@@ -42,7 +42,7 @@
 			TIME_IN_Y = 40
 			START_X = 200
 
-			file = 'minute_waltz.mid'
+			file = 'rachmaninov3.mid'
 
 			// minute_waltz.mid rachmaninov3
 			// 0 && 
@@ -87,7 +87,7 @@
 
 				if (!start) return ctx.restore()
 				const midi = m
-				const lapse = Date.now() - start
+				lapse = (Date.now() - start) / 1000
 
 				ctx.strokeStyle = '#aaa'
 				// cross line
@@ -96,14 +96,15 @@
 				ctx.lineTo(START_X, innerHeight)
 				ctx.stroke()
 
-				ctx.translate(-lapse / 1000 * TIME_IN_Y + START_X, 0)
+				translateY = -lapse * TIME_IN_Y + START_X
 
 				let c = 0.35;
+				const len = midi.tracks.length
 				midi.tracks.forEach(track => {
 					const color = (c * 0xffffff | 0).toString(16)
 					ctx.fillStyle = `#${color}`
 					track.notes.forEach(drawNote)
-					c += 0.13
+					c += 1 / len / 1.2
 				})
 				
 				ctx.restore()
@@ -118,9 +119,12 @@
 			function drawNote(note) {
 				const { midi, time, duration, velocity } = note;
 
+				// quick optimization by filtering
+				if (time < lapse - 60 * 2 || time > lapse + 60 * 2) return
+
 				// ctx.beginPath()
 				// ctx.strokeRect(time * TIME_IN_Y, trackInY(midi), duration * TIME_IN_Y, NOTE_HEIGHT)
-				roundRect(ctx, time * TIME_IN_Y, trackInY(midi), duration * TIME_IN_Y, NOTE_HEIGHT, 6)
+				roundRect(ctx, time * TIME_IN_Y + translateY, trackInY(midi), duration * TIME_IN_Y, NOTE_HEIGHT, 6)
 				ctx.fill()
 			}
 
