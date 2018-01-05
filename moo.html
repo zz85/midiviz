@@ -18,6 +18,7 @@
 			min = 100000
 			max = 0
 			m = null
+			start = null
 
 			NOTE_HEIGHT = 8
 			NOTE_RANGE = 110
@@ -35,12 +36,15 @@
 					})
 				})
 
+				start = Date.now()
+
 				console.log(`${min} -> ${max}`)
 			})
 
 			function render() {
 				requestAnimationFrame(render)
 
+				ctx.save()
 				ctx.fillStyle = '#000'
 				ctx.fillRect(0, 0, canvas.width, canvas.height)
 
@@ -54,18 +58,21 @@
 					ctx.stroke()
 				}
 
-				if (!m) return
+				if (!start) return ctx.restore()
 				const midi = m
+				const lapse = Date.now() - start
+
+				ctx.translate(-lapse / 1000 * TIME_TO_Y, 0)
 
 				// Set faux rounded corners
 				// ctx.lineJoin = 'round';
 				// ctx.lineWidth = 2 // cornerRadius;
 
-
 				midi.tracks.forEach(track => {
 					track.notes.forEach(drawNote)
 				})
 				
+				ctx.restore()
 			}
 
 			render()
