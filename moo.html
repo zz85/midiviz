@@ -1,0 +1,123 @@
+<!DOCTYPE HTML>
+<html>
+	<head>
+		<script src="http://localhost:8000/wip/nwc-viewer/vendor/MIDIFile.js"></script>
+		<script src="MidiConvert.js"></script>
+		<!-- 
+			https://github.com/nfroidure/MIDIFile/raw/master/dist/MIDIFile.js
+		-->
+	</head>
+	<body>
+		<script>
+			canvas = document.createElement('canvas')
+			ctx = canvas.getContext('2d')
+			canvas.width = innerWidth
+			canvas.height = innerHeight
+			document.body.appendChild(canvas)
+
+			min = 100000
+			max = 0
+
+			NOTE_HEIGHT = 12
+			NOTE_RANGE = 105
+			TIME_TO_Y = 40
+
+			MidiConvert.load("minute_waltz.mid", function(midi) {
+				console.log(midi)
+				m = midi;
+
+				midi.tracks.forEach(track => {
+					track.notes.forEach(drawNote)
+				})
+
+				console.log(`${min} -> ${max}`)
+			})
+
+			function render() {
+				ctx.fillStyle = '#000'
+				ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+
+				ctx.lineWidth = 0.8
+				ctx.strokeStyle = '#191919'
+				for (let i = 0; i < NOTE_RANGE; i++) {
+					const y = trackToY(i)
+					ctx.beginPath()
+					ctx.moveTo(0, y)
+					ctx.lineTo(innerWidth, y)
+					ctx.stroke()
+				}
+			}
+
+			render()
+
+			function trackToY(midi) {
+				return NOTE_HEIGHT * (NOTE_RANGE - midi)
+			}
+
+			function drawNote(note) {
+				const { midi, time, duration, velocity } = note;
+				min = Math.min(midi, min)
+				max = Math.max(midi, max)
+
+				ctx.fillStyle = 'yellow'
+				ctx.beginPath()
+				ctx.fillRect(time * TIME_TO_Y, trackToY(midi), duration * TIME_TO_Y, NOTE_HEIGHT)
+			}
+
+
+			1 || fetch('minute_waltz.mid').then(v => {
+				console.log('v')
+				return v.arrayBuffer()
+			}).then(arrayBuffer => {
+				console.log('arrayBuffer', arrayBuffer)
+				midiFile = new MIDIFile(arrayBuffer)
+				// console.log(mid)
+
+
+				// Reading headers
+				midiFile.header.getFormat(); // 0, 1 or 2
+				midiFile.header.getTracksCount(); // n
+				// Time division
+				if(midiFile.header.getTimeDivision() === MIDIFile.Header.TICKS_PER_BEAT) {
+					midiFile.header.getTicksPerBeat();
+				} else {
+					midiFile.header.getSMPTEFrames();
+					midiFile.header.getTicksPerFrame();
+				}
+
+				// MIDI events retriever
+				var events = midiFile.getMidiEvents();
+				console.log('events', events);
+				events[0].subtype; // type of [MIDI event](https://github.com/nfroidure/MIDIFile/blob/master/src/MIDIFile.js#L34)
+				events[0].playTime; // time in ms at wich the event must be played
+				events[0].param1; // first parameter
+				events[0].param2; // second one
+
+				// Lyrics retriever
+				var lyrics = midiFile.getLyrics();
+				if ( lyrics.length ) {
+					lyrics[0].playTime; // Time at wich the text must be displayed
+					lyrics[0].text; // The text content to be displayed
+				}
+
+				// Reading whole track events and filtering them yourself
+				var events = midiFile.getTrackEvents(0);
+
+				events.forEach(console.log.bind(console));
+
+				// Or for a single track
+				var trackEventsChunk = midiFile.tracks[0].getTrackContent();
+				var events = MIDIEvents.createParser(trackEventsChunk);
+
+				var event;
+				// while(event = events.next()) {
+				// 	// Printing meta events containing text only
+				// 	if(event.type === MIDIEvents.EVENT_META && event.text) {
+				// 		console.log('Text meta: '+event.text);
+				// 	}
+				// }
+			})
+		</script>
+	</body>
+</html>
