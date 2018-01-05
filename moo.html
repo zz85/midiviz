@@ -22,6 +22,9 @@
 				note queue
 
 				orientation
+
+				TOFIX
+				- verify octave line
 			*/
 			canvas = document.createElement('canvas')
 			ctx = canvas.getContext('2d')
@@ -36,7 +39,8 @@
 
 			NOTE_HEIGHT = 8
 			NOTE_RANGE = 110
-			TIME_TO_Y = 40
+			TIME_IN_Y = 40
+			START_X = 200
 
 			file = 'minute_waltz.mid'
 
@@ -63,15 +67,18 @@
 				requestAnimationFrame(render)
 
 				ctx.save()
+
+				// background
 				ctx.fillStyle = '#000'
 				ctx.fillRect(0, 0, canvas.width, canvas.height)
 
+				// grids
 				ctx.lineWidth = 0.8
 				ctx.strokeStyle = '#191919'
 				for (let i = 0; i < NOTE_RANGE; i++) {
 					ctx.strokeStyle = i % 12 === 0 ? '#666' : '#191919'
 
-					const y = trackToY(i)
+					const y = trackInY(i)
 					ctx.beginPath()
 					ctx.moveTo(0, y)
 					ctx.lineTo(innerWidth, y)
@@ -82,14 +89,21 @@
 				const midi = m
 				const lapse = Date.now() - start
 
-				ctx.translate(-lapse / 1000 * TIME_TO_Y, 0)
+				ctx.strokeStyle = '#aaa'
+				// cross line
+				ctx.beginPath()
+				ctx.moveTo(START_X, 0)
+				ctx.lineTo(START_X, innerHeight)
+				ctx.stroke()
 
-				// Set faux rounded corners
-				// ctx.lineJoin = 'round';
-				// ctx.lineWidth = 2 // cornerRadius;
+				ctx.translate(-lapse / 1000 * TIME_IN_Y + START_X, 0)
 
+				let c = 0.35;
 				midi.tracks.forEach(track => {
+					const color = (c * 0xffffff | 0).toString(16)
+					ctx.fillStyle = `#${color}`
 					track.notes.forEach(drawNote)
+					c += 0.13
 				})
 				
 				ctx.restore()
@@ -97,18 +111,16 @@
 
 			render()
 
-			function trackToY(midi) {
+			function trackInY(midi) {
 				return NOTE_HEIGHT * (NOTE_RANGE - midi)
 			}
 
 			function drawNote(note) {
 				const { midi, time, duration, velocity } = note;
-				ctx.fillStyle = 'yellow'
-				// ctx.strokeStyle = 'yellow'
+
 				// ctx.beginPath()
-				// ctx.strokeRect(time * TIME_TO_Y, trackToY(midi), duration * TIME_TO_Y, NOTE_HEIGHT)
-				// ctx.strokeRect(time * TIME_TO_Y, trackToY(midi), duration * TIME_TO_Y, NOTE_HEIGHT)
-				roundRect(ctx, time * TIME_TO_Y, trackToY(midi), duration * TIME_TO_Y, NOTE_HEIGHT, 6)
+				// ctx.strokeRect(time * TIME_IN_Y, trackInY(midi), duration * TIME_IN_Y, NOTE_HEIGHT)
+				roundRect(ctx, time * TIME_IN_Y, trackInY(midi), duration * TIME_IN_Y, NOTE_HEIGHT, 6)
 				ctx.fill()
 			}
 
