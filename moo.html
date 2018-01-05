@@ -44,21 +44,26 @@
 			NOTE_HEIGHT = 8
 			NOTE_RANGE = 110
 			TIME_IN_Y = 40
-			START_X = 200
+			START_X = 200 + 400
 
 			// bigger
-			// NOTE_HEIGHT = 10; TIME_IN_Y = 200
+			NOTE_HEIGHT = 10; TIME_IN_Y = 200
 
 			// file = 'Prelude1.mid'
 			file = 'rachmaninov3.mid'
 			// file = 'minute_waltz.mid'
+			// file = 'chpn-p15.mid' // http://www.piano-midi.de/chopin.htm
 
 			// minute_waltz.mid rachmaninov3
 			// 0 && 
 			MidiConvert.load(file, function(midi) {
 				console.log(midi)
 				m = midi
-				
+				colors = {}
+
+				const c = 0.35
+				const len = midi.tracks.length
+
 				midi.tracks.forEach((track, trackNo) => {
 					track.notes.forEach((note) => {
 						const { midi, time, duration, velocity } = note;
@@ -66,6 +71,9 @@
 						max = Math.max(midi, max)
 						allNotes.push(Object.assign({ trackNo }, note))
 					})
+
+					const color = ((trackNo / len / 1.2 + c) * 0xffffff | 0).toString(16)
+					colors[trackNo] = `#${color}`
 				})
 
 				allNotes.sort((an, bn) => {
@@ -115,30 +123,30 @@
 
 				translateY = -lapse * TIME_IN_Y + START_X
 
-				let c = 0.35;
-				const len = midi.tracks.length
 				// allNotes.forEach(note => {
-				// 	const color = (note.trackNo / len / 1.2 + c * 0xffffff | 0).toString(16)
-				// 	ctx.fillStyle = `#${color}`
 				// 	drawNote(note)
 				// })
 
-				for (let i = lastPlayed + 1; i < allNotes.length; i++) {
+				buffer = 5
+
+				for (let i = Math.max(lastPlayed - 50, 0); i < allNotes.length; i++) {
 					const note = allNotes[i];
-					if (note.time <= lapse) {
+					if (i > lastPlayed && note.time <= lapse) {
 						// noteOn!
 						// console.log('noteon', note)
 						noteOn(note.midi, note.velocity)
 						lastPlayed = i;
 					}
 
-					const color = (note.trackNo / len / 1.2 + c * 0xffffff | 0).toString(16)
-					ctx.fillStyle = `#${color}`
 					drawNote(note)
 
-					if (note.time > lapse) {
-						break;
-					}
+					// skip
+					// if (note.time > lapse) {
+					// 	break;
+					// }
+
+					if (i > lastPlayed + buffer) break;
+
 				}
 				
 				ctx.restore()
@@ -153,19 +161,24 @@
 			function drawNote(note) {
 				const { midi, time, duration, velocity } = note;
 
-				ctx.save()
-				// ctx.globalAlpha = velocity
 				// quick optimization by filtering
 				if (time < lapse - 60 * 2 || time > lapse + 60 * 2) return
+
+				ctx.fillStyle = colors[note.trackNo]
+				ctx.save()
+				// ctx.globalAlpha = velocity
+
 				const x0 = time * TIME_IN_Y + translateY
 				const y0 = trackInY(midi)
 				const w = duration * TIME_IN_Y
 				const h = NOTE_HEIGHT
 
-				ctx.beginPath()
-				ctx.arc(x0, y0 + h / 2, h /2, 0, Math.PI * 2)
+				// ctx.beginPath()
+				// ctx.arc(x0, y0 + h / 2, h /2, 0, Math.PI * 2)
 				// ctx.strokeRect(x0, y0, w, h)
-				// roundRect(ctx, x0, y0, w, h, 6)
+				
+				roundRect(ctx, x0, y0, w, h, 6)
+
 				ctx.fill()
 				ctx.restore()
 			}
