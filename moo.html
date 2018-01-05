@@ -1,14 +1,28 @@
 <!DOCTYPE HTML>
 <html>
 	<head>
-		<script src="http://localhost:8000/wip/nwc-viewer/vendor/MIDIFile.js"></script>
+		<script src="MIDIFile.js"></script>
 		<script src="MidiConvert.js"></script>
-		<!-- 
+		<!--
+			Vendor sources:
 			https://github.com/nfroidure/MIDIFile/raw/master/dist/MIDIFile.js
+			https://raw.githubusercontent.com/Tonejs/MidiConvert/master/build/MidiConvert.js
 		-->
 	</head>
 	<body>
 		<script>
+			/*
+			  TODO
+				octave / keyboard (black key) horizontal lines
+
+				note hit vertical lines
+
+				out of bounds easing
+
+				note queue
+
+				orientation
+			*/
 			canvas = document.createElement('canvas')
 			ctx = canvas.getContext('2d')
 			canvas.width = innerWidth
@@ -24,7 +38,11 @@
 			NOTE_RANGE = 110
 			TIME_TO_Y = 40
 
-			MidiConvert.load("minute_waltz.mid", function(midi) {
+			file = 'minute_waltz.mid'
+
+			// minute_waltz.mid rachmaninov3
+			// 0 && 
+			MidiConvert.load(file, function(midi) {
 				console.log(midi)
 				m = midi
 
@@ -106,7 +124,7 @@
 			}
 
 
-			1 || fetch('minute_waltz.mid').then(v => {
+			1 || fetch(file).then(v => {
 				console.log('v')
 				return v.arrayBuffer()
 			}).then(arrayBuffer => {
