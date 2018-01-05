@@ -3,6 +3,7 @@
 	<head>
 		<script src="MIDIFile.js"></script>
 		<script src="MidiConvert.js"></script>
+		<script src="audio.js"></script>
 		<!--
 			Vendor sources:
 			https://github.com/nfroidure/MIDIFile/raw/master/dist/MIDIFile.js
@@ -13,7 +14,7 @@
 		<script>
 			/*
 			  TODO
-				octave / keyboard (black key) horizontal lines
+				[ ] octave / keyboard (black key) horizontal lines
 
 				note hit vertical lines
 
@@ -31,31 +32,46 @@
 			canvas.width = innerWidth
 			canvas.height = innerHeight
 			document.body.appendChild(canvas)
+			// ctx.globalCompositeOperation = 'lighter' // lighter
 
 			min = 100000
 			max = 0
 			m = null
 			start = null
+			lastPlayed = -1
+			allNotes = []
 
 			NOTE_HEIGHT = 8
 			NOTE_RANGE = 110
 			TIME_IN_Y = 40
 			START_X = 200
 
+			// bigger
+			// NOTE_HEIGHT = 10; TIME_IN_Y = 200
+
+			// file = 'Prelude1.mid'
 			file = 'rachmaninov3.mid'
+			// file = 'minute_waltz.mid'
 
 			// minute_waltz.mid rachmaninov3
 			// 0 && 
 			MidiConvert.load(file, function(midi) {
 				console.log(midi)
 				m = midi
-
-				midi.tracks.forEach(track => {
+				
+				midi.tracks.forEach((track, trackNo) => {
 					track.notes.forEach((note) => {
 						const { midi, time, duration, velocity } = note;
 						min = Math.min(midi, min)
 						max = Math.max(midi, max)
+						allNotes.push(Object.assign({ trackNo }, note))
 					})
+				})
+
+				allNotes.sort((an, bn) => {
+					const a = an.time
+					const b = bn.time
+					return a < b ? -1 : a > b ? 1 : 0
 				})
 
 				start = Date.now()
@@ -85,6 +101,7 @@
 					ctx.stroke()
 				}
 
+				// proceed after midi is loaded
 				if (!start) return ctx.restore()
 				const midi = m
 				lapse = (Date.now() - start) / 1000
@@ -100,12 +117,29 @@
 
 				let c = 0.35;
 				const len = midi.tracks.length
-				midi.tracks.forEach(track => {
-					const color = (c * 0xffffff | 0).toString(16)
+				// allNotes.forEach(note => {
+				// 	const color = (note.trackNo / len / 1.2 + c * 0xffffff | 0).toString(16)
+				// 	ctx.fillStyle = `#${color}`
+				// 	drawNote(note)
+				// })
+
+				for (let i = lastPlayed + 1; i < allNotes.length; i++) {
+					const note = allNotes[i];
+					if (note.time <= lapse) {
+						// noteOn!
+						// console.log('noteon', note)
+						noteOn(note.midi, note.velocity)
+						lastPlayed = i;
+					}
+
+					const color = (note.trackNo / len / 1.2 + c * 0xffffff | 0).toString(16)
 					ctx.fillStyle = `#${color}`
-					track.notes.forEach(drawNote)
-					c += 1 / len / 1.2
-				})
+					drawNote(note)
+
+					if (note.time > lapse) {
+						break;
+					}
+				}
 				
 				ctx.restore()
 			}
@@ -119,13 +153,21 @@
 			function drawNote(note) {
 				const { midi, time, duration, velocity } = note;
 
+				ctx.save()
+				// ctx.globalAlpha = velocity
 				// quick optimization by filtering
 				if (time < lapse - 60 * 2 || time > lapse + 60 * 2) return
+				const x0 = time * TIME_IN_Y + translateY
+				const y0 = trackInY(midi)
+				const w = duration * TIME_IN_Y
+				const h = NOTE_HEIGHT
 
-				// ctx.beginPath()
-				// ctx.strokeRect(time * TIME_IN_Y, trackInY(midi), duration * TIME_IN_Y, NOTE_HEIGHT)
-				roundRect(ctx, time * TIME_IN_Y + translateY, trackInY(midi), duration * TIME_IN_Y, NOTE_HEIGHT, 6)
+				ctx.beginPath()
+				ctx.arc(x0, y0 + h / 2, h /2, 0, Math.PI * 2)
+				// ctx.strokeRect(x0, y0, w, h)
+				// roundRect(ctx, x0, y0, w, h, 6)
 				ctx.fill()
+				ctx.restore()
 			}
 
 

@@ -3,9 +3,10 @@
 
 // Instrument synthesis code based on http://www.iquilezles.org/
 
-function midiOut(note) {
-	// console.log(note);
-	if (note) play(note - 36)
+var skipLow = -36
+function noteOn(note, vol) {
+	// console.log(note, vol);
+	if (note) play(note, vol)
 }
 
 /***
@@ -27,7 +28,7 @@ var buffer;
 var samples;
 
 // Number of cache notes
-var notes = 12 * 8; // octaves
+var notes = 12 * 10; // octaves
 var noteSamples = new Array(notes);
 
 var buffers = 16;
@@ -71,7 +72,7 @@ function generateSample(note, outputBuffer) {
 console.time('generate')
 for (i=0; i<notes; i++) {
 	samples = new Float32Array(bufferLength);
-	generateSample(24 + 12 * 2 + i, samples);
+    generateSample(i + 12, samples);
 	noteSamples[i] = samples;
 }
 
@@ -89,10 +90,12 @@ var vol = 100;
 
 var gainNode = audioContext.createGain();
 	gainNode.connect(audioContext.destination);
-	gainNode.gain.value = 0.5 * vol /100.0;
+	// gainNode.gain.value = 0.5 * vol / 100.0;
 
-function play(k) {
-	currentBuffer = ++currentBuffer % 8;;
+function play(k, vol) {
+    currentBuffer = ++currentBuffer % 8;;
+    
+    if (vol !== undefined) gainNode.gain.setTargetAtTime(vol, 0, 0)
 
 	if (k>noteSamples.length || k < 0) {
 		console.log('out of range', k);
