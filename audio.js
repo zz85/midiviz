@@ -6,7 +6,7 @@
 var skipLow = -36
 function noteOn(note, vol) {
 	// console.log(note, vol);
-	if (note) play(note, vol)
+	if (note) play(note, vol ? vol * 0.5 : vol)
 }
 
 /***
