@@ -20,23 +20,27 @@
 		</style>
 		<div id="controls">
 			<input type="range" value="200" min="0" max="1000" onchange="TIME_IN_Y = this.value">Width</input>
-			<input type="range" value="10" min="1" max="14" onchange="NOTE_HEIGHT = this.value">Width</input>
+			<input type="range" value="10" min="1" max="14" onchange="NOTE_HEIGHT = this.value">Height</input>
 		</div>
 		<script>
 			/*
 			  TODO
 				[ ] octave / keyboard (black key) horizontal lines
-
-				note hit vertical lines
-
+				[x] note hit vertical lines
+				[ ] Particle system
 				out of bounds easing
-
-				note queue
-
 				orientation
 
-				TOFIX
-				- verify octave line
+				Note queue / filtering
+				Player seeker
+
+				Function of Note Pitch -> y / x
+				Circular
+
+				Colors
+
+				Grids toggle
+				Bar Grid
 			*/
 			canvas = document.createElement('canvas')
 			ctx = canvas.getContext('2d')
@@ -54,8 +58,12 @@
 
 			NOTE_HEIGHT = 8
 			NOTE_RANGE = 110
+
+			// PARAMETERS
 			TIME_IN_Y = 40
 			START_X = 400 // + 400
+			BALL_MULTIPLIER = 1
+			// move prepTime etc...
 
 			// bigger
 			NOTE_HEIGHT = 10; TIME_IN_Y = 200
@@ -66,7 +74,7 @@
 			// file = 'chpn-p15.mid' // http://www.piano-midi.de/chopin.htm
 
 			// minute_waltz.mid rachmaninov3
-			// 0 && 
+			// 0 &&
 			MidiConvert.load(file, function(midi) {
 				console.log(midi)
 				m = midi
@@ -116,7 +124,7 @@
 				return t<.5 ? 2*t*t : -1+(4-2*t)*t
 
 				// quad ease in  (going up ramp)
-				
+
 
 				// cubic in out
 				return t<.5 ? 4*t*t*t : (t-1)*(2*t-2)*(2*t-2)+1
@@ -128,8 +136,6 @@
 				ctx.save()
 
 				// background
-				// ctx.fillStyle = '#000'
-				// ctx.fillRect(0, 0, canvas.width, canvas.height)
 				ctx.clearRect(0, 0, canvas.width, canvas.height)
 
 				// grids
@@ -151,6 +157,7 @@
 				lapse = (Date.now() - start) / 1000
 
 				ctx.strokeStyle = '#aaa'
+
 				// cross line
 				ctx.beginPath()
 				ctx.moveTo(START_X, 0)
@@ -184,7 +191,7 @@
 					if (i > lastPlayed + buffer) break;
 
 				}
-				
+
 				ctx.restore()
 			}
 
@@ -214,7 +221,7 @@
 
 				// const x0 = time * TIME_IN_Y + translateY
 				var units = 4;
-				
+
 				var diff = time - lapse
 				var f = diff > 0 ? ease(diff / units) * units : diff
 				// var f = diff;
@@ -224,13 +231,14 @@
 
 				const y0 = trackInY(midi)
 				const w = duration * TIME_IN_Y
-				const h = diff <= 0 ?
+				let h = diff <= 0 ?
 					NOTE_HEIGHT * Math.max(easeIn(2 + diff / 0.5), 0) :
 						diff < prepTime ?
 						(easeIn(reverseFrac(diff, prepTime)) + 1) * NOTE_HEIGHT
 						:
 						NOTE_HEIGHT
-				
+
+				h *= BALL_MULTIPLIER
 
 				if (diff < 0) {
 					ctx.globalAlpha = Math.max(easeIn(1 + diff / 1.4), 0);
