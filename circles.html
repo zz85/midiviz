@@ -11,6 +11,9 @@
 		-->
 	</head>
 	<body>
+		<style>
+			body { background: #000; }
+		</style>
 		<script>
 			/*
 			  TODO
@@ -32,7 +35,7 @@
 			canvas.width = innerWidth
 			canvas.height = innerHeight
 			document.body.appendChild(canvas)
-			// ctx.globalCompositeOperation = 'lighter' // lighter
+			ctx.globalCompositeOperation = 'lighter' // lighter
 
 			min = 100000
 			max = 0
@@ -117,8 +120,9 @@
 				ctx.save()
 
 				// background
-				ctx.fillStyle = '#000'
-				ctx.fillRect(0, 0, canvas.width, canvas.height)
+				// ctx.fillStyle = '#000'
+				// ctx.fillRect(0, 0, canvas.width, canvas.height)
+				ctx.clearRect(0, 0, canvas.width, canvas.height)
 
 				// grids
 				ctx.lineWidth = 0.8
