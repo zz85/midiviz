@@ -205,7 +205,12 @@
 
 				const y0 = trackInY(midi)
 				const w = duration * TIME_IN_Y
-				const h = diff <= 0 ? NOTE_HEIGHT * Math.max(easeIn(2 + diff / 0.5), 0) : NOTE_HEIGHT
+				const h = diff <= 0 ?
+					NOTE_HEIGHT * Math.max(easeIn(2 + diff / 0.5), 0) :
+						diff < 1 ?
+						(easeOut(1 - diff) + 1) * NOTE_HEIGHT
+						:
+						NOTE_HEIGHT
 				
 
 				if (diff < 0) {
