@@ -88,10 +88,11 @@
 			})
 
 			function ease(t) {
+                // linear
+                return t;
+
 				// easeOutQuad
 				return t*(2-t)
-
-				return t;
 
 				// ease in out quad
 				return t<.5 ? 2*t*t : -1+(4-2*t)*t
@@ -193,20 +194,20 @@
 
 				const y0 = trackInY(midi)
 				const w = duration * TIME_IN_Y
-				const h = diff <= 0 ? NOTE_HEIGHT * 1.2 * (-diff/0.4) : NOTE_HEIGHT
+				const h = NOTE_HEIGHT
 
 				// Rect
 				// ctx.strokeRect(x0, y0, w, h)
 
 				// Bar
 				roundRect(ctx, x0, y0, w, h, 6)
-				ctx.stroke()
-				// ctx.fill()
+				// ctx.stroke()
+				ctx.fill()
 
 				// Circles
-				ctx.beginPath()
-				ctx.arc(x0, y0 + h / 2, h /2, 0, Math.PI * 2)
-				ctx.fill()
+				// ctx.beginPath()
+				// ctx.arc(x0, y0 + h / 2, h /2, 0, Math.PI * 2)
+				// ctx.fill()
 
 				ctx.restore()
 			}
@@ -225,6 +226,58 @@
 			}
 
 
+			1 || fetch(file).then(v => {
+				console.log('v')
+				return v.arrayBuffer()
+			}).then(arrayBuffer => {
+				console.log('arrayBuffer', arrayBuffer)
+				midiFile = new MIDIFile(arrayBuffer)
+				// console.log(mid)
+
+
+				// Reading headers
+				midiFile.header.getFormat(); // 0, 1 or 2
+				midiFile.header.getTracksCount(); // n
+				// Time division
+				if(midiFile.header.getTimeDivision() === MIDIFile.Header.TICKS_PER_BEAT) {
+					midiFile.header.getTicksPerBeat();
+				} else {
+					midiFile.header.getSMPTEFrames();
+					midiFile.header.getTicksPerFrame();
+				}
+
+				// MIDI events retriever
+				var events = midiFile.getMidiEvents();
+				console.log('events', events);
+				events[0].subtype; // type of [MIDI event](https://github.com/nfroidure/MIDIFile/blob/master/src/MIDIFile.js#L34)
+				events[0].playTime; // time in ms at wich the event must be played
+				events[0].param1; // first parameter
+				events[0].param2; // second one
+
+				// Lyrics retriever
+				var lyrics = midiFile.getLyrics();
+				if ( lyrics.length ) {
+					lyrics[0].playTime; // Time at wich the text must be displayed
+					lyrics[0].text; // The text content to be displayed
+				}
+
+				// Reading whole track events and filtering them yourself
+				var events = midiFile.getTrackEvents(0);
+
+				events.forEach(console.log.bind(console));
+
+				// Or for a single track
+				var trackEventsChunk = midiFile.tracks[0].getTrackContent();
+				var events = MIDIEvents.createParser(trackEventsChunk);
+
+				var event;
+				// while(event = events.next()) {
+				// 	// Printing meta events containing text only
+				// 	if(event.type === MIDIEvents.EVENT_META && event.text) {
+				// 		console.log('Text meta: '+event.text);
+				// 	}
+				// }
+			})
 		</script>
 	</body>
 </html>
