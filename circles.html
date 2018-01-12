@@ -186,6 +186,14 @@
 				return NOTE_HEIGHT * (NOTE_RANGE - midi)
 			}
 
+			function frac(t, unit) {
+				return t / unit;
+			}
+
+			function reverseFrac(t, unit) {
+				return 1 - t / unit;
+			}
+
 			function drawNote(note) {
 				const { midi, time, duration, velocity } = note;
 
@@ -197,18 +205,21 @@
 				// ctx.globalAlpha = velocity
 
 				// const x0 = time * TIME_IN_Y + translateY
-				var units = 3;
+				var units = 4;
 				
 				var diff = time - lapse
 				var f = diff > 0 ? ease(diff / units) * units : diff
+				// var f = diff;
 				const x0 = f * TIME_IN_Y + START_X
+
+				const prepTime = 0.4;
 
 				const y0 = trackInY(midi)
 				const w = duration * TIME_IN_Y
 				const h = diff <= 0 ?
 					NOTE_HEIGHT * Math.max(easeIn(2 + diff / 0.5), 0) :
-						diff < 1 ?
-						(easeOut(1 - diff) + 1) * NOTE_HEIGHT
+						diff < prepTime ?
+						(easeIn(reverseFrac(diff, prepTime)) + 1) * NOTE_HEIGHT
 						:
 						NOTE_HEIGHT
 				
