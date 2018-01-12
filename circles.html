@@ -37,7 +37,15 @@
 				Function of Note Pitch -> y / x
 				Circular
 
-				Colors
+				Customize Easing
+
+				Time slider
+
+				Color scheme functions (color per note, color per track, color per keys, color per chords?)
+				Size functions velocity (by time, easing functions, velocities)
+				Position functions (x-y, circular, stationary)
+
+				Impact effect
 
 				Grids toggle
 				Bar Grid
@@ -130,14 +138,7 @@
 				return t<.5 ? 4*t*t*t : (t-1)*(2*t-2)*(2*t-2)+1
 			}
 
-			function render() {
-				requestAnimationFrame(render)
-
-				ctx.save()
-
-				// background
-				ctx.clearRect(0, 0, canvas.width, canvas.height)
-
+			function drawGrids() {
 				// grids
 				ctx.lineWidth = 0.8
 				ctx.strokeStyle = '#191919'
@@ -151,11 +152,6 @@
 					ctx.stroke()
 				}
 
-				// proceed after midi is loaded
-				if (!start) return ctx.restore()
-				const midi = m
-				lapse = (Date.now() - start) / 1000
-
 				ctx.strokeStyle = '#aaa'
 
 				// cross line
@@ -163,6 +159,22 @@
 				ctx.moveTo(START_X, 0)
 				ctx.lineTo(START_X, innerHeight)
 				ctx.stroke()
+			}
+
+			function render() {
+				requestAnimationFrame(render)
+
+				ctx.save()
+
+				// background
+				ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+				// drawGrids()
+
+				// proceed after midi is loaded
+				if (!start) return ctx.restore()
+				const midi = m
+				lapse = (Date.now() - start) / 1000
 
 				translateY = -lapse * TIME_IN_Y + START_X
 

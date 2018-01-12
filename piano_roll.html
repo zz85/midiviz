@@ -52,7 +52,7 @@
 			// file = 'Prelude1.mid'
 			// file = 'rachmaninov3.mid'
 			file = 'minute_waltz.mid'
-			file = 'chpn-p15.mid' // http://www.piano-midi.de/chopin.htm
+			// file = 'chpn-p15.mid' // http://www.piano-midi.de/chopin.htm
 
 			// minute_waltz.mid rachmaninov3
 			// 0 && 
@@ -189,7 +189,7 @@
 				var units = 2;
 				
 				var diff = time - lapse
-				var f = diff > 0 ? ease(diff / units) * units : diff * 2
+				var f = diff > 0 ? ease(diff / units) * units : diff
 				const x0 = f * TIME_IN_Y + START_X
 
 				const y0 = trackInY(midi)
