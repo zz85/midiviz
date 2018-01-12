@@ -50,9 +50,9 @@
 			NOTE_HEIGHT = 10; TIME_IN_Y = 200
 
 			// file = 'Prelude1.mid'
-			// file = 'rachmaninov3.mid'
-			file = 'minute_waltz.mid'
-			file = 'chpn-p15.mid' // http://www.piano-midi.de/chopin.htm
+			file = 'rachmaninov3.mid'
+			// file = 'minute_waltz.mid'
+			// file = 'chpn-p15.mid' // http://www.piano-midi.de/chopin.htm
 
 			// minute_waltz.mid rachmaninov3
 			// 0 && 
@@ -87,9 +87,17 @@
 				console.log(`${min} -> ${max}`)
 			})
 
+			function easeOut(t) {
+				return t*(2-t)
+			}
+
+			function easeIn(t) {
+				return t*t
+			}
+
 			function ease(t) {
 				// easeOutQuad
-				return t*(2-t)
+				return easeOut(t)
 
 				return t;
 
@@ -97,7 +105,7 @@
 				return t<.5 ? 2*t*t : -1+(4-2*t)*t
 
 				// quad ease in  (going up ramp)
-				return t*t 
+				
 
 				// cubic in out
 				return t<.5 ? 4*t*t*t : (t-1)*(2*t-2)*(2*t-2)+1
@@ -185,27 +193,32 @@
 				// ctx.globalAlpha = velocity
 
 				// const x0 = time * TIME_IN_Y + translateY
-				var units = 2;
+				var units = 3;
 				
 				var diff = time - lapse
-				var f = diff > 0 ? ease(diff / units) * units : diff * 2
+				var f = diff > 0 ? ease(diff / units) * units : diff
 				const x0 = f * TIME_IN_Y + START_X
 
 				const y0 = trackInY(midi)
 				const w = duration * TIME_IN_Y
-				const h = diff <= 0 ? NOTE_HEIGHT * 1.2 * (-diff/0.4) : NOTE_HEIGHT
+				const h = diff <= 0 ? NOTE_HEIGHT * Math.max(easeIn(2 + diff / 0.5), 0) : NOTE_HEIGHT
+				
+
+				if (diff < 0) {
+					ctx.globalAlpha = Math.max(easeIn(1 + diff / 1.4), 0);
+				}
 
 				// Rect
 				// ctx.strokeRect(x0, y0, w, h)
 
 				// Bar
-				roundRect(ctx, x0, y0, w, h, 6)
-				ctx.stroke()
+				// roundRect(ctx, x0, y0, w, h, 6)
+				// ctx.stroke()
 				// ctx.fill()
 
 				// Circles
 				ctx.beginPath()
-				ctx.arc(x0, y0 + h / 2, h /2, 0, Math.PI * 2)
+				ctx.arc(x0, y0 + NOTE_HEIGHT / 2, h /2, 0, Math.PI * 2)
 				ctx.fill()
 
 				ctx.restore()
