@@ -21,8 +21,11 @@
 			<input type="range" value="200" min="0" max="1000" onchange="TIME_IN_Y = this.value">X Spacing</input>
 			<input type="range" value="10" min="1" max="14" onchange="NOTE_HEIGHT = this.value">Y Spacing</input>
 			<input type="range" value="1" min="0" max="8" step="0.1" onchange="BALL_MULTIPLIER = this.value">Size</input>
+			<input id="progress" type="range" value="1" min="0" max="8" step="0.1" onchange="BALL_MULTIPLIER = this.value">Progress</input>
 			<input type="checkbox">Grid</input>
 			<input type="checkbox">Hit</input>
+
+			Time: <span id="playing_time"></span>
 			<!-- Play
 			Open -->
 		</div>
@@ -47,6 +50,8 @@
 				=====
 				Grids toggle
 				Bar Grid
+
+				GUI - DSL / JSON / JS / CustomElements / HTML?
 
 				Share settings?
 
@@ -112,22 +117,74 @@
 					return a < b ? -1 : a > b ? 1 : 0
 				})
 
-				start = Date.now()
+				player.play()
 
 				console.log(`${min} -> ${max}`)
 			})
 
-			function easeOut(t) {
-				return t*(2-t)
-			}
+			const easings = {
+				easeOut(t) {
+					return t*(2-t)
+				},
 
-			function easeIn(t) {
-				return t*t
+				easeIn(t) {
+					return t*t
+				},
+
+				linear(t) {
+					return t;
+				},
+			};
+
+			const player = {
+				init() {
+					player.stop()
+				},
+
+				play() {
+					if (!playing) {
+						playing = true
+						// create reference point
+						start = Date.now() - lapse * 1000
+						console.log('play lapse', lapse)
+					}
+				},
+
+				stop() {
+					playing = false
+					start = null 
+					lapse = 0 // in seconds
+
+					// TODO emit events
+				},
+
+				pause() {
+					if (playing) {
+						playing = false
+						console.log('pause, lapse', lapse)
+					}
+					else {
+						player.play()
+					}
+				},
+
+				seek(target) {
+					lapse = target
+					// adjust goal post
+					start = Date.now() - lapse
+				},
+
+				update() {
+					// use start time as reference time
+					if (playing) {
+						lapse = (Date.now() - start) / 1000
+					}
+				}
 			}
 
 			function ease(t) {
 				// easeOutQuad
-				return easeOut(t)
+				return easings.easeOut(t)
 
 				return t;
 
@@ -173,10 +230,13 @@
 
 				// drawGrids()
 
+				if (typeof lapse !== 'undefined') playing_time.innerHTML = lapse.toFixed(2) + 's'
+
 				// proceed after midi is loaded
-				if (!start) return ctx.restore()
+				if (!playing) return ctx.restore()
+
 				const midi = m
-				lapse = (Date.now() - start) / 1000
+				player.update()
 
 				translateY = -lapse * TIME_IN_Y + START_X
 
@@ -199,6 +259,7 @@
 				ctx.restore()
 			}
 
+			player.init()
 			render()
 
 			function trackInY(midi) {
@@ -237,16 +298,16 @@
 
 				// Impact 1 + size
 				let h = diff <= 0 ?
-					NOTE_HEIGHT * Math.max(easeIn(2 + diff / 0.5), 0) :
+					NOTE_HEIGHT * Math.max(easings.easeIn(2 + diff / 0.5), 0) :
 						diff < prepTime ?
-						(easeIn(reverseFrac(diff, prepTime)) + 1) * NOTE_HEIGHT
+						(easings.easeIn(reverseFrac(diff, prepTime)) + 1) * NOTE_HEIGHT
 						:
 						NOTE_HEIGHT
 
 				h *= BALL_MULTIPLIER
 
 				if (diff < 0) {
-					ctx.globalAlpha = Math.max(easeIn(1 + diff / 1.4), 0);
+					ctx.globalAlpha = Math.max(easings.easeIn(1 + diff / 1.4), 0);
 				}
 
 				// Circles
