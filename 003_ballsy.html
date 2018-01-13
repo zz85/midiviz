@@ -5,7 +5,6 @@
 		<script src="audio.js"></script>
 		<!--
 			Vendor sources:
-			https://github.com/nfroidure/MIDIFile/raw/master/dist/MIDIFile.js
 			https://raw.githubusercontent.com/Tonejs/MidiConvert/master/build/MidiConvert.js
 		-->
 	</head>
@@ -16,16 +15,28 @@
 				position: absolute;
 				z-index: 10;
 			}
+
+			input {
+				width: 50px;
+			}
 		</style>
 		<div id="controls">
-			<input type="range" value="200" min="0" max="1000" onchange="TIME_IN_Y = this.value">X Spacing</input>
-			<input type="range" value="10" min="1" max="14" onchange="NOTE_HEIGHT = this.value">Y Spacing</input>
-			<input type="range" value="1" min="0" max="8" step="0.1" onchange="BALL_MULTIPLIER = this.value">Size</input>
-			<input id="progress" type="range" value="1" min="0" max="8" step="0.1" onchange="BALL_MULTIPLIER = this.value">Progress</input>
-			<input type="checkbox">Grid</input>
-			<input type="checkbox">Hit</input>
+			X Spacing: <input type="range" value="200" min="0" max="1000" onchange="TIME_IN_Y = this.value"></input>
+			Y Spacing: <input type="range" value="10" min="1" max="14" onchange="NOTE_HEIGHT = this.value"></input>
+			Size: <input type="range" value="1" min="0" max="8" step="0.1" onchange="BALL_MULTIPLIER = this.value"></input>
 
+			Grid: <input type="checkbox" onchange="DISPLAY_GRID = (this.checked)"></input>
+			Hit: <input type="checkbox" onchange="DISPLAY_HIT_GRID = this.checked"></input>
+
+			<br/>
 			Time: <span id="playing_time"></span>
+
+			Progress: <input id="progress" type="range" value="0" min="0" max="1" step="0.0001" 
+				onmousedown="PROGRESS_CHANGE = true"
+				onmouseup="player.seek(this.value * duration); PROGRESS_CHANGE = false"
+				onchange="this.value"></input>
+			Speed: <input type="range" value="1" min="0.2" max="4" step="0.2" onchange="player.speed(this.value)"></input>
+			<button onclick="player.pause()">Pause</button>
 			<!-- Play
 			Open -->
 		</div>
@@ -79,6 +90,12 @@
 			TIME_IN_Y = 40
 			START_X = 400 // + 400
 			BALL_MULTIPLIER = 1
+
+			DISPLAY_GRID = false
+			DISPLAY_HIT_GRID = false
+
+			PROGRESS_CHANGE = false
+
 			// move prepTime etc...
 
 			// bigger
@@ -117,6 +134,9 @@
 					return a < b ? -1 : a > b ? 1 : 0
 				})
 
+				endNote = allNotes[allNotes.length - 1]
+				duration = endNote.time + endNote.duration
+
 				player.play()
 
 				console.log(`${min} -> ${max}`)
@@ -136,6 +156,22 @@
 				},
 			};
 
+			/**
+			 * Simple Generic Player
+			 * 
+			 *  properties
+			 *  - lapse - running time
+			 *  - playing - is playing
+			 *  - start - goal post
+			 *  - speed - running speed
+			 * 
+			 *  methods
+			 *  - play() - resume playing when stopped/paused
+			 *  - stop() - stops and reset time to 0
+			 *  - pause() - pauses playing
+			 *  - speed() - adjust speed
+			 *  - seek() - seeks to time
+			 */
 			const player = {
 				init() {
 					player.stop()
@@ -146,7 +182,6 @@
 						playing = true
 						// create reference point
 						player._adjust()
-						console.log('play lapse', lapse)
 					}
 				},
 
@@ -159,7 +194,8 @@
 				},
 
 				speed(target) {
-					speed = target
+					speed = +target
+					this._adjust()
 				},
 
 				_adjust() {
@@ -170,7 +206,6 @@
 				pause() {
 					if (playing) {
 						playing = false
-						console.log('pause, lapse', lapse)
 					}
 					else {
 						player.play()
@@ -179,7 +214,6 @@
 
 				seek(target) {
 					lapse = target
-					// adjust goal post
 					player._adjust()
 				},
 
@@ -208,6 +242,8 @@
 			}
 
 			function drawGrids() {
+				if (!DISPLAY_GRID) return
+
 				// grids
 				ctx.lineWidth = 0.8
 				ctx.strokeStyle = '#191919'
@@ -221,6 +257,8 @@
 					ctx.stroke()
 				}
 
+				if (!DISPLAY_HIT_GRID) return
+
 				ctx.strokeStyle = '#aaa'
 
 				// cross line
@@ -230,6 +268,13 @@
 				ctx.stroke()
 			}
 
+			function formatSeconds(s) {
+				var min = s / 60 | 0;
+				var secs = (s % 60).toFixed(2);
+
+				return min + ':' + secs;
+			}
+
 			function render() {
 				requestAnimationFrame(render)
 				ctx.save()
@@ -237,9 +282,12 @@
 				// background
 				ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-				// drawGrids()
+				drawGrids()
 
-				if (typeof lapse !== 'undefined') playing_time.innerHTML = lapse.toFixed(2) + 's'
+				if (typeof duration !== 'undefined') {
+					playing_time.innerHTML = formatSeconds(lapse) + ' ' + speed.toFixed(1) + 'x'
+					if (!PROGRESS_CHANGE) progress.value = lapse / duration
+				}
 
 				// proceed after midi is loaded
 				if (!playing) return ctx.restore()
