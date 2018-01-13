@@ -145,7 +145,7 @@
 					if (!playing) {
 						playing = true
 						// create reference point
-						start = Date.now() - lapse * 1000
+						player._adjust()
 						console.log('play lapse', lapse)
 					}
 				},
@@ -154,8 +154,17 @@
 					playing = false
 					start = null 
 					lapse = 0 // in seconds
-
+					speed = 1
 					// TODO emit events
+				},
+
+				speed(target) {
+					speed = target
+				},
+
+				_adjust() {
+					// adjust playing reference point
+					start = Date.now() - lapse * 1 / speed * 1000
 				},
 
 				pause() {
@@ -171,13 +180,13 @@
 				seek(target) {
 					lapse = target
 					// adjust goal post
-					start = Date.now() - lapse
+					player._adjust()
 				},
 
 				update() {
 					// use start time as reference time
 					if (playing) {
-						lapse = (Date.now() - start) / 1000
+						lapse = (Date.now() - start) * speed / 1000
 					}
 				}
 			}
