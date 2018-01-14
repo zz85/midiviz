@@ -33,10 +33,18 @@
 
 			Progress: <input id="progress" type="range" value="0" min="0" max="1" step="0.0001" 
 				onmousedown="PROGRESS_CHANGE = true"
-				onmouseup="player.seek(this.value * duration); PROGRESS_CHANGE = false"
+				onmouseup="player.seek(this.value * duration); lastPlayed = -1; PROGRESS_CHANGE = false"
 				onchange="this.value"></input>
 			Speed: <input type="range" value="1" min="0.2" max="4" step="0.2" onchange="player.speed(this.value)"></input>
+			
 			<button onclick="player.pause()">Pause</button>
+
+			<select onchange="console.log(this.value)">
+				<option>linear</option>
+				<option>easeIn</option>
+				<option>easeOut</option>
+			</select>
+
 			<!-- Play
 			Open -->
 		</div>
@@ -79,7 +87,6 @@
 			min = 100000
 			max = 0
 			m = null
-			start = null
 			lastPlayed = -1
 			allNotes = []
 
@@ -93,7 +100,6 @@
 
 			DISPLAY_GRID = false
 			DISPLAY_HIT_GRID = false
-
 			PROGRESS_CHANGE = false
 
 			// move prepTime etc...
@@ -154,7 +160,28 @@
 				linear(t) {
 					return t;
 				},
+
+				easeOutQuad(t) {
+					return easings.easeOut(t)
+				}
 			};
+
+			function ease(t) {
+				// easeOutQuad
+				
+
+				return t;
+
+				// ease in out quad
+				return t<.5 ? 2*t*t : -1+(4-2*t)*t
+
+				// quad ease in  (going up ramp)
+
+
+				// cubic in out
+				return t<.5 ? 4*t*t*t : (t-1)*(2*t-2)*(2*t-2)+1
+			}
+
 
 			/**
 			 * Simple Generic Player
@@ -174,14 +201,14 @@
 			 */
 			const player = {
 				init() {
-					player.stop()
+					this.stop()
 				},
 
 				play() {
 					if (!playing) {
 						playing = true
 						// create reference point
-						player._adjust()
+						this._adjust()
 					}
 				},
 
@@ -200,7 +227,7 @@
 
 				_adjust() {
 					// adjust playing reference point
-					start = Date.now() - lapse * 1 / speed * 1000
+					start = this.now() - lapse * 1 / speed * 1000
 				},
 
 				pause() {
@@ -208,37 +235,25 @@
 						playing = false
 					}
 					else {
-						player.play()
+						this.play()
 					}
 				},
 
 				seek(target) {
 					lapse = target
-					player._adjust()
+					this._adjust()
 				},
 
 				update() {
 					// use start time as reference time
 					if (playing) {
-						lapse = (Date.now() - start) * speed / 1000
+						lapse = (this.now() - start) * speed / 1000
 					}
+				},
+
+				now() {
+					return (window.performance || Date).now()
 				}
-			}
-
-			function ease(t) {
-				// easeOutQuad
-				return easings.easeOut(t)
-
-				return t;
-
-				// ease in out quad
-				return t<.5 ? 2*t*t : -1+(4-2*t)*t
-
-				// quad ease in  (going up ramp)
-
-
-				// cubic in out
-				return t<.5 ? 4*t*t*t : (t-1)*(2*t-2)*(2*t-2)+1
 			}
 
 			function drawGrids() {
@@ -299,16 +314,23 @@
 
 				buffer = 50
 
-				for (let i = Math.max(lastPlayed - 50, 0); i < allNotes.length; i++) {
+				// Math.max(lastPlayed - 50, 0)
+				for (let i = 0; i < allNotes.length; i++) {
 					const note = allNotes[i];
-					if (i > lastPlayed && note.time <= lapse) {
+					if (
+						i > lastPlayed && note.time <= lapse) {
 						// noteOn!
 						// console.log('noteon', note)
-						noteOn(note.midi, note.velocity)
+						if (note.time >= lapse - 0.05) // if missed by 100ms, we drop it.
+							noteOn(note.midi, note.velocity)
 						lastPlayed = i;
 					}
 
-					drawNote(note)
+					var bufferTime = 10;
+					// if (note.time >= lapse - 0.05 && note.time <= lapse)
+					// if (note.time >= lapse - 0.05 && note.time <= lapse + 0.05)
+					if (note.time >= lapse - bufferTime && note.time <= lapse + bufferTime)
+						drawNote(note)
 
 					if (i > lastPlayed + buffer) break;
 				}
