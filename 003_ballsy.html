@@ -39,10 +39,16 @@
 			
 			<button onclick="player.pause()">Pause</button>
 
-			<select onchange="console.log(this.value)">
+			<select onchange="PREP_EASE = easings[this.value]">
 				<option>linear</option>
 				<option>easeIn</option>
 				<option>easeOut</option>
+				<option>easeInOut</option>
+				<option>cubicIn</option>
+				<option>cubicOut</option>
+				<option>exponentialOut</option>
+				<option>exponentialIn</option>
+				<option>sinInOut</option>
 			</select>
 
 			<!-- Play
@@ -109,7 +115,7 @@
 
 			// file = 'Prelude1.mid'
 			file = 'rachmaninov3.mid'
-			// file = 'minute_waltz.mid'
+			file = 'minute_waltz.mid'
 			// file = 'chpn-p15.mid' // http://www.piano-midi.de/chopin.htm
 
 			// minute_waltz.mid rachmaninov3
@@ -157,30 +163,43 @@
 					return t*t
 				},
 
+				cubicIn(k) {
+					return k * k * k;
+				},
+
+				cubicOut(k) {
+					return --k * k * k + 1;
+				},
+
 				linear(t) {
 					return t;
 				},
 
-				easeOutQuad(t) {
-					return easings.easeOut(t)
+				easeInOut(t) {
+					// quad
+					return t<.5 ? 2*t*t : -1+(4-2*t)*t
+				},
+
+				cubicInOut(t) {
+					return t <.5 ? 4*t*t*t : (t-1)*(2*t-2)*(2*t-2)+1
+				},
+
+				exponentialOut(k) {
+					return k === 1 ? 1 : 1 - Math.pow(2, - 10 * k)
+				},
+
+				exponentialIn(k) {
+					return k === 0 ? 0 : Math.pow(1024, k - 1);
+				},
+
+				sinInOut(k) {
+					return 0.5 * (1 - Math.cos(Math.PI * k))
 				}
+
+				
 			};
 
-			function ease(t) {
-				// easeOutQuad
-				
-
-				return t;
-
-				// ease in out quad
-				return t<.5 ? 2*t*t : -1+(4-2*t)*t
-
-				// quad ease in  (going up ramp)
-
-
-				// cubic in out
-				return t<.5 ? 4*t*t*t : (t-1)*(2*t-2)*(2*t-2)+1
-			}
+			var PREP_EASE = easings.linear;
 
 
 			/**
@@ -326,7 +345,7 @@
 						lastPlayed = i;
 					}
 
-					var bufferTime = 10;
+					var bufferTime = 4;
 					// if (note.time >= lapse - 0.05 && note.time <= lapse)
 					// if (note.time >= lapse - 0.05 && note.time <= lapse + 0.05)
 					if (note.time >= lapse - bufferTime && note.time <= lapse + bufferTime)
@@ -353,8 +372,13 @@
 				return 1 - t / unit;
 			}
 
+			var easeInTime = 4;
+			var prepTime = 0.4;
+
+
 			function drawNote(note) {
 				const { midi, time, duration, velocity } = note;
+				// Math.max(...allNotes.map(({ velocity }) => velocity))
 
 				// quick optimization by filtering
 				if (time < lapse - 60 * 2 || time > lapse + 60 * 2) return
@@ -363,13 +387,10 @@
 				ctx.save()
 				// ctx.globalAlpha = velocity
 
-				// const x0 = time * TIME_IN_Y + translateY
-				var easeInTime = 4;
-				const prepTime = 0.4;
-
+				
 				var diff = time - lapse
-				var f = diff > 0 ? ease(diff / easeInTime) * easeInTime : diff
-				// var f = diff;
+				// 4 3 2 1
+				const f = diff > 0 ? (1 - PREP_EASE(1 - diff / easeInTime)) * easeInTime : diff
 				const x0 = f * TIME_IN_Y + START_X
 
 				const y0 = trackInY(midi)
@@ -377,9 +398,13 @@
 
 				// Impact 1 + size
 				let h = diff <= 0 ?
-					NOTE_HEIGHT * Math.max(easings.easeIn(2 + diff / 0.5), 0) :
+					// on note on
+					velocity * 2 *
+					(Math.max(duration * 4, 0.1)) * 
+					NOTE_HEIGHT * Math.min(Math.max(easings.easeIn(2 + diff / 0.5), 0), 4) :
 						diff < prepTime ?
-						(easings.easeIn(reverseFrac(diff, prepTime)) + 1) * NOTE_HEIGHT
+							// prep time
+							(easings.easeIn(reverseFrac(diff, prepTime)) + 1) * NOTE_HEIGHT
 						:
 						NOTE_HEIGHT
 
