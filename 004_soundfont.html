@@ -356,8 +356,8 @@
 				for (let i = 0; i < allNotes.length; i++) {
 					const note = allNotes[i];
 					if (
-						i > lastPlayed && note.time <= lapse + 5) {
-							// allow scheduling up to 5 seconds before
+						i > lastPlayed && note.time <= lapse + 2) {
+							// allow scheduling up to 2 seconds before
 						if (note.time >= lapse - 0.05) {// if missed by 100ms, we drop it.
 							console.log(note.time - lapse);
                             if (!instrument)
@@ -419,7 +419,6 @@
 
 				
 				var diff = time - lapse
-				// 4 3 2 1
 				const f = diff > 0 ? (1 - PREP_EASE(1 - diff / easeInTime)) * easeInTime : diff
 				const x0 = f * TIME_IN_Y + START_X
 

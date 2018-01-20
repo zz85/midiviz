@@ -1,0 +1,108 @@
+<html>
+    <body>
+        <!-- from http://www.blurspline.com/labs/harpsichord/harpsichord2.html  -->
+        <script>
+            var keyboard = document.createElement('canvas');
+            document.body.appendChild(keyboard);
+
+            var whiteKeys = [];
+            var blackKeys = [];
+
+            var whitekeys = 'cdefgab';
+            var blackSharps = 'cdfga';
+
+            var keyWidth = 25;
+            var keyHeight = 150;
+            var blacKeyWidth = 20;
+            var blackKeyHeight = 100;
+
+            keyboard.width = 1600;
+            keyboard.height = 200;
+
+            var ctx = keyboard.getContext('2d');
+
+            ctx.save();
+            ctx.scale(0.8, 0.8);
+            ctx.translate(10, 10);
+
+            var blacks = [ 1, 3,     6, 8, 10];
+            var whites = [0, 2, 4, 5, 7, 9, 11];
+            var blacky = {};
+            var whitey = {};
+            blacks.forEach(function(a) { blacky[a] = blacks.indexOf(a); });
+            whites.forEach(function(a) { whitey[a] = whites.indexOf(a); });
+
+            var ons  = {};
+
+            repaint();
+
+            function repaint() {
+                ctx.clearRect(0, 0, keyboard.width, keyboard.height);
+                var octaves = 8;
+                for (var o=0;o<octaves;o++) {
+                    ctx.strokeStyle = 'black';
+
+                    for (var i=0,il=whitekeys.length;i<il;i++) {
+                        drawWhiteNote(o, i);
+                    }
+
+                    ctx.fillStyle = 'black';
+                    ctx.strokeStyle = 'black';
+
+                    for (i=0,il=blackSharps.length;i<il;i++) {
+                        drawBlackNote(o, i);
+                    }
+                }
+            }
+
+            // Middle C = 60
+            // Low A = 21
+            // Low C = 24
+
+            function drawWhiteNote(octave, i) {
+                var k = 'white' + octave + '.' + i;
+                if (k in ons && ons[k]) {
+                    ctx.fillStyle = 'red';
+                }  else {
+                    ctx.fillStyle = 'white';
+                }
+                ctx.strokeRect( (octave * 7 + i) * keyWidth, 0, keyWidth, keyHeight);
+                ctx.fillRect( (octave * 7 + i) * keyWidth, 0, keyWidth, keyHeight);
+            }
+
+            function drawBlackNote(octave, i) {
+                var k = 'black' + octave + '.' + i;
+                if (k in ons && ons[k]) {
+                    ctx.fillStyle = 'red';
+                }  else {
+                    ctx.fillStyle = 'black';
+                }
+                var pos = whitekeys.indexOf(blackSharps[i]);
+                var off = keyWidth - blacKeyWidth/2;
+                ctx.strokeRect( (octave * 7 + pos) * keyWidth + off, 0, blacKeyWidth, blackKeyHeight);
+                ctx.fillRect( (octave * 7 + pos) * keyWidth + off, 0, blacKeyWidth, blackKeyHeight);
+            }
+
+
+            function toggleNote(note, on) {
+                var octave =  ~~((note-24)/12);
+                
+                note = (note-24) % 12;
+
+                ctx.fillStyle = 'red';
+                var k;
+
+                if (note in blacky) {
+                    k = 'black' + octave + '.' + blacky[note];
+                    // drawBlackNote(octave, blacky[note]);
+                }
+                else {
+                    k = 'white' + octave + '.' + whitey[note];
+                    // drawWhiteNote(octave, whitey[note]);
+                }
+
+                ons[k] = on;
+            }
+        </script>
+    </body>
+</html>
