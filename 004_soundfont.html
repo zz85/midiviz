@@ -117,8 +117,8 @@
             _decay = 0.1 // 0.01
             _sustain = 0.9 // 4
             _release = 0.3 // 0.01
-            _velMul = 1
-            _durMul = 1
+            _velMul = 1.5
+            _durMul = 1.5
 
 			// file = 'Prelude1.mid'
 			file = 'rachmaninov3.mid'
@@ -356,14 +356,14 @@
 				for (let i = 0; i < allNotes.length; i++) {
 					const note = allNotes[i];
 					if (
-						i > lastPlayed && note.time <= lapse) {
-						// noteOn!
-						// console.log('noteon', note)
-                        if (note.time >= lapse - 0.05) {// if missed by 100ms, we drop it.
+						i > lastPlayed && note.time <= lapse + 5) {
+							// allow scheduling up to 5 seconds before
+						if (note.time >= lapse - 0.05) {// if missed by 100ms, we drop it.
+							console.log(note.time - lapse);
                             if (!instrument)
                             noteOn(note.midi, note.velocity)
                             else
-                            instrument.play(note.midi, 0, {
+                            instrument.play(note.midi, ac.currentTime + note.time - lapse, {
                                 gain: note.velocity * _velMul,
                                 duration: note.duration * _durMul,
                                 attack: _attack,
