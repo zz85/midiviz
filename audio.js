@@ -4,9 +4,9 @@
 // Instrument synthesis code based on http://www.iquilezles.org/
 
 var skipLow = -36
-function noteOn(note, vol) {
+function noteOn(note, vol, delay) {
 	// console.log(note, vol);
-	if (note) play(note, vol ? vol * 0.5 : vol)
+	if (note) play(note, vol ? vol * 0.5 : vol, delay)
 }
 
 /***
@@ -92,7 +92,7 @@ var gainNode = audioContext.createGain();
 	gainNode.connect(audioContext.destination);
 	// gainNode.gain.value = 0.5 * vol / 100.0;
 
-function play(k, vol) {
+function play(k, vol, delay) {
     currentBuffer = ++currentBuffer % 8;;
     
     if (vol !== undefined) gainNode.gain.setTargetAtTime(vol, 0, 0)
@@ -112,7 +112,7 @@ function play(k, vol) {
 	var node = audioContext.createBufferSource();
 	    node.buffer = playbackBuffers[currentBuffer];
 	    node.connect(gainNode);
-	    node.start(0);
+	    node.start(delay > 0 ? audioContext.currentTime + delay : 0);
 }
 
 // if (RANDOM_DURATIONS) PlayLoop();
