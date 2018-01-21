@@ -1,0 +1,22 @@
+<html>
+    <body>
+        <script src="hammers2.js"></script>
+        <script>
+            // inspiration taken from dotpiano
+            hammers = new Hammers();
+
+            setInterval(() => {
+                const note = Math.random() * 100 | 0
+                hammers.toggleNote(note, 1)
+                setTimeout(() => hammers.toggleNote(note, 0), Math.random() * 200)
+                hammers.paint()
+            }, 1000/ 60)
+
+            for (let i = 0; i < 100; i++) {
+                button = document.createElement('button')
+                button.onclick = () => hammers.toggleNote(i)
+                document.body.appendChild(button);
+            }
+        </script>
+    </body>
+</html>

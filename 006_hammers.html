@@ -1,0 +1,334 @@
+<!DOCTYPE HTML>
+<html>
+	<head>
+		<script src="MidiConvert.js"></script>
+        <script src="soundfont-player.js"></script>
+        <script src="audio.js"></script>
+        <script src="player.js"></script>
+        <script src="keyboard.js"></script>
+        <script src="hammers2.js"></script>
+
+		<!--
+			Vendor sources:
+			https://raw.githubusercontent.com/Tonejs/MidiConvert/master/build/MidiConvert.js
+		-->
+	</head>
+	<body>
+		<style>
+			body { background: #000; color: #eee; }
+			#controls {
+				position: absolute;
+				z-index: 10;
+			}
+
+			input {
+				width: 50px;
+			}
+		</style>
+		<div id="controls">
+			Size: <input type="range" value="1" min="0" max="8" step="0.1" onchange="BALL_MULTIPLIER = this.value"></input>
+
+            Time: <span id="playing_time"></span>
+
+			Progress: <input id="progress" type="range" value="0" min="0" max="1" step="0.0001" 
+				onmousedown="PROGRESS_CHANGE = true"
+				onmouseup="player.seek(this.value * duration); lastPlayed = -1; PROGRESS_CHANGE = false"
+				onchange="this.value"></input>
+			Speed: <input type="range" value="1" min="0.2" max="4" step="0.2" onchange="player.speed(this.value)"></input>
+			
+			<button onclick="player.pause()">Pause</button>
+		</div>
+		<script>
+			hammers = new Hammers(0, 9, 10, 2, 15);
+			keyboard = new Keyboard(1, 9);
+			
+            // transform-origin: center;
+            // transform: rotate(90deg)
+            /*
+            position: absolute;
+            top: 0;
+            left: -100px;
+            transform: scale(0.5, 0.5);
+            */
+
+			canvas = document.createElement('canvas')
+			ctx = canvas.getContext('2d')
+			canvas.width = innerWidth
+			canvas.height = innerHeight
+			document.body.appendChild(canvas)
+            ctx.globalCompositeOperation = 'lighter' // lighter
+            
+			min = 100000
+			max = 0
+			m = null
+			lastPlayed = -1
+			allNotes = []
+
+			NOTE_HEIGHT = 8
+			NOTE_RANGE = 110
+
+			// PARAMETERS
+			TIME_IN_Y = 40
+			START_X = 400 // + 400
+			BALL_MULTIPLIER = 1
+
+			DISPLAY_GRID = false
+			DISPLAY_HIT_GRID = false
+            PROGRESS_CHANGE = false
+            
+            
+			// move prepTime etc...
+
+			// bigger
+            NOTE_HEIGHT = 10; TIME_IN_Y = 200
+            
+            buffer = 50
+
+            // defaults https://github.com/danigb/sample-player/blob/ebe9f25cf512f78cd338965ba524d6b47ccece38/lib/player.js#L8
+            _attack = 0.01 // 0.01
+            _decay = 0.1 // 0.01
+            _sustain = 0.9 // 4
+            _release = 0.3 // 0.01
+            _velMul = 1.5
+            _durMul = 1.5
+
+			// file = 'Prelude1.mid'
+			file = 'rachmaninov3.mid'
+			// file = 'minute_waltz.mid'
+			// file = 'chpn-p15.mid' // http://www.piano-midi.de/chopin.htm
+
+			// minute_waltz.mid rachmaninov3
+            // 0 &&
+            
+			const startup = () => MidiConvert.load(file, function(midi) {
+				console.log(midi)
+				m = midi
+				colors = {}
+
+				const c = 0.35
+				const len = midi.tracks.length
+
+				midi.tracks.forEach((track, trackNo) => {
+					track.notes.forEach((note) => {
+						const { midi, time, duration, velocity } = note;
+						min = Math.min(midi, min)
+						max = Math.max(midi, max)
+						allNotes.push(Object.assign({ trackNo }, note))
+					})
+
+					const color = ((trackNo / len / 1.2 + c) * 0xffffff | 0).toString(16)
+					colors[trackNo] = `#${color}`
+				})
+
+				allNotes.sort((an, bn) => {
+					const a = an.time
+					const b = bn.time
+					return a < b ? -1 : a > b ? 1 : 0
+				})
+
+				endNote = allNotes[allNotes.length - 1]
+				duration = endNote.time + endNote.duration
+
+				player.play()
+
+				console.log(`${min} -> ${max}`)
+            })
+
+            instrument = null
+            // ac = new AudioContext()
+            // Soundfont.instrument(ac, 'acoustic_grand_piano', { soundfont: 'MusyngKite' })
+            // .then(function (instrument) {
+            //     window.instrument = instrument
+            // })
+            // .then(startup)
+            startup();
+
+			const easings = {
+				easeOut(t) {
+					return t*(2-t)
+				},
+
+				easeIn(t) {
+					return t*t
+				},
+
+				cubicIn(k) {
+					return k * k * k;
+				},
+
+				cubicOut(k) {
+					return --k * k * k + 1;
+				},
+
+				linear(t) {
+					return t;
+				},
+
+				easeInOut(t) {
+					// quad
+					return t<.5 ? 2*t*t : -1+(4-2*t)*t
+				},
+
+				cubicInOut(t) {
+					return t <.5 ? 4*t*t*t : (t-1)*(2*t-2)*(2*t-2)+1
+				},
+
+				exponentialOut(k) {
+					return k === 1 ? 1 : 1 - Math.pow(2, - 10 * k)
+				},
+
+				exponentialIn(k) {
+					return k === 0 ? 0 : Math.pow(1024, k - 1);
+				},
+
+				sinInOut(k) {
+					return 0.5 * (1 - Math.cos(Math.PI * k))
+				}
+
+				
+			};
+
+            var PREP_EASE = easings.linear;
+            PREP_EASE = easings.easeIn
+
+
+			function formatSeconds(s) {
+				var min = s / 60 | 0;
+				var secs = (s % 60).toFixed(2);
+
+				return min + ':' + secs;
+			}
+
+			function render() {
+                requestAnimationFrame(render)
+                
+				keyboard.paint();
+				hammers.paint();
+				ctx.save()
+
+				// background
+				ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+				if (typeof duration !== 'undefined') {
+					playing_time.innerHTML = formatSeconds(lapse) + ' ' + speed.toFixed(1) + 'x'
+					if (!PROGRESS_CHANGE) progress.value = lapse / duration
+				}
+
+				// proceed after midi is loaded
+				if (!playing) return ctx.restore()
+
+				const midi = m
+				player.update()
+
+				translateY = -lapse * TIME_IN_Y + START_X
+
+				// Math.max(lastPlayed - 50, 0)
+				for (let i = 0; i < allNotes.length; i++) {
+					const note = allNotes[i];
+					if (
+						i > lastPlayed && note.time <= lapse + 0.00) {
+							// allow scheduling up to 
+						if (note.time >= lapse - 0.05) { // up until missed by 100ms, we drop it.
+                            var drift = note.time - lapse;
+                            setTimeout(() => {
+								keyboard.toggleNote(note.midi, true)
+								hammers.toggleNote(note.midi, true)
+							}, drift * 1000)
+                            setTimeout(() => {
+								keyboard.toggleNote(note.midi, false)
+								hammers.toggleNote(note.midi, false)
+                            }, note.duration * 1000 + drift)
+
+                            if (!instrument)
+                                noteOn(note.midi, note.velocity, drift)
+                            else
+                            instrument.play(note.midi, ac.currentTime + drift, {
+                                gain: note.velocity * _velMul,
+                                duration: note.duration * _durMul,
+                                attack: _attack,
+                                decay: _decay,
+                                sustain: _sustain,
+                                release: _release
+                            })
+                        }
+						lastPlayed = i;
+					}
+
+					var bufferTime = 4;
+					// if (note.time >= lapse - 0.05 && note.time <= lapse)
+					// if (note.time >= lapse - 0.05 && note.time <= lapse + 0.05)
+					if (note.time >= lapse - bufferTime && note.time <= lapse + bufferTime)
+						drawNote(note)
+
+					if (i > lastPlayed + buffer) break;
+				}
+
+				ctx.restore()
+			}
+
+			player.init()
+			render()
+
+			function trackInY(midi) {
+				return NOTE_HEIGHT * (NOTE_RANGE - midi)
+			}
+
+			function frac(t, unit) {
+				return t / unit;
+			}
+
+			function reverseFrac(t, unit) {
+				return 1 - t / unit;
+			}
+
+			var easeInTime = 4;
+			var prepTime = 0.4;
+
+
+			function drawNote(note) {
+				const { midi, time, duration, velocity } = note;
+				// Math.max(...allNotes.map(({ velocity }) => velocity))
+
+				// quick optimization by filtering
+				if (time < lapse - 60 * 2 || time > lapse + 60 * 2) return
+
+				ctx.fillStyle = colors[note.trackNo]
+				ctx.save()
+				// ctx.globalAlpha = velocity
+
+				
+				var diff = time - lapse
+				const f = diff > 0 ? (1 - PREP_EASE(1 - diff / easeInTime)) * easeInTime : diff
+				const x0 = f * TIME_IN_Y + START_X
+
+				const y0 = trackInY(midi)
+				const w = duration * TIME_IN_Y
+
+				// Impact 1 + size
+				let h = diff <= 0 ?
+					// on note on
+					velocity * 2 *
+					(Math.max(duration * 4, 0.1)) * 
+					NOTE_HEIGHT * Math.min(Math.max(easings.easeIn(2 + diff / 0.5), 0), 4) :
+						diff < prepTime ?
+							// prep time
+							(easings.easeIn(reverseFrac(diff, prepTime)) + 1) * NOTE_HEIGHT
+						:
+						NOTE_HEIGHT
+
+				h *= BALL_MULTIPLIER
+
+				if (diff < 0) {
+					ctx.globalAlpha = Math.max(easings.easeIn(1 + diff / 1.4), 0);
+				}
+
+				// Circles
+				ctx.beginPath()
+				ctx.arc(x0, y0 + NOTE_HEIGHT / 2, h /2, 0, Math.PI * 2)
+				ctx.fill()
+
+				ctx.restore()
+			}
+		</script>
+	</body>
+</html>
