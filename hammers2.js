@@ -55,13 +55,24 @@ class Hammers {
             // ctx.moveTo(x, y)
             // ctx.lineTo(x2, y)
 
-            ctx.beginPath();
-            ctx.arc(200, 200, y, x / total_width * Math.PI * 2, x2 / total_width * Math.PI * 2);
-            ctx.stroke();
+            // Inside
+            // ctx.beginPath();
+            // ctx.arc(200, 200, y, x / total_width * Math.PI * 2, x2 / total_width * Math.PI * 2);
+            // ctx.stroke();
 
+            // Outside
+            // ctx.beginPath();
+            // ctx.arc(200, 200, 80 + v, (x / total_width) * Math.PI * 2, (x2 / total_width) * Math.PI * 2);
+            // ctx.stroke();
+
+            var ca = (x * 0.5 + x2 * 0.5) / total_width * Math.PI * 2
+            var cx = Math.cos(ca) * (100 + v * 2);
+            var cy = Math.sin(ca) * (100 + v * 2);
+            
+            ctx.fillStyle = '#' + ((x * 0.5 + x2 * 0.5) / total_width * 0xffffff | 0).toString(16)
             ctx.beginPath();
-            ctx.arc(200, 200, 100 + v, x / total_width * Math.PI * 2, x2 / total_width * Math.PI * 2);
-            ctx.stroke();
+            ctx.arc(cx + 200, cy + 200, 3, 0, Math.PI * 2, false);
+            ctx.fill();
 
             this.hammer_values[i] = v;
         })
