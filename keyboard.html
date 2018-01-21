@@ -2,8 +2,14 @@
     <body>
         <script src="keyboard.js"></script>
         <script>
-            // repaint();
-            setInterval(repaint, 100)
+            keyboard = new Keyboard();
+
+            setInterval(() => {
+                keyboard.toggleNote(Math.random() * 100 | 0)
+                keyboard.paint()
+            }, 100)
+
+            
         </script>
     </body>
 </html>

@@ -5,6 +5,7 @@
         <script src="soundfont-player.js"></script>
         <script src="audio.js"></script>
         <script src="player.js"></script>
+        <script src="keyboard.js"></script>
 
 		<!--
 			Vendor sources:
@@ -59,13 +60,23 @@
 		</div>
 		<script>
 
+            keyboard = new Keyboard(2);
+            // transform-origin: center;
+            // transform: rotate(90deg)
+            /*
+            position: absolute;
+    top: 0;
+    left: -100px;
+    transform: scale(0.5, 0.5);
+    */
+
 			canvas = document.createElement('canvas')
 			ctx = canvas.getContext('2d')
 			canvas.width = innerWidth
 			canvas.height = innerHeight
 			document.body.appendChild(canvas)
-			ctx.globalCompositeOperation = 'lighter' // lighter
-
+            ctx.globalCompositeOperation = 'lighter' // lighter
+            
 			min = 100000
 			max = 0
 			m = null
@@ -233,7 +244,9 @@
 			}
 
 			function render() {
-				requestAnimationFrame(render)
+                requestAnimationFrame(render)
+                
+                keyboard.paint();
 				ctx.save()
 
 				// background
@@ -259,7 +272,13 @@
 						i > lastPlayed && note.time <= lapse + 0.00) {
 							// allow scheduling up to 
 						if (note.time >= lapse - 0.05) {// if missed by 100ms, we drop it.
-							// console.log(note.time - lapse);
+                            // console.log(note.time - lapse);
+                            
+                            keyboard.toggleNote(note.midi, true)
+                            setTimeout(() => {
+                                keyboard.toggleNote(note.midi, false)
+                            }, note.duration * 1000)
+
                             if (!instrument)
                                 noteOn(note.midi, note.velocity, note.time - lapse)
                             else
