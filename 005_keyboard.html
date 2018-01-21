@@ -25,15 +25,9 @@
 			}
 		</style>
 		<div id="controls">
-			X Spacing: <input type="range" value="200" min="0" max="1000" onchange="TIME_IN_Y = this.value"></input>
-			Y Spacing: <input type="range" value="10" min="1" max="14" onchange="NOTE_HEIGHT = this.value"></input>
 			Size: <input type="range" value="1" min="0" max="8" step="0.1" onchange="BALL_MULTIPLIER = this.value"></input>
 
-			Grid: <input type="checkbox" onchange="DISPLAY_GRID = (this.checked)"></input>
-			Hit: <input type="checkbox" onchange="DISPLAY_HIT_GRID = this.checked"></input>
-
-			<br/>
-			Time: <span id="playing_time"></span>
+            Time: <span id="playing_time"></span>
 
 			Progress: <input id="progress" type="range" value="0" min="0" max="1" step="0.0001" 
 				onmousedown="PROGRESS_CHANGE = true"
@@ -60,15 +54,15 @@
 		</div>
 		<script>
 
-            keyboard = new Keyboard(2);
+            keyboard = new Keyboard();
             // transform-origin: center;
             // transform: rotate(90deg)
             /*
             position: absolute;
-    top: 0;
-    left: -100px;
-    transform: scale(0.5, 0.5);
-    */
+            top: 0;
+            left: -100px;
+            transform: scale(0.5, 0.5);
+            */
 
 			canvas = document.createElement('canvas')
 			ctx = canvas.getContext('2d')
@@ -110,9 +104,9 @@
             _velMul = 1.5
             _durMul = 1.5
 
-			// file = 'Prelude1.mid'
+			file = 'Prelude1.mid'
 			// file = 'rachmaninov3.mid'
-			file = 'minute_waltz.mid'
+			// file = 'minute_waltz.mid'
 			// file = 'chpn-p15.mid' // http://www.piano-midi.de/chopin.htm
 
 			// minute_waltz.mid rachmaninov3
@@ -208,33 +202,6 @@
 
 			var PREP_EASE = easings.linear;
 
-
-			function drawGrids() {
-				if (!DISPLAY_GRID) return
-
-				// grids
-				ctx.lineWidth = 0.8
-				ctx.strokeStyle = '#191919'
-				for (let i = 0; i < NOTE_RANGE; i++) {
-					ctx.strokeStyle = i % 12 === 0 ? '#666' : '#191919'
-
-					const y = trackInY(i)
-					ctx.beginPath()
-					ctx.moveTo(0, y)
-					ctx.lineTo(innerWidth, y)
-					ctx.stroke()
-				}
-
-				if (!DISPLAY_HIT_GRID) return
-
-				ctx.strokeStyle = '#aaa'
-
-				// cross line
-				ctx.beginPath()
-				ctx.moveTo(START_X, 0)
-				ctx.lineTo(START_X, innerHeight)
-				ctx.stroke()
-			}
 
 			function formatSeconds(s) {
 				var min = s / 60 | 0;

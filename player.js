@@ -42,7 +42,7 @@ const player = {
 
     _adjust() {
         // adjust playing reference point
-        start = this.now() - lapse * 1 / speed * 1000
+        start = this.now() - lapse * 1 / speed
     },
 
     pause() {
@@ -62,11 +62,12 @@ const player = {
     update() {
         // use start time as reference time
         if (playing) {
-            lapse = (this.now() - start) * speed / 1000
+            lapse = (this.now() - start) * speed
         }
     },
 
     now() {
-        return (window.performance || Date).now()
+        // return (window.performance || Date).now() / 1000
+        return audioContext.currentTime;
     }
 }

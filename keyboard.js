@@ -23,27 +23,28 @@ var keyHeight = 150;
 var blacKeyWidth = 20;
 var blackKeyHeight = 100;
 
+var HIGHLIGHT_NOTE = 'yellow' // red
 
 function drawWhiteNote(ctx, octave, i, played) {
     if (played) {
-        ctx.fillStyle = 'red';
+        ctx.fillStyle = HIGHLIGHT_NOTE;
     }  else {
         ctx.fillStyle = 'white';
     }
-    ctx.strokeRect( (octave * 7 + i) * keyWidth, 0, keyWidth, keyHeight);
-    ctx.fillRect( (octave * 7 + i) * keyWidth, 0, keyWidth, keyHeight);
+    ctx.strokeRect((octave * 7 + i) * keyWidth, 0, keyWidth, keyHeight);
+    ctx.fillRect((octave * 7 + i) * keyWidth, 0, keyWidth, keyHeight);
 }
 
 function drawBlackNote(ctx, octave, i, played) {
     if (played) {
-        ctx.fillStyle = 'red';
+        ctx.fillStyle = HIGHLIGHT_NOTE;
     }  else {
         ctx.fillStyle = 'black';
     }
 
-    var off = - blacKeyWidth/2;
-    ctx.strokeRect( (octave * 7 + i) * keyWidth + off, 0, blacKeyWidth, blackKeyHeight);
-    ctx.fillRect( (octave * 7 + i) * keyWidth + off, 0, blacKeyWidth, blackKeyHeight);
+    var off = blacKeyWidth/2;
+    ctx.strokeRect((octave * 7 + i) * keyWidth + off, 0, blacKeyWidth, blackKeyHeight);
+    ctx.fillRect((octave * 7 + i) * keyWidth + off, 0, blacKeyWidth, blackKeyHeight);
 }
 
 class Keyboard {
@@ -61,6 +62,7 @@ class Keyboard {
         var ctx = keyboard.getContext('2d');
 
         ctx.save();
+        ctx.scale(0.5, 0.5);
         this.ctx = ctx;
     }
 
