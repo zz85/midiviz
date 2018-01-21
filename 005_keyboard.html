@@ -36,25 +36,10 @@
 			Speed: <input type="range" value="1" min="0.2" max="4" step="0.2" onchange="player.speed(this.value)"></input>
 			
 			<button onclick="player.pause()">Pause</button>
-
-			<select onchange="PREP_EASE = easings[this.value]">
-				<option>linear</option>
-				<option>easeIn</option>
-				<option>easeOut</option>
-				<option>easeInOut</option>
-				<option>cubicIn</option>
-				<option>cubicOut</option>
-				<option>exponentialOut</option>
-				<option>exponentialIn</option>
-				<option>sinInOut</option>
-			</select>
-
-			<!-- Play
-			Open -->
 		</div>
 		<script>
 
-            keyboard = new Keyboard();
+            keyboard = new Keyboard(1, 10);
             // transform-origin: center;
             // transform: rotate(90deg)
             /*
@@ -87,8 +72,9 @@
 
 			DISPLAY_GRID = false
 			DISPLAY_HIT_GRID = false
-			PROGRESS_CHANGE = false
-
+            PROGRESS_CHANGE = false
+            
+            
 			// move prepTime etc...
 
 			// bigger
@@ -104,8 +90,8 @@
             _velMul = 1.5
             _durMul = 1.5
 
-			file = 'Prelude1.mid'
-			// file = 'rachmaninov3.mid'
+			// file = 'Prelude1.mid'
+			file = 'rachmaninov3.mid'
 			// file = 'minute_waltz.mid'
 			// file = 'chpn-p15.mid' // http://www.piano-midi.de/chopin.htm
 
@@ -200,7 +186,8 @@
 				
 			};
 
-			var PREP_EASE = easings.linear;
+            var PREP_EASE = easings.linear;
+            PREP_EASE = easings.easeIn
 
 
 			function formatSeconds(s) {
@@ -238,18 +225,17 @@
 					if (
 						i > lastPlayed && note.time <= lapse + 0.00) {
 							// allow scheduling up to 
-						if (note.time >= lapse - 0.05) {// if missed by 100ms, we drop it.
-                            // console.log(note.time - lapse);
-                            
-                            keyboard.toggleNote(note.midi, true)
+						if (note.time >= lapse - 0.05) { // up until missed by 100ms, we drop it.
+                            var drift = note.time - lapse;
+                            setTimeout(() => keyboard.toggleNote(note.midi, true), drift * 1000)
                             setTimeout(() => {
                                 keyboard.toggleNote(note.midi, false)
-                            }, note.duration * 1000)
+                            }, note.duration * 1000 + drift)
 
                             if (!instrument)
-                                noteOn(note.midi, note.velocity, note.time - lapse)
+                                noteOn(note.midi, note.velocity, drift)
                             else
-                            instrument.play(note.midi, ac.currentTime + note.time - lapse, {
+                            instrument.play(note.midi, ac.currentTime + drift, {
                                 gain: note.velocity * _velMul,
                                 duration: note.duration * _durMul,
                                 attack: _attack,

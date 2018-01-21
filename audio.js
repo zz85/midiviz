@@ -111,7 +111,8 @@ function play(k, vol, delay) {
 
 	var node = audioContext.createBufferSource();
 	    node.buffer = playbackBuffers[currentBuffer];
-	    node.connect(gainNode);
+		node.connect(gainNode);
+		// console.log('delay', delay, audioContext.currentTime + delay)
 	    node.start(delay > 0 ? audioContext.currentTime + delay : 0);
 }
 
