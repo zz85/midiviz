@@ -1,0 +1,47 @@
+<html>
+    <body>
+        <script>
+            len = 400
+            pad = 100
+            canvas = document.createElement('canvas')
+            canvas.width = len + pad * 2
+            canvas.height = len + pad * 2
+
+            // plot fade function as graph
+
+            document.body.appendChild(canvas)
+            ctx = canvas.getContext('2d')
+
+            var v = len;
+            RATIO = 0.85, DUR = 1
+            RATIO = 0.95, DUR = 2
+            RATIO = 0.99, DUR = 10
+            RATIO = 0.9, DUR = 1
+            frames = DUR * 60
+
+            for (var x = 0; x < frames; x++) {
+                var t = x / frames;
+                var rx = t * len + pad;
+                var y = pad + len - v;
+
+                ctx.beginPath();
+                ctx.arc(rx, y, 1, 0, Math.PI * 2)
+                ctx.fill()
+
+                v *= RATIO
+            }
+
+            ctx.strokeStyle = '#999'
+            ctx.beginPath()
+            ctx.moveTo(pad, pad)
+            ctx.lineTo(pad, pad + len)
+            ctx.stroke()
+
+            ctx.beginPath()
+            ctx.moveTo(pad, pad + len)
+            ctx.lineTo(pad + len, pad + len)
+            ctx.stroke()
+
+        </script>
+    </body>
+</html>
