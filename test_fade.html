@@ -24,6 +24,17 @@
                 var rx = t * len + pad;
                 var y = pad + len - v;
 
+                /*
+                // cubic
+                var func = (t) => t * t * t
+                var y = pad + len - len * func(1 - t);
+                
+
+                // Exponential
+                var func = (k) =>  k === 0 ? 0 : Math.pow(1024, k - 1)
+                var y = pad + len - len * func(1 - t);
+                */
+
                 ctx.beginPath();
                 ctx.arc(rx, y, 1, 0, Math.PI * 2)
                 ctx.fill()

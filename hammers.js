@@ -24,6 +24,7 @@ class Hammers {
         document.body.appendChild(canvas);
 
         var ctx = canvas.getContext('2d');
+        ctx.strokeStyle = '#999'
         this.ctx = ctx;
 
 
@@ -38,17 +39,20 @@ class Hammers {
         this.hammers.forEach((on, i) => {
             const x = i * this.width + this.padding / 2;
 
-            let v = on ? this.hammer_height : this.hammer_values[i];
+            let v = this.hammer_values[i];
+
+            if (on) {
+                v += (this.hammer_height - this.hammer_values[i]) * 0.25
+            } else {
+                v *= 0.85;
+            }
+
             const y = baseline - v;
             ctx.beginPath();
             ctx.moveTo(x, y)
             ctx.lineTo(x + this.width - this.padding / 2, y)
             ctx.stroke();
 
-            if (!on) {
-                v *= 0.85;
-            }
-            
             this.hammer_values[i] = v;
         })
     }
