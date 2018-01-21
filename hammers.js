@@ -6,12 +6,13 @@ class Hammers {
         this.padding = end_octave || 4;
         this.hammer_height = hammer_height || 40;
         this.hammers = [];
-        this.noteOns = [];
+        this.hammer_values = [];
 
         for (let i = this.start_octave; i < this.end_octave; i++) {
             for (let j = 0; j < 12; j++) {
                 let note = i * 12 + j
-                this.hammers[note] = 0;
+                this.hammers[note] = false;
+                this.hammer_values[note] = false;
             }
         }
 
@@ -33,21 +34,36 @@ class Hammers {
         ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
         var baseline = 50;
-        this.hammers.forEach((v, i) => {
+        // const start_index = this.start_octave * 12;
+        this.hammers.forEach((on, i) => {
             const x = i * this.width + this.padding / 2;
+
+            let v = on ? this.hammer_height : this.hammer_values[i];
             const y = baseline - v;
             ctx.beginPath();
             ctx.moveTo(x, y)
             ctx.lineTo(x + this.width - this.padding / 2, y)
             ctx.stroke();
 
-            v *= 0.85;
-            this.hammers[i] = v;
+            if (!on) {
+                v *= 0.85;
+            }
+            
+            this.hammer_values[i] = v;
         })
     }
 
-    toggleNote(note) {
-        const i = note - this.start_octave * 12;
-        this.hammers[i] = this.hammer_height;
+    toggleNote(note, on) {
+        if (on == undefined) {
+            this.hammers[note] = !this.hammers[note];
+        }
+        else {
+            this.hammers[note] = on;
+        }
     }
+
+    // toggleNote(note) {
+    //     const i = note - this.start_octave * 12;
+    //     this.hammers[i] = this.hammer_height;
+    // }
 }

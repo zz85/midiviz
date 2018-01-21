@@ -6,7 +6,9 @@
             hammers = new Hammers();
 
             setInterval(() => {
-                hammers.toggleNote(Math.random() * 100 | 0)
+                const note = Math.random() * 100 | 0
+                hammers.toggleNote(note, 1)
+                setTimeout(() => hammers.toggleNote(note, 0), Math.random() * 200)
                 hammers.paint()
             }, 1000/ 60)
 
