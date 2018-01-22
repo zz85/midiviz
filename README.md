@@ -1,5 +1,10 @@
 Midi Visualization Experiments
 
+23 Jan 2018
+[Experiment #007 - Spiral](007_spiral.html)
+- Draw notes as they place around in a spiral
+- Fade notes away after drawing
+
 21 Jan 2018
 
 [Experiment #006 - Hammers](006_hammers.html)
