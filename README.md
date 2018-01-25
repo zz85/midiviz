@@ -4,6 +4,10 @@ Midi Visualization Experiments
 [Experiment #007 - Spiral](007_spiral.html)
 - Draw notes as they place around in a spiral
 - Fade notes away after drawing
+- Idea: follow cursor / trail / random
+- Fast. Slow. (0.5 radar, 100 recorder, 10-20)
+- Not clearing, lighter
+- Predraw
 
 21 Jan 2018
 

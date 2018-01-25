@@ -93,7 +93,7 @@
             _durMul = 1.5
 
 			file = 'Prelude1.mid'
-			// file = 'rachmaninov3.mid'
+			file = 'rachmaninov3.mid'
 			// file = 'minute_waltz.mid'
 			// file = 'chpn-p15.mid' // http://www.piano-midi.de/chopin.htm
 
@@ -231,7 +231,7 @@
                 ctx.moveTo(300, 300)
                 ctx.arc(300, 300, 200, angle, angle + 5.5)
                 ctx.closePath();
-                ctx.fillStyle = 'rgba(0, 0, 0, 0.01)'
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.02)' // 0.02
                 ctx.fill(); 
 
 				// Math.max(lastPlayed - 50, 0)
@@ -294,7 +294,7 @@
 			}
 
             var bufferTime = 10;
-            var circleTime = 10;
+            var circleTime = 0.5; // 
 
 			function drawNote(note) {
 				const { midi, time, duration, velocity } = note;
