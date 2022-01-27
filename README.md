@@ -1,11 +1,19 @@
 Midi Visualization Experiments
 
-4 Feb
-#008
+
+26 Jan 2021
+[Experiment #010 - Lighted piano roll](010_fountain_rain.html)
+- Modified from 003, but arranged in a circle
+
+
+[Experiment #009 - Lighted piano roll](009_piano_roll_lights.html)
+- Extension of 001, but I wanted it to light up when notes are being played
+
+4 Feb 2018
+[Experiment #008 - Spiral path](008_spiral_path.html)
 - Extension of 007, with the trails
 - Follow cursor isn't the best, feels like a drawing app.
-- Maybe it should have a life, and left interactivitiy move it.
-
+- Maybe it should have a life, and let interactivitiy move it.
 
 23 Jan 2018
 [Experiment #007 - Spiral](007_spiral.html)
@@ -36,3 +44,9 @@ Midi Visualization Experiments
 
 [Experiment #001 - Piano Roll ](001_basic_piano_roll.html)
 - Classic visualizations
+
+More ideas
+- using lines
+- fountain rain
+- tonejs
+- note/color buckets

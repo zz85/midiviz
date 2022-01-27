@@ -1,0 +1,230 @@
+<!DOCTYPE HTML>
+<html>
+	<head>
+		<script src="MIDIFile.js"></script>
+		<script src="MidiConvert.js"></script>
+		<script src="audio.js"></script>
+		<!--
+			Vendor sources:
+			https://github.com/nfroidure/MIDIFile/raw/master/dist/MIDIFile.js
+			https://raw.githubusercontent.com/Tonejs/MidiConvert/master/build/MidiConvert.js
+		-->
+	</head>
+	<body>
+		<script>
+			/*
+			  TODO
+				[ ] octave / keyboard (black key) horizontal lines
+
+				note hit vertical lines
+
+				out of bounds easing
+
+				note queue
+
+				orientation
+
+				TOFIX
+				- verify octave line
+			*/
+			canvas = document.createElement('canvas')
+			ctx = canvas.getContext('2d')
+			canvas.width = innerWidth
+			canvas.height = innerHeight
+			document.body.appendChild(canvas)
+			// ctx.globalCompositeOperation = 'lighter' // lighter
+
+			min = 100000
+			max = 0
+			m = null
+			start = null
+			lastPlayed = -1
+			allNotes = []
+
+			NOTE_HEIGHT = 8
+			NOTE_RANGE = 110
+			TIME_IN_Y = 40
+			START_X = 400 // + 400
+
+			// bigger
+			NOTE_HEIGHT = 10; TIME_IN_Y = 200
+
+			// file = 'Prelude1.mid'
+			// file = 'rachmaninov3.mid'
+			file = 'minute_waltz.mid'
+			// file = 'chpn-p15.mid' // http://www.piano-midi.de/chopin.htm
+
+			// minute_waltz.mid rachmaninov3
+			// 0 && 
+			MidiConvert.load(file, function(midi) {
+				console.log(midi)
+				m = midi
+				colors = {}
+
+				const c = 0.35
+				const len = midi.tracks.length
+
+				midi.tracks.forEach((track, trackNo) => {
+					track.notes.forEach((note) => {
+						const { midi, time, duration, velocity } = note;
+						min = Math.min(midi, min)
+						max = Math.max(midi, max)
+						allNotes.push(Object.assign({ trackNo }, note))
+					})
+
+					const color = ((trackNo / len / 1.2 + c) * 0xffffff | 0).toString(16)
+					colors[trackNo] = `#${color}`
+				})
+
+				allNotes.sort((an, bn) => {
+					const a = an.time
+					const b = bn.time
+					return a < b ? -1 : a > b ? 1 : 0
+				})
+
+				start = Date.now()
+
+				console.log(`${min} -> ${max}`)
+			})
+
+			function ease(t) {
+                // linear
+                return t;
+
+				// easeOutQuad
+				return t*(2-t)
+
+				// ease in out quad
+				return t<.5 ? 2*t*t : -1+(4-2*t)*t
+
+				// quad ease in  (going up ramp)
+				return t*t 
+
+				// cubic in out
+				return t<.5 ? 4*t*t*t : (t-1)*(2*t-2)*(2*t-2)+1
+			}
+
+			function render() {
+				requestAnimationFrame(render)
+
+				ctx.save()
+
+				// background
+				ctx.fillStyle = '#000'
+				ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+				// grids
+				ctx.lineWidth = 0.8
+				ctx.strokeStyle = '#191919'
+				for (let i = 0; i < NOTE_RANGE; i++) {
+					ctx.strokeStyle = i % 12 === 0 ? '#666' : '#191919'
+
+					const y = trackInY(i)
+					ctx.beginPath()
+					ctx.moveTo(0, y)
+					ctx.lineTo(innerWidth, y)
+					ctx.stroke()
+				}
+
+				// proceed after midi is loaded
+				if (!start) return ctx.restore()
+				const midi = m
+				lapse = (Date.now() - start) / 1000
+
+				ctx.strokeStyle = '#aaa'
+				// cross line
+				ctx.beginPath()
+				ctx.moveTo(START_X, 0)
+				ctx.lineTo(START_X, innerHeight)
+				ctx.stroke()
+
+				translateY = -lapse * TIME_IN_Y + START_X
+
+				// allNotes.forEach(note => {
+				// 	drawNote(note)
+				// })
+
+				buffer = 50
+
+				for (let i = Math.max(lastPlayed - 50, 0); i < allNotes.length; i++) {
+					const note = allNotes[i];
+					if (i > lastPlayed && note.time <= lapse) {
+						// noteOn!
+						// console.log('noteon', note)
+						noteOn(note.midi, note.velocity)
+						lastPlayed = i;
+					}
+
+					drawNote(note)
+
+					// skip
+					// if (note.time > lapse) {
+					// 	break;
+					// }
+
+					if (i > lastPlayed + buffer) break;
+
+				}
+				
+				ctx.restore()
+			}
+
+			render()
+
+			function trackInY(midi) {
+				return NOTE_HEIGHT * (NOTE_RANGE - midi)
+			}
+
+			function drawNote(note) {
+				const { midi, time, duration, velocity } = note;
+
+				// quick optimization by filtering
+				if (time < lapse - 60 * 2 || time > lapse + 60 * 2) return
+
+				ctx.fillStyle = colors[note.trackNo]
+				ctx.save()
+				// ctx.globalAlpha = velocity
+
+				// const x0 = time * TIME_IN_Y + translateY
+				var units = 2;
+				
+				var diff = time - lapse
+				var f = diff > 0 ? ease(diff / units) * units : diff
+				const x0 = f * TIME_IN_Y + START_X
+
+				const y0 = trackInY(midi)
+				const w = duration * TIME_IN_Y
+				const h = NOTE_HEIGHT
+
+				// Rect
+				// ctx.strokeRect(x0, y0, w, h)
+
+				// Bar
+				roundRect(ctx, x0, y0, w, h, 6)
+				// ctx.stroke()
+				ctx.fill()
+
+				// Circles
+				// ctx.beginPath()
+				// ctx.arc(x0, y0 + h / 2, h /2, 0, Math.PI * 2)
+				// ctx.fill()
+
+				ctx.restore()
+			}
+
+
+			function roundRect(ctx, x, y, w, h, r) {
+				if (w < 2 * r) r = w / 2;
+				if (h < 2 * r) r = h / 2;
+				ctx.beginPath();
+				ctx.moveTo(x+r, y);
+				ctx.arcTo(x+w, y,   x+w, y+h, r);
+				ctx.arcTo(x+w, y+h, x,   y+h, r);
+				ctx.arcTo(x,   y+h, x,   y,   r);
+				ctx.arcTo(x,   y,   x+w, y,   r);
+				ctx.closePath();
+			}
+
+		</script>
+	</body>
+</html>

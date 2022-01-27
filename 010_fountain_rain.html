@@ -1,0 +1,439 @@
+<!DOCTYPE HTML>
+<html>
+	<head>
+		<script src="MidiConvert.js"></script>
+		<script src="audio.js"></script>
+		<!--
+			Vendor sources:
+			https://raw.githubusercontent.com/Tonejs/MidiConvert/master/build/MidiConvert.js
+		-->
+	</head>
+	<body>
+		<style>
+			body { background: #000; color: #eee; }
+			#controls {
+				position: absolute;
+				z-index: 10;
+			}
+
+			input {
+				width: 50px;
+			}
+		</style>
+		<div id="controls">
+			X Spacing: <input type="range" value="200" min="0" max="1000" onchange="TIME_IN_Y = this.value"></input>
+			Y Spacing: <input type="range" value="10" min="1" max="14" onchange="NOTE_HEIGHT = this.value"></input>
+			Size: <input type="range" value="1" min="0" max="8" step="0.1" onchange="BALL_MULTIPLIER = this.value"></input>
+
+			Grid: <input type="checkbox" onchange="DISPLAY_GRID = (this.checked)"></input>
+			Hit: <input type="checkbox" onchange="DISPLAY_HIT_GRID = this.checked"></input>
+
+			<br/>
+			Time: <span id="playing_time"></span>
+
+			Progress: <input id="progress" type="range" value="0" min="0" max="1" step="0.0001" 
+				onmousedown="PROGRESS_CHANGE = true"
+				onmouseup="player.seek(this.value * duration); lastPlayed = -1; PROGRESS_CHANGE = false"
+				onchange="this.value"></input>
+			Speed: <input type="range" value="1" min="0.2" max="4" step="0.2" onchange="player.speed(this.value)"></input>
+			
+			<button onclick="player.pause()">Pause</button>
+
+			<select onchange="PREP_EASE = easings[this.value]">
+				<option>linear</option>
+				<option>easeIn</option>
+				<option>easeOut</option>
+				<option>easeInOut</option>
+				<option>cubicIn</option>
+				<option>cubicOut</option>
+				<option>exponentialOut</option>
+				<option>exponentialIn</option>
+				<option>sinInOut</option>
+			</select>
+
+			<!-- Play
+			Open -->
+		</div>
+		<script>
+			/*
+			  TODO
+				Note queue / filtering
+				Pause music when switching tabs?
+				Open
+				Time slider
+
+				Function of Note Pitch -> y / x
+				Circular
+
+				Customize Easing
+
+				Color scheme functions (color per note, color per track, color per keys, color per chords?)
+				Size functions velocity (by time, easing functions, velocities)
+				Position functions (x-y, circular, stationary)
+
+				Controls
+				=====
+				GUI - DSL / JSON / JS / CustomElements / HTML?
+				Share settings?
+
+				Octave / keyboard (black key) horizontal lines
+				Impact effect / Particle system
+			*/
+			canvas = document.createElement('canvas')
+			ctx = canvas.getContext('2d')
+			canvas.width = innerWidth
+			canvas.height = innerHeight
+			document.body.appendChild(canvas)
+			ctx.globalCompositeOperation = 'lighter' // lighter
+
+			min = 100000
+			max = 0
+			m = null
+			lastPlayed = -1
+			allNotes = []
+
+			NOTE_HEIGHT = 8
+			NOTE_RANGE = 110
+
+			// PARAMETERS
+			TIME_IN_Y = 40
+			START_X = 400 // + 400
+			BALL_MULTIPLIER = 1
+
+			DISPLAY_GRID = false
+			DISPLAY_HIT_GRID = false
+			PROGRESS_CHANGE = false
+
+			// move prepTime etc...
+
+			// bigger
+			NOTE_HEIGHT = 10; TIME_IN_Y = 200
+
+			// file = 'Prelude1.mid'
+			file = 'rachmaninov3.mid'
+			file = 'minute_waltz.mid'
+			// file = 'chpn-p15.mid' // http://www.piano-midi.de/chopin.htm
+
+			// minute_waltz.mid rachmaninov3
+			// 0 &&
+			MidiConvert.load(file, function(midi) {
+				console.log(midi)
+				m = midi
+				colors = {}
+
+				const c = 0.35
+				const len = midi.tracks.length
+
+				midi.tracks.forEach((track, trackNo) => {
+					track.notes.forEach((note) => {
+						const { midi, time, duration, velocity } = note;
+						min = Math.min(midi, min)
+						max = Math.max(midi, max)
+						allNotes.push(Object.assign({ trackNo }, note))
+					})
+
+					const color = ((trackNo / len / 1.2 + c) * 0xffffff | 0).toString(16)
+					colors[trackNo] = `#${color}`
+				})
+
+				allNotes.sort((an, bn) => {
+					const a = an.time
+					const b = bn.time
+					return a < b ? -1 : a > b ? 1 : 0
+				})
+
+				endNote = allNotes[allNotes.length - 1]
+				duration = endNote.time + endNote.duration
+
+				player.play()
+
+				console.log(`${min} -> ${max}`)
+			})
+
+			const easings = {
+				easeOut(t) {
+					return t*(2-t)
+				},
+
+				easeIn(t) {
+					return t*t
+				},
+
+				cubicIn(k) {
+					return k * k * k;
+				},
+
+				cubicOut(k) {
+					return --k * k * k + 1;
+				},
+
+				linear(t) {
+					return t;
+				},
+
+				easeInOut(t) {
+					// quad
+					return t<.5 ? 2*t*t : -1+(4-2*t)*t
+				},
+
+				cubicInOut(t) {
+					return t <.5 ? 4*t*t*t : (t-1)*(2*t-2)*(2*t-2)+1
+				},
+
+				exponentialOut(k) {
+					return k === 1 ? 1 : 1 - Math.pow(2, - 10 * k)
+				},
+
+				exponentialIn(k) {
+					return k === 0 ? 0 : Math.pow(1024, k - 1);
+				},
+
+				sinInOut(k) {
+					return 0.5 * (1 - Math.cos(Math.PI * k))
+				}
+
+				
+			};
+
+			var PREP_EASE = easings.linear;
+
+
+			/**
+			 * Simple Generic Player
+			 * 
+			 *  properties
+			 *  - lapse - running time
+			 *  - playing - is playing
+			 *  - start - goal post
+			 *  - speed - running speed
+			 * 
+			 *  methods
+			 *  - play() - resume playing when stopped/paused
+			 *  - stop() - stops and reset time to 0
+			 *  - pause() - pauses playing
+			 *  - speed() - adjust speed
+			 *  - seek() - seeks to time
+			 */
+			const player = {
+				init() {
+					this.stop()
+				},
+
+				play() {
+					if (!playing) {
+						playing = true
+						// create reference point
+						this._adjust()
+					}
+				},
+
+				stop() {
+					playing = false
+					start = null 
+					lapse = 0 // in seconds
+					speed = 1
+					// TODO emit events
+				},
+
+				speed(target) {
+					speed = +target
+					this._adjust()
+				},
+
+				_adjust() {
+					// adjust playing reference point
+					start = this.now() - lapse * 1 / speed * 1000
+				},
+
+				pause() {
+					if (playing) {
+						playing = false
+					}
+					else {
+						this.play()
+					}
+				},
+
+				seek(target) {
+					lapse = target
+					this._adjust()
+				},
+
+				update() {
+					// use start time as reference time
+					if (playing) {
+						lapse = (this.now() - start) * speed / 1000
+					}
+				},
+
+				now() {
+					return (window.performance || Date).now()
+				}
+			}
+
+			function drawGrids() {
+				if (!DISPLAY_GRID) return
+
+				// grids
+				ctx.lineWidth = 0.8
+				ctx.strokeStyle = '#191919'
+				for (let i = 0; i < NOTE_RANGE; i++) {
+					ctx.strokeStyle = i % 12 === 0 ? '#666' : '#191919'
+
+					const y = trackInY(i)
+					ctx.beginPath()
+					ctx.moveTo(0, y)
+					ctx.lineTo(innerWidth, y)
+					ctx.stroke()
+				}
+
+				if (!DISPLAY_HIT_GRID) return
+
+				ctx.strokeStyle = '#aaa'
+
+				// cross line
+				ctx.beginPath()
+				ctx.moveTo(START_X, 0)
+				ctx.lineTo(START_X, innerHeight)
+				ctx.stroke()
+			}
+
+			function formatSeconds(s) {
+				var min = s / 60 | 0;
+				var secs = (s % 60).toFixed(2);
+
+				return min + ':' + secs;
+			}
+
+			function render() {
+				requestAnimationFrame(render)
+				ctx.save()
+
+				// background
+				ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+				drawGrids()
+
+				if (typeof duration !== 'undefined') {
+					playing_time.innerHTML = formatSeconds(lapse) + ' ' + speed.toFixed(1) + 'x'
+					if (!PROGRESS_CHANGE) progress.value = lapse / duration
+				}
+
+				// proceed after midi is loaded
+				if (!playing) return ctx.restore()
+
+				const midi = m
+				player.update()
+
+				translateY = -lapse * TIME_IN_Y + START_X
+
+				buffer = 50
+
+				// Math.max(lastPlayed - 50, 0)
+				for (let i = 0; i < allNotes.length; i++) {
+					const note = allNotes[i];
+					if (
+						i > lastPlayed && note.time <= lapse) {
+						// noteOn!
+						// console.log('noteon', note)
+						if (note.time >= lapse - 0.05) // if missed by 100ms, we drop it.
+							noteOn(note.midi, note.velocity)
+						lastPlayed = i;
+					}
+
+					var bufferTime = 4;
+					// if (note.time >= lapse - 0.05 && note.time <= lapse)
+					// if (note.time >= lapse - 0.05 && note.time <= lapse + 0.05)
+					if (note.time >= lapse - bufferTime && note.time <= lapse + bufferTime)
+						drawNote(note)
+
+					if (i > lastPlayed + buffer) break;
+				}
+
+				ctx.restore()
+			}
+
+			player.init()
+			render()
+
+			function trackInY(midi) {
+				return NOTE_HEIGHT * (NOTE_RANGE - midi)
+			}
+
+			function frac(t, unit) {
+				return t / unit;
+			}
+
+			function reverseFrac(t, unit) {
+				return 1 - t / unit;
+			}
+
+			var easeInTime = 4;
+			var prepTime = 0.4;
+
+
+			function drawNote(note) {
+				const { midi, time, duration, velocity } = note;
+				// Math.max(...allNotes.map(({ velocity }) => velocity))
+
+				// quick optimization by filtering
+				if (time < lapse - 60 * 2 || time > lapse + 60 * 2) return
+
+				ctx.fillStyle = colors[note.trackNo]
+				ctx.save()
+				// ctx.globalAlpha = velocity
+
+				
+				var diff = time - lapse
+				// 4 3 2 1
+				const f = diff > 0 ? (1 - PREP_EASE(1 - diff / easeInTime)) * easeInTime : diff
+				const x0 = f * TIME_IN_Y + START_X
+
+				const y0 = trackInY(midi)
+				const w = duration * TIME_IN_Y
+
+				// Impact 1 + size
+				let h = diff <= 0 ?
+					// on note on
+					velocity * 2 *
+					(Math.max(duration * 4, 0.1)) * 
+					NOTE_HEIGHT * Math.min(Math.max(easings.easeIn(2 + diff / 0.5), 0), 4) :
+						diff < prepTime ?
+							// prep time
+							(easings.easeIn(reverseFrac(diff, prepTime)) + 1) * NOTE_HEIGHT
+						:
+						NOTE_HEIGHT
+
+				h *= BALL_MULTIPLIER
+
+				if (diff < 0) {
+					// ctx.globalAlpha = Math.max(easings.easeIn(1 + diff / 1.4), 0);
+                    ctx.globalAlpha = 0.1;
+				}
+
+                /// 88 Keypiano = 21 (A0) -> 108 (C8)
+                var range = (midi - 21) / 44; // 88
+                var angle = Math.PI * 2 * range
+                    + Date.now() * 0.0001; // rotate for the fun of it
+
+
+                var r = f * 200 + 200;
+
+                // console.log(x0, midi);
+                
+                var rx = Math.cos(angle) * r;
+                var ry = Math.sin(angle) * r;
+
+				// Circles
+				ctx.beginPath()
+				// ctx.arc(x0, y0 + NOTE_HEIGHT / 2, h / 2, 0, Math.PI * 2)
+
+                ctx.arc(innerWidth / 2 + rx, innerHeight / 2 + ry, h / 2, 0, Math.PI * 2)
+
+				ctx.fill()
+
+				ctx.restore()
+			}
+		</script>
+	</body>
+</html>
