@@ -189,7 +189,15 @@
 				var units = 2;
 				
 				var diff = time - lapse
+
+                // when diff > 0, means notes are on it's way to target
 				var f = diff > 0 ? ease(diff / units) * units : diff
+
+                // when diff < 0, notes are played
+                if (diff < duration && diff > 0) {
+                    ctx.fillStyle = 'white'
+                }
+
 				const x0 = f * TIME_IN_Y + START_X
 
 				const y0 = trackInY(midi)
@@ -204,10 +212,13 @@
 				// ctx.stroke()
 				ctx.fill()
 
-				// Circles
-				// ctx.beginPath()
-				// ctx.arc(x0, y0 + h / 2, h /2, 0, Math.PI * 2)
-				// ctx.fill()
+                if (diff < duration && diff > 0) {
+				    // Circles
+                    ctx.globalAlpha = 0.5;
+                    ctx.beginPath()
+                    ctx.arc(x0, y0 + h / 2, h * 1.5, 0, Math.PI * 2)
+                    ctx.fill()
+                }
 
 				ctx.restore()
 			}
