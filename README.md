@@ -1,13 +1,18 @@
 Midi Visualization Experiments
 
+4 Feb
+#008
+- Extension of 007, with the trails
+- Follow cursor isn't the best, feels like a drawing app.
+- Maybe it should have a life, and left interactivitiy move it.
+
+
 23 Jan 2018
 [Experiment #007 - Spiral](007_spiral.html)
 - Draw notes as they place around in a spiral
 - Fade notes away after drawing
-- Idea: follow cursor / trail / random
-- Fast. Slow. (0.5 radar, 100 recorder, 10-20)
-- Not clearing, lighter
-- Predraw
+- More ideas: follow cursor / trail / random,
+- predraw vs continous simulation
 
 21 Jan 2018
 

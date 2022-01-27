@@ -57,6 +57,15 @@
 			canvas.height = innerHeight
 			document.body.appendChild(canvas)
             // ctx.globalCompositeOperation = 'lighter' // lighter
+
+            var px = -1000, py = - 1000, cx, cy, threshold = 1, lastAngle = 0;
+
+            canvas.addEventListener('mousemove', (e) => {
+                cx = e.offsetX
+                cy = e.offsetY
+            });
+
+
             
 			min = 100000
 			max = 0
@@ -206,6 +215,22 @@
 				hammers.paint();
 				ctx.save()
 
+                var dx = cx - px;
+                var dy = cy - py;
+                var lensq = dx * dx + dy * dy;
+
+                if (lensq >= threshold) {
+                    // var len = Math.sqrt(lensq)
+                    var angle = Math.atan2(dy, dx);
+                    lastAngle = angle;
+
+                    // 
+                    px = cx;
+                    py = cy;
+                }
+                
+                // TODO Fade Away....
+
 				// background
 				// ctx.clearRect(0, 0, canvas.width, canvas.height)
 
@@ -223,16 +248,18 @@
                 translateY = -lapse * TIME_IN_Y + START_X
                 
                 const phase = (lapse + 0.5 % circleTime) / circleTime;
-                const angle = phase * Math.PI * 2;
-                const l = 200;
-                const x = Math.cos(angle) * l + 300;
-                const y = Math.sin(angle) * l + 300;
-                ctx.beginPath()
-                ctx.moveTo(300, 300)
-                ctx.arc(300, 300, 200, angle, angle + 5.5)
-                ctx.closePath();
-                ctx.fillStyle = 'rgba(0, 0, 0, 0.02)' // 0.02
-                ctx.fill(); 
+                // const angle = phase * Math.PI * 2;
+                // const l = 200;
+                // const x = Math.cos(lastAngle) * l + cx;
+                // const y = Math.sin(lastAngle) * l + cy;
+
+
+                // ctx.beginPath()
+                // ctx.moveTo(300, 300)
+                // ctx.arc(300, 300, 200, angle, angle + 5.5)
+                // ctx.closePath();
+                // ctx.fillStyle = 'rgba(0, 0, 0, 0.02)' // 0.02
+                // ctx.fill(); 
 
 				// Math.max(lastPlayed - 50, 0)
 				for (let i = 0; i < allNotes.length; i++) {
@@ -294,7 +321,7 @@
 			}
 
             var bufferTime = 10;
-            var circleTime = 10; // 
+            var circleTime = 0.5; // 
 
 			function drawNote(note) {
 				const { midi, time, duration, velocity } = note;
@@ -312,11 +339,11 @@
 
                 ctx.fillStyle = colors[note.trackNo]
 				
-                const phase = (lapse % circleTime) / circleTime;
-                const angle = phase * Math.PI * 2;
-                const l = midi * 2;
-                const x = Math.cos(angle) * l + 300;
-                const y = Math.sin(angle) * l + 300;
+                // const phase = (lapse % circleTime) / circleTime;
+                // const angle = phase * Math.PI * 2;
+                const l = (midi - 60) * 2;
+                const x = Math.cos(lastAngle + Math.PI / 4) * l + cx;
+                const y = Math.sin(lastAngle + Math.PI / 4) * l + cy;
                 // console.log(x, y)
 
                 ctx.beginPath();
