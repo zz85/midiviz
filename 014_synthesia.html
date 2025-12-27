@@ -5,6 +5,7 @@
   <script src="piano.js"></script>
   <script src="harpsichord.js"></script>
   <script src="electric_piano.js"></script>
+  <script src="wavetable_piano.js"></script>
   <script src="player.js"></script>
   <style>
     body { margin: 0; background: #1a1a2e; overflow: hidden; }
@@ -33,6 +34,7 @@
     </select>
     <select id="instrumentSelect" onchange="switchInstrument(this.value)">
       <option value="piano">Piano</option>
+      <option value="wavetable">Wavetable Piano</option>
       <option value="electric">Electric Piano</option>
       <option value="harpsichord">Harpsichord</option>
     </select>
@@ -258,6 +260,7 @@
     // Instruments
     const instruments = {
       piano: () => new Piano(),
+      wavetable: () => new WavetablePiano(),
       electric: () => new ElectricPiano(),
       harpsichord: () => new Harpsichord()
     };
