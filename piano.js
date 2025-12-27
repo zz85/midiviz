@@ -80,13 +80,24 @@ class Piano {
   }
 
   getProfile(midi) {
+    // Fewer harmonics for performance during dense passages
     if (midi <= 45) return this.profiles.low;
     if (midi <= 65) return this.profiles.mid;
     return this.profiles.high;
   }
 
+  // Limit polyphony to prevent CPU overload
+  limitPolyphony(maxNotes = 16) {
+    if (this.activeNotes.size >= maxNotes) {
+      // Stop oldest note
+      const oldest = this.activeNotes.keys().next().value;
+      this.noteOff(oldest);
+    }
+  }
+
   noteOn(midi, velocity = 0.7) {
     if (this.activeNotes.has(midi)) this.noteOff(midi);
+    this.limitPolyphony(20);
     
     const f0 = this.midiToFreq(midi);
     const t = this.ctx.currentTime;
@@ -106,7 +117,11 @@ class Piano {
     let phaseL = Math.random() * Math.PI * 2;
     let phaseR = Math.random() * Math.PI * 2;
     
-    for (let i = 0; i < profile.harmonics.length; i++) {
+    // Limit partials for performance
+    const maxPartials = 6;
+    const partialsToUse = Math.min(profile.harmonics.length, maxPartials);
+    
+    for (let i = 0; i < partialsToUse; i++) {
       const harmonic = profile.harmonics[i];
       const amp = profile.amplitudes[i];
       
@@ -191,14 +206,19 @@ class Piano {
     
     const t = this.ctx.currentTime;
     
-    // Damper effect
+    // Smooth fadeout to prevent clicks (longer ramp)
     note.partialGains.forEach(g => {
       g.gain.cancelScheduledValues(t);
       g.gain.setValueAtTime(g.gain.value, t);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.1);
+      g.gain.linearRampToValueAtTime(0, t + 0.05);
     });
     
-    note.sources.forEach(s => { try { s.stop(t + 0.15); } catch(e) {} });
+    // Disconnect after fadeout completes
+    setTimeout(() => {
+      note.sources.forEach(s => { try { s.stop(); s.disconnect(); } catch(e) {} });
+      note.noteGain.disconnect();
+    }, 80);
+    
     this.activeNotes.delete(midi);
   }
 

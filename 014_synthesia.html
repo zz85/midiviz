@@ -35,7 +35,47 @@
     const ctx = canvas.getContext('2d');
     const pianoEl = document.getElementById('piano');
     
-    let piano, audioContext, allNotes = [], duration = 0, lastPlayed = -1, seeking = false;
+    let piano, audioContext, allNotes = [], duration = 0, lastPlayed = -1, seeking = false, m = null;
+    
+    // Particle system
+    const particles = [];
+    
+    function spawnParticles(midi, color) {
+      const x = midiToX(midi) + noteWidth(midi) / 2;
+      const y = canvas.height;
+      for (let i = 0; i < 8; i++) {
+        particles.push({
+          x, y,
+          vx: (Math.random() - 0.5) * 4,
+          vy: -Math.random() * 6 - 2,
+          life: 1,
+          color,
+          size: Math.random() * 4 + 2
+        });
+      }
+    }
+    
+    function updateParticles() {
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.15; // gravity
+        p.life -= 0.025;
+        if (p.life <= 0) particles.splice(i, 1);
+      }
+    }
+    
+    function drawParticles() {
+      particles.forEach(p => {
+        ctx.globalAlpha = p.life;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.globalAlpha = 1;
+    }
     const PIANO_HEIGHT = 120;
     const LOOK_AHEAD = 3; // seconds visible above piano
     const keys = {}; // midi -> element
@@ -84,9 +124,59 @@
       requestAnimationFrame(render);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       
+      // Draw vertical grid lines for octaves (C) and E
+      for (let midi = 24; midi <= 108; midi++) {
+        const noteInOctave = midi % 12;
+        if (noteInOctave === 0 || noteInOctave === 4) { // C or E
+          const x = midiToX(midi);
+          ctx.strokeStyle = noteInOctave === 0 ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.1)';
+          ctx.lineWidth = noteInOctave === 0 ? 1.5 : 1;
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, canvas.height);
+          ctx.stroke();
+          // Octave label for C
+          if (noteInOctave === 0) {
+            ctx.fillStyle = 'rgba(255,255,255,0.4)';
+            ctx.font = '10px sans-serif';
+            ctx.fillText('C' + (Math.floor(midi / 12) - 1), x + 3, canvas.height - 5);
+          }
+        }
+      }
+      
+      // Draw horizontal measure lines (assuming 4/4 time, 120 BPM default)
+      const bpm = m?.header?.bpm || 120;
+      const beatsPerMeasure = m?.header?.timeSignature?.[0] || 4;
+      const secondsPerMeasure = (60 / bpm) * beatsPerMeasure;
+      const startMeasure = Math.floor((lapse - LOOK_AHEAD) / secondsPerMeasure);
+      const endMeasure = Math.ceil((lapse + 1) / secondsPerMeasure);
+      
+      for (let measure = startMeasure; measure <= endMeasure; measure++) {
+        if (measure < 0) continue;
+        const measureTime = measure * secondsPerMeasure;
+        const y = canvas.height - (measureTime - lapse) * (canvas.height / LOOK_AHEAD);
+        if (y < 0 || y > canvas.height) continue;
+        
+        ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+        ctx.stroke();
+        
+        // Measure number
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.font = '12px sans-serif';
+        ctx.fillText(measure + 1, 5, y - 3);
+      }
+      
       if (playing) {
         player.update();
+        updateParticles();
       }
+      
+      // Draw particles
+      drawParticles();
       
       if (!seeking) {
         document.getElementById('progress').value = lapse / duration;
@@ -107,6 +197,7 @@
           if (time >= lapse - 0.05) {
             piano.resume();
             piano.noteOn(midi, velocity);
+            spawnParticles(midi, trackColors[trackNo % trackColors.length]);
             setTimeout(() => piano.noteOff(midi), dur * 1000);
           }
           lastPlayed = i;
@@ -144,6 +235,7 @@
     audioContext = piano.ctx;
     
     MidiConvert.load('rush_e_real.mid', function(midi) {
+      m = midi;
       midi.tracks.forEach((track, trackNo) => {
         track.notes.forEach(note => {
           allNotes.push({ ...note, trackNo });
