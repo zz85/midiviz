@@ -1,37 +1,52 @@
-// Piano synthesis using Modal Synthesis with measured parameters
+// Piano synthesis inspired by PianoForte approach
+// Uses harmonic profiles with random phases and exponential decay
 class Piano {
   constructor() {
     this.ctx = new (window.AudioContext || window.webkitAudioContext)();
     this.activeNotes = new Map();
     
-    // Warmth filter - cut harsh highs
+    // Warmth filter - lower cutoff
     this.warmth = this.ctx.createBiquadFilter();
     this.warmth.type = 'lowpass';
-    this.warmth.frequency.value = 3500;
-    this.warmth.Q.value = 0.5;
+    this.warmth.frequency.value = 2800;
+    this.warmth.Q.value = 0.4;
     
-    // Bass boost for deeper tone
+    // Bass boost - more depth
     this.bass = this.ctx.createBiquadFilter();
     this.bass.type = 'lowshelf';
-    this.bass.frequency.value = 250;
-    this.bass.gain.value = 4;
+    this.bass.frequency.value = 300;
+    this.bass.gain.value = 5;
     
-    // Reverb
+    // Light reverb
     this.convolver = this.ctx.createConvolver();
-    this.convolver.buffer = this.createReverb(2.5, 3);
+    this.convolver.buffer = this.createReverb(1.8, 2.5);
     this.dryGain = this.ctx.createGain();
     this.wetGain = this.ctx.createGain();
-    this.dryGain.gain.value = 0.8;
-    this.wetGain.gain.value = 0.2;
+    this.dryGain.gain.value = 0.85;
+    this.wetGain.gain.value = 0.15;
     
     this.masterGain = this.ctx.createGain();
     this.masterGain.gain.value = 0.5;
     
-    // Routing: masterGain -> warmth -> bass -> dry + reverb -> destination
-    this.masterGain.connect(this.warmth);
-    this.warmth.connect(this.bass);
+    this.masterGain.connect(this.warmth).connect(this.bass);
     this.bass.connect(this.dryGain).connect(this.ctx.destination);
     this.bass.connect(this.convolver).connect(this.wetGain).connect(this.ctx.destination);
+    
+    // Harmonic profiles for different registers (from PianoForte's G1, G2, G3)
+    this.profiles = {
+      low: {
+        harmonics: [2.00, 3.01, 4.01, 5.02, 7.03, 9.07, 10.09, 12.13, 16.34, 18.47],
+        amplitudes: [0.084, 0.177, 0.079, 0.056, 0.076, 0.068, 0.082, 0.123, 0.048, 0.053]
+      },
+      mid: {
+        harmonics: [1.0, 2.00, 3.01, 4.01, 5.02, 6.03, 7.04, 8.06, 9.08],
+        amplitudes: [0.25, 0.20, 0.12, 0.08, 0.05, 0.035, 0.025, 0.018, 0.012]
+      },
+      high: {
+        harmonics: [1.0, 2.0, 3.01, 4.01, 5.03, 6.04, 7.05, 8.07],
+        amplitudes: [0.30, 0.18, 0.08, 0.06, 0.03, 0.02, 0.015, 0.01]
+      }
+    };
   }
 
   createReverb(duration, decay) {
@@ -50,30 +65,15 @@ class Piano {
     return 440 * Math.pow(2, (midi - 69) / 12);
   }
 
-  // Inharmonicity coefficient B varies by register (measured from real pianos)
-  getInharmonicity(midi) {
-    // Bass strings (wound) have lower B, treble (plain steel) higher
-    if (midi < 40) return 0.00005;
-    if (midi < 50) return 0.0001;
-    if (midi < 60) return 0.0002;
-    if (midi < 70) return 0.0004;
-    return 0.0006;
+  // Inharmonicity factor (from PianoForte)
+  partialFreq(f0, n, beta = 0.000033) {
+    return n * f0 * Math.sqrt(1 + beta * n * n);
   }
 
-    // Mode amplitude - warmer spectrum (less highs)
-    getModeAmplitude(n, hammerPos) {
-    const nodeEffect = Math.sin(n * Math.PI * hammerPos);
-    // Steeper rolloff for warmer tone
-    const rolloff = 1 / Math.pow(n, 1.1);
-    return Math.abs(nodeEffect) * rolloff;
-  }
-
-  // Decay time for each mode (higher modes decay faster)
-  getModeDecay(n, midi, baseDecay) {
-    // Two decay components: frequency-dependent and mode-dependent
-    const freqDecay = baseDecay;
-    const modeDecay = freqDecay / (1 + 0.03 * (n - 1) * (n - 1));
-    return Math.max(0.1, modeDecay);
+  getProfile(midi) {
+    if (midi <= 45) return this.profiles.low;
+    if (midi <= 65) return this.profiles.mid;
+    return this.profiles.high;
   }
 
   noteOn(midi, velocity = 0.7) {
@@ -81,83 +81,84 @@ class Piano {
     
     const f0 = this.midiToFreq(midi);
     const t = this.ctx.currentTime;
-    const B = this.getInharmonicity(midi);
+    const profile = this.getProfile(midi);
     
-    // Hammer position varies by register (bass ~1/8, treble ~1/12)
-    const hammerPos = midi < 50 ? 0.125 : midi < 70 ? 0.11 : 0.09;
-    
-    // Base decay time varies by register
-    const baseDecay = midi < 40 ? 12 : midi < 55 ? 8 : midi < 70 ? 5 : 3;
-    
-    // Number of modes - fewer for warmer sound
-    const numModes = midi < 50 ? 14 : midi < 65 ? 10 : midi < 80 ? 7 : 5;
+    // Decay rate varies by register - slower for warmer sustain
+    const decayRate = midi < 40 ? 0.0001 : midi < 60 ? 0.00015 : 0.00022;
     
     const noteGain = this.ctx.createGain();
     noteGain.connect(this.masterGain);
     noteGain.gain.setValueAtTime(1, t);
     
     const sources = [];
-    const modeGains = [];
+    const partialGains = [];
     
-    for (let n = 1; n <= numModes; n++) {
-      // Modal frequency with inharmonicity: f_n = n * f0 * sqrt(1 + B*n^2)
-      const fn = n * f0 * Math.sqrt(1 + B * n * n);
-      if (fn > 8000) break;
+    // Random phase accumulator for natural stereo spread
+    let phaseL = Math.random() * Math.PI * 2;
+    let phaseR = Math.random() * Math.PI * 2;
+    
+    for (let i = 0; i < profile.harmonics.length; i++) {
+      const harmonic = profile.harmonics[i];
+      const amp = profile.amplitudes[i];
       
-      // Create oscillator for this mode
+      // Partial frequency with slight inharmonicity
+      const fn = this.partialFreq(f0, harmonic);
+      if (fn > 6000) break;
+      
+      // Create stereo pair with random phase difference
+      phaseL += (Math.random() - 0.5) * 3;
+      phaseR += (Math.random() - 0.5) * 3;
+      
       const osc = this.ctx.createOscillator();
-      const modeGain = this.ctx.createGain();
+      const pGain = this.ctx.createGain();
       
       osc.type = 'sine';
       osc.frequency.value = fn;
       
-      // Slight detune for coupled strings (piano has 2-3 strings per note)
-      if (midi > 35 && n <= 3) {
-        osc.detune.value = (Math.random() - 0.5) * 3;
-      }
+      // Exponential decay time
+      const decayTime = 1 / (decayRate * fn * 2 * Math.PI);
+      const clampedDecay = Math.max(0.3, Math.min(decayTime, 8));
       
-      // Mode amplitude
-      let amp = velocity * 0.2 * this.getModeAmplitude(n, hammerPos);
+      // Slight detune for richness
+      osc.detune.value = (Math.random() - 0.5) * 6;
       
-      // Boost fundamental and second partial for deeper tone
-      if (n === 1) amp *= 2.0;
-      if (n === 2) amp *= 1.4;
+      // Amplitude with velocity scaling
+      const baseAmp = velocity * amp * 0.5;
       
-      // Mode decay
-      const decay = this.getModeDecay(n, midi, baseDecay);
+      // Two-stage decay: fast initial brightness decay, then slow sustain
+      // Higher harmonics lose more in the initial stage (piano characteristic)
+      const brightnessDecay = 0.08 + (i * 0.02); // faster for higher harmonics
+      const sustainDecay = Math.max(0.3, Math.min(clampedDecay, 8));
       
-      // Envelope: sharp attack, two-stage decay (bright then mellow)
-      modeGain.gain.setValueAtTime(0, t);
-      modeGain.gain.linearRampToValueAtTime(amp, t + 0.002);
-      // Initial brightness decay
-      modeGain.gain.setTargetAtTime(amp * 0.6, t + 0.002, 0.05);
-      // Long sustain decay
-      modeGain.gain.setTargetAtTime(0.0001, t + 0.1, decay);
+      pGain.gain.setValueAtTime(baseAmp, t);
+      pGain.gain.setTargetAtTime(baseAmp * (0.4 / (1 + i * 0.15)), t, brightnessDecay);
+      pGain.gain.setTargetAtTime(0.0001, t + 0.3, sustainDecay);
       
-      osc.connect(modeGain).connect(noteGain);
+      osc.connect(pGain).connect(noteGain);
       osc.start(t);
-      osc.stop(t + decay * 6);
+      osc.stop(t + clampedDecay * 6);
       
       sources.push(osc);
-      modeGains.push(modeGain);
+      partialGains.push(pGain);
     }
     
-    // Hammer thump (low frequency transient)
-    const thumpFreq = Math.max(50, f0 * 0.5);
-    const thump = this.ctx.createOscillator();
-    const thumpGain = this.ctx.createGain();
-    thump.type = 'sine';
-    thump.frequency.setValueAtTime(thumpFreq, t);
-    thump.frequency.exponentialRampToValueAtTime(thumpFreq * 0.5, t + 0.03);
-    thumpGain.gain.setValueAtTime(velocity * 0.15, t);
-    thumpGain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
-    thump.connect(thumpGain).connect(noteGain);
-    thump.start(t);
-    thump.stop(t + 0.1);
-    sources.push(thump);
+    // Add fundamental reinforcement - stronger for depth
+    const fundOsc = this.ctx.createOscillator();
+    const fundGain = this.ctx.createGain();
+    fundOsc.type = 'sine';
+    fundOsc.frequency.value = f0;
+    const fundDecay = midi < 50 ? 8 : midi < 70 ? 5 : 3.5;
+    const fundAmp = midi > 60 ? 0.35 : 0.25; // Extra fundamental for treble
+    fundGain.gain.setValueAtTime(velocity * fundAmp, t);
+    fundGain.gain.setTargetAtTime(0.0001, t, fundDecay);
+    fundOsc.connect(fundGain).connect(noteGain);
+    fundOsc.start(t);
+    fundOsc.stop(t + fundDecay * 5);
+    sources.push(fundOsc);
+    partialGains.push(fundGain);
     
-    // Hammer noise
-    const noiseDur = 0.02;
+    // Hammer attack noise
+    const noiseDur = 0.015;
     const noiseBuf = this.ctx.createBuffer(1, this.ctx.sampleRate * noiseDur, this.ctx.sampleRate);
     const noiseData = noiseBuf.getChannelData(0);
     for (let i = 0; i < noiseData.length; i++) {
@@ -165,17 +166,13 @@ class Piano {
     }
     const noiseSrc = this.ctx.createBufferSource();
     const noiseGain = this.ctx.createGain();
-    const noiseFilter = this.ctx.createBiquadFilter();
-    noiseFilter.type = 'bandpass';
-    noiseFilter.frequency.value = Math.min(f0 * 2, 2000);
-    noiseFilter.Q.value = 1;
     noiseSrc.buffer = noiseBuf;
-    noiseGain.gain.value = velocity * 0.1;
-    noiseSrc.connect(noiseFilter).connect(noiseGain).connect(noteGain);
+    noiseGain.gain.value = velocity * 0.08;
+    noiseSrc.connect(noiseGain).connect(noteGain);
     noiseSrc.start(t);
     sources.push(noiseSrc);
 
-    this.activeNotes.set(midi, { sources, noteGain, modeGains });
+    this.activeNotes.set(midi, { sources, noteGain, partialGains });
   }
 
   noteOff(midi) {
@@ -184,8 +181,8 @@ class Piano {
     
     const t = this.ctx.currentTime;
     
-    // Damper stops the string - quick decay
-    note.modeGains.forEach(g => {
+    // Damper effect
+    note.partialGains.forEach(g => {
       g.gain.cancelScheduledValues(t);
       g.gain.setValueAtTime(g.gain.value, t);
       g.gain.exponentialRampToValueAtTime(0.0001, t + 0.1);
