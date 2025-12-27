@@ -43,14 +43,14 @@
     function spawnParticles(midi, color) {
       const x = midiToX(midi) + noteWidth(midi) / 2;
       const y = canvas.height;
-      for (let i = 0; i < 8; i++) {
+      for (let i = 0; i < 12; i++) {
         particles.push({
           x, y,
-          vx: (Math.random() - 0.5) * 4,
-          vy: -Math.random() * 6 - 2,
+          vx: (Math.random() - 0.5) * 6,
+          vy: -Math.random() * 8 - 3,
           life: 1,
           color,
-          size: Math.random() * 4 + 2
+          size: Math.random() * 6 + 3
         });
       }
     }
@@ -69,11 +69,14 @@
     function drawParticles() {
       particles.forEach(p => {
         ctx.globalAlpha = p.life;
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = 15;
         ctx.fillStyle = p.color;
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
         ctx.fill();
       });
+      ctx.shadowBlur = 0;
       ctx.globalAlpha = 1;
     }
     const PIANO_HEIGHT = 120;
@@ -207,22 +210,27 @@
         const startY = canvas.height - (time - lapse) * (canvas.height / LOOK_AHEAD);
         const endY = canvas.height - (time + dur - lapse) * (canvas.height / LOOK_AHEAD);
         
-        if (endY > canvas.height || startY < -100) continue;
+        // Skip if completely off screen (above or below)
+        if (startY < -100 || endY > canvas.height + 100) continue;
         
         const x = midiToX(midi);
         const w = noteWidth(midi) - 2;
         const h = Math.max(startY - endY, 4);
-        const y = Math.min(endY, canvas.height - h);
+        const y = endY; // Don't clamp - let it go below screen
         
         // Light up key when note is playing
         if (time <= lapse && time + dur >= lapse) {
           keys[midi]?.classList.add('active');
         }
         
-        // Draw note bar
+        // Draw note bar - brighter when hitting piano
+        const isHitting = startY >= canvas.height - 5 && endY <= canvas.height;
         ctx.fillStyle = trackColors[trackNo % trackColors.length];
         ctx.shadowColor = ctx.fillStyle;
-        ctx.shadowBlur = 10;
+        ctx.shadowBlur = isHitting ? 25 : 10;
+        if (isHitting) {
+          ctx.fillStyle = '#fff';
+        }
         ctx.beginPath();
         ctx.roundRect(x + 1, y, w, h, 4);
         ctx.fill();
