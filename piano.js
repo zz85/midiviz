@@ -26,11 +26,20 @@ class Piano {
     this.wetGain.gain.value = 0.15;
     
     this.masterGain = this.ctx.createGain();
-    this.masterGain.gain.value = 0.5;
+    this.masterGain.gain.value = 0.35;
+    
+    // Compressor to prevent distortion
+    this.compressor = this.ctx.createDynamicsCompressor();
+    this.compressor.threshold.value = -12;
+    this.compressor.knee.value = 10;
+    this.compressor.ratio.value = 8;
+    this.compressor.attack.value = 0.003;
+    this.compressor.release.value = 0.1;
     
     this.masterGain.connect(this.warmth).connect(this.bass);
-    this.bass.connect(this.dryGain).connect(this.ctx.destination);
-    this.bass.connect(this.convolver).connect(this.wetGain).connect(this.ctx.destination);
+    this.bass.connect(this.compressor);
+    this.compressor.connect(this.dryGain).connect(this.ctx.destination);
+    this.compressor.connect(this.convolver).connect(this.wetGain).connect(this.ctx.destination);
     
     // Harmonic profiles for different registers (from PianoForte's G1, G2, G3)
     this.profiles = {
@@ -122,8 +131,9 @@ class Piano {
       // Slight detune for richness
       osc.detune.value = (Math.random() - 0.5) * 6;
       
-      // Amplitude with velocity scaling
-      const baseAmp = velocity * amp * 0.5;
+      // Amplitude with velocity scaling - reduce for high notes
+      const registerScale = midi > 80 ? 0.3 : midi > 70 ? 0.4 : 0.5;
+      const baseAmp = velocity * amp * registerScale;
       
       // Two-stage decay: fast initial brightness decay, then slow sustain
       // Higher harmonics lose more in the initial stage (piano characteristic)
@@ -148,7 +158,7 @@ class Piano {
     fundOsc.type = 'sine';
     fundOsc.frequency.value = f0;
     const fundDecay = midi < 50 ? 8 : midi < 70 ? 5 : 3.5;
-    const fundAmp = midi > 60 ? 0.35 : 0.25; // Extra fundamental for treble
+    const fundAmp = midi > 75 ? 0.2 : midi > 60 ? 0.3 : 0.25; // Less for very high notes
     fundGain.gain.setValueAtTime(velocity * fundAmp, t);
     fundGain.gain.setTargetAtTime(0.0001, t, fundDecay);
     fundOsc.connect(fundGain).connect(noteGain);
