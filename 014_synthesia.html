@@ -3,6 +3,8 @@
 <head>
   <script src="MidiConvert.js"></script>
   <script src="piano.js"></script>
+  <script src="harpsichord.js"></script>
+  <script src="electric_piano.js"></script>
   <script src="player.js"></script>
   <style>
     body { margin: 0; background: #1a1a2e; overflow: hidden; }
@@ -19,7 +21,22 @@
 </head>
 <body>
   <div id="controls">
-    <button onclick="piano.resume(); player.play()">Play</button>
+    <select id="midiSelect" onchange="loadMidi(this.value)">
+      <option value="rush_e_real.mid">Rush E</option>
+      <option value="entertainer.mid">The Entertainer</option>
+      <option value="minute_waltz.mid">Minute Waltz</option>
+      <option value="Prelude1.mid">Prelude No.1</option>
+      <option value="Fugue1.mid">Fugue No.1</option>
+      <option value="chpn-p15.mid">Chopin Prelude 15</option>
+      <option value="Knight-Rupert-Schumann.mid">Knight Rupert (Schumann)</option>
+      <option value="rachmaninov3.mid">Rachmaninov 3</option>
+    </select>
+    <select id="instrumentSelect" onchange="switchInstrument(this.value)">
+      <option value="piano">Piano</option>
+      <option value="electric">Electric Piano</option>
+      <option value="harpsichord">Harpsichord</option>
+    </select>
+    <button onclick="instrument.resume(); player.play()">Play</button>
     <button onclick="player.pause()">Pause</button>
     <span id="time">0:00</span>
     <input id="progress" type="range" value="0" min="0" max="1" step="0.001" style="width:200px"
@@ -35,7 +52,7 @@
     const ctx = canvas.getContext('2d');
     const pianoEl = document.getElementById('piano');
     
-    let piano, audioContext, allNotes = [], duration = 0, lastPlayed = -1, seeking = false, m = null;
+    let instrument, audioContext, allNotes = [], duration = 0, lastPlayed = -1, seeking = false, m = null;
     
     // Particle system
     const particles = [];
@@ -198,10 +215,10 @@
         // Play note (only when playing)
         if (playing && i > lastPlayed && time <= lapse) {
           if (time >= lapse - 0.05) {
-            piano.resume();
-            piano.noteOn(midi, velocity);
+            instrument.resume();
+            instrument.noteOn(midi, velocity);
             spawnParticles(midi, trackColors[trackNo % trackColors.length]);
-            setTimeout(() => piano.noteOff(midi), dur * 1000);
+            setTimeout(() => instrument.noteOff(midi), dur * 1000);
           }
           lastPlayed = i;
         }
@@ -238,22 +255,42 @@
       }
     }
     
-    // Load MIDI
-    piano = new Piano();
-    audioContext = piano.ctx;
+    // Instruments
+    const instruments = {
+      piano: () => new Piano(),
+      electric: () => new ElectricPiano(),
+      harpsichord: () => new Harpsichord()
+    };
     
-    MidiConvert.load('rush_e_real.mid', function(midi) {
-      m = midi;
-      midi.tracks.forEach((track, trackNo) => {
-        track.notes.forEach(note => {
-          allNotes.push({ ...note, trackNo });
+    function switchInstrument(type) {
+      instrument = instruments[type]();
+      audioContext = instrument.ctx;
+    }
+    
+    switchInstrument('piano');
+    
+    function loadMidi(file) {
+      if (typeof playing !== 'undefined') player.pause();
+      allNotes = [];
+      lastPlayed = -1;
+      particles.length = 0;
+      
+      MidiConvert.load(file, function(midi) {
+        m = midi;
+        midi.tracks.forEach((track, trackNo) => {
+          track.notes.forEach(note => {
+            allNotes.push({ ...note, trackNo });
+          });
         });
+        allNotes.sort((a, b) => a.time - b.time);
+        duration = allNotes[allNotes.length - 1].time + allNotes[allNotes.length - 1].duration;
+        player.init();
       });
-      allNotes.sort((a, b) => a.time - b.time);
-      duration = allNotes[allNotes.length - 1].time + allNotes[allNotes.length - 1].duration;
-      player.init();
-      render();
-    });
+    }
+    
+    player.init();
+    loadMidi('rush_e_real.mid');
+    render();
   </script>
 </body>
 </html>

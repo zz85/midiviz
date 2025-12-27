@@ -1,5 +1,5 @@
-// Piano synthesis - struck string model with inharmonicity
-class Piano {
+// Electric Piano synthesis - struck string model with inharmonicity
+class ElectricPiano {
   constructor() {
     this.ctx = new (window.AudioContext || window.webkitAudioContext)();
     this.activeNotes = new Map();

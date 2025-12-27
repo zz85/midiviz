@@ -1,5 +1,5 @@
-// Piano synthesis using physical modeling (Karplus-Strong + resonance)
-class Piano {
+// Harpsichord synthesis using Karplus-Strong
+class Harpsichord {
   constructor() {
     this.ctx = new (window.AudioContext || window.webkitAudioContext)();
     this.activeNotes = new Map();
