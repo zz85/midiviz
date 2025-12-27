@@ -11,18 +11,29 @@
   </style>
 </head>
 <body>
-  <h3>Click keys or use keyboard (A-K = C4-C5)</h3>
+  <h3>Click keys or use keyboard (A-K = C4-C5, Z-M = C3-B3, 1-0 = C5-B5)</h3>
   <div class="keys" id="keyboard"></div>
   <script src="piano.js"></script>
   <script>
     const piano = new Piano();
     const keyboard = document.getElementById('keyboard');
-    const startMidi = 60; // C4
-    const pattern = [0,1,0,1,0,0,1,0,1,0,1,0,0]; // white/black key pattern
-    const keyMap = 'awsedftgyhujk';
+    const startMidi = 48; // C3
+    const pattern = [0,1,0,1,0,0,1,0,1,0,1,0]; // white/black key pattern (one octave)
+    const fullPattern = [...pattern, ...pattern, ...pattern, 0]; // 3 octaves + C6
+    const keyMap = {
+      'z':0,'s':1,'x':2,'d':3,'c':4,'v':5,'g':6,'b':7,'h':8,'n':9,'j':10,'m':11,
+      'a':12,'w':13,'s':14,'e':15,'d':16,'f':17,'t':18,'g':19,'y':20,'h':21,'u':22,'j':23,'k':24,
+      '1':24,'2':25,'3':26,'4':27,'5':28,'6':29,'7':30,'8':31,'9':32,'0':33
+    };
+    // Fix overlapping keys
+    const keyMapFixed = {
+      'z':0,'x':2,'c':4,'v':5,'b':7,'n':9,'m':11,
+      'a':12,'w':13,'s':14,'e':15,'d':16,'f':17,'t':18,'g':19,'y':20,'h':21,'u':22,'j':23,'k':24,
+      '1':24,'2':25,'3':26,'4':27,'5':28,'6':29,'7':30,'8':31,'9':32,'0':33
+    };
 
     // Create keys
-    pattern.forEach((isBlack, i) => {
+    fullPattern.forEach((isBlack, i) => {
       const key = document.createElement('div');
       key.className = 'key' + (isBlack ? ' black' : '');
       key.dataset.midi = startMidi + i;
@@ -47,15 +58,15 @@
     // Keyboard events
     document.addEventListener('keydown', e => {
       if (e.repeat) return;
-      const i = keyMap.indexOf(e.key.toLowerCase());
-      if (i >= 0) {
+      const i = keyMapFixed[e.key.toLowerCase()];
+      if (i !== undefined) {
         piano.resume();
         piano.noteOn(startMidi + i);
       }
     });
     document.addEventListener('keyup', e => {
-      const i = keyMap.indexOf(e.key.toLowerCase());
-      if (i >= 0) piano.noteOff(startMidi + i);
+      const i = keyMapFixed[e.key.toLowerCase()];
+      if (i !== undefined) piano.noteOff(startMidi + i);
     });
   </script>
 </body>
