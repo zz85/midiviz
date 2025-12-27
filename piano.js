@@ -1,109 +1,169 @@
-// Piano synthesis - physical modeling with sample transposition for treble
+// Piano synthesis using Finite Difference physical modeling
+// Based on OpenPiano approach (Chaigne's stiff string model)
 class Piano {
   constructor() {
     this.ctx = new (window.AudioContext || window.webkitAudioContext)();
     this.activeNotes = new Map();
-    this.sampleCache = new Map(); // Cache generated samples
+    this.Fs = this.ctx.sampleRate;
+    this.Ts = 1 / this.Fs;
     
     this.masterGain = this.ctx.createGain();
     this.masterGain.gain.value = 0.5;
-    
-    // Soundboard resonance
-    this.soundboard = this.ctx.createBiquadFilter();
-    this.soundboard.type = 'peaking';
-    this.soundboard.frequency.value = 220;
-    this.soundboard.Q.value = 2;
-    this.soundboard.gain.value = 3;
-    
-    // Cabinet resonance
-    this.cabinet = this.ctx.createBiquadFilter();
-    this.cabinet.type = 'peaking';
-    this.cabinet.frequency.value = 120;
-    this.cabinet.Q.value = 1.5;
-    this.cabinet.gain.value = 2;
-    
-    this.masterGain.connect(this.soundboard).connect(this.cabinet).connect(this.ctx.destination);
-    
-    // Pre-generate samples for base notes (every 6 semitones up to 60)
-    this.baseNotes = [36, 42, 48, 54, 60];
+    this.masterGain.connect(this.ctx.destination);
   }
 
   midiToFreq(midi) {
     return 440 * Math.pow(2, (midi - 69) / 12);
   }
 
-  // Generate a sample buffer for a given midi note using synthesis
-  generateSample(midi, duration = 5) {
-    const freq = this.midiToFreq(midi);
-    const sampleRate = this.ctx.sampleRate;
-    const samples = Math.ceil(sampleRate * duration);
-    const buf = this.ctx.createBuffer(1, samples, sampleRate);
-    const data = buf.getChannelData(0);
+  // Create a piano string using finite difference simulation
+  createStringSound(midi, velocity, duration = 5) {
+    const f0 = this.midiToFreq(midi);
+    const Fs = this.Fs;
+    const Ts = this.Ts;
     
-    const B = midi < 50 ? 0.0004 : 0.0002;
-    const baseDecay = midi < 40 ? 8 : midi < 55 ? 5 : 3.5;
-    const numPartials = midi < 50 ? 16 : 10;
+    // String physical parameters (scaled for different registers)
+    const L = 0.6 - (midi - 40) * 0.004; // String length decreases with pitch
+    const rho = midi < 50 ? 0.012 : midi < 65 ? 0.008 : 0.005; // Linear density
+    const Te = rho * L * L * 4 * f0 * f0; // Tension from f0
+    const c = Math.sqrt(Te / rho); // Wave speed
     
-    // Render partials into buffer
-    for (let n = 1; n <= numPartials; n++) {
-      const fn = n * freq * Math.sqrt(1 + B * n * n);
-      if (fn > 12000) break;
-      
-      const hammerNode = Math.sin(n * Math.PI * 0.125);
-      let amp = 0.18;
-      if (n === 1) amp *= 1.0;
-      else if (n === 2) amp *= 0.6;
-      else if (n === 3) amp *= 0.35;
-      else amp *= 0.25 / Math.pow(n - 2, 0.9);
-      amp *= Math.pow(Math.abs(hammerNode), 0.7);
-      
-      const partialDecay = baseDecay / (1 + (n - 1) * 0.15);
-      const omega = 2 * Math.PI * fn / sampleRate;
-      
-      for (let i = 0; i < samples; i++) {
-        const t = i / sampleRate;
-        // Two-stage envelope approximation
-        let env;
-        if (t < 0.05) env = amp;
-        else if (t < 0.2) env = amp * (0.6 + 0.4 * (0.2 - t) / 0.15);
-        else env = amp * 0.6 * Math.exp(-(t - 0.2) / (partialDecay * 0.3));
-        
-        data[i] += env * Math.sin(omega * i);
+    // Stiffness (inharmonicity)
+    const r_gyr = 0.0003;
+    const E = 2e11; // Young's modulus (steel)
+    const S = Math.PI * r_gyr * r_gyr;
+    const eps = (r_gyr * r_gyr * E * S) / (Te * L * L);
+    
+    // Damping coefficients - much lower for sustained tone
+    const b1 = midi < 50 ? 0.1 : midi < 70 ? 0.2 : 0.4;
+    const b2 = midi < 50 ? 2e-6 : midi < 70 ? 1e-6 : 5e-7;
+    
+    // Calculate spatial grid size
+    const gamma = Fs / (2 * f0);
+    const N = Math.floor(Math.sqrt((-1 + Math.sqrt(1 + 16 * eps * gamma * gamma)) / (8 * eps)));
+    const Xs = L / N; // Spatial step
+    
+    // Limit N for performance
+    const maxN = 150;
+    const actualN = Math.min(N, maxN);
+    
+    // FD parameters
+    const r = c * Ts / Xs;
+    const D = 1 + b1 * Ts + 2 * b2 / Ts;
+    const N_sqr = actualN * actualN;
+    const r_sqr = r * r;
+    
+    // PDE coefficients (Chaigne)
+    const a1 = (2 - 2 * r_sqr + b2 / Ts - 6 * eps * N_sqr * r_sqr) / D;
+    const a2 = (-1 + b1 * Ts + 2 * b2 / Ts) / D;
+    const a3 = (r_sqr * (1 + 4 * eps * N_sqr)) / D;
+    const a4 = (b2 / Ts - eps * N_sqr * r_sqr) / D;
+    const a5 = (-b2 / Ts) / D;
+    
+    // Hammer parameters - softer hammer for piano tone
+    const Mh = 0.005; // Hammer mass (lighter)
+    const K = 5e8; // Hammer stiffness (softer)
+    const p = 2.2; // Nonlinearity exponent (less harsh)
+    const bH = 0.1; // Hammer damping
+    const hammerPos = 0.125; // Strike position (1/8 of string)
+    const hammerContact = Math.round(hammerPos * actualN);
+    
+    // Hammer FD coefficients
+    const d1 = 2 / (1 + bH * Ts / (2 * Mh));
+    const d2 = (-1 + bH * Ts / (2 * Mh)) / (1 + bH * Ts / (2 * Mh));
+    const dF = (-Ts * Ts / Mh) / (1 + bH * Ts / (2 * Mh));
+    
+    // Hammer window (simplified)
+    const hammerWidth = Math.max(3, Math.floor(actualN * 0.05));
+    const hammerMask = new Float32Array(actualN + 4);
+    for (let i = 0; i < hammerWidth; i++) {
+      const idx = hammerContact - Math.floor(hammerWidth / 2) + i;
+      if (idx >= 0 && idx < actualN + 4) {
+        hammerMask[idx] = 0.5 * (1 - Math.cos(2 * Math.PI * i / hammerWidth));
       }
     }
     
-    // Add hammer noise at start
-    const noiseLen = Math.floor(sampleRate * 0.025);
-    for (let i = 0; i < noiseLen; i++) {
-      const env = Math.pow(1 - i / noiseLen, 2);
-      data[i] += (Math.random() * 2 - 1) * env * 0.08;
+    // String displacement arrays (circular buffer of 4 time steps)
+    const y = [
+      new Float32Array(actualN + 4),
+      new Float32Array(actualN + 4),
+      new Float32Array(actualN + 4),
+      new Float32Array(actualN + 4)
+    ];
+    
+    // Hammer state
+    const eta = new Float32Array(4); // Hammer displacement
+    const Fh = new Float32Array(4);  // Hammer force
+    
+    // Initial hammer velocity - gentler strike
+    const V_h0 = velocity * 2;
+    eta[0] = V_h0 * Ts;
+    
+    // Output buffer
+    const samples = Math.ceil(Fs * duration);
+    const output = new Float32Array(samples);
+    
+    // Pickup position (opposite side from hammer)
+    const pickupPos = actualN - hammerContact;
+    const Ms = rho * L;
+    
+    // Time stepping
+    let n0 = 0, n1 = 3, n2 = 2, n3 = 1;
+    
+    for (let n = 0; n < samples; n++) {
+      // Rotate buffer indices
+      n3 = n2;
+      n2 = n1;
+      n1 = n0;
+      n0 = (n0 + 1) & 3;
+      
+      // Update string displacement (interior points)
+      for (let i = 2; i < actualN + 2; i++) {
+        y[n0][i] = a1 * y[n1][i] + 
+                   a2 * y[n2][i] + 
+                   a3 * (y[n1][i + 1] + y[n1][i - 1]) +
+                   a4 * (y[n1][i + 2] + y[n1][i - 2]) +
+                   a5 * (y[n2][i + 1] + y[n2][i - 1] + y[n3][i]) +
+                   (Ts * Ts * actualN * Fh[n1] * hammerMask[i]) / Ms;
+      }
+      
+      // Boundary conditions (simple reflection)
+      y[n0][0] = -y[n0][2];
+      y[n0][1] = -y[n0][2] * 0.5;
+      y[n0][actualN + 2] = -y[n0][actualN];
+      y[n0][actualN + 3] = -y[n0][actualN] * 0.5;
+      
+      // Update hammer displacement
+      eta[n0] = d1 * eta[n1] + d2 * eta[n2] + dF * Fh[n1];
+      
+      // Calculate hammer force
+      const stringAtHammer = y[n0][hammerContact + 2];
+      if (eta[n0] > stringAtHammer) {
+        Fh[n0] = K * Math.pow(eta[n0] - stringAtHammer, p);
+      } else {
+        Fh[n0] = 0;
+      }
+      
+      // Output: average around pickup position
+      let sum = 0;
+      for (let i = -2; i <= 2; i++) {
+        const idx = pickupPos + 2 + i;
+        if (idx >= 0 && idx < actualN + 4) sum += y[n0][idx];
+      }
+      output[n] = sum / 5;
     }
     
     // Normalize
-    let max = 0;
-    for (let i = 0; i < samples; i++) max = Math.max(max, Math.abs(data[i]));
-    if (max > 0) for (let i = 0; i < samples; i++) data[i] /= max;
+    let maxVal = 0;
+    for (let i = 0; i < samples; i++) maxVal = Math.max(maxVal, Math.abs(output[i]));
+    if (maxVal > 0) {
+      for (let i = 0; i < samples; i++) output[i] /= maxVal;
+    }
     
-    return buf;
-  }
-
-  // Get or create cached sample for base note
-  getSample(baseMidi) {
-    if (!this.sampleCache.has(baseMidi)) {
-      this.sampleCache.set(baseMidi, this.generateSample(baseMidi));
-    }
-    return this.sampleCache.get(baseMidi);
-  }
-
-  // Find nearest base note for transposition
-  findBaseNote(midi) {
-    if (midi <= 60) return midi; // Synthesize directly for low notes
-    // For high notes, find nearest base note to transpose from
-    let best = 60;
-    for (const base of this.baseNotes) {
-      if (Math.abs(midi - base) < Math.abs(midi - best)) best = base;
-    }
-    return best;
+    // Create audio buffer
+    const buffer = this.ctx.createBuffer(1, samples, Fs);
+    buffer.copyToChannel(output, 0);
+    return buffer;
   }
 
   noteOn(midi, velocity = 0.7) {
@@ -113,132 +173,16 @@ class Piano {
     const noteGain = this.ctx.createGain();
     noteGain.connect(this.masterGain);
     
-    const sources = [];
-    const partialGains = [];
-
-    if (midi <= 60) {
-      // Use direct synthesis for midi <= 60
-      this.synthNote(midi, velocity, t, noteGain, sources, partialGains);
-    } else {
-      // Use transposed sample for midi > 60
-      const baseMidi = 60;
-      const semitones = midi - baseMidi;
-      const playbackRate = Math.pow(2, semitones / 12);
-      
-      const sample = this.getSample(baseMidi);
-      const src = this.ctx.createBufferSource();
-      src.buffer = sample;
-      src.playbackRate.value = playbackRate;
-      
-      // Gentle lowpass - not too dark
-      const lpf = this.ctx.createBiquadFilter();
-      lpf.type = 'lowpass';
-      lpf.frequency.value = Math.max(3500, 8000 - (midi - 60) * 120);
-      lpf.Q.value = 0.7;
-      
-      const srcGain = this.ctx.createGain();
-      srcGain.gain.setValueAtTime(velocity * 0.6, t);
-      const decay = 2.5 / Math.sqrt(playbackRate);
-      srcGain.gain.setTargetAtTime(0.0001, t + 0.05, decay);
-      
-      src.connect(lpf).connect(srcGain).connect(noteGain);
-      src.start(t);
-      
-      sources.push(src);
-      partialGains.push(srcGain);
-    }
-
-    this.activeNotes.set(midi, { sources, noteGain, partialGains });
-  }
-
-  // Direct synthesis for lower notes
-  synthNote(midi, velocity, t, noteGain, sources, partialGains) {
-    const freq = this.midiToFreq(midi);
-    const B = midi < 50 ? 0.0005 : 0.0003;
-    const baseDecay = midi < 40 ? 7 : midi < 55 ? 5 : 3.5;
-    const numPartials = midi < 50 ? 16 : 12;
+    // Generate string sound using FD simulation
+    const buffer = this.createStringSound(midi, velocity);
+    const src = this.ctx.createBufferSource();
+    src.buffer = buffer;
     
-    for (let n = 1; n <= numPartials; n++) {
-      const fn = n * freq * Math.sqrt(1 + B * n * n);
-      if (fn > 12000) break;
-      
-      const osc = this.ctx.createOscillator();
-      const pGain = this.ctx.createGain();
-      
-      osc.type = 'sine';
-      osc.frequency.value = fn;
-      osc.detune.value = (Math.random() - 0.5) * 6;
-      
-      const hammerNode = Math.sin(n * Math.PI * 0.125);
-      let amp = velocity * 0.18;
-      if (n === 1) amp *= 1.0;
-      else if (n === 2) amp *= 0.7;
-      else if (n === 3) amp *= 0.5;
-      else if (n === 4) amp *= 0.35;
-      else amp *= 0.25 / Math.pow(n - 3, 0.8);
-      amp *= Math.pow(Math.abs(hammerNode), 0.6);
-      
-      const partialDecay = baseDecay / Math.pow(n, 0.45);
-      
-      pGain.gain.setValueAtTime(0, t);
-      pGain.gain.linearRampToValueAtTime(amp, t + 0.003);
-      pGain.gain.exponentialRampToValueAtTime(amp * 0.5, t + 0.06);
-      pGain.gain.setTargetAtTime(0.0001, t + 0.1, partialDecay);
-      
-      osc.connect(pGain).connect(noteGain);
-      osc.start(t);
-      osc.stop(t + partialDecay * 5);
-      
-      sources.push(osc);
-      partialGains.push(pGain);
-    }
+    noteGain.gain.setValueAtTime(velocity * 0.8, t);
+    src.connect(noteGain);
+    src.start(t);
     
-    // Coupled strings (piano has 2-3 strings per note, slightly detuned)
-    if (midi > 40) {
-      for (const detune of [-1.5, 1.5]) {
-        const osc = this.ctx.createOscillator();
-        const pGain = this.ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.value = freq;
-        osc.detune.value = detune;
-        pGain.gain.setValueAtTime(velocity * 0.08, t);
-        pGain.gain.setTargetAtTime(0.0001, t + 0.1, baseDecay * 0.8);
-        osc.connect(pGain).connect(noteGain);
-        osc.start(t);
-        osc.stop(t + baseDecay * 4);
-        sources.push(osc);
-        partialGains.push(pGain);
-      }
-    }
-    
-    // Soundboard thump
-    if (midi < 55) {
-      const thump = this.ctx.createOscillator();
-      const thumpGain = this.ctx.createGain();
-      thump.type = 'sine';
-      thump.frequency.setValueAtTime(freq * 0.5, t);
-      thump.frequency.exponentialRampToValueAtTime(freq * 0.25, t + 0.04);
-      thumpGain.gain.setValueAtTime(velocity * 0.12, t);
-      thumpGain.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
-      thump.connect(thumpGain).connect(noteGain);
-      thump.start(t);
-      thump.stop(t + 0.1);
-      sources.push(thump);
-    }
-    
-    // Hammer noise
-    const noiseBuf = this.ctx.createBuffer(1, this.ctx.sampleRate * 0.015, this.ctx.sampleRate);
-    const noiseData = noiseBuf.getChannelData(0);
-    for (let i = 0; i < noiseData.length; i++) {
-      noiseData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / noiseData.length, 3);
-    }
-    const noiseSrc = this.ctx.createBufferSource();
-    const noiseGain = this.ctx.createGain();
-    noiseSrc.buffer = noiseBuf;
-    noiseGain.gain.value = velocity * 0.15;
-    noiseSrc.connect(noiseGain).connect(noteGain);
-    noiseSrc.start(t);
-    sources.push(noiseSrc);
+    this.activeNotes.set(midi, { src, noteGain });
   }
 
   noteOff(midi) {
@@ -246,14 +190,11 @@ class Piano {
     if (!note) return;
     
     const t = this.ctx.currentTime;
+    note.noteGain.gain.cancelScheduledValues(t);
+    note.noteGain.gain.setValueAtTime(note.noteGain.gain.value, t);
+    note.noteGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.15);
     
-    note.partialGains.forEach(g => {
-      g.gain.cancelScheduledValues(t);
-      g.gain.setValueAtTime(g.gain.value, t);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
-    });
-    
-    note.sources.forEach(s => { try { s.stop(t + 0.15); } catch(e) {} });
+    try { note.src.stop(t + 0.2); } catch(e) {}
     this.activeNotes.delete(midi);
   }
 
