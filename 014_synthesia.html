@@ -6,6 +6,8 @@
   <script src="harpsichord.js"></script>
   <script src="electric_piano.js"></script>
   <script src="wavetable_piano.js"></script>
+  <script src="fast_piano.js"></script>
+  <script src="silent_piano.js"></script>
   <script src="player.js"></script>
   <style>
     body { margin: 0; background: #1a1a2e; overflow: hidden; }
@@ -33,10 +35,12 @@
       <option value="rachmaninov3.mid">Rachmaninov 3</option>
     </select>
     <select id="instrumentSelect" onchange="switchInstrument(this.value)">
+      <option value="fast">Fast Piano (88-key)</option>
       <option value="piano">Piano</option>
       <option value="wavetable">Wavetable Piano</option>
       <option value="electric">Electric Piano</option>
       <option value="harpsichord">Harpsichord</option>
+      <option value="silent">4'33" (Silent)</option>
     </select>
     <button onclick="instrument.resume(); player.play()">Play</button>
     <button onclick="player.pause()">Pause</button>
@@ -259,10 +263,12 @@
     
     // Instruments
     const instruments = {
+      fast: () => new FastPiano(),
       piano: () => new Piano(),
       wavetable: () => new WavetablePiano(),
       electric: () => new ElectricPiano(),
-      harpsichord: () => new Harpsichord()
+      harpsichord: () => new Harpsichord(),
+      silent: () => new SilentPiano()
     };
     
     function switchInstrument(type) {
@@ -270,7 +276,7 @@
       audioContext = instrument.ctx;
     }
     
-    switchInstrument('piano');
+    switchInstrument('fast');
     
     function loadMidi(file) {
       if (typeof playing !== 'undefined') player.pause();
