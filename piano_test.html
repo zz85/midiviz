@@ -12,11 +12,13 @@
 </head>
 <body>
   <h3>Click keys or use keyboard (A-K = C4-C5, Z-M = C3-B3, 1-0 = C5-B5)</h3>
+  <div id="display">MIDI: --</div>
   <div class="keys" id="keyboard"></div>
   <script src="piano.js"></script>
   <script>
     const piano = new Piano();
     const keyboard = document.getElementById('keyboard');
+    const display = document.getElementById('display');
     const startMidi = 48; // C3
     const pattern = [0,1,0,1,0,0,1,0,1,0,1,0]; // white/black key pattern (one octave)
     const fullPattern = [...pattern, ...pattern, ...pattern, 0]; // 3 octaves + C6
@@ -40,11 +42,15 @@
       keyboard.appendChild(key);
     });
 
+    const showMidi = midi => display.textContent = 'MIDI: ' + midi;
+
     // Mouse events
     keyboard.addEventListener('mousedown', e => {
       if (e.target.dataset.midi) {
         piano.resume();
-        piano.noteOn(+e.target.dataset.midi);
+        const midi = +e.target.dataset.midi;
+        piano.noteOn(midi);
+        showMidi(midi);
         e.target.classList.add('active');
       }
     });
@@ -61,7 +67,9 @@
       const i = keyMapFixed[e.key.toLowerCase()];
       if (i !== undefined) {
         piano.resume();
-        piano.noteOn(startMidi + i);
+        const midi = startMidi + i;
+        piano.noteOn(midi);
+        showMidi(midi);
       }
     });
     document.addEventListener('keyup', e => {
