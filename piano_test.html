@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Piano Test</title>
+  <style>
+    .keys { display: flex; }
+    .key { width: 40px; height: 150px; border: 1px solid #000; background: #fff; cursor: pointer; }
+    .key.black { width: 25px; height: 100px; background: #000; margin: 0 -12px; z-index: 1; }
+    .key:active, .key.active { background: #ddd; }
+    .key.black:active, .key.black.active { background: #333; }
+  </style>
+</head>
+<body>
+  <h3>Click keys or use keyboard (A-K = C4-C5)</h3>
+  <div class="keys" id="keyboard"></div>
+  <script src="piano.js"></script>
+  <script>
+    const piano = new Piano();
+    const keyboard = document.getElementById('keyboard');
+    const startMidi = 60; // C4
+    const pattern = [0,1,0,1,0,0,1,0,1,0,1,0,0]; // white/black key pattern
+    const keyMap = 'awsedftgyhujk';
+
+    // Create keys
+    pattern.forEach((isBlack, i) => {
+      const key = document.createElement('div');
+      key.className = 'key' + (isBlack ? ' black' : '');
+      key.dataset.midi = startMidi + i;
+      keyboard.appendChild(key);
+    });
+
+    // Mouse events
+    keyboard.addEventListener('mousedown', e => {
+      if (e.target.dataset.midi) {
+        piano.resume();
+        piano.noteOn(+e.target.dataset.midi);
+        e.target.classList.add('active');
+      }
+    });
+    document.addEventListener('mouseup', () => {
+      document.querySelectorAll('.key.active').forEach(k => {
+        piano.noteOff(+k.dataset.midi);
+        k.classList.remove('active');
+      });
+    });
+
+    // Keyboard events
+    document.addEventListener('keydown', e => {
+      if (e.repeat) return;
+      const i = keyMap.indexOf(e.key.toLowerCase());
+      if (i >= 0) {
+        piano.resume();
+        piano.noteOn(startMidi + i);
+      }
+    });
+    document.addEventListener('keyup', e => {
+      const i = keyMap.indexOf(e.key.toLowerCase());
+      if (i >= 0) piano.noteOff(startMidi + i);
+    });
+  </script>
+</body>
+</html>
