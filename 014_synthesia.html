@@ -25,9 +25,10 @@
 </head>
 <body>
   <div id="controls">
-    <input type="file" id="midiFile" accept=".mid,.midi" onchange="loadMidiFile(this.files[0])" style="width:180px">
-    <select id="midiSelect" onchange="loadMidi(this.value)">
-      <option value="rush_e_real.mid">Rush E</option>
+    <input type="file" id="midiFile" accept=".mid,.midi" onchange="loadMidiFile(this.files[0])" hidden>
+    <select id="midiSelect" onchange="if(this.value==='browse'){midiFile.click();this.value=lastMidi}else{lastMidi=this.value;loadMidi(this.value)}">
+      <option value="browse">Browse...</option>
+      <option value="rush_e_real.mid" selected>Rush E</option>
       <option value="entertainer.mid">The Entertainer</option>
       <option value="minute_waltz.mid">Minute Waltz</option>
       <option value="Prelude1.mid">Prelude No.1</option>
@@ -66,7 +67,7 @@
     const pianoEl = document.getElementById('piano');
     
     let instrument, audioContext, allNotes = [], duration = 0, lastPlayed = -1, seeking = false, m = null;
-    let bloom = true, showParticles = true;
+    let bloom = true, showParticles = true, lastMidi = 'rush_e_real.mid';
     
     // Particle system
     const particles = [];
