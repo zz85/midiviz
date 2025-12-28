@@ -49,6 +49,7 @@
       onmousedown="seeking=true" onmouseup="player.seek(this.value*duration);lastPlayed=-1;seeking=false">
     Speed: <input type="range" value="1" min="0.2" max="2" step="0.1" style="width:100px" 
       onchange="player.speed(this.value)"><span id="speedVal">1x</span>
+    <label><input type="checkbox" id="bloomToggle" checked onchange="bloom=this.checked"> Bloom</label>
   </div>
   <canvas id="canvas"></canvas>
   <div id="piano"></div>
@@ -59,6 +60,7 @@
     const pianoEl = document.getElementById('piano');
     
     let instrument, audioContext, allNotes = [], duration = 0, lastPlayed = -1, seeking = false, m = null;
+    let bloom = true;
     
     // Particle system
     const particles = [];
@@ -92,8 +94,10 @@
     function drawParticles() {
       particles.forEach(p => {
         ctx.globalAlpha = p.life;
-        ctx.shadowColor = p.color;
-        ctx.shadowBlur = 15;
+        if (bloom) {
+          ctx.shadowColor = p.color;
+          ctx.shadowBlur = 15;
+        }
         ctx.fillStyle = p.color;
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
@@ -249,8 +253,10 @@
         // Draw note bar - brighter when hitting piano
         const isHitting = startY >= canvas.height - 5 && endY <= canvas.height;
         ctx.fillStyle = trackColors[trackNo % trackColors.length];
-        ctx.shadowColor = ctx.fillStyle;
-        ctx.shadowBlur = isHitting ? 25 : 10;
+        if (bloom) {
+          ctx.shadowColor = ctx.fillStyle;
+          ctx.shadowBlur = isHitting ? 25 : 10;
+        }
         if (isHitting) {
           ctx.fillStyle = '#fff';
         }
