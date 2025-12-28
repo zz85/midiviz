@@ -1,0 +1,134 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>Audio Performance Test</title>
+  <script src="MidiConvert.js"></script>
+  <script src="piano.js"></script>
+  <script src="harpsichord.js"></script>
+  <script src="electric_piano.js"></script>
+  <script src="wavetable_piano.js"></script>
+  <script src="fast_piano.js"></script>
+  <script src="silent_piano.js"></script>
+  <script src="player.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #1a1a2e; color: #fff; }
+    select, button { padding: 8px 16px; margin: 5px; font-size: 14px; }
+    #stats { margin-top: 20px; font-family: monospace; }
+  </style>
+</head>
+<body>
+  <h2>Audio Performance Test (No Visuals)</h2>
+  
+  <select id="midiSelect" onchange="loadMidi(this.value)">
+    <option value="rush_e_real.mid">Rush E</option>
+    <option value="entertainer.mid">The Entertainer</option>
+    <option value="minute_waltz.mid">Minute Waltz</option>
+    <option value="Prelude1.mid">Prelude No.1</option>
+    <option value="Fugue1.mid">Fugue No.1</option>
+    <option value="chpn-p15.mid">Chopin Prelude 15</option>
+    <option value="rachmaninov3.mid">Rachmaninov 3</option>
+  </select>
+  
+  <select id="instrumentSelect" onchange="switchInstrument(this.value)">
+    <option value="fast">Fast Piano</option>
+    <option value="piano">Piano</option>
+    <option value="wavetable">Wavetable Piano</option>
+    <option value="electric">Electric Piano</option>
+    <option value="harpsichord">Harpsichord</option>
+    <option value="silent">4'33" (Silent)</option>
+  </select>
+  
+  <button onclick="instrument.resume(); player.play()">Play</button>
+  <button onclick="player.pause()">Pause</button>
+  
+  <span id="time">0:00</span>
+  <input id="progress" type="range" value="0" min="0" max="1" step="0.001" style="width:200px"
+    onmousedown="seeking=true" onmouseup="player.seek(this.value*duration);lastPlayed=-1;seeking=false">
+  Speed: <input type="range" value="1" min="0.2" max="2" step="0.1" style="width:80px" 
+    onchange="player.speed(this.value)"><span id="speedVal">1x</span>
+  
+  <div id="stats">
+    <div>Active notes: <span id="activeNotes">0</span></div>
+    <div>Notes played: <span id="notesPlayed">0</span></div>
+    <div>FPS: <span id="fps">0</span></div>
+  </div>
+
+  <script>
+    let instrument, audioContext, allNotes = [], duration = 0, lastPlayed = -1, seeking = false;
+    let notesPlayed = 0, lastFrameTime = performance.now(), frameCount = 0;
+    
+    const instruments = {
+      fast: () => new FastPiano(),
+      piano: () => new Piano(),
+      wavetable: () => new WavetablePiano(),
+      electric: () => new ElectricPiano(),
+      harpsichord: () => new Harpsichord(),
+      silent: () => new SilentPiano()
+    };
+    
+    function switchInstrument(type) {
+      instrument = instruments[type]();
+      audioContext = instrument.ctx;
+    }
+    
+    switchInstrument('fast');
+    
+    function loadMidi(file) {
+      if (typeof playing !== 'undefined') player.pause();
+      allNotes = [];
+      lastPlayed = -1;
+      notesPlayed = 0;
+      
+      MidiConvert.load(file, function(midi) {
+        midi.tracks.forEach((track, trackNo) => {
+          track.notes.forEach(note => allNotes.push({ ...note, trackNo }));
+        });
+        allNotes.sort((a, b) => a.time - b.time);
+        duration = allNotes[allNotes.length - 1].time + allNotes[allNotes.length - 1].duration;
+        player.init();
+      });
+    }
+    
+    function update() {
+      requestAnimationFrame(update);
+      
+      // FPS counter
+      frameCount++;
+      const now = performance.now();
+      if (now - lastFrameTime >= 1000) {
+        document.getElementById('fps').textContent = frameCount;
+        frameCount = 0;
+        lastFrameTime = now;
+      }
+      
+      if (playing) player.update();
+      
+      if (!seeking) {
+        document.getElementById('progress').value = lapse / duration;
+        document.getElementById('time').textContent = Math.floor(lapse/60) + ':' + (lapse%60).toFixed(1).padStart(4,'0');
+        document.getElementById('speedVal').textContent = speed.toFixed(1) + 'x';
+      }
+      
+      // Play notes
+      for (let i = lastPlayed + 1; i < allNotes.length; i++) {
+        const note = allNotes[i];
+        if (note.time > lapse) break;
+        if (playing && note.time >= lapse - 0.05) {
+          instrument.resume();
+          instrument.noteOn(note.midi, note.velocity);
+          setTimeout(() => instrument.noteOff(note.midi), note.duration * 1000);
+          notesPlayed++;
+        }
+        lastPlayed = i;
+      }
+      
+      document.getElementById('activeNotes').textContent = instrument.activeNotes?.size || 0;
+      document.getElementById('notesPlayed').textContent = notesPlayed;
+    }
+    
+    player.init();
+    loadMidi('rush_e_real.mid');
+    update();
+  </script>
+</body>
+</html>
