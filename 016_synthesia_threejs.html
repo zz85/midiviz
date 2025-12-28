@@ -23,6 +23,7 @@
   <div id="controls">
     <span id="playbackControls"></span>
     <label><input type="checkbox" id="perspectiveToggle"> 3D View</label>
+    <label><input type="checkbox" id="gridToggle" checked> Grid</label>
     <label><input type="checkbox" id="bloomToggle" checked> Bloom</label>
     <label><input type="checkbox" id="particlesToggle" checked> Particles</label>
   </div>
@@ -30,7 +31,7 @@
   <script type="module">
     import * as THREE from 'three';
     
-    let showParticles = true, bloom = true, perspective = false;
+    let showParticles = true, bloom = true, perspective = false, showGrid = true;
     const LOOK_AHEAD = 3;
     const blackPattern = [1,3,6,8,10];
     const particles = [];
@@ -47,9 +48,9 @@
     );
     orthoCamera.position.set(0, 0, 100);
     
-    const perspCamera = new THREE.PerspectiveCamera(60, aspect, 0.1, 1000);
-    perspCamera.position.set(0, -50, 40);
-    perspCamera.lookAt(0, 0, 0);
+    const perspCamera = new THREE.PerspectiveCamera(85, aspect, 0.1, 1000);
+    perspCamera.position.set(0, -35, 80);
+    perspCamera.lookAt(0, 30, 0);
     
     let camera = orthoCamera;
     
@@ -89,6 +90,28 @@
     function noteWidth(midi) {
       const isBlack = blackPattern.includes(midi % 12);
       return (pianoWidth / 52) * (isBlack ? 0.6 : 1) - 0.1;
+    }
+    
+    // Grid lines for C and E notes
+    const gridHeight = frustumSize * 2;
+    const whiteWidth = pianoWidth / 52;
+    const gridLines = [];
+    for (let midi = 24; midi <= 108; midi++) {
+      const noteInOctave = midi % 12;
+      if (noteInOctave === 0 || noteInOctave === 5) {
+        const isC = noteInOctave === 0;
+        const x = midiToX(midi) - whiteWidth / 2;
+        const lineMat = new THREE.LineBasicMaterial({ 
+          color: 0xffffff, 
+          opacity: isC ? 0.3 : 0.1, 
+          transparent: true 
+        });
+        const points = [new THREE.Vector3(x, pianoY, 0), new THREE.Vector3(x, pianoY + gridHeight, 0)];
+        const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
+        const line = new THREE.Line(lineGeo, lineMat);
+        scene.add(line);
+        gridLines.push(line);
+      }
     }
     
     // Piano keys (visual)
@@ -186,6 +209,10 @@
     document.getElementById('perspectiveToggle').onchange = e => {
       perspective = e.target.checked;
       camera = perspective ? perspCamera : orthoCamera;
+    };
+    document.getElementById('gridToggle').onchange = e => {
+      showGrid = e.target.checked;
+      gridLines.forEach(l => l.visible = showGrid);
     };
     
     function resize() {
