@@ -3,6 +3,11 @@ Midi Visualization Experiments
 
 27 Dec 2024
 
+[Experiment #016 - Synthesia Three.js](016_synthesia_threejs.html)
+- Three.js 3D version of Synthesia
+- Orthographic (default) and perspective camera views
+- 88-key 3D piano with proper key positioning
+
 [Experiment #015 - Synthesia WebGL](015_synthesia_webgl.html)
 - WebGL2 GPU-accelerated version of Synthesia
 - Blur-based bloom effect with screen blending

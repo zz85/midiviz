@@ -1,0 +1,261 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <script src="MidiConvert.js"></script>
+  <script src="piano.js"></script>
+  <script src="harpsichord.js"></script>
+  <script src="electric_piano.js"></script>
+  <script src="wavetable_piano.js"></script>
+  <script src="fast_piano.js"></script>
+  <script src="silent_piano.js"></script>
+  <script src="organ.js"></script>
+  <script src="playback_controls.js"></script>
+  <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }
+  </script>
+  <style>
+    body { margin: 0; background: #1a1a2e; overflow: hidden; }
+    #controls { position: absolute; z-index: 10; padding: 10px; color: #fff; }
+    #controls button { margin: 0 5px; padding: 5px 15px; }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <span id="playbackControls"></span>
+    <label><input type="checkbox" id="perspectiveToggle"> 3D View</label>
+    <label><input type="checkbox" id="bloomToggle" checked> Bloom</label>
+    <label><input type="checkbox" id="particlesToggle" checked> Particles</label>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    
+    let showParticles = true, bloom = true, perspective = false;
+    const LOOK_AHEAD = 3;
+    const blackPattern = [1,3,6,8,10];
+    const particles = [];
+    
+    // Scene setup
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a1a2e);
+    
+    const aspect = innerWidth / innerHeight;
+    const frustumSize = 100;
+    const orthoCamera = new THREE.OrthographicCamera(
+      -frustumSize * aspect / 2, frustumSize * aspect / 2,
+      frustumSize / 2, -frustumSize / 2, 0.1, 1000
+    );
+    orthoCamera.position.set(0, 0, 100);
+    
+    const perspCamera = new THREE.PerspectiveCamera(60, aspect, 0.1, 1000);
+    perspCamera.position.set(0, -50, 40);
+    perspCamera.lookAt(0, 0, 0);
+    
+    let camera = orthoCamera;
+    
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(innerWidth, innerHeight);
+    document.body.appendChild(renderer.domElement);
+    
+    // Lighting
+    const ambient = new THREE.AmbientLight(0xffffff, 0.4);
+    scene.add(ambient);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    dirLight.position.set(0, -1, 1);
+    scene.add(dirLight);
+    
+    // Note colors
+    const trackColors = [0xe91e63, 0x9c27b0, 0x3f51b5, 0x03a9f4, 0x009688, 0x8bc34a, 0xffeb3b, 0xff9800];
+    const noteMaterials = trackColors.map(c => new THREE.MeshStandardMaterial({ 
+      color: c, emissive: c, emissiveIntensity: 0.3 
+    }));
+    const hitMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1 });
+    
+    // Piano dimensions (in world units, 88 keys spanning ~88 units)
+    const pianoWidth = 88;
+    const pianoY = -frustumSize / 2 + 15;
+    
+    function midiToX(midi) {
+      let whiteCount = 0;
+      for (let m = 21; m < midi; m++) {
+        if (!blackPattern.includes(m % 12)) whiteCount++;
+      }
+      const isBlack = blackPattern.includes(midi % 12);
+      const whiteWidth = pianoWidth / 52;
+      const x = isBlack ? whiteCount * whiteWidth - whiteWidth * 0.4 : whiteCount * whiteWidth;
+      return x - pianoWidth / 2 + whiteWidth / 2;
+    }
+    
+    function noteWidth(midi) {
+      const isBlack = blackPattern.includes(midi % 12);
+      return (pianoWidth / 52) * (isBlack ? 0.6 : 1) - 0.1;
+    }
+    
+    // Piano keys (visual)
+    const keyMeshes = {};
+    const whiteKeyMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee });
+    const blackKeyMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+    const activeKeyMat = new THREE.MeshStandardMaterial({ color: 0x4fc3f7, emissive: 0x4fc3f7, emissiveIntensity: 0.5 });
+    
+    for (let midi = 21; midi <= 108; midi++) {
+      const isBlack = blackPattern.includes(midi % 12);
+      const w = noteWidth(midi);
+      const h = isBlack ? 3 : 5;
+      const d = isBlack ? 0.8 : 0.5;
+      const geo = new THREE.BoxGeometry(w, h, d);
+      const mesh = new THREE.Mesh(geo, isBlack ? blackKeyMat : whiteKeyMat);
+      mesh.position.set(midiToX(midi), pianoY + (isBlack ? 1 : 0), isBlack ? 3.5 : 2.5);
+      scene.add(mesh);
+      keyMeshes[midi] = { mesh, isBlack };
+    }
+    
+    // Note meshes pool
+    const noteGeo = new THREE.BoxGeometry(1, 1, 2);
+    const noteMeshes = [];
+    const MAX_NOTES = 2000;
+    for (let i = 0; i < MAX_NOTES; i++) {
+      const mesh = new THREE.Mesh(noteGeo, noteMaterials[0]);
+      mesh.visible = false;
+      scene.add(mesh);
+      noteMeshes.push(mesh);
+    }
+    
+    // Particle system
+    const particleGeo = new THREE.BufferGeometry();
+    const particlePositions = new Float32Array(1000 * 3);
+    const particleColors = new Float32Array(1000 * 3);
+    particleGeo.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+    particleGeo.setAttribute('color', new THREE.BufferAttribute(particleColors, 3));
+    const particleMat = new THREE.PointsMaterial({ size: 0.5, vertexColors: true, transparent: true, opacity: 0.8 });
+    const particleSystem = new THREE.Points(particleGeo, particleMat);
+    scene.add(particleSystem);
+    
+    function spawnParticles(midi, color) {
+      const x = midiToX(midi);
+      const c = new THREE.Color(color);
+      for (let i = 0; i < 8; i++) {
+        particles.push({
+          x, y: pianoY + 3, z: 0,
+          vx: (Math.random() - 0.5) * 0.5,
+          vy: Math.random() * 0.5 + 0.2,
+          vz: (Math.random() - 0.5) * 0.3,
+          life: 1, r: c.r, g: c.g, b: c.b
+        });
+      }
+    }
+    
+    function updateParticles() {
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.z += p.vz;
+        p.vy -= 0.02;
+        p.life -= 0.025;
+        if (p.life <= 0) particles.splice(i, 1);
+      }
+      const pos = particleGeo.attributes.position.array;
+      const col = particleGeo.attributes.color.array;
+      for (let i = 0; i < 1000; i++) {
+        if (i < particles.length) {
+          const p = particles[i];
+          pos[i*3] = p.x; pos[i*3+1] = p.y; pos[i*3+2] = p.z;
+          col[i*3] = p.r * p.life; col[i*3+1] = p.g * p.life; col[i*3+2] = p.b * p.life;
+        } else {
+          pos[i*3+1] = -1000; // hide unused
+        }
+      }
+      particleGeo.attributes.position.needsUpdate = true;
+      particleGeo.attributes.color.needsUpdate = true;
+    }
+    
+    // Playback
+    const playback = new PlaybackControls({
+      container: '#playbackControls',
+      onNoteOn: (note, color) => {
+        if (showParticles) spawnParticles(note.midi, color);
+      },
+      onLoad: () => { particles.length = 0; }
+    });
+    
+    document.getElementById('bloomToggle').onchange = e => {
+      bloom = e.target.checked;
+      noteMaterials.forEach(m => m.emissiveIntensity = bloom ? 0.3 : 0);
+    };
+    document.getElementById('particlesToggle').onchange = e => showParticles = e.target.checked;
+    document.getElementById('perspectiveToggle').onchange = e => {
+      perspective = e.target.checked;
+      camera = perspective ? perspCamera : orthoCamera;
+    };
+    
+    function resize() {
+      const w = innerWidth, h = innerHeight;
+      renderer.setSize(w, h);
+      const aspect = w / h;
+      orthoCamera.left = -frustumSize * aspect / 2;
+      orthoCamera.right = frustumSize * aspect / 2;
+      orthoCamera.updateProjectionMatrix();
+      perspCamera.aspect = aspect;
+      perspCamera.updateProjectionMatrix();
+    }
+    resize();
+    window.onresize = resize;
+    
+    function render() {
+      requestAnimationFrame(render);
+      
+      const { lapse, playing, allNotes } = playback;
+      if (playing) {
+        playback.update();
+        updateParticles();
+      }
+      
+      // Reset keys
+      for (const midi in keyMeshes) {
+        const k = keyMeshes[midi];
+        k.mesh.material = k.isBlack ? blackKeyMat : whiteKeyMat;
+      }
+      
+      // Hide all note meshes
+      noteMeshes.forEach(m => m.visible = false);
+      
+      let meshIdx = 0;
+      const scaleY = frustumSize / LOOK_AHEAD;
+      
+      for (const note of allNotes) {
+        const { midi, time, duration: dur, trackNo } = note;
+        const startY = pianoY + 5 + (time - lapse + dur) * scaleY;
+        const endY = pianoY + 5 + (time - lapse) * scaleY;
+        
+        if (endY < pianoY - 10 || startY > frustumSize) continue;
+        if (meshIdx >= MAX_NOTES) break;
+        
+        const mesh = noteMeshes[meshIdx++];
+        mesh.visible = true;
+        
+        const x = midiToX(midi);
+        const w = noteWidth(midi);
+        const h = Math.max(startY - endY, 0.5);
+        const y = (startY + endY) / 2;
+        
+        mesh.position.set(x, y, 1);
+        mesh.scale.set(w, h, 1);
+        
+        const isHitting = time <= lapse && time + dur >= lapse;
+        if (isHitting) {
+          mesh.material = hitMaterial;
+          keyMeshes[midi].mesh.material = activeKeyMat;
+        } else {
+          mesh.material = noteMaterials[trackNo % noteMaterials.length];
+        }
+      }
+      
+      particleSystem.visible = showParticles;
+      renderer.render(scene, camera);
+    }
+    
+    playback.loadMidi('entertainer.mid');
+    render();
+  </script>
+</body>
+</html>
