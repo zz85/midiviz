@@ -25,6 +25,7 @@
 </head>
 <body>
   <div id="controls">
+    <input type="file" id="midiFile" accept=".mid,.midi" onchange="loadMidiFile(this.files[0])" style="width:180px">
     <select id="midiSelect" onchange="loadMidi(this.value)">
       <option value="rush_e_real.mid">Rush E</option>
       <option value="entertainer.mid">The Entertainer</option>
@@ -297,16 +298,32 @@
       particles.length = 0;
       
       MidiConvert.load(file, function(midi) {
-        m = midi;
-        midi.tracks.forEach((track, trackNo) => {
-          track.notes.forEach(note => {
-            allNotes.push({ ...note, trackNo });
-          });
-        });
-        allNotes.sort((a, b) => a.time - b.time);
-        duration = allNotes[allNotes.length - 1].time + allNotes[allNotes.length - 1].duration;
-        player.init();
+        processMidi(midi);
       });
+    }
+    
+    function loadMidiFile(file) {
+      if (!file) return;
+      if (typeof playing !== 'undefined') player.pause();
+      allNotes = [];
+      lastPlayed = -1;
+      particles.length = 0;
+      
+      const reader = new FileReader();
+      reader.onload = e => processMidi(MidiConvert.parse(e.target.result));
+      reader.readAsArrayBuffer(file);
+    }
+    
+    function processMidi(midi) {
+      m = midi;
+      midi.tracks.forEach((track, trackNo) => {
+        track.notes.forEach(note => {
+          allNotes.push({ ...note, trackNo });
+        });
+      });
+      allNotes.sort((a, b) => a.time - b.time);
+      duration = allNotes[allNotes.length - 1].time + allNotes[allNotes.length - 1].duration;
+      player.init();
     }
     
     player.init();
