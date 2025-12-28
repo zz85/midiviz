@@ -9,7 +9,7 @@
   <script src="fast_piano.js"></script>
   <script src="silent_piano.js"></script>
   <script src="organ.js"></script>
-  <script src="player.js"></script>
+  <script src="playback_controls.js"></script>
   <style>
     body { margin: 0; background: #1a1a2e; overflow: hidden; }
     #controls { position: absolute; z-index: 10; padding: 10px; color: #fff; }
@@ -25,38 +25,9 @@
 </head>
 <body>
   <div id="controls">
-    <input type="file" id="midiFile" accept=".mid,.midi" onchange="loadMidiFile(this.files[0])" hidden>
-    <select id="midiSelect" onchange="if(this.value==='browse'){midiFile.click();this.value=lastMidi}else{lastMidi=this.value;loadMidi(this.value)}">
-      <option value="browse">Browse...</option>
-      <option value="rush_e_real.mid" selected>Rush E</option>
-      <option value="entertainer.mid">The Entertainer</option>
-      <option value="minute_waltz.mid">Minute Waltz</option>
-      <option value="Prelude1.mid">Prelude No.1</option>
-      <option value="Fugue1.mid">Fugue No.1</option>
-      <option value="chpn-p15.mid">Chopin Prelude 15</option>
-      <option value="Knight-Rupert-Schumann.mid">Knight Rupert (Schumann)</option>
-      <option value="rachmaninov3.mid">Rachmaninov 3</option>
-      <option value="Toccata-and-Fugue-Dm.mid">Toccata and Fugue in D minor</option>
-      <option value="hedwig_theme.mid">Hedwig's Theme (Harry Potter)</option>
-    </select>
-    <select id="instrumentSelect" onchange="switchInstrument(this.value)">
-      <option value="piano">Piano</option>
-      <option value="fast">Fast Piano (88-key)</option>
-      <option value="wavetable">Wavetable Piano</option>
-      <option value="electric">Electric Piano</option>
-      <option value="harpsichord">Harpsichord</option>
-      <option value="organ">Church Organ</option>
-      <option value="silent">4'33" (Silent)</option>
-    </select>
-    <button onclick="instrument.resume(); player.play()">Play</button>
-    <button onclick="player.pause()">Pause</button>
-    <span id="time">0:00</span>
-    <input id="progress" type="range" value="0" min="0" max="1" step="0.001" style="width:200px"
-      onmousedown="seeking=true" onmouseup="player.seek(this.value*duration);lastPlayed=-1;seeking=false">
-    Speed: <input type="range" value="1" min="0.2" max="10" step="0.1" style="width:100px" 
-      onchange="player.speed(this.value)"><span id="speedVal">1x</span>
-    <label><input type="checkbox" id="bloomToggle" checked onchange="bloom=this.checked"> Bloom</label>
-    <label><input type="checkbox" id="particlesToggle" checked onchange="showParticles=this.checked"> Particles</label>
+    <span id="playbackControls"></span>
+    <label><input type="checkbox" id="bloomToggle" checked> Bloom</label>
+    <label><input type="checkbox" id="particlesToggle" checked> Particles</label>
   </div>
   <canvas id="canvas"></canvas>
   <div id="piano"></div>
@@ -66,8 +37,7 @@
     const ctx = canvas.getContext('2d');
     const pianoEl = document.getElementById('piano');
     
-    let instrument, audioContext, allNotes = [], duration = 0, lastPlayed = -1, seeking = false, m = null;
-    let bloom = true, showParticles = true, lastMidi = 'rush_e_real.mid';
+    let bloom = true, showParticles = true;
     
     // Particle system
     const particles = [];
@@ -113,12 +83,12 @@
       ctx.shadowBlur = 0;
       ctx.globalAlpha = 1;
     }
+    
     const PIANO_HEIGHT = 120;
     const LOOK_AHEAD = 3; // seconds visible above piano
     const keys = {}; // midi -> element
     
     // Build 88-key piano (A0=21 to C8=108)
-    const whitePattern = [0,2,4,5,7,9,11]; // C,D,E,F,G,A,B offsets
     const blackPattern = [1,3,6,8,10]; // C#,D#,F#,G#,A# offsets
     
     for (let midi = 21; midi <= 108; midi++) {
@@ -138,11 +108,7 @@
     resize();
     window.onresize = resize;
     
-    // Note colors by track
-    const trackColors = ['#e91e63','#9c27b0','#3f51b5','#03a9f4','#009688','#8bc34a','#ffeb3b','#ff9800'];
-    
     function midiToX(midi) {
-      // Map midi 21-108 to screen width, accounting for black key positions
       let whiteCount = 0;
       for (let m = 21; m < midi; m++) {
         if (!blackPattern.includes(m % 12)) whiteCount++;
@@ -157,14 +123,30 @@
       return (canvas.width / 52) * (isBlack ? 0.6 : 1);
     }
     
+    // Playback controller
+    const playback = new PlaybackControls({
+      container: '#playbackControls',
+      onNoteOn: (note, color) => {
+        if (showParticles) spawnParticles(note.midi, color);
+      },
+      onLoad: () => {
+        particles.length = 0;
+      }
+    });
+    
+    document.getElementById('bloomToggle').onchange = e => bloom = e.target.checked;
+    document.getElementById('particlesToggle').onchange = e => showParticles = e.target.checked;
+    
     function render() {
       requestAnimationFrame(render);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       
+      const { lapse, playing, midi, allNotes } = playback;
+      
       // Draw vertical grid lines for octaves (C) and E
       for (let midi = 24; midi <= 108; midi++) {
         const noteInOctave = midi % 12;
-        if (noteInOctave === 0 || noteInOctave === 4) { // C or E
+        if (noteInOctave === 0 || noteInOctave === 4) {
           const x = midiToX(midi);
           ctx.strokeStyle = noteInOctave === 0 ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.1)';
           ctx.lineWidth = noteInOctave === 0 ? 1.5 : 1;
@@ -172,7 +154,6 @@
           ctx.moveTo(x, 0);
           ctx.lineTo(x, canvas.height);
           ctx.stroke();
-          // Octave label for C
           if (noteInOctave === 0) {
             ctx.fillStyle = 'rgba(255,255,255,0.4)';
             ctx.font = '10px sans-serif';
@@ -181,9 +162,9 @@
         }
       }
       
-      // Draw horizontal measure lines (assuming 4/4 time, 120 BPM default)
-      const bpm = m?.header?.bpm || 120;
-      const beatsPerMeasure = m?.header?.timeSignature?.[0] || 4;
+      // Draw horizontal measure lines
+      const bpm = midi?.header?.bpm || 120;
+      const beatsPerMeasure = midi?.header?.timeSignature?.[0] || 4;
       const secondsPerMeasure = (60 / bpm) * beatsPerMeasure;
       const startMeasure = Math.floor((lapse - LOOK_AHEAD) / secondsPerMeasure);
       const endMeasure = Math.ceil((lapse + 1) / secondsPerMeasure);
@@ -201,72 +182,46 @@
         ctx.lineTo(canvas.width, y);
         ctx.stroke();
         
-        // Measure number
         ctx.fillStyle = 'rgba(255,255,255,0.5)';
         ctx.font = '12px sans-serif';
         ctx.fillText(measure + 1, 5, y - 3);
       }
       
       if (playing) {
-        player.update();
+        playback.update();
         updateParticles();
       }
       
-      // Draw particles
       if (showParticles) drawParticles();
-      
-      if (!seeking) {
-        document.getElementById('progress').value = lapse / duration;
-        document.getElementById('time').textContent = Math.floor(lapse/60) + ':' + (lapse%60).toFixed(1).padStart(4,'0');
-        document.getElementById('speedVal').textContent = speed.toFixed(1) + 'x';
-      }
       
       // Reset all keys
       Object.values(keys).forEach(k => k.classList.remove('active'));
       
-      // Draw and play notes
-      for (let i = 0; i < allNotes.length; i++) {
-        const note = allNotes[i];
-        const { midi, time, duration: dur, velocity, trackNo } = note;
+      // Draw notes
+      for (const note of allNotes) {
+        const { midi, time, duration: dur, trackNo } = note;
         
-        // Play note (only when playing)
-        if (playing && i > lastPlayed && time <= lapse) {
-          if (time >= lapse - 0.05) {
-            instrument.resume();
-            instrument.noteOn(midi, velocity);
-            if (showParticles) spawnParticles(midi, trackColors[trackNo % trackColors.length]);
-            setTimeout(() => instrument.noteOff(midi), dur * 1000);
-          }
-          lastPlayed = i;
-        }
-        
-        // Draw falling note
         const startY = canvas.height - (time - lapse) * (canvas.height / LOOK_AHEAD);
         const endY = canvas.height - (time + dur - lapse) * (canvas.height / LOOK_AHEAD);
         
-        // Skip if completely off screen (above or below)
         if (startY < -100 || endY > canvas.height + 100) continue;
         
         const x = midiToX(midi);
         const w = noteWidth(midi) - 2;
         const h = Math.max(startY - endY, 4);
-        const y = endY; // Don't clamp - let it go below screen
+        const y = endY;
         
-        // Light up key when note is playing
         if (time <= lapse && time + dur >= lapse) {
           keys[midi]?.classList.add('active');
         }
         
-        // Draw note bar - brighter when hitting piano
         const isHitting = startY >= canvas.height - 5 && endY <= canvas.height;
-        ctx.fillStyle = trackColors[trackNo % trackColors.length];
+        ctx.fillStyle = playback.getNoteColor(trackNo);
         if (bloom) {
           ctx.shadowColor = ctx.fillStyle;
           ctx.shadowBlur = isHitting ? 25 : 10;
         }
-        if (isHitting) {
-          ctx.fillStyle = '#fff';
-        }
+        if (isHitting) ctx.fillStyle = '#fff';
         ctx.beginPath();
         ctx.roundRect(x + 1, y, w, h, 4);
         ctx.fill();
@@ -274,61 +229,7 @@
       }
     }
     
-    // Instruments
-    const instruments = {
-      fast: () => new FastPiano(),
-      piano: () => new Piano(),
-      wavetable: () => new WavetablePiano(),
-      electric: () => new ElectricPiano(),
-      harpsichord: () => new Harpsichord(),
-      organ: () => new ChurchOrgan(),
-      silent: () => new SilentPiano()
-    };
-    
-    function switchInstrument(type) {
-      instrument = instruments[type]();
-      audioContext = instrument.ctx;
-    }
-    
-    switchInstrument('fast');
-    
-    function loadMidi(file) {
-      if (typeof playing !== 'undefined') player.pause();
-      allNotes = [];
-      lastPlayed = -1;
-      particles.length = 0;
-      
-      MidiConvert.load(file, function(midi) {
-        processMidi(midi);
-      });
-    }
-    
-    function loadMidiFile(file) {
-      if (!file) return;
-      if (typeof playing !== 'undefined') player.pause();
-      allNotes = [];
-      lastPlayed = -1;
-      particles.length = 0;
-      
-      const reader = new FileReader();
-      reader.onload = e => processMidi(MidiConvert.parse(e.target.result));
-      reader.readAsArrayBuffer(file);
-    }
-    
-    function processMidi(midi) {
-      m = midi;
-      midi.tracks.forEach((track, trackNo) => {
-        track.notes.forEach(note => {
-          allNotes.push({ ...note, trackNo });
-        });
-      });
-      allNotes.sort((a, b) => a.time - b.time);
-      duration = allNotes[allNotes.length - 1].time + allNotes[allNotes.length - 1].duration;
-      player.init();
-    }
-    
-    player.init();
-    loadMidi('rush_e_real.mid');
+    playback.loadMidi('rush_e_real.mid');
     render();
   </script>
 </body>
