@@ -3,6 +3,11 @@ Midi Visualization Experiments
 
 27 Dec 2024
 
+[Experiment #015 - Synthesia WebGL](015_synthesia_webgl.html)
+- WebGL2 GPU-accelerated version of Synthesia
+- Blur-based bloom effect with screen blending
+- Batched rendering for better performance
+
 [Experiment #014 - Synthesia](014_synthesia.html)
 - Synthesia-style falling notes visualization
 - 88-key piano at bottom with key lighting
