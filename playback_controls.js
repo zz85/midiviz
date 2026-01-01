@@ -54,6 +54,7 @@ class PlaybackControls {
     
     this.onNoteOn = opts.onNoteOn || (() => {});
     this.onLoad = opts.onLoad || (() => {});
+    this.trackFilter = opts.trackFilter || (() => true);
     
     this.trackColors = ['#e91e63','#9c27b0','#3f51b5','#03a9f4','#009688','#8bc34a','#ffeb3b','#ff9800'];
     
@@ -240,7 +241,7 @@ class PlaybackControls {
     for (let i = this.lastPlayed + 1; i < this.allNotes.length; i++) {
       const note = this.allNotes[i];
       if (note.time > this.lapse) break;
-      if (note.time >= this.lapse - 0.05) {
+      if (note.time >= this.lapse - 0.05 && this.trackFilter(note.trackNo)) {
         this.instrument.noteOn(note.midi, note.velocity);
         const color = this.trackColors[note.trackNo % this.trackColors.length];
         this.onNoteOn(note, color);

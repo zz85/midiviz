@@ -34,6 +34,7 @@
     <label><input type="checkbox" id="bloomToggle" checked> Bloom</label>
     <label><input type="checkbox" id="particlesToggle" checked> Particles</label>
     <label><input type="checkbox" id="noteNamesToggle" checked> Note Names</label>
+    <span id="trackToggles"></span>
   </div>
   <canvas id="canvas"></canvas>
   <div id="piano"></div>
@@ -136,13 +137,33 @@
     }
     
     // Playback controller
+    const enabledTracks = new Set();
+    
+    function buildTrackToggles() {
+      const tracks = [...new Set(playback.allNotes.map(n => n.trackNo))].sort((a,b) => a-b);
+      enabledTracks.clear();
+      tracks.forEach(t => enabledTracks.add(t));
+      document.getElementById('trackToggles').innerHTML = tracks.map(t => 
+        `<label style="margin-left:8px"><input type="checkbox" data-track="${t}" checked>` +
+        `<span style="color:${playback.getNoteColor(t)}">T${t+1}</span></label>`
+      ).join('');
+      document.querySelectorAll('#trackToggles input').forEach(cb => {
+        cb.onchange = e => {
+          const t = +e.target.dataset.track;
+          e.target.checked ? enabledTracks.add(t) : enabledTracks.delete(t);
+        };
+      });
+    }
+    
     const playback = new PlaybackControls({
       container: '#playbackControls',
+      trackFilter: t => enabledTracks.has(t),
       onNoteOn: (note, color) => {
-        if (showParticles) spawnParticles(note.midi, color);
+        if (showParticles && enabledTracks.has(note.trackNo)) spawnParticles(note.midi, color);
       },
       onLoad: () => {
         particles.length = 0;
+        buildTrackToggles();
       }
     });
     
@@ -216,6 +237,8 @@
       // Draw notes
       for (const note of allNotes) {
         const { midi, time, duration: dur, trackNo } = note;
+        
+        if (!enabledTracks.has(trackNo)) continue;
         
         const startY = canvas.height - (time - lapse) * (canvas.height / LOOK_AHEAD);
         const endY = canvas.height - (time + dur - lapse) * (canvas.height / LOOK_AHEAD);
