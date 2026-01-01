@@ -35,6 +35,7 @@
     <label><input type="checkbox" id="particlesToggle" checked> Particles</label>
     <label><input type="checkbox" id="noteNamesToggle" checked> Note Names</label>
     <span id="trackToggles"></span>
+    Transpose: <input type="number" id="transposeInput" value="0" style="width:50px">
   </div>
   <canvas id="canvas"></canvas>
   <div id="piano"></div>
@@ -44,7 +45,7 @@
     const ctx = canvas.getContext('2d');
     const pianoEl = document.getElementById('piano');
     
-    let bloom = true, showParticles = true, showNoteNames = true;
+    let bloom = true, showParticles = true, showNoteNames = true, transpose = 0;
     
     // Particle system
     const particles = [];
@@ -173,6 +174,10 @@
       showNoteNames = e.target.checked;
       document.getElementById('piano').classList.toggle('hide-names', !showNoteNames);
     };
+    document.getElementById('transposeInput').oninput = e => {
+      transpose = +e.target.value;
+      playback.transpose = transpose;
+    };
     
     function render() {
       requestAnimationFrame(render);
@@ -236,7 +241,8 @@
       
       // Draw notes
       for (const note of allNotes) {
-        const { midi, time, duration: dur, trackNo } = note;
+        const { midi: origMidi, time, duration: dur, trackNo } = note;
+        const midi = origMidi + transpose;
         
         if (!enabledTracks.has(trackNo)) continue;
         
@@ -273,7 +279,8 @@
           ctx.shadowColor = '#000';
           ctx.shadowBlur = 4;
           ctx.fillStyle = '#fff';
-          ctx.fillText(midiToName(midi), x + 1 + w/2, y + h - 6);
+          const labelY = Math.min(y + h - 6, canvas.height - 6);
+          ctx.fillText(midiToName(midi), x + 1 + w/2, labelY);
           ctx.shadowBlur = 0;
         }
       }
