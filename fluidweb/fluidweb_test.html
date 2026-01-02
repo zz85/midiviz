@@ -1,11 +1,45 @@
 <!DOCTYPE html>
 <html>
 <body>
+  <button id="play">Play C Major Chord</button>
   <script type="module">
-    import init, { init as synthInit } from './pkg/fluidweb.js';
+    import init, { Synth } from './pkg/fluidweb.js';
+
     await init();
-    console.log('WASM loaded:', synthInit());
+
+    const response = await fetch('../soundbanks/Creative (emu10k1)8MBGMSFX.SF2');
+    const sf2Data = new Uint8Array(await response.arrayBuffer());
+
+    const sampleRate = 44100;
+    const synth = new Synth(sf2Data, sampleRate);
+    console.log('Synth loaded:', synth);
+
+    document.getElementById('play').onclick = async () => {
+      const ctx = new AudioContext({ sampleRate });
+      const duration = 2;
+      const frames = sampleRate * duration;
+      
+      synth.note_on(0, 60, 100); // C4
+      synth.note_on(0, 64, 100); // E4
+      synth.note_on(0, 67, 100); // G4
+
+      const left = new Float32Array(frames);
+      const right = new Float32Array(frames);
+      synth.render(left, right);
+
+      synth.note_off(0, 60);
+      synth.note_off(0, 64);
+      synth.note_off(0, 67);
+
+      const buffer = ctx.createBuffer(2, frames, sampleRate);
+      buffer.copyToChannel(left, 0);
+      buffer.copyToChannel(right, 1);
+
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(ctx.destination);
+      source.start();
+    };
   </script>
 </body>
 </html>
-
