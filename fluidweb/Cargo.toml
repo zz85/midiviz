@@ -1,0 +1,11 @@
+[package]
+name = "fluidweb"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+rustysynth = "1"
+wasm-bindgen = "0.2"
