@@ -8,14 +8,14 @@ class ElectricPiano {
     this.masterGain.connect(this.ctx.destination);
   }
 
-  midiToFreq(midi) {
-    return 440 * Math.pow(2, (midi - 69) / 12);
+  midiToFreq(midi, tuning = 440) {
+    return tuning * Math.pow(2, (midi - 69) / 12);
   }
 
-  noteOn(midi, velocity = 0.7) {
+  noteOn(midi, velocity = 0.7, tuning = 440) {
     if (this.activeNotes.has(midi)) this.noteOff(midi);
     
-    const freq = this.midiToFreq(midi);
+    const freq = this.midiToFreq(midi, tuning);
     const t = this.ctx.currentTime;
     
     // Note gain with envelope

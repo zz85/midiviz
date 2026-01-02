@@ -61,14 +61,14 @@ class WavetablePiano {
     return this.waves[this.waves.length - 1];
   }
 
-  midiToFreq(midi) {
-    return 440 * Math.pow(2, (midi - 69) / 12);
+  midiToFreq(midi, tuning = 440) {
+    return tuning * Math.pow(2, (midi - 69) / 12);
   }
 
-  noteOn(midi, velocity = 0.7) {
+  noteOn(midi, velocity = 0.7, tuning = 440) {
     if (this.activeNotes.has(midi)) this.noteOff(midi);
     
-    const freq = this.midiToFreq(midi);
+    const freq = this.midiToFreq(midi, tuning);
     const t = this.ctx.currentTime;
     const wave = this.getWaveForFreq(freq);
     

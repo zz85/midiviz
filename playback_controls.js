@@ -56,6 +56,7 @@ class PlaybackControls {
     this.onLoad = opts.onLoad || (() => {});
     this.trackFilter = opts.trackFilter || (() => true);
     this.transpose = 0;
+    this.tuning = 440;
     
     this.trackColors = ['#e91e63','#9c27b0','#3f51b5','#03a9f4','#009688','#8bc34a','#ffeb3b','#ff9800'];
     
@@ -244,7 +245,7 @@ class PlaybackControls {
       if (note.time > this.lapse) break;
       if (note.time >= this.lapse - 0.05 && this.trackFilter(note.trackNo)) {
         const transposedMidi = note.midi + this.transpose;
-        this.instrument.noteOn(transposedMidi, note.velocity);
+        this.instrument.noteOn(transposedMidi, note.velocity, this.tuning);
         const color = this.trackColors[note.trackNo % this.trackColors.length];
         this.onNoteOn(note, color);
         setTimeout(() => this.instrument.noteOff(transposedMidi), note.duration * 1000 / this.speed);

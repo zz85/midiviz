@@ -56,13 +56,15 @@ class FastPiano {
     }
   }
 
-  noteOn(midi, velocity = 0.7) {
+  noteOn(midi, velocity = 0.7, tuning = 440) {
     if (this.activeNotes.has(midi)) this.noteOff(midi);
     
     const buffer = this.samples.get(midi);
     if (!buffer) return;
     
     const src = this.ctx.createBufferSource();
+    // Adjust playback rate for tuning (relative to A440)
+    src.playbackRate.value = tuning / 440;
     src.buffer = buffer;
     
     const gain = this.ctx.createGain();

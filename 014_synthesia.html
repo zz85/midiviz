@@ -46,6 +46,7 @@
     <label><input type="checkbox" id="noteNamesToggle" checked> Note Names</label>
     <span id="trackToggles"></span>
     Transpose: <input type="number" id="transposeInput" value="0" style="width:50px">
+    A=<input type="number" id="tuningInput" value="440" min="400" max="480" style="width:50px">Hz
     <label><input type="checkbox" id="previewToggle" checked> Preview</label>
   </div>
   <canvas id="canvas"></canvas>
@@ -195,6 +196,9 @@
     document.getElementById('transposeInput').oninput = e => {
       transpose = +e.target.value;
       playback.transpose = transpose;
+    };
+    document.getElementById('tuningInput').oninput = e => {
+      playback.tuning = +e.target.value;
     };
     document.getElementById('previewToggle').onchange = e => showPreview = e.target.checked;
     

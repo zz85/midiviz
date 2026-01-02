@@ -70,8 +70,8 @@ class Piano {
     return buf;
   }
 
-  midiToFreq(midi) {
-    return 440 * Math.pow(2, (midi - 69) / 12);
+  midiToFreq(midi, tuning = 440) {
+    return tuning * Math.pow(2, (midi - 69) / 12);
   }
 
   // Inharmonicity factor (from PianoForte)
@@ -95,11 +95,11 @@ class Piano {
     }
   }
 
-  noteOn(midi, velocity = 0.7) {
+  noteOn(midi, velocity = 0.7, tuning = 440) {
     if (this.activeNotes.has(midi)) this.noteOff(midi);
     this.limitPolyphony(20);
     
-    const f0 = this.midiToFreq(midi);
+    const f0 = this.midiToFreq(midi, tuning);
     const t = this.ctx.currentTime;
     const profile = this.getProfile(midi);
     
