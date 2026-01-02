@@ -21,6 +21,15 @@
                  margin-left: calc(-100vw / 52 * 0.3); margin-right: calc(-100vw / 52 * 0.3); z-index: 1; }
     .key.active.white { background: linear-gradient(to bottom, #4fc3f7, #81d4fa); }
     .key.active.black { background: linear-gradient(to bottom, #0288d1, #03a9f4); }
+    .key.preview.white { background: linear-gradient(to bottom, #ffcc80, #ffb74d); }
+    .key.preview.black { background: linear-gradient(to bottom, #f57c00, #ff9800); }
+    .key { --preview-t: 0; }
+    .key.preview.white { background: linear-gradient(to bottom, 
+      color-mix(in srgb, #e8e8e8, #ffcc80 calc(var(--preview-t) * 100%)),
+      color-mix(in srgb, #fff, #ffb74d calc(var(--preview-t) * 100%))); }
+    .key.preview.black { background: linear-gradient(to bottom,
+      color-mix(in srgb, #222, #f57c00 calc(var(--preview-t) * 100%)),
+      color-mix(in srgb, #000, #ff9800 calc(var(--preview-t) * 100%))); }
     .key .note-name { display: none; position: absolute; bottom: 5px; left: 50%; transform: translateX(-50%); font: bold 10px sans-serif; pointer-events: none; }
     .key.active .note-name { display: block; }
     .key.white .note-name { color: #333; }
@@ -36,6 +45,7 @@
     <label><input type="checkbox" id="noteNamesToggle" checked> Note Names</label>
     <span id="trackToggles"></span>
     Transpose: <input type="number" id="transposeInput" value="0" style="width:50px">
+    <label><input type="checkbox" id="previewToggle"> Preview</label>
   </div>
   <canvas id="canvas"></canvas>
   <div id="piano"></div>
@@ -45,7 +55,7 @@
     const ctx = canvas.getContext('2d');
     const pianoEl = document.getElementById('piano');
     
-    let bloom = true, showParticles = true, showNoteNames = true, transpose = 0;
+    let bloom = true, showParticles = true, showNoteNames = true, transpose = 0, showPreview = false;
     
     // Particle system
     const particles = [];
@@ -178,6 +188,7 @@
       transpose = +e.target.value;
       playback.transpose = transpose;
     };
+    document.getElementById('previewToggle').onchange = e => showPreview = e.target.checked;
     
     function render() {
       requestAnimationFrame(render);
@@ -237,7 +248,10 @@
       if (showParticles) drawParticles();
       
       // Reset all keys
-      Object.values(keys).forEach(k => k.classList.remove('active'));
+      Object.values(keys).forEach(k => {
+        k.classList.remove('active', 'preview');
+        k.style.setProperty('--preview-t', 0);
+      });
       
       // Draw notes
       for (const note of allNotes) {
@@ -258,6 +272,12 @@
         
         if (time <= lapse && time + dur >= lapse) {
           keys[midi]?.classList.add('active');
+        } else if (showPreview && time > lapse && time < lapse + LOOK_AHEAD && keys[midi]) {
+          const t = (time - lapse) / LOOK_AHEAD;
+          const intensity = Math.pow(1 - t, 3);
+          const key = keys[midi];
+          key.classList.add('preview');
+          key.style.setProperty('--preview-t', Math.max(key.style.getPropertyValue('--preview-t') || 0, intensity));
         }
         
         const isHitting = startY >= canvas.height - 5 && endY <= canvas.height;
