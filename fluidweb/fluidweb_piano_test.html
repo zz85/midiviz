@@ -54,7 +54,7 @@
       status.textContent = 'Loading SoundFont...';
       
       // const response = await fetch('../soundbanks/Creative (emu10k1)8MBGMSFX.SF2');
-      const response = await fetch('../soundbanks/SalamanderGrandPiano-SF2-V3+20200602/SalamanderGrandPiano-V3+20200602.sf2');
+      const response = await fetch('../soundfonts/Roland_Super_XP-80.sf2');
       const sf2Data = new Uint8Array(await response.arrayBuffer());
       
       synth = new Synth(sf2Data, 44100);

@@ -42,15 +42,6 @@
 <body>
   <div id="controls">
     <span id="playbackControls"></span>
-    <select id="soundfontSelect">
-      <option value="soundfonts/FluidR3_GM/FluidR3_GM.sf2">FluidR3_GM</option>
-      <option value="soundfonts/Kawai Grand Piano.sf2">Kawai Grand Piano</option>
-      <option value="soundfonts/SalamanderGrandPiano-SF2-V3+20200602/SalamanderGrandPiano-V3+20200602.sf2">SalamanderGrandPiano</option>
-      <option value="soundfonts/Creative(emu10k1)8MBGMSFX.sf2">Creative emu10k1 8MBGMSFX</option>
-      <option value="soundfonts/Full Grand Piano.sf2">Full Grand Piano</option>
-      <option value="soundfonts/Piano_Infinity_Soundfont.sf2">Piano Infinity</option>
-      <option value="soundfonts/School_Piano_2024.sf2">School Piano 2024</option>
-    </select>
     <label><input type="checkbox" id="bloomToggle" checked> Bloom</label>
     <label><input type="checkbox" id="particlesToggle" checked> Particles</label>
     <label><input type="checkbox" id="noteNamesToggle" checked> Note Names</label>
@@ -188,6 +179,16 @@
     
     const playback = new PlaybackControls({
       container: '#playbackControls',
+      soundfonts: [
+        { value: 'soundfonts/Full Grand Piano.sf2', label: 'Full Grand Piano (20MB)' },
+        { value: 'soundfonts/Motif_ES6_Concert_Piano.sf2', label: 'Motif ES6 Concert Piano (12.6MB)' },
+        // { value: 'soundfonts/Korg_Triton_Instrument_Pack.sf2', label: 'Korg Triton Instrument Pack' },
+        // { value: 'soundfonts/SalamanderGrandPiano-SF2-V3+20200602/SalamanderGrandPiano-V3+20200602.sf2', label: 'Salamander Grand' },
+        // { value: 'soundfonts/Roland XV-5080 PopGrand.sf2', label: 'Roland XV-5080 PopGrand' },
+        // { value: 'soundfonts/Roland_JV1080_Nice_Piano.sf2', label: 'Roland JV1080 Nice (12.7MB)' },
+        { value: 'soundfonts/Roland_Super_XP-80.sf2', label: 'Roland Super XP-80 (1.7MB)' },
+        { value: 'soundfonts/Creative(emu10k1)8MBGMSFX.sf2', label: 'Creative emu10k1 (8MB)' },
+      ],
       trackFilter: t => enabledTracks.has(t),
       onNoteOn: (note, color) => {
         if (showParticles && enabledTracks.has(note.trackNo)) spawnParticles(note.midi, color);
@@ -195,8 +196,26 @@
       onLoad: () => {
         particles.length = 0;
         buildTrackToggles();
+      },
+      onPlay: () => {
+        const sfEl = document.getElementById('soundfontSelect');
+        if (sfEl && playback.instrument.loadSoundfont) {
+          if (!playback.instrument.ready) {
+            playback.instrument.loadSoundfont(sfEl.value);
+          }
+        }
       }
     });
+    
+    // Pre-initialize soundfont on first user interaction
+    const initSoundfont = () => {
+      const sfEl = document.getElementById('soundfontSelect');
+      if (sfEl && playback.instrument.loadSoundfont && !playback.instrument.ready) {
+        playback.instrument.loadSoundfont(sfEl.value);
+      }
+      document.removeEventListener('click', initSoundfont);
+    };
+    document.addEventListener('click', initSoundfont);
     
     document.getElementById('bloomToggle').onchange = e => bloom = e.target.checked;
     document.getElementById('particlesToggle').onchange = e => showParticles = e.target.checked;
@@ -216,11 +235,14 @@
       document.getElementById('yScaleVal').textContent = yScale + 'x';
     };
     document.getElementById('previewToggle').onchange = e => showPreview = e.target.checked;
-    document.getElementById('soundfontSelect').onchange = e => {
-      if (playback.instrument.loadSoundfont) {
-        playback.instrument.loadSoundfont(e.target.value);
-      }
-    };
+    const sfEl = document.getElementById('soundfontSelect');
+    if (sfEl) {
+      sfEl.onchange = e => {
+        if (playback.instrument.loadSoundfont) {
+          playback.instrument.loadSoundfont(e.target.value);
+        }
+      };
+    }
     
     function render() {
       requestAnimationFrame(render);
@@ -338,7 +360,7 @@
       }
     }
     
-    playback.loadMidi('entertainer.mid');
+    playback.loadMidi(document.getElementById('midiSelect').value);
     render();
   </script>
 </body>

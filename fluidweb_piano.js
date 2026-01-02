@@ -5,19 +5,21 @@ class FluidWebPiano {
     this.synth = null;
     this.Synth = null;
     this.ready = false;
+    this.initialized = false;
     this.pending = []; // queue notes until ready
-    this._init(soundfontPath);
+    this.defaultSoundfont = soundfontPath;
   }
 
-  async _init(soundfontPath) {
+  async _init() {
+    if (this.initialized) return;
+    this.initialized = true;
     const { default: init, Synth } = await import('./fluidweb/pkg/fluidweb.js');
     await init();
     this.Synth = Synth;
-    
-    await this.loadSoundfont(soundfontPath);
   }
 
   async loadSoundfont(path) {
+    await this._init();
     this.ready = false;
     const response = await fetch(path);
     const sf2Data = new Uint8Array(await response.arrayBuffer());

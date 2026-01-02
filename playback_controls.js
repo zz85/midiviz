@@ -18,16 +18,18 @@
  */
 class PlaybackControls {
   static defaultMidiFiles = [
+    { value: 'JVKE - golden hour.mid', label: 'Golden Hour (JVKE)' },
+    { value: 'Heart and Soul Piano Duet The Real Version.mid', label: 'Heart and Soul' },
     { value: 'entertainer.mid', label: 'The Entertainer' },
     { value: 'rush_e_real.mid', label: 'Rush E' },
     { value: 'minute_waltz.mid', label: 'Minute Waltz' },
-    { value: 'Prelude1.mid', label: 'Prelude No.1' },
-    { value: 'Fugue1.mid', label: 'Fugue No.1' },
     { value: 'chpn-p15.mid', label: 'Chopin Prelude 15' },
-    { value: 'Knight-Rupert-Schumann.mid', label: 'Knight Rupert (Schumann)' },
     { value: 'rachmaninov3.mid', label: 'Rachmaninov 3' },
     { value: 'Toccata-and-Fugue-Dm.mid', label: 'Toccata and Fugue in D minor' },
     { value: 'hedwig_theme.mid', label: "Hedwig's Theme (Harry Potter)" },
+    { value: 'Knight-Rupert-Schumann.mid', label: 'Knight Rupert (Schumann)' },
+    { value: 'Prelude1.mid', label: 'Bach Prelude No.1' },
+    { value: 'Fugue1.mid', label: 'Bach Fugue No.1' },
   ];
 
   static defaultInstruments = [
@@ -56,6 +58,7 @@ class PlaybackControls {
     
     this.onNoteOn = opts.onNoteOn || (() => {});
     this.onLoad = opts.onLoad || (() => {});
+    this.onPlay = opts.onPlay || (() => {});
     this.trackFilter = opts.trackFilter || (() => true);
     this.transpose = 0;
     this.tuning = 440;
@@ -76,7 +79,8 @@ class PlaybackControls {
       this.instruments.fluidweb = () => new FluidWebPiano();
     }
     
-    this.instrument = this.instruments.wavetable();
+    const defaultInst = (typeof FluidWebPiano !== 'undefined') ? 'fluidweb' : 'wavetable';
+    this.instrument = this.instruments[defaultInst]();
     this.audioContext = this.instrument.ctx;
     
     if (opts.container) {
@@ -101,17 +105,22 @@ class PlaybackControls {
     const el = typeof container === 'string' ? document.querySelector(container) : container;
     const midiFiles = opts.midiFiles || PlaybackControls.defaultMidiFiles;
     let instruments = opts.instruments || PlaybackControls.defaultInstruments;
-    if (typeof FluidWebPiano !== 'undefined') {
+    const hasFluidWeb = typeof FluidWebPiano !== 'undefined';
+    if (hasFluidWeb) {
       instruments = [PlaybackControls.fluidWebInstrument, ...instruments];
     }
     
     const midiOptions = midiFiles.map((f, i) => `<option value="${f.value}"${i === 0 ? ' selected' : ''}>${f.label}</option>`).join('');
     const instOptions = instruments.map((i, idx) => `<option value="${i.value}"${idx === 0 ? ' selected' : ''}>${i.label}</option>`).join('');
+    const soundfonts = opts.soundfonts || PlaybackControls.defaultSoundfonts || [];
+    const sfOptions = soundfonts.map((sf, i) => `<option value="${sf.value}"${i === 0 ? ' selected' : ''}>${sf.label}</option>`).join('');
+    const sfSelect = hasFluidWeb && soundfonts.length ? `<select id="soundfontSelect">${sfOptions}</select>` : '';
     
     el.innerHTML = `
       <input type="file" id="midiFile" accept=".mid,.midi" hidden>
       <select id="midiSelect"><option value="browse">Browse...</option>${midiOptions}</select>
       <select id="instrumentSelect">${instOptions}</select>
+      ${sfSelect}
       <button id="playBtn">Play</button>
       <button id="pauseBtn">Pause</button>
       <span id="time">0:00</span>
@@ -220,6 +229,7 @@ class PlaybackControls {
     if (!this.playing) {
       this.playing = true;
       this.start = this.audioContext.currentTime - this.lapse / this.speed;
+      this.onPlay();
     }
   }
   
