@@ -47,6 +47,7 @@
     <span id="trackToggles"></span>
     Transpose: <input type="number" id="transposeInput" value="0" style="width:50px">
     A=<input type="number" id="tuningInput" value="440" min="400" max="480" style="width:50px">Hz
+    Y-Scale: <input type="range" id="yScaleInput" value="1" min="0.001" max="3" step="0.001" style="width:80px"><span id="yScaleVal">1x</span>
     <label><input type="checkbox" id="previewToggle" checked> Preview</label>
   </div>
   <canvas id="canvas"></canvas>
@@ -57,7 +58,7 @@
     const ctx = canvas.getContext('2d');
     const pianoEl = document.getElementById('piano');
     
-    let bloom = true, showParticles = true, showNoteNames = true, transpose = 0, showPreview = true;
+    let bloom = true, showParticles = true, showNoteNames = true, transpose = 0, showPreview = true, yScale = 1;
     
     // Particle system
     const particles = [];
@@ -200,6 +201,10 @@
     document.getElementById('tuningInput').oninput = e => {
       playback.tuning = +e.target.value;
     };
+    document.getElementById('yScaleInput').oninput = e => {
+      yScale = +e.target.value;
+      document.getElementById('yScaleVal').textContent = yScale + 'x';
+    };
     document.getElementById('previewToggle').onchange = e => showPreview = e.target.checked;
     
     function render() {
@@ -237,7 +242,7 @@
       for (let measure = startMeasure; measure <= endMeasure; measure++) {
         if (measure < 0) continue;
         const measureTime = measure * secondsPerMeasure;
-        const y = canvas.height - (measureTime - lapse) * (canvas.height / LOOK_AHEAD);
+        const y = canvas.height - (measureTime - lapse) * (canvas.height / LOOK_AHEAD) * yScale;
         if (y < 0 || y > canvas.height) continue;
         
         ctx.strokeStyle = 'rgba(255,255,255,0.2)';
@@ -272,8 +277,8 @@
         
         if (!enabledTracks.has(trackNo)) continue;
         
-        const startY = canvas.height - (time - lapse) * (canvas.height / LOOK_AHEAD);
-        const endY = canvas.height - (time + dur - lapse) * (canvas.height / LOOK_AHEAD);
+        const startY = canvas.height - (time - lapse) * (canvas.height / LOOK_AHEAD) * yScale;
+        const endY = canvas.height - (time + dur - lapse) * (canvas.height / LOOK_AHEAD) * yScale;
         
         if (startY < -100 || endY > canvas.height + 100) continue;
         
