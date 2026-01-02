@@ -9,3 +9,4 @@ crate-type = ["cdylib"]
 [dependencies]
 rustysynth = "1"
 wasm-bindgen = "0.2"
+tinyaudio = "2"

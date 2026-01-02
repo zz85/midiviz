@@ -11,8 +11,9 @@
   </style>
 </head>
 <body>
-  <h3>FluidWeb SoundFont Piano - Click keys or use keyboard</h3>
-  <div id="status">Loading SoundFont...</div>
+  <h3>FluidWeb SoundFont Piano (tinyaudio + AudioWorklet)</h3>
+  <button id="start">Click to Start</button>
+  <div id="status">Click button to load SoundFont...</div>
   <div id="display">MIDI: --</div>
   <div class="keys" id="keyboard"></div>
 
@@ -24,35 +25,9 @@
     const status = document.getElementById('status');
     const display = document.getElementById('display');
     const keyboard = document.getElementById('keyboard');
+    const startBtn = document.getElementById('start');
 
-    // Load SoundFont
-    const response = await fetch('../soundbanks/Creative (emu10k1)8MBGMSFX.SF2');
-    const sf2Data = new Uint8Array(await response.arrayBuffer());
-
-    const sampleRate = 44100;
-    const synth = new Synth(sf2Data, sampleRate);
-    status.textContent = 'SoundFont loaded! Click a key to start.';
-
-    let ctx = null;
-    let scriptNode = null;
-
-    function startAudio() {
-      if (ctx) return;
-      ctx = new AudioContext({ sampleRate });
-      
-      // Use ScriptProcessorNode for simplicity (deprecated but works everywhere)
-      const bufferSize = 2048;
-      scriptNode = ctx.createScriptProcessor(bufferSize, 0, 2);
-      
-      scriptNode.onaudioprocess = (e) => {
-        const left = e.outputBuffer.getChannelData(0);
-        const right = e.outputBuffer.getChannelData(1);
-        synth.render(left, right);
-      };
-      
-      scriptNode.connect(ctx.destination);
-      status.textContent = 'Playing';
-    }
+    let synth = null;
 
     // Build keyboard
     const startMidi = 48;
@@ -74,18 +49,30 @@
 
     const showMidi = midi => display.textContent = 'MIDI: ' + midi;
 
+    startBtn.onclick = async () => {
+      startBtn.disabled = true;
+      status.textContent = 'Loading SoundFont...';
+      
+      // const response = await fetch('../soundbanks/Creative (emu10k1)8MBGMSFX.SF2');
+      const response = await fetch('../soundbanks/SalamanderGrandPiano-SF2-V3+20200602/SalamanderGrandPiano-V3+20200602.sf2');
+      const sf2Data = new Uint8Array(await response.arrayBuffer());
+      
+      synth = new Synth(sf2Data, 44100);
+      status.textContent = 'Ready! Play with mouse or keyboard.';
+      startBtn.style.display = 'none';
+    };
+
     // Mouse events
     keyboard.addEventListener('mousedown', e => {
-      if (e.target.dataset.midi) {
-        startAudio();
-        const midi = +e.target.dataset.midi;
-        synth.note_on(0, midi, 100);
-        showMidi(midi);
-        e.target.classList.add('active');
-      }
+      if (!synth || !e.target.dataset.midi) return;
+      const midi = +e.target.dataset.midi;
+      synth.note_on(0, midi, 100);
+      showMidi(midi);
+      e.target.classList.add('active');
     });
 
     document.addEventListener('mouseup', () => {
+      if (!synth) return;
       document.querySelectorAll('.key.active').forEach(k => {
         synth.note_off(0, +k.dataset.midi);
         k.classList.remove('active');
@@ -93,25 +80,21 @@
     });
 
     // Keyboard events
-    const activeKeys = new Set();
     document.addEventListener('keydown', e => {
-      if (e.repeat) return;
+      if (!synth || e.repeat) return;
       const i = keyMapFixed[e.key.toLowerCase()];
       if (i !== undefined) {
-        startAudio();
         const midi = startMidi + i;
         synth.note_on(0, midi, 100);
         showMidi(midi);
-        activeKeys.add(midi);
       }
     });
 
     document.addEventListener('keyup', e => {
+      if (!synth) return;
       const i = keyMapFixed[e.key.toLowerCase()];
       if (i !== undefined) {
-        const midi = startMidi + i;
-        synth.note_off(0, midi);
-        activeKeys.delete(midi);
+        synth.note_off(0, startMidi + i);
       }
     });
   </script>
