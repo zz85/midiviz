@@ -45,7 +45,7 @@
     <label><input type="checkbox" id="noteNamesToggle" checked> Note Names</label>
     <span id="trackToggles"></span>
     Transpose: <input type="number" id="transposeInput" value="0" style="width:50px">
-    <label><input type="checkbox" id="previewToggle"> Preview</label>
+    <label><input type="checkbox" id="previewToggle" checked> Preview</label>
   </div>
   <canvas id="canvas"></canvas>
   <div id="piano"></div>
@@ -55,7 +55,7 @@
     const ctx = canvas.getContext('2d');
     const pianoEl = document.getElementById('piano');
     
-    let bloom = true, showParticles = true, showNoteNames = true, transpose = 0, showPreview = false;
+    let bloom = true, showParticles = true, showNoteNames = true, transpose = 0, showPreview = true;
     
     // Particle system
     const particles = [];
@@ -103,7 +103,7 @@
     }
     
     const PIANO_HEIGHT = 120;
-    const LOOK_AHEAD = 3; // seconds visible above piano
+    const LOOK_AHEAD = 1; // seconds visible above piano
     const keys = {}; // midi -> element
     
     // Build 88-key piano (A0=21 to C8=108)
@@ -274,7 +274,7 @@
           keys[midi]?.classList.add('active');
         } else if (showPreview && time > lapse && time < lapse + LOOK_AHEAD && keys[midi]) {
           const t = (time - lapse) / LOOK_AHEAD;
-          const intensity = Math.pow(1 - t, 3);
+          const intensity = 1 - Math.log(1 + t * 9) / Math.log(10);
           const key = keys[midi];
           key.classList.add('preview');
           key.style.setProperty('--preview-t', Math.max(key.style.getPropertyValue('--preview-t') || 0, intensity));
@@ -306,7 +306,7 @@
       }
     }
     
-    playback.loadMidi('rush_e_real.mid');
+    playback.loadMidi('entertainer.mid');
     render();
   </script>
 </body>

@@ -31,9 +31,9 @@ class PlaybackControls {
   ];
 
   static defaultInstruments = [
+    { value: 'wavetable', label: 'Wavetable Piano' },
     { value: 'piano', label: 'Piano' },
     { value: 'fast', label: 'Fast Piano (88-key)' },
-    { value: 'wavetable', label: 'Wavetable Piano' },
     { value: 'electric', label: 'Electric Piano' },
     { value: 'harpsichord', label: 'Harpsichord' },
     { value: 'organ', label: 'Church Organ' },
@@ -70,7 +70,7 @@ class PlaybackControls {
       silent: () => new SilentPiano()
     };
     
-    this.instrument = this.instruments.piano();
+    this.instrument = this.instruments.wavetable();
     this.audioContext = this.instrument.ctx;
     
     if (opts.container) {
