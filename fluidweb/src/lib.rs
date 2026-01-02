@@ -56,3 +56,33 @@ impl Synth {
         self.state.lock().unwrap().synthesizer.note_off(channel, key);
     }
 }
+
+// Manual rendering version for ScriptProcessorNode (iOS compatible)
+#[wasm_bindgen]
+pub struct SynthManual {
+    synthesizer: Synthesizer,
+}
+
+#[wasm_bindgen]
+impl SynthManual {
+    #[wasm_bindgen(constructor)]
+    pub fn new(sf2_data: &[u8], sample_rate: i32) -> Result<SynthManual, JsError> {
+        let mut cursor = Cursor::new(sf2_data);
+        let sound_font = Arc::new(SoundFont::new(&mut cursor).map_err(|e| JsError::new(&e.to_string()))?);
+        let settings = SynthesizerSettings::new(sample_rate);
+        let synthesizer = Synthesizer::new(&sound_font, &settings).map_err(|e| JsError::new(&e.to_string()))?;
+        Ok(SynthManual { synthesizer })
+    }
+
+    pub fn note_on(&mut self, channel: i32, key: i32, velocity: i32) {
+        self.synthesizer.note_on(channel, key, velocity);
+    }
+
+    pub fn note_off(&mut self, channel: i32, key: i32) {
+        self.synthesizer.note_off(channel, key);
+    }
+
+    pub fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
+        self.synthesizer.render(left, right);
+    }
+}

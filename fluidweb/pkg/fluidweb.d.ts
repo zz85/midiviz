@@ -20,6 +20,15 @@ export class Synth {
   note_off(channel: number, key: number): void;
 }
 
+export class SynthManual {
+  free(): void;
+  [Symbol.dispose](): void;
+  constructor(sf2_data: Uint8Array, sample_rate: number);
+  note_on(channel: number, key: number, velocity: number): void;
+  note_off(channel: number, key: number): void;
+  render(left: Float32Array, right: Float32Array): void;
+}
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
@@ -28,6 +37,11 @@ export interface InitOutput {
   readonly synth_new: (a: number, b: number, c: number) => [number, number, number];
   readonly synth_note_on: (a: number, b: number, c: number, d: number) => void;
   readonly synth_note_off: (a: number, b: number, c: number) => void;
+  readonly __wbg_synthmanual_free: (a: number, b: number) => void;
+  readonly synthmanual_new: (a: number, b: number, c: number) => [number, number, number];
+  readonly synthmanual_note_on: (a: number, b: number, c: number, d: number) => void;
+  readonly synthmanual_note_off: (a: number, b: number, c: number) => void;
+  readonly synthmanual_render: (a: number, b: number, c: number, d: any, e: number, f: number, g: any) => void;
   readonly __wbg_outputdevice_free: (a: number, b: number) => void;
   readonly outputdevice_close: (a: number) => void;
   readonly wasm_bindgen__convert__closures_____invoke__hced286be6545c1a4: (a: number, b: number) => void;

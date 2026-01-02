@@ -8,6 +8,15 @@ Midi Visualization Experiments
 - Multiple .sf2 soundfont selection
 - Real-time SF2 playback with AudioWorklet
 
+[FluidWeb Piano Test](fluidweb/fluidweb_piano_test.html)
+- WASM SoundFont synth with AudioWorklet
+
+[FluidWeb Piano (ScriptProcessor)](fluidweb/fluidweb_piano_scriptprocessor.html)
+- WASM SoundFont synth with ScriptProcessorNode (iOS compatible)
+
+[FluidWeb Test](fluidweb/fluidweb_test.html)
+- Basic FluidWeb WASM test
+
 27 Dec 2024
 
 [Experiment #016 - Synthesia Three.js](016_synthesia_threejs.html)
