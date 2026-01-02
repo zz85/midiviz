@@ -39,6 +39,8 @@ class PlaybackControls {
     { value: 'organ', label: 'Church Organ' },
     { value: 'silent', label: "4'33\" (Silent)" },
   ];
+  
+  static fluidWebInstrument = { value: 'fluidweb', label: 'SoundFont (FluidWeb)' };
 
   constructor(opts = {}) {
     this.allNotes = [];
@@ -70,6 +72,9 @@ class PlaybackControls {
       organ: () => new ChurchOrgan(),
       silent: () => new SilentPiano()
     };
+    if (typeof FluidWebPiano !== 'undefined') {
+      this.instruments.fluidweb = () => new FluidWebPiano();
+    }
     
     this.instrument = this.instruments.wavetable();
     this.audioContext = this.instrument.ctx;
@@ -95,7 +100,10 @@ class PlaybackControls {
   _injectHTML(container, opts) {
     const el = typeof container === 'string' ? document.querySelector(container) : container;
     const midiFiles = opts.midiFiles || PlaybackControls.defaultMidiFiles;
-    const instruments = opts.instruments || PlaybackControls.defaultInstruments;
+    let instruments = opts.instruments || PlaybackControls.defaultInstruments;
+    if (typeof FluidWebPiano !== 'undefined') {
+      instruments = [PlaybackControls.fluidWebInstrument, ...instruments];
+    }
     
     const midiOptions = midiFiles.map((f, i) => `<option value="${f.value}"${i === 0 ? ' selected' : ''}>${f.label}</option>`).join('');
     const instOptions = instruments.map((i, idx) => `<option value="${i.value}"${idx === 0 ? ' selected' : ''}>${i.label}</option>`).join('');
