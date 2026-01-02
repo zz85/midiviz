@@ -1,0 +1,15 @@
+{
+  "name": "fluidweb",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "fluidweb_bg.wasm",
+    "fluidweb.js",
+    "fluidweb.d.ts"
+  ],
+  "main": "fluidweb.js",
+  "types": "fluidweb.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
