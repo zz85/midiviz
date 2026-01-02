@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>FluidWeb Piano Test</title>
+  <style>
+    .keys { display: flex; }
+    .key { width: 40px; height: 150px; border: 1px solid #000; background: #fff; cursor: pointer; }
+    .key.black { width: 25px; height: 100px; background: #000; margin: 0 -12px; z-index: 1; }
+    .key:active, .key.active { background: #ddd; }
+    .key.black:active, .key.black.active { background: #333; }
+  </style>
+</head>
+<body>
+  <h3>FluidWeb SoundFont Piano (tinyaudio + AudioWorklet)</h3>
+  <button id="start">Click to Start</button>
+  <div id="status">Click button to load SoundFont...</div>
+  <div id="display">MIDI: --</div>
+  <div class="keys" id="keyboard"></div>
+
+  <script type="module">
+    import init, { Synth } from './pkg/fluidweb.js';
+
+    await init();
+
+    const status = document.getElementById('status');
+    const display = document.getElementById('display');
+    const keyboard = document.getElementById('keyboard');
+    const startBtn = document.getElementById('start');
+
+    let synth = null;
+
+    // Build keyboard
+    const startMidi = 48;
+    const pattern = [0,1,0,1,0,0,1,0,1,0,1,0];
+    const fullPattern = [...pattern, ...pattern, ...pattern, 0];
+
+    fullPattern.forEach((isBlack, i) => {
+      const key = document.createElement('div');
+      key.className = 'key' + (isBlack ? ' black' : '');
+      key.dataset.midi = startMidi + i;
+      keyboard.appendChild(key);
+    });
+
+    const keyMapFixed = {
+      'z':0,'x':2,'c':4,'v':5,'b':7,'n':9,'m':11,
+      'a':12,'w':13,'s':14,'e':15,'d':16,'f':17,'t':18,'g':19,'y':20,'h':21,'u':22,'j':23,'k':24,
+      '1':24,'2':25,'3':26,'4':27,'5':28,'6':29,'7':30,'8':31,'9':32,'0':33
+    };
+
+    const showMidi = midi => display.textContent = 'MIDI: ' + midi;
+
+    startBtn.onclick = async () => {
+      startBtn.disabled = true;
+      status.textContent = 'Loading SoundFont...';
+      
+      // const response = await fetch('../soundbanks/Creative (emu10k1)8MBGMSFX.SF2');
+      const response = await fetch('../soundfonts/Roland_Super_XP-80.sf2');
+      const sf2Data = new Uint8Array(await response.arrayBuffer());
+      
+      synth = new Synth(sf2Data, 44100);
+      status.textContent = 'Ready! Play with mouse or keyboard.';
+      startBtn.style.display = 'none';
+    };
+
+    // Mouse events
+    keyboard.addEventListener('mousedown', e => {
+      if (!synth || !e.target.dataset.midi) return;
+      const midi = +e.target.dataset.midi;
+      synth.note_on(0, midi, 100);
+      showMidi(midi);
+      e.target.classList.add('active');
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (!synth) return;
+      document.querySelectorAll('.key.active').forEach(k => {
+        synth.note_off(0, +k.dataset.midi);
+        k.classList.remove('active');
+      });
+    });
+
+    // Keyboard events
+    document.addEventListener('keydown', e => {
+      if (!synth || e.repeat) return;
+      const i = keyMapFixed[e.key.toLowerCase()];
+      if (i !== undefined) {
+        const midi = startMidi + i;
+        synth.note_on(0, midi, 100);
+        showMidi(midi);
+      }
+    });
+
+    document.addEventListener('keyup', e => {
+      if (!synth) return;
+      const i = keyMapFixed[e.key.toLowerCase()];
+      if (i !== undefined) {
+        synth.note_off(0, startMidi + i);
+      }
+    });
+  </script>
+</body>
+</html>
