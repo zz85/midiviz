@@ -1,7 +1,7 @@
 <!DOCTYPE HTML>
 <html>
 <head>
-  <script src="MidiConvert.js"></script>
+  <script src="tonejs-midi.js"></script>
   <script src="piano.js"></script>
   <script src="harpsichord.js"></script>
   <script src="electric_piano.js"></script>
@@ -50,6 +50,7 @@
     A=<input type="number" id="tuningInput" value="440" min="400" max="480" style="width:50px">Hz
     Y-Scale: <input type="range" id="yScaleInput" value="1" min="0.001" max="3" step="0.001" style="width:80px"><span id="yScaleVal">1x</span>
     <label><input type="checkbox" id="previewToggle" checked> Preview</label>
+    <span id="tempoDisplay" style="margin-left:10px">BPM: --</span>
   </div>
   <canvas id="canvas"></canvas>
   <div id="piano"></div>
@@ -180,12 +181,8 @@
     const playback = new PlaybackControls({
       container: '#playbackControls',
       soundfonts: [
-        { value: 'soundfonts/Full Grand Piano.sf2', label: 'Full Grand Piano (20MB)' },
         { value: 'soundfonts/Motif_ES6_Concert_Piano.sf2', label: 'Motif ES6 Concert Piano (12.6MB)' },
-        // { value: 'soundfonts/Korg_Triton_Instrument_Pack.sf2', label: 'Korg Triton Instrument Pack' },
-        // { value: 'soundfonts/SalamanderGrandPiano-SF2-V3+20200602/SalamanderGrandPiano-V3+20200602.sf2', label: 'Salamander Grand' },
-        // { value: 'soundfonts/Roland XV-5080 PopGrand.sf2', label: 'Roland XV-5080 PopGrand' },
-        // { value: 'soundfonts/Roland_JV1080_Nice_Piano.sf2', label: 'Roland JV1080 Nice (12.7MB)' },
+        { value: 'soundfonts/Full Grand Piano.sf2', label: 'Full Grand Piano (20MB)' },
         { value: 'soundfonts/Roland_Super_XP-80.sf2', label: 'Roland Super XP-80 (1.7MB)' },
         { value: 'soundfonts/Creative(emu10k1)8MBGMSFX.sf2', label: 'Creative emu10k1 (8MB)' },
       ],
@@ -196,6 +193,9 @@
       onLoad: () => {
         particles.length = 0;
         buildTrackToggles();
+        console.log('header:', playback.midi?.header);
+        console.log('tracks:', playback.midi?.tracks?.length);
+        console.log('allNotes:', playback.allNotes?.length);
       },
       onPlay: () => {
         const sfEl = document.getElementById('soundfontSelect');
@@ -248,7 +248,7 @@
       requestAnimationFrame(render);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       
-      const { lapse, playing, midi, allNotes } = playback;
+      const { lapse, playing, midi: midiData, allNotes } = playback;
       
       // Draw vertical grid lines for octaves (C) and E
       for (let midi = 24; midi <= 108; midi++) {
@@ -269,29 +269,45 @@
         }
       }
       
-      // Draw horizontal measure lines
-      const bpm = midi?.header?.bpm || 120;
-      const beatsPerMeasure = midi?.header?.timeSignature?.[0] || 4;
-      const secondsPerMeasure = (60 / bpm) * beatsPerMeasure;
-      const startMeasure = Math.floor((lapse - LOOK_AHEAD) / secondsPerMeasure);
-      const endMeasure = Math.ceil((lapse + 1) / secondsPerMeasure);
+      // Get tempo at a given time (supports tempo changes)
+      const tempos = midiData?.header?.tempos || [{bpm: 120, time: 0}];
+      function getTempoAt(t) {
+        for (let i = tempos.length - 1; i >= 0; i--) {
+          if ((tempos[i].time || 0) <= t) return tempos[i].bpm;
+        }
+        return tempos[0]?.bpm || 120;
+      }
       
-      for (let measure = startMeasure; measure <= endMeasure; measure++) {
-        if (measure < 0) continue;
-        const measureTime = measure * secondsPerMeasure;
-        const y = canvas.height - (measureTime - lapse) * (canvas.height / LOOK_AHEAD) * yScale;
-        if (y < 0 || y > canvas.height) continue;
+      // Update tempo display
+      document.getElementById('tempoDisplay').textContent = 'BPM: ' + Math.round(getTempoAt(lapse));
+      
+      // Draw horizontal measure lines with tempo changes
+      const timeSig = midiData?.header?.timeSignatures?.[0]?.timeSignature || [4, 4];
+      const beatsPerMeasure = timeSig[0];
+      
+      // Build measure times accounting for tempo changes
+      let measureTime = 0, measure = 0;
+      while (measureTime < lapse + LOOK_AHEAD + 10) {
+        const bpm = getTempoAt(measureTime);
+        const secondsPerMeasure = (60 / bpm) * beatsPerMeasure;
         
-        ctx.strokeStyle = 'rgba(255,255,255,0.2)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(canvas.width, y);
-        ctx.stroke();
-        
-        ctx.fillStyle = 'rgba(255,255,255,0.5)';
-        ctx.font = '12px sans-serif';
-        ctx.fillText(measure + 1, 5, y - 3);
+        if (measureTime >= lapse - 1) {
+          const y = canvas.height - (measureTime - lapse) * (canvas.height / LOOK_AHEAD) * yScale;
+          if (y >= 0 && y <= canvas.height) {
+            ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(canvas.width, y);
+            ctx.stroke();
+            
+            ctx.fillStyle = 'rgba(255,255,255,0.5)';
+            ctx.font = '12px sans-serif';
+            ctx.fillText(measure + 1, 5, y - 3);
+          }
+        }
+        measureTime += secondsPerMeasure;
+        measure++;
       }
       
       if (playing) {
@@ -308,6 +324,8 @@
       });
       
       // Draw notes
+      if (!allNotes?.length) console.log('no notes to draw');
+      else if (allNotes.length && !window._loggedNote) { console.log('first note:', allNotes[0]); window._loggedNote = true; }
       for (const note of allNotes) {
         const { midi: origMidi, time, duration: dur, trackNo } = note;
         const midi = origMidi + transpose;

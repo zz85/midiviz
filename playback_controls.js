@@ -188,7 +188,7 @@ class PlaybackControls {
   loadMidi(file) {
     this.pause();
     this._reset();
-    MidiConvert.load(file, midi => this._processMidi(midi));
+    Midi.fromUrl(file).then(midi => this._processMidi(midi));
   }
   
   loadMidiFile(file) {
@@ -196,7 +196,7 @@ class PlaybackControls {
     this.pause();
     this._reset();
     const reader = new FileReader();
-    reader.onload = e => this._processMidi(MidiConvert.parse(e.target.result));
+    reader.onload = e => this._processMidi(new Midi(e.target.result));
     reader.readAsArrayBuffer(file);
   }
   
@@ -213,7 +213,13 @@ class PlaybackControls {
     this.midi = midi;
     midi.tracks.forEach((track, trackNo) => {
       track.notes.forEach(note => {
-        this.allNotes.push({ ...note, trackNo });
+        this.allNotes.push({
+          midi: note.midi,
+          time: note.time,
+          duration: note.duration,
+          velocity: note.velocity,
+          trackNo
+        });
       });
     });
     this.allNotes.sort((a, b) => a.time - b.time);
