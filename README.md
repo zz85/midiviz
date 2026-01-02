@@ -1,6 +1,13 @@
 Midi Visualization Experiments
 
 
+2 Jan 2025
+
+[Experiment #017 - Synthesia FluidWeb](017_synthesia_fluidweb.html)
+- WASM-based SoundFont synthesizer (Rust/fluidlite)
+- Multiple .sf2 soundfont selection
+- Real-time SF2 playback with AudioWorklet
+
 27 Dec 2024
 
 [Experiment #016 - Synthesia Three.js](016_synthesia_threejs.html)
