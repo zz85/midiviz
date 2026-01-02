@@ -18,18 +18,57 @@
  */
 class PlaybackControls {
   static defaultMidiFiles = [
+    // Original
     { value: 'JVKE - golden hour.mid', label: 'Golden Hour (JVKE)' },
     { value: 'Heart and Soul Piano Duet The Real Version.mid', label: 'Heart and Soul' },
     { value: 'entertainer.mid', label: 'The Entertainer' },
     { value: 'rush_e_real.mid', label: 'Rush E' },
     { value: 'minute_waltz.mid', label: 'Minute Waltz' },
-    { value: 'chpn-p15.mid', label: 'Chopin Prelude 15' },
     { value: 'rachmaninov3.mid', label: 'Rachmaninov 3' },
     { value: 'Toccata-and-Fugue-Dm.mid', label: 'Toccata and Fugue in D minor' },
     { value: 'hedwig_theme.mid', label: "Hedwig's Theme (Harry Potter)" },
     { value: 'Knight-Rupert-Schumann.mid', label: 'Knight Rupert (Schumann)' },
     { value: 'Prelude1.mid', label: 'Bach Prelude No.1' },
     { value: 'Fugue1.mid', label: 'Bach Fugue No.1' },
+    // Classical
+    { value: 'midis/bach_846.mid', label: 'Bach - Prelude in C Major BWV 846' },
+    { value: 'midis/bach_847.mid', label: 'Bach - Prelude & Fugue BWV 847' },
+    { value: 'midis/elise.mid', label: 'Beethoven - Für Elise' },
+    { value: 'midis/mond_1.mid', label: 'Beethoven - Moonlight Sonata' },
+    { value: 'midis/pathetique_1.mid', label: 'Beethoven - Pathétique Sonata' },
+    { value: 'midis/chpn_op66.mid', label: 'Chopin - Fantaisie-Impromptu' },
+    { value: 'midis/chpn-p15.mid', label: 'Chopin - Raindrop Prelude' },
+    { value: 'midis/chpn_op27_2.mid', label: 'Chopin - Nocturne Op.27 No.2' },
+    { value: 'midis/chpn_op10_e12.mid', label: 'Chopin - Revolutionary Etude' },
+    { value: 'midis/chp_op18.mid', label: 'Chopin - Grande Valse Brillante' },
+    { value: 'midis/deb_clai.mid', label: 'Debussy - Clair de Lune' },
+    { value: 'midis/deb_pass.mid', label: 'Debussy - Passepied' },
+    { value: 'midis/liz_et2.mid', label: 'Liszt - Etude No.2' },
+    { value: 'midis/mz_331_1.mid', label: 'Mozart - Piano Sonata K.331' },
+    { value: 'midis/mz_545_1.mid', label: 'Mozart - Piano Sonata K.545' },
+    { value: 'midis/schuim-3.mid', label: 'Schubert - Impromptu No.3' },
+    { value: 'midis/scn15_7.mid', label: 'Schumann - Träumerei' },
+    { value: 'midis/grieg_halling.mid', label: 'Grieg - Halling' },
+    // Modern
+    { value: 'midis/river_flows_in_you.mid', label: 'Yiruma - River Flows in You' },
+    { value: 'midis/kiss_the_rain.mid', label: 'Yiruma - Kiss the Rain' },
+    { value: 'midis/nuvole_bianche.mid', label: 'Einaudi - Nuvole Bianche' },
+    { value: 'midis/una_mattina.mid', label: 'Einaudi - Una Mattina' },
+    { value: 'midis/fly_einaudi.mid', label: 'Einaudi - Fly' },
+    { value: 'midis/comptine.mid', label: 'Tiersen - Comptine (Amélie)' },
+    { value: 'midis/time_zimmer.mid', label: 'Zimmer - Time (Inception)' },
+    { value: 'midis/interstellar.mid', label: 'Zimmer - Interstellar' },
+    // Video Games
+    { value: 'midis/ff_prelude.mid', label: 'Final Fantasy - Prelude' },
+    { value: 'midis/ff_battle.mid', label: 'Final Fantasy - Battle' },
+    { value: 'midis/zelda_overworld.mid', label: 'Zelda - Overworld Theme' },
+    { value: 'midis/zelda_gerudo_valley.mid', label: 'Zelda - Gerudo Valley' },
+    { value: 'midis/zelda_kakariko.mid', label: 'Zelda - Kakariko Village' },
+    { value: 'midis/mario_theme.mid', label: 'Super Mario - Main Theme' },
+    { value: 'midis/mario_ground.mid', label: 'Super Mario - Ground Theme' },
+    { value: 'midis/mario_castle.mid', label: 'Super Mario - Castle Theme' },
+    { value: 'midis/minecraft_sweden.mid', label: 'Minecraft - Sweden' },
+    { value: 'midis/skyrim_sons.mid', label: 'Skyrim - Sons of Skyrim' },
   ];
 
   static defaultInstruments = [
