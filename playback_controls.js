@@ -1,6 +1,6 @@
 /**
  * Playback Controls - Shared MIDI playback and instrument management
- * 
+ *
  * Usage:
  *   const playback = new PlaybackControls({
  *     midiSelect: '#midiSelect',
@@ -41,7 +41,7 @@ class PlaybackControls {
     { value: 'organ', label: 'Church Organ' },
     { value: 'silent', label: "4'33\" (Silent)" },
   ];
-  
+
   static fluidWebInstrument = { value: 'fluidweb', label: 'SoundFont (FluidWeb)' };
 
   constructor(opts = {}) {
@@ -55,16 +55,16 @@ class PlaybackControls {
     this.seeking = false;
     this.midi = null;
     this.lastMidi = '';
-    
+
     this.onNoteOn = opts.onNoteOn || (() => {});
     this.onLoad = opts.onLoad || (() => {});
     this.onPlay = opts.onPlay || (() => {});
     this.trackFilter = opts.trackFilter || (() => true);
     this.transpose = 0;
     this.tuning = 440;
-    
+
     this.trackColors = ['#e91e63','#9c27b0','#3f51b5','#03a9f4','#009688','#8bc34a','#ffeb3b','#ff9800'];
-    
+
     // Instruments
     this.instruments = {
       fast: () => new FastPiano(),
@@ -78,11 +78,11 @@ class PlaybackControls {
     if (typeof FluidWebPiano !== 'undefined') {
       this.instruments.fluidweb = () => new FluidWebPiano();
     }
-    
+
     const defaultInst = (typeof FluidWebPiano !== 'undefined') ? 'fluidweb' : 'wavetable';
     this.instrument = this.instruments[defaultInst]();
     this.audioContext = this.instrument.ctx;
-    
+
     if (opts.container) {
       this._injectHTML(opts.container, opts);
       this._bindElements({
@@ -100,7 +100,7 @@ class PlaybackControls {
       this._bindElements(opts);
     }
   }
-  
+
   _injectHTML(container, opts) {
     const el = typeof container === 'string' ? document.querySelector(container) : container;
     const midiFiles = opts.midiFiles || PlaybackControls.defaultMidiFiles;
@@ -109,13 +109,13 @@ class PlaybackControls {
     if (hasFluidWeb) {
       instruments = [PlaybackControls.fluidWebInstrument, ...instruments];
     }
-    
+
     const midiOptions = midiFiles.map((f, i) => `<option value="${f.value}"${i === 0 ? ' selected' : ''}>${f.label}</option>`).join('');
     const instOptions = instruments.map((i, idx) => `<option value="${i.value}"${idx === 0 ? ' selected' : ''}>${i.label}</option>`).join('');
     const soundfonts = opts.soundfonts || PlaybackControls.defaultSoundfonts || [];
     const sfOptions = soundfonts.map((sf, i) => `<option value="${sf.value}"${i === 0 ? ' selected' : ''}>${sf.label}</option>`).join('');
     const sfSelect = hasFluidWeb && soundfonts.length ? `<select id="soundfontSelect">${sfOptions}</select>` : '';
-    
+
     el.innerHTML = `
       <input type="file" id="midiFile" accept=".mid,.midi" hidden>
       <select id="midiSelect"><option value="browse">Browse...</option>${midiOptions}</select>
@@ -129,10 +129,10 @@ class PlaybackControls {
       <span id="speedVal">1x</span>
     `;
   }
-  
+
   _bindElements(opts) {
     const $ = s => s && document.querySelector(s);
-    
+
     this.els = {
       midiSelect: $(opts.midiSelect),
       midiFile: $(opts.midiFile),
@@ -141,7 +141,7 @@ class PlaybackControls {
       time: $(opts.time),
       speedVal: $(opts.speedVal)
     };
-    
+
     if (this.els.midiSelect) {
       this.lastMidi = this.els.midiSelect.value;
       this.els.midiSelect.onchange = () => {
@@ -154,18 +154,18 @@ class PlaybackControls {
         }
       };
     }
-    
+
     if (this.els.midiFile) {
       this.els.midiFile.onchange = () => this.loadMidiFile(this.els.midiFile.files[0]);
     }
-    
+
     if (this.els.instrumentSelect) {
       this.els.instrumentSelect.onchange = () => this.switchInstrument(this.els.instrumentSelect.value);
     }
-    
+
     if ($(opts.playBtn)) $(opts.playBtn).onclick = () => this.play();
     if ($(opts.pauseBtn)) $(opts.pauseBtn).onclick = () => this.pause();
-    
+
     if (this.els.progress) {
       this.els.progress.onmousedown = () => this.seeking = true;
       this.els.progress.onmouseup = () => {
@@ -174,32 +174,33 @@ class PlaybackControls {
         this.seeking = false;
       };
     }
-    
+
     if ($(opts.speedRange)) {
       $(opts.speedRange).onchange = e => this.setSpeed(e.target.value);
     }
   }
-  
+
   switchInstrument(type) {
     this.instrument = this.instruments[type]();
     this.audioContext = this.instrument.ctx;
   }
-  
+
   loadMidi(file) {
     this.pause();
     this._reset();
     Midi.fromUrl(file).then(midi => this._processMidi(midi));
   }
-  
+
   loadMidiFile(file) {
     if (!file) return;
     this.pause();
     this._reset();
+    this._loadedFileName = file.name;
     const reader = new FileReader();
     reader.onload = e => this._processMidi(new Midi(e.target.result));
     reader.readAsArrayBuffer(file);
   }
-  
+
   _reset() {
     this.allNotes = [];
     this.lastPlayed = -1;
@@ -208,7 +209,7 @@ class PlaybackControls {
     this.speed = 1;
     this.start = null;
   }
-  
+
   _processMidi(midi) {
     this.midi = midi;
     midi.tracks.forEach((track, trackNo) => {
@@ -227,9 +228,24 @@ class PlaybackControls {
       const last = this.allNotes[this.allNotes.length - 1];
       this.duration = last.time + last.duration;
     }
+
+    // Update dropdown with loaded file name
+    if (this._loadedFileName && this.els.midiSelect) {
+      const name = this.midi?.header?.name || this._loadedFileName.replace(/\.mid$/i, '');
+      const opt = document.createElement('option');
+      opt.value = 'loaded';
+      opt.textContent = 'Loaded: ' + name;
+      opt.selected = true;
+      const existing = this.els.midiSelect.querySelector('option[value="loaded"]');
+      if (existing) existing.remove();
+      this.els.midiSelect.insertBefore(opt, this.els.midiSelect.firstChild);
+      this.lastMidi = 'loaded';
+      this._loadedFileName = null;
+    }
+
     this.onLoad(this.allNotes, this.duration, this.midi);
   }
-  
+
   play() {
     this.instrument.resume();
     if (!this.playing) {
@@ -238,31 +254,31 @@ class PlaybackControls {
       this.onPlay();
     }
   }
-  
+
   pause() {
     this.playing = !this.playing;
     if (this.playing) this.play();
   }
-  
+
   stop() {
     this._reset();
   }
-  
+
   seek(time) {
     this.lapse = time;
     this.start = this.audioContext.currentTime - this.lapse / this.speed;
   }
-  
+
   setSpeed(val) {
     this.speed = +val;
     this.start = this.audioContext.currentTime - this.lapse / this.speed;
   }
-  
+
   update() {
     if (this.playing) {
       this.lapse = (this.audioContext.currentTime - this.start) * this.speed;
     }
-    
+
     // Play notes
     for (let i = this.lastPlayed + 1; i < this.allNotes.length; i++) {
       const note = this.allNotes[i];
@@ -276,7 +292,7 @@ class PlaybackControls {
       }
       this.lastPlayed = i;
     }
-    
+
     // Update UI
     if (!this.seeking && this.els.progress) {
       this.els.progress.value = this.lapse / this.duration;
@@ -288,7 +304,7 @@ class PlaybackControls {
       this.els.speedVal.textContent = this.speed.toFixed(1) + 'x';
     }
   }
-  
+
   getNoteColor(trackNo) {
     return this.trackColors[trackNo % this.trackColors.length];
   }
