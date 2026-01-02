@@ -30,8 +30,9 @@
     .key.preview.black { background: linear-gradient(to bottom,
       color-mix(in srgb, #222, #f57c00 calc(var(--preview-t) * 100%)),
       color-mix(in srgb, #000, #ff9800 calc(var(--preview-t) * 100%))); }
-    .key .note-name { display: none; position: absolute; bottom: 5px; left: 50%; transform: translateX(-50%); font: bold 10px sans-serif; pointer-events: none; }
-    .key.active .note-name { display: block; }
+    .key .note-name { display: none; position: absolute; bottom: 5px; left: 50%; transform: translateX(-50%); font: bold 10px sans-serif; pointer-events: none; opacity: var(--preview-t, 1); }
+    .key.active .note-name { display: block; opacity: 1; }
+    .key.preview .note-name { display: block; }
     .key.white .note-name { color: #333; }
     .key.black .note-name { color: #fff; text-shadow: 0 0 3px #000; }
     #piano.hide-names .note-name { display: none !important; }
@@ -154,11 +155,18 @@
       const tracks = [...new Set(playback.allNotes.map(n => n.trackNo))].sort((a,b) => a-b);
       enabledTracks.clear();
       tracks.forEach(t => enabledTracks.add(t));
-      document.getElementById('trackToggles').innerHTML = tracks.map(t => 
+      document.getElementById('trackToggles').innerHTML = `<button id="muteAllBtn" style="margin-left:8px">Mute All</button>` + tracks.map(t => 
         `<label style="margin-left:8px"><input type="checkbox" data-track="${t}" checked>` +
         `<span style="color:${playback.getNoteColor(t)}">T${t+1}</span></label>`
       ).join('');
-      document.querySelectorAll('#trackToggles input').forEach(cb => {
+      document.getElementById('muteAllBtn').onclick = () => {
+        const cbs = document.querySelectorAll('#trackToggles input[data-track]');
+        const allMuted = enabledTracks.size === 0;
+        cbs.forEach(cb => { cb.checked = allMuted; });
+        if (allMuted) tracks.forEach(t => enabledTracks.add(t));
+        else enabledTracks.clear();
+      };
+      document.querySelectorAll('#trackToggles input[data-track]').forEach(cb => {
         cb.onchange = e => {
           const t = +e.target.dataset.track;
           e.target.checked ? enabledTracks.add(t) : enabledTracks.delete(t);
