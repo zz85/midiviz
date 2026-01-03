@@ -24,7 +24,7 @@ mod oxi {
     impl OxiSynth {
         #[wasm_bindgen(constructor)]
         pub fn new(sample_rate: i32) -> Result<OxiSynth, JsError> {
-            let desc = SynthDescriptor { sample_rate: sample_rate as f32, ..Default::default() };
+            let desc = SynthDescriptor { sample_rate: sample_rate as f32, gain: 1.0, ..Default::default() };
             let synth = Synth::new(desc).map_err(|e| JsError::new(&format!("{:?}", e)))?;
             
             let state = Arc::new(Mutex::new(SynthState { synth, font_ids: Vec::new() }));
