@@ -1,10 +1,24 @@
 Midi Visualization Experiments
 
 
+3 Jan 2025
+
+[Experiment #019 - Synthesia OxiSynth Worker](019_synthesia_oxisynth_worker.html)
+- Experimental: runs OxiSynth in Web Worker with AudioWorklet
+- Keeps soundfont parsing off main thread
+- Higher latency and memory usage than #018 due to message passing overhead
+- Use #018 for better performance; this is for reference
+
+[Experiment #018 - Synthesia OxiSynth](018_synthesia_oxisynth.html)
+- OxiSynth WASM synthesizer (Rust/oxisynth)
+- SF2 and SF3 soundfont support
+- Soundfont caching via font bank
+- Multi-instrument via MIDI channels
+
 2 Jan 2025
 
 [Experiment #017 - Synthesia FluidWeb](017_synthesia_fluidweb.html)
-- WASM-based SoundFont synthesizer (Rust/fluidlite)
+- RustySynth WASM synthesizer (SF2 only)
 - Multiple .sf2 soundfont selection
 - Real-time SF2 playback with AudioWorklet
 
