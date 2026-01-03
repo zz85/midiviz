@@ -22,14 +22,19 @@ class OxiSynthPiano {
     await this._init();
     this.ready = false;
     
-    const response = await fetch(path);
-    const sf2Data = new Uint8Array(await response.arrayBuffer());
-    
-    this.synth = new this.Synth(sf2Data, 44100);
-    this.ready = true;
-    
-    this.pending.forEach(([method, args]) => this[method](...args));
-    this.pending = [];
+    try {
+      const response = await fetch(path);
+      const sf2Data = new Uint8Array(await response.arrayBuffer());
+      
+      this.synth = new this.Synth(sf2Data, 44100);
+      this.ready = true;
+      
+      this.pending.forEach(([method, args]) => this[method](...args));
+      this.pending = [];
+    } catch (e) {
+      console.error('Failed to load soundfont:', e);
+      alert('Failed to load soundfont: ' + (e.message || 'Unknown error'));
+    }
   }
 
   noteOn(midi, velocity = 0.7, channel = 0) {

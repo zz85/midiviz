@@ -181,12 +181,6 @@
     
     const playback = new PlaybackControls({
       container: '#playbackControls',
-      soundfonts: [
-        { value: 'soundfonts/Motif_ES6_Concert_Piano.sf2', label: 'Motif ES6 Concert Piano (12.6MB)' },
-        { value: 'soundfonts/Full Grand Piano.sf2', label: 'Full Grand Piano (20MB)' },
-        { value: 'soundfonts/Roland_Super_XP-80.sf2', label: 'Roland Super XP-80 (1.7MB)' },
-        { value: 'soundfonts/Creative(emu10k1)8MBGMSFX.sf2', label: 'Creative emu10k1 (8MB)' },
-      ],
       trackFilter: t => enabledTracks.has(t),
       onNoteOn: (note, color) => {
         if (showParticles && enabledTracks.has(note.trackNo)) spawnParticles(note.midi, color);
@@ -245,14 +239,6 @@
       document.getElementById('yScaleVal').textContent = yScale + 'x';
     };
     document.getElementById('previewToggle').onchange = e => showPreview = e.target.checked;
-    const sfEl = document.getElementById('soundfontSelect');
-    if (sfEl) {
-      sfEl.onchange = e => {
-        if (playback.instrument.loadSoundfont) {
-          playback.instrument.loadSoundfont(e.target.value);
-        }
-      };
-    }
     
     function render() {
       requestAnimationFrame(render);

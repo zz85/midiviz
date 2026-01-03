@@ -81,6 +81,22 @@ class PlaybackControls {
     { value: 'silent', label: "4'33\" (Silent)" },
   ];
 
+  static defaultSoundfonts = [
+    { value: 'soundfonts/TimGM6mb.sf2', label: 'TimGM6mb (5.7MB)' },
+    { value: 'soundfonts/FluidR3.sf3', label: 'FluidR3 SF3 (19MB)' },
+    { value: 'soundfonts/Pianoteq_M1_2026.sf2', label: 'Pianoteq M1 (19MB)' },
+    { value: 'soundfonts/Full Grand Piano.sf2', label: 'Full Grand Piano (20MB)' },
+    { value: 'soundfonts/GeneralUser GS v1.471.sf2', label: 'GeneralUser GS v1.471 (30MB)' },
+    { value: 'soundfonts/GeneralUser-GS.sf2', label: 'GeneralUser GS (31MB)' },
+    { value: 'soundfonts/Jnsgm2.sf2', label: 'Jnsgm2 (32MB)' },
+    { value: 'soundfonts/JClive21.sf2', label: 'JClive21 (50MB)' },
+    { value: 'soundfonts/FluidR3_GM.sf2', label: 'FluidR3 GM (142MB)' },
+    { value: 'soundfonts/DSoundFontV4.sf2', label: 'DSoundFontV4 (553MB)' },
+    { value: 'soundfonts/Motif_ES6_Concert_Piano.sf2', label: 'Motif ES6 Concert Piano (12.6MB)' },
+    { value: 'soundfonts/Roland_Super_XP-80.sf2', label: 'Roland Super XP-80 (1.7MB)' },
+    { value: 'soundfonts/Creative(emu10k1)8MBGMSFX.sf2', label: 'Creative emu10k1 (8MB)' },
+  ];
+
   static fluidWebInstrument = { value: 'fluidweb', label: 'SoundFont (FluidWeb)' };
 
   constructor(opts = {}) {
@@ -153,7 +169,7 @@ class PlaybackControls {
     const instOptions = instruments.map((i, idx) => `<option value="${i.value}"${idx === 0 ? ' selected' : ''}>${i.label}</option>`).join('');
     const soundfonts = opts.soundfonts || PlaybackControls.defaultSoundfonts || [];
     const sfOptions = soundfonts.map((sf, i) => `<option value="${sf.value}"${i === 0 ? ' selected' : ''}>${sf.label}</option>`).join('');
-    const sfSelect = hasFluidWeb && soundfonts.length ? `<select id="soundfontSelect">${sfOptions}</select>` : '';
+    const sfSelect = hasFluidWeb && soundfonts.length ? `<input type="file" id="soundfontFile" accept=".sf2" hidden><select id="soundfontSelect"><option value="browse">Browse...</option>${sfOptions}</select>` : '';
 
     el.innerHTML = `
       <input type="file" id="midiFile" accept=".mid,.midi" hidden>
@@ -200,6 +216,37 @@ class PlaybackControls {
 
     if (this.els.instrumentSelect) {
       this.els.instrumentSelect.onchange = () => this.switchInstrument(this.els.instrumentSelect.value);
+    }
+
+    const sfSelect = $('#soundfontSelect');
+    const sfFile = $('#soundfontFile');
+    if (sfSelect) {
+      this.lastSoundfont = sfSelect.value;
+      sfSelect.onchange = () => {
+        if (sfSelect.value === 'browse') {
+          sfFile?.click();
+          sfSelect.value = this.lastSoundfont;
+        } else {
+          this.lastSoundfont = sfSelect.value;
+          if (this.instrument.loadSoundfont) this.instrument.loadSoundfont(sfSelect.value);
+        }
+      };
+    }
+    if (sfFile) {
+      sfFile.onchange = () => {
+        const file = sfFile.files[0];
+        if (file && this.instrument.loadSoundfont) {
+          const url = URL.createObjectURL(file);
+          this.instrument.loadSoundfont(url);
+          // Add to dropdown
+          const opt = document.createElement('option');
+          opt.value = url;
+          opt.textContent = 'Loaded: ' + file.name;
+          opt.selected = true;
+          sfSelect.insertBefore(opt, sfSelect.firstChild.nextSibling);
+          this.lastSoundfont = url;
+        }
+      };
     }
 
     if ($(opts.playBtn)) $(opts.playBtn).onclick = () => this.play();
