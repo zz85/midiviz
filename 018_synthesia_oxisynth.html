@@ -214,11 +214,10 @@
       }
     });
     
-    // Pre-initialize soundfont on first user interaction
+    // Pre-initialize soundfont stack on first user interaction
     const initSoundfont = () => {
-      const sfEl = document.getElementById('soundfontSelect');
-      if (sfEl && playback.instrument.loadSoundfont && !playback.instrument.ready) {
-        playback.instrument.loadSoundfont(sfEl.value);
+      if (playback.instrument.loadSoundfontStack && !playback.instrument.ready) {
+        playback.instrument.loadSoundfontStack(PlaybackControls.defaultSoundfontStack);
       }
       document.removeEventListener('click', initSoundfont);
     };

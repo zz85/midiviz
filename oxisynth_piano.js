@@ -63,6 +63,12 @@ class OxiSynthPiano {
     }
   }
 
+  async loadSoundfontStack(paths) {
+    for (const path of paths) {
+      await this.loadSoundfont(path);
+    }
+  }
+
   noteOn(midi, velocity = 0.7, channel = 0) {
     if (!this.ready) {
       this.pending.push(['noteOn', [midi, velocity, channel]]);

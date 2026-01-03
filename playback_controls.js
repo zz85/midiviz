@@ -18,7 +18,7 @@
  */
 class PlaybackControls {
   static defaultMidiFiles = [
-    { value: '', label: '=== Original ===', disabled: true },
+    { value: '', label: '=== Selections ===', disabled: true },
     { value: 'JVKE - golden hour.mid', label: 'Golden Hour (JVKE)' },
     { value: 'Heart and Soul Piano Duet The Real Version.mid', label: 'Heart and Soul' },
     { value: 'entertainer.mid', label: 'The Entertainer' },
@@ -83,12 +83,17 @@ class PlaybackControls {
   ];
 
   static defaultSoundfonts = [
+    { value: 'soundfonts/Motif_ES6_Concert_Piano.sf2', label: '[Piano] Motif ES6 Concert Piano (12.6MB)' },
     { value: 'soundfonts/FluidR3.sf3', label: '[General] FluidR3 SF3 (19MB)' },
     { value: 'soundfonts/Creative(emu10k1)8MBGMSFX.sf2', label: '[General] Creative emu10k1 (8MB)' },
     { value: 'soundfonts/JClive21.sf2', label: '[General] JClive21 (50MB)' },
-    { value: 'soundfonts/Motif_ES6_Concert_Piano.sf2', label: '[Piano] Motif ES6 Concert Piano (12.6MB)' },
     { value: 'soundfonts/Full Grand Piano.sf2', label: '[Piano] Full Grand Piano (20MB)' },
     { value: 'soundfonts/Roland_Super_XP-80.sf2', label: '[Piano] Roland Super XP-80 (1.7MB)' },
+  ];
+
+  static defaultSoundfontStack = [
+    'soundfonts/Creative(emu10k1)8MBGMSFX.sf2',
+    'soundfonts/Motif_ES6_Concert_Piano.sf2',
   ];
 
   static get sf2OnlySoundfonts() {
