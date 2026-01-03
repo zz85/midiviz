@@ -32,20 +32,28 @@ class OxiSynthPiano {
     this.pending = [];
   }
 
-  noteOn(midi, velocity = 0.7) {
+  noteOn(midi, velocity = 0.7, channel = 0) {
     if (!this.ready) {
-      this.pending.push(['noteOn', [midi, velocity]]);
+      this.pending.push(['noteOn', [midi, velocity, channel]]);
       return;
     }
-    this.synth.note_on(0, midi, Math.round(velocity * 127));
+    this.synth.note_on(channel, midi, Math.round(velocity * 127));
   }
 
-  noteOff(midi) {
+  noteOff(midi, channel = 0) {
     if (!this.ready) {
-      this.pending.push(['noteOff', [midi]]);
+      this.pending.push(['noteOff', [midi, channel]]);
       return;
     }
-    this.synth.note_off(0, midi);
+    this.synth.note_off(channel, midi);
+  }
+
+  programChange(channel, program) {
+    if (!this.ready) {
+      this.pending.push(['programChange', [channel, program]]);
+      return;
+    }
+    this.synth.program_change(channel, program);
   }
 
   resume() {

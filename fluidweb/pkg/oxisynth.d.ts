@@ -18,6 +18,7 @@ export class OxiSynth {
   constructor(sf2_data: Uint8Array, sample_rate: number);
   note_on(channel: number, key: number, velocity: number): void;
   note_off(channel: number, key: number): void;
+  program_change(channel: number, program_id: number): void;
 }
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
@@ -28,6 +29,7 @@ export interface InitOutput {
   readonly oxisynth_new: (a: number, b: number, c: number) => [number, number, number];
   readonly oxisynth_note_on: (a: number, b: number, c: number, d: number) => void;
   readonly oxisynth_note_off: (a: number, b: number, c: number) => void;
+  readonly oxisynth_program_change: (a: number, b: number, c: number) => void;
   readonly __wbg_outputdevice_free: (a: number, b: number) => void;
   readonly outputdevice_close: (a: number) => void;
   readonly wasm_bindgen__convert__closures_____invoke__h23e29a2506e77c36: (a: number, b: number) => void;

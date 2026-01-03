@@ -57,4 +57,8 @@ impl OxiSynth {
     pub fn note_off(&self, channel: u8, key: u8) {
         let _ = self.state.lock().unwrap().synth.send_event(MidiEvent::NoteOff { channel, key });
     }
+
+    pub fn program_change(&self, channel: u8, program_id: u8) {
+        let _ = self.state.lock().unwrap().synth.send_event(MidiEvent::ProgramChange { channel, program_id });
+    }
 }

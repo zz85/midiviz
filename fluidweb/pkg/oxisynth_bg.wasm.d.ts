@@ -5,6 +5,7 @@ export const __wbg_oxisynth_free: (a: number, b: number) => void;
 export const oxisynth_new: (a: number, b: number, c: number) => [number, number, number];
 export const oxisynth_note_on: (a: number, b: number, c: number, d: number) => void;
 export const oxisynth_note_off: (a: number, b: number, c: number) => void;
+export const oxisynth_program_change: (a: number, b: number, c: number) => void;
 export const __wbg_outputdevice_free: (a: number, b: number) => void;
 export const outputdevice_close: (a: number) => void;
 export const wasm_bindgen__convert__closures_____invoke__h23e29a2506e77c36: (a: number, b: number) => void;

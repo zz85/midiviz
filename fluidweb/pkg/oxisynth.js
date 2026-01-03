@@ -307,6 +307,13 @@ export class OxiSynth {
     note_off(channel, key) {
         wasm.oxisynth_note_off(this.__wbg_ptr, channel, key);
     }
+    /**
+     * @param {number} channel
+     * @param {number} program_id
+     */
+    program_change(channel, program_id) {
+        wasm.oxisynth_program_change(this.__wbg_ptr, channel, program_id);
+    }
 }
 if (Symbol.dispose) OxiSynth.prototype[Symbol.dispose] = OxiSynth.prototype.free;
 

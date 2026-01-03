@@ -251,14 +251,19 @@ class PlaybackControls {
 
   _processMidi(midi) {
     this.midi = midi;
+    this.trackChannels = {}; // trackNo -> channel
+    this.trackInstruments = {}; // trackNo -> program number
     midi.tracks.forEach((track, trackNo) => {
+      this.trackChannels[trackNo] = track.channel ?? trackNo;
+      this.trackInstruments[trackNo] = track.instrument?.number ?? 0;
       track.notes.forEach(note => {
         this.allNotes.push({
           midi: note.midi,
           time: note.time,
           duration: note.duration,
           velocity: note.velocity,
-          trackNo
+          trackNo,
+          channel: track.channel ?? trackNo
         });
       });
     });
@@ -324,10 +329,11 @@ class PlaybackControls {
       if (note.time > this.lapse) break;
       if (note.time >= this.lapse - 0.05 && this.trackFilter(note.trackNo)) {
         const transposedMidi = note.midi + this.transpose;
-        this.instrument.noteOn(transposedMidi, note.velocity, this.tuning);
+        const channel = note.channel ?? 0;
+        this.instrument.noteOn(transposedMidi, note.velocity, channel);
         const color = this.trackColors[note.trackNo % this.trackColors.length];
         this.onNoteOn(note, color);
-        setTimeout(() => this.instrument.noteOff(transposedMidi), note.duration * 1000 / this.speed);
+        setTimeout(() => this.instrument.noteOff(transposedMidi, channel), note.duration * 1000 / this.speed);
       }
       this.lastPlayed = i;
     }
