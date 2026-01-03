@@ -51,7 +51,7 @@ mod oxi {
             Ok(OxiSynth { state, device })
         }
 
-        /// Add soundfont, returns index for use with select_soundfont
+        /// Add soundfont from bytes, returns index for use with select_soundfont
         pub fn add_soundfont(&self, sf2_data: &[u8]) -> Result<u32, JsError> {
             let mut cursor = Cursor::new(sf2_data);
             let sound_font = SoundFont::load(&mut cursor).map_err(|e| JsError::new(&format!("{:?}", e)))?;
@@ -99,6 +99,78 @@ mod oxi {
 
         pub fn all_sound_off(&self, channel: u8) {
             let _ = self.state.lock().unwrap().synth.send_event(MidiEvent::AllSoundOff { channel });
+        }
+    }
+
+    // Raw synth without audio output - for use in workers
+    #[wasm_bindgen]
+    pub struct OxiSynthRaw {
+        synth: Synth,
+        font_ids: Vec<SoundFontId>,
+    }
+
+    #[wasm_bindgen]
+    impl OxiSynthRaw {
+        #[wasm_bindgen(constructor)]
+        pub fn new(sample_rate: i32) -> Result<OxiSynthRaw, JsError> {
+            let desc = SynthDescriptor { sample_rate: sample_rate as f32, gain: 1.0, ..Default::default() };
+            let synth = Synth::new(desc).map_err(|e| JsError::new(&format!("{:?}", e)))?;
+            Ok(OxiSynthRaw { synth, font_ids: Vec::new() })
+        }
+
+        pub fn add_soundfont(&mut self, sf2_data: &[u8]) -> Result<u32, JsError> {
+            let mut cursor = Cursor::new(sf2_data);
+            let sound_font = SoundFont::load(&mut cursor).map_err(|e| JsError::new(&format!("{:?}", e)))?;
+            let id = self.synth.add_font(sound_font, true);
+            let idx = self.font_ids.len() as u32;
+            self.font_ids.push(id);
+            Ok(idx)
+        }
+
+        pub fn select_soundfont(&mut self, font_idx: u32) -> Result<(), JsError> {
+            let id = *self.font_ids.get(font_idx as usize)
+                .ok_or_else(|| JsError::new("Invalid font index"))?;
+            for ch in 0..16u8 {
+                let _ = self.synth.select_sound_font(ch, id);
+            }
+            Ok(())
+        }
+
+        pub fn note_on(&mut self, channel: u8, key: u8, velocity: u8) {
+            let _ = self.synth.send_event(MidiEvent::NoteOn { channel, key, vel: velocity });
+        }
+
+        pub fn note_off(&mut self, channel: u8, key: u8) {
+            let _ = self.synth.send_event(MidiEvent::NoteOff { channel, key });
+        }
+
+        pub fn program_change(&mut self, channel: u8, program_id: u8) {
+            let _ = self.synth.send_event(MidiEvent::ProgramChange { channel, program_id });
+        }
+
+        pub fn control_change(&mut self, channel: u8, ctrl: u8, value: u8) {
+            let _ = self.synth.send_event(MidiEvent::ControlChange { channel, ctrl, value });
+        }
+
+        pub fn all_notes_off(&mut self, channel: u8) {
+            let _ = self.synth.send_event(MidiEvent::AllNotesOff { channel });
+        }
+
+        pub fn all_sound_off(&mut self, channel: u8) {
+            let _ = self.synth.send_event(MidiEvent::AllSoundOff { channel });
+        }
+
+        /// Render audio samples, returns interleaved stereo f32
+        pub fn render(&mut self, frames: usize) -> Vec<f32> {
+            let mut left = vec![0f32; frames];
+            let mut right = vec![0f32; frames];
+            self.synth.write_f32(frames, &mut left, 0, 1, &mut right, 0, 1);
+            let mut out = vec![0f32; frames * 2];
+            for i in 0..frames {
+                out[i * 2] = left[i];
+                out[i * 2 + 1] = right[i];
+            }
+            out
         }
     }
 }

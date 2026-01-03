@@ -242,6 +242,10 @@ const OxiSynthFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_oxisynth_free(ptr >>> 0, 1));
 
+const OxiSynthRawFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_oxisynthraw_free(ptr >>> 0, 1));
+
 /**
  * An opaque "handle" to platform-dependent audio output device.
  */
@@ -290,7 +294,7 @@ export class OxiSynth {
         return this;
     }
     /**
-     * Add soundfont, returns index for use with select_soundfont
+     * Add soundfont from bytes, returns index for use with select_soundfont
      * @param {Uint8Array} sf2_data
      * @returns {number}
      */
@@ -364,6 +368,107 @@ export class OxiSynth {
     }
 }
 if (Symbol.dispose) OxiSynth.prototype[Symbol.dispose] = OxiSynth.prototype.free;
+
+export class OxiSynthRaw {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        OxiSynthRawFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_oxisynthraw_free(ptr, 0);
+    }
+    /**
+     * @param {number} sample_rate
+     */
+    constructor(sample_rate) {
+        const ret = wasm.oxisynthraw_new(sample_rate);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        this.__wbg_ptr = ret[0] >>> 0;
+        OxiSynthRawFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {Uint8Array} sf2_data
+     * @returns {number}
+     */
+    add_soundfont(sf2_data) {
+        const ptr0 = passArray8ToWasm0(sf2_data, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.oxisynthraw_add_soundfont(this.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] >>> 0;
+    }
+    /**
+     * @param {number} font_idx
+     */
+    select_soundfont(font_idx) {
+        const ret = wasm.oxisynthraw_select_soundfont(this.__wbg_ptr, font_idx);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @param {number} channel
+     * @param {number} key
+     * @param {number} velocity
+     */
+    note_on(channel, key, velocity) {
+        wasm.oxisynthraw_note_on(this.__wbg_ptr, channel, key, velocity);
+    }
+    /**
+     * @param {number} channel
+     * @param {number} key
+     */
+    note_off(channel, key) {
+        wasm.oxisynthraw_note_off(this.__wbg_ptr, channel, key);
+    }
+    /**
+     * @param {number} channel
+     * @param {number} program_id
+     */
+    program_change(channel, program_id) {
+        wasm.oxisynthraw_program_change(this.__wbg_ptr, channel, program_id);
+    }
+    /**
+     * @param {number} channel
+     * @param {number} ctrl
+     * @param {number} value
+     */
+    control_change(channel, ctrl, value) {
+        wasm.oxisynthraw_control_change(this.__wbg_ptr, channel, ctrl, value);
+    }
+    /**
+     * @param {number} channel
+     */
+    all_notes_off(channel) {
+        wasm.oxisynthraw_all_notes_off(this.__wbg_ptr, channel);
+    }
+    /**
+     * @param {number} channel
+     */
+    all_sound_off(channel) {
+        wasm.oxisynthraw_all_sound_off(this.__wbg_ptr, channel);
+    }
+    /**
+     * Render audio samples, returns interleaved stereo f32
+     * @param {number} frames
+     * @returns {Float32Array}
+     */
+    render(frames) {
+        const ret = wasm.oxisynthraw_render(this.__wbg_ptr, frames);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+}
+if (Symbol.dispose) OxiSynthRaw.prototype[Symbol.dispose] = OxiSynthRaw.prototype.free;
 
 const EXPECTED_RESPONSE_TYPES = new Set(['basic', 'cors', 'default']);
 
@@ -510,8 +615,8 @@ function __wbg_get_imports() {
         const ret = typeof window === 'undefined' ? null : window;
         return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
     };
-    imports.wbg.__wbindgen_cast_2e42aeecbc2281d3 = function(arg0, arg1) {
-        // Cast intrinsic for `Closure(Closure { dtor_idx: 21, function: Function { arguments: [], shim_idx: 22, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+    imports.wbg.__wbindgen_cast_76e94da460e6143e = function(arg0, arg1) {
+        // Cast intrinsic for `Closure(Closure { dtor_idx: 17, function: Function { arguments: [], shim_idx: 18, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
         const ret = makeMutClosure(arg0, arg1, wasm.wasm_bindgen__closure__destroy__h1176e573b102decf, wasm_bindgen__convert__closures_____invoke__h68190eb64e7e6295);
         return ret;
     };
