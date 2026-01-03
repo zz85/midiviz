@@ -32,9 +32,9 @@ class FluidWebPiano {
     this.pending = [];
   }
 
-  noteOn(midi, velocity = 0.7, tuning = 440) {
+  noteOn(midi, velocity = 0.7, channel = 0) {
     if (!this.ready) {
-      this.pending.push(['noteOn', [midi, velocity, tuning]]);
+      this.pending.push(['noteOn', [midi, velocity, channel]]);
       return;
     }
     // velocity is 0-1, convert to 0-127
@@ -42,12 +42,16 @@ class FluidWebPiano {
     this.synth.note_on(0, midi, vel);
   }
 
-  noteOff(midi) {
+  noteOff(midi, channel = 0) {
     if (!this.ready) {
-      this.pending.push(['noteOff', [midi]]);
+      this.pending.push(['noteOff', [midi, channel]]);
       return;
     }
     this.synth.note_off(0, midi);
+  }
+
+  programChange(channel, program) {
+    // rustysynth doesn't support program change, ignore
   }
 
   resume() {
