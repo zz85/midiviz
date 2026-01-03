@@ -1,13 +1,20 @@
 // FluidWeb SoundFont Piano - wraps fluidweb WASM synth (rustysynth)
 class FluidWebPiano {
   constructor(soundfontPath = './soundfonts/Full Grand Piano.sf2') {
-    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    this.ctx = null;
     this.synth = null;
     this.Synth = null;
     this.ready = false;
     this.initialized = false;
     this.pending = []; // queue notes until ready
     this.defaultSoundfont = soundfontPath;
+  }
+
+  _ensureContext() {
+    if (!this.ctx) {
+      this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    return this.ctx;
   }
 
   async _init() {
@@ -58,6 +65,6 @@ class FluidWebPiano {
   }
 
   resume() {
-    return this.ctx.resume();
+    return this._ensureContext().resume();
   }
 }

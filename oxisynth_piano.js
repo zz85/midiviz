@@ -1,12 +1,19 @@
 // OxiSynth Piano - wraps oxisynth WASM synth with tinyaudio
 class OxiSynthPiano {
   constructor() {
-    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    this.ctx = null;
     this.synth = null;
     this.Synth = null;
     this.ready = false;
     this.initialized = false;
     this.pending = [];
+  }
+
+  _ensureContext() {
+    if (!this.ctx) {
+      this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    return this.ctx;
   }
 
   async _init() {
@@ -62,6 +69,6 @@ class OxiSynthPiano {
   }
 
   resume() {
-    return this.ctx?.resume();
+    return this._ensureContext().resume();
   }
 }

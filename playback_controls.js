@@ -82,19 +82,18 @@ class PlaybackControls {
   ];
 
   static defaultSoundfonts = [
-    { value: 'soundfonts/TimGM6mb.sf2', label: 'TimGM6mb (5.7MB)' },
-    { value: 'soundfonts/FluidR3.sf3', label: 'FluidR3 SF3 (19MB)' },
-    { value: 'soundfonts/Pianoteq_M1_2026.sf2', label: 'Pianoteq M1 (19MB)' },
-    { value: 'soundfonts/Full Grand Piano.sf2', label: 'Full Grand Piano (20MB)' },
-    { value: 'soundfonts/GeneralUser GS v1.471.sf2', label: 'GeneralUser GS v1.471 (30MB)' },
-    { value: 'soundfonts/GeneralUser-GS.sf2', label: 'GeneralUser GS (31MB)' },
-    { value: 'soundfonts/Jnsgm2.sf2', label: 'Jnsgm2 (32MB)' },
-    { value: 'soundfonts/JClive21.sf2', label: 'JClive21 (50MB)' },
-    { value: 'soundfonts/FluidR3_GM.sf2', label: 'FluidR3 GM (142MB)' },
-    { value: 'soundfonts/DSoundFontV4.sf2', label: 'DSoundFontV4 (553MB)' },
-    { value: 'soundfonts/Motif_ES6_Concert_Piano.sf2', label: 'Motif ES6 Concert Piano (12.6MB)' },
-    { value: 'soundfonts/Roland_Super_XP-80.sf2', label: 'Roland Super XP-80 (1.7MB)' },
-    { value: 'soundfonts/Creative(emu10k1)8MBGMSFX.sf2', label: 'Creative emu10k1 (8MB)' },
+    { value: 'soundfonts/Creative(emu10k1)8MBGMSFX.sf2', label: '[General] Creative emu10k1 (8MB)' },
+    { value: 'soundfonts/FluidR3.sf3', label: '[General] FluidR3 SF3 (19MB)' },
+    { value: 'soundfonts/JClive21.sf2', label: '[General] JClive21 (50MB)' },
+    { value: 'soundfonts/Motif_ES6_Concert_Piano.sf2', label: '[Piano] Motif ES6 Concert Piano (12.6MB)' },
+    { value: 'soundfonts/Full Grand Piano.sf2', label: '[Piano] Full Grand Piano (20MB)' },
+    { value: 'soundfonts/Roland_Super_XP-80.sf2', label: '[Piano] Roland Super XP-80 (1.7MB)' },
+    // { value: 'soundfonts/TimGM6mb.sf2', label: 'TimGM6mb (5.7MB)' },
+    // { value: 'soundfonts/Pianoteq_M1_2026.sf2', label: 'Pianoteq M1 (19MB)' },
+    // { value: 'soundfonts/GeneralUser GS v1.471.sf2', label: 'GeneralUser GS v1.471 (30MB)' },
+    // // { value: 'soundfonts/Jnsgm2.sf2', label: 'Jnsgm2 (32MB)' },
+    // { value: 'soundfonts/FluidR3_GM.sf2', label: 'FluidR3 GM (142MB)' },
+    // { value: 'soundfonts/DSoundFontV4.sf2', label: 'DSoundFontV4 (553MB)' },
   ];
 
   static fluidWebInstrument = { value: 'fluidweb', label: 'SoundFont (FluidWeb)' };
@@ -169,11 +168,11 @@ class PlaybackControls {
     const instOptions = instruments.map((i, idx) => `<option value="${i.value}"${idx === 0 ? ' selected' : ''}>${i.label}</option>`).join('');
     const soundfonts = opts.soundfonts || PlaybackControls.defaultSoundfonts || [];
     const sfOptions = soundfonts.map((sf, i) => `<option value="${sf.value}"${i === 0 ? ' selected' : ''}>${sf.label}</option>`).join('');
-    const sfSelect = hasFluidWeb && soundfonts.length ? `<input type="file" id="soundfontFile" accept=".sf2" hidden><select id="soundfontSelect"><option value="browse">Browse...</option>${sfOptions}</select>` : '';
+    const sfSelect = hasFluidWeb && soundfonts.length ? `<input type="file" id="soundfontFile" accept=".sf2,.sf3" hidden><select id="soundfontSelect"><option value="browse">Load custom soundfont...</option>${sfOptions}</select>` : '';
 
     el.innerHTML = `
       <input type="file" id="midiFile" accept=".mid,.midi" hidden>
-      <select id="midiSelect"><option value="browse">Browse...</option>${midiOptions}</select>
+      <select id="midiSelect"><option value="browse">Load custom MIDI...</option>${midiOptions}</select>
       <select id="instrumentSelect">${instOptions}</select>
       ${sfSelect}
       <button id="playBtn">Play</button>
@@ -341,7 +340,7 @@ class PlaybackControls {
     this.instrument.resume();
     if (!this.playing) {
       this.playing = true;
-      this.start = this.audioContext.currentTime - this.lapse / this.speed;
+      this.start = this._getAudioContext().currentTime - this.lapse / this.speed;
       this.onPlay();
     }
   }
@@ -357,17 +356,26 @@ class PlaybackControls {
 
   seek(time) {
     this.lapse = time;
-    this.start = this.audioContext.currentTime - this.lapse / this.speed;
+    this.start = this._getAudioContext().currentTime - this.lapse / this.speed;
   }
 
   setSpeed(val) {
     this.speed = +val;
-    this.start = this.audioContext.currentTime - this.lapse / this.speed;
+    if (this.audioContext) {
+      this.start = this.audioContext.currentTime - this.lapse / this.speed;
+    }
+  }
+
+  _getAudioContext() {
+    if (!this.audioContext) {
+      this.audioContext = this.instrument._ensureContext?.() || this.instrument.ctx;
+    }
+    return this.audioContext;
   }
 
   update() {
     if (this.playing) {
-      this.lapse = (this.audioContext.currentTime - this.start) * this.speed;
+      this.lapse = (this._getAudioContext().currentTime - this.start) * this.speed;
     }
 
     // Play notes
