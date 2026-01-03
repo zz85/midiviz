@@ -14,5 +14,5 @@ rustysynth = ["dep:rustysynth"]
 [dependencies]
 wasm-bindgen = "0.2"
 tinyaudio = "2"
-oxisynth = { version = "0.1", optional = true }
+oxisynth = { version = "0.1", optional = true, features = ["sf3"] }
 rustysynth = { version = "1", optional = true }
