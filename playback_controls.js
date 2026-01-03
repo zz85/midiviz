@@ -264,23 +264,41 @@ class PlaybackControls {
   }
 
   switchInstrument(type) {
+    const wasPlaying = this.playing;
+    // Stop all notes on old instrument
+    if (this.instrument.allNotesOff) {
+      this.instrument.allNotesOff();
+    } else {
+      for (let i = 0; i < 128; i++) this.instrument.noteOff?.(i);
+    }
     this.instrument = this.instruments[type]();
     this.audioContext = this.instrument.ctx;
+    if (wasPlaying && this.audioContext) {
+      this.start = this.audioContext.currentTime - this.lapse / this.speed;
+    }
   }
 
   loadMidi(file) {
+    const wasPlaying = this.playing;
     this.pause();
     this._reset();
-    Midi.fromUrl(file).then(midi => this._processMidi(midi));
+    Midi.fromUrl(file).then(midi => {
+      this._processMidi(midi);
+      if (wasPlaying) this.play();
+    });
   }
 
   loadMidiFile(file) {
     if (!file) return;
+    const wasPlaying = this.playing;
     this.pause();
     this._reset();
     this._loadedFileName = file.name;
     const reader = new FileReader();
-    reader.onload = e => this._processMidi(new Midi(e.target.result));
+    reader.onload = e => {
+      this._processMidi(new Midi(e.target.result));
+      if (wasPlaying) this.play();
+    };
     reader.readAsArrayBuffer(file);
   }
 
@@ -383,10 +401,21 @@ class PlaybackControls {
       if (note.time >= this.lapse - 0.05 && this.trackFilter(note.trackNo)) {
         const transposedMidi = note.midi + this.transpose;
         const channel = note.channel ?? 0;
-        this.instrument.noteOn(transposedMidi, note.velocity, channel);
+        const supportsChannels = !!this.instrument.programChange;
+        if (supportsChannels) {
+          this.instrument.noteOn(transposedMidi, note.velocity, channel);
+        } else {
+          this.instrument.noteOn(transposedMidi, note.velocity);
+        }
         const color = this.trackColors[note.trackNo % this.trackColors.length];
         this.onNoteOn(note, color);
-        setTimeout(() => this.instrument.noteOff(transposedMidi, channel), note.duration * 1000 / this.speed);
+        setTimeout(() => {
+          if (supportsChannels) {
+            this.instrument.noteOff(transposedMidi, channel);
+          } else {
+            this.instrument.noteOff(transposedMidi);
+          }
+        }, note.duration * 1000 / this.speed);
       }
       this.lastPlayed = i;
     }
