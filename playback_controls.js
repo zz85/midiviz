@@ -18,7 +18,7 @@
  */
 class PlaybackControls {
   static defaultMidiFiles = [
-    // Original
+    { value: '', label: '=== Original ===', disabled: true },
     { value: 'JVKE - golden hour.mid', label: 'Golden Hour (JVKE)' },
     { value: 'Heart and Soul Piano Duet The Real Version.mid', label: 'Heart and Soul' },
     { value: 'entertainer.mid', label: 'The Entertainer' },
@@ -30,7 +30,7 @@ class PlaybackControls {
     { value: 'Knight-Rupert-Schumann.mid', label: 'Knight Rupert (Schumann)' },
     { value: 'Prelude1.mid', label: 'Bach Prelude No.1' },
     { value: 'Fugue1.mid', label: 'Bach Fugue No.1' },
-    // Classical
+    { value: '', label: '=== Classical ===', disabled: true },
     { value: 'midis/bach_846.mid', label: 'Bach - Prelude in C Major BWV 846' },
     { value: 'midis/bach_847.mid', label: 'Bach - Prelude & Fugue BWV 847' },
     { value: 'midis/elise.mid', label: 'Beethoven - Für Elise' },
@@ -49,7 +49,7 @@ class PlaybackControls {
     { value: 'midis/schuim-3.mid', label: 'Schubert - Impromptu No.3' },
     { value: 'midis/scn15_7.mid', label: 'Schumann - Träumerei' },
     { value: 'midis/grieg_halling.mid', label: 'Grieg - Halling' },
-    // Modern
+    { value: '', label: '=== Modern ===', disabled: true },
     { value: 'midis/river_flows_in_you.mid', label: 'Yiruma - River Flows in You' },
     { value: 'midis/kiss_the_rain.mid', label: 'Yiruma - Kiss the Rain' },
     { value: 'midis/nuvole_bianche.mid', label: 'Einaudi - Nuvole Bianche' },
@@ -58,7 +58,7 @@ class PlaybackControls {
     { value: 'midis/comptine.mid', label: 'Tiersen - Comptine (Amélie)' },
     { value: 'midis/time_zimmer.mid', label: 'Zimmer - Time (Inception)' },
     { value: 'midis/interstellar.mid', label: 'Zimmer - Interstellar' },
-    // Video Games
+    { value: '', label: '=== Video Games ===', disabled: true },
     { value: 'midis/ff_prelude.mid', label: 'Final Fantasy - Prelude' },
     { value: 'midis/ff_battle.mid', label: 'Final Fantasy - Battle' },
     { value: 'midis/zelda_overworld.mid', label: 'Zelda - Overworld Theme' },
@@ -72,6 +72,7 @@ class PlaybackControls {
   ];
 
   static defaultInstruments = [
+    { value: '', label: '=== Procedural ===', disabled: true },
     { value: 'wavetable', label: 'Wavetable Piano' },
     { value: 'piano', label: 'Piano' },
     { value: 'fast', label: 'Fast Piano (88-key)' },
@@ -162,8 +163,8 @@ class PlaybackControls {
       instruments = [PlaybackControls.fluidWebInstrument, ...instruments];
     }
 
-    const midiOptions = midiFiles.map((f, i) => `<option value="${f.value}"${i === 0 ? ' selected' : ''}>${f.label}</option>`).join('');
-    const instOptions = instruments.map((i, idx) => `<option value="${i.value}"${idx === 0 ? ' selected' : ''}>${i.label}</option>`).join('');
+    const midiOptions = midiFiles.map((f, i) => `<option value="${f.value}"${f.disabled ? ' disabled' : ''}${!f.disabled && i === 1 ? ' selected' : ''}>${f.label}</option>`).join('');
+    const instOptions = instruments.map((i, idx) => `<option value="${i.value}"${i.disabled ? ' disabled' : ''}${!i.disabled && idx === 0 ? ' selected' : ''}>${i.label}</option>`).join('');
     const soundfonts = opts.soundfonts || PlaybackControls.defaultSoundfonts || [];
     const sfOptions = soundfonts.map((sf, i) => `<option value="${sf.value}"${i === 0 ? ' selected' : ''}>${sf.label}</option>`).join('');
     const sfSelect = hasFluidWeb && soundfonts.length ? `<input type="file" id="soundfontFile" accept=".sf2,.sf3" hidden><select id="soundfontSelect"><option value="browse">Load custom soundfont...</option>${sfOptions}</select>` : '';
