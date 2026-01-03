@@ -37,6 +37,7 @@ A curated collection of classical, modern, and video game piano pieces in MIDI f
 | `comptine.mid` | Yann Tiersen | Comptine d'un autre été (Amélie) |
 | `time_zimmer.mid` | Hans Zimmer | Time (Inception) |
 | `interstellar.mid` | Hans Zimmer | Interstellar Main Theme |
+| `libertango.mid` | Astor Piazzolla | Libertango |
 
 ## Video Game Music
 
@@ -52,6 +53,8 @@ A curated collection of classical, modern, and video game piano pieces in MIDI f
 | `mario_castle.mid` | Super Mario | Castle Theme |
 | `minecraft_sweden.mid` | Minecraft | Sweden |
 | `skyrim_sons.mid` | Elder Scrolls V: Skyrim | Sons of Skyrim |
+| `tetris.mid` | Tetris | Type A Theme |
+| `last_of_us.mid` | The Last of Us | Main Theme |
 
 ## Sources & Credits
 

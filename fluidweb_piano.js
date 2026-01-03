@@ -1,7 +1,7 @@
-// FluidWeb SoundFont Piano - wraps fluidweb WASM synth
+// FluidWeb SoundFont Piano - wraps fluidweb WASM synth (rustysynth)
 class FluidWebPiano {
   constructor(soundfontPath = './soundfonts/Full Grand Piano.sf2') {
-    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    this.ctx = null;
     this.synth = null;
     this.Synth = null;
     this.ready = false;
@@ -10,12 +10,20 @@ class FluidWebPiano {
     this.defaultSoundfont = soundfontPath;
   }
 
+  _ensureContext() {
+    if (!this.ctx) {
+      this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    return this.ctx;
+  }
+
   async _init() {
     if (this.initialized) return;
     this.initialized = true;
-    const { default: init, Synth } = await import('./fluidweb/pkg/fluidweb.js');
+    const init = (await import('./fluidweb/pkg/rustysynth.js')).default;
+    const { RustySynth } = await import('./fluidweb/pkg/rustysynth.js');
     await init();
-    this.Synth = Synth;
+    this.Synth = RustySynth;
   }
 
   async loadSoundfont(path) {
@@ -32,25 +40,32 @@ class FluidWebPiano {
     this.pending = [];
   }
 
-  noteOn(midi, velocity = 0.7, tuning = 440) {
+  noteOn(midi, velocity = 0.7, channel = 0) {
     if (!this.ready) {
-      this.pending.push(['noteOn', [midi, velocity, tuning]]);
+      this.pending.push(['noteOn', [midi, velocity, channel]]);
       return;
     }
-    // velocity is 0-1, convert to 0-127
     const vel = Math.round(velocity * 127);
-    this.synth.note_on(0, midi, vel);
+    this.synth.note_on(channel, midi, vel);
   }
 
-  noteOff(midi) {
+  noteOff(midi, channel = 0) {
     if (!this.ready) {
-      this.pending.push(['noteOff', [midi]]);
+      this.pending.push(['noteOff', [midi, channel]]);
       return;
     }
-    this.synth.note_off(0, midi);
+    this.synth.note_off(channel, midi);
+  }
+
+  programChange(channel, program) {
+    if (!this.ready) {
+      this.pending.push(['programChange', [channel, program]]);
+      return;
+    }
+    this.synth.program_change(channel, program);
   }
 
   resume() {
-    return this.ctx.resume();
+    return this._ensureContext().resume();
   }
 }

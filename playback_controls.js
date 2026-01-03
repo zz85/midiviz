@@ -18,7 +18,7 @@
  */
 class PlaybackControls {
   static defaultMidiFiles = [
-    // Original
+    { value: '', label: '=== Selections ===', disabled: true },
     { value: 'JVKE - golden hour.mid', label: 'Golden Hour (JVKE)' },
     { value: 'Heart and Soul Piano Duet The Real Version.mid', label: 'Heart and Soul' },
     { value: 'entertainer.mid', label: 'The Entertainer' },
@@ -30,12 +30,12 @@ class PlaybackControls {
     { value: 'Knight-Rupert-Schumann.mid', label: 'Knight Rupert (Schumann)' },
     { value: 'Prelude1.mid', label: 'Bach Prelude No.1' },
     { value: 'Fugue1.mid', label: 'Bach Fugue No.1' },
-    // Classical
+    { value: '', label: '=== Classical ===', disabled: true },
     { value: 'midis/bach_846.mid', label: 'Bach - Prelude in C Major BWV 846' },
     { value: 'midis/bach_847.mid', label: 'Bach - Prelude & Fugue BWV 847' },
-    { value: 'midis/elise.mid', label: 'Beethoven - Für Elise' },
+    { value: 'midis/elise.mid', label: 'Beethoven - Fur Elise' },
     { value: 'midis/mond_1.mid', label: 'Beethoven - Moonlight Sonata' },
-    { value: 'midis/pathetique_1.mid', label: 'Beethoven - Pathétique Sonata' },
+    { value: 'midis/pathetique_1.mid', label: 'Beethoven - Pathetique Sonata' },
     { value: 'midis/chpn_op66.mid', label: 'Chopin - Fantaisie-Impromptu' },
     { value: 'midis/chpn-p15.mid', label: 'Chopin - Raindrop Prelude' },
     { value: 'midis/chpn_op27_2.mid', label: 'Chopin - Nocturne Op.27 No.2' },
@@ -47,18 +47,18 @@ class PlaybackControls {
     { value: 'midis/mz_331_1.mid', label: 'Mozart - Piano Sonata K.331' },
     { value: 'midis/mz_545_1.mid', label: 'Mozart - Piano Sonata K.545' },
     { value: 'midis/schuim-3.mid', label: 'Schubert - Impromptu No.3' },
-    { value: 'midis/scn15_7.mid', label: 'Schumann - Träumerei' },
+    { value: 'midis/scn15_7.mid', label: 'Schumann - Traumerei' },
     { value: 'midis/grieg_halling.mid', label: 'Grieg - Halling' },
-    // Modern
+    { value: '', label: '=== Modern ===', disabled: true },
     { value: 'midis/river_flows_in_you.mid', label: 'Yiruma - River Flows in You' },
     { value: 'midis/kiss_the_rain.mid', label: 'Yiruma - Kiss the Rain' },
     { value: 'midis/nuvole_bianche.mid', label: 'Einaudi - Nuvole Bianche' },
     { value: 'midis/una_mattina.mid', label: 'Einaudi - Una Mattina' },
     { value: 'midis/fly_einaudi.mid', label: 'Einaudi - Fly' },
-    { value: 'midis/comptine.mid', label: 'Tiersen - Comptine (Amélie)' },
+    { value: 'midis/comptine.mid', label: 'Tiersen - Comptine (Amelie)' },
     { value: 'midis/time_zimmer.mid', label: 'Zimmer - Time (Inception)' },
     { value: 'midis/interstellar.mid', label: 'Zimmer - Interstellar' },
-    // Video Games
+    { value: '', label: '=== Video Games ===', disabled: true },
     { value: 'midis/ff_prelude.mid', label: 'Final Fantasy - Prelude' },
     { value: 'midis/ff_battle.mid', label: 'Final Fantasy - Battle' },
     { value: 'midis/zelda_overworld.mid', label: 'Zelda - Overworld Theme' },
@@ -69,9 +69,13 @@ class PlaybackControls {
     { value: 'midis/mario_castle.mid', label: 'Super Mario - Castle Theme' },
     { value: 'midis/minecraft_sweden.mid', label: 'Minecraft - Sweden' },
     { value: 'midis/skyrim_sons.mid', label: 'Skyrim - Sons of Skyrim' },
+    { value: 'midis/tetris.mid', label: 'Tetris - Type A' },
+    { value: 'midis/last_of_us.mid', label: 'The Last of Us - Main Theme' },
+    { value: 'midis/libertango.mid', label: 'Piazzolla - Libertango' },
   ];
 
   static defaultInstruments = [
+    { value: '', label: '=== Procedural ===', disabled: true },
     { value: 'wavetable', label: 'Wavetable Piano' },
     { value: 'piano', label: 'Piano' },
     { value: 'fast', label: 'Fast Piano (88-key)' },
@@ -80,6 +84,24 @@ class PlaybackControls {
     { value: 'organ', label: 'Church Organ' },
     { value: 'silent', label: "4'33\" (Silent)" },
   ];
+
+  static defaultSoundfonts = [
+    { value: 'soundfonts/Motif_ES6_Concert_Piano.sf2', label: '[Piano] Motif ES6 Concert Piano (12.6MB)' },
+    { value: 'soundfonts/FluidR3.sf3', label: '[General] FluidR3 SF3 (19MB)' },
+    { value: 'soundfonts/Creative(emu10k1)8MBGMSFX.sf2', label: '[General] Creative emu10k1 (8MB)' },
+    { value: 'soundfonts/JClive21.sf2', label: '[General] JClive21 (50MB)' },
+    { value: 'soundfonts/Full Grand Piano.sf2', label: '[Piano] Full Grand Piano (20MB)' },
+    { value: 'soundfonts/Roland_Super_XP-80.sf2', label: '[Piano] Roland Super XP-80 (1.7MB)' },
+  ];
+
+  static defaultSoundfontStack = [
+    'soundfonts/Creative(emu10k1)8MBGMSFX.sf2',
+    'soundfonts/Motif_ES6_Concert_Piano.sf2',
+  ];
+
+  static get sf2OnlySoundfonts() {
+    return this.defaultSoundfonts.filter(sf => sf.value.endsWith('.sf2'));
+  }
 
   static fluidWebInstrument = { value: 'fluidweb', label: 'SoundFont (FluidWeb)' };
 
@@ -149,15 +171,15 @@ class PlaybackControls {
       instruments = [PlaybackControls.fluidWebInstrument, ...instruments];
     }
 
-    const midiOptions = midiFiles.map((f, i) => `<option value="${f.value}"${i === 0 ? ' selected' : ''}>${f.label}</option>`).join('');
-    const instOptions = instruments.map((i, idx) => `<option value="${i.value}"${idx === 0 ? ' selected' : ''}>${i.label}</option>`).join('');
+    const midiOptions = midiFiles.map((f, i) => `<option value="${f.value}"${f.disabled ? ' disabled' : ''}${!f.disabled && i === 1 ? ' selected' : ''}>${f.label}</option>`).join('');
+    const instOptions = instruments.map((i, idx) => `<option value="${i.value}"${i.disabled ? ' disabled' : ''}${!i.disabled && idx === 0 ? ' selected' : ''}>${i.label}</option>`).join('');
     const soundfonts = opts.soundfonts || PlaybackControls.defaultSoundfonts || [];
     const sfOptions = soundfonts.map((sf, i) => `<option value="${sf.value}"${i === 0 ? ' selected' : ''}>${sf.label}</option>`).join('');
-    const sfSelect = hasFluidWeb && soundfonts.length ? `<select id="soundfontSelect">${sfOptions}</select>` : '';
+    const sfSelect = hasFluidWeb && soundfonts.length ? `<input type="file" id="soundfontFile" accept=".sf2,.sf3" hidden><select id="soundfontSelect"><option value="browse">Load custom soundfont...</option>${sfOptions}</select>` : '';
 
     el.innerHTML = `
       <input type="file" id="midiFile" accept=".mid,.midi" hidden>
-      <select id="midiSelect"><option value="browse">Browse...</option>${midiOptions}</select>
+      <select id="midiSelect"><option value="browse">Load custom MIDI...</option>${midiOptions}</select>
       <select id="instrumentSelect">${instOptions}</select>
       ${sfSelect}
       <button id="playBtn">Play</button>
@@ -202,6 +224,37 @@ class PlaybackControls {
       this.els.instrumentSelect.onchange = () => this.switchInstrument(this.els.instrumentSelect.value);
     }
 
+    const sfSelect = $('#soundfontSelect');
+    const sfFile = $('#soundfontFile');
+    if (sfSelect) {
+      this.lastSoundfont = sfSelect.value;
+      sfSelect.onchange = () => {
+        if (sfSelect.value === 'browse') {
+          sfFile?.click();
+          sfSelect.value = this.lastSoundfont;
+        } else {
+          this.lastSoundfont = sfSelect.value;
+          if (this.instrument.loadSoundfont) this.instrument.loadSoundfont(sfSelect.value);
+        }
+      };
+    }
+    if (sfFile) {
+      sfFile.onchange = () => {
+        const file = sfFile.files[0];
+        if (file && this.instrument.loadSoundfont) {
+          const url = URL.createObjectURL(file);
+          this.instrument.loadSoundfont(url);
+          // Add to dropdown
+          const opt = document.createElement('option');
+          opt.value = url;
+          opt.textContent = 'Loaded: ' + file.name;
+          opt.selected = true;
+          sfSelect.insertBefore(opt, sfSelect.firstChild.nextSibling);
+          this.lastSoundfont = url;
+        }
+      };
+    }
+
     if ($(opts.playBtn)) $(opts.playBtn).onclick = () => this.play();
     if ($(opts.pauseBtn)) $(opts.pauseBtn).onclick = () => this.pause();
 
@@ -220,23 +273,41 @@ class PlaybackControls {
   }
 
   switchInstrument(type) {
+    const wasPlaying = this.playing;
+    // Stop all notes on old instrument
+    if (this.instrument.allNotesOff) {
+      this.instrument.allNotesOff();
+    } else {
+      for (let i = 0; i < 128; i++) this.instrument.noteOff?.(i);
+    }
     this.instrument = this.instruments[type]();
     this.audioContext = this.instrument.ctx;
+    if (wasPlaying && this.audioContext) {
+      this.start = this.audioContext.currentTime - this.lapse / this.speed;
+    }
   }
 
   loadMidi(file) {
+    const wasPlaying = this.playing;
     this.pause();
     this._reset();
-    Midi.fromUrl(file).then(midi => this._processMidi(midi));
+    Midi.fromUrl(file).then(midi => {
+      this._processMidi(midi);
+      if (wasPlaying) this.play();
+    });
   }
 
   loadMidiFile(file) {
     if (!file) return;
+    const wasPlaying = this.playing;
     this.pause();
     this._reset();
     this._loadedFileName = file.name;
     const reader = new FileReader();
-    reader.onload = e => this._processMidi(new Midi(e.target.result));
+    reader.onload = e => {
+      this._processMidi(new Midi(e.target.result));
+      if (wasPlaying) this.play();
+    };
     reader.readAsArrayBuffer(file);
   }
 
@@ -251,14 +322,19 @@ class PlaybackControls {
 
   _processMidi(midi) {
     this.midi = midi;
+    this.trackChannels = {}; // trackNo -> channel
+    this.trackInstruments = {}; // trackNo -> program number
     midi.tracks.forEach((track, trackNo) => {
+      this.trackChannels[trackNo] = track.channel ?? trackNo;
+      this.trackInstruments[trackNo] = track.instrument?.number ?? 0;
       track.notes.forEach(note => {
         this.allNotes.push({
           midi: note.midi,
           time: note.time,
           duration: note.duration,
           velocity: note.velocity,
-          trackNo
+          trackNo,
+          channel: track.channel ?? trackNo
         });
       });
     });
@@ -289,7 +365,7 @@ class PlaybackControls {
     this.instrument.resume();
     if (!this.playing) {
       this.playing = true;
-      this.start = this.audioContext.currentTime - this.lapse / this.speed;
+      this.start = this._getAudioContext().currentTime - this.lapse / this.speed;
       this.onPlay();
     }
   }
@@ -305,17 +381,26 @@ class PlaybackControls {
 
   seek(time) {
     this.lapse = time;
-    this.start = this.audioContext.currentTime - this.lapse / this.speed;
+    this.start = this._getAudioContext().currentTime - this.lapse / this.speed;
   }
 
   setSpeed(val) {
     this.speed = +val;
-    this.start = this.audioContext.currentTime - this.lapse / this.speed;
+    if (this.audioContext) {
+      this.start = this.audioContext.currentTime - this.lapse / this.speed;
+    }
+  }
+
+  _getAudioContext() {
+    if (!this.audioContext) {
+      this.audioContext = this.instrument._ensureContext?.() || this.instrument.ctx;
+    }
+    return this.audioContext;
   }
 
   update() {
     if (this.playing) {
-      this.lapse = (this.audioContext.currentTime - this.start) * this.speed;
+      this.lapse = (this._getAudioContext().currentTime - this.start) * this.speed;
     }
 
     // Play notes
@@ -324,10 +409,22 @@ class PlaybackControls {
       if (note.time > this.lapse) break;
       if (note.time >= this.lapse - 0.05 && this.trackFilter(note.trackNo)) {
         const transposedMidi = note.midi + this.transpose;
-        this.instrument.noteOn(transposedMidi, note.velocity, this.tuning);
+        const channel = note.channel ?? 0;
+        const supportsChannels = !!this.instrument.programChange;
+        if (supportsChannels) {
+          this.instrument.noteOn(transposedMidi, note.velocity, channel);
+        } else {
+          this.instrument.noteOn(transposedMidi, note.velocity);
+        }
         const color = this.trackColors[note.trackNo % this.trackColors.length];
         this.onNoteOn(note, color);
-        setTimeout(() => this.instrument.noteOff(transposedMidi), note.duration * 1000 / this.speed);
+        setTimeout(() => {
+          if (supportsChannels) {
+            this.instrument.noteOff(transposedMidi, channel);
+          } else {
+            this.instrument.noteOff(transposedMidi);
+          }
+        }, note.duration * 1000 / this.speed);
       }
       this.lastPlayed = i;
     }

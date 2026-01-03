@@ -3,12 +3,12 @@
   "type": "module",
   "version": "0.1.0",
   "files": [
-    "fluidweb_bg.wasm",
-    "fluidweb.js",
-    "fluidweb.d.ts"
+    "oxisynth_bg.wasm",
+    "oxisynth.js",
+    "oxisynth.d.ts"
   ],
-  "main": "fluidweb.js",
-  "types": "fluidweb.d.ts",
+  "main": "oxisynth.js",
+  "types": "oxisynth.d.ts",
   "sideEffects": [
     "./snippets/*"
   ]

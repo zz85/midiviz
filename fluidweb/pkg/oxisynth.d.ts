@@ -1,0 +1,114 @@
+/* tslint:disable */
+/* eslint-disable */
+
+export class OutputDevice {
+  private constructor();
+  free(): void;
+  [Symbol.dispose](): void;
+  /**
+   * Closes the output device and release all system resources occupied by it. Any calls of this
+   * method after the device was closed does nothing.
+   */
+  close(): void;
+}
+
+export class OxiSynth {
+  free(): void;
+  [Symbol.dispose](): void;
+  constructor(sample_rate: number);
+  /**
+   * Add soundfont from bytes, returns index for use with select_soundfont
+   */
+  add_soundfont(sf2_data: Uint8Array): number;
+  /**
+   * Select soundfont by index for all channels
+   */
+  select_soundfont(font_idx: number): void;
+  note_on(channel: number, key: number, velocity: number): void;
+  note_off(channel: number, key: number): void;
+  program_change(channel: number, program_id: number): void;
+  control_change(channel: number, ctrl: number, value: number): void;
+  pitch_bend(channel: number, value: number): void;
+  all_notes_off(channel: number): void;
+  all_sound_off(channel: number): void;
+}
+
+export class OxiSynthRaw {
+  free(): void;
+  [Symbol.dispose](): void;
+  constructor(sample_rate: number);
+  add_soundfont(sf2_data: Uint8Array): number;
+  select_soundfont(font_idx: number): void;
+  note_on(channel: number, key: number, velocity: number): void;
+  note_off(channel: number, key: number): void;
+  program_change(channel: number, program_id: number): void;
+  control_change(channel: number, ctrl: number, value: number): void;
+  all_notes_off(channel: number): void;
+  all_sound_off(channel: number): void;
+  /**
+   * Render audio samples, returns interleaved stereo f32
+   */
+  render(frames: number): Float32Array;
+}
+
+export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
+
+export interface InitOutput {
+  readonly memory: WebAssembly.Memory;
+  readonly __wbg_oxisynth_free: (a: number, b: number) => void;
+  readonly oxisynth_new: (a: number) => [number, number, number];
+  readonly oxisynth_add_soundfont: (a: number, b: number, c: number) => [number, number, number];
+  readonly oxisynth_select_soundfont: (a: number, b: number) => [number, number];
+  readonly oxisynth_note_on: (a: number, b: number, c: number, d: number) => void;
+  readonly oxisynth_note_off: (a: number, b: number, c: number) => void;
+  readonly oxisynth_program_change: (a: number, b: number, c: number) => void;
+  readonly oxisynth_control_change: (a: number, b: number, c: number, d: number) => void;
+  readonly oxisynth_pitch_bend: (a: number, b: number, c: number) => void;
+  readonly oxisynth_all_notes_off: (a: number, b: number) => void;
+  readonly oxisynth_all_sound_off: (a: number, b: number) => void;
+  readonly __wbg_oxisynthraw_free: (a: number, b: number) => void;
+  readonly oxisynthraw_new: (a: number) => [number, number, number];
+  readonly oxisynthraw_add_soundfont: (a: number, b: number, c: number) => [number, number, number];
+  readonly oxisynthraw_select_soundfont: (a: number, b: number) => [number, number];
+  readonly oxisynthraw_note_on: (a: number, b: number, c: number, d: number) => void;
+  readonly oxisynthraw_note_off: (a: number, b: number, c: number) => void;
+  readonly oxisynthraw_program_change: (a: number, b: number, c: number) => void;
+  readonly oxisynthraw_control_change: (a: number, b: number, c: number, d: number) => void;
+  readonly oxisynthraw_all_notes_off: (a: number, b: number) => void;
+  readonly oxisynthraw_all_sound_off: (a: number, b: number) => void;
+  readonly oxisynthraw_render: (a: number, b: number) => [number, number];
+  readonly __wbg_outputdevice_free: (a: number, b: number) => void;
+  readonly outputdevice_close: (a: number) => void;
+  readonly wasm_bindgen__convert__closures_____invoke__h68190eb64e7e6295: (a: number, b: number) => void;
+  readonly wasm_bindgen__closure__destroy__h1176e573b102decf: (a: number, b: number) => void;
+  readonly __wbindgen_malloc: (a: number, b: number) => number;
+  readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+  readonly __wbindgen_exn_store: (a: number) => void;
+  readonly __externref_table_alloc: () => number;
+  readonly __wbindgen_externrefs: WebAssembly.Table;
+  readonly __externref_table_dealloc: (a: number) => void;
+  readonly __wbindgen_free: (a: number, b: number, c: number) => void;
+  readonly __wbindgen_start: () => void;
+}
+
+export type SyncInitInput = BufferSource | WebAssembly.Module;
+
+/**
+* Instantiates the given `module`, which can either be bytes or
+* a precompiled `WebAssembly.Module`.
+*
+* @param {{ module: SyncInitInput }} module - Passing `SyncInitInput` directly is deprecated.
+*
+* @returns {InitOutput}
+*/
+export function initSync(module: { module: SyncInitInput } | SyncInitInput): InitOutput;
+
+/**
+* If `module_or_path` is {RequestInfo} or {URL}, makes a request and
+* for everything else, calls `WebAssembly.instantiate` directly.
+*
+* @param {{ module_or_path: InitInput | Promise<InitInput> }} module_or_path - Passing `InitInput` directly is deprecated.
+*
+* @returns {Promise<InitOutput>}
+*/
+export default function __wbg_init (module_or_path?: { module_or_path: InitInput | Promise<InitInput> } | InitInput | Promise<InitInput>): Promise<InitOutput>;
