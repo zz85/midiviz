@@ -1,4 +1,4 @@
-// FluidWeb SoundFont Piano - wraps fluidweb WASM synth
+// FluidWeb SoundFont Piano - wraps fluidweb WASM synth (rustysynth)
 class FluidWebPiano {
   constructor(soundfontPath = './soundfonts/Full Grand Piano.sf2') {
     this.ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -13,9 +13,9 @@ class FluidWebPiano {
   async _init() {
     if (this.initialized) return;
     this.initialized = true;
-    const { default: init, Synth } = await import('./fluidweb/pkg/fluidweb.js');
+    const { default: init, RustySynth } = await import('./fluidweb/pkg/rustysynth.js');
     await init();
-    this.Synth = Synth;
+    this.Synth = RustySynth;
   }
 
   async loadSoundfont(path) {
@@ -37,9 +37,8 @@ class FluidWebPiano {
       this.pending.push(['noteOn', [midi, velocity, channel]]);
       return;
     }
-    // velocity is 0-1, convert to 0-127
     const vel = Math.round(velocity * 127);
-    this.synth.note_on(0, midi, vel);
+    this.synth.note_on(channel, midi, vel);
   }
 
   noteOff(midi, channel = 0) {
@@ -47,11 +46,15 @@ class FluidWebPiano {
       this.pending.push(['noteOff', [midi, channel]]);
       return;
     }
-    this.synth.note_off(0, midi);
+    this.synth.note_off(channel, midi);
   }
 
   programChange(channel, program) {
-    // rustysynth doesn't support program change, ignore
+    if (!this.ready) {
+      this.pending.push(['programChange', [channel, program]]);
+      return;
+    }
+    this.synth.program_change(channel, program);
   }
 
   resume() {

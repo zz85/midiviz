@@ -12,40 +12,28 @@ export class OutputDevice {
   close(): void;
 }
 
-export class Synth {
+export class RustySynth {
   free(): void;
   [Symbol.dispose](): void;
   constructor(sf2_data: Uint8Array, sample_rate: number);
   note_on(channel: number, key: number, velocity: number): void;
   note_off(channel: number, key: number): void;
-}
-
-export class SynthManual {
-  free(): void;
-  [Symbol.dispose](): void;
-  constructor(sf2_data: Uint8Array, sample_rate: number);
-  note_on(channel: number, key: number, velocity: number): void;
-  note_off(channel: number, key: number): void;
-  render(left: Float32Array, right: Float32Array): void;
+  program_change(channel: number, program: number): void;
 }
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
-  readonly __wbg_synth_free: (a: number, b: number) => void;
-  readonly synth_new: (a: number, b: number, c: number) => [number, number, number];
-  readonly synth_note_on: (a: number, b: number, c: number, d: number) => void;
-  readonly synth_note_off: (a: number, b: number, c: number) => void;
-  readonly __wbg_synthmanual_free: (a: number, b: number) => void;
-  readonly synthmanual_new: (a: number, b: number, c: number) => [number, number, number];
-  readonly synthmanual_note_on: (a: number, b: number, c: number, d: number) => void;
-  readonly synthmanual_note_off: (a: number, b: number, c: number) => void;
-  readonly synthmanual_render: (a: number, b: number, c: number, d: any, e: number, f: number, g: any) => void;
+  readonly __wbg_rustysynth_free: (a: number, b: number) => void;
+  readonly rustysynth_new: (a: number, b: number, c: number) => [number, number, number];
+  readonly rustysynth_note_on: (a: number, b: number, c: number, d: number) => void;
+  readonly rustysynth_note_off: (a: number, b: number, c: number) => void;
+  readonly rustysynth_program_change: (a: number, b: number, c: number) => void;
   readonly __wbg_outputdevice_free: (a: number, b: number) => void;
   readonly outputdevice_close: (a: number) => void;
-  readonly wasm_bindgen__convert__closures_____invoke__hced286be6545c1a4: (a: number, b: number) => void;
-  readonly wasm_bindgen__closure__destroy__h3d0c7cb23895baae: (a: number, b: number) => void;
+  readonly wasm_bindgen__convert__closures_____invoke__ha03fd0a862b819c0: (a: number, b: number) => void;
+  readonly wasm_bindgen__closure__destroy__h7fb8090f87f9b617: (a: number, b: number) => void;
   readonly __wbindgen_malloc: (a: number, b: number) => number;
   readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
   readonly __wbindgen_exn_store: (a: number) => void;

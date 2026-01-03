@@ -32,8 +32,8 @@ export interface InitOutput {
   readonly oxisynth_program_change: (a: number, b: number, c: number) => void;
   readonly __wbg_outputdevice_free: (a: number, b: number) => void;
   readonly outputdevice_close: (a: number) => void;
-  readonly wasm_bindgen__convert__closures_____invoke__h23e29a2506e77c36: (a: number, b: number) => void;
-  readonly wasm_bindgen__closure__destroy__h510c333a44abd720: (a: number, b: number) => void;
+  readonly wasm_bindgen__convert__closures_____invoke__h554d49e809383f56: (a: number, b: number) => void;
+  readonly wasm_bindgen__closure__destroy__h645c47c10af1b7be: (a: number, b: number) => void;
   readonly __wbindgen_malloc: (a: number, b: number) => number;
   readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
   readonly __wbindgen_exn_store: (a: number) => void;

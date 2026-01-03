@@ -81,11 +81,6 @@ function getArrayF32FromWasm0(ptr, len) {
     return getFloat32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
 }
 
-function getArrayU8FromWasm0(ptr, len) {
-    ptr = ptr >>> 0;
-    return getUint8ArrayMemory0().subarray(ptr / 1, ptr / 1 + len);
-}
-
 let cachedDataViewMemory0 = null;
 function getDataViewMemory0() {
     if (cachedDataViewMemory0 === null || cachedDataViewMemory0.buffer.detached === true || (cachedDataViewMemory0.buffer.detached === undefined && cachedDataViewMemory0.buffer !== wasm.memory.buffer)) {
@@ -163,13 +158,6 @@ function passArray8ToWasm0(arg, malloc) {
     return ptr;
 }
 
-function passArrayF32ToWasm0(arg, malloc) {
-    const ptr = malloc(arg.length * 4, 4) >>> 0;
-    getFloat32ArrayMemory0().set(arg, ptr / 4);
-    WASM_VECTOR_LEN = arg.length;
-    return ptr;
-}
-
 function passStringToWasm0(arg, malloc, realloc) {
     if (realloc === undefined) {
         const buf = cachedTextEncoder.encode(arg);
@@ -242,21 +230,17 @@ if (!('encodeInto' in cachedTextEncoder)) {
 
 let WASM_VECTOR_LEN = 0;
 
-function wasm_bindgen__convert__closures_____invoke__hced286be6545c1a4(arg0, arg1) {
-    wasm.wasm_bindgen__convert__closures_____invoke__hced286be6545c1a4(arg0, arg1);
+function wasm_bindgen__convert__closures_____invoke__ha03fd0a862b819c0(arg0, arg1) {
+    wasm.wasm_bindgen__convert__closures_____invoke__ha03fd0a862b819c0(arg0, arg1);
 }
 
 const OutputDeviceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_outputdevice_free(ptr >>> 0, 1));
 
-const SynthFinalization = (typeof FinalizationRegistry === 'undefined')
+const RustySynthFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_synth_free(ptr >>> 0, 1));
-
-const SynthManualFinalization = (typeof FinalizationRegistry === 'undefined')
-    ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_synthmanual_free(ptr >>> 0, 1));
+    : new FinalizationRegistry(ptr => wasm.__wbg_rustysynth_free(ptr >>> 0, 1));
 
 /**
  * An opaque "handle" to platform-dependent audio output device.
@@ -282,16 +266,16 @@ export class OutputDevice {
 }
 if (Symbol.dispose) OutputDevice.prototype[Symbol.dispose] = OutputDevice.prototype.free;
 
-export class Synth {
+export class RustySynth {
     __destroy_into_raw() {
         const ptr = this.__wbg_ptr;
         this.__wbg_ptr = 0;
-        SynthFinalization.unregister(this);
+        RustySynthFinalization.unregister(this);
         return ptr;
     }
     free() {
         const ptr = this.__destroy_into_raw();
-        wasm.__wbg_synth_free(ptr, 0);
+        wasm.__wbg_rustysynth_free(ptr, 0);
     }
     /**
      * @param {Uint8Array} sf2_data
@@ -300,12 +284,12 @@ export class Synth {
     constructor(sf2_data, sample_rate) {
         const ptr0 = passArray8ToWasm0(sf2_data, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.synth_new(ptr0, len0, sample_rate);
+        const ret = wasm.rustysynth_new(ptr0, len0, sample_rate);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
         this.__wbg_ptr = ret[0] >>> 0;
-        SynthFinalization.register(this, this.__wbg_ptr, this);
+        RustySynthFinalization.register(this, this.__wbg_ptr, this);
         return this;
     }
     /**
@@ -314,72 +298,24 @@ export class Synth {
      * @param {number} velocity
      */
     note_on(channel, key, velocity) {
-        wasm.synth_note_on(this.__wbg_ptr, channel, key, velocity);
+        wasm.rustysynth_note_on(this.__wbg_ptr, channel, key, velocity);
     }
     /**
      * @param {number} channel
      * @param {number} key
      */
     note_off(channel, key) {
-        wasm.synth_note_off(this.__wbg_ptr, channel, key);
-    }
-}
-if (Symbol.dispose) Synth.prototype[Symbol.dispose] = Synth.prototype.free;
-
-export class SynthManual {
-    __destroy_into_raw() {
-        const ptr = this.__wbg_ptr;
-        this.__wbg_ptr = 0;
-        SynthManualFinalization.unregister(this);
-        return ptr;
-    }
-    free() {
-        const ptr = this.__destroy_into_raw();
-        wasm.__wbg_synthmanual_free(ptr, 0);
-    }
-    /**
-     * @param {Uint8Array} sf2_data
-     * @param {number} sample_rate
-     */
-    constructor(sf2_data, sample_rate) {
-        const ptr0 = passArray8ToWasm0(sf2_data, wasm.__wbindgen_malloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.synthmanual_new(ptr0, len0, sample_rate);
-        if (ret[2]) {
-            throw takeFromExternrefTable0(ret[1]);
-        }
-        this.__wbg_ptr = ret[0] >>> 0;
-        SynthManualFinalization.register(this, this.__wbg_ptr, this);
-        return this;
+        wasm.rustysynth_note_off(this.__wbg_ptr, channel, key);
     }
     /**
      * @param {number} channel
-     * @param {number} key
-     * @param {number} velocity
+     * @param {number} program
      */
-    note_on(channel, key, velocity) {
-        wasm.synthmanual_note_on(this.__wbg_ptr, channel, key, velocity);
-    }
-    /**
-     * @param {number} channel
-     * @param {number} key
-     */
-    note_off(channel, key) {
-        wasm.synthmanual_note_off(this.__wbg_ptr, channel, key);
-    }
-    /**
-     * @param {Float32Array} left
-     * @param {Float32Array} right
-     */
-    render(left, right) {
-        var ptr0 = passArrayF32ToWasm0(left, wasm.__wbindgen_malloc);
-        var len0 = WASM_VECTOR_LEN;
-        var ptr1 = passArrayF32ToWasm0(right, wasm.__wbindgen_malloc);
-        var len1 = WASM_VECTOR_LEN;
-        wasm.synthmanual_render(this.__wbg_ptr, ptr0, len0, left, ptr1, len1, right);
+    program_change(channel, program) {
+        wasm.rustysynth_program_change(this.__wbg_ptr, channel, program);
     }
 }
-if (Symbol.dispose) SynthManual.prototype[Symbol.dispose] = SynthManual.prototype.free;
+if (Symbol.dispose) RustySynth.prototype[Symbol.dispose] = RustySynth.prototype.free;
 
 const EXPECTED_RESPONSE_TYPES = new Set(['basic', 'cors', 'default']);
 
@@ -419,9 +355,6 @@ function __wbg_get_imports() {
     imports.wbg.__wbg_Error_52673b7de5a0ca89 = function(arg0, arg1) {
         const ret = Error(getStringFromWasm0(arg0, arg1));
         return ret;
-    };
-    imports.wbg.__wbg___wbindgen_copy_to_typed_array_db832bc4df7216c1 = function(arg0, arg1, arg2) {
-        new Uint8Array(arg2.buffer, arg2.byteOffset, arg2.byteLength).set(getArrayU8FromWasm0(arg0, arg1));
     };
     imports.wbg.__wbg___wbindgen_debug_string_adfb662ae34724b6 = function(arg0, arg1) {
         const ret = debugString(arg1);
@@ -529,9 +462,9 @@ function __wbg_get_imports() {
         const ret = typeof window === 'undefined' ? null : window;
         return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
     };
-    imports.wbg.__wbindgen_cast_6c14e8b8f1971d0e = function(arg0, arg1) {
-        // Cast intrinsic for `Closure(Closure { dtor_idx: 9, function: Function { arguments: [], shim_idx: 10, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
-        const ret = makeMutClosure(arg0, arg1, wasm.wasm_bindgen__closure__destroy__h3d0c7cb23895baae, wasm_bindgen__convert__closures_____invoke__hced286be6545c1a4);
+    imports.wbg.__wbindgen_cast_3e0f7cd5ff36de98 = function(arg0, arg1) {
+        // Cast intrinsic for `Closure(Closure { dtor_idx: 5, function: Function { arguments: [], shim_idx: 6, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+        const ret = makeMutClosure(arg0, arg1, wasm.wasm_bindgen__closure__destroy__h7fb8090f87f9b617, wasm_bindgen__convert__closures_____invoke__ha03fd0a862b819c0);
         return ret;
     };
     imports.wbg.__wbindgen_init_externref_table = function() {
@@ -592,7 +525,7 @@ async function __wbg_init(module_or_path) {
     }
 
     if (typeof module_or_path === 'undefined') {
-        module_or_path = new URL('fluidweb_bg.wasm', import.meta.url);
+        module_or_path = new URL('rustysynth_bg.wasm', import.meta.url);
     }
     const imports = __wbg_get_imports();
 
