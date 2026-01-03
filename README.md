@@ -1,7 +1,12 @@
 Midi Visualization Experiments
 
 
-3 Jan 2025
+3 Jan 2026
+
+[Experiment #020 - Synthesia SpessaSynth](020_synthesia_spessasynth.html)
+- SpessaSynth WASM synthesizer
+- SF2 and SF3 soundfont support
+- Soundfont stacking with bank offsets
 
 [Experiment #019 - Synthesia OxiSynth Worker](019_synthesia_oxisynth_worker.html)
 - Experimental: runs OxiSynth in Web Worker with AudioWorklet

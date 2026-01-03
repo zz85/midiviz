@@ -1,0 +1,7 @@
+{
+  "name": "spessasynth-bundle",
+  "type": "module",
+  "dependencies": {
+    "spessasynth_lib": "^4.0.19"
+  }
+}
