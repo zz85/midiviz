@@ -335,6 +335,33 @@ export class OxiSynth {
     program_change(channel, program_id) {
         wasm.oxisynth_program_change(this.__wbg_ptr, channel, program_id);
     }
+    /**
+     * @param {number} channel
+     * @param {number} ctrl
+     * @param {number} value
+     */
+    control_change(channel, ctrl, value) {
+        wasm.oxisynth_control_change(this.__wbg_ptr, channel, ctrl, value);
+    }
+    /**
+     * @param {number} channel
+     * @param {number} value
+     */
+    pitch_bend(channel, value) {
+        wasm.oxisynth_pitch_bend(this.__wbg_ptr, channel, value);
+    }
+    /**
+     * @param {number} channel
+     */
+    all_notes_off(channel) {
+        wasm.oxisynth_all_notes_off(this.__wbg_ptr, channel);
+    }
+    /**
+     * @param {number} channel
+     */
+    all_sound_off(channel) {
+        wasm.oxisynth_all_sound_off(this.__wbg_ptr, channel);
+    }
 }
 if (Symbol.dispose) OxiSynth.prototype[Symbol.dispose] = OxiSynth.prototype.free;
 

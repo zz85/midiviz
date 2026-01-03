@@ -93,6 +93,30 @@ class OxiSynthPiano {
     this.synth.program_change(channel, program);
   }
 
+  controlChange(channel, ctrl, value) {
+    if (!this.ready) return;
+    this.synth.control_change(channel, ctrl, value);
+  }
+
+  pitchBend(channel, value) {
+    if (!this.ready) return;
+    this.synth.pitch_bend(channel, value);
+  }
+
+  allNotesOff(channel = 0) {
+    if (!this.ready) return;
+    if (channel === undefined) {
+      for (let ch = 0; ch < 16; ch++) this.synth.all_notes_off(ch);
+    } else {
+      this.synth.all_notes_off(channel);
+    }
+  }
+
+  allSoundOff() {
+    if (!this.ready) return;
+    for (let ch = 0; ch < 16; ch++) this.synth.all_sound_off(ch);
+  }
+
   resume() {
     return this._ensureContext().resume();
   }

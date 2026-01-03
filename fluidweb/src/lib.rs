@@ -84,6 +84,22 @@ mod oxi {
         pub fn program_change(&self, channel: u8, program_id: u8) {
             let _ = self.state.lock().unwrap().synth.send_event(MidiEvent::ProgramChange { channel, program_id });
         }
+
+        pub fn control_change(&self, channel: u8, ctrl: u8, value: u8) {
+            let _ = self.state.lock().unwrap().synth.send_event(MidiEvent::ControlChange { channel, ctrl, value });
+        }
+
+        pub fn pitch_bend(&self, channel: u8, value: u16) {
+            let _ = self.state.lock().unwrap().synth.send_event(MidiEvent::PitchBend { channel, value });
+        }
+
+        pub fn all_notes_off(&self, channel: u8) {
+            let _ = self.state.lock().unwrap().synth.send_event(MidiEvent::AllNotesOff { channel });
+        }
+
+        pub fn all_sound_off(&self, channel: u8) {
+            let _ = self.state.lock().unwrap().synth.send_event(MidiEvent::AllSoundOff { channel });
+        }
     }
 }
 
