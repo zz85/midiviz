@@ -7,6 +7,6 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-rustysynth = "1"
+oxisynth = "0.1"
 wasm-bindgen = "0.2"
 tinyaudio = "2"
