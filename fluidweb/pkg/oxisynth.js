@@ -278,19 +278,40 @@ export class OxiSynth {
         wasm.__wbg_oxisynth_free(ptr, 0);
     }
     /**
-     * @param {Uint8Array} sf2_data
      * @param {number} sample_rate
      */
-    constructor(sf2_data, sample_rate) {
-        const ptr0 = passArray8ToWasm0(sf2_data, wasm.__wbindgen_malloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.oxisynth_new(ptr0, len0, sample_rate);
+    constructor(sample_rate) {
+        const ret = wasm.oxisynth_new(sample_rate);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
         this.__wbg_ptr = ret[0] >>> 0;
         OxiSynthFinalization.register(this, this.__wbg_ptr, this);
         return this;
+    }
+    /**
+     * Add soundfont, returns index for use with select_soundfont
+     * @param {Uint8Array} sf2_data
+     * @returns {number}
+     */
+    add_soundfont(sf2_data) {
+        const ptr0 = passArray8ToWasm0(sf2_data, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.oxisynth_add_soundfont(this.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] >>> 0;
+    }
+    /**
+     * Select soundfont by index for all channels
+     * @param {number} font_idx
+     */
+    select_soundfont(font_idx) {
+        const ret = wasm.oxisynth_select_soundfont(this.__wbg_ptr, font_idx);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
     }
     /**
      * @param {number} channel

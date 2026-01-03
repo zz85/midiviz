@@ -15,7 +15,15 @@ export class OutputDevice {
 export class OxiSynth {
   free(): void;
   [Symbol.dispose](): void;
-  constructor(sf2_data: Uint8Array, sample_rate: number);
+  constructor(sample_rate: number);
+  /**
+   * Add soundfont, returns index for use with select_soundfont
+   */
+  add_soundfont(sf2_data: Uint8Array): number;
+  /**
+   * Select soundfont by index for all channels
+   */
+  select_soundfont(font_idx: number): void;
   note_on(channel: number, key: number, velocity: number): void;
   note_off(channel: number, key: number): void;
   program_change(channel: number, program_id: number): void;
@@ -26,7 +34,9 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
   readonly __wbg_oxisynth_free: (a: number, b: number) => void;
-  readonly oxisynth_new: (a: number, b: number, c: number) => [number, number, number];
+  readonly oxisynth_new: (a: number) => [number, number, number];
+  readonly oxisynth_add_soundfont: (a: number, b: number, c: number) => [number, number, number];
+  readonly oxisynth_select_soundfont: (a: number, b: number) => [number, number];
   readonly oxisynth_note_on: (a: number, b: number, c: number, d: number) => void;
   readonly oxisynth_note_off: (a: number, b: number, c: number) => void;
   readonly oxisynth_program_change: (a: number, b: number, c: number) => void;

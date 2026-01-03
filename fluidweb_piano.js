@@ -20,7 +20,8 @@ class FluidWebPiano {
   async _init() {
     if (this.initialized) return;
     this.initialized = true;
-    const { default: init, RustySynth } = await import('./fluidweb/pkg/rustysynth.js');
+    const init = (await import('./fluidweb/pkg/rustysynth.js')).default;
+    const { RustySynth } = await import('./fluidweb/pkg/rustysynth.js');
     await init();
     this.Synth = RustySynth;
   }

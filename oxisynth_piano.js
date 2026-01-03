@@ -3,10 +3,10 @@ class OxiSynthPiano {
   constructor() {
     this.ctx = null;
     this.synth = null;
-    this.Synth = null;
     this.ready = false;
-    this.initialized = false;
     this.pending = [];
+    this.fontIndex = new Map(); // path -> font index
+    this.activeFont = null;
   }
 
   _ensureContext() {
@@ -17,30 +17,49 @@ class OxiSynthPiano {
   }
 
   async _init() {
-    if (this.initialized) return;
-    this.initialized = true;
-    const init = (await import('./fluidweb/pkg/oxisynth.js')).default;
-    const { OxiSynth } = await import('./fluidweb/pkg/oxisynth.js');
-    await init();
-    this.Synth = OxiSynth;
+    if (this.synth) return;
+    if (!this._initPromise) {
+      this._initPromise = (async () => {
+        const init = (await import('./fluidweb/pkg/oxisynth.js')).default;
+        const { OxiSynth } = await import('./fluidweb/pkg/oxisynth.js');
+        await init();
+        this._OxiSynth = OxiSynth;
+      })();
+    }
+    await this._initPromise;
+    if (!this.synth) {
+      this.synth = new this._OxiSynth(44100);
+    }
   }
 
   async loadSoundfont(path) {
     await this._init();
-    this.ready = false;
+    
+    if (this.activeFont === path) return;
+    
+    window.dispatchEvent(new CustomEvent('soundfont-loading', { detail: { path } }));
     
     try {
-      const response = await fetch(path);
-      const sf2Data = new Uint8Array(await response.arrayBuffer());
+      let idx = this.fontIndex.get(path);
+      if (idx === undefined) {
+        const response = await fetch(path);
+        const sf2Data = new Uint8Array(await response.arrayBuffer());
+        idx = this.synth.add_soundfont(sf2Data);
+        this.fontIndex.set(path, idx);
+      } else {
+        this.synth.select_soundfont(idx);
+      }
       
-      this.synth = new this.Synth(sf2Data, 44100);
+      this.activeFont = path;
       this.ready = true;
+      
+      window.dispatchEvent(new CustomEvent('soundfont-loaded', { detail: { path } }));
       
       this.pending.forEach(([method, args]) => this[method](...args));
       this.pending = [];
     } catch (e) {
+      window.dispatchEvent(new CustomEvent('soundfont-error', { detail: { path, error: e } }));
       console.error('Failed to load soundfont:', e);
-      alert('Failed to load soundfont: ' + (e.message || 'Unknown error'));
     }
   }
 

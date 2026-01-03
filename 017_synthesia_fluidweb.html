@@ -180,6 +180,7 @@
     
     const playback = new PlaybackControls({
       container: '#playbackControls',
+      soundfonts: PlaybackControls.sf2OnlySoundfonts,
       trackFilter: t => enabledTracks.has(t),
       onNoteOn: (note, color) => {
         if (showParticles && enabledTracks.has(note.trackNo)) spawnParticles(note.midi, color);

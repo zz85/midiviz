@@ -2,7 +2,9 @@
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
 export const __wbg_oxisynth_free: (a: number, b: number) => void;
-export const oxisynth_new: (a: number, b: number, c: number) => [number, number, number];
+export const oxisynth_new: (a: number) => [number, number, number];
+export const oxisynth_add_soundfont: (a: number, b: number, c: number) => [number, number, number];
+export const oxisynth_select_soundfont: (a: number, b: number) => [number, number];
 export const oxisynth_note_on: (a: number, b: number, c: number, d: number) => void;
 export const oxisynth_note_off: (a: number, b: number, c: number) => void;
 export const oxisynth_program_change: (a: number, b: number, c: number) => void;

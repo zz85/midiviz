@@ -15,6 +15,8 @@
   <style>
     body { margin: 0; background: #1a1a2e; overflow: hidden; }
     #controls { position: absolute; z-index: 10; padding: 10px; color: #fff; }
+    #sfLoading { display: none; margin-left: 10px; color: #ffeb3b; }
+    #sfLoading.active { display: inline; }
     #controls button { margin: 0 5px; padding: 5px 15px; }
     #piano { position: absolute; bottom: 0; display: flex; height: 120px; }
     .key { position: relative; border: 1px solid #333; box-sizing: border-box; }
@@ -43,6 +45,7 @@
 <body>
   <div id="controls">
     <span id="playbackControls"></span>
+    <span id="sfLoading">Loading soundfont...</span>
     <label><input type="checkbox" id="bloomToggle" checked> Bloom</label>
     <label><input type="checkbox" id="particlesToggle" checked> Particles</label>
     <label><input type="checkbox" id="noteNamesToggle" checked> Note Names</label>
@@ -220,6 +223,15 @@
       document.removeEventListener('click', initSoundfont);
     };
     document.addEventListener('click', initSoundfont);
+    
+    // Soundfont loading events
+    const sfLoadingEl = document.getElementById('sfLoading');
+    window.addEventListener('soundfont-loading', () => sfLoadingEl.classList.add('active'));
+    window.addEventListener('soundfont-loaded', () => sfLoadingEl.classList.remove('active'));
+    window.addEventListener('soundfont-error', e => {
+      sfLoadingEl.classList.remove('active');
+      alert('Failed to load soundfont: ' + (e.detail.error?.message || 'Unknown error'));
+    });
     
     document.getElementById('bloomToggle').onchange = e => bloom = e.target.checked;
     document.getElementById('particlesToggle').onchange = e => showParticles = e.target.checked;
