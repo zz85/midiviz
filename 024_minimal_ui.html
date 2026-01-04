@@ -1,0 +1,652 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>MidiViz Piano</title>
+  <script src="tonejs-midi.js"></script>
+  <script src="piano.js"></script>
+  <script src="harpsichord.js"></script>
+  <script src="electric_piano.js"></script>
+  <script src="wavetable_piano.js"></script>
+  <script src="fast_piano.js"></script>
+  <script src="silent_piano.js"></script>
+  <script src="organ.js"></script>
+  <script src="midi_clock.js"></script>
+  <script src="playback_controls.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    :root {
+      --bg: #1a1814;
+      --bg2: #242018;
+      --border: #3a3428;
+      --text: #e8dcc8;
+      --text2: #8a7a60;
+      --accent: #d4a056;
+      --accent-glow: rgba(212,160,86,0.4);
+      --lcd-bg: #1a1610;
+      --key-white: linear-gradient(180deg, #f5ead8, #e8dcc8);
+      --key-black: linear-gradient(180deg, #333, #1a1a1a);
+      --key-active: linear-gradient(180deg, #e8c88a, #d4a056);
+    }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* TOP CONTROL BAR */
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 16px;
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      z-index: 10;
+      flex-wrap: wrap;
+    }
+
+    .play-btn {
+      width: 36px;
+      height: 36px;
+      border: none;
+      border-radius: 50%;
+      background: var(--accent);
+      color: var(--bg);
+      font-size: 14px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .play-btn:hover { filter: brightness(1.1); }
+
+    /* SONG SELECTOR */
+    .song-selector { position: relative; }
+    
+    .song-current {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 12px;
+      background: var(--lcd-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      cursor: pointer;
+      min-width: 200px;
+    }
+    .song-current:hover { border-color: var(--accent); }
+    .song-current-info { flex: 1; }
+    .song-current-title { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+    .song-current-artist { font-size: 10px; color: var(--text2); }
+    .song-current-arrow { color: var(--text2); font-size: 10px; }
+
+    .song-dropdown {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      width: 320px;
+      max-height: 400px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      overflow: hidden;
+      display: none;
+      z-index: 100;
+    }
+    .song-dropdown.open { display: block; }
+    
+    .song-search {
+      padding: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .song-search input {
+      width: 100%;
+      padding: 8px 10px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font-size: 12px;
+    }
+    .song-search input:focus { outline: none; border-color: var(--accent); }
+    .song-search input::placeholder { color: var(--text2); }
+
+    .song-list { max-height: 320px; overflow-y: auto; }
+    .song-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border);
+    }
+    .song-item:hover { background: rgba(212,160,86,0.1); }
+    .song-item.active { background: rgba(212,160,86,0.15); }
+    .song-item.disabled { opacity: 0.5; pointer-events: none; font-weight: bold; }
+    .song-item-info { flex: 1; }
+    .song-item-title { font-size: 13px; }
+
+    /* LCD DISPLAY */
+    .lcd {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--lcd-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
+      font-size: 11px;
+      color: var(--accent);
+      box-shadow: inset 0 1px 4px rgba(0,0,0,0.4);
+      flex: 1;
+      max-width: 400px;
+    }
+    .lcd-time { font-variant-numeric: tabular-nums; min-width: 90px; }
+    .lcd-progress {
+      flex: 1;
+      height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      cursor: pointer;
+      min-width: 80px;
+    }
+    .lcd-progress-fill {
+      width: 0%;
+      height: 100%;
+      background: var(--accent);
+      border-radius: 2px;
+      transition: width 0.1s;
+    }
+    .lcd-meta { color: var(--text2); white-space: nowrap; }
+
+    /* KNOBS */
+    .knob-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .knob {
+      width: 28px;
+      height: 28px;
+      background: linear-gradient(145deg, #3a3428, #2a2418);
+      border-radius: 50%;
+      border: 2px solid var(--border);
+      position: relative;
+      cursor: pointer;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+    .knob::before {
+      content: '';
+      position: absolute;
+      top: 3px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 2px;
+      height: 6px;
+      background: var(--accent);
+      border-radius: 1px;
+    }
+    .knob-label { font-size: 10px; color: var(--text2); }
+    .knob-value { font-size: 10px; color: var(--accent); font-family: 'SF Mono', monospace; min-width: 32px; }
+
+    /* TOGGLES */
+    .toggle-group { display: flex; gap: 8px; }
+    .toggle-btn {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+    }
+    .toggle {
+      width: 14px;
+      height: 14px;
+      background: linear-gradient(180deg, #2a2418, #1a1610);
+      border: 2px solid var(--border);
+      border-radius: 2px;
+      box-shadow: inset 0 1px 3px rgba(0,0,0,0.5);
+    }
+    .toggle.on {
+      background: var(--accent);
+      box-shadow: 0 0 6px var(--accent-glow);
+    }
+    .toggle-label { font-size: 10px; color: var(--text2); }
+
+    .spacer { flex: 1; }
+
+    .settings-btn {
+      width: 28px;
+      height: 28px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: transparent;
+      color: var(--text2);
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .settings-btn:hover { background: var(--border); }
+
+    /* VISUALIZATION */
+    .viz {
+      flex: 1;
+      position: relative;
+      background: var(--bg);
+    }
+    .viz canvas { display: block; }
+    .playhead {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: var(--accent);
+      box-shadow: 0 0 30px var(--accent);
+      pointer-events: none;
+    }
+
+    /* PIANO */
+    #piano {
+      display: flex;
+      height: 80px;
+      background: var(--bg2);
+      padding: 4px 2px 0;
+    }
+    .key { position: relative; border: none; }
+    .key.white {
+      flex: 1;
+      background: var(--key-white);
+      margin: 0 0.5px;
+      border-radius: 0 0 4px 4px;
+    }
+    .key.black {
+      width: 1.2%;
+      height: 55%;
+      background: var(--key-black);
+      margin-left: -0.6%;
+      margin-right: -0.6%;
+      z-index: 1;
+      border-radius: 0 0 3px 3px;
+    }
+    .key.active { background: var(--key-active) !important; }
+    .key.preview { background: linear-gradient(180deg, #c9a060, #b08040) !important; }
+
+    .overlay {
+      position: fixed;
+      inset: 0;
+      display: none;
+    }
+    .overlay.open { display: block; }
+
+    /* Loading indicator */
+    #sfLoading {
+      display: none;
+      color: var(--accent);
+      font-size: 11px;
+    }
+    #sfLoading.active { display: inline; }
+  </style>
+</head>
+<body>
+  <div class="overlay" id="overlay"></div>
+
+  <div class="controls">
+    <button class="play-btn" id="playBtn">▶</button>
+
+    <div class="song-selector">
+      <div class="song-current" id="songCurrent">
+        <div class="song-current-info">
+          <div class="song-current-title" id="songTitle">Select a song...</div>
+          <div class="song-current-artist" id="songArtist"></div>
+        </div>
+        <span class="song-current-arrow">▼</span>
+      </div>
+      <div class="song-dropdown" id="dropdown">
+        <div class="song-search">
+          <input type="text" id="songSearch" placeholder="Search songs...">
+        </div>
+        <div class="song-list" id="songList"></div>
+      </div>
+    </div>
+
+    <div class="lcd">
+      <span class="lcd-time" id="lcdTime">0:00 / 0:00</span>
+      <div class="lcd-progress" id="lcdProgress"><div class="lcd-progress-fill" id="lcdProgressFill"></div></div>
+      <span class="lcd-meta" id="lcdMeta">♩120</span>
+    </div>
+
+    <span id="sfLoading">Loading...</span>
+
+    <div class="knob-group">
+      <span class="knob-label">Spd</span>
+      <div class="knob" id="speedKnob"></div>
+      <span class="knob-value" id="speedValue">1.0x</span>
+    </div>
+
+    <div class="knob-group">
+      <span class="knob-label">Key</span>
+      <div class="knob" id="transposeKnob"></div>
+      <span class="knob-value" id="transposeValue">0</span>
+    </div>
+
+    <div class="spacer"></div>
+
+    <div class="toggle-group">
+      <div class="toggle-btn" id="bloomToggle">
+        <div class="toggle on"></div>
+        <span class="toggle-label">Bloom</span>
+      </div>
+      <div class="toggle-btn" id="fxToggle">
+        <div class="toggle on"></div>
+        <span class="toggle-label">FX</span>
+      </div>
+    </div>
+
+    <button class="settings-btn" title="Settings">⚙</button>
+  </div>
+
+  <div class="viz">
+    <canvas id="canvas"></canvas>
+    <div class="playhead"></div>
+  </div>
+
+  <div id="piano"></div>
+
+  <script type="module">
+    import './synth_manager.js';
+    
+    await SynthManager.load('oxisynth_sf3');
+    window.FluidWebPiano = SynthManager.loaded.oxisynth_sf3;
+    
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const pianoEl = document.getElementById('piano');
+    
+    let bloom = true, showParticles = true, transpose = 0, yScale = 1;
+    
+    // Particles
+    const particles = [];
+    function spawnParticles(midi, color) {
+      const x = midiToX(midi) + noteWidth(midi) / 2;
+      const y = canvas.height;
+      for (let i = 0; i < 8; i++) {
+        particles.push({ x, y, vx: (Math.random() - 0.5) * 5, vy: -Math.random() * 6 - 2, life: 1, color: '#d4a056', size: Math.random() * 4 + 2 });
+      }
+    }
+    function updateParticles() {
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx; p.y += p.vy; p.vy += 0.12; p.life -= 0.03;
+        if (p.life <= 0) particles.splice(i, 1);
+      }
+    }
+    function drawParticles() {
+      particles.forEach(p => {
+        ctx.globalAlpha = p.life;
+        if (bloom) { ctx.shadowColor = p.color; ctx.shadowBlur = 10; }
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+    }
+    
+    const PIANO_HEIGHT = 80, LOOK_AHEAD = 2;
+    const keys = {};
+    const blackPattern = [1,3,6,8,10];
+    
+    // Build piano
+    for (let midi = 21; midi <= 108; midi++) {
+      const isBlack = blackPattern.includes(midi % 12);
+      const key = document.createElement('div');
+      key.className = 'key ' + (isBlack ? 'black' : 'white');
+      keys[midi] = key;
+      pianoEl.appendChild(key);
+    }
+    
+    function resize() {
+      const vizEl = document.querySelector('.viz');
+      canvas.width = vizEl.clientWidth;
+      canvas.height = vizEl.clientHeight;
+    }
+    resize();
+    window.onresize = resize;
+    
+    function midiToX(midi) {
+      let whiteCount = 0;
+      for (let m = 21; m < midi; m++) if (!blackPattern.includes(m % 12)) whiteCount++;
+      const isBlack = blackPattern.includes(midi % 12);
+      const whiteWidth = canvas.width / 52;
+      return isBlack ? whiteCount * whiteWidth - whiteWidth * 0.15 : whiteCount * whiteWidth;
+    }
+    function noteWidth(midi) {
+      return (canvas.width / 52) * (blackPattern.includes(midi % 12) ? 0.6 : 1);
+    }
+    
+    // Build song list from PlaybackControls defaults
+    const songListEl = document.getElementById('songList');
+    PlaybackControls.defaultMidiFiles.forEach((f, i) => {
+      const item = document.createElement('div');
+      item.className = 'song-item' + (f.disabled ? ' disabled' : '');
+      item.innerHTML = `<div class="song-item-info"><div class="song-item-title">${f.label}</div></div>`;
+      if (!f.disabled) {
+        item.dataset.value = f.value;
+        item.onclick = () => selectSong(f.value, f.label);
+      }
+      songListEl.appendChild(item);
+    });
+    
+    // Dropdown
+    const dropdown = document.getElementById('dropdown');
+    const overlay = document.getElementById('overlay');
+    document.getElementById('songCurrent').onclick = () => {
+      dropdown.classList.toggle('open');
+      overlay.classList.toggle('open');
+    };
+    overlay.onclick = () => {
+      dropdown.classList.remove('open');
+      overlay.classList.remove('open');
+    };
+    
+    // Search
+    document.getElementById('songSearch').oninput = e => {
+      const q = e.target.value.toLowerCase();
+      songListEl.querySelectorAll('.song-item').forEach(item => {
+        const title = item.querySelector('.song-item-title').textContent.toLowerCase();
+        item.style.display = title.includes(q) ? '' : 'none';
+      });
+    };
+    
+    function selectSong(value, label) {
+      document.getElementById('songTitle').textContent = label;
+      document.querySelectorAll('.song-item').forEach(x => x.classList.remove('active'));
+      document.querySelector(`.song-item[data-value="${value}"]`)?.classList.add('active');
+      dropdown.classList.remove('open');
+      overlay.classList.remove('open');
+      playback.loadMidi(value);
+    }
+    
+    // Playback
+    const playback = new PlaybackControls({
+      useBackgroundClock: true,
+      trackFilter: () => true,
+      onNoteOn: (note) => { if (showParticles) spawnParticles(note.midi + transpose, '#d4a056'); },
+      onLoad: () => {
+        particles.length = 0;
+        if (playback.instrument.programChange) {
+          playback.midi?.tracks?.forEach(t => {
+            if (t.channel !== undefined && t.instrument?.number !== undefined) 
+              playback.instrument.programChange(t.channel, t.instrument.number);
+          });
+        }
+      },
+      onPlay: () => {
+        if (!playback.instrument.ready && playback.instrument.loadSoundfontStack) {
+          playback.instrument.loadSoundfontStack(PlaybackControls.defaultSoundfontStack);
+        }
+      }
+    });
+    
+    // Register synths
+    for (const key of Object.keys(SynthManager.synths)) {
+      playback.instruments[key] = () => SynthManager.loaded[key] ? new SynthManager.loaded[key]() : new SilentPiano();
+    }
+    
+    // Play button
+    const playBtn = document.getElementById('playBtn');
+    playBtn.onclick = () => {
+      if (playback.playing) {
+        playback.pause();
+        playBtn.textContent = '▶';
+      } else {
+        playback.play();
+        playBtn.textContent = '⏸';
+      }
+    };
+    
+    // LCD progress click to seek
+    document.getElementById('lcdProgress').onclick = e => {
+      const rect = e.target.getBoundingClientRect();
+      const pct = (e.clientX - rect.left) / rect.width;
+      playback.seek(pct * playback.duration);
+    };
+    
+    // Knob drag
+    function setupKnob(knobEl, valueEl, min, max, step, initial, format, onChange) {
+      let value = initial;
+      let startY, startValue;
+      
+      const update = () => {
+        const angle = ((value - min) / (max - min) - 0.5) * 270;
+        knobEl.style.transform = `rotate(${angle}deg)`;
+        valueEl.textContent = format(value);
+        onChange(value);
+      };
+      update();
+      
+      knobEl.onmousedown = e => {
+        startY = e.clientY;
+        startValue = value;
+        document.onmousemove = e => {
+          const delta = (startY - e.clientY) * step * 0.5;
+          value = Math.max(min, Math.min(max, startValue + delta));
+          update();
+        };
+        document.onmouseup = () => { document.onmousemove = null; };
+      };
+    }
+    
+    setupKnob(document.getElementById('speedKnob'), document.getElementById('speedValue'),
+      0.25, 2, 0.05, 1, v => v.toFixed(1) + 'x', v => playback.setSpeed(v));
+    
+    setupKnob(document.getElementById('transposeKnob'), document.getElementById('transposeValue'),
+      -12, 12, 1, 0, v => (v > 0 ? '+' : '') + v, v => { transpose = v; playback.transpose = v; });
+    
+    // Toggles
+    document.getElementById('bloomToggle').onclick = function() {
+      this.querySelector('.toggle').classList.toggle('on');
+      bloom = this.querySelector('.toggle').classList.contains('on');
+    };
+    document.getElementById('fxToggle').onclick = function() {
+      this.querySelector('.toggle').classList.toggle('on');
+      showParticles = this.querySelector('.toggle').classList.contains('on');
+    };
+    
+    // Soundfont loading
+    const sfLoadingEl = document.getElementById('sfLoading');
+    window.addEventListener('soundfont-loading', () => sfLoadingEl.classList.add('active'));
+    window.addEventListener('soundfont-loaded', () => sfLoadingEl.classList.remove('active'));
+    
+    // Init soundfont on first click
+    document.addEventListener('click', function init() {
+      if (playback.instrument.loadSoundfontStack && !playback.instrument.ready) {
+        playback.instrument.loadSoundfontStack(PlaybackControls.defaultSoundfontStack);
+      }
+      document.removeEventListener('click', init);
+    });
+    
+    function formatTime(s) {
+      return Math.floor(s/60) + ':' + Math.floor(s%60).toString().padStart(2,'0');
+    }
+    
+    function render() {
+      requestAnimationFrame(render);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      const { lapse, playing, midi: midiData, allNotes, duration } = playback;
+      
+      // Update LCD
+      document.getElementById('lcdTime').textContent = `${formatTime(lapse)} / ${formatTime(duration || 0)}`;
+      document.getElementById('lcdProgressFill').style.width = duration ? (lapse / duration * 100) + '%' : '0%';
+      
+      // BPM
+      const tempos = midiData?.header?.tempos || [{bpm: 120}];
+      const bpm = tempos[0]?.bpm || 120;
+      document.getElementById('lcdMeta').textContent = `♩${Math.round(bpm)}`;
+      
+      // Update play button state
+      if (!playing && playBtn.textContent === '⏸') playBtn.textContent = '▶';
+      
+      // Grid lines (subtle)
+      ctx.strokeStyle = 'rgba(212,160,86,0.1)';
+      ctx.lineWidth = 1;
+      for (let midi = 24; midi <= 108; midi += 12) {
+        const x = midiToX(midi);
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+      }
+      
+      if (playing) { playback.update(); updateParticles(); }
+      if (showParticles) drawParticles();
+      
+      // Reset keys
+      Object.values(keys).forEach(k => k.classList.remove('active', 'preview'));
+      
+      // Draw notes
+      for (const note of allNotes || []) {
+        const { midi: origMidi, time, duration: dur, trackNo } = note;
+        const midi = origMidi + transpose;
+        
+        const startY = canvas.height - (time - lapse) * (canvas.height / LOOK_AHEAD) * yScale;
+        const endY = canvas.height - (time + dur - lapse) * (canvas.height / LOOK_AHEAD) * yScale;
+        if (startY < -50 || endY > canvas.height + 50) continue;
+        
+        const x = midiToX(midi), w = noteWidth(midi) - 2, h = Math.max(startY - endY, 4), y = endY;
+        
+        if (time <= lapse && time + dur >= lapse) keys[midi]?.classList.add('active');
+        
+        const isHitting = startY >= canvas.height - 5 && endY <= canvas.height;
+        
+        // Amber gradient for notes
+        const grad = ctx.createLinearGradient(0, y, 0, y + h);
+        grad.addColorStop(0, '#e8b86a');
+        grad.addColorStop(1, '#d4a056');
+        ctx.fillStyle = grad;
+        
+        if (bloom) {
+          ctx.shadowColor = '#d4a056';
+          ctx.shadowBlur = isHitting ? 20 : 8;
+        }
+        if (isHitting) ctx.fillStyle = '#fff';
+        
+        ctx.beginPath();
+        ctx.roundRect(x + 1, y, w, h, 3);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+    }
+    
+    // Load first song
+    const firstSong = PlaybackControls.defaultMidiFiles.find(f => !f.disabled);
+    if (firstSong) selectSong(firstSong.value, firstSong.label);
+    
+    render();
+  </script>
+</body>
+</html>
