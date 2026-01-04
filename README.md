@@ -3,6 +3,10 @@ Midi Visualization Experiments
 
 3 Jan 2026
 
+[Experiment #022 - Synthesia Multi-Synth](022_synthesia_multi_synth.html)
+- Selectable synth engine: OxiSynth SF3, OxiSynth, SpessaSynth, FluidWeb
+- Hot-swap synths during playback
+
 [Experiment #021 - Synthesia OxiSynth SF3](021_synthesia_oxisynth_sf3.html)
 - OxiSynth with native SF3 support via spessasynth_core
 - Decodes SF3 to SF2 in-browser before loading

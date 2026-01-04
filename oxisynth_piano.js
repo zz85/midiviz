@@ -123,3 +123,5 @@ class OxiSynthPiano {
     return this._ensureContext().resume();
   }
 }
+
+window.OxiSynthPiano = OxiSynthPiano;

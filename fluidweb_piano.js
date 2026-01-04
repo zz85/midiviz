@@ -69,3 +69,5 @@ class FluidWebPiano {
     return this._ensureContext().resume();
   }
 }
+
+window.FluidWebPiano = FluidWebPiano;

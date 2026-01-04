@@ -145,3 +145,5 @@ class SpessaSynthPiano {
     return this._ensureContext().resume();
   }
 }
+
+window.SpessaSynthPiano = SpessaSynthPiano;
