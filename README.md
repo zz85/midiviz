@@ -3,6 +3,15 @@ Midi Visualization Experiments
 
 3 Jan 2026
 
+[Experiment #021 - Synthesia OxiSynth SF3](021_synthesia_oxisynth_sf3.html)
+- OxiSynth with native SF3 support via spessasynth_core
+- Decodes SF3 to SF2 in-browser before loading
+- Non-blocking decompression (main thread stays responsive)
+
+[SF3 to SF2 Converter](test_sf3_to_sf2.html)
+- Browser-based SF3 to SF2 converter
+- Uses Web Worker for non-blocking Vorbis decompression
+
 [Experiment #020 - Synthesia SpessaSynth](020_synthesia_spessasynth.html)
 - SpessaSynth WASM synthesizer
 - SF2 and SF3 soundfont support

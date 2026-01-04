@@ -1,0 +1,18 @@
+{
+  "lockfileVersion": 1,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "spessasynth-bundle",
+      "dependencies": {
+        "spessasynth_core": "^4.0.24",
+        "spessasynth_lib": "^4.0.19",
+      },
+    },
+  },
+  "packages": {
+    "spessasynth_core": ["spessasynth_core@4.0.24", "", {}, "sha512-uEu8DqSlgpqJAnpOnLvY5fd6RcVPQyTmoB7ygD0njXdGzSYI8xTPhH9bvefia8rS8lIUa2bI9zzn/YqVNaYVXw=="],
+
+    "spessasynth_lib": ["spessasynth_lib@4.0.19", "", { "dependencies": { "spessasynth_core": "latest" } }, "sha512-f2xKjvFN5kCX8XLxJvBVVp2ShBlTQ/t8CtPySlFCu8mFPD4KZjL/v+oLaFfQ+fCoeX/Hpu3SofmwRc5r78NmOQ=="],
+  }
+}

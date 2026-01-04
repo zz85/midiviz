@@ -1,4 +1,4 @@
-import { SoundBankLoader, BasicSoundBank } from 'https://esm.sh/spessasynth_core';
+import { SoundBankLoader, BasicSoundBank } from './lib/spessasynth/spessasynth_core.bundle.js';
 
 self.onmessage = async (e) => {
   const soundbank = SoundBankLoader.fromArrayBuffer(e.data);

@@ -1,11 +1,13 @@
-// OxiSynth Piano - wraps oxisynth WASM synth with tinyaudio
-class OxiSynthPiano {
+// OxiSynth Piano with SF3 support - decodes SF3 to SF2 before loading
+import { SoundBankLoader, BasicSoundBank } from './lib/spessasynth/spessasynth_core.bundle.js';
+
+class OxiSynthPianoSF3 {
   constructor() {
     this.ctx = null;
     this.synth = null;
     this.ready = false;
     this.pending = [];
-    this.fontIndex = new Map(); // path -> font index
+    this.fontIndex = new Map();
     this.activeFont = null;
   }
 
@@ -43,7 +45,19 @@ class OxiSynthPiano {
       let idx = this.fontIndex.get(path);
       if (idx === undefined) {
         const response = await fetch(path);
-        const sf2Data = new Uint8Array(await response.arrayBuffer());
+        let sf2Data = new Uint8Array(await response.arrayBuffer());
+        
+        // Convert SF3 to SF2 if needed
+        if (path.endsWith('.sf3')) {
+          console.log('Decoding SF3 to SF2...');
+          const start = performance.now();
+          const soundbank = SoundBankLoader.fromArrayBuffer(sf2Data.buffer);
+          await BasicSoundBank.isSF3DecoderReady;
+          const sf2Buffer = await soundbank.writeSF2({ decompress: true });
+          sf2Data = new Uint8Array(sf2Buffer);
+          console.log(`SF3 decode took ${((performance.now() - start) / 1000).toFixed(2)}s`);
+        }
+        
         const start = performance.now();
         idx = this.synth.add_soundfont(sf2Data);
         console.log(`Soundfont load took ${((performance.now() - start) / 1000).toFixed(2)}s`);
@@ -72,26 +86,17 @@ class OxiSynthPiano {
   }
 
   noteOn(midi, velocity = 0.7, channel = 0) {
-    if (!this.ready) {
-      this.pending.push(['noteOn', [midi, velocity, channel]]);
-      return;
-    }
+    if (!this.ready) { this.pending.push(['noteOn', [midi, velocity, channel]]); return; }
     this.synth.note_on(channel, midi, Math.round(velocity * 127));
   }
 
   noteOff(midi, channel = 0) {
-    if (!this.ready) {
-      this.pending.push(['noteOff', [midi, channel]]);
-      return;
-    }
+    if (!this.ready) { this.pending.push(['noteOff', [midi, channel]]); return; }
     this.synth.note_off(channel, midi);
   }
 
   programChange(channel, program) {
-    if (!this.ready) {
-      this.pending.push(['programChange', [channel, program]]);
-      return;
-    }
+    if (!this.ready) { this.pending.push(['programChange', [channel, program]]); return; }
     this.synth.program_change(channel, program);
   }
 
@@ -123,3 +128,5 @@ class OxiSynthPiano {
     return this._ensureContext().resume();
   }
 }
+
+window.OxiSynthPianoSF3 = OxiSynthPianoSF3;

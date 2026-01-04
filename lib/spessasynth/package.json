@@ -2,6 +2,7 @@
   "name": "spessasynth-bundle",
   "type": "module",
   "dependencies": {
+    "spessasynth_core": "^4.0.24",
     "spessasynth_lib": "^4.0.19"
   }
 }
