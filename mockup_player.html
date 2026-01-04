@@ -27,47 +27,219 @@
       background: var(--bg);
       color: var(--text);
       height: 100vh;
-      display: grid;
-      grid-template-columns: 240px 1fr;
-      grid-template-rows: 1fr auto auto;
-    }
-
-    /* Sidebar - always visible */
-    .sidebar {
-      grid-row: 1 / -1;
-      background: var(--bg2);
-      border-right: 1px solid var(--border);
       display: flex;
       flex-direction: column;
     }
-    .sidebar-header {
-      padding: 16px;
+
+    /* Top controls */
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 16px;
+      background: var(--bg2);
       border-bottom: 1px solid var(--border);
-      font-weight: 500;
-      color: var(--accent);
+      z-index: 10;
     }
-    .tracklist {
-      flex: 1;
-      overflow-y: auto;
+
+    .play-btn {
+      width: 36px;
+      height: 36px;
+      border: none;
+      border-radius: 50%;
+      background: var(--accent);
+      color: var(--bg);
+      font-size: 14px;
+      cursor: pointer;
     }
-    .track {
+
+    /* Song selector dropdown */
+    .song-selector {
+      position: relative;
+    }
+    .song-current {
       display: flex;
       align-items: center;
       gap: 10px;
-      padding: 10px 16px;
+      padding: 6px 12px;
+      background: var(--lcd-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      cursor: pointer;
+      min-width: 200px;
+    }
+    .song-current:hover { border-color: var(--accent); }
+    .song-current-info { flex: 1; }
+    .song-current-title { font-size: 13px; }
+    .song-current-artist { font-size: 10px; color: var(--text2); }
+    .song-current-arrow { color: var(--text2); font-size: 10px; }
+
+    /* Dropdown popover */
+    .song-dropdown {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      width: 320px;
+      max-height: 400px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      overflow: hidden;
+      display: none;
+      z-index: 100;
+    }
+    .song-dropdown.open { display: block; }
+    
+    .song-search {
+      padding: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .song-search input {
+      width: 100%;
+      padding: 8px 10px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font-size: 12px;
+    }
+    .song-search input:focus { outline: none; border-color: var(--accent); }
+    .song-search input::placeholder { color: var(--text2); }
+
+    .song-list {
+      max-height: 320px;
+      overflow-y: auto;
+    }
+    .song-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
       cursor: pointer;
       border-bottom: 1px solid var(--border);
     }
-    .track:hover { background: rgba(212,160,86,0.1); }
-    .track.active { background: rgba(212,160,86,0.15); }
-    .track-num { color: var(--text2); font-size: 11px; min-width: 18px; }
-    .track-info { flex: 1; min-width: 0; }
-    .track-name { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .track-artist { font-size: 11px; color: var(--text2); }
-    .track-dur { font-size: 11px; color: var(--text2); }
+    .song-item:hover { background: rgba(212,160,86,0.1); }
+    .song-item.active { background: rgba(212,160,86,0.15); }
+    .song-item-info { flex: 1; }
+    .song-item-title { font-size: 13px; }
+    .song-item-artist { font-size: 11px; color: var(--text2); }
+    .song-item-dur { font-size: 11px; color: var(--text2); }
 
-    /* Visualization */
+    /* LCD Display */
+    .lcd {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--lcd-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-family: 'SF Mono', 'Consolas', monospace;
+      font-size: 11px;
+      color: var(--accent);
+      box-shadow: inset 0 1px 4px rgba(0,0,0,0.4);
+    }
+    .lcd-time { font-variant-numeric: tabular-nums; min-width: 80px; }
+    .lcd-progress {
+      flex: 1;
+      height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      cursor: pointer;
+      min-width: 120px;
+    }
+    .lcd-progress-fill {
+      width: 35%;
+      height: 100%;
+      background: var(--accent);
+      border-radius: 2px;
+    }
+    .lcd-meta { color: var(--text2); white-space: nowrap; }
+
+    /* Knob */
+    .knob-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .knob {
+      width: 28px;
+      height: 28px;
+      background: linear-gradient(145deg, #3a3428, #2a2418);
+      border-radius: 50%;
+      border: 2px solid var(--border);
+      position: relative;
+      cursor: pointer;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+    .knob::before {
+      content: '';
+      position: absolute;
+      top: 3px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 2px;
+      height: 6px;
+      background: var(--accent);
+      border-radius: 1px;
+    }
+    .knob-label {
+      font-size: 10px;
+      color: var(--text2);
+    }
+    .knob-value {
+      font-size: 10px;
+      color: var(--accent);
+      font-family: 'SF Mono', monospace;
+      min-width: 28px;
+    }
+
+    /* Vintage toggle buttons */
+    .toggle-group {
+      display: flex;
+      gap: 6px;
+    }
+    .toggle-btn {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+    }
+    .toggle {
+      width: 14px;
+      height: 14px;
+      background: linear-gradient(180deg, #2a2418, #1a1610);
+      border: 2px solid var(--border);
+      border-radius: 2px;
+      box-shadow: inset 0 1px 3px rgba(0,0,0,0.5);
+    }
+    .toggle.on {
+      background: var(--accent);
+      box-shadow: 0 0 6px var(--accent-glow);
+    }
+    .toggle-label {
+      font-size: 10px;
+      color: var(--text2);
+    }
+
+    .spacer { flex: 1; }
+
+    .settings-btn {
+      width: 28px;
+      height: 28px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: transparent;
+      color: var(--text2);
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .settings-btn:hover { background: var(--border); }
+
+    /* Visualization - full remaining space */
     .viz {
+      flex: 1;
       position: relative;
     }
     .note {
@@ -112,213 +284,114 @@
     }
     .key.active { background: var(--key-active); }
 
-    /* Controls */
-    .controls {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      padding: 12px 16px;
-      background: var(--bg2);
-      border-top: 1px solid var(--border);
+    /* Click outside to close */
+    .overlay {
+      position: fixed;
+      inset: 0;
+      display: none;
     }
-
-    .play-btn {
-      width: 40px;
-      height: 40px;
-      border: none;
-      border-radius: 50%;
-      background: var(--accent);
-      color: var(--bg);
-      font-size: 16px;
-      cursor: pointer;
-    }
-
-    /* LCD Display */
-    .lcd {
-      background: var(--lcd-bg);
-      border: 2px solid var(--border);
-      border-radius: 4px;
-      padding: 8px 12px;
-      font-family: 'SF Mono', 'Consolas', monospace;
-      font-size: 11px;
-      color: var(--accent);
-      box-shadow: inset 0 2px 8px rgba(0,0,0,0.4);
-      min-width: 280px;
-    }
-    .lcd-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .lcd-title { font-size: 13px; font-weight: 500; }
-    .lcd-time { font-variant-numeric: tabular-nums; }
-    .lcd-meta { color: var(--text2); margin-top: 4px; }
-    .lcd-progress {
-      height: 4px;
-      background: var(--border);
-      border-radius: 2px;
-      margin-top: 8px;
-      cursor: pointer;
-    }
-    .lcd-progress-fill {
-      width: 35%;
-      height: 100%;
-      background: var(--accent);
-      border-radius: 2px;
-    }
-
-    /* Knob */
-    .knob-group {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 4px;
-    }
-    .knob {
-      width: 32px;
-      height: 32px;
-      background: linear-gradient(145deg, #3a3428, #2a2418);
-      border-radius: 50%;
-      border: 2px solid var(--border);
-      position: relative;
-      cursor: pointer;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-    }
-    .knob::before {
-      content: '';
-      position: absolute;
-      top: 4px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 3px;
-      height: 8px;
-      background: var(--accent);
-      border-radius: 2px;
-    }
-    .knob-label {
-      font-size: 9px;
-      color: var(--text2);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    .knob-value {
-      font-size: 10px;
-      color: var(--accent);
-      font-family: 'SF Mono', monospace;
-    }
-
-    /* Vintage toggle buttons */
-    .toggle-group {
-      display: flex;
-      gap: 8px;
-    }
-    .toggle-btn {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 4px;
-    }
-    .toggle {
-      width: 16px;
-      height: 16px;
-      background: linear-gradient(180deg, #2a2418, #1a1610);
-      border: 2px solid var(--border);
-      border-radius: 3px;
-      cursor: pointer;
-      position: relative;
-      box-shadow: inset 0 1px 3px rgba(0,0,0,0.5);
-    }
-    .toggle.on {
-      background: var(--accent);
-      box-shadow: 0 0 8px var(--accent-glow), inset 0 1px 2px rgba(255,255,255,0.2);
-    }
-    .toggle.on::after {
-      content: '';
-      position: absolute;
-      top: 2px;
-      left: 2px;
-      right: 2px;
-      height: 4px;
-      background: rgba(255,255,255,0.3);
-      border-radius: 1px;
-    }
-    .toggle-label {
-      font-size: 8px;
-      color: var(--text2);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    .spacer { flex: 1; }
-
-    /* Settings button */
-    .settings-btn {
-      width: 28px;
-      height: 28px;
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      background: transparent;
-      color: var(--text2);
-      cursor: pointer;
-      font-size: 14px;
-    }
-    .settings-btn:hover { background: var(--border); }
+    .overlay.open { display: block; }
   </style>
 </head>
 <body>
-  <aside class="sidebar">
-    <div class="sidebar-header">Library</div>
-    <div class="tracklist">
-      <div class="track active">
-        <span class="track-num">1</span>
-        <div class="track-info">
-          <div class="track-name">Clair de Lune</div>
-          <div class="track-artist">Debussy</div>
+  <div class="overlay" id="overlay" onclick="closeDropdown()"></div>
+
+  <div class="controls">
+    <button class="play-btn">▶</button>
+
+    <!-- Song selector with dropdown -->
+    <div class="song-selector">
+      <div class="song-current" onclick="toggleDropdown()">
+        <div class="song-current-info">
+          <div class="song-current-title">Clair de Lune</div>
+          <div class="song-current-artist">Debussy</div>
         </div>
-        <span class="track-dur">5:12</span>
+        <span class="song-current-arrow">▼</span>
       </div>
-      <div class="track">
-        <span class="track-num">2</span>
-        <div class="track-info">
-          <div class="track-name">Gymnopédie No.1</div>
-          <div class="track-artist">Satie</div>
+      <div class="song-dropdown" id="dropdown">
+        <div class="song-search">
+          <input type="text" placeholder="Search songs...">
         </div>
-        <span class="track-dur">3:05</span>
-      </div>
-      <div class="track">
-        <span class="track-num">3</span>
-        <div class="track-info">
-          <div class="track-name">Moonlight Sonata</div>
-          <div class="track-artist">Beethoven</div>
+        <div class="song-list">
+          <div class="song-item active">
+            <div class="song-item-info">
+              <div class="song-item-title">Clair de Lune</div>
+              <div class="song-item-artist">Debussy</div>
+            </div>
+            <span class="song-item-dur">5:12</span>
+          </div>
+          <div class="song-item">
+            <div class="song-item-info">
+              <div class="song-item-title">Gymnopédie No.1</div>
+              <div class="song-item-artist">Satie</div>
+            </div>
+            <span class="song-item-dur">3:05</span>
+          </div>
+          <div class="song-item">
+            <div class="song-item-info">
+              <div class="song-item-title">Moonlight Sonata</div>
+              <div class="song-item-artist">Beethoven</div>
+            </div>
+            <span class="song-item-dur">6:30</span>
+          </div>
+          <div class="song-item">
+            <div class="song-item-info">
+              <div class="song-item-title">River Flows in You</div>
+              <div class="song-item-artist">Yiruma</div>
+            </div>
+            <span class="song-item-dur">3:45</span>
+          </div>
+          <div class="song-item">
+            <div class="song-item-info">
+              <div class="song-item-title">Fantaisie-Impromptu</div>
+              <div class="song-item-artist">Chopin</div>
+            </div>
+            <span class="song-item-dur">5:28</span>
+          </div>
+          <div class="song-item">
+            <div class="song-item-info">
+              <div class="song-item-title">Prelude in C Major</div>
+              <div class="song-item-artist">Bach</div>
+            </div>
+            <span class="song-item-dur">2:45</span>
+          </div>
         </div>
-        <span class="track-dur">6:30</span>
-      </div>
-      <div class="track">
-        <span class="track-num">4</span>
-        <div class="track-info">
-          <div class="track-name">River Flows in You</div>
-          <div class="track-artist">Yiruma</div>
-        </div>
-        <span class="track-dur">3:45</span>
-      </div>
-      <div class="track">
-        <span class="track-num">5</span>
-        <div class="track-info">
-          <div class="track-name">Fantaisie-Impromptu</div>
-          <div class="track-artist">Chopin</div>
-        </div>
-        <span class="track-dur">5:28</span>
-      </div>
-      <div class="track">
-        <span class="track-num">6</span>
-        <div class="track-info">
-          <div class="track-name">Prelude in C Major</div>
-          <div class="track-artist">Bach</div>
-        </div>
-        <span class="track-dur">2:45</span>
       </div>
     </div>
-  </aside>
+
+    <div class="lcd">
+      <span class="lcd-time">1:24 / 5:12</span>
+      <div class="lcd-progress"><div class="lcd-progress-fill"></div></div>
+      <span class="lcd-meta">♩66 · 4/4 · D♭</span>
+    </div>
+
+    <div class="knob-group">
+      <span class="knob-label">Spd</span>
+      <div class="knob" style="transform: rotate(-30deg);"></div>
+      <span class="knob-value">0.8x</span>
+    </div>
+
+    <div class="knob-group">
+      <span class="knob-label">Key</span>
+      <div class="knob"></div>
+      <span class="knob-value">0</span>
+    </div>
+
+    <div class="spacer"></div>
+
+    <div class="toggle-group">
+      <div class="toggle-btn" onclick="this.querySelector('.toggle').classList.toggle('on')">
+        <div class="toggle on"></div>
+        <span class="toggle-label">Bloom</span>
+      </div>
+      <div class="toggle-btn" onclick="this.querySelector('.toggle').classList.toggle('on')">
+        <div class="toggle on"></div>
+        <span class="toggle-label">FX</span>
+      </div>
+    </div>
+
+    <button class="settings-btn" title="Settings">⚙</button>
+  </div>
 
   <div class="viz">
     <div class="note" style="left:30%; bottom:65%; height:70px;"></div>
@@ -332,53 +405,6 @@
 
   <div class="piano" id="piano"></div>
 
-  <div class="controls">
-    <button class="play-btn">▶</button>
-
-    <div class="lcd">
-      <div class="lcd-row">
-        <span class="lcd-title">Clair de Lune</span>
-        <span class="lcd-time">1:24 / 5:12</span>
-      </div>
-      <div class="lcd-row lcd-meta">
-        <span>Debussy</span>
-        <span>♩66 · 4/4 · D♭maj</span>
-      </div>
-      <div class="lcd-progress"><div class="lcd-progress-fill"></div></div>
-    </div>
-
-    <div class="knob-group">
-      <div class="knob" style="transform: rotate(-30deg);"></div>
-      <span class="knob-value">0.8x</span>
-      <span class="knob-label">Speed</span>
-    </div>
-
-    <div class="knob-group">
-      <div class="knob" style="transform: rotate(0deg);"></div>
-      <span class="knob-value">0</span>
-      <span class="knob-label">Trans</span>
-    </div>
-
-    <div class="spacer"></div>
-
-    <div class="toggle-group">
-      <div class="toggle-btn">
-        <div class="toggle on"></div>
-        <span class="toggle-label">Bloom</span>
-      </div>
-      <div class="toggle-btn">
-        <div class="toggle on"></div>
-        <span class="toggle-label">Parts</span>
-      </div>
-      <div class="toggle-btn">
-        <div class="toggle"></div>
-        <span class="toggle-label">Names</span>
-      </div>
-    </div>
-
-    <button class="settings-btn" title="More options">⚙</button>
-  </div>
-
   <script>
     // Piano
     const piano = document.getElementById('piano');
@@ -390,16 +416,22 @@
       piano.appendChild(k);
     }
 
-    // Toggle buttons
-    document.querySelectorAll('.toggle').forEach(t => {
-      t.addEventListener('click', () => t.classList.toggle('on'));
-    });
+    // Dropdown
+    function toggleDropdown() {
+      document.getElementById('dropdown').classList.toggle('open');
+      document.getElementById('overlay').classList.toggle('open');
+    }
+    function closeDropdown() {
+      document.getElementById('dropdown').classList.remove('open');
+      document.getElementById('overlay').classList.remove('open');
+    }
 
-    // Track selection
-    document.querySelectorAll('.track').forEach(t => {
-      t.addEventListener('click', () => {
-        document.querySelectorAll('.track').forEach(x => x.classList.remove('active'));
-        t.classList.add('active');
+    // Song selection
+    document.querySelectorAll('.song-item').forEach(item => {
+      item.addEventListener('click', () => {
+        document.querySelectorAll('.song-item').forEach(x => x.classList.remove('active'));
+        item.classList.add('active');
+        closeDropdown();
       });
     });
   </script>
