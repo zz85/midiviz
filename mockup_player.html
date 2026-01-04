@@ -5,182 +5,189 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MIDI Player Mockup</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    @font-face {
+      font-family: 'Pixel';
+      src: url('https://fonts.gstatic.com/s/pressstart2p/v15/e3t4euO8T-267oIAQAu6jDQyK3nVivM.woff2') format('woff2');
+    }
+    
+    * { box-sizing: border-box; margin: 0; padding: 0; image-rendering: pixelated; }
     
     body {
-      font-family: 'Lucida Grande', Geneva, Verdana, sans-serif;
-      background: #2a2a2a url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><rect width="4" height="4" fill="%23222"/><rect width="2" height="2" fill="%23282828"/></svg>');
-      color: #e8e0d0;
+      font-family: 'Press Start 2P', 'Pixel', monospace;
+      background: #1a1a2e;
+      color: #fff;
       height: 100vh;
       overflow: hidden;
+      font-size: 8px;
     }
 
-    /* Sidebar - wood panel */
+    /* Pixel border helper */
+    .pixel-border {
+      border: 4px solid;
+      border-color: #5a6988 #2a3448 #2a3448 #5a6988;
+    }
+    .pixel-border-inset {
+      border: 4px solid;
+      border-color: #2a3448 #5a6988 #5a6988 #2a3448;
+    }
+
+    /* Sidebar */
     .sidebar {
       position: fixed;
       left: 0;
       top: 0;
       bottom: 0;
-      width: 260px;
-      background: linear-gradient(180deg, #4a3728 0%, #3d2d20 50%, #2e2218 100%);
-      border-right: 4px solid #1a1410;
-      box-shadow: inset -2px 0 8px rgba(0,0,0,0.5), 2px 0 10px rgba(0,0,0,0.5);
+      width: 220px;
+      background: #2d2d44;
+      border-right: 4px solid #1a1a2e;
       z-index: 100;
       display: flex;
       flex-direction: column;
     }
 
     .sidebar-header {
-      padding: 16px;
-      background: linear-gradient(180deg, #5a4738, #4a3728);
-      border-bottom: 2px solid #2a1a10;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+      padding: 12px;
+      background: #3d3d5c;
+      border-bottom: 4px solid #1a1a2e;
     }
 
     .sidebar-title {
-      font-size: 14px;
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      color: #c9a86c;
-      text-shadow: 0 1px 0 #000, 0 -1px 0 rgba(255,255,255,0.1);
-      margin-bottom: 12px;
+      font-size: 10px;
+      color: #ffcc00;
+      text-shadow: 2px 2px 0 #aa6600;
+      margin-bottom: 10px;
       text-align: center;
     }
 
     .search-box {
       width: 100%;
-      padding: 8px 12px;
-      background: linear-gradient(180deg, #1a1410, #252015);
-      border: 2px solid #1a1410;
-      border-radius: 4px;
-      color: #c9a86c;
-      font-size: 12px;
-      box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
+      padding: 8px;
+      background: #1a1a2e;
+      border: 4px solid;
+      border-color: #0a0a1e #3a3a5e #3a3a5e #0a0a1e;
+      color: #88ff88;
+      font-family: inherit;
+      font-size: 8px;
     }
-    .search-box::placeholder { color: #6a5a4a; }
-    .search-box:focus { outline: none; border-color: #8a6a3a; }
+    .search-box::placeholder { color: #446644; }
+    .search-box:focus { outline: none; background: #0a0a1e; }
 
     .playlist {
       flex: 1;
       overflow-y: auto;
-      background: linear-gradient(180deg, #2e2218, #251c14);
-      box-shadow: inset 0 4px 8px rgba(0,0,0,0.4);
+      background: #1a1a2e;
     }
 
     .category {
-      padding: 10px 16px 6px;
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      color: #8a7a5a;
-      background: linear-gradient(90deg, transparent, rgba(0,0,0,0.2), transparent);
-      border-top: 1px solid #3a2a1a;
-      border-bottom: 1px solid #1a1410;
+      padding: 8px 12px;
+      font-size: 8px;
+      color: #ffcc00;
+      background: #2d2d44;
+      border-top: 2px solid #3d3d5c;
+      border-bottom: 2px solid #1a1a2e;
     }
 
     .song {
-      padding: 10px 16px;
-      font-size: 12px;
+      padding: 8px 12px;
+      font-size: 8px;
       cursor: pointer;
-      border-bottom: 1px solid rgba(0,0,0,0.3);
-      border-top: 1px solid rgba(255,255,255,0.03);
-      transition: background 0.15s;
+      color: #aaaacc;
+      border-bottom: 2px solid #2d2d44;
     }
-    .song:hover { background: rgba(201,168,108,0.1); }
+    .song:hover { background: #2d2d44; color: #fff; }
     .song.active {
-      background: linear-gradient(90deg, #5a4020, #4a3018);
-      color: #f0d890;
-      box-shadow: inset 0 0 10px rgba(0,0,0,0.3);
+      background: #3d5c3d;
+      color: #88ff88;
     }
     .song.active::before {
-      content: '♪ ';
-      color: #c9a86c;
+      content: '► ';
+      color: #88ff88;
     }
 
     .main-content {
-      margin-left: 260px;
+      margin-left: 220px;
       display: flex;
       flex-direction: column;
       height: 100vh;
     }
 
-    /* Top bar - brushed metal */
+    /* Top bar */
     .top-bar {
       display: flex;
       align-items: center;
-      gap: 12px;
-      padding: 10px 16px;
-      background: linear-gradient(180deg, #5a5a5a 0%, #4a4a4a 50%, #3a3a3a 100%);
-      border-bottom: 2px solid #222;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1);
+      gap: 8px;
+      padding: 8px 12px;
+      background: #3d3d5c;
+      border-bottom: 4px solid #1a1a2e;
     }
 
     .logo {
-      font-weight: 700;
-      font-size: 16px;
-      color: #c9a86c;
-      text-shadow: 0 1px 2px #000, 0 0 10px rgba(201,168,108,0.3);
-      letter-spacing: 1px;
+      font-size: 12px;
+      color: #ff6688;
+      text-shadow: 2px 2px 0 #882244;
     }
 
     select {
-      background: linear-gradient(180deg, #4a4a4a, #3a3a3a);
-      border: 1px solid #222;
-      border-radius: 4px;
-      color: #ccc;
-      padding: 6px 10px;
-      font-size: 11px;
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.1), 0 2px 3px rgba(0,0,0,0.3);
+      background: #2d2d44;
+      border: 4px solid;
+      border-color: #5a6988 #2a3448 #2a3448 #5a6988;
+      color: #aaaacc;
+      padding: 6px 8px;
+      font-family: inherit;
+      font-size: 8px;
+      cursor: pointer;
     }
-    select:focus { outline: none; }
 
     .spacer { flex: 1; }
 
     .bpm {
-      font-size: 13px;
-      color: #7a2a2a;
-      font-weight: bold;
-      text-shadow: 0 0 8px rgba(180,60,60,0.5);
-      background: linear-gradient(180deg, #1a1a1a, #0a0a0a);
-      padding: 6px 12px;
-      border-radius: 4px;
-      border: 2px solid #333;
-      box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
-      font-family: 'Courier New', monospace;
+      font-size: 10px;
+      color: #ff4444;
+      text-shadow: 0 0 8px #ff0000;
+      background: #0a0a0a;
+      padding: 6px 10px;
+      border: 4px solid;
+      border-color: #2a2a2a #4a4a4a #4a4a4a #2a2a2a;
     }
 
     /* Visualization area */
     .viz-area {
       flex: 1;
       position: relative;
-      background: linear-gradient(180deg, #0a0a0a 0%, #151515 100%);
-      box-shadow: inset 0 0 50px rgba(0,0,0,0.8);
-      border: 3px solid #1a1a1a;
+      background: #0f0f1e;
       margin: 8px;
-      border-radius: 4px;
+      border: 4px solid;
+      border-color: #0a0a1e #3a3a5e #3a3a5e #0a0a1e;
     }
 
+    /* Pixel art note blocks */
     .note-block {
       position: absolute;
-      border-radius: 3px;
-      box-shadow: 0 0 15px currentColor, inset 0 0 10px rgba(255,255,255,0.2);
+      image-rendering: pixelated;
+    }
+    .note-block::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: inherit;
+      border: 4px solid;
+      border-color: rgba(255,255,255,0.3) rgba(0,0,0,0.3) rgba(0,0,0,0.3) rgba(255,255,255,0.3);
     }
 
-    /* Piano - realistic wood and ivory */
+    /* Piano */
     .piano-container {
-      background: linear-gradient(180deg, #2a2015, #1a1510);
-      padding: 8px 8px 0;
-      border-top: 3px solid #3a2a1a;
-      box-shadow: inset 0 4px 8px rgba(0,0,0,0.4);
+      background: #2d2d44;
+      padding: 8px;
+      border-top: 4px solid #3d3d5c;
     }
 
     .piano {
       display: flex;
-      height: 130px;
-      background: #0a0805;
-      border-radius: 2px 2px 0 0;
-      padding: 4px 2px 0;
-      box-shadow: 0 -2px 4px rgba(0,0,0,0.5);
+      height: 100px;
+      background: #1a1a2e;
+      border: 4px solid;
+      border-color: #0a0a1e #3a3a5e #3a3a5e #0a0a1e;
+      padding: 4px;
     }
 
     .key {
@@ -188,121 +195,113 @@
     }
     .key.white {
       flex: 1;
-      background: linear-gradient(180deg, #f8f4e8 0%, #e8e0d0 80%, #d8d0c0 100%);
-      border-radius: 0 0 4px 4px;
+      background: #e8e8e8;
       margin: 0 1px;
-      box-shadow: 0 4px 3px rgba(0,0,0,0.4), inset 0 -4px 6px rgba(0,0,0,0.1), inset 0 1px 0 #fff;
+      border: 2px solid;
+      border-color: #fff #aaa #888 #ddd;
     }
     .key.black {
       width: 1.1%;
       height: 55%;
-      background: linear-gradient(180deg, #2a2a2a 0%, #1a1a1a 60%, #0a0a0a 100%);
+      background: #2a2a2a;
       margin-left: -0.55%;
       margin-right: -0.55%;
       z-index: 1;
-      border-radius: 0 0 3px 3px;
-      box-shadow: 0 4px 4px rgba(0,0,0,0.6), inset 0 -2px 3px rgba(255,255,255,0.05);
+      border: 2px solid;
+      border-color: #444 #111 #000 #333;
     }
     .key.white.active {
-      background: linear-gradient(180deg, #b8e8f8 0%, #90d0e8 80%, #70b8d8 100%);
-      box-shadow: 0 2px 2px rgba(0,0,0,0.3), inset 0 0 20px rgba(100,200,255,0.3);
+      background: #88ddff;
+      border-color: #aaeeff #4488aa #226688 #66bbdd;
     }
     .key.black.active {
-      background: linear-gradient(180deg, #4090b0 0%, #306080 60%, #204050 100%);
+      background: #4488aa;
+      border-color: #66aacc #224466 #113344 #448899;
     }
 
-    /* Bottom controls - vintage amp style */
+    /* Bottom controls */
     .controls {
-      padding: 12px 16px;
-      background: linear-gradient(180deg, #3a3a3a 0%, #2a2a2a 100%);
-      border-top: 2px solid #4a4a4a;
-      box-shadow: inset 0 2px 4px rgba(255,255,255,0.05);
+      padding: 12px;
+      background: #2d2d44;
+      border-top: 4px solid #3d3d5c;
     }
 
     .progress-row {
       display: flex;
       align-items: center;
-      gap: 12px;
-      margin-bottom: 12px;
+      gap: 8px;
+      margin-bottom: 10px;
     }
 
     .time {
-      font-size: 14px;
-      font-family: 'Courier New', monospace;
-      color: #7a2a2a;
-      text-shadow: 0 0 6px rgba(180,60,60,0.5);
-      background: linear-gradient(180deg, #1a1a1a, #0a0a0a);
+      font-size: 10px;
+      color: #88ff88;
+      text-shadow: 0 0 6px #00ff00;
+      background: #0a0a0a;
       padding: 4px 8px;
-      border-radius: 3px;
-      border: 1px solid #333;
-      box-shadow: inset 0 1px 3px rgba(0,0,0,0.5);
-      min-width: 50px;
+      border: 4px solid;
+      border-color: #2a2a2a #4a4a4a #4a4a4a #2a2a2a;
+      min-width: 60px;
       text-align: center;
     }
 
     .progress-bar {
       flex: 1;
-      height: 12px;
-      background: linear-gradient(180deg, #1a1a1a, #2a2a2a);
-      border-radius: 6px;
-      cursor: pointer;
+      height: 20px;
+      background: #1a1a2e;
+      border: 4px solid;
+      border-color: #0a0a1e #3a3a5e #3a3a5e #0a0a1e;
       position: relative;
-      border: 2px solid #333;
-      box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
+      cursor: pointer;
     }
     .progress-fill {
       width: 35%;
       height: 100%;
-      background: linear-gradient(180deg, #c9a86c, #a08050);
-      border-radius: 4px;
-      box-shadow: 0 0 8px rgba(201,168,108,0.4);
+      background: repeating-linear-gradient(
+        90deg,
+        #ff6688 0px,
+        #ff6688 4px,
+        #ff8899 4px,
+        #ff8899 8px
+      );
     }
     .progress-thumb {
       position: absolute;
-      top: 50%;
+      top: -2px;
       left: 35%;
-      transform: translate(-50%, -50%);
-      width: 20px;
-      height: 20px;
-      background: linear-gradient(180deg, #6a6a6a, #4a4a4a);
-      border-radius: 50%;
-      border: 2px solid #333;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.2);
-    }
-    .progress-thumb::after {
-      content: '';
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: 6px;
-      height: 6px;
-      background: #c9a86c;
-      border-radius: 50%;
+      transform: translateX(-50%);
+      width: 12px;
+      height: 16px;
+      background: #ffcc00;
+      border: 2px solid;
+      border-color: #ffee66 #aa8800 #886600 #ddbb00;
     }
 
     .controls-row {
       display: flex;
       align-items: center;
-      gap: 16px;
+      gap: 12px;
     }
 
     .play-btn {
-      width: 50px;
-      height: 50px;
-      border-radius: 50%;
-      background: linear-gradient(180deg, #5a5a5a 0%, #3a3a3a 100%);
-      border: 3px solid #2a2a2a;
+      width: 40px;
+      height: 40px;
+      background: #44aa44;
+      border: 4px solid;
+      border-color: #66cc66 #228822 #116611 #44aa44;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 18px;
-      color: #c9a86c;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1);
+      font-size: 14px;
+      color: #fff;
+      text-shadow: 2px 2px 0 #116611;
       cursor: pointer;
     }
-    .play-btn:hover { background: linear-gradient(180deg, #6a6a6a 0%, #4a4a4a 100%); }
-    .play-btn:active { box-shadow: 0 2px 4px rgba(0,0,0,0.4), inset 0 2px 4px rgba(0,0,0,0.3); }
+    .play-btn:hover { background: #55bb55; }
+    .play-btn:active {
+      border-color: #228822 #66cc66 #66cc66 #228822;
+      background: #338833;
+    }
 
     .control-group {
       display: flex;
@@ -311,48 +310,45 @@
     }
 
     .knob-label {
-      font-size: 9px;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      color: #888;
+      font-size: 8px;
+      color: #aaaacc;
     }
 
+    /* Pixel knob */
     .knob {
-      width: 36px;
-      height: 36px;
-      background: linear-gradient(135deg, #5a5a5a 0%, #3a3a3a 50%, #4a4a4a 100%);
-      border-radius: 50%;
-      border: 2px solid #2a2a2a;
-      box-shadow: 0 3px 6px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1);
+      width: 24px;
+      height: 24px;
+      background: #5a5a7a;
+      border: 4px solid;
+      border-color: #7a7a9a #3a3a5a #2a2a4a #6a6a8a;
       position: relative;
     }
     .knob::after {
       content: '';
       position: absolute;
-      top: 6px;
+      top: 2px;
       left: 50%;
       transform: translateX(-50%);
-      width: 3px;
-      height: 10px;
-      background: #c9a86c;
-      border-radius: 2px;
+      width: 4px;
+      height: 6px;
+      background: #ffcc00;
     }
 
+    /* Pixel LED */
     .led {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      background: #2a1a1a;
-      border: 1px solid #1a1a1a;
-      box-shadow: inset 0 1px 2px rgba(0,0,0,0.5);
+      width: 12px;
+      height: 12px;
+      background: #2a2a2a;
+      border: 2px solid;
+      border-color: #1a1a1a #3a3a3a #3a3a3a #1a1a1a;
     }
     .led.on {
-      background: radial-gradient(circle at 30% 30%, #ff6060, #aa2020);
-      box-shadow: 0 0 8px rgba(255,80,80,0.6), inset 0 1px 2px rgba(255,255,255,0.3);
+      background: #ff4444;
+      box-shadow: 0 0 8px #ff0000;
     }
     .led.green.on {
-      background: radial-gradient(circle at 30% 30%, #60ff60, #20aa20);
-      box-shadow: 0 0 8px rgba(80,255,80,0.6);
+      background: #44ff44;
+      box-shadow: 0 0 8px #00ff00;
     }
 
     .toggle-group {
@@ -369,61 +365,55 @@
     }
 
     .track-btn {
-      padding: 6px 12px;
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      background: linear-gradient(180deg, #3a3a3a, #2a2a2a);
-      border: 2px solid #222;
-      border-radius: 3px;
-      color: #666;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.05);
+      padding: 6px 10px;
+      font-size: 8px;
+      font-family: inherit;
+      background: #2d2d44;
+      border: 4px solid;
+      border-color: #5a6988 #2a3448 #2a3448 #5a6988;
+      color: #666688;
       cursor: pointer;
     }
     .track-btn.active {
-      background: linear-gradient(180deg, #4a3020, #3a2010);
-      color: #c9a86c;
-      border-color: #5a4030;
+      border-color: #2a3448 #5a6988 #5a6988 #2a3448;
+      background: #3d3d5c;
     }
-    .track-btn.t1.active { box-shadow: 0 0 8px rgba(233,30,99,0.4); }
-    .track-btn.t2.active { box-shadow: 0 0 8px rgba(63,81,181,0.4); }
+    .track-btn.t1.active { color: #ff6688; text-shadow: 0 0 6px #ff0044; }
+    .track-btn.t2.active { color: #6688ff; text-shadow: 0 0 6px #0044ff; }
   </style>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
 </head>
 <body>
   <div class="sidebar">
     <div class="sidebar-header">
-      <div class="sidebar-title">♫ Library</div>
-      <input type="text" class="search-box" placeholder="Search songs...">
+      <div class="sidebar-title">♫ LIBRARY</div>
+      <input type="text" class="search-box" placeholder="SEARCH...">
     </div>
     <div class="playlist">
-      <div class="category">Selections</div>
-      <div class="song active">Golden Hour (JVKE)</div>
+      <div class="category">★ SELECTIONS</div>
+      <div class="song active">Golden Hour</div>
       <div class="song">Heart and Soul</div>
       <div class="song">The Entertainer</div>
       <div class="song">Rush E</div>
       <div class="song">Minute Waltz</div>
       
-      <div class="category">Classical</div>
-      <div class="song">Bach - Prelude in C Major</div>
-      <div class="song">Beethoven - Fur Elise</div>
-      <div class="song">Beethoven - Moonlight Sonata</div>
-      <div class="song">Chopin - Fantaisie-Impromptu</div>
-      <div class="song">Chopin - Nocturne Op.27</div>
-      <div class="song">Debussy - Clair de Lune</div>
-      <div class="song">Liszt - Etude No.2</div>
+      <div class="category">♪ CLASSICAL</div>
+      <div class="song">Bach - Prelude C</div>
+      <div class="song">Fur Elise</div>
+      <div class="song">Moonlight Sonata</div>
+      <div class="song">Fantaisie-Impromptu</div>
+      <div class="song">Clair de Lune</div>
       
-      <div class="category">Modern</div>
-      <div class="song">Yiruma - River Flows in You</div>
-      <div class="song">Einaudi - Nuvole Bianche</div>
-      <div class="song">Zimmer - Time (Inception)</div>
-      <div class="song">Zimmer - Interstellar</div>
+      <div class="category">♪ MODERN</div>
+      <div class="song">River Flows in You</div>
+      <div class="song">Nuvole Bianche</div>
+      <div class="song">Time (Inception)</div>
       
-      <div class="category">Video Games</div>
-      <div class="song">Final Fantasy - Prelude</div>
-      <div class="song">Zelda - Gerudo Valley</div>
-      <div class="song">Super Mario - Main Theme</div>
-      <div class="song">Minecraft - Sweden</div>
-      <div class="song">Tetris - Type A</div>
+      <div class="category">♪ GAMES</div>
+      <div class="song">FF Prelude</div>
+      <div class="song">Gerudo Valley</div>
+      <div class="song">Mario Theme</div>
+      <div class="song">Minecraft Sweden</div>
     </div>
   </div>
 
@@ -431,25 +421,25 @@
     <div class="top-bar">
       <div class="logo">MidiViz</div>
       <select>
-        <option selected>SoundFont (OxiSynth)</option>
-        <option>Wavetable Piano</option>
-        <option>Electric Piano</option>
+        <option selected>SOUNDFONT</option>
+        <option>WAVETABLE</option>
+        <option>ELECTRIC</option>
       </select>
       <select>
-        <option selected>FluidR3 SF3</option>
-        <option>Motif ES6 Concert Piano</option>
+        <option selected>FLUIDR3</option>
+        <option>MOTIF ES6</option>
       </select>
       <span class="spacer"></span>
-      <span class="bpm">120 BPM</span>
+      <span class="bpm">120BPM</span>
     </div>
 
     <div class="viz-area">
-      <div class="note-block" style="left:30%; top:10%; width:1.5%; height:80px; background:#e91e63; color:#e91e63;"></div>
-      <div class="note-block" style="left:35%; top:25%; width:1.5%; height:120px; background:#3f51b5; color:#3f51b5;"></div>
-      <div class="note-block" style="left:42%; top:5%; width:1.5%; height:60px; background:#e91e63; color:#e91e63;"></div>
-      <div class="note-block" style="left:50%; top:40%; width:1.5%; height:100px; background:#e91e63; color:#e91e63;"></div>
-      <div class="note-block" style="left:55%; top:15%; width:1.5%; height:90px; background:#3f51b5; color:#3f51b5;"></div>
-      <div class="note-block" style="left:62%; top:50%; width:1.5%; height:70px; background:#e91e63; color:#e91e63;"></div>
+      <div class="note-block" style="left:30%; top:10%; width:20px; height:60px; background:#ff6688;"></div>
+      <div class="note-block" style="left:38%; top:25%; width:20px; height:90px; background:#6688ff;"></div>
+      <div class="note-block" style="left:46%; top:5%; width:20px; height:45px; background:#ff6688;"></div>
+      <div class="note-block" style="left:54%; top:40%; width:20px; height:75px; background:#ff6688;"></div>
+      <div class="note-block" style="left:62%; top:15%; width:20px; height:68px; background:#6688ff;"></div>
+      <div class="note-block" style="left:70%; top:50%; width:20px; height:52px; background:#ff6688;"></div>
     </div>
 
     <div class="piano-container">
@@ -469,37 +459,33 @@
         <button class="play-btn">▶</button>
         
         <div class="control-group">
-          <div class="toggle-group">
-            <div class="knob"></div>
-            <span class="knob-label">Speed</span>
-          </div>
+          <span class="knob-label">SPD</span>
+          <div class="knob"></div>
         </div>
 
         <div class="control-group">
-          <div class="toggle-group">
-            <div class="knob" style="transform: rotate(45deg);"></div>
-            <span class="knob-label">Y-Scale</span>
-          </div>
+          <span class="knob-label">Y</span>
+          <div class="knob" style="transform: rotate(45deg);"></div>
         </div>
 
         <div class="control-group">
           <div class="toggle-group">
             <div class="led on"></div>
-            <span class="knob-label">Bloom</span>
+            <span class="knob-label">BLM</span>
           </div>
           <div class="toggle-group">
             <div class="led green on"></div>
-            <span class="knob-label">Particles</span>
+            <span class="knob-label">PRT</span>
           </div>
           <div class="toggle-group">
             <div class="led on"></div>
-            <span class="knob-label">Preview</span>
+            <span class="knob-label">PRV</span>
           </div>
         </div>
 
         <div class="tracks">
-          <button class="track-btn t1 active">Track 1</button>
-          <button class="track-btn t2 active">Track 2</button>
+          <button class="track-btn t1 active">TRK1</button>
+          <button class="track-btn t2 active">TRK2</button>
         </div>
       </div>
     </div>
