@@ -491,6 +491,13 @@ class PlaybackControls {
       this.lapse = (this._getAudioContext().currentTime - this.start) * this.speed;
     }
 
+    // Stop at end of piece (with buffer for last notes to finish)
+    if (this.playing && this.lapse >= this.duration + 2) {
+      this.playing = false;
+      if (this._clock) this._clock.pause();
+      this.lapse = this.duration + 2;
+    }
+
     // Play notes (skip if clock handles it)
     if (!this._clock) {
       for (let i = this.lastPlayed + 1; i < this.allNotes.length; i++) {
