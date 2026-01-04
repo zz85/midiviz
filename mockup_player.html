@@ -20,7 +20,6 @@
       --key-black: linear-gradient(180deg, #333, #1a1a1a);
       --key-active: linear-gradient(180deg, #e8c88a, #d4a056);
       --lcd-bg: #1a1610;
-      --lcd-text: #d4a056;
     }
 
     body {
@@ -28,13 +27,47 @@
       background: var(--bg);
       color: var(--text);
       height: 100vh;
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      grid-template-rows: 1fr auto auto;
+    }
+
+    /* Sidebar - always visible */
+    .sidebar {
+      grid-row: 1 / -1;
+      background: var(--bg2);
+      border-right: 1px solid var(--border);
       display: flex;
       flex-direction: column;
     }
+    .sidebar-header {
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+      font-weight: 500;
+      color: var(--accent);
+    }
+    .tracklist {
+      flex: 1;
+      overflow-y: auto;
+    }
+    .track {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 16px;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border);
+    }
+    .track:hover { background: rgba(212,160,86,0.1); }
+    .track.active { background: rgba(212,160,86,0.15); }
+    .track-num { color: var(--text2); font-size: 11px; min-width: 18px; }
+    .track-info { flex: 1; min-width: 0; }
+    .track-name { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .track-artist { font-size: 11px; color: var(--text2); }
+    .track-dur { font-size: 11px; color: var(--text2); }
 
     /* Visualization */
     .viz {
-      flex: 1;
       position: relative;
     }
     .note {
@@ -79,257 +112,214 @@
     }
     .key.active { background: var(--key-active); }
 
-    /* Controls bar */
+    /* Controls */
     .controls {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 16px;
       padding: 12px 16px;
       background: var(--bg2);
       border-top: 1px solid var(--border);
     }
 
     .play-btn {
-      width: 36px;
-      height: 36px;
+      width: 40px;
+      height: 40px;
       border: none;
       border-radius: 50%;
       background: var(--accent);
       color: var(--bg);
-      font-size: 14px;
+      font-size: 16px;
       cursor: pointer;
     }
 
-    /* LCD Display - Winamp/iTunes style */
+    /* LCD Display */
     .lcd {
-      flex: 1;
       background: var(--lcd-bg);
       border: 2px solid var(--border);
       border-radius: 4px;
       padding: 8px 12px;
       font-family: 'SF Mono', 'Consolas', monospace;
       font-size: 11px;
-      color: var(--lcd-text);
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 4px 16px;
+      color: var(--accent);
       box-shadow: inset 0 2px 8px rgba(0,0,0,0.4);
+      min-width: 280px;
     }
-    .lcd-title {
-      font-size: 13px;
-      font-weight: 500;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .lcd-time {
-      font-size: 13px;
-      text-align: right;
-      font-variant-numeric: tabular-nums;
-    }
-    .lcd-meta {
-      color: var(--text2);
+    .lcd-row {
       display: flex;
-      gap: 16px;
+      justify-content: space-between;
+      align-items: center;
     }
-    .lcd-meta span { white-space: nowrap; }
-
-    /* Waveform scrubber */
-    .waveform {
-      grid-column: 1 / -1;
-      height: 24px;
-      display: flex;
-      align-items: end;
-      gap: 1px;
-      cursor: pointer;
-      margin-top: 4px;
-    }
-    .waveform-bar {
-      flex: 1;
-      background: var(--border);
-      border-radius: 1px;
-      transition: background 0.1s;
-    }
-    .waveform-bar.played { background: var(--accent); }
-
-    /* Minimal progress alternative (toggle to compare) */
-    .progress-minimal {
-      grid-column: 1 / -1;
+    .lcd-title { font-size: 13px; font-weight: 500; }
+    .lcd-time { font-variant-numeric: tabular-nums; }
+    .lcd-meta { color: var(--text2); margin-top: 4px; }
+    .lcd-progress {
       height: 4px;
       background: var(--border);
       border-radius: 2px;
       margin-top: 8px;
       cursor: pointer;
-      display: none;
     }
-    .progress-minimal .fill {
+    .lcd-progress-fill {
       width: 35%;
       height: 100%;
       background: var(--accent);
       border-radius: 2px;
     }
-    body.minimal-progress .waveform { display: none; }
-    body.minimal-progress .progress-minimal { display: block; }
 
-    /* Expand button */
-    .expand-btn {
+    /* Knob */
+    .knob-group {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+    .knob {
       width: 32px;
       height: 32px;
+      background: linear-gradient(145deg, #3a3428, #2a2418);
+      border-radius: 50%;
+      border: 2px solid var(--border);
+      position: relative;
+      cursor: pointer;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+    .knob::before {
+      content: '';
+      position: absolute;
+      top: 4px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 3px;
+      height: 8px;
+      background: var(--accent);
+      border-radius: 2px;
+    }
+    .knob-label {
+      font-size: 9px;
+      color: var(--text2);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .knob-value {
+      font-size: 10px;
+      color: var(--accent);
+      font-family: 'SF Mono', monospace;
+    }
+
+    /* Vintage toggle buttons */
+    .toggle-group {
+      display: flex;
+      gap: 8px;
+    }
+    .toggle-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+    .toggle {
+      width: 16px;
+      height: 16px;
+      background: linear-gradient(180deg, #2a2418, #1a1610);
+      border: 2px solid var(--border);
+      border-radius: 3px;
+      cursor: pointer;
+      position: relative;
+      box-shadow: inset 0 1px 3px rgba(0,0,0,0.5);
+    }
+    .toggle.on {
+      background: var(--accent);
+      box-shadow: 0 0 8px var(--accent-glow), inset 0 1px 2px rgba(255,255,255,0.2);
+    }
+    .toggle.on::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      right: 2px;
+      height: 4px;
+      background: rgba(255,255,255,0.3);
+      border-radius: 1px;
+    }
+    .toggle-label {
+      font-size: 8px;
+      color: var(--text2);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .spacer { flex: 1; }
+
+    /* Settings button */
+    .settings-btn {
+      width: 28px;
+      height: 28px;
       border: 1px solid var(--border);
       border-radius: 4px;
       background: transparent;
       color: var(--text2);
       cursor: pointer;
-      font-size: 12px;
+      font-size: 14px;
     }
-    .expand-btn:hover { background: var(--border); color: var(--text); }
-
-    /* Slide-out panel for extended options */
-    .panel {
-      position: fixed;
-      top: 0;
-      right: -320px;
-      width: 320px;
-      height: 100%;
-      background: var(--bg2);
-      border-left: 1px solid var(--border);
-      transition: right 0.3s ease;
-      z-index: 100;
-      display: flex;
-      flex-direction: column;
-    }
-    .panel.open { right: 0; }
-
-    .panel-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 16px;
-      border-bottom: 1px solid var(--border);
-    }
-    .panel-title { font-weight: 500; }
-    .panel-close {
-      background: none;
-      border: none;
-      color: var(--text2);
-      font-size: 18px;
-      cursor: pointer;
-    }
-
-    .panel-tabs {
-      display: flex;
-      border-bottom: 1px solid var(--border);
-    }
-    .panel-tab {
-      flex: 1;
-      padding: 10px;
-      background: none;
-      border: none;
-      color: var(--text2);
-      font-size: 12px;
-      cursor: pointer;
-      border-bottom: 2px solid transparent;
-    }
-    .panel-tab.active {
-      color: var(--accent);
-      border-bottom-color: var(--accent);
-    }
-
-    .panel-content {
-      flex: 1;
-      overflow-y: auto;
-      padding: 16px;
-    }
-
-    /* Tracklist */
-    .track-item {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 10px;
-      border-radius: 4px;
-      cursor: pointer;
-      margin-bottom: 4px;
-    }
-    .track-item:hover { background: var(--border); }
-    .track-item.active { background: rgba(212,160,86,0.15); }
-    .track-num { color: var(--text2); font-size: 12px; min-width: 20px; }
-    .track-info { flex: 1; }
-    .track-name { font-size: 13px; }
-    .track-artist { font-size: 11px; color: var(--text2); }
-    .track-dur { font-size: 11px; color: var(--text2); }
-
-    /* Options section */
-    .option-group {
-      margin-bottom: 20px;
-    }
-    .option-label {
-      font-size: 11px;
-      color: var(--text2);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 8px;
-    }
-    .option-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 8px 0;
-      border-bottom: 1px solid var(--border);
-    }
-    .option-row:last-child { border-bottom: none; }
-    .option-name { font-size: 13px; }
-
-    /* Toggle switch */
-    .toggle {
-      width: 36px;
-      height: 20px;
-      background: var(--border);
-      border-radius: 10px;
-      position: relative;
-      cursor: pointer;
-    }
-    .toggle.on { background: var(--accent); }
-    .toggle::after {
-      content: '';
-      position: absolute;
-      top: 2px;
-      left: 2px;
-      width: 16px;
-      height: 16px;
-      background: var(--text);
-      border-radius: 50%;
-      transition: transform 0.2s;
-    }
-    .toggle.on::after { transform: translateX(16px); }
-
-    /* Small select */
-    .small-select {
-      padding: 4px 8px;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      color: var(--text);
-      font-size: 12px;
-    }
-
-    /* Debug section */
-    .debug-log {
-      background: var(--lcd-bg);
-      border-radius: 4px;
-      padding: 8px;
-      font-family: 'SF Mono', monospace;
-      font-size: 10px;
-      color: var(--text2);
-      max-height: 150px;
-      overflow-y: auto;
-    }
-    .debug-log div { padding: 2px 0; }
-    .debug-log .warn { color: #f59e0b; }
-    .debug-log .info { color: var(--accent); }
+    .settings-btn:hover { background: var(--border); }
   </style>
 </head>
 <body>
+  <aside class="sidebar">
+    <div class="sidebar-header">Library</div>
+    <div class="tracklist">
+      <div class="track active">
+        <span class="track-num">1</span>
+        <div class="track-info">
+          <div class="track-name">Clair de Lune</div>
+          <div class="track-artist">Debussy</div>
+        </div>
+        <span class="track-dur">5:12</span>
+      </div>
+      <div class="track">
+        <span class="track-num">2</span>
+        <div class="track-info">
+          <div class="track-name">Gymnopédie No.1</div>
+          <div class="track-artist">Satie</div>
+        </div>
+        <span class="track-dur">3:05</span>
+      </div>
+      <div class="track">
+        <span class="track-num">3</span>
+        <div class="track-info">
+          <div class="track-name">Moonlight Sonata</div>
+          <div class="track-artist">Beethoven</div>
+        </div>
+        <span class="track-dur">6:30</span>
+      </div>
+      <div class="track">
+        <span class="track-num">4</span>
+        <div class="track-info">
+          <div class="track-name">River Flows in You</div>
+          <div class="track-artist">Yiruma</div>
+        </div>
+        <span class="track-dur">3:45</span>
+      </div>
+      <div class="track">
+        <span class="track-num">5</span>
+        <div class="track-info">
+          <div class="track-name">Fantaisie-Impromptu</div>
+          <div class="track-artist">Chopin</div>
+        </div>
+        <span class="track-dur">5:28</span>
+      </div>
+      <div class="track">
+        <span class="track-num">6</span>
+        <div class="track-info">
+          <div class="track-name">Prelude in C Major</div>
+          <div class="track-artist">Bach</div>
+        </div>
+        <span class="track-dur">2:45</span>
+      </div>
+    </div>
+  </aside>
+
   <div class="viz">
     <div class="note" style="left:30%; bottom:65%; height:70px;"></div>
     <div class="note" style="left:36%; bottom:40%; height:100px;"></div>
@@ -344,183 +334,49 @@
 
   <div class="controls">
     <button class="play-btn">▶</button>
-    
+
     <div class="lcd">
-      <div class="lcd-title">Clair de Lune</div>
-      <div class="lcd-time">1:24 / 5:12</div>
-      <div class="lcd-meta">
+      <div class="lcd-row">
+        <span class="lcd-title">Clair de Lune</span>
+        <span class="lcd-time">1:24 / 5:12</span>
+      </div>
+      <div class="lcd-row lcd-meta">
         <span>Debussy</span>
-        <span>♩ 66 BPM</span>
-        <span>4/4</span>
-        <span>D♭ maj</span>
+        <span>♩66 · 4/4 · D♭maj</span>
       </div>
-      <div class="waveform" id="waveform"></div>
-      <div class="progress-minimal"><div class="fill"></div></div>
+      <div class="lcd-progress"><div class="lcd-progress-fill"></div></div>
     </div>
 
-    <button class="expand-btn" onclick="togglePanel()">☰</button>
-  </div>
-
-  <!-- Slide-out panel -->
-  <div class="panel" id="panel">
-    <div class="panel-header">
-      <span class="panel-title">Options</span>
-      <button class="panel-close" onclick="togglePanel()">×</button>
+    <div class="knob-group">
+      <div class="knob" style="transform: rotate(-30deg);"></div>
+      <span class="knob-value">0.8x</span>
+      <span class="knob-label">Speed</span>
     </div>
-    <div class="panel-tabs">
-      <button class="panel-tab active" onclick="showTab('tracks')">Tracks</button>
-      <button class="panel-tab" onclick="showTab('options')">Options</button>
-      <button class="panel-tab" onclick="showTab('debug')">Debug</button>
+
+    <div class="knob-group">
+      <div class="knob" style="transform: rotate(0deg);"></div>
+      <span class="knob-value">0</span>
+      <span class="knob-label">Trans</span>
     </div>
-    <div class="panel-content" id="panelContent">
-      <!-- Tracks tab (default) -->
-      <div id="tab-tracks">
-        <div class="track-item active">
-          <span class="track-num">1</span>
-          <div class="track-info">
-            <div class="track-name">Clair de Lune</div>
-            <div class="track-artist">Debussy</div>
-          </div>
-          <span class="track-dur">5:12</span>
-        </div>
-        <div class="track-item">
-          <span class="track-num">2</span>
-          <div class="track-info">
-            <div class="track-name">Gymnopédie No.1</div>
-            <div class="track-artist">Satie</div>
-          </div>
-          <span class="track-dur">3:05</span>
-        </div>
-        <div class="track-item">
-          <span class="track-num">3</span>
-          <div class="track-info">
-            <div class="track-name">Moonlight Sonata</div>
-            <div class="track-artist">Beethoven</div>
-          </div>
-          <span class="track-dur">6:30</span>
-        </div>
-        <div class="track-item">
-          <span class="track-num">4</span>
-          <div class="track-info">
-            <div class="track-name">River Flows in You</div>
-            <div class="track-artist">Yiruma</div>
-          </div>
-          <span class="track-dur">3:45</span>
-        </div>
-      </div>
 
-      <!-- Options tab -->
-      <div id="tab-options" style="display:none;">
-        <div class="option-group">
-          <div class="option-label">Display</div>
-          <div class="option-row">
-            <span class="option-name">Waveform scrubber</span>
-            <div class="toggle on" onclick="this.classList.toggle('on'); document.body.classList.toggle('minimal-progress')"></div>
-          </div>
-          <div class="option-row">
-            <span class="option-name">Bloom effect</span>
-            <div class="toggle on" onclick="this.classList.toggle('on')"></div>
-          </div>
-          <div class="option-row">
-            <span class="option-name">Particles</span>
-            <div class="toggle" onclick="this.classList.toggle('on')"></div>
-          </div>
-          <div class="option-row">
-            <span class="option-name">Note names</span>
-            <div class="toggle on" onclick="this.classList.toggle('on')"></div>
-          </div>
-        </div>
-        <div class="option-group">
-          <div class="option-label">Playback</div>
-          <div class="option-row">
-            <span class="option-name">Speed</span>
-            <select class="small-select">
-              <option>0.25x</option>
-              <option>0.5x</option>
-              <option>0.75x</option>
-              <option selected>1x</option>
-              <option>1.5x</option>
-              <option>2x</option>
-            </select>
-          </div>
-          <div class="option-row">
-            <span class="option-name">Transpose</span>
-            <select class="small-select">
-              <option>-12</option>
-              <option>-6</option>
-              <option selected>0</option>
-              <option>+6</option>
-              <option>+12</option>
-            </select>
-          </div>
-          <div class="option-row">
-            <span class="option-name">Soundfont</span>
-            <select class="small-select">
-              <option>FluidR3</option>
-              <option>Motif ES6</option>
-              <option>Roland XP-80</option>
-            </select>
-          </div>
-        </div>
-        <div class="option-group">
-          <div class="option-label">Theme</div>
-          <div class="option-row">
-            <span class="option-name">Color scheme</span>
-            <select class="small-select">
-              <option>Sepia</option>
-              <option>Dark</option>
-              <option>Light</option>
-              <option>OLED</option>
-              <option>Mono</option>
-            </select>
-          </div>
-        </div>
-      </div>
+    <div class="spacer"></div>
 
-      <!-- Debug tab -->
-      <div id="tab-debug" style="display:none;">
-        <div class="option-group">
-          <div class="option-label">Performance</div>
-          <div class="option-row">
-            <span class="option-name">FPS</span>
-            <span style="color:var(--accent)">60</span>
-          </div>
-          <div class="option-row">
-            <span class="option-name">Notes rendered</span>
-            <span>247</span>
-          </div>
-          <div class="option-row">
-            <span class="option-name">Active voices</span>
-            <span>12</span>
-          </div>
-        </div>
-        <div class="option-group">
-          <div class="option-label">MIDI Info</div>
-          <div class="option-row">
-            <span class="option-name">Tracks</span>
-            <span>2</span>
-          </div>
-          <div class="option-row">
-            <span class="option-name">Total notes</span>
-            <span>1,847</span>
-          </div>
-          <div class="option-row">
-            <span class="option-name">Duration</span>
-            <span>5:12.340</span>
-          </div>
-        </div>
-        <div class="option-group">
-          <div class="option-label">Console</div>
-          <div class="debug-log">
-            <div class="info">[INFO] Loaded: Clair de Lune.mid</div>
-            <div class="info">[INFO] Soundfont: FluidR3 (19MB)</div>
-            <div>[DEBUG] Parsed 1847 notes in 23ms</div>
-            <div>[DEBUG] AudioContext: running</div>
-            <div class="warn">[WARN] High polyphony: 12 voices</div>
-          </div>
-        </div>
+    <div class="toggle-group">
+      <div class="toggle-btn">
+        <div class="toggle on"></div>
+        <span class="toggle-label">Bloom</span>
+      </div>
+      <div class="toggle-btn">
+        <div class="toggle on"></div>
+        <span class="toggle-label">Parts</span>
+      </div>
+      <div class="toggle-btn">
+        <div class="toggle"></div>
+        <span class="toggle-label">Names</span>
       </div>
     </div>
+
+    <button class="settings-btn" title="More options">⚙</button>
   </div>
 
   <script>
@@ -534,27 +390,18 @@
       piano.appendChild(k);
     }
 
-    // Waveform
-    const waveform = document.getElementById('waveform');
-    for (let i = 0; i < 80; i++) {
-      const bar = document.createElement('div');
-      bar.className = 'waveform-bar' + (i < 28 ? ' played' : '');
-      bar.style.height = (15 + Math.random() * 70) + '%';
-      waveform.appendChild(bar);
-    }
+    // Toggle buttons
+    document.querySelectorAll('.toggle').forEach(t => {
+      t.addEventListener('click', () => t.classList.toggle('on'));
+    });
 
-    // Panel
-    function togglePanel() {
-      document.getElementById('panel').classList.toggle('open');
-    }
-
-    // Tabs
-    function showTab(name) {
-      document.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('active'));
-      document.querySelectorAll('[id^="tab-"]').forEach(t => t.style.display = 'none');
-      event.target.classList.add('active');
-      document.getElementById('tab-' + name).style.display = 'block';
-    }
+    // Track selection
+    document.querySelectorAll('.track').forEach(t => {
+      t.addEventListener('click', () => {
+        document.querySelectorAll('.track').forEach(x => x.classList.remove('active'));
+        t.classList.add('active');
+      });
+    });
   </script>
 </body>
 </html>
