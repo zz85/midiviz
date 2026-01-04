@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>MidiClock Test</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #1a1a2e; color: #fff; }
+    button { margin: 5px; padding: 8px 16px; }
+    #log { background: #000; padding: 10px; height: 300px; overflow-y: auto; font-family: monospace; font-size: 12px; }
+    .note-on { color: #4fc3f7; }
+    .note-off { color: #ff9800; }
+    .time { color: #888; }
+  </style>
+</head>
+<body>
+  <h2>MidiClock AudioWorklet Test</h2>
+  <p>Switch tabs after pressing Play - notes should continue logging in background.</p>
+  
+  <div>
+    <button id="initBtn">Init AudioWorklet</button>
+    <button id="loadBtn" disabled>Load Test Notes</button>
+    <button id="playBtn" disabled>Play</button>
+    <button id="pauseBtn" disabled>Pause</button>
+    <button id="seekBtn" disabled>Seek to 2s</button>
+    <span id="timeDisplay" style="margin-left: 20px;">Time: 0.00s</span>
+  </div>
+  
+  <div id="log"></div>
+
+  <script src="midi_clock.js"></script>
+  <script>
+    const log = document.getElementById('log');
+    const timeDisplay = document.getElementById('timeDisplay');
+    
+    function addLog(msg, cls = '') {
+      const div = document.createElement('div');
+      div.className = cls;
+      div.textContent = `[${new Date().toISOString().slice(11, 23)}] ${msg}`;
+      log.appendChild(div);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    // Generate test notes: C major scale, one note per second
+    function generateTestNotes() {
+      const notes = [];
+      const scale = [60, 62, 64, 65, 67, 69, 71, 72]; // C4 to C5
+      for (let i = 0; i < 16; i++) {
+        notes.push({
+          midi: scale[i % 8],
+          time: i * 0.5,
+          duration: 0.4,
+          velocity: 0.8,
+          trackNo: 0,
+          channel: 0
+        });
+      }
+      return notes;
+    }
+
+    let clock;
+    const ctx = new AudioContext();
+
+    document.getElementById('initBtn').onclick = async () => {
+      addLog('Initializing AudioWorklet...');
+      clock = new MidiClock(ctx);
+      
+      clock.onNoteOn = note => {
+        addLog(`noteOn: midi=${note.midi} vel=${note.velocity.toFixed(2)} t=${note.time.toFixed(2)}s`, 'note-on');
+      };
+      clock.onNoteOff = note => {
+        addLog(`noteOff: midi=${note.midi}`, 'note-off');
+      };
+      clock.onTime = lapse => {
+        timeDisplay.textContent = `Time: ${lapse.toFixed(2)}s`;
+      };
+
+      await clock.init();
+      addLog('AudioWorklet ready!');
+      
+      document.getElementById('loadBtn').disabled = false;
+      document.getElementById('playBtn').disabled = false;
+      document.getElementById('pauseBtn').disabled = false;
+      document.getElementById('seekBtn').disabled = false;
+    };
+
+    document.getElementById('loadBtn').onclick = () => {
+      const notes = generateTestNotes();
+      clock.load(notes);
+      addLog(`Loaded ${notes.length} test notes (8 seconds total)`);
+    };
+
+    document.getElementById('playBtn').onclick = () => {
+      clock.play();
+      addLog('Play');
+    };
+
+    document.getElementById('pauseBtn').onclick = () => {
+      clock.pause();
+      addLog('Pause');
+    };
+
+    document.getElementById('seekBtn').onclick = () => {
+      clock.seek(2);
+      addLog('Seek to 2s');
+    };
+  </script>
+</body>
+</html>

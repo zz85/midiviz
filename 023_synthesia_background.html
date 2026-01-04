@@ -1,0 +1,323 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <script src="tonejs-midi.js"></script>
+  <script src="piano.js"></script>
+  <script src="harpsichord.js"></script>
+  <script src="electric_piano.js"></script>
+  <script src="wavetable_piano.js"></script>
+  <script src="fast_piano.js"></script>
+  <script src="silent_piano.js"></script>
+  <script src="organ.js"></script>
+  <script src="midi_clock.js"></script>
+  <script src="playback_controls.js"></script>
+  <style>
+    body { margin: 0; background: #1a1a2e; overflow: hidden; }
+    #controls { position: absolute; z-index: 10; padding: 10px; color: #fff; }
+    #sfLoading { display: none; margin-left: 10px; color: #ffeb3b; }
+    #sfLoading.active { display: inline; }
+    #controls button { margin: 0 5px; padding: 5px 15px; }
+    #piano { position: absolute; bottom: 0; display: flex; height: 120px; }
+    .key { position: relative; border: 1px solid #333; box-sizing: border-box; }
+    .key.white { width: calc(100vw / 52); height: 100%; background: linear-gradient(to bottom, #e8e8e8, #fff); }
+    .key.black { width: calc(100vw / 52 * 0.6); height: 60%; background: linear-gradient(to bottom, #222, #000); 
+                 margin-left: calc(-100vw / 52 * 0.3); margin-right: calc(-100vw / 52 * 0.3); z-index: 1; }
+    .key.active.white { background: linear-gradient(to bottom, #4fc3f7, #81d4fa); }
+    .key.active.black { background: linear-gradient(to bottom, #0288d1, #03a9f4); }
+    .key.preview.white { background: linear-gradient(to bottom, #ffcc80, #ffb74d); }
+    .key.preview.black { background: linear-gradient(to bottom, #f57c00, #ff9800); }
+    .key { --preview-t: 0; }
+    .key.preview.white { background: linear-gradient(to bottom, 
+      color-mix(in srgb, #e8e8e8, #ffcc80 calc(var(--preview-t) * 100%)),
+      color-mix(in srgb, #fff, #ffb74d calc(var(--preview-t) * 100%))); }
+    .key.preview.black { background: linear-gradient(to bottom,
+      color-mix(in srgb, #222, #f57c00 calc(var(--preview-t) * 100%)),
+      color-mix(in srgb, #000, #ff9800 calc(var(--preview-t) * 100%))); }
+    .key .note-name { display: none; position: absolute; bottom: 5px; left: 50%; transform: translateX(-50%); font: bold 10px sans-serif; pointer-events: none; opacity: var(--preview-t, 1); }
+    .key.active .note-name { display: block; opacity: 1; }
+    .key.preview .note-name { display: block; }
+    .key.white .note-name { color: #333; }
+    .key.black .note-name { color: #fff; text-shadow: 0 0 3px #000; }
+    #piano.hide-names .note-name { display: none !important; }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <span id="playbackControls"></span>
+    <span id="sfLoading">Loading soundfont...</span>
+    <label><input type="checkbox" id="bloomToggle" checked> Bloom</label>
+    <label><input type="checkbox" id="particlesToggle" checked> Particles</label>
+    <label><input type="checkbox" id="noteNamesToggle" checked> Note Names</label>
+    <span id="trackToggles"></span>
+    Transpose: <input type="number" id="transposeInput" value="0" style="width:50px">
+    A=<input type="number" id="tuningInput" value="440" min="400" max="480" style="width:50px">Hz
+    Y-Scale: <input type="range" id="yScaleInput" value="1" min="0.001" max="3" step="0.001" style="width:80px"><span id="yScaleVal">1x</span>
+    <label><input type="checkbox" id="previewToggle" checked> Preview</label>
+    <span id="tempoDisplay" style="margin-left:10px">BPM: --</span>
+  </div>
+  <canvas id="canvas"></canvas>
+  <div id="piano"></div>
+
+  <script type="module">
+    import './synth_manager.js';
+    
+    await SynthManager.load('oxisynth_sf3');
+    window.FluidWebPiano = SynthManager.loaded.oxisynth_sf3;
+    
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const pianoEl = document.getElementById('piano');
+    
+    let bloom = true, showParticles = true, showNoteNames = true, transpose = 0, showPreview = true, yScale = 1;
+    
+    const particles = [];
+    
+    function spawnParticles(midi, color) {
+      const x = midiToX(midi) + noteWidth(midi) / 2;
+      const y = canvas.height;
+      for (let i = 0; i < 12; i++) {
+        particles.push({ x, y, vx: (Math.random() - 0.5) * 6, vy: -Math.random() * 8 - 3, life: 1, color, size: Math.random() * 6 + 3 });
+      }
+    }
+    
+    function updateParticles() {
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx; p.y += p.vy; p.vy += 0.15; p.life -= 0.025;
+        if (p.life <= 0) particles.splice(i, 1);
+      }
+    }
+    
+    function drawParticles() {
+      particles.forEach(p => {
+        ctx.globalAlpha = p.life;
+        if (bloom) { ctx.shadowColor = p.color; ctx.shadowBlur = 15; }
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+    }
+    
+    const PIANO_HEIGHT = 120, LOOK_AHEAD = 2;
+    const keys = {};
+    const blackPattern = [1,3,6,8,10];
+    const noteNames = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+    
+    for (let midi = 21; midi <= 108; midi++) {
+      const noteInOctave = midi % 12;
+      const isBlack = blackPattern.includes(noteInOctave);
+      const key = document.createElement('div');
+      key.className = 'key ' + (isBlack ? 'black' : 'white');
+      key.innerHTML = `<span class="note-name">${noteNames[noteInOctave]}</span>`;
+      keys[midi] = key;
+      pianoEl.appendChild(key);
+    }
+    
+    function resize() { canvas.width = innerWidth; canvas.height = innerHeight - PIANO_HEIGHT; }
+    resize();
+    window.onresize = resize;
+    
+    function midiToX(midi) {
+      let whiteCount = 0;
+      for (let m = 21; m < midi; m++) if (!blackPattern.includes(m % 12)) whiteCount++;
+      const isBlack = blackPattern.includes(midi % 12);
+      const whiteWidth = canvas.width / 52;
+      return isBlack ? whiteCount * whiteWidth - whiteWidth * 0.15 : whiteCount * whiteWidth;
+    }
+    
+    function noteWidth(midi) {
+      return (canvas.width / 52) * (blackPattern.includes(midi % 12) ? 0.6 : 1);
+    }
+    
+    const enabledTracks = new Set();
+    
+    function buildTrackToggles() {
+      const tracks = [...new Set(playback.allNotes.map(n => n.trackNo))].sort((a,b) => a-b);
+      enabledTracks.clear();
+      tracks.forEach(t => enabledTracks.add(t));
+      document.getElementById('trackToggles').innerHTML = `<button id="muteAllBtn" style="margin-left:8px">Mute All</button>` + tracks.map(t => 
+        `<label style="margin-left:8px"><input type="checkbox" data-track="${t}" checked><span style="color:${playback.getNoteColor(t)}">T${t+1}</span></label>`
+      ).join('');
+      document.getElementById('muteAllBtn').onclick = () => {
+        const cbs = document.querySelectorAll('#trackToggles input[data-track]');
+        const allMuted = enabledTracks.size === 0;
+        cbs.forEach(cb => { cb.checked = allMuted; });
+        if (allMuted) tracks.forEach(t => enabledTracks.add(t)); else enabledTracks.clear();
+      };
+      document.querySelectorAll('#trackToggles input[data-track]').forEach(cb => {
+        cb.onchange = e => { const t = +e.target.dataset.track; e.target.checked ? enabledTracks.add(t) : enabledTracks.delete(t); };
+      });
+    }
+    
+    const synthInstruments = [
+      { value: '', label: '=== SoundFont Synths ===', disabled: true },
+      { value: 'oxisynth_sf3', label: 'OxiSynth SF3' },
+      { value: 'oxisynth', label: 'OxiSynth' },
+      { value: 'spessasynth', label: 'SpessaSynth' },
+      { value: 'fluidweb', label: 'RustySynth' },
+    ];
+    
+    const playback = new PlaybackControls({
+      container: '#playbackControls',
+      instruments: [...synthInstruments, ...PlaybackControls.defaultInstruments],
+      useBackgroundClock: true, // Enable AudioWorklet-based scheduling
+      trackFilter: t => enabledTracks.has(t),
+      onNoteOn: (note, color) => { if (showParticles && enabledTracks.has(note.trackNo)) spawnParticles(note.midi + transpose, color); },
+      onLoad: () => {
+        particles.length = 0;
+        buildTrackToggles();
+        if (playback.instrument.programChange) {
+          playback.midi?.tracks?.forEach(t => {
+            if (t.channel !== undefined && t.instrument?.number !== undefined) playback.instrument.programChange(t.channel, t.instrument.number);
+          });
+        }
+      },
+      onPlay: () => {
+        if (!playback.instrument.ready) {
+          if (playback.instrument.loadSoundfontStack) playback.instrument.loadSoundfontStack(PlaybackControls.defaultSoundfontStack);
+          else if (playback.instrument.loadSoundfont) playback.instrument.loadSoundfont(document.getElementById('soundfontSelect')?.value);
+        }
+      }
+    });
+    
+    // Register synth engines
+    for (const key of Object.keys(SynthManager.synths)) {
+      playback.instruments[key] = () => {
+        const SynthClass = SynthManager.loaded[key];
+        if (SynthClass) return new SynthClass();
+        SynthManager.load(key);
+        return new SilentPiano();
+      };
+    }
+    
+    // Override switchInstrument for async synth loading
+    const origSwitch = playback.switchInstrument.bind(playback);
+    playback.switchInstrument = async function(type) {
+      if (SynthManager.synths[type]) {
+        if (!SynthManager.loaded[type]) await SynthManager.load(type);
+        if (this.instrument.allNotesOff) this.instrument.allNotesOff();
+        this.instrument = new SynthManager.loaded[type]();
+        this.audioContext = this.instrument.ctx || this.instrument._ensureContext?.();
+        if (this.instrument.loadSoundfontStack) {
+          this.instrument.loadSoundfontStack(PlaybackControls.defaultSoundfontStack);
+        } else if (this.instrument.loadSoundfont) {
+          const sfEl = document.getElementById('soundfontSelect');
+          if (sfEl) this.instrument.loadSoundfont(sfEl.value);
+        }
+      } else {
+        origSwitch(type);
+      }
+    };
+    
+    // Pre-initialize soundfont on first click
+    const initSoundfont = () => {
+      if (playback.instrument.loadSoundfontStack && !playback.instrument.ready) {
+        playback.instrument.loadSoundfontStack(PlaybackControls.defaultSoundfontStack);
+      } else if (playback.instrument.loadSoundfont && !playback.instrument.ready) {
+        const sfEl = document.getElementById('soundfontSelect');
+        if (sfEl) playback.instrument.loadSoundfont(sfEl.value);
+      }
+      document.removeEventListener('click', initSoundfont);
+    };
+    document.addEventListener('click', initSoundfont);
+    
+    // Soundfont loading events
+    const sfLoadingEl = document.getElementById('sfLoading');
+    window.addEventListener('soundfont-loading', () => sfLoadingEl.classList.add('active'));
+    window.addEventListener('soundfont-loaded', () => sfLoadingEl.classList.remove('active'));
+    window.addEventListener('soundfont-error', e => { sfLoadingEl.classList.remove('active'); alert('Failed to load soundfont: ' + (e.detail.error?.message || 'Unknown error')); });
+    
+    document.getElementById('bloomToggle').onchange = e => bloom = e.target.checked;
+    document.getElementById('particlesToggle').onchange = e => showParticles = e.target.checked;
+    document.getElementById('noteNamesToggle').onchange = e => { showNoteNames = e.target.checked; pianoEl.classList.toggle('hide-names', !showNoteNames); };
+    document.getElementById('transposeInput').oninput = e => { transpose = +e.target.value; playback.transpose = transpose; };
+    document.getElementById('tuningInput').oninput = e => { playback.tuning = +e.target.value; };
+    document.getElementById('yScaleInput').oninput = e => { yScale = +e.target.value; document.getElementById('yScaleVal').textContent = yScale + 'x'; };
+    document.getElementById('previewToggle').onchange = e => showPreview = e.target.checked;
+    
+    function render() {
+      requestAnimationFrame(render);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      const { lapse, playing, midi: midiData, allNotes } = playback;
+      
+      // Grid lines
+      for (let midi = 24; midi <= 108; midi++) {
+        const noteInOctave = midi % 12;
+        if (noteInOctave === 0 || noteInOctave === 4) {
+          const x = midiToX(midi);
+          ctx.strokeStyle = noteInOctave === 0 ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.1)';
+          ctx.lineWidth = noteInOctave === 0 ? 1.5 : 1;
+          ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+          if (noteInOctave === 0) { ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = '10px sans-serif'; ctx.fillText('C' + (Math.floor(midi / 12) - 1), x + 3, canvas.height - 5); }
+        }
+      }
+      
+      const tempos = midiData?.header?.tempos || [{bpm: 120, time: 0}];
+      const getTempoAt = t => { for (let i = tempos.length - 1; i >= 0; i--) if ((tempos[i].time || 0) <= t) return tempos[i].bpm; return tempos[0]?.bpm || 120; };
+      document.getElementById('tempoDisplay').textContent = 'BPM: ' + Math.round(getTempoAt(lapse));
+      
+      const timeSig = midiData?.header?.timeSignatures?.[0]?.timeSignature || [4, 4];
+      let measureTime = 0, measure = 0;
+      while (measureTime < lapse + LOOK_AHEAD + 10) {
+        const bpm = getTempoAt(measureTime);
+        const secondsPerMeasure = (60 / bpm) * timeSig[0];
+        if (measureTime >= lapse - 1) {
+          const y = canvas.height - (measureTime - lapse) * (canvas.height / LOOK_AHEAD) * yScale;
+          if (y >= 0 && y <= canvas.height) {
+            ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+            ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = '12px sans-serif'; ctx.fillText(measure + 1, 5, y - 3);
+          }
+        }
+        measureTime += secondsPerMeasure; measure++;
+      }
+      
+      if (playing) { playback.update(); updateParticles(); }
+      if (showParticles) drawParticles();
+      
+      Object.values(keys).forEach(k => { k.classList.remove('active', 'preview'); k.style.setProperty('--preview-t', 0); });
+      
+      for (const note of allNotes || []) {
+        const { midi: origMidi, time, duration: dur, trackNo } = note;
+        const midi = origMidi + transpose;
+        if (!enabledTracks.has(trackNo)) continue;
+        
+        const startY = canvas.height - (time - lapse) * (canvas.height / LOOK_AHEAD) * yScale;
+        const endY = canvas.height - (time + dur - lapse) * (canvas.height / LOOK_AHEAD) * yScale;
+        if (startY < -100 || endY > canvas.height + 100) continue;
+        
+        const x = midiToX(midi), w = noteWidth(midi) - 2, h = Math.max(startY - endY, 4), y = endY;
+        
+        if (time <= lapse && time + dur >= lapse) keys[midi]?.classList.add('active');
+        else if (showPreview && time > lapse && time < lapse + LOOK_AHEAD && keys[midi]) {
+          const t = (time - lapse) / LOOK_AHEAD;
+          const key = keys[midi];
+          key.classList.add('preview');
+          key.style.setProperty('--preview-t', Math.max(key.style.getPropertyValue('--preview-t') || 0, 1 - Math.log(1 + t * 9) / Math.log(10)));
+        }
+        
+        const isHitting = startY >= canvas.height - 5 && endY <= canvas.height;
+        ctx.fillStyle = playback.getNoteColor(trackNo);
+        if (bloom) { ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = isHitting ? 25 : 10; }
+        if (isHitting) ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.roundRect(x + 1, y, w, h, 4); ctx.fill(); ctx.shadowBlur = 0;
+        
+        if (showNoteNames && h > 20) {
+          ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center'; ctx.shadowColor = '#000'; ctx.shadowBlur = 4; ctx.fillStyle = '#fff';
+          const labelY = Math.min(y + h - 6, canvas.height - 6);
+          ctx.fillText(noteNames[midi % 12], x + 1 + w/2, labelY);
+          ctx.shadowBlur = 0;
+          ctx.textAlign = 'left';
+        }
+      }
+    }
+    
+    playback.loadMidi(document.getElementById('midiSelect').value);
+    render();
+  </script>
+</body>
+</html>

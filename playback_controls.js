@@ -135,6 +135,10 @@ class PlaybackControls {
     this.transpose = 0;
     this.tuning = 440;
 
+    // Background playback via AudioWorklet (survives tab switching)
+    this.useBackgroundClock = opts.useBackgroundClock || false;
+    this._clock = null; // Lazy-initialized MidiClock
+
     this.trackColors = ['#e91e63','#9c27b0','#3f51b5','#03a9f4','#009688','#8bc34a','#ffeb3b','#ff9800'];
 
     // Instruments
@@ -389,30 +393,88 @@ class PlaybackControls {
     this.instrument.resume();
     if (!this.playing) {
       this.playing = true;
-      this.start = this._getAudioContext().currentTime - this.lapse / this.speed;
+      if (this.useBackgroundClock) {
+        this._ensureClock().then(() => {
+          this._clock.load(this.allNotes, this.allCC);
+          this._clock.setSpeed(this.speed);
+          this._clock.play();
+        });
+      } else {
+        this.start = this._getAudioContext().currentTime - this.lapse / this.speed;
+      }
       this.onPlay();
     }
   }
 
   pause() {
     this.playing = !this.playing;
-    if (this.playing) this.play();
+    if (this.playing) {
+      this.play();
+    } else if (this._clock) {
+      this._clock.pause();
+    }
   }
 
   stop() {
+    if (this._clock) this._clock.pause();
     this._reset();
   }
 
   seek(time) {
     this.lapse = time;
-    this.start = this._getAudioContext().currentTime - this.lapse / this.speed;
+    if (this._clock) {
+      this._clock.seek(time);
+    } else {
+      this.start = this._getAudioContext().currentTime - this.lapse / this.speed;
+    }
+    this.lastPlayed = -1;
+    this.lastPlayedCC = -1;
   }
 
   setSpeed(val) {
     this.speed = +val;
-    if (this.audioContext) {
+    if (this._clock) {
+      this._clock.setSpeed(+val);
+    } else if (this.audioContext) {
       this.start = this.audioContext.currentTime - this.lapse / this.speed;
     }
+  }
+
+  async _ensureClock() {
+    if (this._clock?.ready) return;
+    if (typeof MidiClock === 'undefined') {
+      console.warn('MidiClock not loaded, falling back to RAF-based playback');
+      this.useBackgroundClock = false;
+      return;
+    }
+    this._clock = new MidiClock(this._getAudioContext());
+    this._clock.onNoteOn = note => {
+      if (!this.trackFilter(note.trackNo)) return;
+      const midi = note.midi + this.transpose;
+      const channel = note.channel ?? 0;
+      if (this.instrument.programChange) {
+        this.instrument.noteOn(midi, note.velocity, channel);
+      } else {
+        this.instrument.noteOn(midi, note.velocity);
+      }
+      this.onNoteOn(note, this.getNoteColor(note.trackNo));
+    };
+    this._clock.onNoteOff = note => {
+      const midi = note.midi + this.transpose;
+      const channel = note.channel ?? 0;
+      if (this.instrument.programChange) {
+        this.instrument.noteOff(midi, channel);
+      } else {
+        this.instrument.noteOff(midi);
+      }
+    };
+    this._clock.onCC = cc => {
+      this.instrument.controlChange?.(cc.channel, cc.ctrl, cc.value);
+    };
+    this._clock.onTime = lapse => {
+      this.lapse = lapse;
+    };
+    await this._clock.init();
   }
 
   _getAudioContext() {
@@ -423,44 +485,47 @@ class PlaybackControls {
   }
 
   update() {
-    if (this.playing) {
+    // When using background clock, it updates lapse via onTime callback
+    if (this.playing && !this._clock) {
       this.lapse = (this._getAudioContext().currentTime - this.start) * this.speed;
     }
 
-    // Play notes
-    for (let i = this.lastPlayed + 1; i < this.allNotes.length; i++) {
-      const note = this.allNotes[i];
-      if (note.time > this.lapse) break;
-      if (note.time >= this.lapse - 0.05 && this.trackFilter(note.trackNo)) {
-        const transposedMidi = note.midi + this.transpose;
-        const channel = note.channel ?? 0;
-        const supportsChannels = !!this.instrument.programChange;
-        if (supportsChannels) {
-          this.instrument.noteOn(transposedMidi, note.velocity, channel);
-        } else {
-          this.instrument.noteOn(transposedMidi, note.velocity);
-        }
-        const color = this.trackColors[note.trackNo % this.trackColors.length];
-        this.onNoteOn(note, color);
-        setTimeout(() => {
+    // Play notes (skip if clock handles it)
+    if (!this._clock) {
+      for (let i = this.lastPlayed + 1; i < this.allNotes.length; i++) {
+        const note = this.allNotes[i];
+        if (note.time > this.lapse) break;
+        if (note.time >= this.lapse - 0.05 && this.trackFilter(note.trackNo)) {
+          const transposedMidi = note.midi + this.transpose;
+          const channel = note.channel ?? 0;
+          const supportsChannels = !!this.instrument.programChange;
           if (supportsChannels) {
-            this.instrument.noteOff(transposedMidi, channel);
+            this.instrument.noteOn(transposedMidi, note.velocity, channel);
           } else {
-            this.instrument.noteOff(transposedMidi);
+            this.instrument.noteOn(transposedMidi, note.velocity);
           }
-        }, note.duration * 1000 / this.speed);
+          const color = this.trackColors[note.trackNo % this.trackColors.length];
+          this.onNoteOn(note, color);
+          setTimeout(() => {
+            if (supportsChannels) {
+              this.instrument.noteOff(transposedMidi, channel);
+            } else {
+              this.instrument.noteOff(transposedMidi);
+            }
+          }, note.duration * 1000 / this.speed);
+        }
+        this.lastPlayed = i;
       }
-      this.lastPlayed = i;
-    }
 
-    // Process control changes (sustain pedal, etc.)
-    for (let i = this.lastPlayedCC + 1; i < this.allCC.length; i++) {
-      const cc = this.allCC[i];
-      if (cc.time > this.lapse) break;
-      if (cc.time >= this.lapse - 0.05 && this.instrument.controlChange) {
-        this.instrument.controlChange(cc.channel, cc.ctrl, cc.value);
+      // Process control changes (sustain pedal, etc.)
+      for (let i = this.lastPlayedCC + 1; i < this.allCC.length; i++) {
+        const cc = this.allCC[i];
+        if (cc.time > this.lapse) break;
+        if (cc.time >= this.lapse - 0.05 && this.instrument.controlChange) {
+          this.instrument.controlChange(cc.channel, cc.ctrl, cc.value);
+        }
+        this.lastPlayedCC = i;
       }
-      this.lastPlayedCC = i;
     }
 
     // Update UI

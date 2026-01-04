@@ -1,6 +1,13 @@
 Midi Visualization Experiments
 
 
+4 Jan 2026
+
+[Experiment #023 - Synthesia Background Playback](023_synthesia_background.html)
+- AudioWorklet-based MIDI scheduling (plays in background tabs)
+- Reduced audio glitches via worklet timing
+- Uses new `useBackgroundClock` option in PlaybackControls
+
 3 Jan 2026
 
 [Experiment #022 - Synthesia Multi-Synth](022_synthesia_multi_synth.html)
