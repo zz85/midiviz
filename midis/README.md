@@ -24,6 +24,21 @@ A curated collection of classical, modern, and video game piano pieces in MIDI f
 | `schuim-3.mid` | Schubert | Impromptu No. 3 |
 | `scn15_7.mid` | Schumann | Träumerei |
 | `grieg_halling.mid` | Grieg | Halling |
+| `pachelbel_canon.mid` | Pachelbel | Canon in D |
+| `bach_toccata.mid` | J.S. Bach | Toccata & Fugue in D minor |
+
+## Symphonic Works
+
+| File | Composer | Piece |
+|------|----------|-------|
+| `beethoven_sym5_1.mid` | Beethoven | Symphony No.5, 1st Movement |
+| `beethoven_sym7_2.mid` | Beethoven | Symphony No.7, 2nd Movement |
+| `mozart_sym40_1.mid` | Mozart | Symphony No.40, 1st Movement |
+| `mozart_eine_kleine.mid` | Mozart | Eine Kleine Nachtmusik |
+| `dvorak_newworld_2.mid` | Dvorak | New World Symphony (Largo) |
+| `vivaldi_winter.mid` | Vivaldi | Winter (Four Seasons) |
+| `grieg_morning.mid` | Grieg | Morning Mood (Peer Gynt) |
+| `handel_hornpipe.mid` | Handel | Water Music Hornpipe |
 
 ## Modern/Contemporary Pieces
 
@@ -60,6 +75,9 @@ A curated collection of classical, modern, and video game piano pieces in MIDI f
 
 **Classical pieces:** [piano-midi.de](http://www.piano-midi.de) by Bernd Krueger  
 License: [CC BY-SA 3.0](http://creativecommons.org/licenses/by-sa/3.0/de/deed.en)
+
+**Symphonic works:** [mfiles.co.uk](https://www.mfiles.co.uk)  
+Classical MIDI files for educational use.
 
 **Modern & Game pieces:** [midifind.com](https://midifind.com)  
 Free MIDI files for educational and creative use.
