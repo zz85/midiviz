@@ -5,744 +5,189 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MidiViz</title>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
-    
     * { box-sizing: border-box; margin: 0; padding: 0; }
     
-    :root {
-      --bg-primary: #0a0a0f;
-      --bg-secondary: #12121a;
-      --bg-tertiary: #1a1a24;
-      --bg-hover: #222230;
-      --accent: #6366f1;
-      --accent-glow: rgba(99, 102, 241, 0.4);
-      --text-primary: #ffffff;
-      --text-secondary: #8888a0;
-      --text-muted: #555566;
-      --border: #2a2a3a;
-      --success: #22c55e;
-      --warning: #f59e0b;
-    }
-    
     body {
-      font-family: 'Inter', -apple-system, sans-serif;
-      background: var(--bg-primary);
-      color: var(--text-primary);
+      font-family: system-ui, sans-serif;
+      background: #0a0a0f;
+      color: #fff;
       height: 100vh;
-      overflow: hidden;
-      line-height: 1.4;
-    }
-
-    /* Layout */
-    .app {
-      display: grid;
-      grid-template-columns: 280px 1fr;
-      grid-template-rows: 1fr auto auto;
-      height: 100vh;
-    }
-
-    /* Sidebar */
-    .sidebar {
-      grid-row: 1 / -1;
-      background: var(--bg-secondary);
-      border-right: 1px solid var(--border);
       display: flex;
       flex-direction: column;
     }
 
-    .sidebar-header {
-      padding: 20px;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .logo {
-      font-size: 20px;
-      font-weight: 600;
-      background: linear-gradient(135deg, #6366f1, #a855f7);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      margin-bottom: 16px;
-    }
-
-    .search {
-      position: relative;
-    }
-    .search-icon {
-      position: absolute;
-      left: 12px;
-      top: 50%;
-      transform: translateY(-50%);
-      color: var(--text-muted);
-      font-size: 14px;
-    }
-    .search input {
-      width: 100%;
-      padding: 10px 12px 10px 36px;
-      background: var(--bg-tertiary);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      color: var(--text-primary);
-      font-size: 13px;
-      transition: border-color 0.2s, box-shadow 0.2s;
-    }
-    .search input:focus {
-      outline: none;
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px var(--accent-glow);
-    }
-    .search input::placeholder { color: var(--text-muted); }
-
-    /* Playlist */
-    .playlist {
+    /* Visualization - the star */
+    .viz {
       flex: 1;
-      overflow-y: auto;
-      padding: 12px 0;
-    }
-    .playlist::-webkit-scrollbar { width: 6px; }
-    .playlist::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-
-    .section-label {
-      padding: 8px 20px;
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: var(--text-muted);
-    }
-
-    .track {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 10px 20px;
-      cursor: pointer;
-      transition: background 0.15s;
-    }
-    .track:hover { background: var(--bg-hover); }
-    .track.active {
-      background: linear-gradient(90deg, rgba(99,102,241,0.15), transparent);
-    }
-    .track.active .track-title { color: var(--accent); }
-
-    .track-art {
-      width: 40px;
-      height: 40px;
-      background: linear-gradient(135deg, #6366f1, #a855f7);
-      border-radius: 4px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 16px;
-    }
-    .track-info { flex: 1; min-width: 0; }
-    .track-title {
-      font-size: 13px;
-      font-weight: 500;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .track-meta {
-      font-size: 11px;
-      color: var(--text-secondary);
-      display: flex;
-      gap: 8px;
-      margin-top: 2px;
-    }
-    .track-duration { color: var(--text-muted); }
-
-    .playing-indicator {
-      width: 14px;
-      height: 14px;
-      display: flex;
-      gap: 2px;
-      align-items: flex-end;
-    }
-    .playing-indicator span {
-      width: 3px;
-      background: var(--accent);
-      border-radius: 1px;
-      animation: eq 0.5s ease-in-out infinite alternate;
-    }
-    .playing-indicator span:nth-child(1) { height: 60%; animation-delay: 0s; }
-    .playing-indicator span:nth-child(2) { height: 100%; animation-delay: 0.2s; }
-    .playing-indicator span:nth-child(3) { height: 40%; animation-delay: 0.4s; }
-    @keyframes eq {
-      to { height: 30%; }
-    }
-
-    /* Main visualization */
-    .viz-container {
       position: relative;
-      background: var(--bg-primary);
-      overflow: hidden;
+      background: linear-gradient(180deg, #0a0a0f 0%, #0f0f18 100%);
     }
 
-    /* Grid overlay */
-    .grid-overlay {
+    .note {
       position: absolute;
-      inset: 0;
-      background-image: 
-        linear-gradient(90deg, var(--border) 1px, transparent 1px),
-        linear-gradient(0deg, rgba(255,255,255,0.03) 1px, transparent 1px);
-      background-size: calc(100% / 12) 50px;
-      pointer-events: none;
-      opacity: 0.5;
+      width: 1.8%;
+      border-radius: 4px;
+      background: linear-gradient(180deg, #818cf8, #6366f1);
+      box-shadow: 0 0 20px rgba(99,102,241,0.4);
     }
 
-    /* Playhead */
     .playhead {
       position: absolute;
       bottom: 0;
       left: 0;
       right: 0;
       height: 2px;
-      background: var(--accent);
-      box-shadow: 0 0 20px var(--accent), 0 0 40px var(--accent-glow);
+      background: #6366f1;
+      box-shadow: 0 0 30px #6366f1;
     }
 
-    /* Notes */
-    .note {
-      position: absolute;
-      border-radius: 4px;
-      transition: filter 0.1s;
-    }
-    .note.track-1 { background: linear-gradient(180deg, #6366f1, #4f46e5); }
-    .note.track-2 { background: linear-gradient(180deg, #a855f7, #9333ea); }
-    .note::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      border-radius: 4px;
-      box-shadow: 0 0 20px currentColor;
-      opacity: 0;
-      transition: opacity 0.1s;
-    }
-    .note.hitting { filter: brightness(1.5); }
-    .note.hitting::after { opacity: 0.6; }
-
-    /* Velocity indicator on notes */
-    .note-velocity {
-      position: absolute;
-      bottom: 4px;
-      left: 50%;
-      transform: translateX(-50%);
-      font-size: 9px;
-      color: rgba(255,255,255,0.6);
-      font-weight: 500;
-    }
-
-    /* Piano */
-    .piano-section {
-      background: var(--bg-secondary);
-      border-top: 1px solid var(--border);
-    }
-
-    .piano-wrapper {
-      position: relative;
-      height: 120px;
-      padding: 8px 0 0;
-    }
-
+    /* Piano - compact */
     .piano {
       display: flex;
-      height: 100%;
-      padding: 0 2px;
+      height: 80px;
+      background: #111;
+      padding: 4px 2px 0;
     }
-
     .key {
       position: relative;
-      transition: transform 0.05s, filter 0.05s;
     }
     .key.white {
       flex: 1;
-      background: linear-gradient(180deg, #fafafa 0%, #e8e8e8 100%);
-      border-radius: 0 0 5px 5px;
+      background: linear-gradient(180deg, #f5f5f5, #e0e0e0);
       margin: 0 0.5px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.2), inset 0 -2px 4px rgba(0,0,0,0.05);
+      border-radius: 0 0 4px 4px;
     }
     .key.black {
       width: 1.2%;
-      height: 58%;
-      background: linear-gradient(180deg, #3a3a3a 0%, #1a1a1a 100%);
+      height: 55%;
+      background: linear-gradient(180deg, #333, #111);
       margin-left: -0.6%;
       margin-right: -0.6%;
       z-index: 1;
-      border-radius: 0 0 4px 4px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+      border-radius: 0 0 3px 3px;
     }
-    .key.white.active {
-      background: linear-gradient(180deg, var(--accent) 0%, #4f46e5 100%);
-      transform: translateY(2px);
-      box-shadow: 0 0 20px var(--accent-glow);
+    .key.active.white {
+      background: linear-gradient(180deg, #a5b4fc, #818cf8);
     }
-    .key.black.active {
-      background: linear-gradient(180deg, #7c3aed 0%, #5b21b6 100%);
-      transform: translateY(2px);
+    .key.active.black {
+      background: linear-gradient(180deg, #6366f1, #4f46e5);
     }
 
-    /* Octave markers */
-    .octave-marker {
-      position: absolute;
-      bottom: 8px;
-      font-size: 10px;
-      color: var(--text-muted);
-      transform: translateX(-50%);
-      pointer-events: none;
-    }
-
-    /* Transport controls */
-    .transport {
+    /* Controls - minimal bar */
+    .controls {
       display: flex;
       align-items: center;
       gap: 16px;
-      padding: 16px 24px;
-      background: var(--bg-secondary);
-      border-top: 1px solid var(--border);
+      padding: 12px 20px;
+      background: #111;
+      border-top: 1px solid #222;
     }
 
-    .transport-btn {
+    .play-btn {
       width: 40px;
       height: 40px;
       border: none;
       border-radius: 50%;
-      background: var(--bg-tertiary);
-      color: var(--text-primary);
+      background: #6366f1;
+      color: #fff;
+      font-size: 16px;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 16px;
-      transition: background 0.15s, transform 0.1s;
     }
-    .transport-btn:hover { background: var(--bg-hover); }
-    .transport-btn:active { transform: scale(0.95); }
-    .transport-btn.play {
-      width: 48px;
-      height: 48px;
-      background: var(--accent);
-      font-size: 18px;
-    }
-    .transport-btn.play:hover { background: #5558e3; }
+    .play-btn:hover { background: #5558e3; }
 
-    /* Progress/waveform */
-    .progress-section {
+    .progress {
       flex: 1;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    .waveform {
-      height: 32px;
-      background: var(--bg-tertiary);
-      border-radius: 4px;
-      position: relative;
-      overflow: hidden;
-      cursor: pointer;
-    }
-    .waveform-bars {
       display: flex;
       align-items: center;
-      height: 100%;
-      gap: 1px;
-      padding: 4px;
+      gap: 12px;
     }
-    .waveform-bar {
-      flex: 1;
-      background: var(--text-muted);
-      border-radius: 1px;
-      transition: background 0.1s;
-    }
-    .waveform-bar.played { background: var(--accent); }
-    .waveform-progress {
-      position: absolute;
-      left: 0;
-      top: 0;
-      bottom: 0;
-      width: 35%;
-      background: rgba(99,102,241,0.1);
-      border-right: 2px solid var(--accent);
-    }
-
-    .time-display {
-      display: flex;
-      justify-content: space-between;
-      font-size: 11px;
-      color: var(--text-secondary);
+    .time {
+      font-size: 12px;
+      color: #666;
       font-variant-numeric: tabular-nums;
+      min-width: 40px;
     }
-
-    /* Right controls */
-    .right-controls {
-      display: flex;
-      align-items: center;
-      gap: 20px;
-    }
-
-    .volume-control {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .volume-icon { color: var(--text-secondary); font-size: 16px; }
-    .volume-slider {
-      width: 80px;
+    .bar {
+      flex: 1;
       height: 4px;
-      -webkit-appearance: none;
-      background: var(--bg-tertiary);
+      background: #222;
+      border-radius: 2px;
+      cursor: pointer;
+      position: relative;
+    }
+    .bar-fill {
+      width: 35%;
+      height: 100%;
+      background: #6366f1;
       border-radius: 2px;
     }
-    .volume-slider::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      width: 12px;
-      height: 12px;
-      background: var(--text-primary);
-      border-radius: 50%;
-      cursor: pointer;
-    }
 
-    .speed-select {
-      padding: 6px 10px;
-      background: var(--bg-tertiary);
-      border: 1px solid var(--border);
+    .song-select {
+      padding: 8px 12px;
+      background: #1a1a1a;
+      border: 1px solid #333;
       border-radius: 6px;
-      color: var(--text-primary);
-      font-size: 12px;
-      cursor: pointer;
-    }
-
-    .icon-btn {
-      width: 32px;
-      height: 32px;
-      border: none;
-      background: transparent;
-      color: var(--text-secondary);
-      cursor: pointer;
-      border-radius: 6px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 16px;
-      transition: color 0.15s, background 0.15s;
-    }
-    .icon-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
-    .icon-btn.active { color: var(--accent); }
-
-    /* Track layers panel */
-    .layers-panel {
-      position: absolute;
-      top: 12px;
-      right: 12px;
-      background: rgba(18,18,26,0.9);
-      backdrop-filter: blur(12px);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 12px;
+      color: #fff;
+      font-size: 13px;
       min-width: 180px;
     }
-    .layers-title {
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 10px;
-    }
-    .layer {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 8px 0;
-      border-bottom: 1px solid var(--border);
-    }
-    .layer:last-child { border-bottom: none; }
-    .layer-color {
-      width: 12px;
-      height: 12px;
-      border-radius: 3px;
-    }
-    .layer-color.t1 { background: #6366f1; }
-    .layer-color.t2 { background: #a855f7; }
-    .layer-name { flex: 1; font-size: 12px; }
-    .layer-toggle {
-      width: 36px;
-      height: 20px;
-      background: var(--bg-tertiary);
-      border-radius: 10px;
-      position: relative;
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-    .layer-toggle.on { background: var(--accent); }
-    .layer-toggle::after {
-      content: '';
-      position: absolute;
-      top: 2px;
-      left: 2px;
-      width: 16px;
-      height: 16px;
-      background: white;
-      border-radius: 50%;
-      transition: transform 0.2s;
-    }
-    .layer-toggle.on::after { transform: translateX(16px); }
 
-    /* Stats overlay */
-    .stats {
-      position: absolute;
-      top: 12px;
-      left: 12px;
-      display: flex;
-      gap: 16px;
-    }
-    .stat {
-      background: rgba(18,18,26,0.9);
-      backdrop-filter: blur(12px);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 10px 14px;
-      text-align: center;
-    }
-    .stat-value {
-      font-size: 18px;
-      font-weight: 600;
-      color: var(--text-primary);
-    }
-    .stat-value.accent { color: var(--accent); }
-    .stat-value.success { color: var(--success); }
-    .stat-label {
-      font-size: 10px;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-top: 2px;
+    .speed {
+      padding: 6px 10px;
+      background: transparent;
+      border: 1px solid #333;
+      border-radius: 4px;
+      color: #888;
+      font-size: 12px;
     }
   </style>
 </head>
 <body>
-  <div class="app">
-    <aside class="sidebar">
-      <div class="sidebar-header">
-        <div class="logo">MidiViz</div>
-        <div class="search">
-          <span class="search-icon">⌕</span>
-          <input type="text" placeholder="Search songs...">
-        </div>
-      </div>
-      <div class="playlist">
-        <div class="section-label">Recently Played</div>
-        <div class="track active">
-          <div class="track-art">♫</div>
-          <div class="track-info">
-            <div class="track-title">Golden Hour</div>
-            <div class="track-meta">
-              <span>JVKE</span>
-              <span class="track-duration">4:02</span>
-            </div>
-          </div>
-          <div class="playing-indicator">
-            <span></span><span></span><span></span>
-          </div>
-        </div>
-        <div class="track">
-          <div class="track-art">♫</div>
-          <div class="track-info">
-            <div class="track-title">Clair de Lune</div>
-            <div class="track-meta">
-              <span>Debussy</span>
-              <span class="track-duration">5:12</span>
-            </div>
-          </div>
-        </div>
-        <div class="track">
-          <div class="track-art">♫</div>
-          <div class="track-info">
-            <div class="track-title">River Flows in You</div>
-            <div class="track-meta">
-              <span>Yiruma</span>
-              <span class="track-duration">3:45</span>
-            </div>
-          </div>
-        </div>
-        
-        <div class="section-label">Classical</div>
-        <div class="track">
-          <div class="track-art">♫</div>
-          <div class="track-info">
-            <div class="track-title">Moonlight Sonata</div>
-            <div class="track-meta">
-              <span>Beethoven</span>
-              <span class="track-duration">6:30</span>
-            </div>
-          </div>
-        </div>
-        <div class="track">
-          <div class="track-art">♫</div>
-          <div class="track-info">
-            <div class="track-title">Fantaisie-Impromptu</div>
-            <div class="track-meta">
-              <span>Chopin</span>
-              <span class="track-duration">5:28</span>
-            </div>
-          </div>
-        </div>
-        <div class="track">
-          <div class="track-art">♫</div>
-          <div class="track-info">
-            <div class="track-title">Prelude in C Major</div>
-            <div class="track-meta">
-              <span>Bach</span>
-              <span class="track-duration">2:45</span>
-            </div>
-          </div>
-        </div>
-        
-        <div class="section-label">Video Games</div>
-        <div class="track">
-          <div class="track-art">♫</div>
-          <div class="track-info">
-            <div class="track-title">Gerudo Valley</div>
-            <div class="track-meta">
-              <span>Zelda OoT</span>
-              <span class="track-duration">2:18</span>
-            </div>
-          </div>
-        </div>
-        <div class="track">
-          <div class="track-art">♫</div>
-          <div class="track-info">
-            <div class="track-title">Sweden</div>
-            <div class="track-meta">
-              <span>Minecraft</span>
-              <span class="track-duration">3:35</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </aside>
+  <div class="viz">
+    <div class="note" style="left:30%; bottom:65%; height:70px;"></div>
+    <div class="note" style="left:36%; bottom:40%; height:100px;"></div>
+    <div class="note" style="left:44%; bottom:75%; height:50px;"></div>
+    <div class="note" style="left:50%; bottom:20%; height:120px;"></div>
+    <div class="note" style="left:58%; bottom:50%; height:80px;"></div>
+    <div class="note" style="left:64%; bottom:30%; height:90px;"></div>
+    <div class="playhead"></div>
+  </div>
 
-    <main class="viz-container">
-      <div class="grid-overlay"></div>
-      
-      <div class="stats">
-        <div class="stat">
-          <div class="stat-value accent">124</div>
-          <div class="stat-label">BPM</div>
-        </div>
-        <div class="stat">
-          <div class="stat-value">4/4</div>
-          <div class="stat-label">Time Sig</div>
-        </div>
-        <div class="stat">
-          <div class="stat-value success">C maj</div>
-          <div class="stat-label">Key</div>
-        </div>
-      </div>
+  <div class="piano" id="piano"></div>
 
-      <div class="layers-panel">
-        <div class="layers-title">Tracks</div>
-        <div class="layer">
-          <div class="layer-color t1"></div>
-          <div class="layer-name">Piano Right</div>
-          <div class="layer-toggle on"></div>
-        </div>
-        <div class="layer">
-          <div class="layer-color t2"></div>
-          <div class="layer-name">Piano Left</div>
-          <div class="layer-toggle on"></div>
-        </div>
-      </div>
-
-      <!-- Notes -->
-      <div class="note track-1" style="left:32%; bottom:60%; width:1.8%; height:80px;"></div>
-      <div class="note track-1" style="left:38%; bottom:45%; width:1.8%; height:120px;"></div>
-      <div class="note track-2" style="left:42%; bottom:70%; width:1.8%; height:60px;"></div>
-      <div class="note track-1 hitting" style="left:48%; bottom:5%; width:1.8%; height:100px;"></div>
-      <div class="note track-2" style="left:54%; bottom:35%; width:1.8%; height:90px;"></div>
-      <div class="note track-1" style="left:60%; bottom:55%; width:1.8%; height:70px;"></div>
-      <div class="note track-2" style="left:65%; bottom:25%; width:1.8%; height:110px;"></div>
-
-      <div class="playhead"></div>
-    </main>
-
-    <section class="piano-section">
-      <div class="piano-wrapper">
-        <div class="piano" id="piano"></div>
-      </div>
-    </section>
-
-    <footer class="transport">
-      <button class="transport-btn">⏮</button>
-      <button class="transport-btn play">▶</button>
-      <button class="transport-btn">⏭</button>
-
-      <div class="progress-section">
-        <div class="waveform">
-          <div class="waveform-bars" id="waveform"></div>
-          <div class="waveform-progress"></div>
-        </div>
-        <div class="time-display">
-          <span>1:24</span>
-          <span>Golden Hour — JVKE</span>
-          <span>4:02</span>
-        </div>
-      </div>
-
-      <div class="right-controls">
-        <div class="volume-control">
-          <span class="volume-icon">🔊</span>
-          <input type="range" class="volume-slider" value="80">
-        </div>
-        
-        <select class="speed-select">
-          <option>0.5x</option>
-          <option>0.75x</option>
-          <option selected>1x</option>
-          <option>1.25x</option>
-          <option>1.5x</option>
-        </select>
-
-        <button class="icon-btn active" title="Loop">⟳</button>
-        <button class="icon-btn" title="Shuffle">⤭</button>
-        <button class="icon-btn" title="Settings">⚙</button>
-      </div>
-    </footer>
+  <div class="controls">
+    <button class="play-btn">▶</button>
+    <div class="progress">
+      <span class="time">1:24</span>
+      <div class="bar"><div class="bar-fill"></div></div>
+      <span class="time">4:02</span>
+    </div>
+    <select class="song-select">
+      <option>Golden Hour — JVKE</option>
+      <option>Clair de Lune — Debussy</option>
+      <option>River Flows in You — Yiruma</option>
+      <option>Moonlight Sonata — Beethoven</option>
+    </select>
+    <select class="speed">
+      <option>0.5x</option>
+      <option>0.75x</option>
+      <option selected>1x</option>
+      <option>1.5x</option>
+    </select>
   </div>
 
   <script>
-    // Piano
     const piano = document.getElementById('piano');
-    const blackPattern = [1,3,6,8,10];
-    for (let midi = 21; midi <= 108; midi++) {
-      const isBlack = blackPattern.includes(midi % 12);
-      const key = document.createElement('div');
-      key.className = 'key ' + (isBlack ? 'black' : 'white');
-      if ([60,64,67].includes(midi)) key.classList.add('active');
-      piano.appendChild(key);
+    const blacks = [1,3,6,8,10];
+    for (let m = 21; m <= 108; m++) {
+      const k = document.createElement('div');
+      k.className = 'key ' + (blacks.includes(m % 12) ? 'black' : 'white');
+      if ([60,64,67].includes(m)) k.classList.add('active');
+      piano.appendChild(k);
     }
-
-    // Waveform bars
-    const waveform = document.getElementById('waveform');
-    for (let i = 0; i < 100; i++) {
-      const bar = document.createElement('div');
-      bar.className = 'waveform-bar' + (i < 35 ? ' played' : '');
-      bar.style.height = (20 + Math.random() * 60) + '%';
-      waveform.appendChild(bar);
-    }
-
-    // Track selection
-    document.querySelectorAll('.track').forEach(t => {
-      t.addEventListener('click', () => {
-        document.querySelectorAll('.track').forEach(x => x.classList.remove('active'));
-        t.classList.add('active');
-      });
-    });
-
-    // Layer toggles
-    document.querySelectorAll('.layer-toggle').forEach(t => {
-      t.addEventListener('click', () => t.classList.toggle('on'));
-    });
   </script>
 </body>
 </html>
