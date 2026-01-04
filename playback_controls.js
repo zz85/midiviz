@@ -45,6 +45,7 @@ class PlaybackControls {
     { value: 'midis/deb_clai.mid', label: 'Debussy - Clair de Lune' },
     { value: 'midis/deb_pass.mid', label: 'Debussy - Passepied' },
     { value: 'midis/liz_et2.mid', label: 'Liszt - Etude No.2' },
+    { value: 'liz_liebestraum.mid', label: 'Liszt - Liebestraum No.3' },
     { value: 'midis/mz_331_1.mid', label: 'Mozart - Piano Sonata K.331' },
     { value: 'midis/mz_545_1.mid', label: 'Mozart - Piano Sonata K.545' },
     { value: 'midis/schuim-3.mid', label: 'Schubert - Impromptu No.3' },
