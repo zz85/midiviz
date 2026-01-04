@@ -3,17 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MIDI Player Mockup</title>
+  <title>MIDI Player</title>
   <style>
-    @font-face {
-      font-family: 'Pixel';
-      src: url('https://fonts.gstatic.com/s/pressstart2p/v15/e3t4euO8T-267oIAQAu6jDQyK3nVivM.woff2') format('woff2');
-    }
+    @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
     
     * { box-sizing: border-box; margin: 0; padding: 0; image-rendering: pixelated; }
     
     body {
-      font-family: 'Press Start 2P', 'Pixel', monospace;
+      font-family: 'Press Start 2P', monospace;
       background: #1a1a2e;
       color: #fff;
       height: 100vh;
@@ -21,23 +18,71 @@
       font-size: 8px;
     }
 
-    /* Pixel border helper */
-    .pixel-border {
+    /* Game-like start screen overlay */
+    .start-screen {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.9);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      gap: 30px;
+    }
+    .start-screen.hidden { display: none; }
+    
+    .game-title {
+      font-size: 32px;
+      color: #ff6688;
+      text-shadow: 4px 4px 0 #882244, 0 0 30px #ff6688;
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+    }
+    
+    .start-hint {
+      font-size: 12px;
+      color: #88ff88;
+      animation: blink 1s step-end infinite;
+    }
+    @keyframes blink {
+      50% { opacity: 0; }
+    }
+    
+    .difficulty-select {
+      display: flex;
+      gap: 20px;
+    }
+    .difficulty-btn {
+      padding: 16px 24px;
+      font-family: inherit;
+      font-size: 10px;
+      background: #2d2d44;
       border: 4px solid;
       border-color: #5a6988 #2a3448 #2a3448 #5a6988;
+      color: #aaa;
+      cursor: pointer;
     }
-    .pixel-border-inset {
-      border: 4px solid;
-      border-color: #2a3448 #5a6988 #5a6988 #2a3448;
+    .difficulty-btn:hover {
+      background: #3d3d5c;
+      color: #fff;
+    }
+    .difficulty-btn.selected {
+      background: #3d5c3d;
+      color: #88ff88;
+      border-color: #5c8a5c #2a3d2a #2a3d2a #5c8a5c;
     }
 
-    /* Sidebar */
+    /* Main layout */
     .sidebar {
       position: fixed;
       left: 0;
       top: 0;
       bottom: 0;
-      width: 220px;
+      width: 240px;
       background: #2d2d44;
       border-right: 4px solid #1a1a2e;
       z-index: 100;
@@ -49,108 +94,106 @@
       padding: 12px;
       background: #3d3d5c;
       border-bottom: 4px solid #1a1a2e;
+      text-align: center;
     }
 
     .sidebar-title {
       font-size: 10px;
       color: #ffcc00;
       text-shadow: 2px 2px 0 #aa6600;
-      margin-bottom: 10px;
-      text-align: center;
+      margin-bottom: 8px;
     }
 
-    .search-box {
-      width: 100%;
-      padding: 8px;
-      background: #1a1a2e;
-      border: 4px solid;
-      border-color: #0a0a1e #3a3a5e #3a3a5e #0a0a1e;
-      color: #88ff88;
-      font-family: inherit;
-      font-size: 8px;
-    }
-    .search-box::placeholder { color: #446644; }
-    .search-box:focus { outline: none; background: #0a0a1e; }
-
-    .playlist {
+    /* Song cards instead of list */
+    .song-grid {
       flex: 1;
       overflow-y: auto;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .song-card {
+      padding: 12px;
       background: #1a1a2e;
-    }
-
-    .category {
-      padding: 8px 12px;
-      font-size: 8px;
-      color: #ffcc00;
-      background: #2d2d44;
-      border-top: 2px solid #3d3d5c;
-      border-bottom: 2px solid #1a1a2e;
-    }
-
-    .song {
-      padding: 8px 12px;
-      font-size: 8px;
+      border: 4px solid;
+      border-color: #3a3a5e #1a1a2e #1a1a2e #3a3a5e;
       cursor: pointer;
-      color: #aaaacc;
-      border-bottom: 2px solid #2d2d44;
     }
-    .song:hover { background: #2d2d44; color: #fff; }
-    .song.active {
-      background: #3d5c3d;
+    .song-card:hover {
+      background: #2a2a4e;
+    }
+    .song-card.active {
+      background: #2a4a2a;
+      border-color: #4a8a4a #1a3a1a #1a3a1a #4a8a4a;
+    }
+    .song-name {
+      color: #fff;
+      margin-bottom: 6px;
+    }
+    .song-meta {
+      display: flex;
+      gap: 8px;
+      color: #888;
+      font-size: 6px;
+    }
+    .song-difficulty {
       color: #88ff88;
     }
-    .song.active::before {
-      content: '► ';
-      color: #88ff88;
-    }
+    .song-difficulty.medium { color: #ffcc00; }
+    .song-difficulty.hard { color: #ff6666; }
 
     .main-content {
-      margin-left: 220px;
+      margin-left: 240px;
       display: flex;
       flex-direction: column;
       height: 100vh;
     }
 
-    /* Top bar */
+    /* Simplified top bar */
     .top-bar {
       display: flex;
       align-items: center;
-      gap: 8px;
-      padding: 8px 12px;
+      gap: 12px;
+      padding: 10px 16px;
       background: #3d3d5c;
       border-bottom: 4px solid #1a1a2e;
     }
 
     .logo {
-      font-size: 12px;
+      font-size: 14px;
       color: #ff6688;
       text-shadow: 2px 2px 0 #882244;
     }
 
-    select {
-      background: #2d2d44;
-      border: 4px solid;
-      border-color: #5a6988 #2a3448 #2a3448 #5a6988;
-      color: #aaaacc;
-      padding: 6px 8px;
-      font-family: inherit;
-      font-size: 8px;
-      cursor: pointer;
-    }
-
     .spacer { flex: 1; }
 
-    .bpm {
-      font-size: 10px;
-      color: #ff4444;
-      text-shadow: 0 0 8px #ff0000;
-      background: #0a0a0a;
-      padding: 6px 10px;
-      border: 4px solid;
-      border-color: #2a2a2a #4a4a4a #4a4a4a #2a2a2a;
+    /* Score/combo display - gamified! */
+    .score-display {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+    }
+    .score-box {
+      text-align: center;
+    }
+    .score-label {
+      font-size: 6px;
+      color: #888;
+      margin-bottom: 2px;
+    }
+    .score-value {
+      font-size: 14px;
+      color: #ffcc00;
+      text-shadow: 0 0 10px #ffcc00;
+    }
+    .combo-value {
+      color: #ff6688;
+      text-shadow: 0 0 10px #ff6688;
     }
 
-    /* Visualization area */
+    /* Visualization - with guide lines */
     .viz-area {
       flex: 1;
       position: relative;
@@ -158,23 +201,41 @@
       margin: 8px;
       border: 4px solid;
       border-color: #0a0a1e #3a3a5e #3a3a5e #0a0a1e;
+      overflow: hidden;
     }
 
-    /* Pixel art note blocks */
-    .note-block {
+    /* Hit zone indicator */
+    .hit-zone {
       position: absolute;
-      image-rendering: pixelated;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 8px;
+      background: repeating-linear-gradient(90deg, #ffcc00 0px, #ffcc00 8px, transparent 8px, transparent 16px);
+      opacity: 0.5;
     }
-    .note-block::before {
-      content: '';
+
+    /* Countdown overlay */
+    .countdown {
       position: absolute;
       inset: 0;
-      background: inherit;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 64px;
+      color: #fff;
+      text-shadow: 4px 4px 0 #000;
+      background: rgba(0,0,0,0.5);
+    }
+    .countdown.hidden { display: none; }
+
+    .note-block {
+      position: absolute;
       border: 4px solid;
       border-color: rgba(255,255,255,0.3) rgba(0,0,0,0.3) rgba(0,0,0,0.3) rgba(255,255,255,0.3);
     }
 
-    /* Piano */
+    /* Piano with key hints */
     .piano-container {
       background: #2d2d44;
       padding: 8px;
@@ -183,15 +244,18 @@
 
     .piano {
       display: flex;
-      height: 100px;
+      height: 110px;
       background: #1a1a2e;
       border: 4px solid;
       border-color: #0a0a1e #3a3a5e #3a3a5e #0a0a1e;
       padding: 4px;
+      position: relative;
     }
 
     .key {
       position: relative;
+      cursor: pointer;
+      transition: transform 0.05s;
     }
     .key.white {
       flex: 1;
@@ -210,236 +274,257 @@
       border: 2px solid;
       border-color: #444 #111 #000 #333;
     }
-    .key.white.active {
+    .key.white.active, .key.white.pressed {
       background: #88ddff;
       border-color: #aaeeff #4488aa #226688 #66bbdd;
+      transform: translateY(2px);
     }
-    .key.black.active {
+    .key.black.active, .key.black.pressed {
       background: #4488aa;
-      border-color: #66aacc #224466 #113344 #448899;
+      transform: translateY(2px);
+    }
+    
+    /* Key labels for beginners */
+    .key-label {
+      position: absolute;
+      bottom: 8px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 8px;
+      color: #666;
+      pointer-events: none;
+    }
+    .key.black .key-label {
+      color: #888;
+      bottom: 4px;
+      font-size: 6px;
+    }
+    .key.active .key-label, .key.pressed .key-label {
+      color: #fff;
     }
 
-    /* Bottom controls */
+    /* Simplified controls */
     .controls {
-      padding: 12px;
+      padding: 12px 16px;
       background: #2d2d44;
       border-top: 4px solid #3d3d5c;
-    }
-
-    .progress-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 10px;
-    }
-
-    .time {
-      font-size: 10px;
-      color: #88ff88;
-      text-shadow: 0 0 6px #00ff00;
-      background: #0a0a0a;
-      padding: 4px 8px;
-      border: 4px solid;
-      border-color: #2a2a2a #4a4a4a #4a4a4a #2a2a2a;
-      min-width: 60px;
-      text-align: center;
-    }
-
-    .progress-bar {
-      flex: 1;
-      height: 20px;
-      background: #1a1a2e;
-      border: 4px solid;
-      border-color: #0a0a1e #3a3a5e #3a3a5e #0a0a1e;
-      position: relative;
-      cursor: pointer;
-    }
-    .progress-fill {
-      width: 35%;
-      height: 100%;
-      background: repeating-linear-gradient(
-        90deg,
-        #ff6688 0px,
-        #ff6688 4px,
-        #ff8899 4px,
-        #ff8899 8px
-      );
-    }
-    .progress-thumb {
-      position: absolute;
-      top: -2px;
-      left: 35%;
-      transform: translateX(-50%);
-      width: 12px;
-      height: 16px;
-      background: #ffcc00;
-      border: 2px solid;
-      border-color: #ffee66 #aa8800 #886600 #ddbb00;
     }
 
     .controls-row {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 16px;
     }
 
     .play-btn {
-      width: 40px;
-      height: 40px;
+      width: 50px;
+      height: 50px;
       background: #44aa44;
       border: 4px solid;
       border-color: #66cc66 #228822 #116611 #44aa44;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 14px;
+      font-size: 18px;
       color: #fff;
       text-shadow: 2px 2px 0 #116611;
       cursor: pointer;
+      font-family: inherit;
     }
     .play-btn:hover { background: #55bb55; }
     .play-btn:active {
       border-color: #228822 #66cc66 #66cc66 #228822;
-      background: #338833;
     }
 
-    .control-group {
+    /* Big friendly progress bar */
+    .progress-section {
+      flex: 1;
+    }
+    .progress-label {
+      font-size: 8px;
+      color: #888;
+      margin-bottom: 4px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .progress-bar {
+      height: 24px;
+      background: #1a1a2e;
+      border: 4px solid;
+      border-color: #0a0a1e #3a3a5e #3a3a5e #0a0a1e;
+      position: relative;
+    }
+    .progress-fill {
+      width: 35%;
+      height: 100%;
+      background: linear-gradient(180deg, #88ff88 0%, #44aa44 100%);
+    }
+
+    /* Speed as simple buttons */
+    .speed-control {
       display: flex;
       align-items: center;
       gap: 8px;
     }
-
-    .knob-label {
-      font-size: 8px;
-      color: #aaaacc;
-    }
-
-    /* Pixel knob */
-    .knob {
-      width: 24px;
-      height: 24px;
-      background: #5a5a7a;
-      border: 4px solid;
-      border-color: #7a7a9a #3a3a5a #2a2a4a #6a6a8a;
-      position: relative;
-    }
-    .knob::after {
-      content: '';
-      position: absolute;
-      top: 2px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 4px;
-      height: 6px;
-      background: #ffcc00;
-    }
-
-    /* Pixel LED */
-    .led {
-      width: 12px;
-      height: 12px;
-      background: #2a2a2a;
-      border: 2px solid;
-      border-color: #1a1a1a #3a3a3a #3a3a3a #1a1a1a;
-    }
-    .led.on {
-      background: #ff4444;
-      box-shadow: 0 0 8px #ff0000;
-    }
-    .led.green.on {
-      background: #44ff44;
-      box-shadow: 0 0 8px #00ff00;
-    }
-
-    .toggle-group {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 4px;
-    }
-
-    .tracks {
-      display: flex;
-      gap: 6px;
-      margin-left: auto;
-    }
-
-    .track-btn {
-      padding: 6px 10px;
-      font-size: 8px;
+    .speed-btn {
+      padding: 8px 12px;
       font-family: inherit;
+      font-size: 10px;
       background: #2d2d44;
       border: 4px solid;
       border-color: #5a6988 #2a3448 #2a3448 #5a6988;
-      color: #666688;
+      color: #888;
       cursor: pointer;
     }
-    .track-btn.active {
-      border-color: #2a3448 #5a6988 #5a6988 #2a3448;
-      background: #3d3d5c;
+    .speed-btn.active {
+      background: #3d5c3d;
+      color: #88ff88;
     }
-    .track-btn.t1.active { color: #ff6688; text-shadow: 0 0 6px #ff0044; }
-    .track-btn.t2.active { color: #6688ff; text-shadow: 0 0 6px #0044ff; }
+
+    /* Help tooltip */
+    .help-btn {
+      width: 30px;
+      height: 30px;
+      background: #5a5a7a;
+      border: 4px solid;
+      border-color: #7a7a9a #3a3a5a #2a2a4a #6a6a8a;
+      color: #ffcc00;
+      font-family: inherit;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    /* Floating hints */
+    .hint-bubble {
+      position: fixed;
+      bottom: 200px;
+      right: 20px;
+      background: #ffcc00;
+      color: #1a1a2e;
+      padding: 12px 16px;
+      font-size: 8px;
+      max-width: 200px;
+      border: 4px solid #aa8800;
+      z-index: 50;
+    }
+    .hint-bubble::after {
+      content: '';
+      position: absolute;
+      bottom: -12px;
+      right: 20px;
+      border: 8px solid transparent;
+      border-top-color: #aa8800;
+    }
+    .hint-bubble.hidden { display: none; }
+    .hint-close {
+      position: absolute;
+      top: 4px;
+      right: 8px;
+      cursor: pointer;
+      color: #886600;
+    }
   </style>
-  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
 </head>
 <body>
+  <!-- Game-like start screen -->
+  <div class="start-screen" id="startScreen">
+    <div class="game-title">MidiViz</div>
+    <div style="color:#aaa; font-size:10px; margin-bottom:20px;">LEARN PIANO THE FUN WAY</div>
+    <div class="difficulty-select">
+      <button class="difficulty-btn selected" data-speed="0.5">
+        EASY<br><span style="font-size:6px;color:#88ff88">50% SPEED</span>
+      </button>
+      <button class="difficulty-btn" data-speed="0.75">
+        NORMAL<br><span style="font-size:6px;color:#ffcc00">75% SPEED</span>
+      </button>
+      <button class="difficulty-btn" data-speed="1">
+        FULL<br><span style="font-size:6px;color:#ff6666">100% SPEED</span>
+      </button>
+    </div>
+    <div class="start-hint">PRESS SPACE OR CLICK TO START</div>
+  </div>
+
+  <!-- Helpful hint bubble -->
+  <div class="hint-bubble" id="hintBubble">
+    <span class="hint-close" onclick="this.parentElement.classList.add('hidden')">×</span>
+    <b>TIP:</b> Watch the falling blocks and press the matching keys when they reach the yellow line!
+  </div>
+
   <div class="sidebar">
     <div class="sidebar-header">
-      <div class="sidebar-title">♫ LIBRARY</div>
-      <input type="text" class="search-box" placeholder="SEARCH...">
+      <div class="sidebar-title">♫ PICK A SONG</div>
     </div>
-    <div class="playlist">
-      <div class="category">★ SELECTIONS</div>
-      <div class="song active">Golden Hour</div>
-      <div class="song">Heart and Soul</div>
-      <div class="song">The Entertainer</div>
-      <div class="song">Rush E</div>
-      <div class="song">Minute Waltz</div>
-      
-      <div class="category">♪ CLASSICAL</div>
-      <div class="song">Bach - Prelude C</div>
-      <div class="song">Fur Elise</div>
-      <div class="song">Moonlight Sonata</div>
-      <div class="song">Fantaisie-Impromptu</div>
-      <div class="song">Clair de Lune</div>
-      
-      <div class="category">♪ MODERN</div>
-      <div class="song">River Flows in You</div>
-      <div class="song">Nuvole Bianche</div>
-      <div class="song">Time (Inception)</div>
-      
-      <div class="category">♪ GAMES</div>
-      <div class="song">FF Prelude</div>
-      <div class="song">Gerudo Valley</div>
-      <div class="song">Mario Theme</div>
-      <div class="song">Minecraft Sweden</div>
+    <div class="song-grid">
+      <div class="song-card active">
+        <div class="song-name">Golden Hour</div>
+        <div class="song-meta">
+          <span class="song-difficulty">★ EASY</span>
+          <span>4:02</span>
+        </div>
+      </div>
+      <div class="song-card">
+        <div class="song-name">Heart and Soul</div>
+        <div class="song-meta">
+          <span class="song-difficulty">★ EASY</span>
+          <span>2:30</span>
+        </div>
+      </div>
+      <div class="song-card">
+        <div class="song-name">Fur Elise</div>
+        <div class="song-meta">
+          <span class="song-difficulty medium">★★ MEDIUM</span>
+          <span>3:15</span>
+        </div>
+      </div>
+      <div class="song-card">
+        <div class="song-name">Clair de Lune</div>
+        <div class="song-meta">
+          <span class="song-difficulty medium">★★ MEDIUM</span>
+          <span>5:00</span>
+        </div>
+      </div>
+      <div class="song-card">
+        <div class="song-name">Fantaisie-Impromptu</div>
+        <div class="song-meta">
+          <span class="song-difficulty hard">★★★ HARD</span>
+          <span>5:30</span>
+        </div>
+      </div>
+      <div class="song-card">
+        <div class="song-name">Rush E</div>
+        <div class="song-meta">
+          <span class="song-difficulty hard">★★★ HARD</span>
+          <span>2:45</span>
+        </div>
+      </div>
     </div>
   </div>
 
   <div class="main-content">
     <div class="top-bar">
       <div class="logo">MidiViz</div>
-      <select>
-        <option selected>SOUNDFONT</option>
-        <option>WAVETABLE</option>
-        <option>ELECTRIC</option>
-      </select>
-      <select>
-        <option selected>FLUIDR3</option>
-        <option>MOTIF ES6</option>
-      </select>
       <span class="spacer"></span>
-      <span class="bpm">120BPM</span>
+      <div class="score-display">
+        <div class="score-box">
+          <div class="score-label">SCORE</div>
+          <div class="score-value">12,450</div>
+        </div>
+        <div class="score-box">
+          <div class="score-label">COMBO</div>
+          <div class="score-value combo-value">x24</div>
+        </div>
+        <div class="score-box">
+          <div class="score-label">ACCURACY</div>
+          <div class="score-value" style="color:#88ff88">94%</div>
+        </div>
+      </div>
     </div>
 
     <div class="viz-area">
+      <div class="hit-zone"></div>
+      <div class="countdown hidden" id="countdown">3</div>
       <div class="note-block" style="left:30%; top:10%; width:20px; height:60px; background:#ff6688;"></div>
       <div class="note-block" style="left:38%; top:25%; width:20px; height:90px; background:#6688ff;"></div>
       <div class="note-block" style="left:46%; top:5%; width:20px; height:45px; background:#ff6688;"></div>
       <div class="note-block" style="left:54%; top:40%; width:20px; height:75px; background:#ff6688;"></div>
       <div class="note-block" style="left:62%; top:15%; width:20px; height:68px; background:#6688ff;"></div>
-      <div class="note-block" style="left:70%; top:50%; width:20px; height:52px; background:#ff6688;"></div>
     </div>
 
     <div class="piano-container">
@@ -447,60 +532,90 @@
     </div>
 
     <div class="controls">
-      <div class="progress-row">
-        <span class="time">1:24</span>
-        <div class="progress-bar">
-          <div class="progress-fill"></div>
-          <div class="progress-thumb"></div>
-        </div>
-        <span class="time">4:02</span>
-      </div>
       <div class="controls-row">
         <button class="play-btn">▶</button>
         
-        <div class="control-group">
-          <span class="knob-label">SPD</span>
-          <div class="knob"></div>
-        </div>
-
-        <div class="control-group">
-          <span class="knob-label">Y</span>
-          <div class="knob" style="transform: rotate(45deg);"></div>
-        </div>
-
-        <div class="control-group">
-          <div class="toggle-group">
-            <div class="led on"></div>
-            <span class="knob-label">BLM</span>
+        <div class="progress-section">
+          <div class="progress-label">
+            <span>1:24</span>
+            <span>Golden Hour - JVKE</span>
+            <span>4:02</span>
           </div>
-          <div class="toggle-group">
-            <div class="led green on"></div>
-            <span class="knob-label">PRT</span>
-          </div>
-          <div class="toggle-group">
-            <div class="led on"></div>
-            <span class="knob-label">PRV</span>
+          <div class="progress-bar">
+            <div class="progress-fill"></div>
           </div>
         </div>
 
-        <div class="tracks">
-          <button class="track-btn t1 active">TRK1</button>
-          <button class="track-btn t2 active">TRK2</button>
+        <div class="speed-control">
+          <span style="font-size:8px;color:#888;">SPEED:</span>
+          <button class="speed-btn active">50%</button>
+          <button class="speed-btn">75%</button>
+          <button class="speed-btn">100%</button>
         </div>
+
+        <button class="help-btn">?</button>
       </div>
     </div>
   </div>
 
   <script>
+    // Piano with note labels
     const piano = document.getElementById('piano');
     const blackPattern = [1,3,6,8,10];
+    const noteNames = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+    
     for (let midi = 21; midi <= 108; midi++) {
       const isBlack = blackPattern.includes(midi % 12);
       const key = document.createElement('div');
       key.className = 'key ' + (isBlack ? 'black' : 'white');
+      
+      // Add note labels for white keys (C, D, E, F, G, A, B)
+      const noteName = noteNames[midi % 12];
+      if (!isBlack && ['C','E','G'].includes(noteName)) {
+        const label = document.createElement('span');
+        label.className = 'key-label';
+        label.textContent = noteName + Math.floor(midi / 12 - 1);
+        key.appendChild(label);
+      }
+      
       if ([60,64,67].includes(midi)) key.classList.add('active');
       piano.appendChild(key);
     }
+
+    // Start screen interaction
+    document.getElementById('startScreen').addEventListener('click', function() {
+      this.classList.add('hidden');
+    });
+    document.addEventListener('keydown', function(e) {
+      if (e.code === 'Space') {
+        document.getElementById('startScreen').classList.add('hidden');
+      }
+    });
+
+    // Difficulty buttons
+    document.querySelectorAll('.difficulty-btn').forEach(btn => {
+      btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        document.querySelectorAll('.difficulty-btn').forEach(b => b.classList.remove('selected'));
+        this.classList.add('selected');
+      });
+    });
+
+    // Speed buttons
+    document.querySelectorAll('.speed-btn').forEach(btn => {
+      btn.addEventListener('click', function() {
+        document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+      });
+    });
+
+    // Song cards
+    document.querySelectorAll('.song-card').forEach(card => {
+      card.addEventListener('click', function() {
+        document.querySelectorAll('.song-card').forEach(c => c.classList.remove('active'));
+        this.classList.add('active');
+      });
+    });
   </script>
 </body>
 </html>
