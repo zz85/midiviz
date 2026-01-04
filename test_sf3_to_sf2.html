@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>SF3 to SF2 Converter</title>
+</head>
+<body>
+  <h1>SF3 to SF2 Converter</h1>
+  <input type="file" id="file" accept=".sf3">
+  <div id="status"></div>
+
+  <script type="module">
+    const worker = new Worker('./sf3-worker.js', { type: 'module' });
+
+    document.getElementById('file').onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      
+      const status = document.getElementById('status');
+      status.textContent = 'Converting to SF2 (decompressing samples)...';
+      
+      const sf3Data = await file.arrayBuffer();
+      worker.postMessage(sf3Data, [sf3Data]);
+      
+      worker.onmessage = (e) => {
+        const blob = new Blob([e.data], { type: 'application/octet-stream' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = file.name.replace('.sf3', '.sf2');
+        a.click();
+        status.textContent = 'Done! SF2 downloaded.';
+      };
+    };
+  </script>
+</body>
+</html>
