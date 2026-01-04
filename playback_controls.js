@@ -33,6 +33,7 @@ class PlaybackControls {
     { value: '', label: '=== Classical ===', disabled: true },
     { value: 'midis/bach_846.mid', label: 'Bach - Prelude in C Major BWV 846' },
     { value: 'midis/bach_847.mid', label: 'Bach - Prelude & Fugue BWV 847' },
+    { value: 'midis/bach_toccata.mid', label: 'Bach - Toccata & Fugue in D minor' },
     { value: 'midis/elise.mid', label: 'Beethoven - Fur Elise' },
     { value: 'midis/mond_1.mid', label: 'Beethoven - Moonlight Sonata' },
     { value: 'midis/pathetique_1.mid', label: 'Beethoven - Pathetique Sonata' },
@@ -49,6 +50,16 @@ class PlaybackControls {
     { value: 'midis/schuim-3.mid', label: 'Schubert - Impromptu No.3' },
     { value: 'midis/scn15_7.mid', label: 'Schumann - Traumerei' },
     { value: 'midis/grieg_halling.mid', label: 'Grieg - Halling' },
+    { value: 'midis/pachelbel_canon.mid', label: 'Pachelbel - Canon in D' },
+    { value: '', label: '=== Symphonic ===', disabled: true },
+    { value: 'midis/beethoven_sym5_1.mid', label: 'Beethoven - Symphony No.5 (1st mvt)' },
+    { value: 'midis/beethoven_sym7_2.mid', label: 'Beethoven - Symphony No.7 (2nd mvt)' },
+    { value: 'midis/mozart_sym40_1.mid', label: 'Mozart - Symphony No.40 (1st mvt)' },
+    { value: 'midis/mozart_eine_kleine.mid', label: 'Mozart - Eine Kleine Nachtmusik' },
+    { value: 'midis/dvorak_newworld_2.mid', label: 'Dvorak - New World Symphony (Largo)' },
+    { value: 'midis/vivaldi_winter.mid', label: 'Vivaldi - Winter (Four Seasons)' },
+    { value: 'midis/grieg_morning.mid', label: 'Grieg - Morning Mood (Peer Gynt)' },
+    { value: 'midis/handel_hornpipe.mid', label: 'Handel - Water Music Hornpipe' },
     { value: '', label: '=== Modern ===', disabled: true },
     { value: 'midis/river_flows_in_you.mid', label: 'Yiruma - River Flows in You' },
     { value: 'midis/kiss_the_rain.mid', label: 'Yiruma - Kiss the Rain' },
@@ -263,6 +274,7 @@ class PlaybackControls {
       this.els.progress.onmouseup = () => {
         this.seek(this.els.progress.value * this.duration);
         this.lastPlayed = -1;
+        this.lastPlayedCC = -1;
         this.seeking = false;
       };
     }
@@ -313,7 +325,9 @@ class PlaybackControls {
 
   _reset() {
     this.allNotes = [];
+    this.allCC = [];
     this.lastPlayed = -1;
+    this.lastPlayedCC = -1;
     this.lapse = 0;
     this.playing = false;
     this.speed = 1;
@@ -337,8 +351,18 @@ class PlaybackControls {
           channel: track.channel ?? trackNo
         });
       });
+      // Extract control changes (sustain pedal, etc.)
+      const cc = track.controlChanges;
+      if (cc) {
+        Object.keys(cc).forEach(ctrl => {
+          cc[ctrl].forEach(ev => {
+            this.allCC.push({ time: ev.time, ctrl: +ctrl, value: Math.round(ev.value * 127), channel: track.channel ?? trackNo });
+          });
+        });
+      }
     });
     this.allNotes.sort((a, b) => a.time - b.time);
+    this.allCC.sort((a, b) => a.time - b.time);
     if (this.allNotes.length) {
       const last = this.allNotes[this.allNotes.length - 1];
       this.duration = last.time + last.duration;
@@ -427,6 +451,16 @@ class PlaybackControls {
         }, note.duration * 1000 / this.speed);
       }
       this.lastPlayed = i;
+    }
+
+    // Process control changes (sustain pedal, etc.)
+    for (let i = this.lastPlayedCC + 1; i < this.allCC.length; i++) {
+      const cc = this.allCC[i];
+      if (cc.time > this.lapse) break;
+      if (cc.time >= this.lapse - 0.05 && this.instrument.controlChange) {
+        this.instrument.controlChange(cc.channel, cc.ctrl, cc.value);
+      }
+      this.lastPlayedCC = i;
     }
 
     // Update UI
