@@ -1,7 +1,8 @@
 Midi Visualization Experiments
 
+[MidiViz Piano](midiviz_piano.html) - Main player with sepia theme UI
 
-4 Jan 2026
+5 Jan 2026
 
 [Experiment #023 - Synthesia Background Playback](023_synthesia_background.html)
 - AudioWorklet-based MIDI scheduling (plays in background tabs)
