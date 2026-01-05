@@ -253,7 +253,7 @@
     /* PIANO */
     #piano {
       display: flex;
-      height: 80px;
+      height: 120px;
       background: var(--bg2);
       padding: 4px 2px 0;
     }
@@ -471,7 +471,8 @@
       ctx.globalAlpha = 1;
     }
     
-    const PIANO_HEIGHT = 80, LOOK_AHEAD = 2;
+    const PIANO_HEIGHT = 120, LOOK_AHEAD = 2;
+    let pxPerSec = 250; // Will be derived from key width
     const keys = {};
     const blackPattern = [1,3,6,8,10];
     const trackColors = ['#e91e63','#9c27b0','#3f51b5','#03a9f4','#009688','#8bc34a','#ffeb3b','#ff9800'];
@@ -506,16 +507,19 @@
     }
     
     function resize() {
-      const vizEl = document.querySelector('.viz');
-      canvas.width = vizEl.clientWidth;
-      canvas.height = vizEl.clientHeight;
-      // Force piano to be visible
+      const controlsHeight = document.querySelector('.controls').offsetHeight;
+      const row2 = document.getElementById('controlsRow2');
+      const row2Height = row2.classList.contains('open') ? row2.offsetHeight : 0;
+      canvas.width = document.body.clientWidth;
+      canvas.height = window.innerHeight - controlsHeight - row2Height - PIANO_HEIGHT;
       pianoEl.style.display = 'flex';
+      // Derive pxPerSec from white key width (roughly 10x key width per second)
+      const whiteKeyWidth = canvas.width / 52;
+      pxPerSec = whiteKeyWidth * 10;
     }
     resize();
-    window.onresize = resize;
-    // Also handle orientation change
-    window.addEventListener('orientationchange', () => setTimeout(resize, 100));
+    new ResizeObserver(resize).observe(document.body);
+    new ResizeObserver(resize).observe(document.querySelector('.controls'));
     
     function midiToX(midi) {
       let whiteCount = 0;
@@ -651,7 +655,7 @@
     
     // Play button
     const playBtn = document.getElementById('playBtn');
-    playBtn.onclick = () => {
+    function togglePlay() {
       if (playback.playing) {
         playback.pause();
         playBtn.textContent = '▶';
@@ -659,7 +663,14 @@
         playback.play();
         playBtn.textContent = '⏸';
       }
-    };
+    }
+    playBtn.onclick = togglePlay;
+    
+    // Keyboard shortcuts
+    document.addEventListener('keydown', e => {
+      if (e.target.tagName === 'INPUT') return; // Don't trigger when typing in inputs
+      if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
+    });
     
     // LCD progress click to seek
     document.getElementById('lcdProgress').onclick = e => {
@@ -806,8 +817,8 @@
         if (!enabledTracks.has(trackNo)) continue;
         const midi = origMidi + transpose;
         
-        const startY = canvas.height - (time - lapse) * (canvas.height / LOOK_AHEAD) * yScale;
-        const endY = canvas.height - (time + dur - lapse) * (canvas.height / LOOK_AHEAD) * yScale;
+        const startY = canvas.height - (time - lapse) * pxPerSec * yScale;
+        const endY = canvas.height - (time + dur - lapse) * pxPerSec * yScale;
         if (startY < -50 || endY > canvas.height + 50) continue;
         
         const x = midiToX(midi), w = noteWidth(midi) - 2, h = Math.max(startY - endY, 4), y = endY;
