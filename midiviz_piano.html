@@ -145,26 +145,34 @@
       font-size: 11px;
       color: var(--accent);
       box-shadow: inset 0 1px 4px rgba(0,0,0,0.4);
-      flex: 1;
-      max-width: 400px;
+      flex: 2;
+      min-width: 200px;
     }
-    .lcd-time { font-variant-numeric: tabular-nums; min-width: 90px; }
+    .lcd-time { font-variant-numeric: tabular-nums; min-width: 90px; flex-shrink: 0; }
     .lcd-progress {
       flex: 1;
-      height: 4px;
+      height: 6px;
       background: var(--border);
-      border-radius: 2px;
+      border-radius: 3px;
       cursor: pointer;
-      min-width: 80px;
+      min-width: 100px;
     }
     .lcd-progress-fill {
       width: 0%;
       height: 100%;
       background: var(--accent);
-      border-radius: 2px;
+      border-radius: 3px;
       transition: width 0.1s;
     }
-    .lcd-meta { color: var(--text2); white-space: nowrap; }
+    .lcd-meta { color: var(--text2); white-space: nowrap; flex-shrink: 0; }
+
+    /* Volume slider */
+    .volume-group { display: flex; align-items: center; gap: 4px; }
+    .volume-slider { width: 60px; height: 4px; cursor: pointer; accent-color: var(--accent); }
+
+    /* Playback mode */
+    .mode-btn { background: var(--lcd-bg); border: 1px solid var(--border); color: var(--text2); padding: 4px 8px; border-radius: 4px; font-size: 11px; cursor: pointer; }
+    .mode-btn:hover { border-color: var(--accent); }
 
     /* KNOBS */
     .knob-group {
@@ -343,6 +351,13 @@
       <span class="lcd-time" id="lcdTime">0:00 / 0:00</span>
       <div class="lcd-progress" id="lcdProgress"><div class="lcd-progress-fill" id="lcdProgressFill"></div></div>
       <span class="lcd-meta" id="lcdMeta">♩120</span>
+    </div>
+
+    <button class="mode-btn" id="modeBtn" title="Playback mode">⏹</button>
+
+    <div class="volume-group">
+      <span style="font-size:10px;color:var(--text2)">🔊</span>
+      <input type="range" class="volume-slider" id="volumeSlider" min="0" max="1" step="0.01" value="1">
     </div>
 
     <span id="sfLoading">Loading...</span>
@@ -666,9 +681,56 @@
     }
     playBtn.onclick = togglePlay;
     
+    // Playback mode: stop, next, shuffle
+    const modes = ['stop', 'next', 'shuffle'];
+    const modeIcons = { stop: '⏹', next: '➡️', shuffle: '🔀' };
+    const modeTitles = { stop: 'Stop at end', next: 'Play next', shuffle: 'Shuffle' };
+    let playbackMode = 'stop';
+    const modeBtn = document.getElementById('modeBtn');
+    modeBtn.onclick = () => {
+      playbackMode = modes[(modes.indexOf(playbackMode) + 1) % modes.length];
+      modeBtn.textContent = modeIcons[playbackMode];
+      modeBtn.title = modeTitles[playbackMode];
+    };
+    
+    // Get playable songs list
+    function getPlayableSongs() {
+      return PlaybackControls.defaultMidiFiles.filter(f => !f.disabled && f.value);
+    }
+    
+    // Play next/random song
+    function playNextSong() {
+      const songs = getPlayableSongs();
+      if (!songs.length) return;
+      const currentVal = document.querySelector('.song-item.active')?.dataset.value;
+      let nextSong;
+      if (playbackMode === 'shuffle') {
+        nextSong = songs[Math.floor(Math.random() * songs.length)];
+      } else {
+        const idx = songs.findIndex(s => s.value === currentVal);
+        nextSong = songs[(idx + 1) % songs.length];
+      }
+      selectSong(nextSong.value, nextSong.label);
+      setTimeout(() => playback.play(), 100);
+    }
+    
+    // Volume control
+    const volumeSlider = document.getElementById('volumeSlider');
+    volumeSlider.oninput = () => {
+      if (playback.audioContext) {
+        if (!playback._gainNode) {
+          playback._gainNode = playback.audioContext.createGain();
+          playback._gainNode.connect(playback.audioContext.destination);
+        }
+        playback._gainNode.gain.value = volumeSlider.value;
+      }
+      if (playback.instrument?.setVolume) playback.instrument.setVolume(volumeSlider.value);
+      else if (playback.instrument?.gain) playback.instrument.gain.gain.value = volumeSlider.value;
+    };
+    
     // Keyboard shortcuts
     document.addEventListener('keydown', e => {
-      if (e.target.tagName === 'INPUT') return; // Don't trigger when typing in inputs
+      if (e.target.tagName === 'INPUT') return;
       if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
     });
     
@@ -790,8 +852,14 @@
       const bpm = tempos[0]?.bpm || 120;
       document.getElementById('lcdMeta').textContent = `♩${Math.round(bpm)}`;
       
-      // Update play button state
-      if (!playing && playBtn.textContent === '⏸') playBtn.textContent = '▶';
+      // Update play button state and handle end of song
+      if (!playing && playBtn.textContent === '⏸') {
+        playBtn.textContent = '▶';
+        // Check if song ended (not paused manually)
+        if (lapse >= duration && playbackMode !== 'stop') {
+          playNextSong();
+        }
+      }
       
       // Grid lines (subtle)
       ctx.strokeStyle = 'rgba(212,160,86,0.1)';
