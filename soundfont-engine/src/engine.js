@@ -2,32 +2,42 @@ import { EventEmitter } from './events.js';
 import { OxiSynthBackend } from './backends/oxisynth.js';
 import { SpessaSynthBackend } from './backends/spessasynth.js';
 import { RustySynthBackend } from './backends/rustysynth.js';
+import { WavetablePianoBackend } from './backends/wavetable.js';
 
 /** Backend name -> constructor mapping */
 const BACKENDS = {
   oxisynth: OxiSynthBackend,
   spessasynth: SpessaSynthBackend,
   rustysynth: RustySynthBackend,
+  wavetable: WavetablePianoBackend,
 };
 
 /**
  * SoundFontEngine - unified facade for soundfont-based MIDI synthesis.
  *
- * Wraps a single backend at a time (OxiSynth, SpessaSynth, or RustySynth)
- * behind a clean, consistent API with event emission and lifecycle management.
+ * Wraps a single backend at a time behind a clean, consistent API
+ * with event emission and lifecycle management.
+ *
+ * If no backend is specified, a built-in wavetable piano is used as the
+ * default - ready to play immediately with no soundfont files required.
  *
  * @example
  * ```js
+ * // Instant piano - no setup needed
+ * const engine = new SoundFontEngine();
+ * await engine.resume();
+ * engine.noteOn(60, 0.8);
+ *
+ * // With a soundfont backend
  * const engine = new SoundFontEngine({ backend: 'oxisynth' });
  * await engine.loadSoundFont('/soundfonts/gm.sf2');
  * engine.noteOn(60, 0.8);
- * engine.noteOff(60);
  * ```
  */
 export class SoundFontEngine extends EventEmitter {
   /**
-   * @param {object} options
-   * @param {string|object} options.backend - Backend name ('oxisynth', 'spessasynth', 'rustysynth') or a backend instance
+   * @param {object} [options]
+   * @param {string|object} [options.backend] - Backend name ('oxisynth', 'spessasynth', 'rustysynth', 'wavetable') or a backend instance. Defaults to 'wavetable'.
    * @param {AudioContext} [options.audioContext] - Existing AudioContext to reuse
    * @param {string} [options.vendorPath] - Base path to vendor directory containing WASM files and libs
    */
@@ -37,9 +47,7 @@ export class SoundFontEngine extends EventEmitter {
     this._audioContext = audioContext;
     this._vendorPath = vendorPath;
 
-    if (backend) {
-      this._setBackend(backend);
-    }
+    this._setBackend(backend ?? 'wavetable');
   }
 
   // --- Properties ---
@@ -121,11 +129,18 @@ export class SoundFontEngine extends EventEmitter {
 
   /**
    * Trigger a MIDI note on.
+   * If the backend hasn't been initialized yet (e.g. wavetable), it is
+   * initialized automatically on first noteOn.
    * @param {number} midi - MIDI note number (0-127)
    * @param {number} [velocity=0.7] - Velocity (0.0-1.0)
    * @param {number} [channel=0] - MIDI channel (0-15)
    */
   noteOn(midi, velocity = 0.7, channel = 0) {
+    if (this._backend && !this._backend.ready) {
+      // Auto-init on first note (wavetable backend is synchronous-ready after init)
+      this._backend.init().then(() => this._backend.noteOn(midi, velocity, channel));
+      return;
+    }
     this._backend?.noteOn(midi, velocity, channel);
   }
 

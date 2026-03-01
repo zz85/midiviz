@@ -8,4 +8,5 @@ export { EventEmitter } from './events.js';
 export { OxiSynthBackend } from './backends/oxisynth.js';
 export { SpessaSynthBackend } from './backends/spessasynth.js';
 export { RustySynthBackend } from './backends/rustysynth.js';
+export { WavetablePianoBackend } from './backends/wavetable.js';
 export { BaseBackend } from './backends/base.js';

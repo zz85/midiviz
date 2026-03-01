@@ -46,10 +46,10 @@ export interface BackendOptions {
 
 export interface EngineOptions extends BackendOptions {
   /**
-   * Backend to use. Either a string name ('oxisynth', 'spessasynth', 'rustysynth')
-   * or a pre-created backend instance.
+   * Backend to use. Either a string name ('oxisynth', 'spessasynth', 'rustysynth', 'wavetable')
+   * or a pre-created backend instance. Defaults to 'wavetable' (built-in piano, no setup needed).
    */
-  backend: BackendName | BaseBackend;
+  backend?: BackendName | BaseBackend;
 }
 
 export interface SchedulerOptions {
@@ -64,7 +64,7 @@ export interface SchedulerLoadData {
   controlChanges?: ControlChangeEvent[];
 }
 
-export type BackendName = 'oxisynth' | 'spessasynth' | 'rustysynth';
+export type BackendName = 'oxisynth' | 'spessasynth' | 'rustysynth' | 'wavetable';
 
 // ---- Engine events ----
 
@@ -155,13 +155,31 @@ export declare class RustySynthBackend extends BaseBackend {
   constructor(options?: BackendOptions);
 }
 
+/**
+ * WavetablePiano backend - built-in piano using PeriodicWave synthesis.
+ * Zero dependencies, no WASM, no soundfont files needed.
+ * Ready to play immediately after init(). Piano timbre only.
+ * No controlChange or pitchBend support. programChange is a no-op.
+ */
+export declare class WavetablePianoBackend extends BaseBackend {
+  constructor(options?: BackendOptions);
+}
+
 // ---- SoundFontEngine ----
 
 /**
  * Unified facade for soundfont-based MIDI synthesis.
  *
+ * Defaults to a built-in wavetable piano if no backend is specified -
+ * ready to play immediately with zero setup.
+ *
  * @example
  * ```ts
+ * // Instant piano - no config needed
+ * const engine = new SoundFontEngine();
+ * engine.noteOn(60, 0.8);
+ *
+ * // With a soundfont backend
  * const engine = new SoundFontEngine({
  *   backend: 'oxisynth',
  *   vendorPath: '/vendor',
@@ -171,7 +189,7 @@ export declare class RustySynthBackend extends BaseBackend {
  * ```
  */
 export declare class SoundFontEngine extends EventEmitter {
-  constructor(options: EngineOptions);
+  constructor(options?: EngineOptions);
 
   /** The active AudioContext */
   readonly audioContext: AudioContext;
