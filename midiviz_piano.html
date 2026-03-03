@@ -453,11 +453,22 @@
   <div id="piano"></div>
 
   <script type="module">
-    import './synth_manager.js';
-    
-    await SynthManager.load('oxisynth_sf3');
-    window.FluidWebPiano = SynthManager.loaded.oxisynth_sf3;
-    
+    import { SoundFontEngine } from './soundfont-engine/src/index.js';
+
+    // Shared AudioContext (persists across backend swaps, shared with MidiClock)
+    const sharedCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const vendorPath = new URL('./vendor', import.meta.url).href;
+    const engine = new SoundFontEngine({ backend: 'oxisynth', vendorPath, audioContext: sharedCtx });
+
+    // Legacy compat shims so PlaybackControls can use the engine as an instrument
+    Object.defineProperty(engine, 'ctx', { get() { return this.audioContext; } });
+    engine.loadSoundfontStack = function(paths) { return this.loadSoundFontStack(paths); };
+    engine.loadSoundfont = function(path) { return this.loadSoundFont(path); };
+
+    // Expose as FluidWebPiano so PlaybackControls detects soundfont support
+    // and uses the engine as the default instrument
+    window.FluidWebPiano = function() { return engine; };
+
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     const pianoEl = document.getElementById('piano');
@@ -639,37 +650,19 @@
       }
     });
     
-    // Register synths
-    for (const key of Object.keys(SynthManager.synths)) {
-      playback.instruments[key] = () => SynthManager.loaded[key] ? new SynthManager.loaded[key]() : new SilentPiano();
-    }
+    // PlaybackControls already registers 'fluidweb' via FluidWebPiano detection
     
-    // Current synth engine for soundfonts
-    let currentSynthEngine = 'oxisynth_sf3';
+    // Backend name mapping for synth engine selector
+    const BACKEND_MAP = { oxisynth_sf3: 'oxisynth', oxisynth: 'oxisynth', spessasynth: 'spessasynth', fluidweb: 'rustysynth' };
     
-    // Synth/instrument selector
-    const origSwitch = playback.switchInstrument.bind(playback);
-    playback.switchInstrument = async function(type) {
-      if (SynthManager.synths[type]) {
-        if (!SynthManager.loaded[type]) await SynthManager.load(type);
-        if (this.instrument.allNotesOff) this.instrument.allNotesOff();
-        this.instrument = new SynthManager.loaded[type]();
-        this.audioContext = this.instrument.ctx || this.instrument._ensureContext?.();
-      } else {
-        origSwitch(type);
-      }
-    };
-    
+    // Soundfont loading - switches back to engine if on a procedural instrument
     async function loadSoundfont(sfPath) {
-      if (!SynthManager.loaded[currentSynthEngine]) await SynthManager.load(currentSynthEngine);
-      if (playback.instrument.allNotesOff) playback.instrument.allNotesOff();
-      playback.instrument = new SynthManager.loaded[currentSynthEngine]();
-      playback.audioContext = playback.instrument.ctx || playback.instrument._ensureContext?.();
-      if (playback.instrument.loadSoundfontStack) {
-        playback.instrument.loadSoundfontStack([sfPath]);
-      } else if (playback.instrument.loadSoundfont) {
-        playback.instrument.loadSoundfont(sfPath);
+      if (playback.instrument !== engine) {
+        if (playback.instrument.allNotesOff) playback.instrument.allNotesOff();
+        playback.instrument = engine;
+        playback.audioContext = engine.audioContext;
       }
+      await engine.loadSoundFont(sfPath);
     }
     
     document.getElementById('synthSelect').onchange = e => {
@@ -683,10 +676,11 @@
     
     // Synth engine selector (in expanded options)
     document.getElementById('synthEngineSelect').onchange = e => {
-      currentSynthEngine = e.target.value;
-      // Reload current soundfont with new engine if applicable
+      const backend = BACKEND_MAP[e.target.value];
+      engine.setBackend(backend);
+      // Reload current soundfont with new backend if applicable
       const synthVal = document.getElementById('synthSelect').value;
-      if (synthVal.startsWith('sf:')) loadSoundfont(synthVal.slice(3));
+      if (synthVal.startsWith('sf:')) engine.loadSoundFont(synthVal.slice(3));
     };
     
     // Play button
@@ -834,10 +828,10 @@
     // Tuning
     document.getElementById('tuningInput').oninput = e => { playback.tuning = +e.target.value; };
     
-    // Soundfont loading indicator
+    // Soundfont loading indicator (engine events)
     const sfLoadingEl = document.getElementById('sfLoading');
-    window.addEventListener('soundfont-loading', () => sfLoadingEl.classList.add('active'));
-    window.addEventListener('soundfont-loaded', () => sfLoadingEl.classList.remove('active'));
+    engine.on('loading', () => sfLoadingEl.classList.add('active'));
+    engine.on('loaded', () => sfLoadingEl.classList.remove('active'));
     
     // Init soundfont on first click
     document.addEventListener('click', function init() {

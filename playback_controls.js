@@ -19,6 +19,7 @@
 class PlaybackControls {
   static defaultMidiFiles = [
     { value: '', label: '=== Selections ===', disabled: true },
+    { value: 'C.V.Alkan - Etude sans opus.mid', label: 'Alkan - Etude sans opus' },
     { value: 'JVKE - golden hour.mid', label: 'Golden Hour (JVKE)' },
     { value: 'Heart and Soul Piano Duet The Real Version.mid', label: 'Heart and Soul' },
     { value: 'entertainer.mid', label: 'The Entertainer' },
