@@ -727,6 +727,7 @@
       } else {
         playback.switchInstrument(val);
       }
+      updateHash();
     };
     
     // Synth engine selector (in expanded options)
@@ -989,18 +990,52 @@
       ctx.textAlign = 'left';
     }
     
-    // Load from hash or first song
+    // --- Hash-based deep links: #song.mid  or  #song.mid|instrument ---
+
+    function parseHash() {
+      const raw = location.hash.slice(1);
+      if (!raw) return {};
+      const decoded = decodeURIComponent(raw);
+      const pipe = decoded.indexOf('|');
+      if (pipe === -1) return { song: decoded };
+      return { song: decoded.slice(0, pipe), inst: decoded.slice(pipe + 1) };
+    }
+
+    function updateHash() {
+      const songItem = document.querySelector('.song-item.active');
+      const song = songItem?.dataset.value;
+      if (!song) return;
+      const inst = document.getElementById('synthSelect').value;
+      const hash = inst ? `${song}|${inst}` : song;
+      history.replaceState(null, '', '#' + encodeURIComponent(hash));
+    }
+
+    function applyInstrument(inst) {
+      if (!inst) return;
+      const synthSelect = document.getElementById('synthSelect');
+      // Verify this value exists in the dropdown
+      if ([...synthSelect.options].some(o => o.value === inst)) {
+        synthSelect.value = inst;
+        if (inst.startsWith('sf:')) {
+          loadSoundfont(inst.slice(3));
+        } else {
+          playback.switchInstrument(inst);
+        }
+      }
+    }
+
     function loadFromHash() {
-      const hash = decodeURIComponent(location.hash.slice(1));
-      if (hash) {
-        const match = PlaybackControls.defaultMidiFiles.find(f => f.value === hash);
+      const { song, inst } = parseHash();
+      if (song) {
+        const match = PlaybackControls.defaultMidiFiles.find(f => f.value === song);
         if (match) {
           selectSong(match.value, match.label, true);
         } else {
           // Try loading as URL
-          document.getElementById('songTitle').textContent = hash.split('/').pop().replace(/\.midi?$/i, '');
-          playback.loadMidi(hash);
+          document.getElementById('songTitle').textContent = song.split('/').pop().replace(/\.midi?$/i, '');
+          playback.loadMidi(song);
         }
+        applyInstrument(inst);
         return true;
       }
       return false;
@@ -1012,7 +1047,7 @@
       document.querySelector(`.song-item[data-value="${value}"]`)?.classList.add('active');
       dropdown.classList.remove('open');
       playback.loadMidi(value);
-      if (!skipHash) history.replaceState(null, '', '#' + encodeURIComponent(value));
+      if (!skipHash) updateHash();
     }
     
     // Listen for hash changes
