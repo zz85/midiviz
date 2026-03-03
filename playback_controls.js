@@ -95,6 +95,7 @@ class PlaybackControls {
     { value: 'electric', label: 'Electric Piano' },
     { value: 'harpsichord', label: 'Harpsichord' },
     { value: 'organ', label: 'Church Organ' },
+    { value: 'chiptune', label: 'Chiptune 8-bit' },
     { value: 'silent', label: "4'33\" (Silent)" },
   ];
 
@@ -151,6 +152,7 @@ class PlaybackControls {
       electric: () => new ElectricPiano(),
       harpsichord: () => new Harpsichord(),
       organ: () => new ChurchOrgan(),
+      chiptune: () => new ChiptuneSynth(),
       silent: () => new SilentPiano()
     };
     if (typeof FluidWebPiano !== 'undefined') {
