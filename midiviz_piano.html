@@ -266,7 +266,7 @@
       background: var(--bg2);
       padding: 4px 2px 0;
     }
-    .key { position: relative; border: none; }
+    .key { position: relative; border: none; cursor: pointer; touch-action: none; }
     .key.white {
       flex: 1;
       background: var(--key-white);
@@ -549,8 +549,61 @@
       const isBlack = blackPattern.includes(midi % 12);
       const key = document.createElement('div');
       key.className = 'key ' + (isBlack ? 'black' : 'white');
+      key.dataset.midi = midi;
       keys[midi] = key;
       pianoEl.appendChild(key);
+    }
+
+    // Interactive piano — click/drag to play notes
+    {
+      const heldKeys = new Set();
+
+      function keyOn(midi) {
+        if (heldKeys.has(midi)) return;
+        heldKeys.add(midi);
+        keys[midi]?.classList.add('active');
+        playback.instrument.resume?.();
+        playback.instrument.noteOn(midi, 0.8, 0);
+      }
+      function keyOff(midi) {
+        if (!heldKeys.has(midi)) return;
+        heldKeys.delete(midi);
+        keys[midi]?.classList.remove('active');
+        playback.instrument.noteOff(midi, 0);
+      }
+      function allKeysOff() {
+        for (const m of heldKeys) {
+          keys[m]?.classList.remove('active');
+          playback.instrument.noteOff(m, 0);
+        }
+        heldKeys.clear();
+      }
+
+      function midiFromEvent(e) {
+        const el = document.elementFromPoint(e.clientX, e.clientY);
+        return el?.dataset?.midi ? +el.dataset.midi : null;
+      }
+
+      let dragging = false;
+
+      pianoEl.addEventListener('pointerdown', e => {
+        e.preventDefault();
+        dragging = true;
+        pianoEl.setPointerCapture(e.pointerId);
+        const midi = midiFromEvent(e);
+        if (midi != null) keyOn(midi);
+      });
+      pianoEl.addEventListener('pointermove', e => {
+        if (!dragging) return;
+        const midi = midiFromEvent(e);
+        // Release keys that the pointer has left
+        for (const m of heldKeys) {
+          if (m !== midi) keyOff(m);
+        }
+        if (midi != null) keyOn(midi);
+      });
+      pianoEl.addEventListener('pointerup', () => { dragging = false; allKeysOff(); });
+      pianoEl.addEventListener('pointercancel', () => { dragging = false; allKeysOff(); });
     }
     
     function resize() {
