@@ -128,6 +128,34 @@ h1 { margin-bottom: 4px; font-size: 24px; }
 .log-panel .log .entry.error { color: #e74c3c; }
 .log-panel .log .entry.info { color: #3498db; }
 .log-panel .log .entry.success { color: #2ecc71; }
+
+/* ── Playback bar ── */
+.playback-bar {
+	display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+	padding: 10px 12px; margin-bottom: 16px;
+	background: #fff; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+.playback-bar label { font-size: 12px; font-weight: 600; color: #555; }
+.playback-bar select {
+	font-size: 12px; padding: 4px 10px; border-radius: 4px; border: 1px solid #ccc;
+}
+.playback-bar button {
+	font-size: 12px; padding: 6px 14px; border-radius: 4px; border: none;
+	cursor: pointer; color: #fff;
+}
+.playback-bar button:disabled { background: #bbb; cursor: not-allowed; }
+.playback-bar .btn-play { background: #2ecc71; }
+.playback-bar .btn-play:hover:not(:disabled) { background: #27ae60; }
+.playback-bar .btn-stop { background: #e74c3c; }
+.playback-bar .btn-stop:hover:not(:disabled) { background: #c0392b; }
+.playback-bar .progress-wrap {
+	flex: 1; min-width: 120px; display: flex; align-items: center; gap: 6px;
+}
+.playback-bar .progress-wrap input[type="range"] {
+	flex: 1; height: 4px; accent-color: #4a90d9; cursor: pointer;
+}
+.playback-bar .time { font-size: 11px; color: #888; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.playback-bar .sf-status { font-size: 11px; color: #999; }
 </style>
 </head>
 <body>
@@ -166,6 +194,30 @@ h1 { margin-bottom: 4px; font-size: 24px; }
 	<div class="sep"></div>
 	<button id="btn-metadata" disabled>Metadata</button>
 	<button id="btn-positions" disabled>Positions</button>
+</div>
+
+<!-- Playback bar -->
+<div class="playback-bar">
+	<button class="btn-play" id="btn-play" disabled>Play</button>
+	<button class="btn-stop" id="btn-stop" disabled>Stop</button>
+	<div class="progress-wrap">
+		<input type="range" id="playback-seek" min="0" max="1" step="0.001" value="0" disabled>
+		<span class="time" id="playback-time">0:00 / 0:00</span>
+	</div>
+	<div class="sep"></div>
+	<label>SoundFont:</label>
+	<select id="sf-select">
+		<option value="soundfonts/TimGM6mb.sf2">TimGM6mb (6 MB)</option>
+		<option value="soundfonts/FluidR3.sf3">FluidR3 SF3 (141 MB)</option>
+		<option value="soundfonts/GeneralUser-GS.sf2">GeneralUser GS (30 MB)</option>
+		<option value="soundfonts/JClive21.sf2">JClive 2.1 (18 MB)</option>
+	</select>
+	<label>Backend:</label>
+	<select id="backend-select">
+		<option value="spessasynth">SpessaSynth</option>
+		<option value="oxisynth">OxiSynth</option>
+	</select>
+	<span class="sf-status" id="sf-status"></span>
 </div>
 
 <!-- Main content -->
@@ -218,6 +270,8 @@ h1 { margin-bottom: 4px; font-size: 24px; }
 
 <!-- Load webmscore from CDN (WASM files resolved relative to script origin) -->
 <script src="https://cdn.jsdelivr.net/npm/webmscore/webmscore.js"></script>
+<!-- tonejs-midi for parsing MIDI exports -->
+<script src="tonejs-midi.js"></script>
 
 <script>
 (function () {
@@ -410,6 +464,9 @@ h1 { margin-bottom: 4px; font-size: 24px; }
 
 			setButtonsEnabled(true)
 			setStatus(`Loaded — ${totalPages} page${totalPages !== 1 ? 's' : ''}`)
+
+			// Notify playback module that a new score is ready
+			if (window._onScoreLoaded) window._onScoreLoaded()
 		} catch (err) {
 			log(`Failed to load score: ${err.message}`, 'error')
 			setStatus('Load failed')
@@ -606,6 +663,226 @@ h1 { margin-bottom: 4px; font-size: 24px; }
 		console.error(err)
 	})
 })()
+</script>
+
+<!-- ── Playback integration (ES module for SoundFontEngine imports) ── -->
+<script type="module">
+import { SoundFontEngine } from './soundfont-engine/src/index.js'
+import { MidiScheduler } from './soundfont-engine/src/scheduler.js'
+
+const btnPlay      = document.getElementById('btn-play')
+const btnStop      = document.getElementById('btn-stop')
+const seekBar      = document.getElementById('playback-seek')
+const timeDisplay  = document.getElementById('playback-time')
+const sfSelect     = document.getElementById('sf-select')
+const backendSelect = document.getElementById('backend-select')
+const sfStatus     = document.getElementById('sf-status')
+
+// Reuse the IIFE's log function via a simple helper
+function log(msg, type) {
+	const el = document.getElementById('log')
+	const entry = document.createElement('div')
+	entry.className = 'entry' + (type ? ' ' + type : '')
+	const ts = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
+	entry.textContent = `[${ts}] ${msg}`
+	el.appendChild(entry)
+	el.scrollTop = el.scrollHeight
+}
+
+function fmtTime(sec) {
+	if (!sec || !isFinite(sec)) return '0:00'
+	const m = Math.floor(sec / 60)
+	const s = Math.floor(sec % 60)
+	return `${m}:${s.toString().padStart(2, '0')}`
+}
+
+// ── Engine + scheduler state ────────────────────────────────────
+let engine = null
+let scheduler = null
+let sfLoaded = false
+let midiNotes = null   // flattened + sorted note array
+let midiCC = null
+let midiDuration = 0
+let animFrame = null
+
+async function ensureEngine() {
+	const backend = backendSelect.value
+	if (engine) {
+		engine.dispose()
+		scheduler?.dispose()
+		engine = null
+		scheduler = null
+		sfLoaded = false
+	}
+	engine = new SoundFontEngine({ backend, vendorPath: new URL('./vendor', location.href).href })
+	engine.on('loading', (d) => { sfStatus.textContent = `Loading ${d.path}...` })
+	engine.on('loaded', (d) => { sfStatus.textContent = 'Ready'; sfLoaded = true })
+	engine.on('error', (d) => { sfStatus.textContent = `Error: ${d.message}`; log(`SoundFont error: ${d.message}`, 'error') })
+
+	log(`Initializing ${backend} backend...`, 'info')
+	sfStatus.textContent = 'Loading soundfont...'
+	await engine.loadSoundFont(sfSelect.value)
+	log(`SoundFont loaded: ${sfSelect.value}`, 'success')
+
+	scheduler = new MidiScheduler(engine)
+	await scheduler.init()
+
+	scheduler.on('time', (t) => {
+		if (!seekBar._dragging) {
+			seekBar.value = midiDuration > 0 ? t / midiDuration : 0
+			timeDisplay.textContent = `${fmtTime(t)} / ${fmtTime(midiDuration)}`
+		}
+	})
+	scheduler.on('end', () => {
+		log('Playback finished', 'info')
+		btnPlay.textContent = 'Play'
+		cancelAnimationFrame(animFrame)
+	})
+}
+
+// ── Export MIDI from webmscore + parse with tonejs-midi ──────────
+async function prepareMidi() {
+	const score = window.score
+	if (!score) { log('No score loaded', 'error'); return false }
+
+	log('Exporting MIDI from score...', 'info')
+	const midiBytes = await score.saveMidi()
+
+	// tonejs-midi expects ArrayBuffer
+	const buf = midiBytes.buffer.slice(midiBytes.byteOffset, midiBytes.byteOffset + midiBytes.byteLength)
+	const midi = new Midi(buf)
+
+	// Flatten all tracks into scheduler format
+	const notes = []
+	const cc = []
+	midi.tracks.forEach((track, trackNo) => {
+		const ch = track.channel ?? trackNo
+		track.notes.forEach(n => {
+			notes.push({
+				midi: n.midi, time: n.time, duration: n.duration,
+				velocity: n.velocity, channel: ch,
+			})
+		})
+		// Flatten control changes
+		if (track.controlChanges) {
+			for (const [ctrlNum, events] of Object.entries(track.controlChanges)) {
+				events.forEach(ev => {
+					cc.push({ time: ev.time, channel: ch, controller: parseInt(ctrlNum), value: Math.round(ev.value * 127) })
+				})
+			}
+		}
+	})
+	notes.sort((a, b) => a.time - b.time)
+	cc.sort((a, b) => a.time - b.time)
+
+	midiNotes = notes
+	midiCC = cc
+	midiDuration = notes.length > 0 ? notes[notes.length - 1].time + (notes[notes.length - 1].duration || 0) : 0
+
+	log(`MIDI parsed: ${notes.length} notes, ${cc.length} CCs, ${fmtTime(midiDuration)} duration, ${midi.tracks.length} tracks`, 'success')
+
+	// Set program changes per channel based on track instruments
+	midi.tracks.forEach((track, trackNo) => {
+		const ch = track.channel ?? trackNo
+		if (track.instrument && track.instrument.number != null) {
+			engine.programChange(ch, track.instrument.number)
+		}
+	})
+
+	return true
+}
+
+// ── Play / Stop ─────────────────────────────────────────────────
+btnPlay.addEventListener('click', async () => {
+	if (scheduler?.playing) {
+		scheduler.pause()
+		btnPlay.textContent = 'Play'
+		return
+	}
+
+	try {
+		btnPlay.disabled = true
+		btnPlay.textContent = '...'
+
+		if (!engine || !sfLoaded) await ensureEngine()
+		if (!midiNotes) {
+			const ok = await prepareMidi()
+			if (!ok) { btnPlay.disabled = false; btnPlay.textContent = 'Play'; return }
+		}
+
+		scheduler.load({ notes: midiNotes, controlChanges: midiCC })
+		await engine.resume()
+		scheduler.play()
+
+		btnPlay.textContent = 'Pause'
+		btnPlay.disabled = false
+		btnStop.disabled = false
+		seekBar.disabled = false
+		log('Playback started', 'info')
+	} catch (err) {
+		log(`Playback error: ${err.message}`, 'error')
+		console.error(err)
+		btnPlay.textContent = 'Play'
+		btnPlay.disabled = false
+	}
+})
+
+btnStop.addEventListener('click', () => {
+	if (scheduler) {
+		scheduler.stop()
+		btnPlay.textContent = 'Play'
+		seekBar.value = 0
+		timeDisplay.textContent = `0:00 / ${fmtTime(midiDuration)}`
+	}
+})
+
+// ── Seek bar interaction ────────────────────────────────────────
+seekBar.addEventListener('mousedown', () => { seekBar._dragging = true })
+seekBar.addEventListener('input', () => {
+	if (scheduler && midiDuration > 0) {
+		const t = parseFloat(seekBar.value) * midiDuration
+		timeDisplay.textContent = `${fmtTime(t)} / ${fmtTime(midiDuration)}`
+	}
+})
+seekBar.addEventListener('change', () => {
+	seekBar._dragging = false
+	if (scheduler && midiDuration > 0) {
+		scheduler.seek(parseFloat(seekBar.value) * midiDuration)
+	}
+})
+
+// ── Backend / soundfont change → reset engine ───────────────────
+backendSelect.addEventListener('change', () => {
+	if (scheduler?.playing) scheduler.stop()
+	engine?.dispose(); scheduler?.dispose()
+	engine = null; scheduler = null; sfLoaded = false; midiNotes = null
+	sfStatus.textContent = ''
+	btnPlay.textContent = 'Play'
+	log(`Backend changed to ${backendSelect.value}`, 'info')
+})
+
+sfSelect.addEventListener('change', () => {
+	if (scheduler?.playing) scheduler.stop()
+	engine?.dispose(); scheduler?.dispose()
+	engine = null; scheduler = null; sfLoaded = false
+	sfStatus.textContent = ''
+	btnPlay.textContent = 'Play'
+	log(`SoundFont changed to ${sfSelect.value}`, 'info')
+})
+
+// ── Enable play button when a score is loaded ───────────────────
+// Poll for score availability (the IIFE sets window.score)
+const pollScore = setInterval(() => {
+	btnPlay.disabled = !window.score
+}, 500)
+
+// Called by the IIFE when a new score is loaded
+window._onScoreLoaded = () => {
+	midiNotes = null  // invalidate cached MIDI
+	if (scheduler?.playing) { scheduler.stop(); btnPlay.textContent = 'Play' }
+	seekBar.value = 0
+	timeDisplay.textContent = '0:00 / 0:00'
+}
 </script>
 </body>
 </html>
