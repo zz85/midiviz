@@ -2,6 +2,16 @@ Midi Visualization Experiments
 
 [MidiViz Piano](midiviz_piano.html) - Main player with sepia theme UI
 
+[WebMscore](webmscore.html) - MuseScore reference renderer (libmscore via WebAssembly)
+
+15 Mar 2026
+
+[WebMscore Reference Renderer](webmscore.html)
+- Load .mscz, .mscx, MusicXML, MIDI files and render via MuseScore's libmscore in WASM
+- SVG/PNG/PDF/MIDI/MusicXML export
+- Score metadata, parts, measure positions
+- Interactive API console for experimentation
+
 5 Jan 2026
 
 [Experiment #023 - Synthesia Background Playback](023_synthesia_background.html)
