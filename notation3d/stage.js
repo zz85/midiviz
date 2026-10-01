@@ -17,10 +17,10 @@ import { BokehPass } from 'three/addons/postprocessing/BokehPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { VignetteShader } from 'three/addons/shaders/VignetteShader.js'
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { FontLoader } from 'three/addons/loaders/FontLoader.js'
 import { TextGeometry } from 'three/addons/geometries/TextGeometry.js'
+import { Reflector } from 'three/addons/objects/Reflector.js'
 
 const TITLE_FONT = 'https://cdn.jsdelivr.net/npm/three@0.170.0/examples/fonts/droid/droid_serif_bold.typeface.json'
 
@@ -65,7 +65,8 @@ export const VIEWS = {
 	tilt: { offset: [-0.12, -0.32, 0.94], lead: 0.2, hop: 'y', fov: 34 },
 	table: { offset: [0, -0.95, 0.62], lead: 0.12, hop: 'z', fov: 38, up: [0, 0, 1] },
 	low: { offset: [-0.5, -0.9, 0.3], lead: 0.12, hop: 'z', fov: 42, up: [0, 0, 1] },
-	free: { offset: [-0.2, -0.6, 0.8], lead: 0.15, hop: 'z', fov: 38 },
+	// free: camera orbits the playhead following the mouse position (hover, no click)
+	free: { orbit: true, lead: 0.05, hop: 'z', fov: 38, up: [0, 0, 1] },
 }
 
 const QUALITY_TIERS = [
@@ -76,6 +77,45 @@ const QUALITY_TIERS = [
 	{ pr: 0.7, noShadow: true },
 	{ pr: 0.55, noShadow: true },
 ]
+// Notehead surface finishes (own material + explicit envMap so reflections
+// don't depend on the theme's global environment intensity)
+export const HEAD_FINISHES = {
+	matte: { roughness: 0.75, metalness: 0, env: 0.1 },
+	satin: { roughness: 0.38, metalness: 0.05, env: 0.35 },
+	gloss: { roughness: 0.07, metalness: 0, env: 0.45 },
+	chrome: { roughness: 0.1, metalness: 1, env: 0.9, ink: '#c8cbd2' },
+	gold: { roughness: 0.16, metalness: 1, env: 0.9, ink: '#d9a650' },
+}
+
+// Paper surface finishes. 'mirror' adds a planar reflection of bright things
+// (glowing notes, streaks, title) — an extra scene render at half resolution.
+export const PAPER_FINISHES = {
+	matte: {},
+	satin: { roughness: 0.5, env: 0.25 },
+	glossy: { roughness: 0.55, specular: 0.5, env: 0.3 },
+	mirror: { roughness: 0.55, specular: 0.5, env: 0.25, mirror: 0.6 },
+}
+
+/** Additive reflection shader: only light brighter than a threshold reflects (no grey haze). */
+const MirrorShader = {
+	name: 'AdditiveMirror',
+	uniforms: { color: { value: null }, tDiffuse: { value: null }, textureMatrix: { value: null }, strength: { value: 0.5 } },
+	vertexShader: Reflector.ReflectorShader.vertexShader,
+	fragmentShader: /* glsl */`
+		uniform vec3 color;
+		uniform sampler2D tDiffuse;
+		uniform float strength;
+		varying vec4 vUv;
+		#include <logdepthbuf_pars_fragment>
+		void main() {
+			#include <logdepthbuf_fragment>
+			vec3 base = texture2DProj( tDiffuse, vUv ).rgb;
+			gl_FragColor = vec4( max( base - 0.12, 0.0 ) * strength, 1.0 );
+			#include <tonemapping_fragment>
+			#include <colorspace_fragment>
+		}`,
+}
+
 const MAX_LANES_PER_STAFF = 6
 const STREAK_N = 32
 const MAX_POOLS = 160
@@ -165,6 +205,36 @@ function oldPaperTexture() {
 	t.wrapS = t.wrapT = THREE.RepeatWrapping
 	t.colorSpace = THREE.SRGBColorSpace
 	return t
+}
+
+/**
+ * Dark studio environment for reflective noteheads: a z-up dome that is black
+ * below the page, softly lit above, with a warm horizon band and a key spot,
+ * so glossy ink stays black with a sheen (RoomEnvironment would wash it grey).
+ */
+function studioEnvironment(renderer) {
+	// Score space is z-up. A dome that is black below the page, softly lit
+	// above, with a bright warm horizon band ahead (+y) — the direction a
+	// grazing camera sees mirrored in flat noteheads — and a key "softbox".
+	const env = new THREE.Scene()
+	const geo = new THREE.SphereGeometry(10, 64, 32)
+	const pos = geo.attributes.position, col = []
+	const d = new THREE.Vector3(), warm = new THREE.Color('#ffdcae'), cool = new THREE.Color('#bcd2ff')
+	for (let i = 0; i < pos.count; i++) {
+		d.fromBufferAttribute(pos, i).normalize()
+		const up = Math.max(0, d.z)
+		const band = Math.exp(-(((d.z - 0.22) / 0.12) ** 2)) * Math.max(0, d.y) ** 0.7
+		const key = Math.exp(-(((d.x + 0.45) ** 2 + (d.y - 0.35) ** 2 + (d.z - 0.8) ** 2) / 0.05))
+		const w = 0.25 * Math.pow(up, 0.8) + 2.2 * band + 6 * key
+		const k = 0.8 * Math.exp(-(((d.x - 0.9) ** 2 + d.z ** 2) / 0.04))
+		col.push(warm.r * w + cool.r * k, warm.g * w + cool.g * k, warm.b * w + cool.b * k)
+	}
+	geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3))
+	env.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })))
+	const pm = new THREE.PMREMGenerator(renderer)
+	const tex = pm.fromScene(env, 0).texture
+	pm.dispose()
+	return tex
 }
 
 function dotTexture() {
@@ -260,7 +330,15 @@ function upperBound(arr, t, key) {
 export class NotationStage {
 	constructor(container) {
 		this.container = container
-		this.opts = { bloom: true, dof: true, fx: false, shadows: true, trail: true, bounce: 1, zoom: 1, view: 'cinema', theme: 'cinema' }
+		this.opts = {
+			bloom: true, dof: true, fx: false, shadows: true, trail: true, bounce: 1, zoom: 1, view: 'cinema', theme: 'cinema',
+			arcMode: 'distance',  // 'distance' (low, leaps go high) | 'classic' (time-based, bouncy)
+			restMode: 'leap',     // 'leap' (wait on the note, leap in at the end) | 'glide' (one long arc over the rest)
+			litMode: 'fade',      // 'stay' | 'fade' | 'off' — what played notes do after the flash
+			litFade: 4,           // seconds (music time) to fade back to ink
+			headFinish: 'satin',
+			paperFinish: 'matte',
+		}
 
 		// No canvas MSAA: everything renders offscreen through the composer.
 		const renderer = this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' })
@@ -274,12 +352,29 @@ export class NotationStage {
 
 		const scene = this.scene = new THREE.Scene()
 		this.envTex = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture
+		this.studioEnv = studioEnvironment(renderer)
 		scene.environment = this.envTex
 
 		this.camera = new THREE.PerspectiveCamera(34, 1, 0.5, 1500)
-		this.controls = new OrbitControls(this.camera, renderer.domElement)
-		this.controls.enableDamping = true
-		this.controls.enabled = false
+		// Pointer: click cycles views; in free view, hovering steers the orbit
+		// (no buttons needed, so a click always means "next view").
+		this.viewOrder = ['cinema', 'bounce', 'tilt', 'flat', 'table', 'low', 'free']
+		this.onViewChange = null
+		this._mouse = { x: -0.25, y: 0.35 }   // normalised [-1,1], y up
+		this._freeDist = 1
+		const el = renderer.domElement
+		el.style.cursor = 'pointer'
+		el.addEventListener('pointermove', e => {
+			const r = el.getBoundingClientRect()
+			this._mouse.x = clamp(((e.clientX - r.left) / r.width) * 2 - 1, -1, 1)
+			this._mouse.y = clamp(1 - ((e.clientY - r.top) / r.height) * 2, -1, 1)
+		})
+		el.addEventListener('click', () => this.cycleView())
+		el.addEventListener('wheel', e => {
+			if (!this.view.orbit) return
+			e.preventDefault()
+			this._freeDist = clamp(this._freeDist * Math.exp(e.deltaY * 0.001), 0.35, 3)
+		}, { passive: false })
 
 		// Lights: hemi fill, directional key (non-cinematic themes), grazing spot (cinematic)
 		this.hemi = new THREE.HemisphereLight(0xfff4e0, 0x403020, 0.5)
@@ -294,10 +389,12 @@ export class NotationStage {
 		scene.add(this.hemi, key, key.target, spot, spot.target)
 
 		this.inkColor = new THREE.Color()
+		this.headInk = new THREE.Color()
 		this.materials = {
 			staff: new THREE.MeshStandardMaterial({ roughness: 0.6, metalness: 0.05 }),
 			ink: new THREE.MeshStandardMaterial({ roughness: 0.5, metalness: 0.05 }),
 			glyph: makeGlyphMaterial(),
+			head: makeGlyphMaterial(),
 			text: new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false }),
 			inkColor: this.inkColor,
 		}
@@ -306,7 +403,7 @@ export class NotationStage {
 			paperFine: { ...paperTextures(), tile: 26 },
 			marble: { ...marbleTextures(), tile: 120 },
 		}
-		this.paperMat = new THREE.MeshStandardMaterial({ roughness: 0.92, metalness: 0 })
+		this.paperMat = new THREE.MeshPhysicalMaterial({ roughness: 0.92, metalness: 0 })
 		this._surfaceSize = [100, 100]
 
 		// Shared FX resources
@@ -336,6 +433,13 @@ export class NotationStage {
 		this.composer.addPass(new RenderPass(scene, this.camera))
 		this.bokehPass = new BokehPass(scene, this.camera, { focus: 40, aperture: 0.0003, maxblur: 0.008 })
 		this.composer.addPass(this.bokehPass)
+		const bokehRender = this.bokehPass.render.bind(this.bokehPass)
+		this.bokehPass.render = (...a) => {
+			const mv = this.mirror?.visible
+			if (this.mirror) this.mirror.visible = false
+			bokehRender(...a)
+			if (this.mirror) this.mirror.visible = mv
+		}
 		this.bloomPass = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.8, 0.55, 0.9)
 		this.composer.addPass(this.bloomPass)
 		this.composer.addPass(new OutputPass())
@@ -363,6 +467,7 @@ export class NotationStage {
 		this._msaaOff = true
 
 		this.setTheme(this.opts.theme)
+		this.setHeadFinish(this.opts.headFinish)
 		this.setView(this.opts.view)
 		this.resize()
 		new ResizeObserver(() => this.resize()).observe(container)
@@ -398,6 +503,7 @@ export class NotationStage {
 		this.composer.setPixelRatio(this.pixelRatio)
 		this.composer.setSize(w, h)
 		this.bloomPass.resolution.set(w * this.pixelRatio / 3, h * this.pixelRatio / 3)
+		this.mirror?.getRenderTarget().setSize(Math.max(2, (w * this.pixelRatio) >> 1), Math.max(2, (h * this.pixelRatio) >> 1))
 		this.camera.aspect = w / h
 		this.camera.updateProjectionMatrix()
 		if (snap) this._snapCamera = true
@@ -418,6 +524,7 @@ export class NotationStage {
 		if (th.spotColor) this.spot.color.set(th.spotColor)
 		this._applyShadowCaster()
 		this.inkColor.set(th.ink)
+		this.headInk.set(HEAD_FINISHES[this.opts.headFinish]?.ink || th.ink)
 		this.materials.ink.color.set(th.ink)
 		this.materials.staff.color.set(th.staff)
 		const surf = this.surfaces[th.surface] || this.surfaces.paper
@@ -426,7 +533,7 @@ export class NotationStage {
 		this.paperMat.bumpScale = th.bump ?? 0.6
 		this.paperMat.roughness = th.roughness ?? 0.92
 		this.paperMat.color.set(th.surface === 'marble' ? '#ffffff' : th.paper)
-		this.paperMat.needsUpdate = true
+		this._applyPaperFinish()
 		this._updateSurfaceRepeat()
 		this.bloomPass.strength = th.bloom
 		this.bloomPass.threshold = th.threshold
@@ -489,13 +596,77 @@ export class NotationStage {
 		const v = this.view = VIEWS[this.opts.view]
 		this.camera.fov = v.fov
 		this.camera.updateProjectionMatrix()
-		this.controls.enabled = name === 'free'
-		if (name === 'free') this.camera.up.set(0, 1, 0)
-		this._snapCamera = true
+		this.renderer.domElement.style.cursor = v.orbit ? 'crosshair' : 'pointer'
+		this._snapCamera = false // glide between views
+	}
+
+	/** Advance to the next camera view (canvas click). */
+	cycleView() {
+		const order = this.viewOrder
+		const next = order[(order.indexOf(this.opts.view) + 1) % order.length]
+		this.setView(next)
+		this.onViewChange?.(next)
+	}
+
+	setPaperFinish(name) {
+		this.opts.paperFinish = PAPER_FINISHES[name] ? name : 'matte'
+		this._applyPaperFinish()
+	}
+
+	_applyPaperFinish() {
+		const f = PAPER_FINISHES[this.opts.paperFinish] || PAPER_FINISHES.matte
+		const m = this.paperMat
+		m.roughness = f.roughness ?? this.theme.roughness ?? 0.92
+		// No clearcoat: a sharp coat turns the grazing spotlight into a big glare
+		// blob; glossiness comes from reflections (env + optional planar mirror).
+		m.clearcoat = f.clearcoat || 0
+		m.specularIntensity = f.specular ?? 1
+		m.clearcoatRoughness = f.clearcoatRoughness ?? 0.1
+		m.envMap = f.env ? this.studioEnv : null
+		m.envMapIntensity = f.env ?? 1
+		m.needsUpdate = true
+		this._updateMirror()
+	}
+
+	/** Planar mirror over the paper (created lazily, only for the 'mirror' finish). */
+	_updateMirror() {
+		const f = PAPER_FINISHES[this.opts.paperFinish] || {}
+		const want = !!f.mirror && !QUALITY_TIERS[this.tier ?? 1].noShadow
+		if (want && !this.mirror) {
+			const r = this.renderer.getDrawingBufferSize(new THREE.Vector2())
+			this.mirror = new Reflector(new THREE.PlaneGeometry(1, 1), {
+				shader: MirrorShader, textureWidth: Math.max(2, r.x >> 1), textureHeight: Math.max(2, r.y >> 1), clipBias: 0.002,
+			})
+			Object.assign(this.mirror.material, { transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })
+			this.mirror.renderOrder = 0.5
+			this.scene.add(this.mirror)
+		}
+		if (!this.mirror) return
+		this.mirror.visible = want
+		this.mirror.material.uniforms.strength.value = f.mirror || 0
+		const [w, h] = this._surfaceSize
+		this.mirror.scale.set(w, h, 1)
+		this.mirror.position.set(this._surfaceCenter?.[0] || 0, this._surfaceCenter?.[1] || 0, 0.004)
+	}
+
+	setHeadFinish(name) {
+		const f = HEAD_FINISHES[name] || HEAD_FINISHES.satin
+		this.opts.headFinish = HEAD_FINISHES[name] ? name : 'satin'
+		const m = this.materials.head
+		m.roughness = f.roughness
+		m.metalness = f.metalness
+		m.envMap = this.studioEnv
+		m.envMapIntensity = f.env
+		m.needsUpdate = true
+		this.headInk.set(f.ink || this.theme.ink)
+		if (this.score) this._recolorAll(this._lastT)
 	}
 
 	setOption(key, value) {
 		this.opts[key] = value
+		if (key === 'headFinish') return this.setHeadFinish(value)
+		if (key === 'paperFinish') return this.setPaperFinish(value)
+		if (key === 'litMode' || key === 'litFade') this._recolorAll(this._lastT)
 		if (key === 'shadows') this._applyShadowCaster()
 		if (key === 'trail' && this.streak) this.streak.visible = value
 		if (key === 'zoom') this._snapCamera = false
@@ -531,7 +702,9 @@ export class NotationStage {
 		paper.position.set((b.min.x + b.max.x) / 2 + 150, (b.min.y + b.max.y) / 2, -0.01)
 		paper.receiveShadow = true
 		this._surfaceSize = [width + 400, height + 3000]
+		this._surfaceCenter = [paper.position.x, paper.position.y]
 		this._updateSurfaceRepeat()
+		this._updateMirror()
 		root.add(paper)
 		this.scene.add(root)
 		built.group.traverse(o => { if (o.userData.isText) o.material.color.set(this._textColor) })
@@ -620,23 +793,38 @@ export class NotationStage {
 		const s = this.score
 		if (!s) return
 		s.built.setInkColor(this.inkColor)
-		for (const st of s.headState.values()) {
-			st.glowStart = -1
-			this._applyHead(st, st.time <= t + 1e-4 ? 'played' : 'ink', 0)
-		}
 		s.active.clear()
+		for (const st of s.headState.values()) {
+			st.glowStart = -Infinity
+			const level = this._litLevel(st, t)
+			this._applyHead(st, level, 0)
+			if (level > 0 && level < 1) s.active.add(st) // still fading
+		}
 		s.staffIdx = s.perStaff.map(on => upperBound(on, t, 'time') - 1)
 	}
 
-	_applyHead(st, mode, glow) {
+	/** How lit a played notehead is at music time t (0 = ink, 1 = fully lit). */
+	_litLevel(st, t) {
+		if (st.time > t + 1e-4) return 0
+		const mode = this.opts.litMode
+		if (mode === 'stay') return 1
+		if (mode === 'off') return 0
+		const x = clamp((t - st.time) / Math.max(0.1, this.opts.litFade), 0, 1)
+		return 1 - x * x * (3 - 2 * x)
+	}
+
+	/** level: 0..1 lit amount; glow: 0..1 impact flash on top. */
+	_applyHead(st, level, glow) {
 		const { mesh, index, matrix, x, y } = st.h
 		const c = this._tmpC
-		if (mode === 'ink') c.copy(this.inkColor)
-		else {
+		c.copy(this.headInk)
+		if (level > 0 || glow > 0) {
 			const pal = this.palette
 			const base = this._tmpC2.set(pal[st.staff % pal.length])
-			c.lerpColors(this.inkColor, base, this.theme.playedMix)
-			if (this.theme.playedGlow) c.multiplyScalar(this.theme.playedGlow)
+			const lit = this._tmpC3 || (this._tmpC3 = new THREE.Color())
+			lit.lerpColors(this.headInk, base, this.theme.playedMix)
+			if (this.theme.playedGlow) lit.multiplyScalar(this.theme.playedGlow)
+			c.lerp(lit, level)
 			if (glow > 0) c.lerp(base.multiplyScalar(5), glow)
 		}
 		mesh.setColorAt(index, c)
@@ -699,11 +887,14 @@ export class NotationStage {
 		const dt = o1.time - o0.time
 		const u = clamp((t - o0.time) / dt, 0, 1)
 		const dx = Math.hypot(B.x - A.x, B.y - A.y)
-		const h = clamp(0.24 * dx + 0.5 * Math.min(dt, 1.5), 0.45, 5) * this.opts.bounce
+		const h = (this.opts.arcMode === 'classic'
+			? Math.min(8, 0.35 + dt * 4.5 + dx * 0.12)                  // time-based: long notes bounce high
+			: clamp(0.24 * dx + 0.5 * Math.min(dt, 1.5), 0.45, 5)        // distance-based: low steps, high leaps
+		) * this.opts.bounce
 		out.lerpVectors(A, B, u)
 		out[this.view.hop] += h * 4 * u * (1 - u)
-		// hide during very long gaps (rests): rest on the source, then leap in the last 0.6s
-		if (dt > 1.2) {
+		// long gaps (rests): wait on the source note, then leap in during the last 0.6s
+		if (this.opts.restMode === 'leap' && dt > 1.2) {
 			const fly = Math.min(0.6, dt * 0.5), t0 = o1.time - fly
 			if (t < t0) { out.copy(A) } else {
 				const v = (t - t0) / fly
@@ -860,8 +1051,10 @@ export class NotationStage {
 			for (const st of s.active) {
 				const age = wall - st.glowStart
 				const g = Math.exp(-age / 0.3) * (age < 0.05 ? age / 0.05 : 1)
-				if (age > 1.5) { this._applyHead(st, 'played', 0); s.active.delete(st) }
-				else this._applyHead(st, 'played', g)
+				const level = this._litLevel(st, t)
+				const settled = age > 1.5 && (level === 0 || level === 1)
+				this._applyHead(st, level, settled ? 0 : g)
+				if (settled) s.active.delete(st)
 			}
 		}
 
@@ -888,6 +1081,7 @@ export class NotationStage {
 		this.pixelRatio = Math.max(0.6, this.maxPixelRatio * T.pr)
 		this._msaaOff = !T.msaa
 		this._applyShadowCaster()
+		this._updateMirror()
 		this.resize(false)
 	}
 
@@ -913,27 +1107,26 @@ export class NotationStage {
 		const D = ((s.height / 2 + 7) / Math.tan(fovR / 2)) / (this.opts.zoom * (v.zoom || 1))
 		const viewW = 2 * D * Math.tan(fovR / 2) * this.camera.aspect
 		const target = this._camTarget.set(fx + viewW * v.lead, s.centerY, 0)
-		const pos = this._camPos.set(target.x + v.offset[0] * D, target.y + v.offset[1] * D, v.offset[2] * D)
-
-		if (v === VIEWS.free) {
-			const dx = this._lastFocusX == null ? 0 : target.x - this._lastFocusX
-			if (this._snapCamera || this._lastFocusX == null) {
-				this.camera.position.copy(pos)
-				this.controls.target.copy(target)
-			} else {
-				this.camera.position.x += dx
-				this.controls.target.x += dx
-			}
-			this.controls.update()
-			this._lookAt.copy(this.controls.target)
+		const pos = this._camPos
+		if (v.orbit) {
+			// mouse x → azimuth around the playhead (±50°), mouse y → elevation (6°…80°)
+			const az = this._mouse.x * 0.9
+			const el = THREE.MathUtils.degToRad(lerp(6, 80, (this._mouse.y + 1) / 2))
+			const R = D * this._freeDist
+			pos.set(target.x + Math.sin(az) * Math.cos(el) * R, target.y - Math.cos(az) * Math.cos(el) * R, Math.sin(el) * R)
 		} else {
-			const k = this._snapCamera ? 1 : 1 - Math.exp(-dt * 6)
-			this.camera.position.lerp(pos, k)
-			if (this._snapCamera) this._lookAt.copy(target)
-			else this._lookAt.lerp(target, k)
-			this.camera.up.set(...(v.up || [0, 1, 0]))
-			this.camera.lookAt(this._lookAt)
+			pos.set(target.x + v.offset[0] * D, target.y + v.offset[1] * D, v.offset[2] * D)
 		}
+		const k = this._snapCamera ? 1 : 1 - Math.exp(-dt * (v.orbit ? 4 : 6))
+		this.camera.position.lerp(pos, k)
+		if (this._snapCamera) this._lookAt.copy(target)
+		else this._lookAt.lerp(target, k)
+		if (v.orbit) {
+			// near top-down, z-up is degenerate: blend toward "up the page" (+y) so the score stays upright
+			const e = clamp((this._mouse.y + 1) / 2, 0, 1)
+			this.camera.up.set(0, e * e, 1 - e * e).normalize()
+		} else this.camera.up.set(...(v.up || [0, 1, 0]))
+		this.camera.lookAt(this._lookAt)
 		this._lastFocusX = target.x
 		this._snapCamera = false
 

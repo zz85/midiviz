@@ -202,7 +202,7 @@
       <option value="flat">Flat</option>
       <option value="table">Tabletop</option>
       <option value="low">Low angle</option>
-      <option value="free">Free orbit</option>
+      <option value="free">Free orbit (mouse)</option>
     </select>
 
     <select id="synthSelect" class="mini-select" aria-label="Sound">
@@ -242,7 +242,47 @@
         <option value="rustysynth">RustySynth</option>
       </select>
     </label>
-    <span class="hint">Drop a .mid / .nwc / .musicxml file onto the score · Space = play/pause · ←/→ = seek</span>
+    <label>Arcs:
+      <select id="arcModeSelect" class="mini-select" data-opt="arcMode" title="How high the lights hop">
+        <option value="distance">Low (by distance)</option>
+        <option value="classic">Bouncy (by time)</option>
+      </select>
+    </label>
+    <label>Rests:
+      <select id="restModeSelect" class="mini-select" data-opt="restMode" title="What a light does across long rests">
+        <option value="leap">Wait, then leap</option>
+        <option value="glide">Glide over</option>
+      </select>
+    </label>
+    <label>Lit notes:
+      <select id="litModeSelect" class="mini-select" data-opt="litMode">
+        <option value="fade">Fade back</option>
+        <option value="stay">Stay lit</option>
+        <option value="off">Flash only</option>
+      </select>
+    </label>
+    <label id="litFadeLabel">Fade:
+      <input type="range" id="litFadeRange" min="0.5" max="12" step="0.5" value="4" style="width:70px;accent-color:var(--accent)" aria-label="Lit note fade seconds">
+      <span id="litFadeValue" style="min-width:26px">4s</span>
+    </label>
+    <label>Noteheads:
+      <select id="headFinishSelect" class="mini-select" data-opt="headFinish">
+        <option value="satin">Satin</option>
+        <option value="matte">Matte</option>
+        <option value="gloss">Glossy lacquer</option>
+        <option value="chrome">Chrome</option>
+        <option value="gold">Gold</option>
+      </select>
+    </label>
+    <label>Paper:
+      <select id="paperFinishSelect" class="mini-select" data-opt="paperFinish" title="Surface finish of the paper / table">
+        <option value="matte">Matte</option>
+        <option value="satin">Satin</option>
+        <option value="glossy">Glossy coated</option>
+        <option value="mirror">Glossy + reflections</option>
+      </select>
+    </label>
+    <span class="hint">Drop a .mid / .nwc / .musicxml file onto the score · Space = play/pause · ←/→ = seek · click the score (or V) = next view · Free orbit: move the mouse to look around, wheel to zoom</span>
   </div>
 
   <div class="viz" id="viz">
@@ -252,10 +292,10 @@
 
   <script type="module">
     import { SoundFontEngine, MidiScheduler } from './soundfont-engine/src/index.js'
-    import { loadNotationEngine, engrave, decodeNotationFile } from './notation3d/nwc-bridge.js?v=5'
-    import { midiToScore, midiToSchedule } from './notation3d/midi-score.js?v=5'
-    import { patchOpentype, recordElements, buildScoreMeshes } from './notation3d/vector-recorder.js?v=5'
-    import { NotationStage, buildOnsets } from './notation3d/stage.js?v=5'
+    import { loadNotationEngine, engrave, decodeNotationFile } from './notation3d/nwc-bridge.js?v=9'
+    import { midiToScore, midiToSchedule } from './notation3d/midi-score.js?v=9'
+    import { patchOpentype, recordElements, buildScoreMeshes } from './notation3d/vector-recorder.js?v=9'
+    import { NotationStage, buildOnsets } from './notation3d/stage.js?v=9'
 
     const $ = id => document.getElementById(id)
     const statusEl = $('status')
@@ -513,7 +553,7 @@
       currentSongValue = value
       songListEl.querySelectorAll('.song-item').forEach(x => x.classList.toggle('active', x.dataset.value === value))
       closeDropdown()
-      if (!skipHash) history.replaceState(null, '', '#' + encodeURIComponent(value))
+      if (!skipHash) writeHash()
       return loadUrl(value, label)
     }
 
@@ -587,8 +627,13 @@
       }
     })
     $('viewSelect').onchange = e => stage.setView(e.target.value)
+    stage.onViewChange = v => { $('viewSelect').value = v }
     $('themeSelect').onchange = e => stage.setTheme(e.target.value)
-    $('staffModeSelect').onchange = () => { if (currentSongValue) selectSong(currentSongValue, $('songTitle').textContent, true) }
+    let pendingReload = false
+    $('staffModeSelect').onchange = () => {
+      if (applyingHash) { pendingReload = true; return } // loadFromHash reloads once at the end
+      if (currentSongValue) selectSong(currentSongValue, $('songTitle').textContent, true)
+    }
     $('synthSelect').onchange = e => { if (engine.ready || soundReady) loadSound(e.target.value); else currentSound = e.target.value }
     $('synthEngineSelect').onchange = e => {
       pause()
@@ -596,6 +641,18 @@
       soundReady = null
       loadSound($('synthSelect').value)
     }
+    // Advanced options (settings row): selects with data-opt map straight onto stage options
+    for (const sel of document.querySelectorAll('#controlsRow2 select[data-opt]')) {
+      sel.onchange = () => {
+        stage.setOption(sel.dataset.opt, sel.value)
+        if (sel.dataset.opt === 'litMode') $('litFadeLabel').style.display = sel.value === 'fade' ? '' : 'none'
+      }
+    }
+    $('litFadeRange').oninput = e => {
+      $('litFadeValue').textContent = e.target.value + 's'
+      stage.setOption('litFade', +e.target.value)
+    }
+
     $('settingsBtn').onclick = () => {
       const open = $('controlsRow2').classList.toggle('open')
       $('settingsBtn').setAttribute('aria-expanded', String(open))
@@ -606,6 +663,7 @@
       if (e.code === 'Space') { e.preventDefault(); togglePlay() }
       else if (e.key === 'ArrowRight') seek(clock.time + 5)
       else if (e.key === 'ArrowLeft') seek(clock.time - 5)
+      else if (e.key === 'v' || e.key === 'V') stage.cycleView()
     })
 
     // ── Render loop ─────────────────────────────────────────────────────
@@ -630,15 +688,70 @@
     requestAnimationFrame(frame)
 
     // ── Initial song (hash deep link: #song.mid) ─────────────────────────
+    // ── URL hash: #song.mid|view=bounce&theme=marble&lit=stay… (only non-default options) ──
+    const HASH_SELECTS = {
+      view: 'viewSelect', theme: 'themeSelect', staves: 'staffModeSelect', engine: 'synthEngineSelect', sound: 'synthSelect',
+      arc: 'arcModeSelect', rest: 'restModeSelect', lit: 'litModeSelect', fade: 'litFadeRange', head: 'headFinishSelect', paper: 'paperFinishSelect',
+    }
+    const HASH_TOGGLES = ['bloom', 'dof', 'trail', 'fx', 'shadows']
+    const toggleBtn = opt => document.querySelector(`.toggle-btn[data-opt="${opt}"]`)
+    const readOptions = () => {
+      const o = {}
+      for (const [k, id] of Object.entries(HASH_SELECTS)) o[k] = $(id).value
+      for (const t of HASH_TOGGLES) o[t] = toggleBtn(t).getAttribute('aria-pressed') === 'true' ? '1' : '0'
+      return o
+    }
+    const DEFAULT_OPTIONS = readOptions()
+    let applyingHash = false
+
+    function writeHash() {
+      if (applyingHash) return
+      const o = readOptions()
+      const q = Object.entries(o).filter(([k, v]) => v !== DEFAULT_OPTIONS[k]).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&')
+      const songPart = currentSongValue ? encodeURIComponent(currentSongValue) : ''
+      history.replaceState(null, '', '#' + songPart + (q ? '|' + q : ''))
+    }
+
+    function applyOptions(q) {
+      const o = Object.fromEntries(new URLSearchParams(q || ''))
+      applyingHash = true
+      try {
+        for (const [k, id] of Object.entries(HASH_SELECTS)) {
+          const el = $(id), v = o[k] ?? DEFAULT_OPTIONS[k]
+          if (el.value === v) continue
+          if (el.tagName === 'SELECT' && ![...el.options].some(op => op.value === v)) continue
+          el.value = v
+          el.dispatchEvent(new Event(el.type === 'range' ? 'input' : 'change'))
+        }
+        for (const t of HASH_TOGGLES) {
+          const want = (o[t] ?? DEFAULT_OPTIONS[t]) === '1'
+          if ((toggleBtn(t).getAttribute('aria-pressed') === 'true') !== want) toggleBtn(t).click()
+        }
+      } finally { applyingHash = false }
+    }
+
     function loadFromHash() {
-      const raw = decodeURIComponent(location.hash.slice(1))
+      const raw = location.hash.slice(1)
       if (!raw) return false
-      const match = PlaybackControls.defaultMidiFiles.find(f => f.value === raw)
-      selectSong(raw, match?.label || raw.split('/').pop().replace(/\.[^.]+$/, ''), true)
-      return true
+      const pipe = raw.indexOf('|')
+      const songRaw = decodeURIComponent(pipe < 0 ? raw : raw.slice(0, pipe))
+      const q = pipe < 0 ? '' : raw.slice(pipe + 1)
+      pendingReload = false
+      applyOptions(q)
+      if (songRaw && songRaw !== currentSongValue) {
+        const match = PlaybackControls.defaultMidiFiles.find(f => f.value === songRaw)
+        selectSong(songRaw, match?.label || songRaw.split('/').pop().replace(/\.[^.]+$/, ''), true)
+      } else if (pendingReload && currentSongValue) selectSong(currentSongValue, $('songTitle').textContent, true)
+      pendingReload = false
+      return !!songRaw
     }
     window.addEventListener('hashchange', loadFromHash)
-    if (!loadFromHash()) selectSong('entertainer.mid', 'The Entertainer', true)
+    // Persist any control change into the hash
+    for (const id of Object.values(HASH_SELECTS)) $(id).addEventListener('change', writeHash)
+    for (const t of HASH_TOGGLES) toggleBtn(t).addEventListener('click', () => setTimeout(writeHash))
+    const prevViewCb = stage.onViewChange
+    stage.onViewChange = v => { prevViewCb?.(v); writeHash() }
+    if (!loadFromHash()) selectSong('entertainer.mid', 'The Entertainer')
 
     // Debug / automation hooks
     window.__player = { play, pause, seek, clock, get song() { return song } }

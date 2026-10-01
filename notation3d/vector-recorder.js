@@ -374,7 +374,7 @@ export function buildScoreMeshes(records, { fontSize, materials, chunk = 40 }) {
 			byChunk.get(k).push(inst)
 		}
 		for (const [, list] of byChunk) {
-			const mesh = new THREE.InstancedMesh(geo, materials.glyph, list.length)
+			const mesh = new THREE.InstancedMesh(geo, info.isHead && materials.head ? materials.head : materials.glyph, list.length)
 			mesh.castShadow = true
 			mesh.receiveShadow = true
 			mesh.userData.isHead = info.isHead
