@@ -4,6 +4,17 @@ Midi Visualization Experiments
 
 [WebMscore](webmscore.html) - MuseScore reference renderer (libmscore via WebAssembly)
 
+1 Oct 2026
+
+[Experiment #025 - Notation 3D](025_notation_3d.html)
+- 3D sheet-music player inspired by "Note Bounce": extruded SMuFL notation, bouncing balls land on every onset
+- Engraving by [nwc-viewer](../nwc-viewer/) (interpreter + scroll-layout typesetter), loaded from `../nwc-viewer/` (override with `?nwc=<url>`)
+- Canvas2D → three.js bridge: nwc-viewer draws into a recording context; glyphs become InstancedMeshes, beams/stems/staff lines are extruded
+- Own MIDI → notation builder (grand-staff split, onset-clipped durations, running accidentals, key detection, piano reduction)
+- Loads MIDI, NWC and MusicXML; audio via soundfont-engine + MidiScheduler
+- Views: tilted, flat, tabletop, low angle, free orbit · night ink / paper themes · bloom, ripples, particles, trails, shadows
+- Needs a server rooted at the parent folder locally, e.g. `cd .. && python3 -m http.server`
+
 15 Mar 2026
 
 [WebMscore Reference Renderer](webmscore.html)
