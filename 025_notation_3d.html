@@ -67,7 +67,7 @@
     .lcd {
       display: flex; align-items: center; gap: 12px; background: var(--lcd-bg); border: 1px solid var(--border);
       border-radius: 6px; padding: 6px 12px; font-family: 'SF Mono', 'Consolas', 'Monaco', monospace; font-size: 11px;
-      color: var(--accent); box-shadow: inset 0 1px 4px rgba(0,0,0,0.4); flex: 2; min-width: 200px;
+      color: var(--accent); box-shadow: inset 0 1px 4px rgba(0,0,0,0.4); flex: 1; min-width: 160px;
     }
     .lcd-time { font-variant-numeric: tabular-nums; min-width: 90px; flex-shrink: 0; }
     .lcd-progress { flex: 1; height: 6px; background: var(--border); border-radius: 3px; cursor: pointer; min-width: 100px; }
@@ -195,6 +195,7 @@
     </div>
 
     <select id="viewSelect" class="mini-select" aria-label="Camera view">
+      <option value="bounce" selected>Note Bounce</option>
       <option value="tilt">Tilted</option>
       <option value="flat">Flat</option>
       <option value="table">Tabletop</option>
@@ -219,6 +220,7 @@
   <div class="controls-row2" id="controlsRow2">
     <label>Theme:
       <select id="themeSelect" class="mini-select">
+        <option value="marble" selected>Marble</option>
         <option value="night">Night ink</option>
         <option value="paper">Paper</option>
       </select>
@@ -324,7 +326,9 @@
     const measureCtx = document.createElement('canvas').getContext('2d')
 
     /** Build the 3D score for nwc-viewer data + hit list. */
-    function buildStage(data, hitsFn) {
+    function buildStage(data, hitsFn, title) {
+      // The title is drawn as 3D text by the stage, not by nwc-viewer
+      if (data.info) data.info.title = ''
       const t0 = performance.now()
       const { elements, staves, fontSize } = engrave(notation, data)
       const t1 = performance.now()
@@ -333,6 +337,7 @@
       const t2 = performance.now()
       const perStaff = buildOnsets(hitsFn(staves), built.heads, staves.length)
       stage.setScore(built, perStaff)
+      stage.setTitle(title)
       console.log(`engrave ${(t1 - t0).toFixed(0)}ms, 3D ${(t2 - t1).toFixed(0)}ms, ${elements.length} elements, ${built.heads.size} noteheads`)
       return staves
     }
@@ -357,7 +362,7 @@
               for (const tok of st.tokens) if (tok._onset) hits.push({ time: midi.header.ticksToSeconds(tok._tick), staff: si, token: tok })
             })
             return hits
-          })
+          }, label || filename)
           song = {
             title: label || filename,
             schedule: { notes, controlChanges: controlChanges.filter(c => c.controller !== 7) },
@@ -366,11 +371,12 @@
           void staffMeta
         } else {
           const data = await decodeNotationFile(notation, buffer, filename)
+          const nwcTitle = label || data.info?.title || filename
           let events = null
           buildStage(data, staves => {
             events = notation.audio.buildNoteEvents(data)
             return events.notes.map(n => ({ time: n.time, staff: n.staffIndex, token: n.token }))
-          })
+          }, nwcTitle)
           const programs = new Map()
           data.score.staves.forEach((st, si) => {
             const ch = events.channels[si]
@@ -378,7 +384,7 @@
           })
           const tempo = data.score.staves[0]?.tokens.find(t => t.type === 'Tempo')
           song = {
-            title: label || data.info?.title || filename,
+            title: nwcTitle,
             schedule: { notes: events.notes.map(({ midi, time, duration, velocity, channel }) => ({ midi, time, duration, velocity, channel })), controlChanges: [] },
             programs, bpm: tempo?.duration || 120,
           }

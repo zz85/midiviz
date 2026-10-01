@@ -1,7 +1,8 @@
 /**
  * stage.js — three.js scene for the 3D notation player: extruded score on a
- * paper plane, bouncing balls (one per staff) that land on each onset,
- * notehead pops, ripples, particles, comet trails, bloom and a follow camera.
+ * marble / paper table, glowing notehead "balls" (one per staff) that hop onto
+ * each onset leaving arc streaks, sparkle + dust particles, played notes that
+ * stay lit, a 3D title, bloom and a follow camera. Look inspired by Note Bounce.
  */
 import * as THREE from 'three'
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
@@ -10,23 +11,36 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
+import { FontLoader } from 'three/addons/loaders/FontLoader.js'
+import { TextGeometry } from 'three/addons/geometries/TextGeometry.js'
 
-export const STAFF_COLORS = ['#ff5a8a', '#3fb6ff', '#9be15d', '#ffb340', '#c77dff', '#2ee6c5', '#ffe14d', '#7b8cff']
+const TITLE_FONT = 'https://cdn.jsdelivr.net/npm/three@0.170.0/examples/fonts/droid/droid_serif_bold.typeface.json'
 
+export const STAFF_COLORS = ['#ff8a2a', '#2f86ff', '#ff4f8b', '#3ee0b0', '#ffd23f', '#b06bff', '#7cff4f', '#4fd8ff']
+
+// playedGlow > 0: played noteheads stay lit (emissive, feeds bloom)
 export const THEMES = {
+	marble: {
+		surface: 'marble', bgTop: '#3a4148', bgBottom: '#15181b', ink: '#0b0c0e', staff: '#121417', text: '#0d0e10',
+		fog: '#1f2428', hemi: 0.5, key: 1.2, env: 0.3, bloom: 1.15, threshold: 0.95, playedMix: 1, playedGlow: 2.2,
+		title: '#1fae8a', titleGlow: 0.55, roughness: 0.55,
+	},
 	night: {
 		bgTop: '#2a2219', bgBottom: '#0d0b08', paper: '#211c15', ink: '#e2d2ae', staff: '#9a876a', text: '#cdb991',
 		fog: '#120f0b', hemi: 0.45, key: 2.0, env: 0.3, bloom: 0.8, threshold: 1.05, playedMix: 0.75,
+		title: '#d4a056', titleGlow: 0.5, roughness: 0.92,
 	},
 	paper: {
 		bgTop: '#d9ccb0', bgBottom: '#8f826a', paper: '#e6dbc3', ink: '#120d08', staff: '#2e261c', text: '#1c160f',
 		fog: '#c9bc9f', hemi: 0.45, key: 1.5, env: 0.25, bloom: 0.45, threshold: 1.15, playedMix: 0.85,
+		title: '#7a1f2b', titleGlow: 0, roughness: 0.92,
 	},
 }
 
 // Camera offsets in score space (x right, y up the page, z out of the page),
 // as multiples of the framing distance. `hop` = axis the balls bounce along.
 export const VIEWS = {
+	bounce: { offset: [-0.42, -0.78, 0.5], lead: 0.1, hop: 'z', fov: 40, up: [0, 0, 1] },
 	flat: { offset: [0, 0, 1], lead: 0.18, hop: 'y', fov: 30 },
 	tilt: { offset: [-0.12, -0.32, 0.94], lead: 0.2, hop: 'y', fov: 34 },
 	table: { offset: [0, -0.95, 0.62], lead: 0.12, hop: 'z', fov: 38, up: [0, 0, 1] },
@@ -42,8 +56,8 @@ const QUALITY_TIERS = [
 	{ pr: 0.7, noShadow: true },
 	{ pr: 0.55, noShadow: true },
 ]
-const MAX_PARTICLES = 2400
-const TRAIL_N = 16
+const STREAK_N = 36        // samples along each arc streak
+const STREAK_SPAN = 0.34   // seconds of trajectory the streak covers
 
 function gradientTexture(top, bottom) {
 	const c = document.createElement('canvas')
@@ -80,6 +94,91 @@ function paperTexture() {
 	t.wrapS = t.wrapT = THREE.RepeatWrapping
 	t.colorSpace = THREE.SRGBColorSpace
 	return t
+}
+
+/** Tileable procedural marble (colour + bump). Dark slate with pale and warm veins. */
+function marbleTextures(size = 512) {
+	const hash = (i, j, s) => { const v = Math.sin(i * 127.1 + j * 311.7 + s * 74.7) * 43758.5453; return v - Math.floor(v) }
+	const noise = (x, y, period, s) => {
+		const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi
+		const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf)
+		const w = i => ((i % period) + period) % period
+		const a = hash(w(xi), w(yi), s), b = hash(w(xi + 1), w(yi), s)
+		const c = hash(w(xi), w(yi + 1), s), d = hash(w(xi + 1), w(yi + 1), s)
+		return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v
+	}
+	const fbm = (x, y, s) => { let f = 0, amp = 0.5, P = 4; for (let o = 0; o < 6; o++) { f += amp * noise(x, y, P, s); x *= 2; y *= 2; P *= 2; amp *= 0.5 } return f }
+	const col = document.createElement('canvas'), bmp = document.createElement('canvas')
+	col.width = col.height = bmp.width = bmp.height = size
+	const ci = col.getContext('2d').createImageData(size, size), bi = bmp.getContext('2d').createImageData(size, size)
+	for (let py = 0; py < size; py++) for (let px = 0; px < size; px++) {
+		const x = px / size * 4, y = py / size * 4
+		const n = fbm(x, y, 1), n2 = fbm(x + 7.3, y + 2.1, 2)
+		// sin args are periodic over the 4-unit tile (coefficients × 4 are even)
+		const v1 = Math.pow(1 - Math.abs(Math.sin((x * 0.5 + y * 0.5 + n * 3.2) * Math.PI)), 18)
+		const v2 = Math.pow(1 - Math.abs(Math.sin((x * 1.5 - y * 0.5 + n2 * 4.0) * Math.PI)), 30)
+		const mott = n * 0.6 + n2 * 0.4
+		let r = 30 + mott * 26, g = 36 + mott * 28, b = 41 + mott * 30
+		r += v1 * 30; g += v1 * 33; b += v1 * 36           // pale grey veins
+		r += v2 * 48; g += v2 * 32; b += v2 * 12           // warm brown/gold veins
+		const k = (py * size + px) * 4
+		ci.data[k] = Math.min(255, r); ci.data[k + 1] = Math.min(255, g); ci.data[k + 2] = Math.min(255, b); ci.data[k + 3] = 255
+		const h = 160 + mott * 60 - (v1 * 50 + v2 * 70)    // veins slightly recessed
+		bi.data[k] = bi.data[k + 1] = bi.data[k + 2] = Math.max(0, Math.min(255, h)); bi.data[k + 3] = 255
+	}
+	col.getContext('2d').putImageData(ci, 0, 0)
+	bmp.getContext('2d').putImageData(bi, 0, 0)
+	const map = new THREE.CanvasTexture(col), bump = new THREE.CanvasTexture(bmp)
+	for (const t of [map, bump]) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8 }
+	map.colorSpace = THREE.SRGBColorSpace
+	return { map, bump }
+}
+
+/** Ring-buffer point sprites with gravity along the current "up" axis. */
+class Particles {
+	constructor(max, { size, texture, gravity = 14, drag = 0.985, floor = true, blending = THREE.AdditiveBlending, opacity = 1 }) {
+		this.max = max
+		this.pos = new Float32Array(max * 3); this.vel = new Float32Array(max * 3)
+		this.col = new Float32Array(max * 3); this.base = new Float32Array(max * 3)
+		this.life = new Float32Array(max); this.life0 = new Float32Array(max)
+		this.next = 0; this.gravity = gravity; this.drag = drag; this.floor = floor; this.alive = false
+		const geo = new THREE.BufferGeometry()
+		geo.setAttribute('position', new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage))
+		geo.setAttribute('color', new THREE.BufferAttribute(this.col, 3).setUsage(THREE.DynamicDrawUsage))
+		this.points = new THREE.Points(geo, new THREE.PointsMaterial({
+			size, map: texture, vertexColors: true, transparent: true, depthWrite: false, blending, toneMapped: false, opacity,
+		}))
+		this.points.frustumCulled = false
+	}
+	spawn(x, y, z, vx, vy, vz, life, r, g, b) {
+		const k = this.next++ % this.max, i = k * 3
+		this.pos[i] = x; this.pos[i + 1] = y; this.pos[i + 2] = z
+		this.vel[i] = vx; this.vel[i + 1] = vy; this.vel[i + 2] = vz
+		this.base[i] = r; this.base[i + 1] = g; this.base[i + 2] = b
+		this.life[k] = this.life0[k] = life
+	}
+	update(dt, upAxis) {
+		let alive = false
+		const { pos, vel, col, base, life, life0, drag } = this
+		for (let k = 0; k < this.max; k++) {
+			const i = k * 3
+			if (life[k] <= 0) { if (col[i] || col[i + 1] || col[i + 2]) col[i] = col[i + 1] = col[i + 2] = 0; continue }
+			alive = true
+			life[k] -= dt
+			vel[i + upAxis] -= this.gravity * dt
+			vel[i] *= drag; vel[i + 1] *= drag; vel[i + 2] *= drag
+			pos[i] += vel[i] * dt; pos[i + 1] += vel[i + 1] * dt; pos[i + 2] += vel[i + 2] * dt
+			if (this.floor && upAxis === 2 && pos[i + 2] < 0.05) { pos[i + 2] = 0.05; vel[i + 2] *= -0.45 }
+			const f = Math.max(0, life[k] / life0[k])
+			const a = f * f * (3 - 2 * f)
+			col[i] = base[i] * a; col[i + 1] = base[i + 1] * a; col[i + 2] = base[i + 2] * a
+		}
+		if (alive || this.alive) {
+			this.points.geometry.attributes.position.needsUpdate = true
+			this.points.geometry.attributes.color.needsUpdate = true
+		}
+		this.alive = alive
+	}
 }
 
 function dotTexture() {
@@ -125,7 +224,7 @@ function upperBound(arr, t, key) {
 export class NotationStage {
 	constructor(container) {
 		this.container = container
-		this.opts = { bloom: true, fx: true, shadows: true, trail: true, bounce: 1, zoom: 1, view: 'tilt', theme: 'night' }
+		this.opts = { bloom: true, fx: true, shadows: true, trail: true, bounce: 1, zoom: 1, view: 'bounce', theme: 'marble' }
 
 		// No antialias on the default framebuffer: with bloom on, everything is
 		// rendered offscreen and the final pass is a fullscreen quad, so canvas
@@ -171,7 +270,9 @@ export class NotationStage {
 			text: new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false }),
 			inkColor: this.inkColor,
 		}
-		this.paperMat = new THREE.MeshStandardMaterial({ roughness: 0.92, metalness: 0, map: paperTexture() })
+		this.surfaces = { paper: { map: paperTexture(), tile: 24 }, marble: { ...marbleTextures(), tile: 120 } }
+		this.paperMat = new THREE.MeshStandardMaterial({ roughness: 0.92, metalness: 0, map: this.surfaces.paper.map })
+		this._surfaceSize = [100, 100]
 
 		// Effects
 		this.fxGroup = new THREE.Group()
@@ -212,21 +313,10 @@ export class NotationStage {
 
 	// ── setup helpers ──
 	_initParticles() {
-		const geo = new THREE.BufferGeometry()
-		this.pPos = new Float32Array(MAX_PARTICLES * 3)
-		this.pCol = new Float32Array(MAX_PARTICLES * 3)
-		this.pVel = new Float32Array(MAX_PARTICLES * 3)
-		this.pLife = new Float32Array(MAX_PARTICLES)
-		this.pBase = new Float32Array(MAX_PARTICLES * 3)
-		geo.setAttribute('position', new THREE.BufferAttribute(this.pPos, 3).setUsage(THREE.DynamicDrawUsage))
-		geo.setAttribute('color', new THREE.BufferAttribute(this.pCol, 3).setUsage(THREE.DynamicDrawUsage))
-		this.pNext = 0
-		this.particles = new THREE.Points(geo, new THREE.PointsMaterial({
-			size: 0.32, map: dotTexture(), vertexColors: true, transparent: true, depthWrite: false,
-			blending: THREE.AdditiveBlending, toneMapped: false,
-		}))
-		this.particles.frustumCulled = false
-		this.fxGroup.add(this.particles)
+		const tex = dotTexture()
+		this.sparks = new Particles(3000, { size: 0.26, texture: tex, gravity: 6, drag: 0.97 })
+		this.dust = new Particles(700, { size: 2.6, texture: tex, gravity: -0.6, drag: 0.94, floor: false, opacity: 0.5 })
+		this.fxGroup.add(this.dust.points, this.sparks.points)
 	}
 
 	_initRipples() {
@@ -277,7 +367,15 @@ export class NotationStage {
 		this.inkColor.set(th.ink)
 		this.materials.ink.color.set(th.ink)
 		this.materials.staff.color.set(th.staff)
-		this.paperMat.color.set(th.paper)
+		const surf = this.surfaces[th.surface || 'paper']
+		this.paperMat.map = surf.map
+		this.paperMat.bumpMap = surf.bump || null
+		this.paperMat.bumpScale = 0.6
+		this.paperMat.roughness = th.roughness ?? 0.92
+		this.paperMat.color.set(th.surface === 'marble' ? '#ffffff' : th.paper)
+		this.paperMat.needsUpdate = true
+		this._updateSurfaceRepeat()
+		if (this.titleMesh) this._styleTitle()
 		this.bloomPass.strength = th.bloom
 		this.bloomPass.threshold = th.threshold
 		if (this.score) {
@@ -285,6 +383,44 @@ export class NotationStage {
 			this._recolorAll(this._lastT)
 		}
 		this._textColor = th.text
+	}
+
+	_updateSurfaceRepeat() {
+		const surf = this.surfaces[this.theme.surface || 'paper']
+		const [w, h] = this._surfaceSize
+		surf.map.repeat.set(w / surf.tile, h / surf.tile)
+		if (surf.bump) surf.bump.repeat.copy(surf.map.repeat)
+	}
+
+	_styleTitle() {
+		const th = this.theme, m = this.titleMesh.material
+		m.color.set(th.title)
+		m.emissive.set(th.title)
+		m.emissiveIntensity = th.titleGlow
+	}
+
+	/** 3D extruded song title lying on the table above the first system. */
+	async setTitle(text) {
+		const seq = (this._titleSeq = (this._titleSeq || 0) + 1)
+		if (this.titleMesh) { this.titleMesh.removeFromParent(); this.titleMesh.geometry.dispose(); this.titleMesh = null }
+		if (!text || !this.score) return
+		try {
+			this._font ||= new FontLoader().loadAsync(TITLE_FONT)
+			const font = await this._font
+			if (seq !== this._titleSeq || !this.score) return
+			const geo = new TextGeometry(text.slice(0, 60), {
+				font, size: 2.4, depth: 0.45, curveSegments: 4,
+				bevelEnabled: true, bevelThickness: 0.08, bevelSize: 0.06, bevelSegments: 2,
+			})
+			geo.computeBoundingBox()
+			const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ roughness: 0.35, metalness: 0.1 }))
+			const s = this.score
+			mesh.position.set(s.minX + 2, s.centerY + s.height / 2 + 5, 0)
+			mesh.castShadow = true
+			this.titleMesh = mesh
+			this._styleTitle()
+			s.root.add(mesh)
+		} catch (e) { console.warn('title font failed', e) }
 	}
 
 	setView(name) {
@@ -295,13 +431,12 @@ export class NotationStage {
 		this.controls.enabled = name === 'free'
 		if (name === 'free') this.camera.up.set(0, 1, 0)
 		this._snapCamera = true
-		for (const b of this.balls) b.histLen = 0
-	}
+			}
 
 	setOption(key, value) {
 		this.opts[key] = value
 		if (key === 'shadows') this.keyLight.castShadow = value && !QUALITY_TIERS[this.tier].noShadow
-		if (key === 'trail') for (const b of this.balls) b.trail.visible = value
+		if (key === 'trail') for (const b of this.balls) b.streak.visible = value
 		if (key === 'zoom') this._snapCamera = false
 	}
 
@@ -313,7 +448,8 @@ export class NotationStage {
 				if (o.userData.isText) { o.material.map?.dispose(); o.material.dispose() }
 			})
 		}
-		for (const b of this.balls) { b.mesh.removeFromParent(); b.trail.removeFromParent(); b.glow.removeFromParent() }
+		for (const b of this.balls) b.streak.geometry.dispose()
+		this.titleMesh = null
 		this.balls = []
 		this.score = null
 	}
@@ -333,7 +469,8 @@ export class NotationStage {
 		const paper = new THREE.Mesh(new THREE.PlaneGeometry(width + 400, height + 3000), this.paperMat)
 		paper.position.set((b.min.x + b.max.x) / 2 + 150, (b.min.y + b.max.y) / 2, -0.01)
 		paper.receiveShadow = true
-		this.paperMat.map.repeat.set((width + 400) / 24, (height + 3000) / 24)
+		this._surfaceSize = [width + 400, height + 3000]
+		this._updateSurfaceRepeat()
 		root.add(paper)
 		this.scene.add(root)
 
@@ -366,35 +503,40 @@ export class NotationStage {
 			active: new Set(),
 		}
 
-		// Balls
-		const geo = new THREE.SphereGeometry(BALL_R, 32, 20)
-		const trailGeo = new THREE.SphereGeometry(BALL_R * 0.55, 10, 8)
+		// Balls: glowing, notehead-shaped (tilted flat ellipsoid)
+		const geo = new THREE.SphereGeometry(BALL_R, 28, 16)
+		geo.scale(1.3, 0.92, 0.55)
+		geo.rotateZ(0.38)
+		this._streakMat ||= new THREE.MeshBasicMaterial({
+			vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, toneMapped: false,
+		})
 		perStaff.forEach((onsets, si) => {
 			if (!onsets.length) return
 			const color = new THREE.Color(STAFF_COLORS[si % STAFF_COLORS.length])
-			const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
-				color, emissive: color, emissiveIntensity: 1.6, roughness: 0.25, metalness: 0.1,
-			}))
+			const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: color.clone().lerp(new THREE.Color(1, 1, 1), 0.35).multiplyScalar(2.6), toneMapped: false }))
 			mesh.castShadow = true
 			mesh.userData.sharedGeo = true
-			// Fake light pool on the paper (cheap additive decal instead of a PointLight)
+			// Fake light pool on the table (cheap additive decal instead of a PointLight)
 			const glow = new THREE.Mesh(this._glowGeo || (this._glowGeo = new THREE.PlaneGeometry(1, 1)), new THREE.MeshBasicMaterial({
 				map: this._glowTex || (this._glowTex = dotTexture()), color: color.clone().multiplyScalar(0.9),
 				transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false,
 			}))
 			glow.userData.sharedGeo = true
 			glow.renderOrder = 1
-			root.add(glow)
-			const trail = new THREE.InstancedMesh(trailGeo, new THREE.MeshBasicMaterial({
-				transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false,
-			}), TRAIL_N)
-			trail.frustumCulled = false
-			trail.visible = this.opts.trail
-			trail.userData.sharedGeo = true
-			for (let i = 0; i < TRAIL_N; i++) trail.setColorAt(i, color)
-			root.add(mesh, trail)
-			const hist = Array.from({ length: TRAIL_N * 2 }, () => new THREE.Vector3())
-			this.balls.push({ staff: si, onsets, mesh, trail, glow, color, lastIdx: -2, hist, histHead: 0, histLen: 0, pos: new THREE.Vector3() })
+			// Arc streak: camera-facing ribbon along the last STREAK_SPAN seconds of trajectory
+			const sg = new THREE.BufferGeometry()
+			sg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(STREAK_N * 6), 3).setUsage(THREE.DynamicDrawUsage))
+			sg.setAttribute('color', new THREE.BufferAttribute(new Float32Array(STREAK_N * 6), 3).setUsage(THREE.DynamicDrawUsage))
+			const idx = []
+			for (let k = 0; k < STREAK_N - 1; k++) { const a = k * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2) }
+			sg.setIndex(idx)
+			const streak = new THREE.Mesh(sg, this._streakMat)
+			streak.frustumCulled = false
+			streak.visible = this.opts.trail
+			streak.renderOrder = 2
+			root.add(glow, mesh, streak)
+			const samples = Array.from({ length: STREAK_N }, () => new THREE.Vector3())
+			this.balls.push({ staff: si, onsets, mesh, streak, glow, color, samples, lastIdx: -2, pos: new THREE.Vector3() })
 		})
 
 		this._snapCamera = true
@@ -424,6 +566,7 @@ export class NotationStage {
 		else {
 			const base = this._tmpC2.set(STAFF_COLORS[st.staff % STAFF_COLORS.length])
 			c.lerpColors(this.inkColor, base, this.theme.playedMix)
+			if (this.theme.playedGlow) c.multiplyScalar(this.theme.playedGlow)
 			if (glow > 0) c.lerp(base.multiplyScalar(5), glow)
 		}
 		mesh.setColorAt(index, c)
@@ -455,34 +598,25 @@ export class NotationStage {
 		r.userData.start = wallTime
 		r.position.set(top.x, top.y, top.depth + 0.02)
 		r.material.color.copy(ball.color).multiplyScalar(2.2)
-		// particles
-		const n = 14 + Math.min(16, onset.heads.length * 4)
+		// burst of sparks + a puff of coloured dust
+		const c = ball.color
+		const px = top.x, py = hop === 'y' ? top.top : top.y, pz = top.depth + 0.1
+		const n = 12 + Math.min(14, onset.heads.length * 4)
 		for (let i = 0; i < n; i++) {
-			const k = this.pNext++ % MAX_PARTICLES
-			const a = Math.random() * Math.PI * 2, sp = 2 + Math.random() * 5
-			this.pPos[k * 3] = top.x
-			this.pPos[k * 3 + 1] = hop === 'y' ? top.top : top.y
-			this.pPos[k * 3 + 2] = top.depth + 0.1
-			if (hop === 'y') {
-				this.pVel[k * 3] = Math.cos(a) * sp
-				this.pVel[k * 3 + 1] = Math.abs(Math.sin(a)) * sp * 1.2
-				this.pVel[k * 3 + 2] = (Math.random() - 0.3) * 3
-			} else {
-				this.pVel[k * 3] = Math.cos(a) * sp
-				this.pVel[k * 3 + 1] = Math.sin(a) * sp
-				this.pVel[k * 3 + 2] = 2 + Math.random() * 5
-			}
-			this.pLife[k] = 0.7 + Math.random() * 0.6
-			const c = ball.color
-			const w = Math.random() * 0.4
-			this.pBase[k * 3] = lerp(c.r, 1, w) * 2.5
-			this.pBase[k * 3 + 1] = lerp(c.g, 1, w) * 2.5
-			this.pBase[k * 3 + 2] = lerp(c.b, 1, w) * 2.5
+			const a = Math.random() * Math.PI * 2, sp = 1.5 + Math.random() * 4.5, w = Math.random() * 0.5
+			const [vx, vy, vz] = hop === 'y'
+				? [Math.cos(a) * sp, Math.abs(Math.sin(a)) * sp * 1.2, (Math.random() - 0.3) * 3]
+				: [Math.cos(a) * sp, Math.sin(a) * sp, 1.5 + Math.random() * 4]
+			this.sparks.spawn(px, py, pz, vx, vy, vz, 0.6 + Math.random() * 0.7, lerp(c.r, 1, w) * 3, lerp(c.g, 1, w) * 3, lerp(c.b, 1, w) * 3)
+		}
+		for (let i = 0; i < 3; i++) {
+			const a = Math.random() * Math.PI * 2
+			this.dust.spawn(px, py, pz + 0.3, Math.cos(a) * 0.8, Math.sin(a) * 0.8, 0.4, 1.2 + Math.random(), c.r * 0.35, c.g * 0.35, c.b * 0.35)
 		}
 	}
 
 	/** Ball position at music time t (score space). Returns onset index (≤ t). */
-	_ballAt(ball, t, out) {
+	_ballAt(ball, t, out, sample = false) {
 		const on = ball.onsets
 		const hop = this.view.hop
 		const land = (o, v) => {
@@ -495,6 +629,7 @@ export class NotationStage {
 		const idx = upperBound(on, t, 'time') - 1
 		const A = this._va || (this._va = new THREE.Vector3())
 		const B = this._vb || (this._vb = new THREE.Vector3())
+		if (sample && idx >= on.length - 1) return idx >= 0 ? (land(on[on.length - 1], out), idx) : idx
 		let squash = 0
 		if (idx < 0) {
 			// waiting above the first note, dropping in during the last second
@@ -521,6 +656,7 @@ export class NotationStage {
 			const near = Math.min(t - o0.time, o1.time - t)
 			squash = near < 0.05 ? (1 - near / 0.05) * clamp(dt * 6, 0.3, 1) : 0
 		}
+		if (sample) return idx
 		const s = ball.mesh.scale
 		const k = squash * 0.32
 		if (axis === 'y') s.set(1 + k, 1 - k, 1 + k)
@@ -566,20 +702,8 @@ export class NotationStage {
 				b.glow.position.set(b.pos.x, this.view.hop === 'y' ? b.pos.y - 0.6 : b.pos.y, 0.015)
 				b.glow.scale.set(gs, gs, 1)
 				b.glow.material.opacity = 0.85 / (1 + lift * 0.35)
-				if (this.opts.trail) {
-					const H = b.hist, n = H.length
-					b.histHead = (b.histHead + n - 1) % n
-					H[b.histHead].copy(b.pos)
-					b.histLen = Math.min(n, b.histLen + 1)
-					const M = this._tmpM
-					for (let i = 0; i < TRAIL_N; i++) {
-						const p = b.histLen ? H[(b.histHead + Math.min(b.histLen - 1, i * 2 + 1)) % n] : b.pos
-						const sc = playing ? (1 - i / TRAIL_N) * 0.9 : 0
-						M.makeScale(sc, sc, sc).setPosition(p)
-						b.trail.setMatrixAt(i, M)
-					}
-					b.trail.instanceMatrix.needsUpdate = true
-				}
+				if (this.opts.trail) this._updateStreak(b, t)
+				if (this.opts.fx && playing) this._emitTrail(b, dt)
 			}
 
 			// Active notehead glows
@@ -598,6 +722,62 @@ export class NotationStage {
 		this._lastT = t
 		this.bloomPass.enabled = this.opts.bloom
 		this.composer.render()
+	}
+
+	/** Rebuild a ball's arc-streak ribbon from its analytic trajectory. */
+	_updateStreak(b, t) {
+		const P = b.samples, N = STREAK_N
+		for (let k = 0; k < N; k++) this._ballAt(b, t - (k / (N - 1)) * STREAK_SPAN, P[k], true)
+		P[0].copy(b.pos)
+		const pos = b.streak.geometry.attributes.position.array
+		const col = b.streak.geometry.attributes.color.array
+		const cam = this.camera.position
+		const T = this._vt || (this._vt = new THREE.Vector3())
+		const V = this._vv || (this._vv = new THREE.Vector3())
+		const S = this._vs || (this._vs = new THREE.Vector3())
+		const c = b.color
+		const moving = P[0].distanceToSquared(P[N - 1]) > 0.04
+		for (let k = 0; k < N; k++) {
+			const p = P[k]
+			T.subVectors(P[Math.max(0, k - 1)], P[Math.min(N - 1, k + 1)])
+			V.subVectors(cam, p)
+			S.crossVectors(T, V)
+			const len = S.length()
+			const f = 1 - k / (N - 1)
+			const w = moving && len > 1e-6 ? BALL_R * 0.55 * Math.pow(f, 0.65) / len : 0
+			S.multiplyScalar(w)
+			const i = k * 6
+			pos[i] = p.x + S.x; pos[i + 1] = p.y + S.y; pos[i + 2] = p.z + S.z
+			pos[i + 3] = p.x - S.x; pos[i + 4] = p.y - S.y; pos[i + 5] = p.z - S.z
+			// hot white head → staff colour → fade
+			const hot = Math.max(0, 1 - k / (N * 0.22))
+			const br = 2.8 * Math.pow(f, 1.4)
+			const r = lerp(c.r, 1, hot) * br, g = lerp(c.g, 1, hot) * br, bl = lerp(c.b, 1, hot) * br
+			col[i] = col[i + 3] = r; col[i + 1] = col[i + 4] = g; col[i + 2] = col[i + 5] = bl
+		}
+		b.streak.geometry.attributes.position.needsUpdate = true
+		b.streak.geometry.attributes.color.needsUpdate = true
+	}
+
+	/** Sparkles shed along the streak, plus a soft coloured dust cloud. */
+	_emitTrail(b, dt) {
+		const c = b.color, P = b.samples
+		b._emit = (b._emit || 0) + dt * 70
+		while (b._emit >= 1) {
+			b._emit--
+			const p = P[Math.floor(Math.random() * STREAK_N * 0.5)]
+			const j = () => (Math.random() - 0.5) * 0.9
+			const w = Math.random() * 0.6
+			this.sparks.spawn(p.x + j() * 0.4, p.y + j() * 0.4, p.z + j() * 0.4, j(), j(), j() + 0.3, 0.4 + Math.random() * 0.8,
+				lerp(c.r, 1, w) * 2.2, lerp(c.g, 1, w) * 2.2, lerp(c.b, 1, w) * 2.2)
+		}
+		b._dust = (b._dust || 0) + dt * 14
+		while (b._dust >= 1) {
+			b._dust--
+			const p = P[Math.floor(Math.random() * STREAK_N * 0.7)]
+			const j = () => (Math.random() - 0.5) * 0.6
+			this.dust.spawn(p.x, p.y, p.z, j(), j(), j() + 0.2, 1 + Math.random() * 1.2, c.r * 0.22, c.g * 0.22, c.b * 0.22)
+		}
 	}
 
 	/**
@@ -685,30 +865,9 @@ export class NotationStage {
 			r.scale.set(sc, sc, sc)
 			r.material.opacity = (1 - a) * (1 - a)
 		}
-		// particles
-		const hop = this.view.hop
-		const g = 14
-		let alive = false
-		for (let k = 0; k < MAX_PARTICLES; k++) {
-			if (this.pLife[k] <= 0) { this.pCol[k * 3] = this.pCol[k * 3 + 1] = this.pCol[k * 3 + 2] = 0; continue }
-			alive = true
-			this.pLife[k] -= dt
-			const i = k * 3
-			if (hop === 'y') this.pVel[i + 1] -= g * dt
-			else this.pVel[i + 2] -= g * dt
-			this.pVel[i] *= 0.985; this.pVel[i + 1] *= 0.985; this.pVel[i + 2] *= 0.985
-			this.pPos[i] += this.pVel[i] * dt
-			this.pPos[i + 1] += this.pVel[i + 1] * dt
-			this.pPos[i + 2] += this.pVel[i + 2] * dt
-			if (hop === 'z' && this.pPos[i + 2] < 0.05) { this.pPos[i + 2] = 0.05; this.pVel[i + 2] *= -0.45 }
-			const f = clamp(this.pLife[k], 0, 1)
-			this.pCol[i] = this.pBase[i] * f; this.pCol[i + 1] = this.pBase[i + 1] * f; this.pCol[i + 2] = this.pBase[i + 2] * f
-		}
-		if (alive || this._pAlive) {
-			this.particles.geometry.attributes.position.needsUpdate = true
-			this.particles.geometry.attributes.color.needsUpdate = true
-		}
-		this._pAlive = alive
+		const up = this.view.hop === 'y' ? 1 : 2
+		this.sparks.update(dt, up)
+		this.dust.update(dt, up)
 	}
 }
 
