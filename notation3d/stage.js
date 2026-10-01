@@ -35,6 +35,13 @@ export const VIEWS = {
 }
 
 const BALL_R = 0.48
+const QUALITY_TIERS = [
+	{ pr: 1, msaa: true },
+	{ pr: 1 },
+	{ pr: 0.85 },
+	{ pr: 0.7, noShadow: true },
+	{ pr: 0.55, noShadow: true },
+]
 const MAX_PARTICLES = 2400
 const TRAIL_N = 16
 
@@ -120,10 +127,15 @@ export class NotationStage {
 		this.container = container
 		this.opts = { bloom: true, fx: true, shadows: true, trail: true, bounce: 1, zoom: 1, view: 'tilt', theme: 'night' }
 
-		const renderer = this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
-		renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+		// No antialias on the default framebuffer: with bloom on, everything is
+		// rendered offscreen and the final pass is a fullscreen quad, so canvas
+		// MSAA would cost fill-rate for nothing. MSAA lives on the composer target.
+		const renderer = this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' })
+		this.maxPixelRatio = Math.min(window.devicePixelRatio || 1, 1.5)
+		this.pixelRatio = this.maxPixelRatio
+		renderer.setPixelRatio(this.pixelRatio)
 		renderer.shadowMap.enabled = true
-		renderer.shadowMap.type = THREE.PCFSoftShadowMap
+		renderer.shadowMap.type = THREE.PCFShadowMap
 		renderer.toneMapping = THREE.ACESFilmicToneMapping
 		renderer.toneMappingExposure = 1.0
 		container.appendChild(renderer.domElement)
@@ -143,7 +155,7 @@ export class NotationStage {
 		scene.add(this.hemi)
 		const key = this.keyLight = new THREE.DirectionalLight(0xfff0d8, 2)
 		key.castShadow = true
-		key.shadow.mapSize.set(2048, 2048)
+		key.shadow.mapSize.set(1024, 1024)
 		key.shadow.bias = -0.0004
 		key.shadow.normalBias = 0.03
 		scene.add(key, key.target)
@@ -168,7 +180,8 @@ export class NotationStage {
 		this._initRipples()
 
 		// Post
-		this.composer = new EffectComposer(renderer)
+		const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 0 })
+		this.composer = new EffectComposer(renderer, rt)
 		this.composer.addPass(new RenderPass(scene, this.camera))
 		this.bloomPass = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.8, 0.5, 0.9)
 		this.composer.addPass(this.bloomPass)
@@ -185,6 +198,11 @@ export class NotationStage {
 		this._tmpM = new THREE.Matrix4()
 		this._tmpM2 = new THREE.Matrix4()
 		this._tmpC = new THREE.Color()
+		this._tmpC2 = new THREE.Color()
+		this._frameEMA = 16
+		this._qualityTimer = 0
+		this.tier = 1
+		this._msaaOff = true
 
 		this.setTheme(this.opts.theme)
 		this.setView(this.opts.view)
@@ -227,16 +245,25 @@ export class NotationStage {
 	}
 
 	// ── public API ──
-	resize() {
+	resize(snap = true) {
 		const w = this.container.clientWidth || 1, h = this.container.clientHeight || 1
+		this.renderer.setPixelRatio(this.pixelRatio)
 		this.renderer.setSize(w, h, false)
 		this.renderer.domElement.style.width = w + 'px'
 		this.renderer.domElement.style.height = h + 'px'
+		// MSAA only where it pays: at high pixel ratios the extra resolution
+		// already antialiases, and adaptive quality drops it first when slow.
+		const samples = this.pixelRatio < 1.25 && !this._msaaOff ? 4 : 0
+		for (const target of [this.composer.renderTarget1, this.composer.renderTarget2]) {
+			if (target.samples !== samples) { target.samples = samples; target.dispose() }
+		}
+		this.composer.setPixelRatio(this.pixelRatio)
 		this.composer.setSize(w, h)
-		this.bloomPass.resolution.set(w / 2, h / 2)
+		// Bloom is soft anyway: run its mip chain at reduced resolution
+		this.bloomPass.resolution.set(w * this.pixelRatio / 3, h * this.pixelRatio / 3)
 		this.camera.aspect = w / h
 		this.camera.updateProjectionMatrix()
-		this._snapCamera = true
+		if (snap) this._snapCamera = true
 	}
 
 	setTheme(name) {
@@ -268,12 +295,12 @@ export class NotationStage {
 		this.controls.enabled = name === 'free'
 		if (name === 'free') this.camera.up.set(0, 1, 0)
 		this._snapCamera = true
-		for (const b of this.balls) b.trailHist.length = 0
+		for (const b of this.balls) b.histLen = 0
 	}
 
 	setOption(key, value) {
 		this.opts[key] = value
-		if (key === 'shadows') this.keyLight.castShadow = value
+		if (key === 'shadows') this.keyLight.castShadow = value && !QUALITY_TIERS[this.tier].noShadow
 		if (key === 'trail') for (const b of this.balls) b.trail.visible = value
 		if (key === 'zoom') this._snapCamera = false
 	}
@@ -286,7 +313,7 @@ export class NotationStage {
 				if (o.userData.isText) { o.material.map?.dispose(); o.material.dispose() }
 			})
 		}
-		for (const b of this.balls) { b.mesh.removeFromParent(); b.trail.removeFromParent() }
+		for (const b of this.balls) { b.mesh.removeFromParent(); b.trail.removeFromParent(); b.glow.removeFromParent() }
 		this.balls = []
 		this.score = null
 	}
@@ -350,10 +377,14 @@ export class NotationStage {
 			}))
 			mesh.castShadow = true
 			mesh.userData.sharedGeo = true
-			if (this.balls.length < 4) {
-				const light = new THREE.PointLight(color, 6, 9, 1.6)
-				mesh.add(light)
-			}
+			// Fake light pool on the paper (cheap additive decal instead of a PointLight)
+			const glow = new THREE.Mesh(this._glowGeo || (this._glowGeo = new THREE.PlaneGeometry(1, 1)), new THREE.MeshBasicMaterial({
+				map: this._glowTex || (this._glowTex = dotTexture()), color: color.clone().multiplyScalar(0.9),
+				transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false,
+			}))
+			glow.userData.sharedGeo = true
+			glow.renderOrder = 1
+			root.add(glow)
 			const trail = new THREE.InstancedMesh(trailGeo, new THREE.MeshBasicMaterial({
 				transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false,
 			}), TRAIL_N)
@@ -362,7 +393,8 @@ export class NotationStage {
 			trail.userData.sharedGeo = true
 			for (let i = 0; i < TRAIL_N; i++) trail.setColorAt(i, color)
 			root.add(mesh, trail)
-			this.balls.push({ staff: si, onsets, mesh, trail, color, lastIdx: -2, trailHist: [], pos: new THREE.Vector3() })
+			const hist = Array.from({ length: TRAIL_N * 2 }, () => new THREE.Vector3())
+			this.balls.push({ staff: si, onsets, mesh, trail, glow, color, lastIdx: -2, hist, histHead: 0, histLen: 0, pos: new THREE.Vector3() })
 		})
 
 		this._snapCamera = true
@@ -390,8 +422,7 @@ export class NotationStage {
 		const c = this._tmpC
 		if (mode === 'ink') c.copy(this.inkColor)
 		else {
-			c.set(STAFF_COLORS[st.staff % STAFF_COLORS.length])
-			const base = c.clone()
+			const base = this._tmpC2.set(STAFF_COLORS[st.staff % STAFF_COLORS.length])
 			c.lerpColors(this.inkColor, base, this.theme.playedMix)
 			if (glow > 0) c.lerp(base.multiplyScalar(5), glow)
 		}
@@ -529,12 +560,20 @@ export class NotationStage {
 				}
 				b.lastIdx = idx
 				// trail
+				// light pool under the ball: brighter and tighter when close to the page
+				const lift = this.view.hop === 'y' ? 0.6 : Math.max(0, b.pos.z - 0.6)
+				const gs = 3.2 + lift * 0.6
+				b.glow.position.set(b.pos.x, this.view.hop === 'y' ? b.pos.y - 0.6 : b.pos.y, 0.015)
+				b.glow.scale.set(gs, gs, 1)
+				b.glow.material.opacity = 0.85 / (1 + lift * 0.35)
 				if (this.opts.trail) {
-					b.trailHist.unshift(b.pos.clone())
-					if (b.trailHist.length > TRAIL_N * 2) b.trailHist.length = TRAIL_N * 2
+					const H = b.hist, n = H.length
+					b.histHead = (b.histHead + n - 1) % n
+					H[b.histHead].copy(b.pos)
+					b.histLen = Math.min(n, b.histLen + 1)
 					const M = this._tmpM
 					for (let i = 0; i < TRAIL_N; i++) {
-						const p = b.trailHist[Math.min(b.trailHist.length - 1, i * 2 + 1)] || b.pos
+						const p = b.histLen ? H[(b.histHead + Math.min(b.histLen - 1, i * 2 + 1)) % n] : b.pos
 						const sc = playing ? (1 - i / TRAIL_N) * 0.9 : 0
 						M.makeScale(sc, sc, sc).setPosition(p)
 						b.trail.setMatrixAt(i, M)
@@ -555,9 +594,34 @@ export class NotationStage {
 		}
 
 		this._updateFx(wall, dt)
+		this._adaptQuality(dt)
 		this._lastT = t
-		if (this.opts.bloom) this.composer.render()
-		else this.renderer.render(this.scene, this.camera)
+		this.bloomPass.enabled = this.opts.bloom
+		this.composer.render()
+	}
+
+	/**
+	 * Adaptive quality: keep frames under ~20ms by stepping through tiers
+	 * (cheapest visual loss first). Tier 0 = MSAA (only kicks in on fast GPUs).
+	 */
+	_applyTier() {
+		const T = QUALITY_TIERS[this.tier]
+		this.pixelRatio = Math.max(0.6, this.maxPixelRatio * T.pr)
+		this._msaaOff = !T.msaa
+		this.keyLight.castShadow = this.opts.shadows && !T.noShadow
+		this.resize(false)
+	}
+
+	_adaptQuality(dt) {
+		if (!(dt > 0) || dt > 0.5) return // tab switch / stalls
+		this._frameEMA += (dt * 1000 - this._frameEMA) * 0.05
+		this._qualityTimer += dt
+		const slow = this._frameEMA > 21, fast = this._frameEMA < (this.tier === 1 ? 10 : 13)
+		if (slow && this._qualityTimer > 1.5 && this.tier < QUALITY_TIERS.length - 1) this.tier++
+		else if (fast && this._qualityTimer > 4 && this.tier > 0) this.tier--
+		else return
+		this._qualityTimer = 0
+		this._applyTier()
 	}
 
 	_updateCamera(t, dt) {
