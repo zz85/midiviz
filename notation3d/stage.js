@@ -365,11 +365,12 @@ export class NotationStage {
 		const el = renderer.domElement
 		el.style.cursor = 'pointer'
 		el.addEventListener('pointermove', e => {
+			if (this._offline) return
 			const r = el.getBoundingClientRect()
 			this._mouse.x = clamp(((e.clientX - r.left) / r.width) * 2 - 1, -1, 1)
 			this._mouse.y = clamp(1 - ((e.clientY - r.top) / r.height) * 2, -1, 1)
 		})
-		el.addEventListener('click', () => this.cycleView())
+		el.addEventListener('click', () => { if (!this._offline) this.cycleView() })
 		el.addEventListener('wheel', e => {
 			if (!this.view.orbit) return
 			e.preventDefault()
@@ -490,11 +491,18 @@ export class NotationStage {
 
 	// ── public API ──
 	resize(snap = true) {
-		const w = this.container.clientWidth || 1, h = this.container.clientHeight || 1
+		const cw = this.container.clientWidth || 1, ch = this.container.clientHeight || 1
+		const off = this._offline
+		// Offline export renders at an exact pixel size; the canvas is just scaled to fit on screen.
+		const w = off ? off.w : cw, h = off ? off.h : ch
+		if (off) this.pixelRatio = 1
 		this.renderer.setPixelRatio(this.pixelRatio)
 		this.renderer.setSize(w, h, false)
-		this.renderer.domElement.style.width = w + 'px'
-		this.renderer.domElement.style.height = h + 'px'
+		const fit = off ? Math.min(cw / w, ch / h) : 1
+		const el = this.renderer.domElement
+		el.style.width = Math.round(w * fit) + 'px'
+		el.style.height = Math.round(h * fit) + 'px'
+		el.style.margin = off ? '0 auto' : ''
 		// MSAA only at low pixel ratios; adaptive quality drops it first when slow.
 		const samples = this.pixelRatio < 1.25 && !this._msaaOff ? 4 : 0
 		for (const target of [this.composer.renderTarget1, this.composer.renderTarget2]) {
@@ -1027,9 +1035,10 @@ export class NotationStage {
 	 * @param {number} dt - wall-clock delta seconds
 	 * @param {boolean} playing
 	 */
-	update(t, dt, playing) {
+	update(t, dt, playing, wallTime) {
 		const s = this.score
-		const wall = performance.now() / 1000
+		// wallTime lets offline export drive flash/ripple timing from music time
+		const wall = wallTime ?? performance.now() / 1000
 		if (s) {
 			const jumped = Math.abs(t - this._lastT) > 0.6 || t < this._lastT - 1e-3
 			if (jumped) this._recolorAll(t)
@@ -1076,6 +1085,23 @@ export class NotationStage {
 	}
 
 	/** Adaptive quality tiers (MSAA → resolution → DOF → shadows) keep frames under ~20ms. */
+	/** Enter fixed-size, fixed-quality rendering for video export. */
+	beginOffline(w, h) {
+		this._offline = { w, h, tier: this.tier, pr: this.pixelRatio }
+		this.tier = h <= 1200 ? 0 : 1 // MSAA up to ~1080p; at higher res the pixels antialias themselves
+		this._snapCamera = true
+		this._applyTier()
+	}
+
+	endOffline() {
+		const off = this._offline
+		if (!off) return
+		this._offline = null
+		this.tier = off.tier
+		this._snapCamera = true
+		this._applyTier()
+	}
+
 	_applyTier() {
 		const T = QUALITY_TIERS[this.tier]
 		this.pixelRatio = Math.max(0.6, this.maxPixelRatio * T.pr)
@@ -1086,7 +1112,7 @@ export class NotationStage {
 	}
 
 	_adaptQuality(dt) {
-		if (!(dt > 0) || dt > 0.5) return
+		if (this._offline || !(dt > 0) || dt > 0.5) return
 		this._frameEMA += (dt * 1000 - this._frameEMA) * 0.05
 		this._qualityTimer += dt
 		const slow = this._frameEMA > 21, fast = this._frameEMA < (this.tier === 1 ? 10 : 13)

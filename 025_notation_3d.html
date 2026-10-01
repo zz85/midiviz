@@ -121,7 +121,34 @@
     #sfLoading { display: none; color: var(--accent); font-size: 11px; }
     #sfLoading.active { display: inline; }
 
-    .viz { flex: 1; position: relative; overflow: hidden; }
+    .viz { flex: 1; position: relative; overflow: hidden; background: #000; }
+    .toast {
+      position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%) translateY(20px); opacity: 0; pointer-events: none;
+      background: var(--bg2); border: 1px solid var(--accent); color: var(--text); padding: 8px 14px; border-radius: 6px;
+      font-size: 12px; box-shadow: 0 6px 24px rgba(0,0,0,0.5); transition: opacity 0.2s, transform 0.2s; z-index: 400; max-width: 80vw;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    dialog.export {
+      background: var(--bg2); color: var(--text); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px;
+      width: min(440px, 92vw); box-shadow: 0 16px 60px rgba(0,0,0,0.6); font-size: 12px;
+    }
+    dialog.export::backdrop { background: rgba(0,0,0,0.55); }
+    dialog.export h2 { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: var(--accent); }
+    dialog.export .row { display: grid; grid-template-columns: 110px 1fr; gap: 8px; align-items: center; margin: 8px 0; }
+    dialog.export label { color: var(--text2); }
+    dialog.export .mini-select, dialog.export input[type=number] { max-width: none; width: 100%; font-size: 12px; padding: 5px 6px; }
+    dialog.export input[type=number] { background: var(--lcd-bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; }
+    dialog.export .note { color: var(--text2); font-size: 11px; margin-top: 6px; line-height: 1.5; }
+    dialog.export .buttons { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+    dialog.export button {
+      background: var(--lcd-bg); border: 1px solid var(--border); color: var(--text); padding: 6px 14px; border-radius: 5px; cursor: pointer; font-size: 12px;
+    }
+    dialog.export button.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 600; }
+    dialog.export button:disabled { opacity: 0.5; cursor: default; }
+    dialog.export .bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin-top: 12px; display: none; }
+    dialog.export .bar > div { height: 100%; width: 0; background: var(--accent); }
+    dialog.export.busy .bar { display: block; }
+    dialog.export .status { margin-top: 8px; font-family: 'SF Mono', monospace; font-size: 11px; color: var(--accent); min-height: 14px; }
     .viz canvas { display: block; }
     .status {
       position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none;
@@ -216,6 +243,8 @@
     </select>
 
     <input type="file" id="fileInput" accept=".mid,.midi,.nwc,.musicxml,.xml,.mxl" hidden>
+    <button class="settings-btn" id="shareBtn" title="Copy share link (song, options, position)" aria-label="Copy share link">🔗</button>
+    <button class="settings-btn" id="exportBtn" title="Export video (up to 4K)" aria-label="Export video">🎬</button>
     <button class="settings-btn" id="settingsBtn" title="Settings" aria-label="Settings" aria-expanded="false">⚙</button>
   </div>
 
@@ -285,6 +314,49 @@
     <span class="hint">Drop a .mid / .nwc / .musicxml file onto the score · Space = play/pause · ←/→ = seek · click the score (or V) = next view · Free orbit: move the mouse to look around, wheel to zoom</span>
   </div>
 
+  <dialog class="export" id="exportDialog" aria-labelledby="exportTitle">
+    <h2 id="exportTitle">Export video</h2>
+    <div class="row"><label for="exResolution">Resolution</label>
+      <select id="exResolution" class="mini-select">
+        <option value="1280">720p (1280×720)</option>
+        <option value="1920" selected>1080p (1920×1080)</option>
+        <option value="2560">1440p (2560×1440)</option>
+        <option value="3840">4K UHD (3840×2160)</option>
+      </select></div>
+    <div class="row"><label for="exAspect">Aspect</label>
+      <select id="exAspect" class="mini-select">
+        <option value="16:9" selected>16:9 landscape</option>
+        <option value="9:16">9:16 vertical (Shorts / Reels)</option>
+        <option value="1:1">1:1 square</option>
+      </select></div>
+    <div class="row"><label for="exFps">Frame rate</label>
+      <select id="exFps" class="mini-select"><option value="30">30 fps</option><option value="60" selected>60 fps</option></select></div>
+    <div class="row"><label for="exRange">Range</label>
+      <select id="exRange" class="mini-select">
+        <option value="all" selected>Whole song</option>
+        <option value="here">From current position to end</option>
+        <option value="30">30 s from current position</option>
+        <option value="60">60 s from current position</option>
+      </select></div>
+    <div class="row"><label for="exQuality">Quality</label>
+      <select id="exQuality" class="mini-select">
+        <option value="0.6">Smaller file</option>
+        <option value="1" selected>High</option>
+        <option value="1.8">Very high</option>
+      </select></div>
+    <div class="row"><label for="exAudio">Audio</label>
+      <select id="exAudio" class="mini-select"><option value="1" selected>Include (rendered offline, exact sync)</option><option value="0">Video only</option></select></div>
+    <div class="note" id="exNote">Renders frame-by-frame (not realtime), so 4K60 stays perfectly smooth on any GPU; it just takes longer.
+      Uses the current view, theme and options. Chrome/Edge stream the file straight to disk.</div>
+    <div class="bar"><div id="exBar"></div></div>
+    <div class="status" id="exStatus" aria-live="polite"></div>
+    <div class="buttons">
+      <button id="exCancel">Close</button>
+      <button id="exStart" class="primary">Export MP4</button>
+    </div>
+  </dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
   <div class="viz" id="viz">
     <div class="status" id="status">Loading notation engine…</div>
     <div class="drop-hint">Drop MIDI / NWC / MusicXML</div>
@@ -292,10 +364,11 @@
 
   <script type="module">
     import { SoundFontEngine, MidiScheduler } from './soundfont-engine/src/index.js'
-    import { loadNotationEngine, engrave, decodeNotationFile } from './notation3d/nwc-bridge.js?v=9'
-    import { midiToScore, midiToSchedule } from './notation3d/midi-score.js?v=9'
-    import { patchOpentype, recordElements, buildScoreMeshes } from './notation3d/vector-recorder.js?v=9'
-    import { NotationStage, buildOnsets } from './notation3d/stage.js?v=9'
+    import { loadNotationEngine, engrave, decodeNotationFile } from './notation3d/nwc-bridge.js?v=10'
+    import { midiToScore, midiToSchedule } from './notation3d/midi-score.js?v=10'
+    import { patchOpentype, recordElements, buildScoreMeshes } from './notation3d/vector-recorder.js?v=10'
+    import { NotationStage, buildOnsets } from './notation3d/stage.js?v=10'
+    import { exportVideo, exportSupported, defaultBitrate } from './notation3d/video-export.js?v=10'
 
     const $ = id => document.getElementById(id)
     const statusEl = $('status')
@@ -591,12 +664,14 @@
 
     $('volumeSlider').oninput = applyVolume
 
+    // Knobs: return {get,set}; dispatch 'change' on commit (pointer up / key / reset) for the URL hash
     function setupKnob(id, valueId, min, max, initial, step, onChange) {
       const knob = $(id), valueEl = $(valueId)
       let value = initial
+      const commit = () => knob.dispatchEvent(new Event('change'))
       const update = () => {
         knob.style.transform = `rotate(${((value - min) / (max - min) - 0.5) * 270}deg)`
-        valueEl.textContent = value.toFixed(1) + 'x'
+        valueEl.textContent = (Math.abs(value * 10 - Math.round(value * 10)) > 1e-6 ? value.toFixed(2) : value.toFixed(1)) + 'x'
         knob.setAttribute('aria-valuenow', value.toFixed(2))
         onChange(value)
       }
@@ -604,20 +679,23 @@
         const startY = e.clientY, start = value
         knob.setPointerCapture(e.pointerId)
         knob.onpointermove = ev => { value = Math.max(min, Math.min(max, start + (startY - ev.clientY) * (max - min) / 200)); update() }
-        knob.onpointerup = () => { knob.onpointermove = null }
+        knob.onpointerup = () => { knob.onpointermove = null; commit() }
       })
       knob.addEventListener('keydown', e => {
         if (e.key === 'ArrowUp' || e.key === 'ArrowRight') value = Math.min(max, value + step)
         else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') value = Math.max(min, value - step)
         else return
-        e.preventDefault(); e.stopPropagation(); update()
+        e.preventDefault(); e.stopPropagation(); update(); commit()
       })
-      knob.addEventListener('dblclick', () => { value = initial; update() })
+      knob.addEventListener('dblclick', () => { value = initial; update(); commit() })
       update()
+      return { el: knob, get: () => value, set: v => { if (isFinite(v)) { value = Math.max(min, Math.min(max, v)); update() } } }
     }
-    setupKnob('speedKnob', 'speedValue', 0.25, 2, 1, 0.05, v => { clock.speed = v; scheduler?.setSpeed(v) })
-    setupKnob('zoomKnob', 'zoomValue', 0.4, 3, 1, 0.1, v => stage.setOption('zoom', v))
-    setupKnob('hopKnob', 'hopValue', 0, 2.5, 1, 0.1, v => stage.setOption('bounce', v))
+    const knobs = {
+      spd: setupKnob('speedKnob', 'speedValue', 0.25, 2, 1, 0.05, v => { clock.speed = v; scheduler?.setSpeed(v) }),
+      zoom: setupKnob('zoomKnob', 'zoomValue', 0.4, 3, 1, 0.1, v => stage.setOption('zoom', v)),
+      hop: setupKnob('hopKnob', 'hopValue', 0, 2.5, 1, 0.1, v => stage.setOption('bounce', v)),
+    }
 
     document.querySelectorAll('.toggle-btn').forEach(btn => {
       btn.onclick = () => {
@@ -659,6 +737,7 @@
     }
 
     document.addEventListener('keydown', e => {
+      if (exporting || exDlg.open) return
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.classList.contains('knob')) return
       if (e.code === 'Space') { e.preventDefault(); togglePlay() }
       else if (e.key === 'ArrowRight') seek(clock.time + 5)
@@ -669,10 +748,12 @@
     // ── Render loop ─────────────────────────────────────────────────────
     function fmt(s) { return Math.floor(s / 60) + ':' + Math.floor(s % 60).toString().padStart(2, '0') }
     let lastFrame = performance.now()
+    let exporting = false
     function frame(now) {
       requestAnimationFrame(frame)
       const dt = (now - lastFrame) / 1000
       lastFrame = now
+      if (exporting) return // the exporter drives the stage
       if (clock.playing) {
         // Extrapolate between scheduler time reports; never run more than 150ms ahead
         const est = clock.audioTime + Math.min(0.15, (now - clock.audioAt) / 1000 * clock.speed)
@@ -698,6 +779,7 @@
     const readOptions = () => {
       const o = {}
       for (const [k, id] of Object.entries(HASH_SELECTS)) o[k] = $(id).value
+      for (const [k, kn] of Object.entries(knobs)) o[k] = String(+kn.get().toFixed(2))
       for (const t of HASH_TOGGLES) o[t] = toggleBtn(t).getAttribute('aria-pressed') === 'true' ? '1' : '0'
       return o
     }
@@ -723,6 +805,10 @@
           el.value = v
           el.dispatchEvent(new Event(el.type === 'range' ? 'input' : 'change'))
         }
+        for (const [k, kn] of Object.entries(knobs)) {
+          const v = +(o[k] ?? DEFAULT_OPTIONS[k])
+          if (+kn.get().toFixed(2) !== v) kn.set(v)
+        }
         for (const t of HASH_TOGGLES) {
           const want = (o[t] ?? DEFAULT_OPTIONS[t]) === '1'
           if ((toggleBtn(t).getAttribute('aria-pressed') === 'true') !== want) toggleBtn(t).click()
@@ -738,23 +824,149 @@
       const q = pipe < 0 ? '' : raw.slice(pipe + 1)
       pendingReload = false
       applyOptions(q)
+      const startAt = parseFloat(new URLSearchParams(q).get('t'))
+      let loading = null
       if (songRaw && songRaw !== currentSongValue) {
         const match = PlaybackControls.defaultMidiFiles.find(f => f.value === songRaw)
-        selectSong(songRaw, match?.label || songRaw.split('/').pop().replace(/\.[^.]+$/, ''), true)
-      } else if (pendingReload && currentSongValue) selectSong(currentSongValue, $('songTitle').textContent, true)
+        loading = selectSong(songRaw, match?.label || songRaw.split('/').pop().replace(/\.[^.]+$/, ''), true)
+      } else if (pendingReload && currentSongValue) loading = selectSong(currentSongValue, $('songTitle').textContent, true)
       pendingReload = false
+      if (startAt > 0) Promise.resolve(loading).then(() => { seek(startAt); writeHash() }) // t= is one-shot (share links)
       return !!songRaw
     }
     window.addEventListener('hashchange', loadFromHash)
     // Persist any control change into the hash
     for (const id of Object.values(HASH_SELECTS)) $(id).addEventListener('change', writeHash)
     for (const t of HASH_TOGGLES) toggleBtn(t).addEventListener('click', () => setTimeout(writeHash))
+    for (const kn of Object.values(knobs)) kn.el.addEventListener('change', writeHash)
     const prevViewCb = stage.onViewChange
     stage.onViewChange = v => { prevViewCb?.(v); writeHash() }
     if (!loadFromHash()) selectSong('entertainer.mid', 'The Entertainer')
 
+    // ── Toast ──
+    let toastTimer = 0
+    function toast(msg, ms = 2600) {
+      const el = $('toast')
+      el.textContent = msg
+      el.classList.add('show')
+      clearTimeout(toastTimer)
+      toastTimer = setTimeout(() => el.classList.remove('show'), ms)
+    }
+
+    // ── Copy share link: song + non-default options + current position ──
+    async function copyText(text) {
+      try { await navigator.clipboard.writeText(text); return true } catch {
+        const ta = document.createElement('textarea')
+        ta.value = text; ta.style.cssText = 'position:fixed;opacity:0'
+        document.body.appendChild(ta); ta.select()
+        const ok = document.execCommand('copy')
+        ta.remove()
+        return ok
+      }
+    }
+    $('shareBtn').onclick = async () => {
+      writeHash()
+      const url = new URL(location.href)
+      if (clock.time > 1 && song && clock.time < song.duration - 1) {
+        const h = url.hash.slice(1)
+        url.hash = h + (h.includes('|') ? '&' : '|') + 't=' + clock.time.toFixed(1)
+      }
+      const ok = await copyText(url.href)
+      if (!currentSongValue) toast(ok ? 'Link copied — note: local files can’t be shared, the link carries options only' : 'Copy failed: ' + url.href, 5000)
+      else toast(ok ? 'Share link copied' + (url.hash.includes('t=') ? ' (starts at ' + fmt(clock.time) + ')' : '') : 'Copy failed: ' + url.href, ok ? 2600 : 8000)
+    }
+
+    // ── Video export ──
+    const exDlg = $('exportDialog')
+    let exAbort = null
+    const exSize = () => {
+      const long = +$('exResolution').value, short = Math.round(long * 9 / 16)
+      const a = $('exAspect').value
+      return a === '9:16' ? [short, long] : a === '1:1' ? [short, short] : [long, short]
+    }
+    function exRange() {
+      const r = $('exRange').value, dur = song?.duration || 0, now = Math.min(clock.time, Math.max(0, dur - 1))
+      if (r === 'all') return [0, dur]
+      if (r === 'here') return [now, dur]
+      return [now, Math.min(dur, now + +r)]
+    }
+    function exSummary() {
+      if (!song) return
+      const [w, h] = exSize(), fps = +$('exFps').value, [a, b] = exRange()
+      const secs = b - a + 3, mb = defaultBitrate(w, h, fps) * +$('exQuality').value * secs / 8 / 1e6
+      $('exStatus').textContent = `${w}×${h} @ ${fps}fps · ${fmt(secs)} · ~${mb < 1000 ? Math.round(mb) + ' MB' : (mb / 1000).toFixed(1) + ' GB'}`
+    }
+    for (const id of ['exResolution', 'exAspect', 'exFps', 'exRange', 'exQuality']) $(id).addEventListener('change', exSummary)
+    $('exportBtn').onclick = () => {
+      if (!exportSupported()) { toast('Video export needs WebCodecs (Chrome, Edge or Safari 17+)', 5000); return }
+      if (!song) { toast('Load a song first'); return }
+      pause()
+      exDlg.classList.remove('busy')
+      $('exStart').disabled = false
+      $('exCancel').textContent = 'Close'
+      $('exBar').style.width = '0'
+      exSummary()
+      exDlg.showModal()
+    }
+    $('exCancel').onclick = () => { if (exAbort) exAbort.abort(); else exDlg.close() }
+    exDlg.addEventListener('cancel', e => { if (exAbort) { e.preventDefault(); exAbort.abort() } })
+    $('exStart').onclick = async () => {
+      const [width, height] = exSize(), fps = +$('exFps').value, [start, end] = exRange()
+      const name = (song.title || 'notation').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_') + `_${height}p${fps}.mp4`
+      let fileStream = null
+      if (window.showSaveFilePicker) {
+        try {
+          const handle = await showSaveFilePicker({ suggestedName: name, types: [{ description: 'MP4 video', accept: { 'video/mp4': ['.mp4'] } }] })
+          fileStream = await handle.createWritable()
+        } catch (e) { if (e.name === 'AbortError') return; console.warn(e) }
+      }
+      exAbort = new AbortController()
+      exporting = true
+      exDlg.classList.add('busy')
+      $('exStart').disabled = true
+      $('exCancel').textContent = 'Cancel'
+      const soundVal = $('synthSelect').value
+      const soundfonts = soundVal === 'stack' ? PlaybackControls.defaultSoundfontStack : [soundVal]
+      try {
+        const blob = await exportVideo({
+          stage, song, width, height, fps, start, end,
+          bitrate: Math.round(defaultBitrate(width, height, fps) * +$('exQuality').value),
+          audio: $('exAudio').value === '1',
+          audioOpts: {
+            vendorPath, soundfonts, volume: +$('volumeSlider').value,
+            convertSF3: engine._backend?._convertSF3 ? d => engine._backend._convertSF3(d) : null,
+          },
+          fileStream, signal: exAbort.signal,
+          onProgress: p => {
+            $('exBar').style.width = (p.frame / p.frames * 100).toFixed(1) + '%'
+            $('exStatus').textContent = p.phase === 'finalizing' ? 'Finalizing…'
+              : `${p.frame}/${p.frames} frames · ${(p.frame / p.elapsed).toFixed(1)} fps · ${fmt(p.eta)} left · ${p.codec}${p.audioCodec ? ' + ' + p.audioCodec : ''}`
+          },
+        })
+        if (blob) {
+          const a = document.createElement('a')
+          a.href = URL.createObjectURL(blob)
+          a.download = name
+          a.click()
+          setTimeout(() => URL.revokeObjectURL(a.href), 60000)
+        }
+        $('exStatus').textContent = 'Done ✓ ' + name
+        toast('Exported ' + name)
+      } catch (e) {
+        console.error(e)
+        $('exStatus').textContent = e.name === 'AbortError' ? 'Cancelled' : 'Failed: ' + e.message
+      } finally {
+        exporting = false
+        exAbort = null
+        lastFrame = performance.now()
+        exDlg.classList.remove('busy')
+        $('exStart').disabled = false
+        $('exCancel').textContent = 'Close'
+      }
+    }
+
     // Debug / automation hooks
-    window.__player = { play, pause, seek, clock, get song() { return song } }
+    window.__player = { play, pause, seek, clock, knobs, get song() { return song } }
   </script>
 </body>
 </html>
