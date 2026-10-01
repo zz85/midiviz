@@ -303,7 +303,8 @@ export function buildScoreMeshes(records, { fontSize, materials, chunk = 40 }) {
 	const group = new THREE.Group()
 	group.name = 'score'
 
-	const DEPTH = { staff: 0.06, ink: 0.22, glyph: 0.3, notehead: 0.5 }
+	// Thin, printed-looking ink: barely raised off the page (embossed print)
+	const DEPTH = { staff: 0.02, ink: 0.05, glyph: 0.07, notehead: 0.09 }
 	const buckets = new Map() // key → { staff: [], ink: [] }
 	const bucket = x => {
 		const k = Math.floor(x / chunk)
@@ -360,9 +361,9 @@ export function buildScoreMeshes(records, { fontSize, materials, chunk = 40 }) {
 		const shapes = shapePathToShapes(opsToShapePath(subs, S))
 		if (!shapes.length) continue
 		const depth = info.isHead ? DEPTH.notehead : DEPTH.glyph
-		const bevel = Math.min(0.05, depth * 0.15)
+		const bevel = Math.min(0.02, depth * 0.25)
 		const geo = new THREE.ExtrudeGeometry(shapes, {
-			depth: depth - bevel * 2, bevelEnabled: true, bevelThickness: bevel, bevelSize: 0.02, bevelSegments: 2, curveSegments: info.isHead ? 10 : 6,
+			depth: depth - bevel * 2, bevelEnabled: true, bevelThickness: bevel, bevelSize: 0.012, bevelSegments: 1, curveSegments: info.isHead ? 10 : 6,
 		})
 		geo.translate(0, 0, bevel)
 		const bb = path.getBoundingBox()

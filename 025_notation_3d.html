@@ -24,7 +24,7 @@
     }
 
     .controls {
-      display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: var(--bg2);
+      display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: var(--bg2);
       border-bottom: 1px solid var(--border); z-index: 10; flex-wrap: wrap;
     }
     .play-btn {
@@ -67,10 +67,10 @@
     .lcd {
       display: flex; align-items: center; gap: 12px; background: var(--lcd-bg); border: 1px solid var(--border);
       border-radius: 6px; padding: 6px 12px; font-family: 'SF Mono', 'Consolas', 'Monaco', monospace; font-size: 11px;
-      color: var(--accent); box-shadow: inset 0 1px 4px rgba(0,0,0,0.4); flex: 1; min-width: 160px;
+      color: var(--accent); box-shadow: inset 0 1px 4px rgba(0,0,0,0.4); flex: 1; min-width: 170px;
     }
     .lcd-time { font-variant-numeric: tabular-nums; min-width: 90px; flex-shrink: 0; }
-    .lcd-progress { flex: 1; height: 6px; background: var(--border); border-radius: 3px; cursor: pointer; min-width: 100px; }
+    .lcd-progress { flex: 1; height: 6px; background: var(--border); border-radius: 3px; cursor: pointer; min-width: 40px; }
     .lcd-progress-fill { width: 0%; height: 100%; background: var(--accent); border-radius: 3px; pointer-events: none; }
     .lcd-meta { color: var(--text2); white-space: nowrap; flex-shrink: 0; }
 
@@ -189,13 +189,15 @@
 
     <div class="toggle-group">
       <button class="toggle-btn" data-opt="bloom" aria-pressed="true"><div class="toggle"></div><span class="toggle-label">Bloom</span></button>
-      <button class="toggle-btn" data-opt="fx" aria-pressed="true"><div class="toggle"></div><span class="toggle-label">FX</span></button>
-      <button class="toggle-btn" data-opt="trail" aria-pressed="true"><div class="toggle"></div><span class="toggle-label">Trail</span></button>
+      <button class="toggle-btn" data-opt="dof" aria-pressed="true" title="Depth of field"><div class="toggle"></div><span class="toggle-label">DOF</span></button>
+      <button class="toggle-btn" data-opt="trail" aria-pressed="true" title="Arc streaks"><div class="toggle"></div><span class="toggle-label">Trail</span></button>
+      <button class="toggle-btn" data-opt="fx" aria-pressed="false" title="Sparkles, dust and ripples"><div class="toggle"></div><span class="toggle-label">FX</span></button>
       <button class="toggle-btn" data-opt="shadows" aria-pressed="true"><div class="toggle"></div><span class="toggle-label">Shadow</span></button>
     </div>
 
     <select id="viewSelect" class="mini-select" aria-label="Camera view">
-      <option value="bounce" selected>Note Bounce</option>
+      <option value="cinema" selected>Grazing</option>
+      <option value="bounce">Note Bounce</option>
       <option value="tilt">Tilted</option>
       <option value="flat">Flat</option>
       <option value="table">Tabletop</option>
@@ -220,7 +222,8 @@
   <div class="controls-row2" id="controlsRow2">
     <label>Theme:
       <select id="themeSelect" class="mini-select">
-        <option value="marble" selected>Marble</option>
+        <option value="cinema" selected>Cinematic</option>
+        <option value="marble">Marble</option>
         <option value="night">Night ink</option>
         <option value="paper">Paper</option>
       </select>
@@ -249,10 +252,10 @@
 
   <script type="module">
     import { SoundFontEngine, MidiScheduler } from './soundfont-engine/src/index.js'
-    import { loadNotationEngine, engrave, decodeNotationFile } from './notation3d/nwc-bridge.js'
-    import { midiToScore, midiToSchedule } from './notation3d/midi-score.js'
-    import { patchOpentype, recordElements, buildScoreMeshes } from './notation3d/vector-recorder.js'
-    import { NotationStage, buildOnsets } from './notation3d/stage.js'
+    import { loadNotationEngine, engrave, decodeNotationFile } from './notation3d/nwc-bridge.js?v=5'
+    import { midiToScore, midiToSchedule } from './notation3d/midi-score.js?v=5'
+    import { patchOpentype, recordElements, buildScoreMeshes } from './notation3d/vector-recorder.js?v=5'
+    import { NotationStage, buildOnsets } from './notation3d/stage.js?v=5'
 
     const $ = id => document.getElementById(id)
     const statusEl = $('status')
@@ -337,7 +340,7 @@
       const t2 = performance.now()
       const perStaff = buildOnsets(hitsFn(staves), built.heads, staves.length)
       stage.setScore(built, perStaff)
-      stage.setTitle(title)
+      stage.setTitle?.(title)
       console.log(`engrave ${(t1 - t0).toFixed(0)}ms, 3D ${(t2 - t1).toFixed(0)}ms, ${elements.length} elements, ${built.heads.size} noteheads`)
       return staves
     }
