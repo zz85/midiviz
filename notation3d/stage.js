@@ -365,7 +365,7 @@ export class NotationStage {
 		const el = renderer.domElement
 		el.style.cursor = 'pointer'
 		el.addEventListener('pointermove', e => {
-			if (this._offline) return
+			if (this._offline || this.tour) return // the tour steers the orbit
 			const r = el.getBoundingClientRect()
 			this._mouse.x = clamp(((e.clientX - r.left) / r.width) * 2 - 1, -1, 1)
 			this._mouse.y = clamp(1 - ((e.clientY - r.top) / r.height) * 2, -1, 1)
@@ -451,6 +451,7 @@ export class NotationStage {
 
 		this.lanes = []
 		this.score = null
+		this.tour = null
 		this._camPos = new THREE.Vector3()
 		this._camTarget = new THREE.Vector3()
 		this._lookAt = new THREE.Vector3()
@@ -606,6 +607,35 @@ export class NotationStage {
 		this.camera.updateProjectionMatrix()
 		this.renderer.domElement.style.cursor = v.orbit ? 'crosshair' : 'pointer'
 		this._snapCamera = false // glide between views
+	}
+
+	/**
+	 * Camera tour: rotate through views every `segment` seconds of music time.
+	 * In orbit views the virtual mouse circles, sweeping azimuth and elevation.
+	 * @param {{views:string[], segment:number, t0?:number}|null} spec
+	 */
+	setTour(spec) {
+		this.tour = spec && spec.views?.length ? { t0: 0, ...spec } : null
+		this._tourIdx = null
+	}
+
+	_applyTour(t) {
+		const { views, segment, t0 } = this.tour
+		const rel = Math.max(0, t - t0)
+		const idx = Math.floor(rel / segment)
+		if (idx !== this._tourIdx) {
+			const first = this._tourIdx == null
+			this._tourIdx = idx
+			const name = views[idx % views.length]
+			if (name !== this.opts.view) { this.setView(name); this.onViewChange?.(name) }
+			if (first) this._snapCamera = true
+		}
+		if (this.view.orbit) {
+			// one full circle per segment: swing side to side while rising and dipping
+			const u = (rel % segment) / segment, a = u * Math.PI * 2
+			this._mouse.x = 0.85 * Math.sin(a)
+			this._mouse.y = -0.25 + 0.6 * Math.cos(a)
+		}
 	}
 
 	/** Advance to the next camera view (canvas click). */
@@ -1036,6 +1066,7 @@ export class NotationStage {
 	 * @param {boolean} playing
 	 */
 	update(t, dt, playing, wallTime) {
+		if (this._offline && wallTime === undefined) return // exporter owns the stage
 		const s = this.score
 		// wallTime lets offline export drive flash/ripple timing from music time
 		const wall = wallTime ?? performance.now() / 1000
@@ -1053,6 +1084,7 @@ export class NotationStage {
 				s.staffIdx[si] = idx
 			})
 
+			if (this.tour) this._applyTour(t)
 			this._updateCamera(t, dt)
 			this._updateLanes(t, wall, playing)
 

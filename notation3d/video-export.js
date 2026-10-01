@@ -146,6 +146,7 @@ class OfflineSynth {
  * @param {NotationStage} o.stage
  * @param {{schedule, programs, duration, title}} o.song
  * @param {number} o.width, o.height, o.fps, o.start, o.end - seconds (music time)
+ * @param {{views:string[], segment:number}|null} o.tour - rotate camera views during the export
  * @param {boolean} o.audio
  * @param {object} o.audioOpts - { vendorPath, soundfonts, convertSF3, volume }
  * @param {FileSystemWritableFileStream|null} o.fileStream - stream to write to (else buffered)
@@ -188,6 +189,8 @@ export async function exportVideo(o) {
 
 	const yieldUI = () => new Promise(r => setTimeout(r, 0))
 	const startWall = performance.now()
+	const prevTour = stage.tour
+	if (o.tour) stage.setTour({ ...o.tour, t0: o.start })
 	stage.beginOffline(width, height)
 	let audioFrame = Math.round(t0 * SAMPLE_RATE) // may be negative (pre-roll silence)
 	let audioTs = 0
@@ -248,6 +251,7 @@ export async function exportVideo(o) {
 		throw e
 	} finally {
 		synth?.dispose()
+		if (o.tour) stage.setTour(prevTour)
 		stage.endOffline()
 	}
 }
