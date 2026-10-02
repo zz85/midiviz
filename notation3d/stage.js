@@ -707,8 +707,9 @@ export class NotationStage {
 			if (first) { this._snapCamera = true; this._xfade = null }
 		}
 		if (this.view.orbit) {
-			// one full circle per segment: swing side to side while rising and dipping
-			const u = (rel % segment) / segment, a = u * Math.PI * 2
+			// one full circle per segment (at least 8 s, so short scenes sway rather than spin)
+			const period = Math.max(segment, 8)
+			const u = ((rel - idx * segment) % period) / period, a = u * Math.PI * 2
 			this._mouse.x = 0.85 * Math.sin(a)
 			this._mouse.y = -0.25 + 0.6 * Math.cos(a)
 		}

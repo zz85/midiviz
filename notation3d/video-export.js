@@ -343,12 +343,15 @@ export async function exportVideo(o) {
 	const introFrames = o.intro?.seconds > 0 ? Math.round(o.intro.seconds * fps) : 0
 	const outroFade = o.outro?.music === 'fade'
 	const outroFrames = o.outro?.seconds > 0 ? Math.min(Math.round(o.outro.seconds * fps), outroFade ? musicFrames : Infinity) : 0
-	const frames = introFrames + musicFrames + (outroFade ? 0 : outroFrames)
+	// music can start while the intro is still fading out (overlap)
+	const overlapFrames = introFrames && o.intro.overlap ? Math.round(Math.min(o.intro.seconds * 0.45, 2.5) * fps) : 0
+	const musicStart = introFrames - overlapFrames
+	const frames = musicStart + musicFrames + (outroFade ? 0 : outroFrames)
 	// 'fade': credits start outroFrames before the end and the music fades out under them
-	const outroStart = introFrames + musicFrames - (outroFade ? outroFrames : 0)
+	const outroStart = musicStart + musicFrames - (outroFade ? outroFrames : 0)
 	const fadeA = Math.round(outroStart * SAMPLE_RATE / fps), fadeB = Math.round((outroStart + outroFrames) * SAMPLE_RATE / fps)
 	const intro3D = o.intro?.style === '3d' && stage.titleMesh
-	const introSamples = Math.round(introFrames * SAMPLE_RATE / fps)
+	const introSamples = Math.round(musicStart * SAMPLE_RATE / fps)
 
 	const vc = await pickVideoCodec(width, height, fps, bitrate)
 	const ac = o.audio ? await pickAudioCodec() : null
@@ -376,7 +379,7 @@ export async function exportVideo(o) {
 
 	const yieldUI = () => new Promise(r => setTimeout(r, 0))
 	const startWall = performance.now()
-	const prevTour = stage.tour, prevTransition = stage.opts.transition
+	const prevTour = stage.tour, prevTransition = stage.opts.transition, prevView = stage.opts.view
 	if (o.tour) stage.setTour({ ...o.tour, t0: o.start })
 	if (o.transition) stage.opts.transition = o.transition
 	// 2D canvas for compositing the title card over the WebGL frame
@@ -399,10 +402,10 @@ export async function exportVideo(o) {
 			const outroI = outroFrames ? i - outroStart : -1
 			const inOutro = outroI >= 0
 			// music time: frozen during the intro; keeps running in the outro so the camera drifts on
-			const t = inIntro ? t0 : t0 + (i - introFrames) / fps
+			const t = i < musicStart ? t0 : t0 + (i - musicStart) / fps
 			const introK = inIntro ? (i + 0.5) / introFrames : null
 			if (intro3D) stage.setIntroShot(introK)
-			stage.update(t, 1 / fps, !inIntro && !(inOutro && !outroFade), t)
+			stage.update(t, 1 / fps, i >= musicStart && !(inOutro && !outroFade), t)
 			let src = stage.renderer.domElement
 			if (inIntro || inOutro) {
 				const g = card.g
@@ -475,7 +478,10 @@ export async function exportVideo(o) {
 		synth?.dispose()
 		if (intro3D) stage.setIntroShot(null)
 		if (intro3D && stage.titleText !== prevTitle) stage.setTitle(prevTitle)
-		if (o.tour) stage.setTour(prevTour)
+		if (o.tour) {
+			stage.setTour(prevTour)
+			if (!prevTour && stage.opts.view !== prevView) { stage.setView(prevView); stage.onViewChange?.(prevView); stage._snapCamera = true }
+		}
 		stage.opts.transition = prevTransition
 		stage.endOffline()
 	}
