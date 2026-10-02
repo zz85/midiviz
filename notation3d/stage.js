@@ -996,10 +996,13 @@ export class NotationStage {
 		const idx = upperBound(on, t, 'time') - 1
 		lane._i = idx
 		lane._fade = 1
+		lane._park = true // parked/fading on a note (not in flight)
 		if (idx < 0) {
 			// fade in just before a voice's first note
-			if (!on.length || on[0].time - t > LANE_ENTER) return false
+			if (!on.length) return false
 			this._land(on[0], k, out)
+			const until = on[0].time - t
+			if (until > LANE_ENTER) return false
 			lane._fade = 1 - (on[0].time - t) / LANE_ENTER
 			return k < on[0].heads.length
 		}
@@ -1014,11 +1017,14 @@ export class NotationStage {
 		const o0 = on[idx], o1 = on[idx + 1]
 		const A = this._land(o0, k, this._v[6]), B = this._land(o1, k, this._v[7])
 		const dt = o1.time - o0.time
+		lane._park = false
 		// long silence in this voice (e.g. a track whose notes moved to the other staff):
 		// park on the last note, fade out, and fade back in on the next note instead of
 		// hovering for the whole gap
 		if (dt > LANE_GAP) {
 			const since = t - o0.time, until = o1.time - t
+			lane._park = true
+			// re-entry: the light simply appears on its next note (no flight from elsewhere)
 			if (until < LANE_ENTER) {
 				out.copy(B)
 				lane._fade = 1 - until / LANE_ENTER
@@ -1066,8 +1072,11 @@ export class NotationStage {
 			lane.vis = vis && laneFade > 0.01
 			lane.pos.copy(P)
 			// velocity for motion stretch
+			const parked = lane._park
 			this._laneAt(lane, t - 1 / 120, Q)
-			V.subVectors(P, Q).multiplyScalar(120)
+			// no velocity across a park/fade (a light reappearing on its next note is not a jump)
+			if (parked || lane._park) V.set(0, 0, 0)
+			else V.subVectors(P, Q).multiplyScalar(120)
 			const speed = V.length()
 			// glowing head: rest pose = flat notehead; in flight = stretched along velocity
 			const fade = vis ? laneFade : 0
@@ -1101,8 +1110,14 @@ export class NotationStage {
 				const span = clamp(hopDur * 1.05, 0.12, 0.7)
 				const base = li * STREAK_N * 6
 				const p = this._sp || (this._sp = Array.from({ length: STREAK_N }, () => new THREE.Vector3()))
-				p[0].copy(P); p[0]._vis = vis
-				for (let k = 1; k < STREAK_N; k++) p[k]._vis = this._laneAt(lane, t - (k / (STREAK_N - 1)) * span, p[k])
+				p[0].copy(P); p[0]._vis = vis && laneFade > 0.01
+				for (let k = 1; k < STREAK_N; k++) {
+					p[k]._vis = this._laneAt(lane, t - (k / (STREAK_N - 1)) * span, p[k]) && lane._fade > 0.01
+					// the tail stops where the light was hidden: collapse the rest onto the last visible
+					// point so no ribbon quad bridges to a stale or parked position
+					if (!p[k]._vis || !p[k - 1]._vis) { p[k]._vis = false; p[k].copy(p[k - 1]) }
+				}
+				lane._fade = laneFade
 				const moving = vis && p[0].distanceToSquared(p[STREAK_N - 1]) > 0.02
 				for (let k = 0; k < STREAK_N; k++) {
 					const f = 1 - k / (STREAK_N - 1)
@@ -1110,7 +1125,7 @@ export class NotationStage {
 					Y.subVectors(cam, p[k])
 					Z.crossVectors(X, Y)
 					const len = Z.length()
-					const w = moving && p[k]._vis && len > 1e-6 ? (0.012 + 0.2 * Math.pow(f, 1.6)) / len : 0
+					const w = moving && p[k]._vis && len > 1e-6 ? laneFade * (0.012 + 0.2 * Math.pow(f, 1.6)) / len : 0
 					Z.multiplyScalar(w)
 					const o = base + k * 6
 					pos[o] = p[k].x + Z.x; pos[o + 1] = p[k].y + Z.y; pos[o + 2] = p[k].z + Z.z
@@ -1419,7 +1434,7 @@ export class NotationStage {
  * @param {{byTrack?: boolean}} [opts]
  */
 // lanes vanish during silences longer than LANE_GAP: linger LANE_HOLD, fade over
-// LANE_FADE, then fade back in over the LANE_ENTER seconds before the next note
+// LANE_FADE, then reappear on the next note itself, fading in over the LANE_ENTER s before it
 const LANE_GAP = 2.5, LANE_HOLD = 0.35, LANE_FADE = 0.5, LANE_ENTER = 0.4
 
 export function buildOnsets(hits, heads, staffCount, { byTrack = false } = {}) {
