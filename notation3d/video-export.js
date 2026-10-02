@@ -145,7 +145,7 @@ class OfflineSynth {
  * Intro title card, drawn with Canvas2D over a dimmed still of the opening shot.
  * k = progress through the card (0..1); secs = card length.
  */
-function drawTitleCard(g, w, h, k, secs, { title, subtitle, credit }) {
+export function drawTitleCard(g, w, h, k, secs, { title, subtitle, credit }) {
 	const t = k * secs
 	const fadeIn = clamp01((t - 0.15) / 0.8)                 // text in
 	const fadeOut = clamp01((secs - t) / 0.7)                // whole card out (scene revealed)
@@ -201,6 +201,89 @@ const clamp01 = x => Math.max(0, Math.min(1, x))
 const easeOut = x => 1 - (1 - x) * (1 - x)
 
 /**
+ * Outro / credits card: the scene keeps drifting while it dims, title and
+ * credit lines stagger in, then everything fades to black.
+ * credits: [{role, name}] — role may be '' for a plain line.
+ */
+export function drawOutroCard(g, w, h, k, secs, { title, subtitle, credits = [] }) {
+	const t = k * secs
+	const dim = clamp01(t / 1.2)                              // scene dims in
+	const black = clamp01((t - (secs - 1.1)) / 1.0)           // final fade to black
+	g.fillStyle = `rgba(0,0,0,${0.7 * dim + 0.3 * black})`
+	g.fillRect(0, 0, w, h)
+	const vg = g.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.2, w / 2, h / 2, Math.max(w, h) * 0.75)
+	vg.addColorStop(0, 'rgba(0,0,0,0)')
+	vg.addColorStop(1, `rgba(0,0,0,${0.6 * dim})`)
+	g.fillStyle = vg
+	g.fillRect(0, 0, w, h)
+	const S = Math.min(w, h)
+	const lines = credits.filter(c => c && (c.role || c.name))
+	const lineH = S * 0.05
+	const blockH = S * 0.12 + (subtitle ? S * 0.06 : 0) + S * 0.05 + lines.length * lineH
+	let y = h / 2 - blockH / 2 + S * 0.06
+	const appear = (delay) => clamp01((t - delay) / 0.7) * (1 - black)
+	g.save()
+	g.textAlign = 'center'
+	g.textBaseline = 'alphabetic'
+	// title
+	let a = appear(0.5)
+	if (a > 0) {
+		let fs = S * 0.075
+		const font = px => `600 ${px}px Georgia, 'Times New Roman', serif`
+		g.font = font(fs)
+		const tw = g.measureText(title).width, maxW = w * 0.86
+		if (tw > maxW) { fs *= maxW / tw; g.font = font(fs) }
+		g.globalAlpha = a
+		g.shadowColor = 'rgba(255, 190, 110, 0.8)'
+		g.shadowBlur = S * 0.03
+		g.fillStyle = '#ffe9c9'
+		g.fillText(title, w / 2, y + (1 - easeOut(a)) * S * 0.015)
+		g.shadowBlur = 0
+	}
+	y += S * 0.06
+	if (subtitle) {
+		a = appear(0.8)
+		g.globalAlpha = a
+		g.font = `italic ${S * 0.036}px Georgia, 'Times New Roman', serif`
+		g.fillStyle = 'rgba(235, 220, 195, 0.9)'
+		g.fillText(subtitle, w / 2, y)
+		y += S * 0.06
+	}
+	// rule
+	a = appear(1.0)
+	const ruleW = S * 0.3 * easeOut(a)
+	const lg = g.createLinearGradient(w / 2 - ruleW / 2, 0, w / 2 + ruleW / 2, 0)
+	lg.addColorStop(0, 'rgba(255,200,130,0)'); lg.addColorStop(0.5, 'rgba(255,200,130,0.85)'); lg.addColorStop(1, 'rgba(255,200,130,0)')
+	g.globalAlpha = a
+	g.fillStyle = lg
+	g.fillRect(w / 2 - ruleW / 2, y - S * 0.01, ruleW, Math.max(1, S * 0.0022))
+	y += S * 0.05
+	// credit lines: "role  name" — role right-aligned, name left-aligned around the centre
+	lines.forEach((c, i) => {
+		a = appear(1.3 + i * 0.25)
+		if (a <= 0) return
+		g.globalAlpha = a
+		const yy = y + i * lineH + (1 - easeOut(a)) * S * 0.01
+		if (c.role && c.name) {
+			g.font = `${S * 0.024}px system-ui, sans-serif`
+			g.fillStyle = 'rgba(210, 190, 160, 0.7)'
+			g.textAlign = 'right'
+			g.fillText(c.role.toUpperCase(), w / 2 - S * 0.02, yy)
+			g.font = `${S * 0.032}px Georgia, 'Times New Roman', serif`
+			g.fillStyle = 'rgba(245, 232, 210, 0.95)'
+			g.textAlign = 'left'
+			g.fillText(c.name, w / 2 + S * 0.02, yy)
+			g.textAlign = 'center'
+		} else {
+			g.font = `${S * 0.03}px Georgia, 'Times New Roman', serif`
+			g.fillStyle = 'rgba(240, 225, 200, 0.9)'
+			g.fillText(c.role || c.name, w / 2, yy)
+		}
+	})
+	g.restore()
+}
+
+/**
  * @param {object} o
  * @param {NotationStage} o.stage
  * @param {{schedule, programs, duration, title}} o.song
@@ -208,6 +291,7 @@ const easeOut = x => 1 - (1 - x) * (1 - x)
  * @param {{views:string[], segment:number, random?:boolean}|null} o.tour - rotate camera views during the export
  * @param {'glide'|'crossfade'|'cut'} [o.transition] - view-change style during the export
  * @param {{seconds:number, title:string, subtitle?:string, credit?:string}|null} [o.intro] - title card
+ * @param {{seconds:number, title:string, subtitle?:string, credits:{role,name}[]}|null} [o.outro] - credits card
  * @param {boolean} o.audio
  * @param {object} o.audioOpts - { vendorPath, soundfonts, convertSF3, volume }
  * @param {FileSystemWritableFileStream|null} o.fileStream - stream to write to (else buffered)
@@ -224,7 +308,8 @@ export async function exportVideo(o) {
 	const t1 = Math.min(song.duration + tail, o.end + (o.end >= song.duration ? tail : 0))
 	const musicFrames = Math.max(1, Math.round((t1 - t0) * fps))
 	const introFrames = o.intro?.seconds > 0 ? Math.round(o.intro.seconds * fps) : 0
-	const frames = introFrames + musicFrames
+	const outroFrames = o.outro?.seconds > 0 ? Math.round(o.outro.seconds * fps) : 0
+	const frames = introFrames + musicFrames + outroFrames
 	const introSamples = Math.round(introFrames * SAMPLE_RATE / fps)
 
 	const vc = await pickVideoCodec(width, height, fps, bitrate)
@@ -258,7 +343,7 @@ export async function exportVideo(o) {
 	if (o.transition) stage.opts.transition = o.transition
 	// 2D canvas for compositing the title card over the WebGL frame
 	let card = null
-	if (introFrames) {
+	if (introFrames || outroFrames) {
 		card = document.createElement('canvas')
 		card.width = width; card.height = height
 		card.g = card.getContext('2d')
@@ -271,13 +356,17 @@ export async function exportVideo(o) {
 			if (signal?.aborted) throw new DOMException('Export cancelled', 'AbortError')
 			if (encError) throw encError
 			const inIntro = i < introFrames
+			const outroI = i - introFrames - musicFrames
+			const inOutro = outroI >= 0
+			// music time: frozen during the intro; keeps running in the outro so the camera drifts on
 			const t = inIntro ? t0 : t0 + (i - introFrames) / fps
-			stage.update(t, 1 / fps, !inIntro, t)
+			stage.update(t, 1 / fps, !inIntro && !inOutro, t)
 			let src = stage.renderer.domElement
-			if (inIntro) {
+			if (inIntro || inOutro) {
 				const g = card.g
 				g.drawImage(src, 0, 0, width, height)
-				drawTitleCard(g, width, height, (i + 0.5) / introFrames, o.intro.seconds, o.intro)
+				if (inIntro) drawTitleCard(g, width, height, (i + 0.5) / introFrames, o.intro.seconds, o.intro)
+				else drawOutroCard(g, width, height, (outroI + 0.5) / outroFrames, o.outro.seconds, o.outro)
 				src = card
 			}
 			const frame = new VideoFrame(src, { timestamp: Math.round(i * 1e6 / fps), duration: Math.round(1e6 / fps) })
