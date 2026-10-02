@@ -149,6 +149,8 @@ function grandStaff(name, notes, channel, program) {
 
 function assignStaves(midi, mode = 'auto') {
 	const tracks = midi.tracks.filter(t => t.notes.length && t.channel !== 9)
+	// Tag notes with their source track so a piano reduction can keep per-track colours
+	tracks.forEach((t, ti) => { for (const n of t.notes) n._trk = ti })
 	if (!tracks.length) return []
 
 	if (mode !== 'piano') {
@@ -209,7 +211,7 @@ function buildStaffTokens(st, ctx) {
 	const q = st.notes.map(n => {
 		const s = Math.round(n.ticks / grid) * grid
 		const e = Math.max(s + grid, Math.round((n.ticks + n.durationTicks) / grid) * grid)
-		return { midi: n.midi, start: s, end: e, src: n }
+		return { midi: n.midi, start: s, end: e, src: n, trk: n._trk ?? 0 }
 	}).sort((a, b) => a.start - b.start || a.midi - b.midi)
 
 	const groups = []
@@ -253,6 +255,7 @@ function buildStaffTokens(st, ctx) {
 			position: abs - clefOffset, accidental, tie, tieEnd,
 			slur: 0, beam: 0, stem: 0, staccato: 0, accent: 0, grace: 0, tenuto: 0,
 			_midi: n.midi,
+			_track: n.trk,
 		}
 	}
 
@@ -340,6 +343,7 @@ export function midiToScore(midi, title = 'MIDI', { staffMode = 'auto' } = {}) {
 
 	return {
 		ppq,
+		trackCount: midi.tracks.filter(t => t.notes.length && t.channel !== 9).length,
 		staffMeta: plan.map(p => ({ channel: p.channel, program: p.program, clef: p.clef })),
 		data: {
 			header: { version: 0, company: '[MIDI Import]', product: '[MidiViz]' },

@@ -145,12 +145,13 @@ class OfflineSynth {
  * Intro title card, drawn with Canvas2D over a dimmed still of the opening shot.
  * k = progress through the card (0..1); secs = card length.
  */
-export function drawTitleCard(g, w, h, k, secs, { title, subtitle, credit }) {
+export function drawTitleCard(g, w, h, k, secs, { title, subtitle, credit, style }) {
 	const t = k * secs
 	const fadeIn = clamp01((t - 0.15) / 0.8)                 // text in
 	const fadeOut = clamp01((secs - t) / 0.7)                // whole card out (scene revealed)
 	const black = clamp01(1 - t / 0.45)                      // start from black
 	const a = Math.min(fadeIn, fadeOut)
+	if (style === '3d') return drawTitleOverlay3D(g, w, h, t, secs, { subtitle, credit, black })
 	// dim + vignette the scene behind the card
 	g.fillStyle = `rgba(0,0,0,${Math.max(black, 0.62 * fadeOut)})`
 	g.fillRect(0, 0, w, h)
@@ -199,6 +200,37 @@ export function drawTitleCard(g, w, h, k, secs, { title, subtitle, credit }) {
 }
 const clamp01 = x => Math.max(0, Math.min(1, x))
 const easeOut = x => 1 - (1 - x) * (1 - x)
+
+/** 2D layer for the 3D-title intro: fade from black, letterbox vignette, subtitle in the lower third. */
+function drawTitleOverlay3D(g, w, h, t, secs, { subtitle, credit, black }) {
+	const S = Math.min(w, h)
+	const out = clamp01((secs - t) / 1.2)
+	g.fillStyle = `rgba(0,0,0,${black})`
+	g.fillRect(0, 0, w, h)
+	const vg = g.createRadialGradient(w / 2, h / 2, S * 0.3, w / 2, h / 2, Math.max(w, h) * 0.75)
+	vg.addColorStop(0, 'rgba(0,0,0,0)')
+	vg.addColorStop(1, `rgba(0,0,0,${0.5 * out})`)
+	g.fillStyle = vg
+	g.fillRect(0, 0, w, h)
+	const a = Math.min(clamp01((t - 0.9) / 0.8), clamp01((secs * 0.62 - t) / 0.6))
+	if (a <= 0) return
+	g.save()
+	g.globalAlpha = a
+	g.textAlign = 'center'
+	if (subtitle) {
+		g.font = `italic ${S * 0.042}px Georgia, 'Times New Roman', serif`
+		g.shadowColor = 'rgba(0,0,0,0.8)'; g.shadowBlur = S * 0.02
+		g.fillStyle = 'rgba(240, 226, 200, 0.92)'
+		g.fillText(subtitle, w / 2, h * 0.8)
+		g.shadowBlur = 0
+	}
+	if (credit) {
+		g.font = `${S * 0.022}px system-ui, sans-serif`
+		g.fillStyle = 'rgba(210, 190, 160, 0.55)'
+		g.fillText(credit, w / 2, h - S * 0.07)
+	}
+	g.restore()
+}
 
 /**
  * Outro / credits card: the scene keeps drifting while it dims, title and
@@ -291,7 +323,8 @@ export function drawOutroCard(g, w, h, k, secs, { title, subtitle, credits = [] 
  * @param {{views:string[], segment:number, random?:boolean}|null} o.tour - rotate camera views during the export
  * @param {'glide'|'crossfade'|'cut'} [o.transition] - view-change style during the export
  * @param {{seconds:number, title:string, subtitle?:string, credit?:string}|null} [o.intro] - title card
- * @param {{seconds:number, title:string, subtitle?:string, credits:{role,name}[]}|null} [o.outro] - credits card
+ * @param {{seconds:number, title:string, subtitle?:string, credits:{role,name}[], music?:'ring'|'fade'}|null} [o.outro]
+ *        - credits card; music 'ring' = after the end, 'fade' = overlaps the ending while the music fades out
  * @param {boolean} o.audio
  * @param {object} o.audioOpts - { vendorPath, soundfonts, convertSF3, volume }
  * @param {FileSystemWritableFileStream|null} o.fileStream - stream to write to (else buffered)
@@ -308,8 +341,13 @@ export async function exportVideo(o) {
 	const t1 = Math.min(song.duration + tail, o.end + (o.end >= song.duration ? tail : 0))
 	const musicFrames = Math.max(1, Math.round((t1 - t0) * fps))
 	const introFrames = o.intro?.seconds > 0 ? Math.round(o.intro.seconds * fps) : 0
-	const outroFrames = o.outro?.seconds > 0 ? Math.round(o.outro.seconds * fps) : 0
-	const frames = introFrames + musicFrames + outroFrames
+	const outroFade = o.outro?.music === 'fade'
+	const outroFrames = o.outro?.seconds > 0 ? Math.min(Math.round(o.outro.seconds * fps), outroFade ? musicFrames : Infinity) : 0
+	const frames = introFrames + musicFrames + (outroFade ? 0 : outroFrames)
+	// 'fade': credits start outroFrames before the end and the music fades out under them
+	const outroStart = introFrames + musicFrames - (outroFade ? outroFrames : 0)
+	const fadeA = Math.round(outroStart * SAMPLE_RATE / fps), fadeB = Math.round((outroStart + outroFrames) * SAMPLE_RATE / fps)
+	const intro3D = o.intro?.style === '3d' && stage.titleMesh
 	const introSamples = Math.round(introFrames * SAMPLE_RATE / fps)
 
 	const vc = await pickVideoCodec(width, height, fps, bitrate)
@@ -348,6 +386,8 @@ export async function exportVideo(o) {
 		card.width = width; card.height = height
 		card.g = card.getContext('2d')
 	}
+	const prevTitle = stage.titleText
+	if (intro3D && o.intro.title && o.intro.title !== prevTitle) await stage.setTitle(o.intro.title)
 	stage.beginOffline(width, height)
 	let musicFrame = Math.round(t0 * SAMPLE_RATE) // synth timeline; may be negative (pre-roll silence)
 	let audioTs = 0                                // samples encoded so far (output timeline)
@@ -356,16 +396,18 @@ export async function exportVideo(o) {
 			if (signal?.aborted) throw new DOMException('Export cancelled', 'AbortError')
 			if (encError) throw encError
 			const inIntro = i < introFrames
-			const outroI = i - introFrames - musicFrames
+			const outroI = outroFrames ? i - outroStart : -1
 			const inOutro = outroI >= 0
 			// music time: frozen during the intro; keeps running in the outro so the camera drifts on
 			const t = inIntro ? t0 : t0 + (i - introFrames) / fps
-			stage.update(t, 1 / fps, !inIntro && !inOutro, t)
+			const introK = inIntro ? (i + 0.5) / introFrames : null
+			if (intro3D) stage.setIntroShot(introK)
+			stage.update(t, 1 / fps, !inIntro && !(inOutro && !outroFade), t)
 			let src = stage.renderer.domElement
 			if (inIntro || inOutro) {
 				const g = card.g
 				g.drawImage(src, 0, 0, width, height)
-				if (inIntro) drawTitleCard(g, width, height, (i + 0.5) / introFrames, o.intro.seconds, o.intro)
+				if (inIntro) drawTitleCard(g, width, height, introK, o.intro.seconds, { ...o.intro, style: intro3D ? '3d' : '2d' })
 				else drawOutroCard(g, width, height, (outroI + 0.5) / outroFrames, o.outro.seconds, o.outro)
 				src = card
 			}
@@ -393,6 +435,14 @@ export async function exportVideo(o) {
 							data.set(rest.subarray(n - pad), n + pad)
 						} else data = synth.renderTo(chunkEnd)
 						musicFrame = chunkEnd
+						// fade the music out under the credits (equal-power cosine)
+						if (outroFade && audioTs + n > fadeA) {
+							for (let j = 0; j < n; j++) {
+								const x = clamp01((audioTs + j - fadeA) / Math.max(1, fadeB - fadeA))
+								const gn = Math.cos(x * Math.PI / 2)
+								data[j] *= gn; data[n + j] *= gn
+							}
+						}
 					}
 					const ad = new AudioData({ format: 'f32-planar', sampleRate: SAMPLE_RATE, numberOfFrames: n, numberOfChannels: 2, timestamp: Math.round(audioTs * 1e6 / SAMPLE_RATE), data })
 					aenc.encode(ad)
@@ -423,6 +473,8 @@ export async function exportVideo(o) {
 		throw e
 	} finally {
 		synth?.dispose()
+		if (intro3D) stage.setIntroShot(null)
+		if (intro3D && stage.titleText !== prevTitle) stage.setTitle(prevTitle)
 		if (o.tour) stage.setTour(prevTour)
 		stage.opts.transition = prevTransition
 		stage.endOffline()

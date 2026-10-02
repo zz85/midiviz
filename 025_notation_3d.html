@@ -323,6 +323,13 @@
         <option value="cut">Cut</option>
       </select>
     </label>
+    <label>Colours:
+      <select id="colorModeSelect" class="mini-select" title="Colour notes by staff or by source MIDI track (keeps track colours in a piano reduction)">
+        <option value="auto">Auto</option>
+        <option value="track">By track</option>
+        <option value="staff">By staff</option>
+      </select>
+    </label>
     <label>Paper:
       <select id="paperFinishSelect" class="mini-select" data-opt="paperFinish" title="Surface finish of the paper / table">
         <option value="matte">Matte</option>
@@ -370,10 +377,20 @@
       </select></div>
     <div class="row"><label for="exIntro">Intro card</label>
       <select id="exIntro" class="mini-select"><option value="0">None</option><option value="3">3 s</option><option value="5" selected>5 s</option><option value="8">8 s</option></select></div>
+    <div class="row" id="exIntroStyleRow"><label for="exIntroStyle">Intro style</label>
+      <select id="exIntroStyle" class="mini-select">
+        <option value="3d" selected>3D title (camera flies over the extruded title)</option>
+        <option value="2d">2D glowing text card</option>
+      </select></div>
     <div class="row" id="exTitleRow"><label for="exTitle">Title</label><input type="text" id="exTitle" class="mini-input"></div>
     <div class="row" id="exSubRow"><label for="exSubtitle">Subtitle</label><input type="text" id="exSubtitle" class="mini-input" placeholder="Composer, arranger… (optional)"></div>
     <div class="row"><label for="exOutro">Outro credits</label>
       <select id="exOutro" class="mini-select"><option value="0">None</option><option value="5">5 s</option><option value="7" selected>7 s</option><option value="10">10 s</option></select></div>
+    <div class="row" id="exOutroMusicRow"><label for="exOutroMusic">Music under credits</label>
+      <select id="exOutroMusic" class="mini-select">
+        <option value="fade" selected>Fade out (credits overlap the ending)</option>
+        <option value="ring">Let it ring (credits after the end)</option>
+      </select></div>
     <div class="row" id="exCreditsRow"><label for="exCredits">Credits</label>
       <textarea id="exCredits" class="mini-input" rows="4" spellcheck="false" placeholder="Role: Name (one per line)"></textarea></div>
     <div class="row" id="exPreviewRow"><label>Preview</label>
@@ -416,11 +433,11 @@
 
   <script type="module">
     import { SoundFontEngine, MidiScheduler } from './soundfont-engine/src/index.js'
-    import { loadNotationEngine, engrave, decodeNotationFile } from './notation3d/nwc-bridge.js?v=13'
-    import { midiToScore, midiToSchedule } from './notation3d/midi-score.js?v=13'
-    import { patchOpentype, recordElements, buildScoreMeshes } from './notation3d/vector-recorder.js?v=13'
-    import { NotationStage, buildOnsets } from './notation3d/stage.js?v=13'
-    import { exportVideo, exportSupported, defaultBitrate, drawTitleCard, drawOutroCard } from './notation3d/video-export.js?v=13'
+    import { loadNotationEngine, engrave, decodeNotationFile } from './notation3d/nwc-bridge.js?v=14'
+    import { midiToScore, midiToSchedule } from './notation3d/midi-score.js?v=14'
+    import { patchOpentype, recordElements, buildScoreMeshes } from './notation3d/vector-recorder.js?v=14'
+    import { NotationStage, buildOnsets } from './notation3d/stage.js?v=14'
+    import { exportVideo, exportSupported, defaultBitrate, drawTitleCard, drawOutroCard } from './notation3d/video-export.js?v=14'
 
     const $ = id => document.getElementById(id)
     const statusEl = $('status')
@@ -503,7 +520,9 @@
       const records = recordElements(elements, measureCtx)
       const built = buildScoreMeshes(records, { fontSize, materials: stage.materials })
       const t2 = performance.now()
-      const perStaff = buildOnsets(hitsFn(staves), built.heads, staves.length)
+      const mode = $('colorModeSelect').value
+      const byTrack = (data._trackCount ?? 0) >= 2 && (mode === 'track' || mode === 'auto')
+      const perStaff = buildOnsets(hitsFn(staves), built.heads, staves.length, { byTrack })
       stage.setScore(built, perStaff)
       stage.setTitle?.(title)
       console.log(`engrave ${(t1 - t0).toFixed(0)}ms, 3D ${(t2 - t1).toFixed(0)}ms, ${elements.length} elements, ${built.heads.size} noteheads`)
@@ -522,7 +541,8 @@
         const isMidi = new Uint8Array(buffer, 0, 4).every((b, i) => b === [0x4d, 0x54, 0x68, 0x64][i])
         if (isMidi) {
           const midi = new Midi(buffer)
-          const { data, staffMeta } = midiToScore(midi, label || filename, { staffMode: $('staffModeSelect').value })
+          const { data, staffMeta, trackCount } = midiToScore(midi, label || filename, { staffMode: $('staffModeSelect').value })
+          data._trackCount = trackCount
           const { notes, controlChanges, programs } = midiToSchedule(midi)
           buildStage(data, staves => {
             const hits = []
@@ -760,6 +780,7 @@
     stage.onViewChange = v => { $('viewSelect').value = v }
     $('themeSelect').onchange = e => stage.setTheme(e.target.value)
     let pendingReload = false
+    $('colorModeSelect').onchange = () => $('staffModeSelect').onchange()
     $('staffModeSelect').onchange = () => {
       if (applyingHash) { pendingReload = true; return } // loadFromHash reloads once at the end
       if (currentSongValue) selectSong(currentSongValue, $('songTitle').textContent, true)
@@ -832,7 +853,7 @@
     // ── URL hash: #song.mid|view=bounce&theme=marble&lit=stay… (only non-default options) ──
     const HASH_SELECTS = {
       view: 'viewSelect', theme: 'themeSelect', staves: 'staffModeSelect', engine: 'synthEngineSelect', sound: 'synthSelect',
-      tour: 'tourSelect', order: 'tourOrderSelect', trans: 'transitionSelect', arc: 'arcModeSelect', rest: 'restModeSelect', lit: 'litModeSelect', fade: 'litFadeRange', head: 'headFinishSelect', paper: 'paperFinishSelect',
+      colors: 'colorModeSelect', tour: 'tourSelect', order: 'tourOrderSelect', trans: 'transitionSelect', arc: 'arcModeSelect', rest: 'restModeSelect', lit: 'litModeSelect', fade: 'litFadeRange', head: 'headFinishSelect', paper: 'paperFinishSelect',
     }
     const HASH_TOGGLES = ['bloom', 'dof', 'trail', 'fx', 'shadows']
     const toggleBtn = opt => document.querySelector(`.toggle-btn[data-opt="${opt}"]`)
@@ -953,7 +974,8 @@
     function exSummary() {
       if (!song) return
       const [w, h] = exSize(), fps = +$('exFps').value, [a, b] = exRange()
-      const secs = b - a + 3 + +$('exIntro').value + +$('exOutro').value, mb = defaultBitrate(w, h, fps) * +$('exQuality').value * secs / 8 / 1e6
+      const outroExtra = $('exOutroMusic').value === 'fade' ? 0 : +$('exOutro').value
+      const secs = b - a + 3 + +$('exIntro').value + outroExtra, mb = defaultBitrate(w, h, fps) * +$('exQuality').value * secs / 8 / 1e6
       $('exStatus').textContent = `${w}×${h} @ ${fps}fps · ${fmt(secs)} · ~${mb < 1000 ? Math.round(mb) + ' MB' : (mb / 1000).toFixed(1) + ' GB'}`
     }
     for (const id of ['exResolution', 'exAspect', 'exFps', 'exRange', 'exQuality']) $(id).addEventListener('change', exSummary)
@@ -962,12 +984,14 @@
       $('exTourRow').hidden = cam === 'current'
       $('exOrderRow').hidden = cam === 'current' || cam === 'orbit'
       $('exTitleRow').hidden = $('exSubRow').hidden = !intro && !outro
-      $('exCreditsRow').hidden = !outro
+      $('exCreditsRow').hidden = $('exOutroMusicRow').hidden = !outro
+      $('exIntroStyleRow').hidden = !intro
       $('exPreviewRow').hidden = !intro && !outro
       $('exPrevIntro').hidden = !intro
       $('exPrevOutro').hidden = !outro
     }
     $('exOutro').addEventListener('change', () => { exRows(); exSummary() })
+    $('exOutroMusic').addEventListener('change', exSummary)
 
     // ── Card specs (shared by export and live preview) ──
     function soundName() {
@@ -993,11 +1017,11 @@
     const cardTitle = () => $('exTitle').value.trim() || song?.title || 'Untitled'
     function introSpec() {
       const secs = +$('exIntro').value
-      return secs > 0 ? { seconds: secs, title: cardTitle(), subtitle: $('exSubtitle').value.trim(), credit: '♪ MidiViz · 3D notation' } : null
+      return secs > 0 ? { seconds: secs, title: cardTitle(), subtitle: $('exSubtitle').value.trim(), credit: '♪ MidiViz · 3D notation', style: $('exIntroStyle').value } : null
     }
     function outroSpec() {
       const secs = +$('exOutro').value
-      return secs > 0 ? { seconds: secs, title: cardTitle(), subtitle: $('exSubtitle').value.trim(), credits: parseCredits($('exCredits').value) } : null
+      return secs > 0 ? { seconds: secs, title: cardTitle(), subtitle: $('exSubtitle').value.trim(), credits: parseCredits($('exCredits').value), music: $('exOutroMusic').value } : null
     }
 
     // ── Live card preview: overlay canvas on the live scene, plays once (click / Esc to stop) ──
@@ -1008,13 +1032,18 @@
       preview.canvas.remove(); preview.hint.remove()
       document.removeEventListener('keydown', preview.onKey, true)
       if (preview.wasPlaying) pause()
+      stage.setIntroShot(null)
+      if (preview.prevTitle != null && stage.titleText !== preview.prevTitle) stage.setTitle(preview.prevTitle)
       if (preview.at != null) seek(preview.at)
       preview = null
       if (reopen) { exRows(); exDlg.showModal() }
     }
-    function startPreview(kind) {
+    async function startPreview(kind) {
       const spec = kind === 'intro' ? introSpec() : outroSpec()
       if (!spec || !song) return
+      const use3D = kind === 'intro' && spec.style === '3d'
+      const prevTitle = stage.titleText
+      if (use3D && spec.title !== prevTitle) await stage.setTitle(spec.title)
       exDlg.close()
       const vizEl = $('viz')
       const canvas = document.createElement('canvas')
@@ -1029,20 +1058,22 @@
       document.addEventListener('keydown', onKey, true)
       canvas.onclick = () => stopPreview()
       const at = clock.time
-      preview = { canvas, hint, onKey, at, wasPlaying: false, raf: 0 }
-      // outro: let the scene drift from near the end like the export does; intro: hold the opening shot
-      if (kind === 'outro') { seek(Math.max(0, song.duration - 0.5)) }
+      preview = { canvas, hint, onKey, at, wasPlaying: false, raf: 0, prevTitle: use3D ? prevTitle : null }
+      // outro: drift through the ending like the export does ('fade' overlaps the last seconds); intro: hold the opening shot
+      const outroFrom = spec.music === 'fade' ? Math.max(0, song.duration - spec.seconds + 2) : song.duration - 0.5
+      if (kind === 'outro') seek(outroFrom)
       else seek(Math.max(0, exRange()[0] - 1))
       const t0 = performance.now()
       const step = now => {
         const k = (now - t0) / 1000 / spec.seconds
         if (k >= 1) { stopPreview(); return }
-        if (kind === 'outro') clock.time = song.duration - 0.5 + (now - t0) / 1000 // camera keeps moving
+        if (kind === 'outro') clock.time = outroFrom + (now - t0) / 1000 // camera keeps moving
+        if (use3D) stage.setIntroShot(k)
         const dpr = Math.min(window.devicePixelRatio || 1, 2)
         const w = Math.round(vizEl.clientWidth * dpr), h = Math.round(vizEl.clientHeight * dpr)
         if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h }
         g.clearRect(0, 0, w, h)
-        if (kind === 'intro') drawTitleCard(g, w, h, k, spec.seconds, spec)
+        if (kind === 'intro') drawTitleCard(g, w, h, k, spec.seconds, { ...spec, style: use3D && stage.titleMesh ? '3d' : '2d' })
         else drawOutroCard(g, w, h, k, spec.seconds, spec)
         preview.raf = requestAnimationFrame(step)
       }

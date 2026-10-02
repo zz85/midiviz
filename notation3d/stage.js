@@ -599,6 +599,7 @@ export class NotationStage {
 	/** 3D extruded song title lying on the table above the first system. */
 	async setTitle(text) {
 		const seq = (this._titleSeq = (this._titleSeq || 0) + 1)
+		this.titleText = text || ''
 		if (this.titleMesh) { this.titleMesh.removeFromParent(); this.titleMesh.geometry.dispose(); this.titleMesh = null }
 		if (!text || !this.score) return
 		try {
@@ -613,10 +614,35 @@ export class NotationStage {
 			const s = this.score
 			mesh.position.set(s.minX + 2, s.centerY + s.height / 2 + 5, 0)
 			mesh.castShadow = true
+			geo.computeBoundingBox()
 			this.titleMesh = mesh
 			this._styleTitle()
 			s.root.add(mesh)
 		} catch (e) { console.warn('title font failed', e) }
+	}
+
+	/**
+	 * 3D title intro shot. k = 0..1 through the intro; null clears it.
+	 * The camera starts low and close on the extruded title, dollies across it,
+	 * then (last ~40%) eases into the normal view at the opening of the music.
+	 */
+	setIntroShot(k) {
+		this._introShot = k == null || !this.titleMesh ? null : clamp(k, 0, 1)
+		if (this.titleMesh) this.titleMesh.material.emissiveIntensity = this.theme.titleGlow * (this._introShot == null ? 1 : 0.45)
+		if (k == null) this._snapCamera = true
+	}
+
+	_introPose(k, out) {
+		const m = this.titleMesh
+		const bb = m.geometry.boundingBox
+		const w = Math.max(6, bb.max.x - bb.min.x), h = bb.max.y - bb.min.y
+		const cx = m.position.x + (bb.min.x + bb.max.x) / 2, cy = m.position.y + (bb.min.y + bb.max.y) / 2
+		// frame the whole word: distance from the title width and the camera fov
+		const D = (w * 0.62) / Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2) / Math.max(1, this.camera.aspect) + 8
+		const u = 1 - (1 - k) * (1 - k) // ease-out dolly
+		out.target.set(cx + lerp(-w * 0.06, w * 0.06, u), cy, 0.3)
+		out.pos.set(cx + lerp(-w * 0.3, w * 0.12, u), cy - D * lerp(0.92, 0.8, u), D * lerp(0.28, 0.4, u))
+		out.up.set(0, 0, 1)
 	}
 
 	setView(name) {
@@ -802,7 +828,7 @@ export class NotationStage {
 		perStaff.forEach((onsets, si) => {
 			for (const o of onsets) {
 				o.heads.sort((p, q) => p.y - q.y || p.x - q.x)
-				for (const h of o.heads) if (!headState.has(h)) headState.set(h, { h, time: o.time, staff: si, glowStart: -1 })
+				for (const h of o.heads) if (!headState.has(h)) headState.set(h, { h, time: o.time, staff: si, color: onsets.color ?? si, glowStart: -1 })
 			}
 		})
 
@@ -829,7 +855,7 @@ export class NotationStage {
 		perStaff.forEach((onsets, si) => {
 			if (!onsets.length) return
 			const L = Math.min(MAX_LANES_PER_STAFF, onsets.reduce((m, o) => Math.max(m, o.heads.length), 1))
-			for (let k = 0; k < L; k++) this.lanes.push({ staff: si, k, onsets, color: new THREE.Color(), pos: new THREE.Vector3(), vis: false, idx: -1 })
+			for (let k = 0; k < L; k++) this.lanes.push({ staff: si, colorIdx: onsets.color ?? si, k, onsets, color: new THREE.Color(), pos: new THREE.Vector3(), vis: false, idx: -1 })
 		})
 		this._recolorLanes()
 
@@ -868,7 +894,7 @@ export class NotationStage {
 
 	_recolorLanes() {
 		const pal = this.palette
-		for (const l of this.lanes) l.color.set(pal[l.staff % pal.length])
+		for (const l of this.lanes) l.color.set(pal[l.colorIdx % pal.length])
 		if (this.heads) {
 			const c = this._tmpC
 			this.lanes.forEach((l, i) => this.heads.setColorAt(i, c.copy(l.color).lerp(new THREE.Color(1, 1, 1), 0.25).multiplyScalar(2.6)))
@@ -908,7 +934,7 @@ export class NotationStage {
 		c.copy(this.headInk)
 		if (level > 0 || glow > 0) {
 			const pal = this.palette
-			const base = this._tmpC2.set(pal[st.staff % pal.length])
+			const base = this._tmpC2.set(pal[st.color % pal.length])
 			const lit = this._tmpC3 || (this._tmpC3 = new THREE.Color())
 			lit.lerpColors(this.headInk, base, this.theme.playedMix)
 			if (this.theme.playedGlow) lit.multiplyScalar(this.theme.playedGlow)
@@ -936,7 +962,7 @@ export class NotationStage {
 			this.score.active.add(st)
 		}
 		if (!this.opts.fx) return
-		const pal = this.palette, c = this._tmpC2.set(pal[si % pal.length])
+		const pal = this.palette, ci = this.score.perStaff[si]?.color ?? si, c = this._tmpC2.set(pal[ci % pal.length])
 		const hop = this.view.hop
 		for (const h of onset.heads) {
 			const r = this.ripples[this.rippleNext++ % this.ripples.length]
@@ -1091,7 +1117,7 @@ export class NotationStage {
 			M.makeScale(s, s, 1).setPosition(st.h.x, st.h.y, 0.012)
 			this.pools.setMatrixAt(pools, M)
 			const pal = this.palette
-			this.pools.setColorAt(pools, poolC.set(pal[st.staff % pal.length]).multiplyScalar(0.9 * g * gain))
+			this.pools.setColorAt(pools, poolC.set(pal[st.color % pal.length]).multiplyScalar(0.9 * g * gain))
 			pools++
 		}
 		this.pools.count = pools
@@ -1287,6 +1313,16 @@ export class NotationStage {
 		const laneX = vis.length ? vis.reduce((a, l) => a + l.pos.x, 0) / vis.length : this._timelineX(t)
 		const fx = this._lastFx = laneX * 0.35 + this._timelineX(t) * 0.65
 		const { D, viewW } = this._poseFor(v, fx, this._pose, this._mouse)
+		if (this._introShot != null) {
+			// title shot, then blend into the normal pose over the last 40%
+			const ip = this._introP || (this._introP = { pos: new THREE.Vector3(), target: new THREE.Vector3(), up: new THREE.Vector3() })
+			this._introPose(this._introShot, ip)
+			const b = clamp((this._introShot - 0.6) / 0.4, 0, 1), e = b * b * (3 - 2 * b)
+			this._pose.pos.lerpVectors(ip.pos, this._pose.pos, e)
+			this._pose.target.lerpVectors(ip.target, this._pose.target, e)
+			this._pose.up.lerpVectors(ip.up, this._pose.up, e).normalize()
+			this._snapCamera = true // pose is fully scripted
+		}
 		const target = this._camTarget.copy(this._pose.target)
 		const k = this._snapCamera ? 1 : 1 - Math.exp(-dt * (v.orbit ? 4 : 6))
 		this.camera.position.lerp(this._pose.pos, k)
@@ -1336,29 +1372,61 @@ export class NotationStage {
 }
 
 /**
- * Build per-staff onset lists from (time, staffIndex, token) hits.
+ * Build onset groups from (time, staffIndex, token) hits.
+ *
+ * Without byTrack: one group per staff, coloured by staff index.
+ * With byTrack: noteheads carry their source MIDI track (`_track`), and each
+ * staff is split into one group per (staff, track) — every group gets its own
+ * voice lanes and is coloured by track, so a piano reduction keeps the
+ * per-track colours of the multi-staff layout.
+ *
+ * Returns an array of onset lists; each list has `.staff` and `.color`.
  * @param {Array<{time:number, staff:number, token:object}>} hits
  * @param {Map} heads - drawing element → head info (from buildScoreMeshes)
  * @param {number} staffCount
+ * @param {{byTrack?: boolean}} [opts]
  */
-export function buildOnsets(hits, heads, staffCount) {
-	const perStaff = Array.from({ length: staffCount }, () => [])
+export function buildOnsets(hits, heads, staffCount, { byTrack = false } = {}) {
+	const groups = new Map() // key → list
+	const order = []
+	const group = (staff, track) => {
+		const key = byTrack ? staff + ':' + track : String(staff)
+		let g = groups.get(key)
+		if (!g) {
+			g = []
+			g.staff = staff
+			g.color = byTrack ? track : staff
+			groups.set(key, g)
+			order.push(g)
+		}
+		return g
+	}
+	if (!byTrack) for (let si = 0; si < staffCount; si++) group(si, 0) // stable staff order
 	const seen = new Set()
 	hits = [...hits].sort((a, b) => a.time - b.time)
 	for (const { time, staff, token } of hits) {
 		const key = staff + ':' + time.toFixed(4) + ':' + (token._uid ??= Math.random())
 		if (seen.has(key)) continue
 		seen.add(key)
-		const els = token.type === 'Chord' && token.notes
-			? token.notes.map(n => n.drawingNoteHead).filter(Boolean)
-			: [token.drawingNoteHead].filter(Boolean)
-		const hs = els.map(e => heads.get(e)).filter(Boolean)
-		if (!hs.length) continue
-		const list = perStaff[staff]
-		const last = list[list.length - 1]
-		if (last && Math.abs(last.time - time) < 1e-3) { for (const h of hs) if (!last.heads.includes(h)) last.heads.push(h) }
-		else list.push({ time, heads: hs })
+		const parts = token.type === 'Chord' && token.notes
+			? token.notes.map(n => [n.drawingNoteHead, n._track])
+			: [[token.drawingNoteHead, token._track]]
+		const byGroup = new Map()
+		for (const [el, trk] of parts) {
+			const h = el && heads.get(el)
+			if (!h) continue
+			const g = group(staff, trk ?? 0)
+			if (!byGroup.has(g)) byGroup.set(g, [])
+			byGroup.get(g).push(h)
+		}
+		for (const [list, hs] of byGroup) {
+			const last = list[list.length - 1]
+			if (last && Math.abs(last.time - time) < 1e-3) { for (const h of hs) if (!last.heads.includes(h)) last.heads.push(h) }
+			else list.push({ time, heads: hs })
+		}
 	}
-	for (const l of perStaff) l.sort((a, b) => a.time - b.time)
-	return perStaff
+	for (const l of order) l.sort((a, b) => a.time - b.time)
+	// colours by track index; keep groups ordered by staff then colour
+	if (byTrack) order.sort((a, b) => a.staff - b.staff || a.color - b.color)
+	return order
 }
