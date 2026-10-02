@@ -995,11 +995,40 @@ export class NotationStage {
 		const on = lane.onsets, k = lane.k
 		const idx = upperBound(on, t, 'time') - 1
 		lane._i = idx
-		if (idx < 0) return false
-		if (idx >= on.length - 1) { this._land(on[on.length - 1], k, out); return k < on[on.length - 1].heads.length }
+		lane._fade = 1
+		if (idx < 0) {
+			// fade in just before a voice's first note
+			if (!on.length || on[0].time - t > LANE_ENTER) return false
+			this._land(on[0], k, out)
+			lane._fade = 1 - (on[0].time - t) / LANE_ENTER
+			return k < on[0].heads.length
+		}
+		if (idx >= on.length - 1) {
+			// voice has ended: linger on the last note, then fade away
+			const o = on[on.length - 1], held = t - o.time
+			this._land(o, k, out)
+			if (held > LANE_HOLD + LANE_FADE) return false
+			lane._fade = clamp(1 - (held - LANE_HOLD) / LANE_FADE, 0, 1)
+			return k < o.heads.length
+		}
 		const o0 = on[idx], o1 = on[idx + 1]
 		const A = this._land(o0, k, this._v[6]), B = this._land(o1, k, this._v[7])
 		const dt = o1.time - o0.time
+		// long silence in this voice (e.g. a track whose notes moved to the other staff):
+		// park on the last note, fade out, and fade back in on the next note instead of
+		// hovering for the whole gap
+		if (dt > LANE_GAP) {
+			const since = t - o0.time, until = o1.time - t
+			if (until < LANE_ENTER) {
+				out.copy(B)
+				lane._fade = 1 - until / LANE_ENTER
+				return k < o1.heads.length
+			}
+			out.copy(A)
+			if (since > LANE_HOLD + LANE_FADE) return false
+			lane._fade = clamp(1 - (since - LANE_HOLD) / LANE_FADE, 0, 1)
+			return k < o0.heads.length
+		}
 		const u = clamp((t - o0.time) / dt, 0, 1)
 		const dx = Math.hypot(B.x - A.x, B.y - A.y)
 		const h = (this.opts.arcMode === 'classic'
@@ -1033,33 +1062,35 @@ export class NotationStage {
 
 		this.lanes.forEach((lane, li) => {
 			const vis = this._laneAt(lane, t, P)
-			lane.vis = vis
+			const laneFade = lane._fade
+			lane.vis = vis && laneFade > 0.01
 			lane.pos.copy(P)
 			// velocity for motion stretch
 			this._laneAt(lane, t - 1 / 120, Q)
 			V.subVectors(P, Q).multiplyScalar(120)
 			const speed = V.length()
 			// glowing head: rest pose = flat notehead; in flight = stretched along velocity
-			if (!vis) M.makeScale(0, 0, 0)
+			const fade = vis ? laneFade : 0
+			if (!vis || fade <= 0.01) M.makeScale(0, 0, 0)
 			else if (speed < 2) {
-				M.makeRotationZ(0.35).scale(this._v[6].set(1, 1, 1)).setPosition(P)
+				M.makeRotationZ(0.35).scale(this._v[6].set(fade, fade, fade)).setPosition(P)
 			} else {
 				X.copy(V).normalize()
 				Z.set(0, 0, 1)
 				if (hopAxis === 'y' || Math.abs(X.z) > 0.95) Z.set(0, 1, 0).cross(X).normalize()
 				Y.crossVectors(Z, X).normalize(); Z.crossVectors(X, Y)
 				const st = 1 + Math.min(2.2, speed * 0.035)
-				M.makeBasis(X.multiplyScalar(st), Y.multiplyScalar(1 / Math.sqrt(st)), Z).setPosition(P)
+				M.makeBasis(X.multiplyScalar(st * fade), Y.multiplyScalar(fade / Math.sqrt(st)), Z.multiplyScalar(fade)).setPosition(P)
 			}
 			this.heads.setMatrixAt(li, M)
 
 			// light pool under the head
-			if (vis && pools < MAX_POOLS) {
+			if (vis && fade > 0.01 && pools < MAX_POOLS) {
 				const lift = hopAxis === 'y' ? 0.6 : Math.max(0, P.z - 0.2)
 				const s = 3.4 + lift * 0.9
 				M.makeScale(s, s, 1).setPosition(P.x, hopAxis === 'y' ? P.y - 0.4 : P.y, 0.012)
 				this.pools.setMatrixAt(pools, M)
-				this.pools.setColorAt(pools, poolC.copy(lane.color).multiplyScalar(0.75 * gain / (1 + lift * 0.4)))
+				this.pools.setColorAt(pools, poolC.copy(lane.color).multiplyScalar(0.75 * gain * fade / (1 + lift * 0.4)))
 				pools++
 			}
 
@@ -1387,6 +1418,10 @@ export class NotationStage {
  * @param {number} staffCount
  * @param {{byTrack?: boolean}} [opts]
  */
+// lanes vanish during silences longer than LANE_GAP: linger LANE_HOLD, fade over
+// LANE_FADE, then fade back in over the LANE_ENTER seconds before the next note
+const LANE_GAP = 2.5, LANE_HOLD = 0.35, LANE_FADE = 0.5, LANE_ENTER = 0.4
+
 export function buildOnsets(hits, heads, staffCount, { byTrack = false } = {}) {
 	const groups = new Map() // key → list
 	const order = []
