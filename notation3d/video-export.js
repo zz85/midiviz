@@ -142,11 +142,72 @@ class OfflineSynth {
 }
 
 /**
+ * Intro title card, drawn with Canvas2D over a dimmed still of the opening shot.
+ * k = progress through the card (0..1); secs = card length.
+ */
+function drawTitleCard(g, w, h, k, secs, { title, subtitle, credit }) {
+	const t = k * secs
+	const fadeIn = clamp01((t - 0.15) / 0.8)                 // text in
+	const fadeOut = clamp01((secs - t) / 0.7)                // whole card out (scene revealed)
+	const black = clamp01(1 - t / 0.45)                      // start from black
+	const a = Math.min(fadeIn, fadeOut)
+	// dim + vignette the scene behind the card
+	g.fillStyle = `rgba(0,0,0,${Math.max(black, 0.62 * fadeOut)})`
+	g.fillRect(0, 0, w, h)
+	const vg = g.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.25, w / 2, h / 2, Math.max(w, h) * 0.75)
+	vg.addColorStop(0, 'rgba(0,0,0,0)')
+	vg.addColorStop(1, `rgba(0,0,0,${0.55 * fadeOut})`)
+	g.fillStyle = vg
+	g.fillRect(0, 0, w, h)
+	if (a <= 0) return
+	const S = Math.min(w, h)
+	const cy = h * 0.47
+	const rise = (1 - easeOut(fadeIn)) * S * 0.02
+	g.save()
+	g.globalAlpha = a
+	g.textAlign = 'center'
+	g.textBaseline = 'alphabetic'
+	// title — shrink to fit 86% of the width
+	let fs = S * 0.105
+	const font = px => `600 ${px}px Georgia, 'Times New Roman', serif`
+	g.font = font(fs)
+	const maxW = w * 0.86
+	const tw = g.measureText(title).width
+	if (tw > maxW) { fs *= maxW / tw; g.font = font(fs) }
+	g.shadowColor = 'rgba(255, 190, 110, 0.85)'
+	g.shadowBlur = S * 0.035
+	g.fillStyle = '#ffe9c9'
+	g.fillText(title, w / 2, cy + rise)
+	g.shadowBlur = 0
+	// rule
+	const ruleW = Math.min(maxW, Math.max(g.measureText(title).width * 0.6, S * 0.25)) * easeOut(fadeIn)
+	const lg = g.createLinearGradient(w / 2 - ruleW / 2, 0, w / 2 + ruleW / 2, 0)
+	lg.addColorStop(0, 'rgba(255,200,130,0)'); lg.addColorStop(0.5, 'rgba(255,200,130,0.9)'); lg.addColorStop(1, 'rgba(255,200,130,0)')
+	g.fillStyle = lg
+	g.fillRect(w / 2 - ruleW / 2, cy + fs * 0.32 + rise, ruleW, Math.max(1, S * 0.0025))
+	if (subtitle) {
+		g.font = `italic ${S * 0.042}px Georgia, 'Times New Roman', serif`
+		g.fillStyle = 'rgba(235, 220, 195, 0.88)'
+		g.fillText(subtitle, w / 2, cy + fs * 0.32 + S * 0.075 + rise)
+	}
+	if (credit) {
+		g.font = `${S * 0.022}px system-ui, sans-serif`
+		g.fillStyle = 'rgba(210, 190, 160, 0.55)'
+		g.fillText(credit, w / 2, h - S * 0.07)
+	}
+	g.restore()
+}
+const clamp01 = x => Math.max(0, Math.min(1, x))
+const easeOut = x => 1 - (1 - x) * (1 - x)
+
+/**
  * @param {object} o
  * @param {NotationStage} o.stage
  * @param {{schedule, programs, duration, title}} o.song
  * @param {number} o.width, o.height, o.fps, o.start, o.end - seconds (music time)
- * @param {{views:string[], segment:number}|null} o.tour - rotate camera views during the export
+ * @param {{views:string[], segment:number, random?:boolean}|null} o.tour - rotate camera views during the export
+ * @param {'glide'|'crossfade'|'cut'} [o.transition] - view-change style during the export
+ * @param {{seconds:number, title:string, subtitle?:string, credit?:string}|null} [o.intro] - title card
  * @param {boolean} o.audio
  * @param {object} o.audioOpts - { vendorPath, soundfonts, convertSF3, volume }
  * @param {FileSystemWritableFileStream|null} o.fileStream - stream to write to (else buffered)
@@ -161,7 +222,10 @@ export async function exportVideo(o) {
 	const preroll = o.preroll ?? 1, tail = o.tail ?? 2
 	const t0 = o.start - preroll
 	const t1 = Math.min(song.duration + tail, o.end + (o.end >= song.duration ? tail : 0))
-	const frames = Math.max(1, Math.round((t1 - t0) * fps))
+	const musicFrames = Math.max(1, Math.round((t1 - t0) * fps))
+	const introFrames = o.intro?.seconds > 0 ? Math.round(o.intro.seconds * fps) : 0
+	const frames = introFrames + musicFrames
+	const introSamples = Math.round(introFrames * SAMPLE_RATE / fps)
 
 	const vc = await pickVideoCodec(width, height, fps, bitrate)
 	const ac = o.audio ? await pickAudioCodec() : null
@@ -189,43 +253,62 @@ export async function exportVideo(o) {
 
 	const yieldUI = () => new Promise(r => setTimeout(r, 0))
 	const startWall = performance.now()
-	const prevTour = stage.tour
+	const prevTour = stage.tour, prevTransition = stage.opts.transition
 	if (o.tour) stage.setTour({ ...o.tour, t0: o.start })
+	if (o.transition) stage.opts.transition = o.transition
+	// 2D canvas for compositing the title card over the WebGL frame
+	let card = null
+	if (introFrames) {
+		card = document.createElement('canvas')
+		card.width = width; card.height = height
+		card.g = card.getContext('2d')
+	}
 	stage.beginOffline(width, height)
-	let audioFrame = Math.round(t0 * SAMPLE_RATE) // may be negative (pre-roll silence)
-	let audioTs = 0
+	let musicFrame = Math.round(t0 * SAMPLE_RATE) // synth timeline; may be negative (pre-roll silence)
+	let audioTs = 0                                // samples encoded so far (output timeline)
 	try {
 		for (let i = 0; i < frames; i++) {
 			if (signal?.aborted) throw new DOMException('Export cancelled', 'AbortError')
 			if (encError) throw encError
-			const t = t0 + i / fps
-			stage.update(t, 1 / fps, true, t)
-			const frame = new VideoFrame(stage.renderer.domElement, { timestamp: Math.round(i * 1e6 / fps), duration: Math.round(1e6 / fps) })
+			const inIntro = i < introFrames
+			const t = inIntro ? t0 : t0 + (i - introFrames) / fps
+			stage.update(t, 1 / fps, !inIntro, t)
+			let src = stage.renderer.domElement
+			if (inIntro) {
+				const g = card.g
+				g.drawImage(src, 0, 0, width, height)
+				drawTitleCard(g, width, height, (i + 0.5) / introFrames, o.intro.seconds, o.intro)
+				src = card
+			}
+			const frame = new VideoFrame(src, { timestamp: Math.round(i * 1e6 / fps), duration: Math.round(1e6 / fps) })
 			venc.encode(frame, { keyFrame: i % (fps * 2) === 0 })
 			frame.close()
 
-			// audio up to the end of this video frame
+			// audio up to the end of this video frame (silence during the intro card)
 			if (aenc) {
-				const end = Math.round((t0 + (i + 1) / fps) * SAMPLE_RATE)
-				while (audioFrame < end) {
-					const chunkEnd = Math.min(end, audioFrame + 4800)
-					const n = chunkEnd - audioFrame
-					let data
-					if (chunkEnd <= 0) data = new Float32Array(n * 2) // pre-roll before t=0
-					else {
-						if (audioFrame < 0) { // straddles t=0
-							const pad = -audioFrame
+				const target = Math.round((i + 1) * SAMPLE_RATE / fps)
+				while (audioTs < target) {
+					let n, data
+					if (audioTs < introSamples) {
+						n = Math.min(target, introSamples, audioTs + 4800) - audioTs
+						data = new Float32Array(n * 2)
+					} else {
+						n = Math.min(target - audioTs, 4800)
+						const chunkEnd = musicFrame + n
+						if (chunkEnd <= 0) data = new Float32Array(n * 2) // pre-roll before t=0
+						else if (musicFrame < 0) { // straddles t=0
+							const pad = -musicFrame
 							const rest = synth.renderTo(chunkEnd)
 							data = new Float32Array(n * 2)
 							data.set(rest.subarray(0, n - pad), pad)
 							data.set(rest.subarray(n - pad), n + pad)
 						} else data = synth.renderTo(chunkEnd)
+						musicFrame = chunkEnd
 					}
 					const ad = new AudioData({ format: 'f32-planar', sampleRate: SAMPLE_RATE, numberOfFrames: n, numberOfChannels: 2, timestamp: Math.round(audioTs * 1e6 / SAMPLE_RATE), data })
 					aenc.encode(ad)
 					ad.close()
 					audioTs += n
-					audioFrame = chunkEnd
 				}
 			}
 
@@ -252,6 +335,7 @@ export async function exportVideo(o) {
 	} finally {
 		synth?.dispose()
 		if (o.tour) stage.setTour(prevTour)
+		stage.opts.transition = prevTransition
 		stage.endOffline()
 	}
 }

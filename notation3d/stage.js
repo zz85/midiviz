@@ -16,6 +16,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { BokehPass } from 'three/addons/postprocessing/BokehPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
+import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js'
 import { VignetteShader } from 'three/addons/shaders/VignetteShader.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { FontLoader } from 'three/addons/loaders/FontLoader.js'
@@ -338,6 +339,8 @@ export class NotationStage {
 			litFade: 4,           // seconds (music time) to fade back to ink
 			headFinish: 'satin',
 			paperFinish: 'matte',
+			transition: 'glide',  // view changes: 'glide' (camera flies) | 'crossfade' (dissolve) | 'cut'
+			fadeDur: 1.2,         // crossfade seconds
 		}
 
 		// No canvas MSAA: everything renders offscreen through the composer.
@@ -431,7 +434,8 @@ export class NotationStage {
 		// Post: render → DOF → bloom → vignette → output
 		const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 0 })
 		this.composer = new EffectComposer(renderer, rt)
-		this.composer.addPass(new RenderPass(scene, this.camera))
+		this.renderPass = new RenderPass(scene, this.camera)
+		this.composer.addPass(this.renderPass)
 		this.bokehPass = new BokehPass(scene, this.camera, { focus: 40, aperture: 0.0003, maxblur: 0.008 })
 		this.composer.addPass(this.bokehPass)
 		const bokehRender = this.bokehPass.render.bind(this.bokehPass)
@@ -448,6 +452,21 @@ export class NotationStage {
 		this.vignettePass = new ShaderPass(VignetteShader)
 		this.vignettePass.uniforms.offset.value = 1.0
 		this.composer.addPass(this.vignettePass)
+
+		// Crossfade: the outgoing view is rendered live by a second camera into
+		// fadeRT, then dissolved over the incoming view.
+		this.fadeCam = new THREE.PerspectiveCamera(34, 1, 0.5, 1500)
+		this.fadeRT = new THREE.WebGLRenderTarget(2, 2)
+		this._copyQuad = new FullScreenQuad(new THREE.ShaderMaterial({
+			uniforms: { tDiffuse: { value: null }, opacity: { value: 1 } },
+			vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+			fragmentShader: 'uniform sampler2D tDiffuse; uniform float opacity; varying vec2 vUv; void main() { gl_FragColor = vec4(texture2D(tDiffuse, vUv).rgb, opacity); }',
+			depthTest: false, depthWrite: false, transparent: true,
+		}))
+		this._xfade = null
+		this._pose = { pos: new THREE.Vector3(), target: new THREE.Vector3(), up: new THREE.Vector3() }
+		this._fadePose = { pos: new THREE.Vector3(), target: new THREE.Vector3(), up: new THREE.Vector3() }
+		this._lastFx = 0
 
 		this.lanes = []
 		this.score = null
@@ -601,12 +620,24 @@ export class NotationStage {
 	}
 
 	setView(name) {
+		const prev = this.view
 		this.opts.view = VIEWS[name] ? name : 'cinema'
 		const v = this.view = VIEWS[this.opts.view]
 		this.camera.fov = v.fov
 		this.camera.updateProjectionMatrix()
 		this.renderer.domElement.style.cursor = v.orbit ? 'crosshair' : 'pointer'
-		this._snapCamera = false // glide between views
+		const mode = this.opts.transition
+		if (mode === 'crossfade' && prev && prev !== v && this.score) {
+			// dissolve from the outgoing view (frozen orbit mouse) into a snapped new view
+			this._xfade = { from: prev, mouse: { ...this._mouse }, start: null }
+			this._snapCamera = true
+		} else if (mode === 'cut') {
+			this._xfade = null
+			this._snapCamera = true
+		} else {
+			this._xfade = null
+			this._snapCamera = false // glide between views
+		}
 	}
 
 	/**
@@ -615,20 +646,39 @@ export class NotationStage {
 	 * @param {{views:string[], segment:number, t0?:number}|null} spec
 	 */
 	setTour(spec) {
-		this.tour = spec && spec.views?.length ? { t0: 0, ...spec } : null
+		this.tour = spec && spec.views?.length ? { t0: 0, seed: (Math.random() * 1e9) | 0, ...spec } : null
 		this._tourIdx = null
+		this._tourOrders = new Map()
+	}
+
+	/** View for tour segment idx; random order = seeded reshuffle per cycle, no repeats across cycles. */
+	_tourView(idx) {
+		const { views, random, seed } = this.tour
+		const n = views.length
+		if (!random || n < 2) return views[idx % n]
+		const order = c => {
+			if (this._tourOrders.has(c)) return this._tourOrders.get(c)
+			let x = (seed + c * 2654435761) >>> 0
+			const rnd = () => { x ^= x << 13; x >>>= 0; x ^= x >> 17; x ^= x << 5; x >>>= 0; return x / 4294967296 }
+			const o = views.slice()
+			for (let i = n - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [o[i], o[j]] = [o[j], o[i]] }
+			if (c > 0) { const prev = order(c - 1); if (o[0] === prev[n - 1]) [o[0], o[1]] = [o[1], o[0]] }
+			this._tourOrders.set(c, o)
+			return o
+		}
+		return order(Math.floor(idx / n))[idx % n]
 	}
 
 	_applyTour(t) {
-		const { views, segment, t0 } = this.tour
+		const { segment, t0 } = this.tour
 		const rel = Math.max(0, t - t0)
 		const idx = Math.floor(rel / segment)
 		if (idx !== this._tourIdx) {
 			const first = this._tourIdx == null
 			this._tourIdx = idx
-			const name = views[idx % views.length]
+			const name = this._tourView(idx)
 			if (name !== this.opts.view) { this.setView(name); this.onViewChange?.(name) }
-			if (first) this._snapCamera = true
+			if (first) { this._snapCamera = true; this._xfade = null }
 		}
 		if (this.view.orbit) {
 			// one full circle per segment: swing side to side while rising and dipping
@@ -1113,7 +1163,59 @@ export class NotationStage {
 			this.bokehPass.uniforms.maxblur.value = 0.009
 		}
 		this.bloomPass.enabled = this.opts.bloom
+
+		const xf = this._xfade
+		if (xf && s) {
+			if (xf.start == null) xf.start = wall
+			const u = (wall - xf.start) / Math.max(0.05, this.opts.fadeDur)
+			if (u >= 1) this._xfade = null
+			else {
+				this._renderOutgoing(xf)
+				this.composer.render()
+				// dissolve outgoing (smoothstep) over the incoming frame
+				const r = this.renderer, q = this._copyQuad
+				q.material.uniforms.tDiffuse.value = this.fadeRT.texture
+				q.material.uniforms.opacity.value = 1 - u * u * (3 - 2 * u)
+				q.material.blending = THREE.NormalBlending
+				const ac = r.autoClear
+				r.autoClear = false
+				r.setRenderTarget(null)
+				q.render(r)
+				r.autoClear = ac
+				return
+			}
+		}
 		this.composer.render()
+	}
+
+	/** Render the outgoing view (live, own camera) through the full post chain into fadeRT. */
+	_renderOutgoing(xf) {
+		const cam = this.fadeCam, P = this._fadePose
+		cam.fov = xf.from.fov
+		cam.aspect = this.camera.aspect
+		cam.near = this.camera.near; cam.far = this.camera.far
+		cam.updateProjectionMatrix()
+		this._poseFor(xf.from, this._lastFx, P, xf.mouse)
+		cam.position.copy(P.pos)
+		cam.up.copy(P.up)
+		cam.lookAt(P.target)
+		const size = this.renderer.getDrawingBufferSize(this._v2 || (this._v2 = new THREE.Vector2()))
+		if (this.fadeRT.width !== size.x || this.fadeRT.height !== size.y) this.fadeRT.setSize(size.x, size.y)
+		const main = this.camera
+		this.renderPass.camera = cam
+		this.bokehPass.camera = cam
+		this.composer.renderToScreen = false
+		this.composer.render()
+		this.composer.renderToScreen = true
+		this.renderPass.camera = main
+		this.bokehPass.camera = main
+		const q = this._copyQuad
+		q.material.uniforms.tDiffuse.value = this.composer.readBuffer.texture
+		q.material.uniforms.opacity.value = 1
+		q.material.blending = THREE.NoBlending
+		this.renderer.setRenderTarget(this.fadeRT)
+		q.render(this.renderer)
+		this.renderer.setRenderTarget(null)
 	}
 
 	/** Adaptive quality tiers (MSAA → resolution → DOF → shadows) keep frames under ~20ms. */
@@ -1155,35 +1257,42 @@ export class NotationStage {
 		this._applyTier()
 	}
 
+	/** Camera pose for view v around focus x (fx). Writes out.{pos,target,up}; returns {D, viewW}. */
+	_poseFor(v, fx, out, mouse) {
+		const s = this.score
+		const fovR = THREE.MathUtils.degToRad(v.fov)
+		const D = ((s.height / 2 + 7) / Math.tan(fovR / 2)) / (this.opts.zoom * (v.zoom || 1))
+		const viewW = 2 * D * Math.tan(fovR / 2) * this.camera.aspect
+		const target = out.target.set(fx + viewW * v.lead, s.centerY, 0)
+		if (v.orbit) {
+			// mouse x → azimuth around the playhead (±50°), mouse y → elevation (6°…80°)
+			const az = mouse.x * 0.9
+			const el = THREE.MathUtils.degToRad(lerp(6, 80, (mouse.y + 1) / 2))
+			const R = D * this._freeDist
+			out.pos.set(target.x + Math.sin(az) * Math.cos(el) * R, target.y - Math.cos(az) * Math.cos(el) * R, Math.sin(el) * R)
+			// near top-down, z-up is degenerate: blend toward "up the page" (+y) so the score stays upright
+			const e = clamp((mouse.y + 1) / 2, 0, 1)
+			out.up.set(0, e * e, 1 - e * e).normalize()
+		} else {
+			out.pos.set(target.x + v.offset[0] * D, target.y + v.offset[1] * D, v.offset[2] * D)
+			out.up.set(...(v.up || [0, 1, 0]))
+		}
+		return { D, viewW }
+	}
+
 	_updateCamera(t, dt) {
 		const s = this.score
 		const v = this.view
 		const vis = this.lanes.filter(l => l.vis)
 		const laneX = vis.length ? vis.reduce((a, l) => a + l.pos.x, 0) / vis.length : this._timelineX(t)
-		const fx = laneX * 0.35 + this._timelineX(t) * 0.65
-		const fovR = THREE.MathUtils.degToRad(this.camera.fov)
-		const D = ((s.height / 2 + 7) / Math.tan(fovR / 2)) / (this.opts.zoom * (v.zoom || 1))
-		const viewW = 2 * D * Math.tan(fovR / 2) * this.camera.aspect
-		const target = this._camTarget.set(fx + viewW * v.lead, s.centerY, 0)
-		const pos = this._camPos
-		if (v.orbit) {
-			// mouse x → azimuth around the playhead (±50°), mouse y → elevation (6°…80°)
-			const az = this._mouse.x * 0.9
-			const el = THREE.MathUtils.degToRad(lerp(6, 80, (this._mouse.y + 1) / 2))
-			const R = D * this._freeDist
-			pos.set(target.x + Math.sin(az) * Math.cos(el) * R, target.y - Math.cos(az) * Math.cos(el) * R, Math.sin(el) * R)
-		} else {
-			pos.set(target.x + v.offset[0] * D, target.y + v.offset[1] * D, v.offset[2] * D)
-		}
+		const fx = this._lastFx = laneX * 0.35 + this._timelineX(t) * 0.65
+		const { D, viewW } = this._poseFor(v, fx, this._pose, this._mouse)
+		const target = this._camTarget.copy(this._pose.target)
 		const k = this._snapCamera ? 1 : 1 - Math.exp(-dt * (v.orbit ? 4 : 6))
-		this.camera.position.lerp(pos, k)
+		this.camera.position.lerp(this._pose.pos, k)
 		if (this._snapCamera) this._lookAt.copy(target)
 		else this._lookAt.lerp(target, k)
-		if (v.orbit) {
-			// near top-down, z-up is degenerate: blend toward "up the page" (+y) so the score stays upright
-			const e = clamp((this._mouse.y + 1) / 2, 0, 1)
-			this.camera.up.set(0, e * e, 1 - e * e).normalize()
-		} else this.camera.up.set(...(v.up || [0, 1, 0]))
+		this.camera.up.copy(this._pose.up)
 		this.camera.lookAt(this._lookAt)
 		this._lastFocusX = target.x
 		this._snapCamera = false

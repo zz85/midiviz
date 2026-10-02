@@ -136,8 +136,8 @@
     dialog.export h2 { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: var(--accent); }
     dialog.export .row { display: grid; grid-template-columns: 110px 1fr; gap: 8px; align-items: center; margin: 8px 0; }
     dialog.export label { color: var(--text2); }
-    dialog.export .mini-select, dialog.export input[type=number] { max-width: none; width: 100%; font-size: 12px; padding: 5px 6px; }
-    dialog.export input[type=number] { background: var(--lcd-bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; }
+    dialog.export .mini-select, dialog.export input[type=number], dialog.export .mini-input { max-width: none; width: 100%; font-size: 12px; padding: 5px 6px; }
+    dialog.export input[type=number], dialog.export .mini-input { background: var(--lcd-bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; }
     dialog.export .note { color: var(--text2); font-size: 11px; margin-top: 6px; line-height: 1.5; }
     dialog.export .buttons { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
     dialog.export button {
@@ -310,6 +310,16 @@
         <option value="15">Every 15 s</option>
       </select>
     </label>
+    <label>Tour order:
+      <select id="tourOrderSelect" class="mini-select"><option value="seq">In sequence</option><option value="random">Random</option></select>
+    </label>
+    <label>View changes:
+      <select id="transitionSelect" class="mini-select" title="How the camera moves when the view changes (tour or click)">
+        <option value="glide">Glide</option>
+        <option value="crossfade">Crossfade</option>
+        <option value="cut">Cut</option>
+      </select>
+    </label>
     <label>Paper:
       <select id="paperFinishSelect" class="mini-select" data-opt="paperFinish" title="Surface finish of the paper / table">
         <option value="matte">Matte</option>
@@ -347,6 +357,18 @@
       <select id="exTourSeg" class="mini-select">
         <option value="5">5 s</option><option value="8" selected>8 s</option><option value="12">12 s</option><option value="20">20 s</option>
       </select></div>
+    <div class="row" id="exOrderRow" hidden><label for="exOrder">Order</label>
+      <select id="exOrder" class="mini-select"><option value="seq" selected>In sequence</option><option value="random">Random (no repeats)</option></select></div>
+    <div class="row"><label for="exTransition">Transitions</label>
+      <select id="exTransition" class="mini-select">
+        <option value="glide">Glide (camera flies)</option>
+        <option value="crossfade" selected>Crossfade (dissolve)</option>
+        <option value="cut">Cut</option>
+      </select></div>
+    <div class="row"><label for="exIntro">Intro card</label>
+      <select id="exIntro" class="mini-select"><option value="0">None</option><option value="3">3 s</option><option value="5" selected>5 s</option><option value="8">8 s</option></select></div>
+    <div class="row" id="exTitleRow"><label for="exTitle">Title</label><input type="text" id="exTitle" class="mini-input"></div>
+    <div class="row" id="exSubRow"><label for="exSubtitle">Subtitle</label><input type="text" id="exSubtitle" class="mini-input" placeholder="Composer, arranger… (optional)"></div>
     <div class="row"><label for="exFps">Frame rate</label>
       <select id="exFps" class="mini-select"><option value="30">30 fps</option><option value="60" selected>60 fps</option></select></div>
     <div class="row"><label for="exRange">Range</label>
@@ -382,11 +404,11 @@
 
   <script type="module">
     import { SoundFontEngine, MidiScheduler } from './soundfont-engine/src/index.js'
-    import { loadNotationEngine, engrave, decodeNotationFile } from './notation3d/nwc-bridge.js?v=11'
-    import { midiToScore, midiToSchedule } from './notation3d/midi-score.js?v=11'
-    import { patchOpentype, recordElements, buildScoreMeshes } from './notation3d/vector-recorder.js?v=11'
-    import { NotationStage, buildOnsets } from './notation3d/stage.js?v=11'
-    import { exportVideo, exportSupported, defaultBitrate } from './notation3d/video-export.js?v=11'
+    import { loadNotationEngine, engrave, decodeNotationFile } from './notation3d/nwc-bridge.js?v=12'
+    import { midiToScore, midiToSchedule } from './notation3d/midi-score.js?v=12'
+    import { patchOpentype, recordElements, buildScoreMeshes } from './notation3d/vector-recorder.js?v=12'
+    import { NotationStage, buildOnsets } from './notation3d/stage.js?v=12'
+    import { exportVideo, exportSupported, defaultBitrate } from './notation3d/video-export.js?v=12'
 
     const $ = id => document.getElementById(id)
     const statusEl = $('status')
@@ -749,10 +771,13 @@
       stage.setOption('litFade', +e.target.value)
     }
 
-    $('tourSelect').onchange = e => {
-      const v = e.target.value
-      stage.setTour(v === 'off' ? null : { views: stage.viewOrder, segment: +v, t0: 0 })
+    function applyLiveTour() {
+      const v = $('tourSelect').value
+      stage.setTour(v === 'off' ? null : { views: stage.viewOrder, segment: +v, t0: 0, random: $('tourOrderSelect').value === 'random' })
     }
+    $('tourSelect').onchange = applyLiveTour
+    $('tourOrderSelect').onchange = applyLiveTour
+    $('transitionSelect').onchange = e => stage.setOption('transition', e.target.value)
 
     $('settingsBtn').onclick = () => {
       const open = $('controlsRow2').classList.toggle('open')
@@ -795,7 +820,7 @@
     // ── URL hash: #song.mid|view=bounce&theme=marble&lit=stay… (only non-default options) ──
     const HASH_SELECTS = {
       view: 'viewSelect', theme: 'themeSelect', staves: 'staffModeSelect', engine: 'synthEngineSelect', sound: 'synthSelect',
-      tour: 'tourSelect', arc: 'arcModeSelect', rest: 'restModeSelect', lit: 'litModeSelect', fade: 'litFadeRange', head: 'headFinishSelect', paper: 'paperFinishSelect',
+      tour: 'tourSelect', order: 'tourOrderSelect', trans: 'transitionSelect', arc: 'arcModeSelect', rest: 'restModeSelect', lit: 'litModeSelect', fade: 'litFadeRange', head: 'headFinishSelect', paper: 'paperFinishSelect',
     }
     const HASH_TOGGLES = ['bloom', 'dof', 'trail', 'fx', 'shadows']
     const toggleBtn = opt => document.querySelector(`.toggle-btn[data-opt="${opt}"]`)
@@ -916,15 +941,22 @@
     function exSummary() {
       if (!song) return
       const [w, h] = exSize(), fps = +$('exFps').value, [a, b] = exRange()
-      const secs = b - a + 3, mb = defaultBitrate(w, h, fps) * +$('exQuality').value * secs / 8 / 1e6
+      const secs = b - a + 3 + +$('exIntro').value, mb = defaultBitrate(w, h, fps) * +$('exQuality').value * secs / 8 / 1e6
       $('exStatus').textContent = `${w}×${h} @ ${fps}fps · ${fmt(secs)} · ~${mb < 1000 ? Math.round(mb) + ' MB' : (mb / 1000).toFixed(1) + ' GB'}`
     }
     for (const id of ['exResolution', 'exAspect', 'exFps', 'exRange', 'exQuality']) $(id).addEventListener('change', exSummary)
-    $('exCamera').addEventListener('change', () => { $('exTourRow').hidden = $('exCamera').value === 'current' })
+    function exRows() {
+      const cam = $('exCamera').value, intro = $('exIntro').value !== '0'
+      $('exTourRow').hidden = cam === 'current'
+      $('exOrderRow').hidden = cam === 'current' || cam === 'orbit'
+      $('exTitleRow').hidden = $('exSubRow').hidden = !intro
+    }
+    $('exCamera').addEventListener('change', exRows)
+    $('exIntro').addEventListener('change', () => { exRows(); exSummary() })
     const TOUR_SETS = { all: () => stage.viewOrder, cine: () => ['cinema', 'bounce', 'low', 'free'], orbit: () => ['free'] }
     function exTour() {
       const v = $('exCamera').value
-      return v === 'current' ? null : { views: TOUR_SETS[v](), segment: +$('exTourSeg').value }
+      return v === 'current' ? null : { views: TOUR_SETS[v](), segment: +$('exTourSeg').value, random: $('exOrder').value === 'random' }
     }
     $('exportBtn').onclick = () => {
       if (!exportSupported()) { toast('Video export needs WebCodecs (Chrome, Edge or Safari 17+)', 5000); return }
@@ -934,6 +966,8 @@
       $('exStart').disabled = false
       $('exCancel').textContent = 'Close'
       $('exBar').style.width = '0'
+      if (!$('exTitle').dataset.song || $('exTitle').dataset.song !== song.title) { $('exTitle').value = song.title || ''; $('exTitle').dataset.song = song.title }
+      exRows()
       exSummary()
       exDlg.showModal()
     }
@@ -967,6 +1001,13 @@
             convertSF3: engine._backend?._convertSF3 ? d => engine._backend._convertSF3(d) : null,
           },
           tour: exTour(),
+          transition: $('exTransition').value,
+          intro: +$('exIntro').value > 0 ? {
+            seconds: +$('exIntro').value,
+            title: $('exTitle').value.trim() || song.title || 'Untitled',
+            subtitle: $('exSubtitle').value.trim(),
+            credit: '♪ MidiViz · 3D notation',
+          } : null,
           fileStream, signal: exAbort.signal,
           onProgress: p => {
             $('exBar').style.width = (p.frame / p.frames * 100).toFixed(1) + '%'
