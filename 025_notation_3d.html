@@ -233,6 +233,7 @@
       <option value="table">Tabletop</option>
       <option value="low">Low angle</option>
       <option value="free">Free orbit (mouse)</option>
+      <option value="page" disabled>Whole page (wrapped / pages)</option>
     </select>
 
     <select id="synthSelect" class="mini-select" aria-label="Sound">
@@ -258,6 +259,20 @@
         <option value="marble">Marble</option>
         <option value="night">Night ink</option>
         <option value="paper">Paper</option>
+      </select>
+    </label>
+    <label>Layout:
+      <select id="layoutSelect" class="mini-select" title="Single endless line, or wrapped into systems like a printed score">
+        <option value="scroll">Single line</option>
+        <option value="wrap">Wrapped sheet</option>
+        <option value="pages">Pages</option>
+      </select>
+    </label>
+    <label id="lineChangeLabel">Line change:
+      <select id="lineChangeSelect" class="mini-select" data-opt="lineChange" title="How close-up cameras move to the next line (and the page view to the next page) in wrapped / paged layouts">
+        <option value="pan">Pan</option>
+        <option value="crossfade">Crossfade</option>
+        <option value="cut">Cut</option>
       </select>
     </label>
     <label>Staves (MIDI):
@@ -440,11 +455,11 @@
 
   <script type="module">
     import { SoundFontEngine, MidiScheduler } from './soundfont-engine/src/index.js'
-    import { loadNotationEngine, engrave, decodeNotationFile } from './notation3d/nwc-bridge.js?v=21'
-    import { midiToScore, midiToSchedule } from './notation3d/midi-score.js?v=21'
-    import { patchOpentype, recordElements, buildScoreMeshes } from './notation3d/vector-recorder.js?v=21'
-    import { NotationStage, buildOnsets } from './notation3d/stage.js?v=21'
-    import { exportVideo, exportSupported, defaultBitrate, drawTitleCard, drawOutroCard } from './notation3d/video-export.js?v=21'
+    import { loadNotationEngine, engrave, decodeNotationFile } from './notation3d/nwc-bridge.js?v=22'
+    import { midiToScore, midiToSchedule } from './notation3d/midi-score.js?v=22'
+    import { patchOpentype, recordElements, buildScoreMeshes } from './notation3d/vector-recorder.js?v=22'
+    import { NotationStage, buildOnsets } from './notation3d/stage.js?v=22'
+    import { exportVideo, exportSupported, defaultBitrate, drawTitleCard, drawOutroCard } from './notation3d/video-export.js?v=22'
 
     const $ = id => document.getElementById(id)
     const statusEl = $('status')
@@ -522,7 +537,7 @@
       // The title is drawn as 3D text by the stage, not by nwc-viewer
       if (data.info) data.info.title = ''
       const t0 = performance.now()
-      const { elements, staves, fontSize } = engrave(notation, data)
+      const { elements, staves, fontSize, layout } = engrave(notation, data, { layout: $('layoutSelect').value, pageWidth: 720 })
       const t1 = performance.now()
       const records = recordElements(elements, measureCtx)
       const built = buildScoreMeshes(records, { fontSize, materials: stage.materials })
@@ -530,8 +545,12 @@
       const mode = $('colorModeSelect').value
       const byTrack = (data._trackCount ?? 0) >= 2 && (mode === 'track' || mode === 'auto')
       const perStaff = buildOnsets(hitsFn(staves), built.heads, staves.length, { byTrack })
-      stage.setScore(built, perStaff)
+      stage.setScore(built, perStaff, { ...layout, staffCount: staves.length })
       stage.setTitle?.(title)
+      // 'Whole page' view only exists for wrapped / paged layouts
+      $('viewSelect').querySelector('option[value="page"]').disabled = !stage.score.systems
+      $('viewSelect').value = stage.opts.view
+      if (stage.tour) applyLiveTour()
       console.log(`engrave ${(t1 - t0).toFixed(0)}ms, 3D ${(t2 - t1).toFixed(0)}ms, ${elements.length} elements, ${built.heads.size} noteheads`)
       return staves
     }
@@ -788,6 +807,11 @@
     $('themeSelect').onchange = e => stage.setTheme(e.target.value)
     let pendingReload = false
     $('colorModeSelect').onchange = () => $('staffModeSelect').onchange()
+    $('layoutSelect').onchange = () => {
+      // picking a paper layout by hand: show it off with the whole-page view
+      if (!applyingHash) stage.setView($('layoutSelect').value !== 'scroll' ? 'page' : stage.opts.view === 'page' ? 'tilt' : stage.opts.view)
+      $('staffModeSelect').onchange()
+    }
     $('staffModeSelect').onchange = () => {
       if (applyingHash) { pendingReload = true; return } // loadFromHash reloads once at the end
       if (currentSongValue) selectSong(currentSongValue, $('songTitle').textContent, true)
@@ -860,7 +884,7 @@
     // ── URL hash: #song.mid|view=bounce&theme=marble&lit=stay… (only non-default options) ──
     const HASH_SELECTS = {
       view: 'viewSelect', theme: 'themeSelect', staves: 'staffModeSelect', engine: 'synthEngineSelect', sound: 'synthSelect',
-      colors: 'colorModeSelect', tour: 'tourSelect', order: 'tourOrderSelect', trans: 'transitionSelect', arc: 'arcModeSelect', rest: 'restModeSelect', lit: 'litModeSelect', fade: 'litFadeRange', head: 'headFinishSelect', paper: 'paperFinishSelect',
+      colors: 'colorModeSelect', layout: 'layoutSelect', line: 'lineChangeSelect', tour: 'tourSelect', order: 'tourOrderSelect', trans: 'transitionSelect', arc: 'arcModeSelect', rest: 'restModeSelect', lit: 'litModeSelect', fade: 'litFadeRange', head: 'headFinishSelect', paper: 'paperFinishSelect',
     }
     const HASH_TOGGLES = ['bloom', 'dof', 'trail', 'fx', 'shadows']
     const toggleBtn = opt => document.querySelector(`.toggle-btn[data-opt="${opt}"]`)

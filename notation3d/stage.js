@@ -68,7 +68,13 @@ export const VIEWS = {
 	low: { offset: [-0.5, -0.9, 0.3], lead: 0.12, hop: 'z', fov: 42, up: [0, 0, 1] },
 	// free: camera orbits the playhead following the mouse position (hover, no click)
 	free: { orbit: true, lead: 0.05, hop: 'z', fov: 38, up: [0, 0, 1] },
+	// page: the whole sheet (wrapped / paged layouts only), gently tilted, like reading a printed score
+	page: { page: true, offset: [0, -0.3, 0.95], lead: 0, hop: 'y', fov: 30 },
 }
+const BASE_VIEW_ORDER = ['cinema', 'bounce', 'tilt', 'flat', 'table', 'low', 'free']
+
+// desk under the sheet(s) in wrapped / paged layouts
+const DESK_COLORS = { cinema: '#17130f', marble: '#22262a', night: '#0a0806', paper: '#5e4c38' }
 
 const QUALITY_TIERS = [
 	{ pr: 1, msaa: true, dof: true },
@@ -341,6 +347,7 @@ export class NotationStage {
 			paperFinish: 'matte',
 			transition: 'glide',  // view changes: 'glide' (camera flies) | 'crossfade' (dissolve) | 'cut'
 			fadeDur: 1.2,         // crossfade seconds
+			lineChange: 'pan',    // wrapped / paged layouts: 'pan' to the next line | 'crossfade' | 'cut'
 		}
 
 		// No canvas MSAA: everything renders offscreen through the composer.
@@ -361,7 +368,6 @@ export class NotationStage {
 		this.camera = new THREE.PerspectiveCamera(34, 1, 0.5, 1500)
 		// Pointer: click cycles views; in free view, hovering steers the orbit
 		// (no buttons needed, so a click always means "next view").
-		this.viewOrder = ['cinema', 'bounce', 'tilt', 'flat', 'table', 'low', 'free']
 		this.onViewChange = null
 		this._mouse = { x: -0.25, y: 0.35 }   // normalised [-1,1], y up
 		this._freeDist = 1
@@ -408,6 +414,7 @@ export class NotationStage {
 			marble: { ...marbleTextures(), tile: 120 },
 		}
 		this.paperMat = new THREE.MeshPhysicalMaterial({ roughness: 0.92, metalness: 0 })
+		this.deskMat = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0 })
 		this._surfaceSize = [100, 100]
 
 		// Shared FX resources
@@ -466,7 +473,8 @@ export class NotationStage {
 		this._xfade = null
 		this._pose = { pos: new THREE.Vector3(), target: new THREE.Vector3(), up: new THREE.Vector3() }
 		this._fadePose = { pos: new THREE.Vector3(), target: new THREE.Vector3(), up: new THREE.Vector3() }
-		this._lastFx = 0
+		this._lastFocus = { x: 0, y: 0, h: 8, page: 0 }
+		this._focus = { x: 0, y: 0, h: 8, page: 0 }
 
 		this.lanes = []
 		this.score = null
@@ -539,6 +547,9 @@ export class NotationStage {
 
 	get palette() { return this.theme.palette || STAFF_COLORS }
 
+	/** Views available for the current score ('page' only for wrapped / paged layouts). */
+	get viewOrder() { return this.score?.systems ? [...BASE_VIEW_ORDER, 'page'] : BASE_VIEW_ORDER }
+
 	setTheme(name) {
 		const th = this.theme = THEMES[name] || THEMES.cinema
 		this.opts.theme = name
@@ -561,6 +572,7 @@ export class NotationStage {
 		this.paperMat.bumpScale = th.bump ?? 0.6
 		this.paperMat.roughness = th.roughness ?? 0.92
 		this.paperMat.color.set(th.surface === 'marble' ? '#ffffff' : th.paper)
+		this.deskMat.color.set(DESK_COLORS[name] || DESK_COLORS.cinema)
 		this._applyPaperFinish()
 		this._updateSurfaceRepeat()
 		this.bloomPass.strength = th.bloom
@@ -612,7 +624,9 @@ export class NotationStage {
 			})
 			const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ roughness: 0.4, metalness: 0.1 }))
 			const s = this.score
-			mesh.position.set(s.minX + 2, s.centerY + s.height / 2 + 5, 0)
+			const sys0 = s.systems?.[0]
+			if (sys0) mesh.position.set(sys0.minX + 1, sys0.maxY + 4.5, 0) // top of the first page/sheet
+			else mesh.position.set(s.minX + 2, s.centerY + s.height / 2 + 5, 0)
 			mesh.castShadow = true
 			geo.computeBoundingBox()
 			this.titleMesh = mesh
@@ -647,6 +661,9 @@ export class NotationStage {
 
 	setView(name) {
 		const prev = this.view
+		// 'page' needs a wrapped / paged score; remember the wish so the next such score gets it
+		this._wantPage = name === 'page'
+		if (name === 'page' && this.score && !this.score.systems) name = 'tilt'
 		this.opts.view = VIEWS[name] ? name : 'cinema'
 		const v = this.view = VIEWS[this.opts.view]
 		this.camera.fov = v.fov
@@ -759,9 +776,9 @@ export class NotationStage {
 		if (!this.mirror) return
 		this.mirror.visible = want
 		this.mirror.material.uniforms.strength.value = f.mirror || 0
-		const [w, h] = this._surfaceSize
+		const [w, h, cx, cy] = this._mirrorRect || [...this._surfaceSize, ...(this._surfaceCenter || [0, 0])]
 		this.mirror.scale.set(w, h, 1)
-		this.mirror.position.set(this._surfaceCenter?.[0] || 0, this._surfaceCenter?.[1] || 0, 0.004)
+		this.mirror.position.set(cx, cy, 0.004)
 	}
 
 	setHeadFinish(name) {
@@ -805,7 +822,7 @@ export class NotationStage {
 	 * @param {object} built - from buildScoreMeshes
 	 * @param {Array<Array<{time, heads}>>} perStaff - onsets per staff, time-sorted
 	 */
-	setScore(built, perStaff) {
+	setScore(built, perStaff, layout = null) {
 		this.clear()
 		const root = new THREE.Group()
 		root.add(built.group)
@@ -813,14 +830,20 @@ export class NotationStage {
 		const b = built.bounds
 		const width = b.max.x - b.min.x
 		const height = b.max.y - b.min.y
-		const paper = new THREE.Mesh(new THREE.PlaneGeometry(width + 400, height + 3000), this.paperMat)
-		paper.position.set((b.min.x + b.max.x) / 2 + 150, (b.min.y + b.max.y) / 2, -0.01)
-		paper.receiveShadow = true
-		this._surfaceSize = [width + 400, height + 3000]
-		this._surfaceCenter = [paper.position.x, paper.position.y]
+		const systems = this._buildSystems(layout, built.scale)
+		this._mirrorRect = null
+		this._pages = null
+		if (systems) this._buildSheets(root, systems, layout, built.scale)
+		else {
+			const paper = new THREE.Mesh(new THREE.PlaneGeometry(width + 400, height + 3000), this.paperMat)
+			paper.position.set((b.min.x + b.max.x) / 2 + 150, (b.min.y + b.max.y) / 2, -0.01)
+			paper.receiveShadow = true
+			this._surfaceSize = [width + 400, height + 3000]
+			this._surfaceCenter = [paper.position.x, paper.position.y]
+			root.add(paper)
+		}
 		this._updateSurfaceRepeat()
 		this._updateMirror()
-		root.add(paper)
 		this.scene.add(root)
 		built.group.traverse(o => { if (o.userData.isText) o.material.color.set(this._textColor) })
 
@@ -833,9 +856,12 @@ export class NotationStage {
 			}
 		})
 
+		// System (line of music) of every onset — wrapped / paged layouts stack many
+		for (const onsets of perStaff) for (const o of onsets) o.sys = systems ? this._systemOf(systems, o.heads[0]) : 0
+
 		// Camera timeline: leftmost head per distinct time
 		const pts = []
-		for (const onsets of perStaff) for (const o of onsets) pts.push({ time: o.time, x: o.heads[0].x })
+		for (const onsets of perStaff) for (const o of onsets) pts.push({ time: o.time, x: o.heads[0].x, sys: o.sys })
 		pts.sort((p, q) => p.time - q.time || p.x - q.x)
 		const timeline = []
 		for (const p of pts) {
@@ -847,7 +873,19 @@ export class NotationStage {
 			built, root, perStaff, headState, timeline,
 			centerY: (b.min.y + b.max.y) / 2, height: Math.max(height, 8), minX: b.min.x, maxX: b.max.x,
 			active: new Set(), staffIdx: perStaff.map(() => -2),
+			systems, lines: null, pages: this._pages,
 		}
+		if (systems) {
+			// per-line timelines in reading order; framing height = one system
+			const lines = systems.map((sy, i) => ({ sys: i, pts: [], t0: Infinity }))
+			for (const p of timeline) lines[p.sys].pts.push(p)
+			this.score.lines = lines.filter(l => l.pts.length).map(l => (l.t0 = l.pts[0].time, l)).sort((p, q) => p.t0 - q.t0)
+			this.score.height = Math.max(8, ...systems.map(sy => sy.maxY - sy.minY))
+			this.score.centerY = systems[0].cy
+			if (!this.score.lines.length) this.score.lines = null
+		}
+		if (this.opts.view === 'page' && !systems) { this.setView('tilt'); this._wantPage = true }
+		else if (systems && this._wantPage && this.opts.view !== 'page') this.setView('page')
 
 		// Voice lanes: lane k of a staff follows the k-th notehead (bottom-up) of each
 		// onset, clamped to the top note — so lanes split out of / merge into the
@@ -889,8 +927,117 @@ export class NotationStage {
 		root.add(this.streak)
 
 		this._snapCamera = true
+		this._lineKey = null
 		this._recolorAll(0)
 		this._lastT = 0
+	}
+
+	/**
+	 * Systems (lines of music) from the staff rectangles of a wrapped / paged layout:
+	 * staves of one system share x and are listed staff by staff, so sort into reading
+	 * order (page by page, top to bottom) and chunk by the staff count.
+	 */
+	_buildSystems(layout, S) {
+		const rects = layout?.staveRects, n = layout?.staffCount
+		if (!rects?.length || !n || rects.length % n) return null
+		const r3 = rects.map(r => {
+			const y0 = -r.y * S
+			return { x0: r.x * S, x1: (r.x + r.width) * S, y0, y1: y0 + (r.size || 0) * S }
+		})
+		const pages = layout.pages || []
+		const col = r => Math.max(0, pages.findIndex(p => r.x0 >= p.x * S - 1 && r.x0 <= (p.x + p.width) * S))
+		r3.sort((p, q) => col(p) - col(q) || q.y1 - p.y1)
+		const systems = []
+		for (let i = 0; i < r3.length; i += n) {
+			const g = r3.slice(i, i + n)
+			if (g.some(r => Math.abs(r.x0 - g[0].x0) > 0.5)) return null // not a clean system
+			const minY = Math.min(...g.map(r => r.y0)), maxY = Math.max(...g.map(r => r.y1))
+			systems.push({ minX: Math.min(...g.map(r => r.x0)), maxX: Math.max(...g.map(r => r.x1)), minY, maxY, cy: (minY + maxY) / 2, page: col(g[0]) })
+		}
+		return systems.length > 1 ? systems : null
+	}
+
+	/** System index for a notehead: x within the line, nearest staff band in y. */
+	_systemOf(systems, h) {
+		let best = 0, bd = Infinity
+		systems.forEach((sy, i) => {
+			if (h.x < sy.minX - 3 || h.x > sy.maxX + 3) return
+			const d = h.y > sy.maxY ? h.y - sy.maxY : h.y < sy.minY ? sy.minY - h.y : 0
+			if (d < bd) { bd = d; best = i }
+		})
+		return best
+	}
+
+	/** Paper sheet(s) on a desk: Letter pages (paged layout) or one long sheet (wrapped). */
+	_buildSheets(root, systems, layout, S) {
+		const rects = []
+		if (layout.pages?.length) {
+			for (const p of layout.pages) rects.push({ x0: p.x * S, x1: (p.x + p.width) * S, y1: -p.y * S, y0: -(p.y + p.height) * S })
+		} else {
+			const minX = Math.min(...systems.map(s => s.minX)), maxX = Math.max(...systems.map(s => s.maxX))
+			const top = systems[0].maxY, bottom = systems[systems.length - 1].minY
+			const m = 7 // margin, staff spaces
+			rects.push({ x0: minX - m, x1: maxX + m, y1: top + m + 6, y0: bottom - m - 3 })
+		}
+		this._pages = rects.map(r => ({ cx: (r.x0 + r.x1) / 2, cy: (r.y0 + r.y1) / 2, w: r.x1 - r.x0, h: r.y1 - r.y0 }))
+		const T = 0.12
+		for (const p of this._pages) {
+			const sheet = new THREE.Mesh(new THREE.BoxGeometry(p.w, p.h, T), this.paperMat)
+			sheet.position.set(p.cx, p.cy, -0.01 - T / 2)
+			sheet.receiveShadow = true
+			sheet.castShadow = true
+			root.add(sheet)
+		}
+		const ux0 = Math.min(...rects.map(r => r.x0)), ux1 = Math.max(...rects.map(r => r.x1))
+		const uy0 = Math.min(...rects.map(r => r.y0)), uy1 = Math.max(...rects.map(r => r.y1))
+		const desk = new THREE.Mesh(new THREE.PlaneGeometry(ux1 - ux0 + 800, uy1 - uy0 + 800), this.deskMat)
+		desk.position.set((ux0 + ux1) / 2, (uy0 + uy1) / 2, -0.01 - T - 0.02)
+		desk.receiveShadow = true
+		root.add(desk)
+		// one texture repeat per sheet (all pages share a size); the mirror spans every sheet
+		this._surfaceSize = [this._pages[0].w, this._pages[0].h]
+		this._surfaceCenter = [this._pages[0].cx, this._pages[0].cy]
+		this._mirrorRect = [ux1 - ux0, uy1 - uy0, (ux0 + ux1) / 2, (uy0 + uy1) / 2]
+	}
+
+	/**
+	 * Camera focus at music time t: playhead x and the y / height of its line. Wrapped
+	 * layouts glide to the next line over ~1.1 s around its first note ("carriage return").
+	 */
+	_focusAt(t, out) {
+		const s = this.score
+		if (!s.lines) {
+			out.x = this._timelineX(t); out.y = s.centerY; out.h = s.height; out.page = 0
+			return out
+		}
+		const L = s.lines, sys = s.systems
+		const lineX = (j, t) => {
+			const P = L[j].pts, k = upperBound(P, t, 'time')
+			if (k <= 0) return P[0].x - 4 * clamp(P[0].time - t, 0, 1)
+			if (k >= P.length) return P[P.length - 1].x
+			const a = P[k - 1], b = P[k]
+			return lerp(a.x, b.x, clamp((t - a.time) / (b.time - a.time), 0, 1))
+		}
+		const PRE = 0.8, POST = 0.7
+		const hard = this.opts.lineChange !== 'pan' // crossfade / cut switch lines just before the first note
+		let i = Math.max(0, upperBound(L, t, 't0') - 1)
+		let j = -1
+		if (i > 0 && t < L[i].t0 + POST) j = i
+		else if (i + 1 < L.length && t >= L[i + 1].t0 - PRE) j = i + 1
+		if (j > 0) {
+			const u = clamp((t - (L[j].t0 - PRE)) / (PRE + POST), 0, 1)
+			const w = hard ? (t >= L[j].t0 - 0.12 ? 1 : 0) : u * u * (3 - 2 * u)
+			const A = sys[L[j - 1].sys], B = sys[L[j].sys]
+			out.x = lerp(lineX(j - 1, t), lineX(j, t), w)
+			out.y = lerp(A.cy, B.cy, w)
+			out.h = lerp(A.maxY - A.minY, B.maxY - B.minY, w)
+			out.page = (w < 0.5 ? A : B).page
+			out.sys = L[w < 0.5 ? j - 1 : j].sys
+		} else {
+			const S = sys[L[i].sys]
+			out.x = lineX(i, t); out.y = S.cy; out.h = S.maxY - S.minY; out.page = S.page; out.sys = L[i].sys
+		}
+		return out
 	}
 
 	_recolorLanes() {
@@ -996,6 +1143,7 @@ export class NotationStage {
 		const idx = upperBound(on, t, 'time') - 1
 		lane._i = idx
 		lane._fade = 1
+		lane._side = 0  // 1 = leaving the end of a line, 2 = entering the next line
 		lane._park = true // parked/fading on a note (not in flight)
 		if (idx < 0) {
 			// fade in just before a voice's first note
@@ -1035,6 +1183,29 @@ export class NotationStage {
 			lane._fade = clamp(1 - (since - LANE_HOLD) / LANE_FADE, 0, 1)
 			return k < o0.heads.length
 		}
+		if (o0.sys !== o1.sys) {
+			// line break: carry on off the end of this line (fading), then come in from the
+			// left of the next line onto its note — never a long flight back across the page
+			const leap = this.opts.restMode === 'leap' && dt > 1.2
+			const fly = leap ? Math.min(0.6, dt * 0.5) : dt
+			const v = clamp((t - (o1.time - fly)) / fly, 0, 1)
+			const H = 1.2 * this.opts.bounce, hop = this.view.hop
+			const vis = k < Math.max(o0.heads.length, o1.heads.length)
+			lane._park = false
+			if (v <= 0) { out.copy(A); return vis }
+			if (v < 0.5) {
+				const e = v / 0.5, a = e * 0.5
+				out.copy(A); out.x += WRAP_RUN * e; out[hop] += H * 4 * a * (1 - a)
+				lane._fade = 1 - e * e * (3 - 2 * e)
+				lane._side = 1
+			} else {
+				const e = (v - 0.5) / 0.5, a = 0.5 + e * 0.5
+				out.copy(B); out.x -= WRAP_RUN * (1 - e); out[hop] += H * 4 * a * (1 - a)
+				lane._fade = e * e * (3 - 2 * e)
+				lane._side = 2
+			}
+			return vis
+		}
 		const u = clamp((t - o0.time) / dt, 0, 1)
 		const dx = Math.hypot(B.x - A.x, B.y - A.y)
 		const h = (this.opts.arcMode === 'classic'
@@ -1072,10 +1243,10 @@ export class NotationStage {
 			lane.vis = vis && laneFade > 0.01
 			lane.pos.copy(P)
 			// velocity for motion stretch
-			const parked = lane._park
+			const parked = lane._park, side = lane._side
 			this._laneAt(lane, t - 1 / 120, Q)
-			// no velocity across a park/fade (a light reappearing on its next note is not a jump)
-			if (parked || lane._park) V.set(0, 0, 0)
+			// no velocity across a park/fade or a line break (reappearing is not a jump)
+			if (parked || lane._park || side !== lane._side) V.set(0, 0, 0)
 			else V.subVectors(P, Q).multiplyScalar(120)
 			const speed = V.length()
 			// glowing head: rest pose = flat notehead; in flight = stretched along velocity
@@ -1110,14 +1281,16 @@ export class NotationStage {
 				const span = clamp(hopDur * 1.05, 0.12, 0.7)
 				const base = li * STREAK_N * 6
 				const p = this._sp || (this._sp = Array.from({ length: STREAK_N }, () => new THREE.Vector3()))
-				p[0].copy(P); p[0]._vis = vis && laneFade > 0.01
+				p[0].copy(P); p[0]._vis = vis && laneFade > 0.01; p[0]._side = side
 				for (let k = 1; k < STREAK_N; k++) {
 					p[k]._vis = this._laneAt(lane, t - (k / (STREAK_N - 1)) * span, p[k]) && lane._fade > 0.01
-					// the tail stops where the light was hidden: collapse the rest onto the last visible
-					// point so no ribbon quad bridges to a stale or parked position
-					if (!p[k]._vis || !p[k - 1]._vis) { p[k]._vis = false; p[k].copy(p[k - 1]) }
+					p[k]._side = lane._side
+					// the tail stops where the light was hidden or jumped (line break): collapse the
+					// rest onto the last visible point so no ribbon quad bridges to another position
+					const broke = p[k]._side + p[k - 1]._side === 3 || p[k].distanceToSquared(p[k - 1]) > 64
+					if (!p[k]._vis || !p[k - 1]._vis || broke) { p[k]._vis = false; p[k]._side = p[k - 1]._side; p[k].copy(p[k - 1]) }
 				}
-				lane._fade = laneFade
+				lane._fade = laneFade; lane._side = side
 				const moving = vis && p[0].distanceToSquared(p[STREAK_N - 1]) > 0.02
 				for (let k = 0; k < STREAK_N; k++) {
 					const f = 1 - k / (STREAK_N - 1)
@@ -1194,7 +1367,7 @@ export class NotationStage {
 		// wallTime lets offline export drive flash/ripple timing from music time
 		const wall = wallTime ?? performance.now() / 1000
 		if (s) {
-			const jumped = Math.abs(t - this._lastT) > 0.6 || t < this._lastT - 1e-3
+			const jumped = this._jumped = Math.abs(t - this._lastT) > 0.6 || t < this._lastT - 1e-3
 			if (jumped) this._recolorAll(t)
 
 			// Impacts per staff (lights the landed noteheads)
@@ -1268,7 +1441,7 @@ export class NotationStage {
 		cam.aspect = this.camera.aspect
 		cam.near = this.camera.near; cam.far = this.camera.far
 		cam.updateProjectionMatrix()
-		this._poseFor(xf.from, this._lastFx, P, xf.mouse)
+		this._poseFor(xf.from, xf.focus || this._lastFocus, P, xf.mouse)
 		cam.position.copy(P.pos)
 		cam.up.copy(P.up)
 		cam.lookAt(P.target)
@@ -1331,12 +1504,29 @@ export class NotationStage {
 	}
 
 	/** Camera pose for view v around focus x (fx). Writes out.{pos,target,up}; returns {D, viewW}. */
-	_poseFor(v, fx, out, mouse) {
+	_poseFor(v, f, out, mouse) {
 		const s = this.score
 		const fovR = THREE.MathUtils.degToRad(v.fov)
-		const D = ((s.height / 2 + 7) / Math.tan(fovR / 2)) / (this.opts.zoom * (v.zoom || 1))
+		if (v.page && s.systems) {
+			// whole sheet: the current page (paged) or the full line width, a few systems tall (wrapped)
+			const tn = Math.tan(fovR / 2), asp = this.camera.aspect
+			const pg = s.pages?.length > 1 ? s.pages[f.page] || s.pages[0] : null
+			let cx, cy, W, H
+			if (pg) { cx = pg.cx; W = pg.w; H = pg.h; cy = lerp(pg.cy, f.y, 0.1) }
+			else {
+				const sh = s.pages[0]
+				cx = sh.cx; W = sh.w; H = Math.min(sh.h, W * 0.55)
+				cy = clamp(f.y - H * 0.12, sh.cy - sh.h / 2 + H / 2, sh.cy + sh.h / 2 - H / 2)
+			}
+			const D = Math.max(H / 2 / tn, W / 2 / (tn * asp)) * 1.12 / this.opts.zoom
+			out.target.set(cx, cy, 0)
+			out.pos.set(cx + v.offset[0] * D, cy + v.offset[1] * D, v.offset[2] * D)
+			out.up.set(0, 1, 0)
+			return { D, viewW: 2 * D * tn * asp, viewH: 2 * D * tn }
+		}
+		const D = ((f.h / 2 + 7) / Math.tan(fovR / 2)) / (this.opts.zoom * (v.zoom || 1))
 		const viewW = 2 * D * Math.tan(fovR / 2) * this.camera.aspect
-		const target = out.target.set(fx + viewW * v.lead, s.centerY, 0)
+		const target = out.target.set(f.x + viewW * v.lead, f.y, 0)
 		if (v.orbit) {
 			// mouse x → azimuth around the playhead (±50°), mouse y → elevation (6°…80°)
 			const az = mouse.x * 0.9
@@ -1356,10 +1546,21 @@ export class NotationStage {
 	_updateCamera(t, dt) {
 		const s = this.score
 		const v = this.view
-		const vis = this.lanes.filter(l => l.vis)
-		const laneX = vis.length ? vis.reduce((a, l) => a + l.pos.x, 0) / vis.length : this._timelineX(t)
-		const fx = this._lastFx = laneX * 0.35 + this._timelineX(t) * 0.65
-		const { D, viewW } = this._poseFor(v, fx, this._pose, this._mouse)
+		const f = this._focusAt(t, this._focus)
+		// line change (or page turn in the page view): crossfade / cut instead of panning
+		const lineKey = s.lines ? (v.page ? f.page : f.sys) : 0
+		if (this._lineKey != null && lineKey !== this._lineKey && !this._jumped && this._introShot == null) {
+			const mode = this.opts.lineChange
+			if (mode === 'crossfade' && !this._xfade) this._xfade = { from: v, mouse: { ...this._mouse }, start: null, focus: { ...this._lastFocus } }
+			if (mode !== 'pan') this._snapCamera = true
+		}
+		this._lineKey = lineKey
+		// lights on the focused line pull the camera a little (wrapped layouts: ignore other lines)
+		const vis = this.lanes.filter(l => l.vis && (!s.lines || Math.abs(l.pos.y - f.y) < f.h * 0.5 + 4))
+		const laneX = vis.length ? vis.reduce((a, l) => a + l.pos.x, 0) / vis.length : f.x
+		f.x = laneX * 0.35 + f.x * 0.65
+		Object.assign(this._lastFocus, f)
+		const { D, viewW, viewH } = this._poseFor(v, f, this._pose, this._mouse)
 		if (this._introShot != null) {
 			// title shot, then blend into the normal pose over the last 40%
 			const ip = this._introP || (this._introP = { pos: new THREE.Vector3(), target: new THREE.Vector3(), up: new THREE.Vector3() })
@@ -1389,15 +1590,24 @@ export class NotationStage {
 		key.target.position.set(target.x, target.y, 0)
 		const sc = key.shadow.camera
 		const half = viewW * 0.75 + 10
-		sc.left = -half; sc.right = half; sc.top = s.height + 20; sc.bottom = -s.height - 20
+		const halfY = Math.max(s.height + 20, (viewH || 0) * 0.6 + 10)
+		sc.left = -half; sc.right = half; sc.top = halfY; sc.bottom = -halfY
 		sc.near = 1; sc.far = 120
 		sc.updateProjectionMatrix()
 
 		// Grazing spotlight: from behind-left, low, pooling on the playhead
 		const spot = this.spot
-		spot.position.set(target.x - viewW * 0.25 - 6, target.y + s.height * 0.9 + 14, 16 + s.height * 0.4)
-		spot.target.position.set(target.x + viewW * 0.08, target.y, 0)
-		spot.angle = clamp(Math.atan((viewW * 0.55) / spot.position.distanceTo(spot.target.position)), 0.25, 0.9)
+		if (v.page) {
+			// whole page: a wide pool over the sheet, drifting toward the playing line
+			const R = Math.max(viewW, viewH) * 0.5
+			spot.target.position.set(lerp(target.x, f.x, 0.35), lerp(target.y, f.y, 0.35), 0)
+			spot.position.set(spot.target.position.x - R * 0.35, spot.target.position.y + R * 0.6, R * 1.6)
+			spot.angle = clamp(Math.atan((R * 1.05) / spot.position.distanceTo(spot.target.position)), 0.25, 0.9)
+		} else {
+			spot.position.set(target.x - viewW * 0.25 - 6, target.y + s.height * 0.9 + 14, 16 + s.height * 0.4)
+			spot.target.position.set(target.x + viewW * 0.08, target.y, 0)
+			spot.angle = clamp(Math.atan((viewW * 0.55) / spot.position.distanceTo(spot.target.position)), 0.25, 0.9)
+		}
 		spot.shadow.camera.near = 2
 		spot.shadow.camera.far = 200
 	}
@@ -1436,6 +1646,8 @@ export class NotationStage {
 // lanes vanish during silences longer than LANE_GAP: linger LANE_HOLD, fade over
 // LANE_FADE, then reappear on the next note itself, fading in over the LANE_ENTER s before it
 const LANE_GAP = 2.5, LANE_HOLD = 0.35, LANE_FADE = 0.5, LANE_ENTER = 0.4
+// line breaks (wrapped layouts): how far a light runs off the line end / in before the next note
+const WRAP_RUN = 3.5
 
 export function buildOnsets(hits, heads, staffCount, { byTrack = false } = {}) {
 	const groups = new Map() // key → list

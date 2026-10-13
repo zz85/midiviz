@@ -13,6 +13,7 @@ Midi Visualization Experiments
 - Own MIDI → notation builder (grand-staff split, onset-clipped durations, running accidentals, key detection, piano reduction)
 - Loads MIDI, NWC and MusicXML; audio via soundfont-engine + MidiScheduler
 - Views: tilted, flat, tabletop, low angle, free orbit · night ink / paper themes · bloom, ripples, particles, trails, shadows
+- Layouts: single endless line, wrapped sheet, or Letter pages on a desk (nwc-viewer wrap/page modes) with a whole-page view and pan/crossfade/cut line changes
 - Needs a server rooted at the parent folder locally, e.g. `cd .. && python3 -m http.server`
 
 15 Mar 2026

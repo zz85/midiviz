@@ -77,11 +77,35 @@ export async function loadNotationEngine() {
  * Interpret + typeset a score. Returns the drawing elements (in insertion
  * order) and the staves (tokens now carry drawingNoteHead etc.).
  */
-export function engrave(eng, data) {
-	const mc = new eng.context.MusicContext(data, window.canvas)
-	if (data._source !== 'musescore' && data._source !== 'musicxml') eng.interp.interpret(mc)
-	eng.typeset.score(mc)
-	return { elements: [...window.drawing.set], staves: data.score.staves, fontSize: eng.constants.getFontSize() }
+export function engrave(eng, data, { layout = 'scroll', pageWidth = 1000 } = {}) {
+	// layout: 'scroll' = one endless line; 'wrap' = systems broken to pageWidth (score px)
+	// like a long sheet; 'pages' = Letter pages laid side by side (nwc-viewer page mode)
+	const C = eng.constants
+	const mode = layout === 'pages' ? 'page' : layout === 'wrap' ? 'wrap' : 'scroll'
+	C.setLayoutMode(mode)
+	if (mode === 'page') { C.setPageSize?.('letter'); C.setPageOrientation?.('portrait'); C.setPageViewMode?.('horizontal') }
+	const scoreEl = document.getElementById('score')
+	// wrap mode reads the available width from the #score container (score px at zoom 1)
+	const prevWidth = scoreEl.style.width
+	const zoom = C.getZoomLevel?.() || 1
+	if (mode === 'wrap') scoreEl.style.width = Math.round((pageWidth + C.getFontSize() * 1.5) * zoom) + 'px'
+	window._pageGeometry = null
+	try {
+		const mc = new eng.context.MusicContext(data, window.canvas)
+		if (data._source !== 'musescore' && data._source !== 'musicxml') eng.interp.interpret(mc)
+		eng.typeset.score(mc)
+	} finally {
+		scoreEl.style.width = prevWidth
+		C.setLayoutMode('scroll')
+	}
+	const elements = [...window.drawing.set]
+	// staff rectangles (score px): one per staff per system in wrap/page mode
+	const staveRects = mode === 'scroll' ? [] : elements
+		.filter(e => e.constructor?.name === 'Stave')
+		.map(e => ({ x: (e.x || 0) + (e.offsetX || 0), y: (e.y || 0) + (e.offsetY || 0), width: e.width, size: e.size }))
+	const pg = mode === 'page' && window._pageGeometry
+	const pages = pg ? pg.pagePositions.map(p => ({ x: p.x, y: p.y, width: pg.pageWidth, height: pg.pageHeight })) : null
+	return { elements, staves: data.score.staves, fontSize: C.getFontSize(), layout: { mode: layout, staveRects, pages, pageWidth } }
 }
 
 /** Decode a non-MIDI notation file into nwc-viewer data. */

@@ -263,6 +263,7 @@ function segmentShape(a, b, w, extend) {
 }
 
 function firstX(subs, S) { return subs[0].ops[0].p[0] * S }
+function firstY(subs, S) { return -subs[0].ops[0].p[1] * S }
 
 const textCache = new Map()
 function textTexture(text, font) {
@@ -306,8 +307,9 @@ export function buildScoreMeshes(records, { fontSize, materials, chunk = 40 }) {
 	// Thin, printed-looking ink: barely raised off the page (embossed print)
 	const DEPTH = { staff: 0.02, ink: 0.05, glyph: 0.07, notehead: 0.09 }
 	const buckets = new Map() // key → { staff: [], ink: [] }
-	const bucket = x => {
-		const k = Math.floor(x / chunk)
+	// chunks are 2D so wrapped/paged layouts (many systems stacked) still cull well
+	const bucket = (x, y) => {
+		const k = Math.floor(x / chunk) + ',' + Math.floor(y / chunk)
 		if (!buckets.has(k)) buckets.set(k, { staff: [], ink: [] })
 		return buckets.get(k)
 	}
@@ -318,14 +320,14 @@ export function buildScoreMeshes(records, { fontSize, materials, chunk = 40 }) {
 	for (const r of records) {
 		const cat = r.el?.constructor?.name === 'Stave' ? 'staff' : 'ink'
 		if (r.kind === 'fill') {
-			for (const s of shapePathToShapes(opsToShapePath(r.subs, S))) bucket(firstX(r.subs, S))[cat].push(s)
+			for (const s of shapePathToShapes(opsToShapePath(r.subs, S))) bucket(firstX(r.subs, S), firstY(r.subs, S))[cat].push(s)
 		} else if (r.kind === 'stroke') {
 			const w = Math.max(r.width * S, 0.02)
 			for (const sub of r.subs) {
 				const pts = flatten(sub, S)
 				for (let i = 0; i < pts.length - 1; i++) {
 					const sh = segmentShape(pts[i], pts[i + 1], w, cat === 'staff' ? 0 : w * 0.25)
-					if (sh) { bucket(pts[i][0])[cat].push(sh); grow(pts[i][0], pts[i][1]); grow(pts[i + 1][0], pts[i + 1][1]) }
+					if (sh) { bucket(pts[i][0], pts[i][1])[cat].push(sh); grow(pts[i][0], pts[i][1]); grow(pts[i + 1][0], pts[i + 1][1]) }
 				}
 			}
 		} else if (r.kind === 'glyph') {
@@ -369,7 +371,7 @@ export function buildScoreMeshes(records, { fontSize, materials, chunk = 40 }) {
 		const bb = path.getBoundingBox()
 		const byChunk = new Map()
 		for (const inst of info.instances) {
-			const k = Math.floor(inst.m[4] * S / chunk)
+			const k = Math.floor(inst.m[4] * S / chunk) + ',' + Math.floor(-inst.m[5] * S / chunk)
 			if (!byChunk.has(k)) byChunk.set(k, [])
 			byChunk.get(k).push(inst)
 		}
