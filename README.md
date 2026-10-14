@@ -4,6 +4,23 @@ Midi Visualization Experiments
 
 [WebMscore](webmscore.html) - MuseScore reference renderer (libmscore via WebAssembly)
 
+13 Oct 2026
+
+[Experiment #027 - JabTunes Reimagined](027_jabtunes_reimagined.html)
+- Real-time three.js take on the 2009 JabTunes piano: every key is extruded geometry (notched whites, sloped blacks) on its own pivot, so chords, glissandi and whole songs animate
+- Mirror-under-lacquer fallboard with gold "My Music" (`?title=` to change); light trails rise from each played key up through the varnish (per-channel colours for songs)
+- Song player: built-in MIDIs, Open… or drag-and-drop any .mid; keyboard grows to fit, speed, seek
+- Sound via soundfont-engine (oxisynth, Motif ES6 + Creative GM by default, GM instrument picker) or the original 2009 samples, repitched to any range, with damping and a working pedal
+- Original QWERTY map, ←/→ octave shift, Space sustain, Web MIDI keyboard input with velocity
+- Notepad recorder in the old `c1 d1s …` notation with Play / Back / Clear, plus Share (link replays the recording)
+- 25, 37, 49, 61 or 88 keys; original, player, low, top and free-orbit cameras
+
+[Experiment #026 - JabTunes (recovered)](026_jabtunes_recovered.html)
+- Faithful HTML5 port of jabtunes.com as archived on 15 Jan 2010: landing page, "Peek" bubble and fancybox popup, then the Flash stage
+- Uses the assets pulled out of `3Dpiano.swf` and `peek.swf` (decompiled with JPEXS, kept in [jabtunes/](jabtunes/)): 26 pre-rendered JPEG frames swapped per key, 25 embedded 11 kHz MP3 samples, the 25 hand-placed button hit shapes, and the ActionScript, ported line by line (quirks included: one key shown at a time, samples always ring out, no glissando)
+- Instrument combo, Undo / Clear notepad and Play replay as in the original; the streamed non-piano instruments were never archived, so they fall back to General MIDI patches
+- `?peek` opens the stage alone, `?peek&fit` scales it to the window, `&hits` outlines the hit areas
+
 1 Oct 2026
 
 [Experiment #025 - Notation 3D](025_notation_3d.html)

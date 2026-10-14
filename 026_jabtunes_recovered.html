@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JabTunes - Music Seekers' Paradise</title>
+<!--
+  Experiment #026 - JabTunes (recovered)
+
+  A faithful HTML5 port of jabtunes.com as archived on 15 Jan 2010
+  (https://web.archive.org/web/20100115041359/http://jabtunes.com/).
+
+  Everything here comes out of the original files, decompiled with JPEXS:
+    jabtunes/original/3Dpiano.swf  - the piano (600x320, Flash 8, AS2)
+    jabtunes/original/peek.swf     - the host movie (600x450): instrument
+                                     combo, notes pad, Undo / Clear / Play
+    jabtunes/frames/*.jpg          - the 26 pre-rendered frames: "rest" and
+                                     one per key, swapped by gotoAndStop()
+    jabtunes/samples/*.mp3         - the 25 embedded piano samples (11 kHz)
+    jabtunes/original/hit_areas.json - the 25 key buttons: one parallelogram
+                                     hit shape, placed with a per-key matrix
+    jabtunes/original/*.as         - the decompiled ActionScript this ports
+
+  Modes:  (no query)  the landing page with the fancybox "Try it here!" popup
+          ?peek       peek.html?iframe - the Flash stage on its own
+          ?peek&fit   the stage scaled to fill the window
+
+  The other instruments were streamed from joshkoo.comp.nus.edu.sg/mymusic/
+  notes/<instrument>/<1..25>.mp3, which the Wayback Machine never captured,
+  so those entries play the nearest General MIDI patch from a SoundFont.
+-->
+<style>
+  /* ── jabtunes.com landing page (inline CSS from the archived index) ── */
+  .jt { text-align: center; padding: 0.5em; margin: 1em; }
+  #jtbody { color: #927B51; background: #BCDD5A; font-family: Georgia, serif; font-size: 48px; margin: 8px; }
+  .peek-popup { margin: 100px auto; padding: 0; width: 100px; position: relative; }
+  .peek-popup a { font-weight: bold; color: #FF7900; text-decoration: none; }
+  .peek-popup a:hover { text-decoration: underline; }
+  div.peek-popup em {
+    background: url(jabtunes/site/bubble.png) no-repeat; width: 200px; height: 49px;
+    position: absolute; top: -70px; left: 0; text-align: center; text-indent: -9999px;
+    z-index: 2; display: none; opacity: 0;
+  }
+  #credits {
+    position: fixed; left: 0; right: 0; bottom: 0; padding: 6px 12px; font: 12px Georgia, serif;
+    color: #6f5d3a; background: rgba(255,255,255,0.35); text-align: center;
+  }
+  #credits a { color: #b85a00; }
+
+  /* ── fancybox 1.x (overlayShow: false, frame 630x482) ── */
+  #fancy_outer { position: fixed; z-index: 90; display: none; transform-origin: 0 0; }
+  #fancy_inner { position: relative; width: 100%; height: 100%; background: #fff; }
+  #fancy_content { position: absolute; inset: 10px; }
+  #fancy_frame { width: 100%; height: 100%; border: 0; display: block; }
+  #fancy_close {
+    position: absolute; top: -12px; right: -15px; width: 30px; height: 30px; cursor: pointer; z-index: 3;
+    background: url(jabtunes/site/fancy_closebox.png) no-repeat;
+  }
+  .fancy_bg { position: absolute; }
+  #fancy_bg_n  { top: -18px; left: 0; width: 100%; height: 18px; background: url(jabtunes/site/fancy_shadow_n.png) repeat-x; }
+  #fancy_bg_ne { top: -18px; right: -13px; width: 13px; height: 18px; background: url(jabtunes/site/fancy_shadow_ne.png) no-repeat; }
+  #fancy_bg_e  { top: 0; right: -13px; width: 13px; height: 100%; background: url(jabtunes/site/fancy_shadow_e.png) repeat-y; }
+  #fancy_bg_se { bottom: -18px; right: -13px; width: 13px; height: 18px; background: url(jabtunes/site/fancy_shadow_se.png) no-repeat; }
+  #fancy_bg_s  { bottom: -18px; left: 0; width: 100%; height: 18px; background: url(jabtunes/site/fancy_shadow_s.png) repeat-x; }
+  #fancy_bg_sw { bottom: -18px; left: -13px; width: 13px; height: 18px; background: url(jabtunes/site/fancy_shadow_sw.png) no-repeat; }
+  #fancy_bg_w  { top: 0; left: -13px; width: 13px; height: 100%; background: url(jabtunes/site/fancy_shadow_w.png) repeat-y; }
+  #fancy_bg_nw { top: -18px; left: -13px; width: 13px; height: 18px; background: url(jabtunes/site/fancy_shadow_nw.png) no-repeat; }
+
+  /* ── peek.html?iframe ── */
+  body.peek { margin: 8px; background: #fff; font-family: "Times New Roman", serif; }
+  body.peek.fit { margin: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; height: 100vh; }
+  body.peek.fit > em { position: fixed; top: 6px; left: 8px; }
+
+  /* The 600x450 Flash stage. Everything inside is positioned in stage pixels,
+     straight from the PlaceObject matrices. */
+  #stage {
+    position: relative; width: 600px; height: 450px; overflow: hidden; background: #fff;
+    font-family: Verdana, "DejaVu Sans", "Bitstream Vera Sans", sans-serif; user-select: none;
+    -webkit-user-select: none; transform-origin: 0 0; flex: none;
+  }
+  #stage * { box-sizing: border-box; }
+  #bg { position: absolute; left: -0.5px; top: -0.5px; width: 600.5px; height: 347.8px; background: #d8dfea; border-top: 1px solid #666; }
+
+  /* frame 1: loading dialog */
+  #dialog { position: absolute; left: 0; top: 0; width: 600px; height: 320px; }
+  #dialog .bar { position: absolute; left: 211px; top: 106px; width: 150px; height: 30px; border: 1px solid #919999; background: #fff; }
+  #dialog .bar i { display: block; height: 100%; width: 0; background: linear-gradient(#cbf6cb, #7fd77f); }
+  #dialog p { position: absolute; left: 156px; top: 140px; width: 270px; margin: 0; font-size: 15px; line-height: 26px; text-align: center; color: #000; }
+
+  /* 3Dpiano.swf, loaded into container_piano at (0, 0) */
+  #piano { position: absolute; left: 0; top: 0; width: 600px; height: 320px; display: none; }
+  #piano img { position: absolute; inset: 0; width: 600px; height: 320px; }
+  #hits { position: absolute; inset: 0; width: 600px; height: 320px; touch-action: none; }
+  #hits polygon { fill: transparent; cursor: pointer; }
+  #hits.debug polygon { fill: rgba(255, 0, 0, 0.18); stroke: red; stroke-width: 0.5; }
+  #loading_status { position: absolute; left: 234.25px; top: 13.5px; width: 140px; font-size: 12px; color: #000; text-align: center; }
+  #loading_bar { position: absolute; left: 232.25px; top: 34px; width: 150px; height: 10px; border: 1px solid #919999; background: #fff; display: none; }
+  #loading_bar i { display: block; height: 100%; width: 0; background: linear-gradient(#cbf6cb, #7fd77f); }
+
+  /* frame 2: the controls under the piano (mx.controls Halo theme) */
+  #controls { display: none; }
+  .lbl { position: absolute; font-size: 15px; color: #000; }
+  #instrument_option {
+    position: absolute; left: 196.85px; top: 332.45px; width: 120px; height: 22px; font: 12px Verdana, sans-serif;
+    border: 1px solid #919999; border-radius: 4px; padding: 0 22px 0 4px; color: #0b333c; cursor: pointer;
+    appearance: none; -webkit-appearance: none;
+    background: linear-gradient(#e5fbe5, #b9eab9) right / 20px 100% no-repeat, #fff;
+  }
+  #instrument_option + b {
+    position: absolute; left: 303px; top: 340px; width: 0; height: 0; pointer-events: none;
+    border: 4px solid transparent; border-top: 5px solid #2b333c; border-bottom: 0;
+  }
+  .btn {
+    position: absolute; top: 333.45px; width: 50px; height: 21px; border: 1px solid #5a5a5a; border-radius: 4px;
+    background: linear-gradient(#f0f0f0, #c8c8c8 55%, #a8a8a8); font: 11px Verdana, sans-serif; color: #2b333c;
+    box-shadow: inset 0 0 0 1px #fff; cursor: pointer; padding: 0;
+  }
+  .btn:active { background: linear-gradient(#a8a8a8, #d0d0d0); }
+  #back_Button { left: 366.85px; }
+  #clearButton { left: 426.95px; }
+  #notesBox { position: absolute; left: 81.05px; top: 370.4px; width: 404.35px; height: 64.3px; background: #d6d3d6; }
+  #keys {
+    position: absolute; left: 82.9px; top: 371.8px; width: 401px; height: 61px; overflow: hidden; font-size: 12px;
+    line-height: 15px; color: #000; word-wrap: break-word;
+  }
+  #ButtonPlay {
+    position: absolute; left: 515.55px; top: 379.45px; width: 40px; height: 40px; border-radius: 50%;
+    border: 2px solid #ddd; background: radial-gradient(#fafafa 55%, #e4e4e4); cursor: pointer; padding: 0;
+  }
+  #ButtonPlay::after {
+    content: ''; position: absolute; left: 15px; top: 11px; border: 9px solid transparent;
+    border-left: 13px solid #484848; border-right: 0;
+  }
+  #ButtonPlay:active { background: radial-gradient(#e0e0e0 55%, #cfcfcf); }
+</style>
+</head>
+<body>
+<script>
+  // Decide the page before anything renders: the landing page, or peek.html?iframe
+  const PEEK = new URLSearchParams(location.search).has('peek')
+  document.body.id = PEEK ? '' : 'jtbody'
+  if (PEEK) document.body.className = 'peek' + (new URLSearchParams(location.search).has('fit') ? ' fit' : '')
+</script>
+
+<!-- ═════════════ jabtunes.com ═════════════ -->
+<template id="landing">
+  <div class="jt" style="text-align:left">Always wanted to play music yourself?</div>
+  <div class="jt peek-popup">
+    <a href="?peek" id="peek">Try it here!</a>
+    <em>Peek</em>
+  </div>
+  <div class="jt" style="text-align:right; font-size:smaller;">JabTunes.com</div>
+
+  <div id="fancy_outer">
+    <div id="fancy_inner">
+      <div id="fancy_close" title="Close"></div>
+      <div class="fancy_bg" id="fancy_bg_n"></div><div class="fancy_bg" id="fancy_bg_ne"></div>
+      <div class="fancy_bg" id="fancy_bg_e"></div><div class="fancy_bg" id="fancy_bg_se"></div>
+      <div class="fancy_bg" id="fancy_bg_s"></div><div class="fancy_bg" id="fancy_bg_sw"></div>
+      <div class="fancy_bg" id="fancy_bg_w"></div><div class="fancy_bg" id="fancy_bg_nw"></div>
+      <div id="fancy_content"><iframe id="fancy_frame" title="JabTunes Peek"></iframe></div>
+    </div>
+  </div>
+
+  <div id="credits">
+    Experiment #026 · jabtunes.com recovered from the
+    <a href="https://web.archive.org/web/20100115041359/http://jabtunes.com/" target="_blank" rel="noopener">15 Jan 2010 archive</a>,
+    Flash ported to HTML5 from its own frames, samples and ActionScript ·
+    <a href="?peek&fit">stage only</a> ·
+    <a href="027_jabtunes_reimagined.html">reimagined in 3D →</a> ·
+    <a href="README.md">all experiments</a>
+  </div>
+</template>
+
+<!-- ═════════════ peek.html?iframe ═════════════ -->
+<template id="peekpage">
+  <em style="font-size:smaller">Click on the notes!</em>
+  <div id="stage">
+    <div id="bg"></div>
+
+    <!-- peek.swf frame 1 -->
+    <div id="dialog">
+      <div class="bar"><i></i></div>
+      <p>Click on the piano keys, and your keyboard to play when loading ends</p>
+    </div>
+
+    <!-- container_piano ← 3Dpiano.swf -->
+    <div id="piano">
+      <img id="frame" alt="3D piano" draggable="false">
+      <svg id="hits" viewBox="0 0 600 320"></svg>
+      <div id="loading_status"></div>
+      <div id="loading_bar"><i></i></div>
+    </div>
+
+    <!-- peek.swf frame 2 -->
+    <div id="controls">
+      <div class="lbl" style="left:97.2px; top:333px">Instrument:</div>
+      <select id="instrument_option" title="Instrument">
+        <option value="piano">Piano</option>
+        <option value="harpsichord">Harpsichord</option>
+        <option value="glockenspiel">Glockenspiel</option>
+        <option value="guitar">Guitar</option>
+        <option value="organ">Organ</option>
+        <option value="bells">Bells</option>
+        <option value="fun">Fun Effects</option>
+      </select><b></b>
+      <button class="btn" id="back_Button">Undo</button>
+      <button class="btn" id="clearButton">Clear</button>
+      <div class="lbl" style="left:17.4px; top:374px">Notes:</div>
+      <div id="notesBox"></div>
+      <div id="keys"></div>
+      <button id="ButtonPlay" title="Play"></button>
+    </div>
+  </div>
+</template>
+
+<script type="module">
+const $ = id => document.getElementById(id)
+const params = new URLSearchParams(location.search)
+
+if (!PEEK) landing()
+else peek()
+
+// ═══════════════════════════════════════════════════════════════════════
+// jabtunes.com — landing page with the jQuery bubble + fancybox popup
+// ═══════════════════════════════════════════════════════════════════════
+function landing() {
+  document.title = "JabTunes - Music Seekers' Paradise"
+  document.body.append($('landing').content.cloneNode(true))
+
+  // $(".peek-popup a").hover(): bubble slides down to -60 and fades in ("slow" = 600 ms),
+  // back up to -70 and out ("fast" = 200 ms)
+  const a = $('peek'), em = a.nextElementSibling
+  em.style.transition = 'opacity 600ms, top 600ms'
+  a.addEventListener('mouseenter', () => {
+    em.style.transition = 'opacity 600ms, top 600ms'
+    em.style.display = 'block'
+    requestAnimationFrame(() => { em.style.opacity = 1; em.style.top = '-60px' })
+  })
+  a.addEventListener('mouseleave', () => {
+    em.style.transition = 'opacity 200ms, top 200ms'
+    em.style.opacity = 0; em.style.top = '-70px'
+    setTimeout(() => { if (em.style.opacity === '0') em.style.display = 'none' }, 200)
+  })
+
+  // $("a#peek").fancybox({ frameWidth: 630, frameHeight: 482, zoomSpeedIn: 300, zoomSpeedOut: 300, overlayShow: false })
+  const outer = $('fancy_outer'), frame = $('fancy_frame')
+  const W = 630 + 20, H = 482 + 20 // frame plus fancybox's 10px padding
+  let open = false
+  function place(scale = 1) {
+    const s = Math.min(1, (innerWidth - 40) / W, (innerHeight - 40) / H)
+    outer.style.width = W + 'px'; outer.style.height = H + 'px'
+    outer.style.left = (innerWidth - W * s) / 2 + 'px'
+    outer.style.top = Math.max(20, (innerHeight - H * s) / 2) + 'px'
+    outer.style.transform = `scale(${s * scale})`
+    return s
+  }
+  function zoom(from, to, done) {
+    const r = a.getBoundingClientRect(), s = place()
+    // zoom out of / back into the link, like fancybox's zoomSpeedIn/Out
+    const fromBox = `translate(${r.left - parseFloat(outer.style.left)}px, ${r.top - parseFloat(outer.style.top)}px) scale(${r.width / W})`
+    const toBox = `scale(${s})`
+    outer.animate([{ transform: from ? toBox : fromBox, opacity: from ? 1 : 0.2 }, { transform: to ? toBox : fromBox, opacity: to ? 1 : 0 }],
+      { duration: 300, easing: 'ease-out' }).onfinish = done
+  }
+  a.addEventListener('click', ev => {
+    ev.preventDefault()
+    if (open) return
+    open = true
+    outer.style.display = 'block'
+    if (!frame.src) frame.src = '?peek'
+    zoom(false, true, () => frame.contentWindow?.focus())
+  })
+  frame.addEventListener('load', () => open && frame.contentWindow.focus())
+  $('fancy_close').addEventListener('click', () => {
+    zoom(true, false, () => {
+      outer.style.display = 'none'; open = false
+      frame.src = ''; frame.removeAttribute('src') // fancybox tears the iframe down on close
+    })
+  })
+  addEventListener('keydown', ev => { if (ev.key === 'Escape' && open) $('fancy_close').click() })
+  addEventListener('resize', () => open && place())
+  if (location.hash === '#open') a.click()
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// peek.swf + 3Dpiano.swf
+// ═══════════════════════════════════════════════════════════════════════
+async function peek() {
+  document.title = 'JabTunes Peek'
+  document.body.append($('peekpage').content.cloneNode(true))
+  const stage = $('stage')
+  if (document.body.classList.contains('fit')) {
+    // scale = "showall": fit the 600x450 movie inside the window, keep aspect
+    const fit = () => {
+      const s = Math.min(innerWidth / 600, (innerHeight - 30) / 450)
+      stage.style.transform = `scale(${s})`
+      stage.style.marginRight = 600 * (s - 1) + 'px'
+      stage.style.marginBottom = 450 * (s - 1) + 'px'
+    }
+    fit(); addEventListener('resize', fit)
+  }
+
+  // The 25 note names in 3Dpiano.swf frame order (frames 3..27, also the
+  // button instance names, the sound linkage names and the notepad text).
+  const NOTES = ['c1', 'c1s', 'd1', 'd1s', 'e1', 'f1', 'f1s', 'g1', 'g1s', 'a1', 'a1s', 'b1',
+    'c2', 'c2s', 'd2', 'd2s', 'e2', 'f2', 'f2s', 'g2', 'g2s', 'a2', 'a2s', 'b2', 'c3']
+  // oldnotes[name] = 1..25 (the file index used for the streamed instruments)
+  const oldnotes = Object.fromEntries(NOTES.map((n, i) => [n, i + 1]))
+
+  // ── Assets ────────────────────────────────────────────────────────────
+  const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+  const master = audioCtx.createGain()
+  master.gain.value = 0.8
+  master.connect(audioCtx.destination)
+  const frames = {}   // label -> HTMLImageElement
+  const samples = {}  // linkage name -> AudioBuffer
+  let loaded = 0
+  const total = 26 + 25
+  const tick = () => { loaded++; document.querySelector('#dialog .bar i').style.width = (100 * loaded / total) + '%' }
+
+  const loadImage = (name) => new Promise((res, rej) => {
+    const img = new Image()
+    img.onload = () => { frames[name] = img; tick(); res() }
+    img.onerror = rej
+    img.src = `jabtunes/frames/${name}.jpg`
+  })
+  const loadSample = async (name) => {
+    const buf = await (await fetch(`jabtunes/samples/${name}.mp3`)).arrayBuffer()
+    samples[name] = await audioCtx.decodeAudioData(buf)
+    tick()
+  }
+  try {
+    await Promise.all([loadImage('rest'), ...NOTES.map(loadImage), ...NOTES.map(loadSample)])
+  } catch (e) {
+    document.querySelector('#dialog p').textContent = 'Failed to load: ' + e.message
+    throw e
+  }
+
+  // ── 3Dpiano.swf ───────────────────────────────────────────────────────
+  // Frame 2 is the piano at rest; frames 3..27 are labelled with a note name
+  // and show that one key pressed.
+  const img = $('frame')
+  function gotoAndStop(f) { img.src = frames[f === 2 ? 'rest' : f].src }
+
+  const instrument_option = $('instrument_option')
+  const instrument_sounds = {}  // instrument -> [1..25] (here: a GM substitute)
+
+  function PlaySound(soundNote) {
+    gotoAndStop(soundNote)
+    resume()
+    if (instrument_option.value === 'piano') {
+      // var s = new Sound(this); s.attachSound(soundNote); s.start();
+      // The whole sample plays out every time: Flash never stopped it on release.
+      const src = audioCtx.createBufferSource()
+      src.buffer = samples[soundNote]
+      src.connect(master)
+      src.start()
+    } else {
+      instrument_sounds[instrument_option.value]?.[oldnotes[soundNote]]?.start()
+    }
+  }
+  // Called through _parent, i.e. into peek.swf's recorder
+  const add_note = (time, note_name) => addNote(note_name, time)
+  const stop_note = (time, note_name) => stopNote(note_name, time)
+  const getTimer = () => Math.round(performance.now())
+
+  // Buttons: one shared hit shape (a parallelogram) placed 25 times. Depth
+  // order matters where they overlap, so they are added in depth order.
+  const hits = $('hits')
+  if (params.has('hits')) hits.classList.add('debug')
+  const areas = await (await fetch('jabtunes/original/hit_areas.json')).json()
+  for (const [name, depth, poly] of areas.sort((a, b) => a[1] - b[1])) {
+    const p = document.createElementNS('http://www.w3.org/2000/svg', 'polygon')
+    p.setAttribute('points', poly.map(q => q.join(',')).join(' '))
+    p.id = name
+    hits.append(p)
+    // Flash button semantics: onPress, onRelease (over the same button),
+    // onDragOut (left while held). No onReleaseOutside / onDragOver, so
+    // sliding across keys does nothing - just like the original.
+    let down = false
+    p.addEventListener('pointerdown', ev => {
+      p.releasePointerCapture?.(ev.pointerId) // so touch gets leave events too
+      down = true
+      add_note(getTimer(), name)
+      PlaySound(name)
+    })
+    p.addEventListener('pointerup', () => {
+      if (!down) return
+      down = false
+      stop_note(getTimer(), name)
+      gotoAndStop(2)
+    })
+    p.addEventListener('pointerleave', () => {
+      if (!down) return
+      down = false
+      stop_note(getTimer(), name)
+      gotoAndStop(2)
+    })
+  }
+
+  // Key.addListener(keyObject). key_map keyed by Flash keyCodes; translated
+  // via KeyboardEvent.code so it works the same on every layout/browser.
+  const CODE_TO_KEYCODE = {
+    Digit2: 50, Digit3: 51, Digit5: 53, Digit6: 54, Digit7: 55, Digit9: 57, Digit0: 48, Equal: 187,
+    KeyQ: 81, KeyW: 87, KeyE: 69, KeyR: 82, KeyT: 84, KeyY: 89, KeyU: 85, KeyI: 73, KeyO: 79, KeyP: 80,
+    BracketLeft: 219, BracketRight: 221, Backslash: 220,
+    KeyA: 65, KeyS: 83, KeyF: 70, KeyG: 71, KeyH: 72,
+    ShiftLeft: 16, ShiftRight: 16, KeyZ: 90, KeyX: 88, KeyC: 67, KeyV: 86, KeyB: 66, KeyN: 78, KeyM: 77,
+  }
+  const key_map = {
+    50: 'c1s', 51: 'd1s', 53: 'f1s', 54: 'g1s', 55: 'a1s', 57: 'c2s', 48: 'd2s', 187: 'f2s',
+    81: 'c1', 87: 'd1', 69: 'e1', 82: 'f1', 84: 'g1', 89: 'a1', 85: 'b1', 73: 'c2', 79: 'd2', 80: 'e2',
+    219: 'f2', 221: 'g2', 220: 'a2',
+    65: 'c2s', 83: 'd2s', 70: 'f2s', 71: 'g2s', 72: 'a2s',
+    16: 'c2', 90: 'd2', 88: 'e2', 67: 'f2', 86: 'g2', 66: 'a2', 78: 'b2', 77: 'c3',
+  }
+  const key_presses = {}
+  let write = false
+  addEventListener('keydown', ev => {
+    if (write || ev.target === instrument_option) return
+    const code = CODE_TO_KEYCODE[ev.code]
+    const n1 = key_map[code]
+    if (n1 === undefined) return
+    ev.preventDefault()
+    if (!key_presses[code]) {
+      key_presses[code] = true
+      add_note(getTimer(), n1)
+      PlaySound(n1)
+    }
+  })
+  addEventListener('keyup', ev => {
+    const code = CODE_TO_KEYCODE[ev.code]
+    const n1 = key_map[code]
+    if (n1 === undefined) return
+    key_presses[code] = false
+    stop_note(getTimer(), n1)
+    gotoAndStop(2)
+  })
+  addEventListener('blur', () => { for (const k in key_presses) key_presses[k] = false })
+
+  // Instrument change: the original streamed 25 MP3s per instrument from
+  // joshkoo.comp.nus.edu.sg (never archived). Same flow here - "Loading.
+  // Please wait..." + progress bar - but the notes come from a SoundFont.
+  const GM = { harpsichord: 6, glockenspiel: 9, guitar: 24, organ: 19, bells: 14, fun: 98 }
+  let engine = null, enginePromise = null
+  async function getEngine() {
+    if (enginePromise) return enginePromise
+    enginePromise = (async () => {
+      const { SoundFontEngine } = await import('./soundfont-engine/src/index.js')
+      engine = new SoundFontEngine({ backend: 'oxisynth', vendorPath: new URL('./vendor', import.meta.url).href, audioContext: audioCtx })
+      await engine.loadSoundFont('soundfonts/Creative(emu10k1)8MBGMSFX.sf2')
+      return engine
+    })()
+    return enginePromise
+  }
+  const loading_status = $('loading_status'), loading_bar = $('loading_bar')
+  const setProgress = (v, max) => { loading_bar.firstChild.style.width = (100 * v / max) + '%' }
+  instrument_option.addEventListener('change', async () => {
+    instrument_option.blur() // instrument_option.onSetFocus = Selection.setFocus(null)
+    const inst = instrument_option.value
+    if (inst === 'piano' || instrument_sounds[inst]) return
+    instrument_sounds[inst] = []
+    loading_status.textContent = 'Loading. Please wait...'
+    let loading_amt = 0
+    loading_bar.style.display = 'block'
+    setProgress(0, 25)
+    const fake = setInterval(() => { // the SoundFont arrives in one piece; step the bar like 25 files would
+      if (loading_amt < 24) { loading_amt++; loading_status.textContent = 'Loading ' + loading_amt * 4 + '%'; setProgress(loading_amt, 25) }
+    }, 120)
+    const eng = await getEngine()
+    clearInterval(fake)
+    const ch = Object.keys(GM).indexOf(inst) + 1 // one MIDI channel per instrument
+    eng.programChange(ch, GM[inst])
+    for (let i = 1; i <= 25; i++) {
+      const midi = 59 + i
+      // setPan(int((i - 12.5) * 200 / 25)) - per-note pan can't be done on one
+      // synth channel, so these stay centred.
+      instrument_sounds[inst][i] = {
+        start() {
+          eng.noteOff(midi, ch)
+          eng.noteOn(midi, 0.8, ch)
+          // Flash played each MP3 to its end; let the synth note ring the same ~3 s
+          clearTimeout(this.t); this.t = setTimeout(() => eng.noteOff(midi, ch), 3000)
+        },
+      }
+    }
+    loading_status.textContent = ''
+    loading_bar.style.display = 'none'
+  })
+
+  // ── peek.swf frame 2: the notepad recorder ────────────────────────────
+  const keys = $('keys')
+  let notes = []
+  let start_time
+  let song_content = ''
+  let running = false
+
+  function addNote(pitch, time) {
+    if (start_time === undefined) start_time = getTimer()
+    const n = notes.length
+    notes[n] = { pitch, start: getTimer() - start_time }
+    keys.textContent += notes[n].pitch + ' '
+    song_content = keys.textContent
+    keys.scrollTop = keys.scrollHeight
+  }
+  function stopNote(pitch, time) {
+    for (let i = notes.length - 1; i >= 0; i--) {
+      if (notes[i].pitch === pitch) { notes[i].duration = getTimer() - start_time - notes[i].start; break }
+    }
+  }
+  $('back_Button').onclick = () => {
+    notes.pop()
+    start_time = notes.length > 1 ? getTimer() - notes[notes.length - 1].start : undefined
+    keys.textContent = notes.map(n => n.pitch + ' ').join('')
+  }
+  $('clearButton').onclick = () => {
+    start_time = undefined
+    keys.textContent = ''
+    song_content = ''
+    notes.length = 0
+  }
+  $('ButtonPlay').onclick = () => {
+    // Ported as written - including start_time being reset to "now" after the
+    // replay is scheduled, so notes added afterwards are timed from this click.
+    if (!running && notes.length) {
+      running = true
+      const base = 0 // int(notes[i].start) with i still undefined → 0
+      for (const n of notes) {
+        setTimeout(() => PlaySound(n.pitch), n.start - base)
+        const up = n.duration !== undefined ? n.duration : 100
+        setTimeout(() => gotoAndStop(2), n.start + up - base)
+      }
+      setTimeout(() => { running = false }, notes[notes.length - 1].start - base + 500)
+    }
+    start_time = getTimer()
+  }
+
+  function resume() { if (audioCtx.state !== 'running') audioCtx.resume() }
+  addEventListener('pointerdown', resume, { capture: true })
+
+  // ── Loading ends: piano appears, peek moves to frame 2 ────────────────
+  gotoAndStop(2)
+  $('dialog').style.display = 'none'
+  $('piano').style.display = 'block'
+  $('controls').style.display = 'block'
+  window.__peek = { notes: () => notes, PlaySound, gotoAndStop, img }
+}
+</script>
+</body>
+</html>

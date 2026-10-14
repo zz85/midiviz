@@ -1,0 +1,1167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>Experiment #027 - JabTunes Reimagined</title>
+  <!--
+    Experiment #027 - a real-time, reimagined remake of the 2009 JabTunes
+    "3Dpiano.swf" (see 026_jabtunes_recovered.html for the faithful port).
+
+    The Flash original (recovered from web.archive.org) was:
+      - 26 pre-rendered 600x320 JPEG frames: one at rest + one per pressed key
+        (25 keys, C to C two octaves up), switched with gotoAndStop(noteName)
+      - 25 embedded MP3 samples (11 kHz mono, ~6 s each), one per key,
+        played with Sound.attachSound(noteName).start()
+      - Other instruments lazily loaded as notes/<instrument>/<1..25>.mp3,
+        each panned by pitch with setPan()
+      - A QWERTY key map (Q..] white, 2..= black, Shift/Z..M lower row)
+      - A note recorder in the host movie (Back / Clear / Play, melody search)
+
+    Here every key is real geometry (so any number can be down at once),
+    and sound comes from the SoundFont engine instead of per-note samples.
+  -->
+  <script type="importmap">
+    { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    } }
+  </script>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #1a0f07; font-family: Georgia, serif; color: #f1e3c8; }
+    canvas { display: block; touch-action: none; }
+    #panel {
+      position: absolute; top: 10px; left: 10px; width: 270px;
+      background: rgba(40, 22, 10, 0.82); border: 1px solid #7a5530; border-radius: 8px;
+      padding: 10px 12px; font-size: 13px; backdrop-filter: blur(4px);
+      box-shadow: 0 4px 18px rgba(0,0,0,0.5);
+    }
+    #panel h1 { font-size: 15px; margin: 0 0 6px; color: #e9c46a; font-style: italic; font-weight: normal; }
+    #panel h1 a { color: inherit; text-decoration: none; }
+    #panel .sub { font-size: 11px; color: #b39c78; margin: -4px 0 6px; }
+    #panel .sub a { color: #e9c46a; }
+    #panel hr { border: 0; border-top: 1px solid #5a3a1c; margin: 8px 0; }
+    #seek { flex: 1; }
+    #songTime { font-family: monospace; font-size: 11px; color: #cdb48c; min-width: 70px; text-align: right; }
+    #dropHint { position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+      font-size: 28px; color: #e9c46a; background: rgba(20,10,4,0.6); pointer-events: none; }
+    body.dragging #dropHint { display: flex; }
+    #panel.collapsed .body { display: none; }
+    #toggle { float: right; cursor: pointer; background: none; border: none; color: #e9c46a; font-size: 14px; }
+    .row { display: flex; align-items: center; gap: 6px; margin: 5px 0; }
+    .row label { flex: 0 0 82px; color: #cdb48c; }
+    select, input[type=range] { flex: 1; min-width: 0; }
+    select { background: #2b190c; color: #f1e3c8; border: 1px solid #7a5530; border-radius: 4px; padding: 2px; font-family: inherit; }
+    button.b {
+      background: #5a3518; color: #f1e3c8; border: 1px solid #a07040; border-radius: 4px;
+      padding: 3px 8px; cursor: pointer; font-family: inherit; font-size: 12px;
+    }
+    button.b:hover { background: #774a22; }
+    button.b.on { background: #b8862e; color: #1a0f07; }
+    #notes {
+      margin-top: 6px; padding: 5px; min-height: 2.6em; max-height: 6em; overflow-y: auto;
+      background: rgba(0,0,0,0.3); border-radius: 4px; font-family: monospace; font-size: 11px;
+      color: #e9d8b4; word-break: break-word;
+    }
+    #hint { color: #b39c78; font-size: 11px; line-height: 1.4; margin-top: 6px; }
+    #status {
+      position: absolute; top: 12px; right: 12px; padding: 6px 10px; border-radius: 6px;
+      background: rgba(40,22,10,0.85); border: 1px solid #7a5530; font-size: 12px;
+    }
+    #status.hidden { display: none; }
+    #status.error { border-color: #c44; color: #f99; }
+    #octave { color: #e9c46a; font-family: monospace; }
+  </style>
+</head>
+<body>
+  <div id="panel">
+    <button id="toggle" title="Collapse">–</button>
+    <h1><a href="README.md" title="Back to experiments">#027 · JabTunes Reimagined</a></h1>
+    <div class="sub">a real-time remake of <a href="026_jabtunes_recovered.html">the 2009 Flash piano</a></div>
+    <div class="body">
+      <div class="row"><label>SoundFont</label><select id="sf"></select></div>
+      <div class="row"><label>Instrument</label><select id="program"></select></div>
+      <div class="row"><label>Keys</label><select id="range"></select></div>
+      <div class="row"><label>Velocity</label><input id="velocity" type="range" min="0.1" max="1" step="0.01" value="0.8"></div>
+      <div class="row"><label>Labels</label><select id="labels">
+        <option value="keys">Computer keys</option>
+        <option value="notes">Note names</option>
+        <option value="off">Off</option>
+      </select></div>
+      <div class="row"><label>Camera</label><select id="view">
+        <option value="original">Original (2009 render)</option>
+        <option value="player">Player's seat</option>
+        <option value="low">Low angle</option>
+        <option value="top">Top down</option>
+        <option value="free">Free orbit</option>
+      </select></div>
+      <div class="row"><label>Light trails</label><input id="trails" type="checkbox" checked>
+        <label style="flex:0 0 auto; margin-left:10px">Glow</label><input id="glow" type="checkbox"></div>
+      <div class="row"><label>Keyboard C</label><span id="octave"></span>
+        <button class="b" id="octDown" title="Octave down (←)">◀</button>
+        <button class="b" id="octUp" title="Octave up (→)">▶</button>
+      </div>
+      <hr>
+      <div class="row"><label>Song</label><select id="song"></select>
+        <button class="b" id="open" title="Open a .mid file (or drop one on the page)">Open…</button>
+        <input id="file" type="file" accept=".mid,.midi,audio/midi" hidden></div>
+      <div class="row">
+        <button class="b" id="songPlay" title="Play / pause the song">▶</button>
+        <button class="b" id="songStop" title="Stop">■</button>
+        <input id="seek" type="range" min="0" max="1" step="0.001" value="0">
+        <span id="songTime">0:00 / 0:00</span>
+      </div>
+      <div class="row"><label>Speed</label><select id="speed">
+        <option value="0.5">50%</option><option value="0.75">75%</option><option value="1" selected>100%</option><option value="1.25">125%</option>
+      </select>
+        <button class="b" id="midiIn" title="Play from a connected MIDI keyboard (Web MIDI)">MIDI in</button></div>
+      <hr>
+      <div class="row">
+        <button class="b" id="play">▶ Play</button>
+        <button class="b" id="back">⌫ Back</button>
+        <button class="b" id="clear">Clear</button>
+        <button class="b" id="sustain" title="Sustain pedal (Space)">Pedal</button>
+        <button class="b" id="share" title="Copy a link that replays this recording">Share</button>
+      </div>
+      <div id="notes"></div>
+      <div id="hint">
+        Click or drag across the keys, or play from your keyboard just like 2009:
+        <b>Q W E R T Y U I O P [ ] \</b> white keys, <b>2 3 5 6 7 9 0 =</b> black keys,
+        <b>Shift Z X C V B N M</b> / <b>A S F G H</b> the upper octave again.
+        ←/→ shift octave · Space = sustain.
+      </div>
+    </div>
+  </div>
+  <div id="status" class="hidden"></div>
+  <div id="dropHint">Drop a MIDI file to play it on the piano</div>
+  <script src="tonejs-midi.js"></script>
+
+  <script type="module">
+    import * as THREE from 'three'
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+    import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
+    import { Reflector } from 'three/addons/objects/Reflector.js'
+    import { SoundFontEngine, MidiScheduler } from './soundfont-engine/src/index.js'
+    import { midiToSchedule } from './notation3d/midi-score.js'
+
+    const $ = id => document.getElementById(id)
+    const params = new URLSearchParams(location.search)
+
+    // ── Constants ──────────────────────────────────────────────────────────
+    // Units are centimetres, roughly real piano proportions.
+    const WHITE_W = 2.35, WHITE_L = 15, WHITE_H = 2.2, GAP = 0.06
+    const BLACK_W = 1.3, BLACK_L = 9.5, BLACK_RISE = 1.25
+    const PIVOT_Z = -9          // keys pivot well behind the fallboard, like a real action
+    const PRESS_WHITE = 0.062   // radians: ~1 cm dip at the front edge
+    const PRESS_BLACK = 0.058
+    const IS_BLACK = [0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0]
+    // Black-key centre offset from the boundary between its two white keys, in white widths
+    const BLACK_OFFSET = { 1: -0.12, 3: 0.12, 6: -0.14, 8: 0, 10: 0.14 }
+    const NOTE_NAMES = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B']
+    const OLD_NAMES = ['c', 'c%s', 'd', 'd%s', 'e', 'f', 'f%s', 'g', 'g%s', 'a', 'a%s', 'b']
+
+    const RANGES = [
+      { label: '25 keys · C4–C6 (original)', lo: 60, hi: 84 },
+      { label: '37 keys · C3–C6', lo: 48, hi: 84 },
+      { label: '49 keys · C2–C6', lo: 36, hi: 84 },
+      { label: '61 keys · C2–C7', lo: 36, hi: 96 },
+      { label: '88 keys · A0–C8', lo: 21, hi: 108 },
+    ]
+
+    // The original Flash key map, translated from keyCodes to KeyboardEvent.code.
+    // Offsets are semitones above "c1" (the keyboard's base C).
+    const KEY_MAP = {
+      Digit2: 1, Digit3: 3, Digit5: 6, Digit6: 8, Digit7: 10, Digit9: 13, Digit0: 15, Equal: 18,
+      KeyQ: 0, KeyW: 2, KeyE: 4, KeyR: 5, KeyT: 7, KeyY: 9, KeyU: 11,
+      KeyI: 12, KeyO: 14, KeyP: 16, BracketLeft: 17, BracketRight: 19, Backslash: 21,
+      KeyA: 13, KeyS: 15, KeyF: 18, KeyG: 20, KeyH: 22,
+      ShiftLeft: 12, KeyZ: 14, KeyX: 16, KeyC: 17, KeyV: 19, KeyB: 21, KeyN: 23, KeyM: 24,
+    }
+    const KEY_GLYPH = {
+      Digit2: '2', Digit3: '3', Digit5: '5', Digit6: '6', Digit7: '7', Digit9: '9', Digit0: '0', Equal: '=',
+      BracketLeft: '[', BracketRight: ']', Backslash: '\\', ShiftLeft: '⇧',
+    }
+    const glyphOf = code => KEY_GLYPH[code] ?? code.replace('Key', '')
+
+    const PROGRAMS = [
+      [0, 'Acoustic Grand Piano'], [1, 'Bright Piano'], [2, 'Electric Grand'], [3, 'Honky-tonk'],
+      [4, 'Rhodes'], [6, 'Harpsichord'], [8, 'Celesta'], [10, 'Music Box'], [11, 'Vibraphone'],
+      [12, 'Marimba'], [19, 'Church Organ'], [21, 'Accordion'], [24, 'Nylon Guitar'],
+      [46, 'Harp'], [48, 'Strings'], [52, 'Choir Aahs'], [56, 'Trumpet'], [73, 'Flute'], [80, 'Square Lead'],
+    ]
+    const SOUNDFONTS = [
+      { value: 'stack', label: 'Motif ES6 piano + Creative GM (default)' },
+      { value: 'jabtunes', label: '[2009] JabTunes samples from 3Dpiano.swf' },
+      { value: 'soundfonts/Motif_ES6_Concert_Piano.sf2', label: '[Piano] Motif ES6 Concert Piano' },
+      { value: 'soundfonts/Full Grand Piano.sf2', label: '[Piano] Full Grand Piano' },
+      { value: 'soundfonts/Roland_Super_XP-80.sf2', label: '[Piano] Roland Super XP-80' },
+      { value: 'soundfonts/FluidR3.sf3', label: '[GM] FluidR3 SF3' },
+      { value: 'soundfonts/Creative(emu10k1)8MBGMSFX.sf2', label: '[GM] Creative emu10k1' },
+      { value: 'soundfonts/JClive21.sf2', label: '[GM] JClive21 (50MB)' },
+    ]
+    const STACK = ['soundfonts/Creative(emu10k1)8MBGMSFX.sf2', 'soundfonts/Motif_ES6_Concert_Piano.sf2']
+
+    const isBlack = m => IS_BLACK[m % 12] === 1
+    const noteName = m => NOTE_NAMES[m % 12] + (Math.floor(m / 12) - 1)
+
+    // ── Status ─────────────────────────────────────────────────────────────
+    function setStatus(msg, isError = false) {
+      const el = $('status')
+      el.textContent = msg || ''
+      el.classList.toggle('hidden', !msg)
+      el.classList.toggle('error', isError)
+    }
+
+    // ── Audio ──────────────────────────────────────────────────────────────
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+    const vendorPath = new URL('./vendor', import.meta.url).href
+    const engine = new SoundFontEngine({ backend: 'oxisynth', vendorPath, audioContext: audioCtx })
+    let program = 0
+    let soundReady = false
+    let engineFont = null
+    // Live playing (pointer, QWERTY, MIDI in, recorder) uses its own channel so
+    // a MIDI file's program changes never hijack the instrument you picked.
+    const LIVE = 15
+
+    // The 25 original 2009 samples (C4..C6, 11 kHz MP3), repitched from the
+    // nearest one so they cover any range. Unlike the Flash version, notes are
+    // damped on release (and held by the pedal) instead of always ringing out.
+    const SAMPLE_NAMES = ['c1', 'c1s', 'd1', 'd1s', 'e1', 'f1', 'f1s', 'g1', 'g1s', 'a1', 'a1s', 'b1',
+      'c2', 'c2s', 'd2', 'd2s', 'e2', 'f2', 'f2s', 'g2', 'g2s', 'a2', 'a2s', 'b2', 'c3']
+    const samplePlayer = {
+      audioContext: audioCtx,
+      buffers: null, loading: null, voices: new Map(), pedal: false, out: null,
+      load() {
+        this.loading ??= (async () => {
+          this.out = audioCtx.createGain(); this.out.gain.value = 0.7; this.out.connect(audioCtx.destination)
+          const bufs = await Promise.all(SAMPLE_NAMES.map(async n =>
+            audioCtx.decodeAudioData(await (await fetch(`jabtunes/samples/${n}.mp3`)).arrayBuffer())))
+          this.buffers = bufs
+        })()
+        return this.loading
+      },
+      noteOn(midi, velocity = 0.7, ch = 0) {
+        if (!this.buffers) return
+        this.noteOff(midi, ch, 0.03)
+        const base = THREE.MathUtils.clamp(midi, 60, 84)
+        const src = audioCtx.createBufferSource()
+        src.buffer = this.buffers[base - 60]
+        src.playbackRate.value = 2 ** ((midi - base) / 12)
+        const g = audioCtx.createGain()
+        g.gain.value = 0.25 + 0.75 * velocity
+        src.connect(g).connect(this.out)
+        src.start()
+        this.voices.set(ch * 128 + midi, { src, g, held: true })
+      },
+      noteOff(midi, ch = 0, fade = 0.35) {
+        const id = ch * 128 + midi, v = this.voices.get(id)
+        if (!v) return
+        v.held = false
+        if (this.pedal && fade > 0.05) return
+        this._damp(v, fade); this.voices.delete(id)
+      },
+      _damp(v, fade) {
+        const t = audioCtx.currentTime
+        v.g.gain.cancelScheduledValues(t); v.g.gain.setValueAtTime(v.g.gain.value, t)
+        v.g.gain.setTargetAtTime(0, t, fade / 3)
+        v.src.stop(t + fade + 0.1)
+      },
+      controlChange(ch, cc, value) {
+        if (cc !== 64) return
+        this.pedal = value >= 64
+        if (!this.pedal) for (const [id, v] of this.voices) if (!v.held) { this._damp(v, 0.35); this.voices.delete(id) }
+      },
+      programChange() {},
+      allNotesOff() { for (const v of this.voices.values()) this._damp(v, 0.2); this.voices.clear() },
+      allSoundOff() { this.allNotesOff() },
+      resume() { return audioCtx.resume() },
+    }
+    let synth = engine
+
+    async function loadSound(value) {
+      soundReady = false
+      synth.allSoundOff?.()
+      setStatus(value === 'jabtunes' ? 'Loading the 2009 samples…' : 'Loading soundfont…')
+      try {
+        if (value === 'jabtunes') {
+          await samplePlayer.load()
+          synth = samplePlayer
+        } else {
+          if (engineFont !== value) {
+            if (value === 'stack') await engine.loadSoundFontStack(STACK)
+            else await engine.loadSoundFont(value)
+            engineFont = value
+          }
+          synth = engine
+          engine.programChange(LIVE, program)
+          applySongPrograms()
+        }
+        $('program').disabled = value === 'jabtunes'
+        soundReady = true
+        setStatus('')
+      } catch (e) {
+        console.error(e)
+        setStatus('Sound failed to load: ' + e.message, true)
+      }
+    }
+    function unlockAudio() {
+      if (audioCtx.state !== 'running') audioCtx.resume().then(() => engine.resume?.()).catch(() => {})
+    }
+
+    // ── Renderer / scene ───────────────────────────────────────────────────
+    const renderer = new THREE.WebGLRenderer({ antialias: true })
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+    renderer.setSize(innerWidth, innerHeight)
+    renderer.toneMapping = THREE.ACESFilmicToneMapping
+    renderer.toneMappingExposure = 1.05
+    renderer.shadowMap.enabled = true
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    document.body.appendChild(renderer.domElement)
+
+    const scene = new THREE.Scene()
+    scene.background = new THREE.Color(0x1a0f07)
+    const pmrem = new THREE.PMREMGenerator(renderer)
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
+    scene.environmentIntensity = 0.55
+
+    const camera = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 1, 2000)
+    const controls = new OrbitControls(camera, renderer.domElement)
+    controls.enableDamping = true
+    controls.enabled = false
+
+    // Lighting: a warm key light from above-left casting the long black-key
+    // shadows of the original render, plus soft fill.
+    scene.add(new THREE.HemisphereLight(0xfff4e0, 0x3a2010, 0.6))
+    const sun = new THREE.DirectionalLight(0xfff1dc, 2.4)
+    sun.castShadow = true
+    sun.shadow.mapSize.set(4096, 2048)
+    sun.shadow.bias = -0.0004
+    sun.shadow.normalBias = 0.02
+    sun.shadow.radius = 3
+    scene.add(sun, sun.target)
+    const fill = new THREE.DirectionalLight(0xffe2c0, 0.5)
+    fill.position.set(40, 30, 80)
+    scene.add(fill)
+
+    // ── Procedural textures ────────────────────────────────────────────────
+    function rand(seed) { return () => (seed = (seed * 16807) % 2147483647) / 2147483647 }
+
+    // Rosewood/mahogany grain running along X.
+    function woodTexture(w = 1024, h = 256, seed = 7, base = '#5a2c0e') {
+      const c = document.createElement('canvas'); c.width = w; c.height = h
+      const g = c.getContext('2d'); const r = rand(seed)
+      g.fillStyle = base; g.fillRect(0, 0, w, h)
+      for (let i = 0; i < 260; i++) {
+        const y = r() * h, amp = 2 + r() * 8, freq = 0.002 + r() * 0.01, ph = r() * 6.28
+        const light = r() < 0.5
+        g.strokeStyle = light ? `rgba(190,110,50,${0.04 + r() * 0.12})` : `rgba(25,8,0,${0.06 + r() * 0.18})`
+        g.lineWidth = 0.5 + r() * 2.5
+        g.beginPath()
+        for (let x = 0; x <= w; x += 8) {
+          const yy = y + Math.sin(x * freq + ph) * amp + Math.sin(x * freq * 3.1 + ph) * amp * 0.3
+          x ? g.lineTo(x, yy) : g.moveTo(x, yy)
+        }
+        g.stroke()
+      }
+      const t = new THREE.CanvasTexture(c)
+      t.colorSpace = THREE.SRGBColorSpace
+      t.wrapS = t.wrapT = THREE.RepeatWrapping
+      t.anisotropy = 8
+      return t
+    }
+
+    // Gold "My Music" script lettering, as on the 2009 fallboard.
+    function titleTexture(text) {
+      const c = document.createElement('canvas'); c.width = 1024; c.height = 192
+      const g = c.getContext('2d')
+      g.font = 'italic bold 120px "Monotype Corsiva", "Brush Script MT", "URW Chancery L", Georgia, serif'
+      g.textAlign = 'center'; g.textBaseline = 'middle'
+      const grad = g.createLinearGradient(0, 30, 0, 160)
+      grad.addColorStop(0, '#fff2b0'); grad.addColorStop(0.45, '#d9a640'); grad.addColorStop(1, '#7a4f12')
+      g.shadowColor = 'rgba(0,0,0,0.55)'; g.shadowOffsetY = 5; g.shadowBlur = 6
+      g.fillStyle = grad
+      g.fillText(text, 512, 100)
+      const t = new THREE.CanvasTexture(c)
+      t.colorSpace = THREE.SRGBColorSpace
+      t.anisotropy = 8
+      return t
+    }
+
+    function labelTexture(text, dark) {
+      const c = document.createElement('canvas'); c.width = c.height = 128
+      const g = c.getContext('2d')
+      g.font = `bold ${text.length > 2 ? 46 : 64}px Georgia, serif`
+      g.textAlign = 'center'; g.textBaseline = 'middle'
+      g.fillStyle = dark ? 'rgba(230,215,180,0.6)' : 'rgba(90,60,30,0.45)'
+      g.fillText(text, 64, 68)
+      const t = new THREE.CanvasTexture(c)
+      t.colorSpace = THREE.SRGBColorSpace
+      return t
+    }
+
+    // ── Key geometry ───────────────────────────────────────────────────────
+    // White keys are extruded from their real top-view outline (notched where
+    // the black keys sit); black keys from their side profile (sloped front).
+    const BEVEL = 0.12
+    const geoCache = new Map()
+
+    function whiteKeyGeometry(leftCut, rightCut) {
+      const key = `${leftCut.toFixed(3)}|${rightCut.toFixed(3)}`
+      if (geoCache.has(key)) return geoCache.get(key)
+      const hw = WHITE_W / 2 - GAP / 2 - BEVEL
+      const L = WHITE_L - BEVEL
+      const notchZ = BLACK_L + 0.25
+      const s = new THREE.Shape()
+      // (x, z) outline; back of the key at z = 0, playing edge at z = L
+      const xl = leftCut ? -WHITE_W / 2 + leftCut + GAP + BEVEL : -hw
+      const xr = rightCut ? WHITE_W / 2 - rightCut - GAP - BEVEL : hw
+      s.moveTo(xl, BEVEL)
+      s.lineTo(xr, BEVEL)
+      if (rightCut) { s.lineTo(xr, notchZ); s.lineTo(hw, notchZ) }
+      s.lineTo(hw, L)
+      s.lineTo(-hw, L)
+      if (leftCut) { s.lineTo(-hw, notchZ); s.lineTo(xl, notchZ) }
+      s.lineTo(xl, BEVEL)
+      const geo = new THREE.ExtrudeGeometry(s, {
+        depth: WHITE_H - 2 * BEVEL, bevelEnabled: true, bevelThickness: BEVEL,
+        bevelSize: BEVEL, bevelSegments: 3, curveSegments: 1,
+      })
+      // shape (x, z, extrude) -> world (x, y, z): extrusion becomes -y, lift to sit on y = 0
+      geo.rotateX(Math.PI / 2)
+      geo.translate(0, WHITE_H - BEVEL, 0)
+      geo.computeVertexNormals()
+      geoCache.set(key, geo)
+      return geo
+    }
+
+    function blackKeyGeometry() {
+      if (geoCache.has('black')) return geoCache.get('black')
+      const b = 0.1
+      const top = WHITE_H + BLACK_RISE - b, bottom = WHITE_H * 0.35
+      const L = BLACK_L - b
+      const s = new THREE.Shape()
+      // (z, y) side profile: flat top, sloped front face
+      s.moveTo(b, bottom)
+      s.lineTo(L, bottom)
+      s.lineTo(L, top - 0.85)
+      s.quadraticCurveTo(L - 0.15, top - 0.05, L - 1.1, top)
+      s.lineTo(b, top)
+      s.lineTo(b, bottom)
+      const geo = new THREE.ExtrudeGeometry(s, {
+        depth: BLACK_W - 2 * b, bevelEnabled: true, bevelThickness: b,
+        bevelSize: b, bevelSegments: 3, curveSegments: 6,
+      })
+      // shape (z, y, extrude) -> world (x = -extrude, y, z)
+      geo.rotateY(-Math.PI / 2)
+      geo.translate(BLACK_W / 2 - b, 0, 0)
+      geo.computeVertexNormals()
+      geoCache.set('black', geo)
+      return geo
+    }
+
+    // Ivory and ebony: glossy clearcoat over a soft base, like the render.
+    const whiteMat = new THREE.MeshPhysicalMaterial({
+      color: 0xf4f1ea, roughness: 0.32, clearcoat: 0.9, clearcoatRoughness: 0.12, sheen: 0.2,
+    })
+    // Key sides (notch walls, fronts) are a touch darker and matte, so the
+    // walls seen in the gap in front of each black key don't glare.
+    const whiteSideMat = new THREE.MeshPhysicalMaterial({ color: 0xc9c2b4, roughness: 0.6, clearcoat: 0.3 })
+    const blackMat = new THREE.MeshPhysicalMaterial({
+      color: 0x050505, roughness: 0.45, clearcoat: 0.75, clearcoatRoughness: 0.1,
+      // own env map so the intensity applies (scene.environmentIntensity would override it)
+      envMap: scene.environment, envMapIntensity: 0.12,
+    })
+
+    // ── Piano body ─────────────────────────────────────────────────────────
+    const piano = new THREE.Group()
+    scene.add(piano)
+    let keys = new Map() // midi -> { pivot, mesh, mat, black, angle, target, label }
+    let keyMeshes = []
+    let range = RANGES[0]
+    let bodyWidth = 0
+    let reflector = null
+
+    const woodTex = woodTexture()
+    const woodMat = (repeatX, opts = {}) => {
+      const t = woodTex.clone(); t.needsUpdate = true; t.repeat.set(repeatX, 1)
+      return new THREE.MeshPhysicalMaterial({
+        map: t, color: 0xffffff, roughness: 0.42, clearcoat: 0.8, clearcoatRoughness: 0.15, ...opts,
+      })
+    }
+
+    function disposeGroup(g) {
+      g.traverse(o => {
+        const shared = o.geometry === labelGeo || o.geometry === trailGeo || [...geoCache.values()].includes(o.geometry)
+        if (o.geometry && !shared) o.geometry.dispose()
+        if (o.material && o.material !== whiteMat && o.material !== blackMat && o.material !== trailMat && o.material !== whiteSideMat) {
+          ;[].concat(o.material).filter(m => m !== whiteSideMat).forEach(m => { m.map?.dispose?.(); m.dispose() })
+        }
+      })
+      if (reflector) { reflector.dispose(); reflector = null }
+      g.clear()
+    }
+
+    function buildPiano(r) {
+      disposeGroup(piano)
+      keys = new Map(); keyMeshes = []
+      range = r
+
+      // Lay out white keys left to right, centred on x = 0
+      const whites = []
+      for (let m = r.lo; m <= r.hi; m++) if (!isBlack(m)) whites.push(m)
+      const totalW = whites.length * WHITE_W
+      const whiteX = new Map()
+      whites.forEach((m, i) => whiteX.set(m, -totalW / 2 + WHITE_W * (i + 0.5)))
+
+      const blackX = m => {
+        // boundary between the white key below and above
+        const below = whiteX.get(m - 1) ?? whiteX.get(m + 1) - WHITE_W
+        return below + WHITE_W / 2 + BLACK_OFFSET[m % 12] * WHITE_W
+      }
+
+      for (let m = r.lo; m <= r.hi; m++) {
+        const black = isBlack(m)
+        const x = black ? blackX(m) : whiteX.get(m)
+        let geo, mat
+        if (black) {
+          geo = blackKeyGeometry(); mat = blackMat.clone()
+        } else {
+          // How far each neighbouring black key cuts into this white key
+          const cut = side => {
+            const n = m + side
+            if (n < r.lo || n > r.hi || !isBlack(n)) return 0
+            const edge = blackX(n) - side * BLACK_W / 2   // black key's near edge
+            return Math.max(0, side > 0 ? x + WHITE_W / 2 - edge : edge - (x - WHITE_W / 2))
+          }
+          geo = whiteKeyGeometry(cut(-1), cut(1)); mat = whiteMat.clone()
+        }
+        mat.emissive = new THREE.Color(0x000000)
+        const mesh = new THREE.Mesh(geo, black ? mat : [mat, whiteSideMat])
+        mesh.castShadow = mesh.receiveShadow = true
+        mesh.position.z = -PIVOT_Z           // key starts at z = 0 in world space
+        mesh.userData.midi = m
+        const pivot = new THREE.Group()
+        pivot.position.set(x, 0, PIVOT_Z)
+        pivot.add(mesh)
+        piano.add(pivot)
+        keyMeshes.push(mesh)
+        keys.set(m, { pivot, mesh, mat, black, angle: 0, target: 0, glow: 0, label: null })
+      }
+
+      // Key bed beneath the keys
+      const bedW = totalW + 1.2
+      bodyWidth = bedW
+      const bed = new THREE.Mesh(new THREE.BoxGeometry(bedW, 1.2, WHITE_L + 2), new THREE.MeshStandardMaterial({ color: 0x140a04, roughness: 0.9 }))
+      bed.position.set(0, -0.62, WHITE_L / 2 - 0.5)
+      bed.receiveShadow = true
+      piano.add(bed)
+
+      // Key slip (front rail), slightly below the key tops
+      const slip = new THREE.Mesh(new THREE.BoxGeometry(bedW + 6, 2.6, 1.6), woodMat(bedW / 50))
+      slip.position.set(0, -0.2, WHITE_L + 1.05)
+      slip.castShadow = slip.receiveShadow = true
+      piano.add(slip)
+
+      // Cheek blocks at both ends
+      for (const side of [-1, 1]) {
+        const cheek = new THREE.Mesh(new THREE.BoxGeometry(3, 5.2, WHITE_L + 6), woodMat(0.4))
+        cheek.position.set(side * (bedW / 2 + 1.5), 1.1, WHITE_L / 2 + 0.3)
+        cheek.castShadow = cheek.receiveShadow = true
+        piano.add(cheek)
+      }
+
+      // Red felt strip behind the keys
+      const felt = new THREE.Mesh(new THREE.BoxGeometry(bedW, 0.5, 0.45), new THREE.MeshStandardMaterial({ color: 0x9c0d0d, roughness: 1 }))
+      felt.position.set(0, WHITE_H + 0.35, -0.35)
+      felt.receiveShadow = true
+      piano.add(felt)
+
+      // Fallboard: a real mirror under a translucent lacquered-wood skin, so
+      // the keys reflect in the varnish exactly like the 2009 render.
+      const fbH = FB_H, fbTilt = -0.09
+      const fallboard = new THREE.Group()
+      fallboard.position.set(0, WHITE_H + 0.55, -0.6)
+      fallboard.rotation.x = fbTilt
+      piano.add(fallboard)
+
+      reflector = new Reflector(new THREE.PlaneGeometry(bedW + 6, fbH), {
+        textureWidth: Math.min(2048, innerWidth * devicePixelRatio),
+        textureHeight: Math.min(1024, innerHeight * devicePixelRatio * 0.5),
+        color: 0x8a7a6a, clipBias: 0.003,
+      })
+      reflector.position.y = fbH / 2
+      fallboard.add(reflector)
+
+      const skin = new THREE.Mesh(new THREE.PlaneGeometry(bedW + 6, fbH), woodMat(bedW / 45, {
+        transparent: true, opacity: 0.72, roughness: 0.25, clearcoat: 1, clearcoatRoughness: 0.05, depthWrite: false,
+      }))
+      skin.position.set(0, fbH / 2, 0.02)
+      fallboard.add(skin)
+
+      const title = params.get('title') ?? 'My   Music'
+      const titleMesh = new THREE.Mesh(new THREE.PlaneGeometry(16, 3), new THREE.MeshStandardMaterial({
+        map: titleTexture(title), transparent: true, metalness: 0.75, roughness: 0.3, depthWrite: false,
+      }))
+      titleMesh.position.set(0, fbH * 0.62, 0.05)
+      fallboard.add(titleMesh)
+
+      // Light trails: notes rise up through the lacquer from the key that played them
+      trailMesh = new THREE.InstancedMesh(trailGeo, trailMat, MAX_TRAILS)
+      trailMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+      trailMesh.setColorAt(0, new THREE.Color())
+      trailMesh.count = 0
+      trailMesh.frustumCulled = false
+      trailMesh.position.z = 0.06
+      trailMesh.renderOrder = 2
+      fallboard.add(trailMesh)
+      trails = []; activeTrails.clear()
+
+      // Lid rail across the top
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(bedW + 6, 2.4, 4), woodMat(bedW / 50))
+      rail.position.set(0, fbH + 1.1, -1.2)
+      rail.castShadow = true
+      fallboard.add(rail)
+
+      // Shadow camera framing the keyboard
+      const sc = sun.shadow.camera
+      sc.left = -bedW / 2 - 6; sc.right = bedW / 2 + 6; sc.top = 30; sc.bottom = -30
+      sc.near = 1; sc.far = 300; sc.updateProjectionMatrix()
+      sun.position.set(-bedW * 0.25 - 20, 70, 45)
+      sun.target.position.set(0, 0, 6)
+
+      applyLabels()
+      fitView()
+    }
+
+    // ── Light trails ───────────────────────────────────────────────────────
+    // Each held note grows a glowing bar up the fallboard; on release the bar
+    // detaches and keeps rising, fading as it nears the lid - a piano roll
+    // played backwards into the varnish.
+    const FB_H = 13, TRAIL_SPEED = 6, MAX_TRAILS = 600
+    const trailGeo = new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0)
+    const trailMat = (() => {
+      const c = document.createElement('canvas'); c.width = 64; c.height = 4
+      const g = c.getContext('2d'), grad = g.createLinearGradient(0, 0, 64, 0)
+      grad.addColorStop(0, 'rgba(255,255,255,0)'); grad.addColorStop(0.3, 'rgba(255,255,255,0.8)')
+      grad.addColorStop(0.5, '#fff'); grad.addColorStop(0.7, 'rgba(255,255,255,0.8)'); grad.addColorStop(1, 'rgba(255,255,255,0)')
+      g.fillStyle = grad; g.fillRect(0, 0, 64, 4)
+      const t = new THREE.CanvasTexture(c)
+      return new THREE.MeshBasicMaterial({ map: t, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false })
+    })()
+    let trailMesh = null, trails = []
+    const activeTrails = new Map() // midi -> trail
+    function startTrail(midi, color) {
+      if (!$('trails').checked || !trailMesh) return
+      const k = keys.get(midi)
+      endTrail(midi)
+      if (trails.length >= MAX_TRAILS) trails.shift()
+      const t = { x: k.pivot.position.x, w: k.black ? 0.9 : 1.5, y0: 0, y1: 0.15, held: true, color: color.clone(), age: 0 }
+      trails.push(t); activeTrails.set(midi, t)
+    }
+    function endTrail(midi) {
+      const t = activeTrails.get(midi)
+      if (t) { t.held = false; activeTrails.delete(midi) }
+    }
+    const _m = new THREE.Matrix4(), _c = new THREE.Color()
+    function updateTrails(dt) {
+      if (!trailMesh) return
+      let n = 0
+      for (const t of trails) {
+        t.age += dt
+        t.y1 += TRAIL_SPEED * dt
+        if (!t.held) t.y0 += TRAIL_SPEED * dt
+      }
+      trails = trails.filter(t => t.y0 < FB_H)
+      for (const t of trails) {
+        const top = Math.min(t.y1, FB_H)
+        const h = Math.max(0.05, top - t.y0)
+        _m.makeScale(t.w, h, 1).setPosition(t.x, t.y0, 0)
+        trailMesh.setMatrixAt(n, _m)
+        // brighter while held and just struck, fading towards the lid
+        const fade = (1 - t.y0 / FB_H) ** 1.5 * (t.held ? 1 : 0.8) * (1 + 1.5 * Math.exp(-t.age * 6))
+        trailMesh.setColorAt(n, _c.copy(t.color).multiplyScalar(0.7 * fade))
+        n++
+      }
+      trailMesh.count = n
+      trailMesh.instanceMatrix.needsUpdate = true
+      if (trailMesh.instanceColor) trailMesh.instanceColor.needsUpdate = true
+    }
+
+    // ── Labels on keys ─────────────────────────────────────────────────────
+    let baseC = 60  // "c1" of the original key map
+    const labelGeo = new THREE.PlaneGeometry(1.4, 1.4)
+
+    function applyLabels() {
+      const mode = $('labels').value
+      const byMidi = new Map()
+      if (mode === 'keys') {
+        for (const [code, off] of Object.entries(KEY_MAP)) {
+          const m = baseC + off
+          if (!byMidi.has(m)) byMidi.set(m, glyphOf(code))
+          else if (byMidi.get(m).length < 3) byMidi.set(m, byMidi.get(m) + glyphOf(code))
+        }
+      }
+      for (const [m, k] of keys) {
+        if (k.label) { k.mesh.remove(k.label); k.label.material.map.dispose(); k.label.material.dispose(); k.label = null }
+        let text = null
+        if (mode === 'keys') text = byMidi.get(m) ?? null
+        else if (mode === 'notes') text = k.black ? null : (m % 12 === 0 ? noteName(m) : NOTE_NAMES[m % 12])
+        if (!text) continue
+        const label = new THREE.Mesh(labelGeo, new THREE.MeshBasicMaterial({
+          map: labelTexture(text, k.black), transparent: true, depthWrite: false, toneMapped: false,
+        }))
+        label.rotation.x = -Math.PI / 2
+        label.position.set(0, k.black ? WHITE_H + BLACK_RISE + 0.01 : WHITE_H + 0.01, k.black ? BLACK_L - 2.2 : WHITE_L - 1.6)
+        if (k.black) label.scale.setScalar(0.75)
+        k.mesh.add(label)
+        k.label = label
+      }
+      $('octave').textContent = noteName(baseC)
+    }
+
+    // ── Camera ─────────────────────────────────────────────────────────────
+    const VIEWS = {
+      // elevation (deg above horizontal), fov, target, distance multiplier
+      original: { elev: 47, fov: 24, target: [0, 5, 3.5], fill: 1.3 },
+      player: { elev: 32, fov: 45, target: [0, 3, 7], fill: 1.05 },
+      low: { elev: 12, fov: 30, target: [0, 4, 4], fill: 1.05 },
+      top: { elev: 82, fov: 30, target: [0, 0, 6], fill: 1.08 },
+    }
+    function fitView() {
+      const v = $('view').value
+      controls.enabled = v === 'free'
+      if (v === 'free') return
+      const p = VIEWS[v]
+      camera.fov = p.fov
+      camera.aspect = innerWidth / innerHeight
+      camera.updateProjectionMatrix()
+      // Distance so the keyboard width (plus cheeks) fills the view horizontally;
+      // the original render crops right to the keys, so fill slightly past them.
+      const wantW = (bodyWidth + (v === 'original' ? -1 : 8)) * p.fill
+      const hfov = 2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(p.fov) / 2) * camera.aspect)
+      let dist = (wantW / 2) / Math.tan(hfov / 2)
+      // On tall/narrow screens don't back off forever — keep keys readable
+      dist = Math.min(dist, 260)
+      const e = THREE.MathUtils.degToRad(p.elev)
+      const t = new THREE.Vector3(...p.target)
+      camera.position.set(t.x, t.y + Math.sin(e) * dist, t.z + Math.cos(e) * dist)
+      controls.target.copy(t)
+      camera.lookAt(t)
+    }
+
+    // ── Note on / off with multiple sources ────────────────────────────────
+    // A key stays down while any source (pointer, computer key, playback) holds it.
+    const holders = new Map() // midi -> Set(sourceId)
+    let sustain = false
+
+    // Visual hold: a key stays down while any source holds it. Returns true
+    // on the first hold / last release so callers can sound it exactly once.
+    const KEY_LIGHT = new THREE.Color(0xffc46b)
+    function keyDown(midi, source, color = KEY_LIGHT) {
+      if (midi < 0 || midi > 127) return false
+      let set = holders.get(midi)
+      if (!set) holders.set(midi, set = new Set())
+      if (set.has(source)) return false
+      set.add(source)
+      if (set.size > 1) return false
+      const k = keys.get(midi)
+      if (k) { k.target = 1; k.glow = 1; startTrail(midi, color) }
+      return true
+    }
+    function keyUp(midi, source) {
+      const set = holders.get(midi)
+      if (!set || !set.delete(source) || set.size) return false
+      const k = keys.get(midi)
+      if (k) k.target = 0
+      endTrail(midi)
+      return true
+    }
+    // Live notes: visual + sound + notepad
+    function press(midi, source, velocity = +$('velocity').value) {
+      if (!keyDown(midi, source)) return
+      unlockAudio()
+      if (soundReady) synth.noteOn(midi, velocity, LIVE)
+      if (!String(source).startsWith('play')) record(midi, true)
+    }
+    function release(midi, source) {
+      if (!keyUp(midi, source)) return
+      synth.noteOff(midi, LIVE)
+      if (!String(source).startsWith('play')) record(midi, false)
+    }
+    function setSustain(on) {
+      if (sustain === on) return
+      sustain = on
+      synth.controlChange(LIVE, 64, on ? 127 : 0)
+      $('sustain').classList.toggle('on', on)
+    }
+
+    // ── Recorder (port of the peek.swf notepad: Back / Clear / Play) ───────
+    let notes = []    // { midi, start, dur }
+    let startTime = null
+    let playTimers = []
+
+    function oldName(m) {
+      // The 2009 notation: c1..b1, c2..b2, c3 relative to the base C, s = sharp
+      const rel = m - baseC
+      const oct = Math.floor(rel / 12) + 1
+      return OLD_NAMES[((rel % 12) + 12) % 12].replace('%s', 's') + oct
+    }
+    function renderNotes() {
+      $('notes').textContent = notes.map(n => oldName(n.midi)).join(' ')
+      $('notes').scrollTop = 1e6
+    }
+    function record(midi, on) {
+      const now = performance.now()
+      if (on) {
+        if (startTime == null) startTime = now
+        notes.push({ midi, start: now - startTime, dur: null })
+        renderNotes()
+      } else {
+        for (let i = notes.length - 1; i >= 0; i--) {
+          if (notes[i].midi === midi && notes[i].dur == null) { notes[i].dur = now - startTime - notes[i].start; break }
+        }
+      }
+    }
+    function stopPlayback() {
+      playTimers.forEach(clearTimeout); playTimers = []
+      for (const [m, set] of holders) for (const s of [...set]) if (String(s).startsWith('play')) release(m, s)
+      $('play').classList.remove('on'); $('play').textContent = '▶ Play'
+    }
+    function playRecording() {
+      if (playTimers.length) return stopPlayback()
+      if (!notes.length) return
+      unlockAudio()
+      const t0 = notes[0].start
+      notes.forEach((n, i) => {
+        const src = 'play' + i
+        playTimers.push(setTimeout(() => press(n.midi, src), n.start - t0))
+        playTimers.push(setTimeout(() => release(n.midi, src), n.start - t0 + (n.dur ?? 100)))
+      })
+      const last = notes[notes.length - 1]
+      playTimers.push(setTimeout(stopPlayback, last.start - t0 + (last.dur ?? 100) + 50))
+      $('play').classList.add('on'); $('play').textContent = '■ Stop'
+    }
+    $('play').onclick = playRecording
+    $('back').onclick = () => {
+      notes.pop()
+      startTime = notes.length ? performance.now() - notes[notes.length - 1].start : null
+      renderNotes()
+    }
+    $('clear').onclick = () => { stopPlayback(); notes = []; startTime = null; renderNotes() }
+
+    // ── Pointer input (multi-touch, glissando) ─────────────────────────────
+    const raycaster = new THREE.Raycaster()
+    const ndc = new THREE.Vector2()
+    const pointerKey = new Map() // pointerId -> midi
+
+    function keyAt(ev) {
+      const r = renderer.domElement.getBoundingClientRect()
+      ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1)
+      raycaster.setFromCamera(ndc, camera)
+      const hit = raycaster.intersectObjects(keyMeshes, false)[0]
+      if (!hit) return null
+      // Strike position along the key: nearer the front edge = a fuller tone
+      const k = keys.get(hit.object.userData.midi)
+      const local = hit.object.worldToLocal(hit.point.clone())
+      const along = THREE.MathUtils.clamp(local.z / (k.black ? BLACK_L : WHITE_L), 0, 1)
+      return { midi: hit.object.userData.midi, along }
+    }
+    const vel = along => +$('velocity').value * (0.7 + 0.3 * along)
+
+    const canvas = renderer.domElement
+    canvas.addEventListener('pointerdown', ev => {
+      unlockAudio()
+      if (controls.enabled) return
+      const hit = keyAt(ev)
+      if (!hit) return
+      canvas.setPointerCapture(ev.pointerId)
+      pointerKey.set(ev.pointerId, hit.midi)
+      press(hit.midi, 'p' + ev.pointerId, vel(hit.along))
+    })
+    canvas.addEventListener('pointermove', ev => {
+      if (!pointerKey.has(ev.pointerId)) return
+      const hit = keyAt(ev)
+      const prev = pointerKey.get(ev.pointerId)
+      const now = hit?.midi ?? null
+      if (now === prev) return
+      if (prev != null) release(prev, 'p' + ev.pointerId)
+      pointerKey.set(ev.pointerId, now)
+      if (now != null) press(now, 'p' + ev.pointerId, vel(hit.along))
+    })
+    const endPointer = ev => {
+      const m = pointerKey.get(ev.pointerId)
+      if (m != null) release(m, 'p' + ev.pointerId)
+      pointerKey.delete(ev.pointerId)
+    }
+    canvas.addEventListener('pointerup', endPointer)
+    canvas.addEventListener('pointercancel', endPointer)
+
+    // ── Computer keyboard ──────────────────────────────────────────────────
+    const keyHeld = new Map() // code -> midi it started (so octave shifts don't strand notes)
+    addEventListener('keydown', ev => {
+      if (ev.target.closest?.('select, input')) return
+      if (ev.code === 'Space') { setSustain(true); ev.preventDefault(); return }
+      if (ev.code === 'ArrowLeft' || ev.code === 'ArrowRight') { shiftOctave(ev.code === 'ArrowLeft' ? -1 : 1); ev.preventDefault(); return }
+      if (ev.repeat || ev.metaKey || ev.ctrlKey || ev.altKey) return
+      const off = KEY_MAP[ev.code]
+      if (off == null || keyHeld.has(ev.code)) return
+      const midi = baseC + off
+      keyHeld.set(ev.code, midi)
+      press(midi, 'k' + ev.code)
+      ev.preventDefault()
+    })
+    addEventListener('keyup', ev => {
+      if (ev.code === 'Space') { setSustain(false); return }
+      const midi = keyHeld.get(ev.code)
+      if (midi == null) return
+      keyHeld.delete(ev.code)
+      release(midi, 'k' + ev.code)
+    })
+    addEventListener('blur', () => {
+      for (const [code, midi] of keyHeld) release(midi, 'k' + code)
+      keyHeld.clear(); setSustain(false)
+    })
+
+    function shiftOctave(dir) {
+      const next = baseC + dir * 12
+      // keep the whole 25-note map playable inside the visible range where possible
+      const lo = Math.floor(range.lo / 12) * 12, hi = range.hi - 24
+      if (next < Math.max(lo, 12) || next > Math.max(hi, range.lo)) return
+      baseC = next
+      applyLabels()
+    }
+    $('octDown').onclick = () => shiftOctave(-1)
+    $('octUp').onclick = () => shiftOctave(1)
+    $('sustain').onpointerdown = () => setSustain(!sustain)
+
+    // ── Song playback: any MIDI file, played on the 3D keys ───────────────
+    const SONGS = [
+      ['', '— choose a song —'],
+      ['entertainer.mid', 'Joplin – The Entertainer'],
+      ['minute_waltz.mid', 'Chopin – Minute Waltz'],
+      ['chpn-p15.mid', 'Chopin – Raindrop Prelude'],
+      ['Prelude1.mid', 'Bach – Prelude in C'],
+      ['Fugue1.mid', 'Bach – Fugue in C'],
+      ['liz_liebestraum.mid', 'Liszt – Liebestraum'],
+      ['hedwig_theme.mid', "Williams – Hedwig's Theme"],
+      ['JVKE - golden hour.mid', 'JVKE – golden hour'],
+      ['Heart and Soul Piano Duet The Real Version.mid', 'Heart and Soul (duet)'],
+    ]
+    const CH_COLORS = [0xffc46b, 0x7fd3ff, 0xff8fb1, 0xa6ff8f, 0xd2a6ff, 0xffe27a, 0x8fffe0, 0xff9f6b,
+      0x9fb4ff, 0xffffff, 0xff7a7a, 0x7affb4, 0xf5a6ff, 0xc8ff7a, 0x7ad8ff, 0xffd0a0].map(c => new THREE.Color(c))
+    let scheduler = null, song = null, seeking = false
+    const isSongSource = s => String(s).startsWith('song')
+    function releaseSong() {
+      for (const [m, set] of holders) for (const s of [...set]) if (isSongSource(s)) keyUp(m, s)
+    }
+    // The scheduler drives this proxy: sound through the current synth, keys + trails on screen
+    const songTarget = {
+      audioContext: audioCtx,
+      resume: () => audioCtx.resume(),
+      noteOn(m, v, ch) {
+        if (soundReady && !(ch === 9 && synth === samplePlayer)) synth.noteOn(m, v, ch)
+        if (ch !== 9) keyDown(m, 'song' + ch, CH_COLORS[ch])
+      },
+      noteOff(m, ch) {
+        synth.noteOff(m, ch)
+        if (ch !== 9) keyUp(m, 'song' + ch)
+      },
+      controlChange(ch, cc, v) { synth.controlChange(ch, cc, v) },
+      allSoundOff() {
+        for (let ch = 0; ch < 16; ch++) if (ch !== LIVE) synth.controlChange(ch, 64, 0)
+        synth.allNotesOff?.()
+        releaseSong()
+      },
+    }
+    function applySongPrograms() {
+      if (!song || synth !== engine) return
+      for (const [ch, p] of song.programs) if (ch !== LIVE) engine.programChange(ch, p)
+    }
+    async function ensureScheduler() {
+      if (scheduler) return scheduler
+      scheduler = new MidiScheduler(songTarget)
+      await scheduler.init()
+      scheduler.on('time', t => showTime(t))
+      scheduler.on('end', () => { songTarget.allSoundOff(); setSongPlaying(false); showTime(0) })
+      return scheduler
+    }
+    const fmt = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`
+    function showTime(t) {
+      const d = scheduler?.duration || 0
+      $('songTime').textContent = `${fmt(t)} / ${fmt(d)}`
+      if (!seeking) $('seek').value = d ? t / d : 0
+    }
+    function setSongPlaying(on) { $('songPlay').textContent = on ? '❚❚' : '▶'; $('songPlay').classList.toggle('on', on) }
+
+    async function loadSong(buffer, name) {
+      try {
+        const sch = await ensureScheduler()
+        if (sch.playing) sch.stop()
+        songTarget.allSoundOff()
+        const midi = new Midi(buffer)
+        song = midiToSchedule(midi)
+        if (!song.notes.length) throw new Error('no notes in file')
+        // Grow the keyboard to fit the song (never shrink what you chose)
+        const pitched = song.notes.filter(n => n.channel !== 9)
+        const lo = Math.min(...pitched.map(n => n.midi)), hi = Math.max(...pitched.map(n => n.midi))
+        const need = RANGES.findIndex(r => r.lo <= lo && r.hi >= hi)
+        if (need > +$('range').value) { $('range').value = need; $('range').onchange() }
+        applySongPrograms()
+        sch.load(song)
+        sch.speed = +$('speed').value
+        showTime(0)
+        setStatus('')
+        unlockAudio()
+        sch.play(); setSongPlaying(true)
+      } catch (e) {
+        console.error(e)
+        setStatus(`Could not play ${name}: ${e.message}`, true)
+      }
+    }
+    async function loadSongUrl(url) {
+      if (!url) return
+      setStatus('Loading song…')
+      try { loadSong(await (await fetch(encodeURI(url))).arrayBuffer(), url) }
+      catch (e) { setStatus('Could not load song: ' + e.message, true) }
+    }
+    for (const [v, l] of SONGS) $('song').add(new Option(l, v))
+    $('song').onchange = () => loadSongUrl($('song').value)
+    $('open').onclick = () => $('file').click()
+    $('file').onchange = async () => {
+      const f = $('file').files[0]
+      if (f) { $('song').value = ''; loadSong(await f.arrayBuffer(), f.name) }
+      $('file').value = ''
+    }
+    addEventListener('dragover', ev => { ev.preventDefault(); document.body.classList.add('dragging') })
+    addEventListener('dragleave', ev => { if (!ev.relatedTarget) document.body.classList.remove('dragging') })
+    addEventListener('drop', async ev => {
+      ev.preventDefault(); document.body.classList.remove('dragging')
+      const f = ev.dataTransfer.files[0]
+      if (f) { $('song').value = ''; loadSong(await f.arrayBuffer(), f.name) }
+    })
+    $('songPlay').onclick = async () => {
+      if (!song) { $('song').value = SONGS[1][0]; return loadSongUrl(SONGS[1][0]) }
+      const sch = await ensureScheduler()
+      unlockAudio()
+      if (sch.playing) { sch.pause(); songTarget.allSoundOff(); setSongPlaying(false) }
+      else { sch.play(); setSongPlaying(true) }
+    }
+    $('songStop').onclick = () => { scheduler?.stop(); songTarget.allSoundOff(); setSongPlaying(false); showTime(0) }
+    $('seek').addEventListener('input', () => { seeking = true; showTimeLabel() })
+    const showTimeLabel = () => { const d = scheduler?.duration || 0; $('songTime').textContent = `${fmt(+$('seek').value * d)} / ${fmt(d)}` }
+    $('seek').addEventListener('change', () => {
+      seeking = false
+      if (!scheduler || !song) return
+      songTarget.allSoundOff()
+      scheduler.seek(+$('seek').value * scheduler.duration)
+    })
+    $('speed').onchange = () => { if (scheduler) scheduler.speed = +$('speed').value }
+
+    // ── MIDI keyboard in (Web MIDI) ────────────────────────────────────────
+    function onMidiMessage(e) {
+      const [st, d1, d2] = e.data, type = st & 0xf0
+      if (type === 0x90 && d2 > 0) press(d1, 'midiin', d2 / 127)
+      else if (type === 0x80 || type === 0x90) release(d1, 'midiin')
+      else if (type === 0xb0 && d1 === 64) setSustain(d2 >= 64)
+    }
+    $('midiIn').onclick = async () => {
+      if (!navigator.requestMIDIAccess) return setStatus('Web MIDI is not available in this browser', true)
+      try {
+        const access = await navigator.requestMIDIAccess()
+        const hook = () => {
+          let n = 0
+          for (const input of access.inputs.values()) { input.onmidimessage = onMidiMessage; n++ }
+          $('midiIn').classList.toggle('on', n > 0)
+          setStatus(n ? `MIDI: ${n} input${n > 1 ? 's' : ''} connected` : 'No MIDI keyboard found')
+          setTimeout(() => setStatus(''), 2500)
+        }
+        hook()
+        access.onstatechange = hook
+      } catch (e) { setStatus('MIDI access was refused', true) }
+    }
+
+    // ── Share a recording as a link ────────────────────────────────────────
+    // #rec=<midi>.<start/10ms>.<dur/10ms>_... in base 36
+    $('share').onclick = async () => {
+      if (!notes.length) return setStatus('Play something first'), setTimeout(() => setStatus(''), 1500)
+      const rec = notes.map(n => [n.midi, Math.round(n.start / 10), Math.round((n.dur ?? 100) / 10)]
+        .map(v => v.toString(36)).join('.')).join('_')
+      history.replaceState(null, '', '#rec=' + rec)
+      try { await navigator.clipboard.writeText(location.href); setStatus('Link copied – it replays this recording') }
+      catch { setStatus('Link is in the address bar') }
+      setTimeout(() => setStatus(''), 2500)
+    }
+    function loadSharedRecording() {
+      const m = location.hash.match(/rec=([0-9a-z._]+)/)
+      if (!m) return
+      notes = m[1].split('_').map(t => t.split('.').map(v => parseInt(v, 36)))
+        .filter(a => a.length === 3 && a.every(Number.isFinite))
+        .map(([midi, s, d]) => ({ midi, start: s * 10, dur: d * 10 }))
+      renderNotes()
+      if (notes.length) setStatus('Shared recording loaded – press ▶ Play')
+    }
+
+    // ── UI wiring ──────────────────────────────────────────────────────────
+    for (const s of SOUNDFONTS) $('sf').add(new Option(s.label, s.value))
+    for (const [p, n] of PROGRAMS) $('program').add(new Option(`${p + 1}. ${n}`, p))
+    RANGES.forEach((r, i) => $('range').add(new Option(r.label, i)))
+
+    $('sf').value = params.get('sf') ?? 'stack'
+    $('sf').onchange = () => loadSound($('sf').value)
+    $('program').onchange = () => { program = +$('program').value; engine.programChange(LIVE, program) }
+    $('range').value = params.get('range') ?? 0
+    $('range').onchange = () => {
+      stopPlayback()
+      for (const [m, set] of holders) for (const s of [...set]) release(m, s)
+      const r = RANGES[+$('range').value]
+      if (baseC < r.lo || baseC + 24 > r.hi) baseC = 60
+      buildPiano(r)
+    }
+    $('labels').onchange = applyLabels
+    $('view').value = params.get('view') ?? 'original'
+    $('view').onchange = fitView
+    $('toggle').onclick = () => {
+      $('panel').classList.toggle('collapsed')
+      $('toggle').textContent = $('panel').classList.contains('collapsed') ? '+' : '–'
+    }
+    // Keep keyboard focus on the page so QWERTY play keeps working after using a control
+    for (const el of document.querySelectorAll('select, input')) el.addEventListener('change', () => el.blur())
+
+    addEventListener('resize', () => {
+      renderer.setSize(innerWidth, innerHeight)
+      camera.aspect = innerWidth / innerHeight
+      camera.updateProjectionMatrix()
+      reflector?.getRenderTarget().setSize(
+        Math.min(2048, innerWidth * devicePixelRatio), Math.min(1024, innerHeight * devicePixelRatio * 0.5))
+      fitView()
+    })
+
+    // ── Animation ──────────────────────────────────────────────────────────
+    const clock = new THREE.Clock()
+    const glowColor = new THREE.Color(0xffb347)
+    function animate() {
+      const dt = Math.min(clock.getDelta(), 0.05)
+      const glowOn = $('glow').checked
+      for (const k of keys.values()) {
+        // Fast attack, slightly slower spring back - keys feel weighted
+        const rate = k.target > k.angle ? 45 : 22
+        k.angle += (k.target - k.angle) * (1 - Math.exp(-rate * dt))
+        k.pivot.rotation.x = k.angle * (k.black ? PRESS_BLACK : PRESS_WHITE)
+        if (k.target === 0) k.glow = Math.max(0, k.glow - dt * 3)
+        const g = glowOn ? k.glow : 0
+        k.mat.emissive.copy(glowColor).multiplyScalar(g * (k.black ? 0.5 : 0.22))
+      }
+      updateTrails(dt)
+      if (controls.enabled) controls.update()
+      renderer.render(scene, camera)
+      requestAnimationFrame(animate)
+    }
+
+    buildPiano(RANGES[+$('range').value] ?? RANGES[0])
+    animate()
+    loadSound($('sf').value)
+    loadSharedRecording()
+    window.__piano = { press, release, keys, engine, camera, get scheduler() { return scheduler } } // for debugging
+  </script>
+</body>
+</html>
