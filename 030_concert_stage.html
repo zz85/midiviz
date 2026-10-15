@@ -171,11 +171,13 @@
 
   <div id="audioPop" class="pop ui" style="width:260px">
     <div class="sect">Hall acoustics</div>
+    <div class="field"><label>Volume <span class="val" id="volV"></span></label><input type="range" id="vol" min="0" max="2" step="0.01" value="1"></div>
     <div class="field"><label>Room</label><select id="room"></select></div>
     <div class="field"><label>Seat</label><select id="seat"></select></div>
     <div class="field"><label>Reverb <span class="val" id="rvAmtV"></span></label><input type="range" id="rvAmt" min="0" max="2" step="0.01" value="1"></div>
     <div class="field"><label>Decay <span class="val" id="rvDecayV"></span></label><input type="range" id="rvDecay" min="0.4" max="2" step="0.01" value="1"></div>
     <div class="field"><label>Tone <span class="val" id="rvToneV"></span></label><input type="range" id="rvTone" min="0" max="1" step="0.01" value="0.5"></div>
+    <div class="field" title="Raises the room (reverb, ambience, applause) relative to the piano"><label>Room boost <span class="val" id="boostV"></span></label><input type="range" id="boost" min="-12" max="12" step="0.5" value="0"></div>
     <div class="sect">Audience</div>
     <div class="field"><label>Hall ambience <span class="val" id="ambV"></span></label><input type="range" id="amb" min="0" max="1" step="0.01" value="0"></div>
     <label class="chk"><input type="checkbox" id="applause" checked>Applause when a song ends</label>
@@ -923,7 +925,7 @@
     for (const [k, r] of Object.entries(ROOMS)) $('room').add(new Option(r.label, k))
     for (const [k, r] of Object.entries(SEATS)) $('seat').add(new Option(r.label, k))
     $('room').value = 'hall'; $('seat').value = 'front'
-    const hallSettings = () => ({ room: $('room').value, seat: $('seat').value, amount: +$('rvAmt').value, decay: +$('rvDecay').value, tone: +$('rvTone').value })
+    const hallSettings = () => ({ room: $('room').value, seat: $('seat').value, amount: +$('rvAmt').value, decay: +$('rvDecay').value, tone: +$('rvTone').value, boost: +$('boost').value })
     function applyHall() {
       const h = hallSettings(), dry = h.room === 'dry'
       $('rvAmtV').textContent = Math.round(h.amount * 100) + '%'
@@ -931,11 +933,15 @@
       $('rvToneV').textContent = h.tone < 0.35 ? 'warm' : h.tone > 0.65 ? 'bright' : 'neutral'
       $('ambV').textContent = +$('amb').value ? Math.round(+$('amb').value * 100) + '%' : 'off'
       for (const id of ['seat', 'rvAmt', 'rvDecay', 'rvTone']) $(id).disabled = dry
+      const vol = +$('vol').value
+      $('volV').textContent = vol ? Math.round(vol * 100) + '%' : 'muted'
+      $('boostV').textContent = (h.boost > 0 ? '+' : '') + h.boost + ' dB'
+      hall.setLevels({ volume: vol, boost: h.boost })
       hall.set(acousticParams(h))
       hall.setAmbience(+$('amb').value)
     }
     for (const id of ['room', 'seat']) $(id).onchange = applyHall
-    for (const id of ['rvAmt', 'rvDecay', 'rvTone', 'amb']) $(id).oninput = applyHall
+    for (const id of ['vol', 'boost', 'rvAmt', 'rvDecay', 'rvTone', 'amb']) $(id).oninput = applyHall
     $('clapNow').onclick = () => { unlockAudio(); hall.applause() }
     hall.ready.then(applyHall)
     applyHall()
@@ -1478,7 +1484,7 @@
           bitrate: defaultBitrate(width, height, fps),
           audio: $('exAudio').checked,
           audioOpts: { vendorPath, soundfonts, volume: 1, convertSF3: engine._backend?._convertSF3 ? d => engine._backend._convertSF3(d) : null },
-          audioFx: $('room').value === 'dry' ? null : offlineHall(acousticParams(hallSettings()), 48000),
+          audioFx: offlineHall($('room').value === 'dry' ? null : acousticParams(hallSettings()), 48000, { volume: +$('vol').value }),
           tour: null,
           intro: $('exTitle').checked ? { seconds: 3.5, title: song.title, subtitle: 'Concert Stage · MIDIVIZ', style: '2d', overlap: true } : null,
           outro: null,
@@ -1519,7 +1525,7 @@
       ['ao', 'ao', 'chk', !LOWQ], ['dof', 'dof', 'chk', !LOWQ], ['bloom', 'bloom', 'chk'], ['grain', 'grain', 'chk'], ['drift', 'drift', 'chk'],
       ['sf', 'sf', 'val', 'stack'], ['vel', 'velocity', 'num'],
       ['room', 'room', 'val', 'hall'], ['seat', 'seat', 'val', 'front'], ['rv', 'rvAmt', 'num'], ['decay', 'rvDecay', 'num'],
-      ['tone', 'rvTone', 'num'], ['amb', 'amb', 'num'], ['clap', 'applause', 'chk'],
+      ['tone', 'rvTone', 'num'], ['vol', 'vol', 'num'], ['boost', 'boost', 'num'], ['amb', 'amb', 'num'], ['clap', 'applause', 'chk'],
       ['res', 'exRes', 'val', '1920x1080'], ['fps', 'exFps', 'val', '60'], ['excam', 'exCam', 'val', 'tour'],
       ['exaudio', 'exAudio', 'chk'], ['extitle', 'exTitle', 'chk'],
     ]

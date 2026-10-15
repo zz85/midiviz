@@ -32,14 +32,17 @@ export const SEATS = {
  * amount scales the reverberant level, decay scales the room's RT60 and tone
  * (0 dark … 1 bright) moves the high-frequency damping.
  */
-export function acousticParams({ room = 'hall', seat = 'front', amount = 1, decay = 1, tone = 0.5 } = {}) {
+// boost: the environment (reverberant field, early reflections, ambience and
+// applause) relative to the piano, in dB; the direct sound is untouched
+export const dB = x => Math.pow(10, x / 20)
+export function acousticParams({ room = 'hall', seat = 'front', amount = 1, decay = 1, tone = 0.5, boost = 0 } = {}) {
   const r = ROOMS[room] || ROOMS.hall, s = SEATS[seat] || SEATS.front
   if (r.on === false) return { on: false, dry: 1, dryHz: 20000, wet: 0, er: 0 }
   return {
     on: true,
     rt60: r.rt60 * decay, pre: r.pre + s.pre, size: r.size, er: r.er,
     damp: Math.min(1, Math.max(0, r.damp + (tone - 0.5) * 0.6)),
-    wet: s.wet * amount, dry: s.dry, dryHz: s.dryHz, width: s.width,
+    wet: s.wet * amount * dB(boost), dry: s.dry, dryHz: s.dryHz, width: s.width,
   }
 }
 export const rt60Of = (room, decay) => (ROOMS[room]?.rt60 || 0) * decay
@@ -52,8 +55,15 @@ export function installAcoustics() {
     ready: null,
     set(p) { this.params = p; this.node?.port.postMessage(p) },
     reset() { this.node?.port.postMessage('reset') },
-    applause(opts) { if (this.ctx) playApplause(this.ctx, this.input, opts) },
-    setAmbience(level) { ambience(this, level) },
+    volume: 1, boost: 0, ambLevel: 0,
+    applause(opts = {}) { if (this.ctx) playApplause(this.ctx, this.input, { ...opts, level: (opts.level ?? 1) * dB(this.boost) }) },
+    setAmbience(level) { this.ambLevel = level; ambience(this, level * dB(this.boost)) },
+    /** master volume (linear, 0…2) and environment boost (dB) */
+    setLevels({ volume = this.volume, boost = this.boost } = {}) {
+      this.volume = volume; this.boost = boost
+      if (this.master) this.master.gain.setTargetAtTime(volume, this.ctx.currentTime, 0.03)
+      if (this._amb) ambience(this, this.ambLevel * dB(boost))
+    },
   }
   let resolve
   api.ready = new Promise(r => { resolve = r })
@@ -64,15 +74,22 @@ export function installAcoustics() {
       const real = Object.getOwnPropertyDescriptor(BaseAudioContext.prototype, 'destination').get.call(this)
       const input = this.createGain()
       input.channelCount = 2; input.channelCountMode = 'explicit'
-      input.connect(real)
+      // master volume, then a limiter so a boosted room or volume never clips
+      const master = this.createGain(), limiter = this.createDynamicsCompressor()
+      master.gain.value = api.volume
+      limiter.threshold.value = -3; limiter.knee.value = 4; limiter.ratio.value = 20
+      limiter.attack.value = 0.002; limiter.release.value = 0.15
+      master.connect(limiter).connect(real)
+      api.master = master; api.limiter = limiter
+      input.connect(master)
       Object.defineProperty(this, 'destination', { get: () => input, configurable: true })
-      api.ctx = this; api.input = input; api.out = real
+      api.ctx = this; api.input = input; api.out = master
       this.audioWorklet.addModule(new URL('./hall-worklet.js', import.meta.url)).then(() => {
         const node = new AudioWorkletNode(this, 'hall-reverb', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2], channelCount: 2, channelCountMode: 'explicit' })
         node.port.postMessage(api.params)
         input.disconnect()
         input.connect(node)
-        node.connect(real)
+        node.connect(master)
         api.node = node
         resolve(api)
       }).catch(e => { console.warn('hall reverb unavailable', e); resolve(api) })
@@ -83,13 +100,17 @@ export function installAcoustics() {
 }
 
 /** The same reverb for the offline export: process planar [L…, R…] chunks in place. */
-export function offlineHall(params, sampleRate) {
-  const rv = new HallReverb(sampleRate)
-  rv.set(params)
-  rv.g.dry = rv.t.dry; rv.g.wet = rv.t.wet; rv.g.er = rv.t.er
+// params null = no room; volume is the master gain, followed by a soft
+// limiter above -3 dBFS (as the live page's compressor)
+export function offlineHall(params, sampleRate, { volume = 1 } = {}) {
+  const rv = params && params.on !== false ? new HallReverb(sampleRate) : null
+  if (rv) { rv.set(params); rv.g.dry = rv.t.dry; rv.g.wet = rv.t.wet; rv.g.er = rv.t.er }
+  const T = dB(-3), H = 1 - T
+  const soft = x => { const a = Math.abs(x); return a <= T ? x : Math.sign(x) * (T + H * Math.tanh((a - T) / H)) }
   return (data, n) => {
     const L = data.subarray(0, n), R = data.subarray(n, 2 * n)
-    rv.process(L, R, L, R, n)
+    if (rv) rv.process(L, R, L, R, n)
+    if (volume !== 1 || rv) for (let i = 0; i < 2 * n; i++) data[i] = soft(data[i] * volume)
   }
 }
 
