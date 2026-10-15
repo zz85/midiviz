@@ -198,6 +198,7 @@
     <div class="sect">Quality</div>
     <label class="chk"><input type="checkbox" id="dof" checked>Depth of field</label>
     <label class="chk"><input type="checkbox" id="mirror" checked>Fallboard reflection</label>
+    <label class="chk" title="Keep the pianist's hands sharp; off focuses on the camera's aim point"><input type="checkbox" id="focusHands" checked>Focus on the hands</label>
     <label class="chk"><input type="checkbox" id="ao" checked>Ambient occlusion</label>
     <label class="chk"><input type="checkbox" id="bloom" checked>Bloom</label>
     <label class="chk"><input type="checkbox" id="grain" checked>Film grain &amp; vignette</label>
@@ -1377,7 +1378,37 @@
     }
 
     // ── Frame ──────────────────────────────────────────────────────────────
-    const _focus = new THREE.Vector3(), _drift = new THREE.Vector3(), _look = new THREE.Vector3()
+    const _focus = new THREE.Vector3(), _drift = new THREE.Vector3(), _look = new THREE.Vector3(), _fdir = new THREE.Vector3()
+    let focusZ = 0, focusHand = 'R', focusLead = 0
+    // depth (along the view axis, as the bokeh shader measures it) to focus at
+    function focusDepth(dt) {
+      camera.updateMatrixWorld()
+      camera.getWorldDirection(_fdir)
+      const aim = _focus.subVectors(controls.target, camera.position).dot(_fdir)
+      if (!$('focusHands').checked || !hands.group.visible) return aim
+      // a focus puller picks one hand: the one nearer the middle of the frame,
+      // or the busier one, and stays on it until the other clearly wins
+      const cand = {}
+      for (const h of ['L', 'R']) {
+        const p = hands.joints[h]?.M
+        if (!p) continue
+        const z = _focus.subVectors(p, camera.position).dot(_fdir)
+        if (z < camera.near * 2) continue
+        _focus.copy(p).project(camera)
+        const off = Math.hypot(_focus.x, _focus.y)
+        if (off > 1.2) continue                   // out of frame
+        const busy = (hands.hands?.[h]?.diag?.press || []).reduce((a, v) => a + v, 0)
+        cand[h] = { z, w: (1.25 - off) * (0.5 + Math.min(1, busy)) }
+      }
+      const hs = Object.keys(cand)
+      if (!hs.length) return aim
+      if (!cand[focusHand]) focusHand = hs[0]
+      // (it must win for a while: no focus pull for a single note)
+      const other = hs.find(h => h !== focusHand && cand[h].w > cand[focusHand].w * 1.25)
+      focusLead = other ? focusLead + dt : 0
+      if (focusLead > 1.5) { focusHand = other; focusLead = 0 }
+      return cand[focusHand].z
+    }
     let elapsed = 0
     function frame(dt, t) {
       elapsed += dt
@@ -1413,10 +1444,13 @@
       updateNotes(t, dt)
       dust.material.uniforms.uTime.value = elapsed
       grade.uniforms.uTime.value = elapsed
-      // autofocus on the look-at point; aperture opens on close shots
-      const dist = camera.position.distanceTo(controls.target)
-      bokeh.uniforms.focus.value = dist
-      bokeh.uniforms.aperture.value = 0.00011 * dofScale * THREE.MathUtils.clamp(220 / dist, 0.4, 1.6)
+      // autofocus on the hands (the one nearer the middle of the frame counts
+      // more), falling back to the look-at point; aperture opens on close shots
+      const dist = focusDepth(dt)
+      if (!(focusZ > 0)) focusZ = dist
+      focusZ += (dist - focusZ) * Math.min(1, dt * 2.5)
+      bokeh.uniforms.focus.value = focusZ
+      bokeh.uniforms.aperture.value = 0.00011 * dofScale * THREE.MathUtils.clamp(220 / focusZ, 0.4, 1.6)
       // a slow handheld drift on top of the framing (not while orbiting by hand)
       const drift = $('drift').checked && !controls.autoRotate
       if (drift) {
@@ -1567,7 +1601,7 @@
       ['desk', 'desk', 'chk'], ['bench', 'bench', 'chk'], ['mirror', 'mirror', 'chk', !!piano.mirror], ['hands', 'hands', 'chk'],
       ['rh', 'rhColor', 'color'], ['lh', 'lhColor', 'color'], ['glow', 'glowConcert', 'chk'], ['labels', 'labels', 'chk'],
       ['light', 'light', 'num'], ['ex', 'exposure', 'num'], ['sync', 'tourSync', 'chk'], ['glance', 'lookHands', 'chk'],
-      ['ao', 'ao', 'chk', !LOWQ], ['dof', 'dof', 'chk', !LOWQ], ['bloom', 'bloom', 'chk'], ['grain', 'grain', 'chk'], ['drift', 'drift', 'chk'],
+      ['ao', 'ao', 'chk', !LOWQ], ['dof', 'dof', 'chk', !LOWQ], ['focus', 'focusHands', 'chk'], ['bloom', 'bloom', 'chk'], ['grain', 'grain', 'chk'], ['drift', 'drift', 'chk'],
       ['sf', 'sf', 'val', 'stack'], ['vel', 'velocity', 'num'],
       ['room', 'room', 'val', 'hall'], ['seat', 'seat', 'val', 'front'], ['rv', 'rvAmt', 'num'], ['decay', 'rvDecay', 'num'],
       ['tone', 'rvTone', 'num'], ['vol', 'vol', 'num'], ['boost', 'boost', 'num'], ['amb', 'amb', 'num'], ['clap', 'applause', 'chk'],
@@ -1671,7 +1705,7 @@
     }
     syncUrl()
     // test hook for headless checks
-    window.__stage = { hall, shareUrl, piano, hands, press, release, setView, setMode, setScene, scene, renderer, camera, controls, tour, music, frame, stageAdapter, driveSong, loadSongUrl, get song() { return song }, get scheduler() { return scheduler }, offlineSet(t) { offlineT = t } }
+    window.__stage = { get focusZ() { return focusZ }, get focusHand() { return focusHand }, hall, shareUrl, piano, hands, press, release, setView, setMode, setScene, scene, renderer, camera, controls, tour, music, frame, stageAdapter, driveSong, loadSongUrl, get song() { return song }, get scheduler() { return scheduler }, offlineSet(t) { offlineT = t } }
   </script>
 </body>
 </html>
