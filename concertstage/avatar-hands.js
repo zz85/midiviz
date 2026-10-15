@@ -20,7 +20,7 @@
 
 import * as THREE from 'three'
 import { solveFinger } from '../fingering/hands3d.js'
-import { buildMotion } from '../fingering/motion.js'
+import { buildMotion, KEY, restOffset } from '../fingering/motion.js'
 
 const KEY_TOP = 73
 // Adult hand (as fingering/hands3d.js): segment lengths, radii at each joint,
@@ -35,7 +35,7 @@ const FINGERS = {
   4: { len: [4.6, 2.8, 2.1], rad: [0.9, 0.82, 0.74], base: [2.1, 0, 0.35], k: 0.7, dir: [0.05, 0, -1] },
   5: { len: [3.7, 2.1, 1.9], rad: [0.8, 0.72, 0.66], base: [3.9, -0.65, 1.3], k: 0.7, dir: [0.12, 0, -1] },
 }
-const KNUCKLE_Y = 4.9, KNUCKLE_Z = 3.2
+const KNUCKLE_Y = 5.9, KNUCKLE_Z = 3.6   // an arched hand: knuckles high, fingers curved
 const UPPER = 29, FORE = 26          // shoulder–elbow, elbow–wrist
 const WRIST = [0.6, -0.8, 8.6]       // wrist from the middle-finger knuckle base
 
@@ -371,9 +371,26 @@ function buildHand(side, mats) {
   mesh.bind(new THREE.Skeleton(bones), new THREE.Matrix4())
 
   const J = makeJoints()
-  const knuckle = v3(), offset = v3(), need = v3(), target = v3(), tip = v3(), shoulder = v3()
+  const shoulder = v3(), tip = v3(), base = v3()
   const SHOULDER = new THREE.Vector3(s * 20, 107, 45)
   const thumbCurl = { side: new THREE.Vector3(s, 0, 0), tilt: FINGERS[1].tilt }
+  // Where each fingertip sits in a relaxed hand, relative to the middle
+  // knuckle (x across, z forward is negative): the same rest places the
+  // motion model uses, so a hand with nothing to do fits itself exactly.
+  const REST = [1, 2, 3, 4, 5].map(f => [restOffset(side, f), KEY.WHITE_Z[f] - KNUCKLE_Z])
+  // Sideways limits (radians) around each finger's neutral direction: tight
+  // for a finger that is not playing, looser while it holds a key; the thumb
+  // swings much further (it passes under the hand).
+  // free-finger box around its rest tip, in the hand frame: [toward the thumb, toward the little finger, ± forward/back] (cm)
+  const FREE_BOX = [null, [-1.2, 5.5, 2.2], [-1, 1, 2], [-0.8, 0.8, 2], [-0.8, 0.8, 2], [-1, 1.2, 2]]
+  const SPLAY = { free: [0, 0.4, 0.13, 0.1, 0.12, 0.16], held: [0, 0.95, 0.34, 0.28, 0.3, 0.4] }
+  const NEUTRAL = [1, 2, 3, 4, 5].map(f => { const d = FINGERS[f].dir, l = Math.hypot(d[0], d[2]); return [s * d[0] / l, d[2] / l] })
+  // smoothed hand placement: middle knuckle (x, z), yaw, plus a reach slide
+  const hand = { x: s * 12, z: KNUCKLE_Z, yaw: 0, init: false }
+  const slide = v3(), slideGoal = v3()
+  const diag = { splay: [0, 0, 0, 0, 0], err: [0, 0, 0, 0, 0], press: [0, 0, 0, 0, 0] }
+  // rotate a hand-frame (x, z) offset by the yaw; θ > 0 turns the fingers toward +x
+  const rot = (x, z, th) => { const c = Math.cos(th), n = Math.sin(th); return [x * c - z * n, x * n + z * c] }
 
   function armIK(W, out) {
     // two bones from the shoulder to the wrist; lean in when it cannot reach
@@ -391,35 +408,114 @@ function buildHand(side, mats) {
     out.copy(shoulder).addScaledVector(n, UPPER * cosA).addScaledVector(pole, UPPER * sinA)
   }
 
+  // Fit the hand to the fingertip targets: the rigid motion (x, z, yaw) that
+  // best carries the relaxed fingertips onto the targets, weighted toward
+  // the fingers that are pressing (closed-form 2D Procrustes).
+  function fitHand(tips, anchor) {
+    let W = 0, px = 0, pz = 0, qx = 0, qz = 0
+    // pressing fingers count most; a free finger counts where it rests
+    // around the motion model's hand anchor, not where it may be flying to
+    const w = [], Q = []
+    for (let i = 0; i < 5; i++) {
+      const t = tips[i], held = t.press > 0.2
+      w.push(held ? 0.25 + 1.2 * t.press : 0.12)
+      Q.push(held ? [t.x, t.z] : [anchor.x + REST[i][0], KNUCKLE_Z + REST[i][1] - 2.5 * anchor.black + 2 * anchor.idle])
+    }
+    for (let i = 0; i < 5; i++) { W += w[i]; px += w[i] * REST[i][0]; pz += w[i] * REST[i][1]; qx += w[i] * Q[i][0]; qz += w[i] * Q[i][1] }
+    px /= W; pz /= W; qx /= W; qz /= W
+    let sc = 0, ss = 0
+    for (let i = 0; i < 5; i++) {
+      const ax = REST[i][0] - px, az = REST[i][1] - pz, bx = Q[i][0] - qx, bz = Q[i][1] - qz
+      sc += w[i] * (ax * bx + az * bz); ss += w[i] * (ax * bz - az * bx)
+    }
+    let yaw = THREE.MathUtils.clamp(Math.atan2(ss, sc), -0.32, 0.32)
+    // the forearm's line pulls the hand round a little (playing far out, the
+    // fingers turn with the arm)
+    const armYaw = Math.atan2(qx - SHOULDER.x, -(qz - SHOULDER.z))
+    yaw = THREE.MathUtils.clamp(0.75 * yaw + 0.3 * armYaw, -0.4, 0.4)
+    const [rx, rz] = rot(px, pz, yaw)
+    return { x: qx - rx, z: THREE.MathUtils.clamp(qz - rz, -3.5, 7), yaw, y: KEY_TOP + KNUCKLE_Y + 1.2 * anchor.idle }
+  }
+
+  function basePos(f, out) {
+    const d = FINGERS[f]
+    const [bx, bz] = rot(s * d.base[0], d.base[2], hand.yaw)
+    return out.set(hand.x + bx, hand.y + d.base[1], hand.z + bz).add(slide)
+  }
+
   function update(pose, dt) {
     if (!pose) { group.visible = false; return }
     group.visible = true
     const { anchor, fingers: tips } = pose
-    knuckle.set(anchor.x, KEY_TOP + KNUCKLE_Y + 1.2 * anchor.idle, KNUCKLE_Z - 3.2 * anchor.black + 3 * anchor.idle)
-    // slide toward any pressed key the fingers cannot reach (as hands3d.js)
-    need.set(0, 0, 0)
+    const fit = fitHand(tips, anchor)
+    if (!hand.init) { Object.assign(hand, fit, { init: true }) }
+    const k = Math.min(1, dt * 14)
+    hand.x += (fit.x - hand.x) * k; hand.z += (fit.z - hand.z) * k
+    hand.yaw += (fit.yaw - hand.yaw) * k; hand.y = fit.y
+    // what the fit cannot cover, a slide does (and it relaxes back to zero):
+    // a held key out of reach, or so far sideways the finger would splay
+    slideGoal.set(0, 0, 0)
     let worst = 0
+    const saved = slide.clone(); slide.set(0, 0, 0)
     for (const f of [1, 2, 3, 4, 5]) {
-      const d = FINGERS[f], t = tips[f - 1], P = J.fingers[f]
-      P[0].set(knuckle.x + s * d.base[0], knuckle.y + d.base[1], knuckle.z + d.base[2]).add(offset)
+      const d = FINGERS[f], t = tips[f - 1]
+      if (!(t.press > 0.2 || t.y < 0.6)) continue
+      basePos(f, base)
       tip.set(t.x, KEY_TOP + t.y + d.rad[2] * 0.9, t.z)
-      if (t.press > 0.2 || t.y < 0.6) {
-        _a.subVectors(tip, P[0])
-        const e = _a.length() - chainReach(d.len, d.k, 0.5)
-        if (e > worst) { worst = e; need.copy(_a).setLength(e) }
+      _a.subVectors(tip, base)
+      const e = _a.length() - chainReach(d.len, d.k, 0.5)
+      if (e > worst) { worst = e; slideGoal.copy(_a).setLength(e) }
+      const [nx, nz] = rot(NEUTRAL[f - 1][0], NEUTRAL[f - 1][1], hand.yaw)
+      const ang = Math.atan2(nx * _a.z - nz * _a.x, nx * _a.x + nz * _a.z), over = Math.abs(ang) - SPLAY.held[f]
+      if (over > 0) {
+        const h = Math.hypot(_a.x, _a.z), e2 = h * Math.sin(over)
+        if (e2 > worst) { worst = e2; slideGoal.set(_a.x, 0, _a.z).setLength(e2) }
       }
     }
-    target.copy(offset).add(need)
-    target.y = Math.max(-2, Math.min(1.5, target.y))
-    offset.lerp(target, Math.min(1, dt * 18))
+    slideGoal.y = THREE.MathUtils.clamp(slideGoal.y, -2, 1.5)
+    slide.copy(saved).lerp(slideGoal, Math.min(1, dt * 18))
+    // fingertip targets in the hand frame (lx toward the little finger = s·x)
+    const lx = [], lz = [], held = [], ty = []
     for (const f of [1, 2, 3, 4, 5]) {
-      const d = FINGERS[f], t = tips[f - 1], P = J.fingers[f]
-      P[0].set(knuckle.x + s * d.base[0], knuckle.y + d.base[1], knuckle.z + d.base[2]).add(offset)
-      tip.set(t.x, KEY_TOP + t.y + d.rad[2] * 0.9, t.z)
-      solveFinger(P[0].clone(), tip, d.len, d.k, P, f === 1 ? thumbCurl : null)
+      const d = FINGERS[f], t = tips[f - 1]
+      const [ax, az] = rot(t.x - hand.x - slide.x, t.z - hand.z - slide.z, -hand.yaw)
+      let x = s * ax, z = az
+      held.push(t.press > 0.2)
+      if (!held[f - 1]) {
+        // a free finger moves with the hand: keep it near its relaxed place
+        // (the thumb may tuck under toward the fingers)
+        const r = REST[f - 1], box = FREE_BOX[f]
+        x = s * r[0] + THREE.MathUtils.clamp(x - s * r[0], box[0], box[1])
+        z = r[1] + THREE.MathUtils.clamp(z - r[1], -box[2], box[2])
+      }
+      lx.push(x); lz.push(z); ty.push(KEY_TOP + t.y + d.rad[2] * 0.9)
+    }
+    // fingers 2–5 keep their order across the hand: a free finger never sits
+    // on top of, or beyond, its neighbour (the thumb passes under; it is free)
+    const GAP = 1.7
+    for (let i = 2; i < 5; i++) if (!held[i] && lx[i] < lx[i - 1] + GAP) lx[i] = lx[i - 1] + GAP
+    for (let i = 3; i >= 1; i--) if (!held[i] && lx[i] > lx[i + 1] - GAP) lx[i] = lx[i + 1] - GAP
+    for (let i = 2; i < 5; i++) if (!held[i] && lx[i] < lx[i - 1] + GAP) lx[i] = lx[i - 1] + GAP
+    // joint IK per finger
+    for (const f of [1, 2, 3, 4, 5]) {
+      const d = FINGERS[f], P = J.fingers[f], i = f - 1
+      basePos(f, P[0])
+      const [wx2, wz2] = rot(s * lx[i], lz[i], hand.yaw)
+      tip.set(hand.x + slide.x + wx2, ty[i], hand.z + slide.z + wz2)
+      const [nx, nz] = rot(NEUTRAL[i][0], NEUTRAL[i][1], hand.yaw)
+      const vx = tip.x - P[0].x, vz = tip.z - P[0].z
+      const ang = Math.atan2(nx * vz - nz * vx, nx * vx + nz * vz)
+      const lim = held[i] ? SPLAY.held[f] : SPLAY.free[f]
+      diag.splay[i] = Math.abs(ang); diag.press[i] = tips[i].press
+      if (!held[i] && Math.abs(ang) > lim) {
+        const [cx, cz] = rot(vx, vz, -(ang - Math.sign(ang) * lim))
+        tip.x = P[0].x + cx; tip.z = P[0].z + cz
+      }
+      diag.err[i] = solveFinger(P[0].clone(), tip, d.len, d.k, P, f === 1 ? thumbCurl : null)
     }
     const k3 = J.fingers[3][0]
-    J.W.set(k3.x + s * WRIST[0], k3.y + WRIST[1], k3.z + WRIST[2])
+    const [wx, wz] = rot(s * WRIST[0], WRIST[2], hand.yaw)
+    J.W.set(k3.x + wx, k3.y + WRIST[1], k3.z + wz)
     palmPoint(J, J.M)
     J.R.subVectors(J.fingers[5][0], J.fingers[2][0]).multiplyScalar(s).normalize()
     // a slight roll toward whichever side of the hand is pressing
@@ -429,7 +525,7 @@ function buildHand(side, mats) {
     armIK(J.W, J.E)
     poseBones(bones, J, s)
   }
-  return { group, update, side }
+  return { group, update, side, diag, hand }
 }
 
 // ── Both hands, driven by a fingered song ──────────────────────────────────
@@ -452,5 +548,6 @@ export function buildAvatarHands() {
       L.update(pose.L, dt); R.update(pose.R, dt)
     },
     get sleeves() { return sleeves },
+    hands: { L, R },
   }
 }
