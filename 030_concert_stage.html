@@ -57,6 +57,7 @@
     .sect { padding: 10px 16px 4px; font-size: 11px; color: #8d8d8d; text-transform: uppercase; letter-spacing: 0.06em; }
     .field { padding: 6px 16px 8px; }
     .field > label { display: block; font-size: 12px; color: #c8c8c8; margin-bottom: 5px; }
+    .field > label .val { float: right; color: #8f8f8f; font-variant-numeric: tabular-nums; }
     .field input[type=color] { width: 100%; height: 24px; border: 0; border-radius: 6px; padding: 0; background: none; cursor: pointer; }
     .field input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
     .field input[type=color]::-webkit-color-swatch { border: 0; border-radius: 6px; }
@@ -93,6 +94,7 @@
     #status.error { color: #f99; }
     #dropHint { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; font: 300 26px Georgia, serif; color: #f3e6c4; background: rgba(0, 0, 0, 0.55); pointer-events: none; }
     body.dragging #dropHint { display: flex; }
+    body.queued #dropHint { display: flex; background: rgba(0, 0, 0, 0.35); }
     #help { padding: 8px 16px 10px; font-size: 11px; color: #8e8e8e; line-height: 1.5; white-space: normal; }
     #help b { color: #bbb; }
     #exBar { height: 4px; margin: 4px 16px 6px; border-radius: 2px; background: #333; overflow: hidden; }
@@ -119,8 +121,10 @@
   <div id="topRight" class="ui">
     <button class="pill" id="cameraBtn"><svg viewBox="0 0 24 24"><path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11z"/></svg>Camera</button>
     <button class="pill" id="visualsBtn"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 0 0 0 18c.8 0 1.5-.7 1.5-1.5 0-.4-.2-.7-.4-1-.2-.3-.4-.6-.4-1 0-.8.7-1.5 1.5-1.5H16a5 5 0 0 0 5-5c0-4.4-4-8-9-8zM6.5 12a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm3-4a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm3 4a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/></svg>Visuals</button>
+    <button class="pill" id="audioBtn" title="Hall acoustics: room, seat, reverb, applause"><svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9zm13.5 3A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z"/></svg>Hall</button>
     <button class="pill" id="renderBtn"><svg viewBox="0 0 24 24"><circle cx="7" cy="12" r="4"/><circle cx="16" cy="12" r="4" opacity=".55"/></svg>Render</button>
     <button class="pill" id="settingsBtn" title="Sound and quality" style="padding:0 9px"><svg viewBox="0 0 24 24"><path d="M19.4 13a7.5 7.5 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.6 7.6 0 0 0-1.7-1L15 3h-4l-.4 2.7a7.6 7.6 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.5 7.5 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1c.5.4 1.1.7 1.7 1L11 21h4l.4-2.7c.6-.3 1.2-.6 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg></button>
+    <button class="pill" id="shareBtn" title="Copy a link that reopens the page with every setting, the camera, the song and its position"><svg viewBox="0 0 24 24"><path d="M10.6 13.4a1 1 0 0 1 0-1.4l3.5-3.5a1 1 0 1 1 1.4 1.4L12 13.4a1 1 0 0 1-1.4 0zM8.5 19.4a4 4 0 0 1-2.8-6.8l2.1-2.1a1 1 0 1 1 1.4 1.4l-2.1 2.1a2 2 0 0 0 2.8 2.8l2.1-2.1a1 1 0 1 1 1.4 1.4l-2.1 2.1a4 4 0 0 1-2.8 1.2zm7.8-5.5a1 1 0 0 1-.7-1.7l2.1-2.1a2 2 0 0 0-2.8-2.8l-2.1 2.1a1 1 0 1 1-1.4-1.4l2.1-2.1a4 4 0 0 1 5.6 5.6L17 13.6a1 1 0 0 1-.7.3z"/></svg><span id="shareLbl">Share</span></button>
   </div>
 
   <div id="cameraPop" class="pop ui">
@@ -163,6 +167,19 @@
     <div id="exBar"><div></div></div>
     <div id="exStatus">Choose a song first. Rendering is offline, so every frame is smooth regardless of GPU speed.</div>
     <div class="btnrow"><button id="exStart">Export</button><button id="exCancel" class="sec">Cancel</button></div>
+  </div>
+
+  <div id="audioPop" class="pop ui" style="width:260px">
+    <div class="sect">Hall acoustics</div>
+    <div class="field"><label>Room</label><select id="room"></select></div>
+    <div class="field"><label>Seat</label><select id="seat"></select></div>
+    <div class="field"><label>Reverb <span class="val" id="rvAmtV"></span></label><input type="range" id="rvAmt" min="0" max="2" step="0.01" value="1"></div>
+    <div class="field"><label>Decay <span class="val" id="rvDecayV"></span></label><input type="range" id="rvDecay" min="0.4" max="2" step="0.01" value="1"></div>
+    <div class="field"><label>Tone <span class="val" id="rvToneV"></span></label><input type="range" id="rvTone" min="0" max="1" step="0.01" value="0.5"></div>
+    <div class="sect">Audience</div>
+    <div class="field"><label>Hall ambience <span class="val" id="ambV"></span></label><input type="range" id="amb" min="0" max="1" step="0.01" value="0"></div>
+    <label class="chk"><input type="checkbox" id="applause" checked>Applause when a song ends</label>
+    <div class="btnrow"><button id="clapNow" class="sec">Applaud now</button></div>
   </div>
 
   <div id="settingsPop" class="pop ui" style="width:250px">
@@ -215,6 +232,7 @@
     import { exportVideo, exportSupported, defaultBitrate } from './notation3d/video-export.js'
     import { buildGrandPiano, FINISHES, LOW, HIGH, DIM } from './concertstage/concert-grand.js'
     import { buildAvatarHands } from './concertstage/avatar-hands.js'
+    import { installAcoustics, offlineHall, acousticParams, rt60Of, ROOMS, SEATS } from './concertstage/acoustics.js'
 
     const $ = id => document.getElementById(id)
     const params = new URLSearchParams(location.search)
@@ -837,7 +855,7 @@
     $('tourSync').onchange = () => anchorTour()
 
     // ── Popovers and UI chrome ─────────────────────────────────────────────
-    const POPS = { songsBtn: 'songsPop', cameraBtn: 'cameraPop', visualsBtn: 'visualsPop', renderBtn: 'renderPop', settingsBtn: 'settingsPop' }
+    const POPS = { songsBtn: 'songsPop', cameraBtn: 'cameraPop', visualsBtn: 'visualsPop', audioBtn: 'audioPop', renderBtn: 'renderPop', settingsBtn: 'settingsPop' }
     function closePops(except) { for (const p of Object.values(POPS)) if (p !== except) $(p).classList.remove('open') }
     for (const [btn, pop] of Object.entries(POPS)) {
       $(btn).onclick = ev => {
@@ -871,6 +889,9 @@
 
     // ── Sound ──────────────────────────────────────────────────────────────
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+    // the synth's own AudioContext (created inside OxiSynth) gets the hall
+    // reverb between it and the speakers; see concertstage/acoustics.js
+    const hall = installAcoustics()
     const engine = new SoundFontEngine({ backend: 'oxisynth', vendorPath, audioContext: audioCtx })
     const LIVE = 15
     const SOUNDFONTS = [
@@ -896,7 +917,28 @@
       } catch (e) { console.error(e); setStatus('Sound failed to load: ' + e.message, true) }
     }
     $('sf').onchange = () => loadSound($('sf').value)
-    const unlockAudio = () => { if (audioCtx.state !== 'running') audioCtx.resume().then(() => engine.resume?.()).catch(() => {}) }
+    const unlockAudio = () => { if (audioCtx.state !== 'running') audioCtx.resume().then(() => engine.resume?.()).catch(() => {}); if (hall.ctx && hall.ctx.state !== 'running') hall.ctx.resume().catch(() => {}) }
+
+    // ── Hall acoustics ─────────────────────────────────────────────────────
+    for (const [k, r] of Object.entries(ROOMS)) $('room').add(new Option(r.label, k))
+    for (const [k, r] of Object.entries(SEATS)) $('seat').add(new Option(r.label, k))
+    $('room').value = 'hall'; $('seat').value = 'front'
+    const hallSettings = () => ({ room: $('room').value, seat: $('seat').value, amount: +$('rvAmt').value, decay: +$('rvDecay').value, tone: +$('rvTone').value })
+    function applyHall() {
+      const h = hallSettings(), dry = h.room === 'dry'
+      $('rvAmtV').textContent = Math.round(h.amount * 100) + '%'
+      $('rvDecayV').textContent = dry ? '–' : rt60Of(h.room, h.decay).toFixed(1) + ' s'
+      $('rvToneV').textContent = h.tone < 0.35 ? 'warm' : h.tone > 0.65 ? 'bright' : 'neutral'
+      $('ambV').textContent = +$('amb').value ? Math.round(+$('amb').value * 100) + '%' : 'off'
+      for (const id of ['seat', 'rvAmt', 'rvDecay', 'rvTone']) $(id).disabled = dry
+      hall.set(acousticParams(h))
+      hall.setAmbience(+$('amb').value)
+    }
+    for (const id of ['room', 'seat']) $(id).onchange = applyHall
+    for (const id of ['rvAmt', 'rvDecay', 'rvTone', 'amb']) $(id).oninput = applyHall
+    $('clapNow').onclick = () => { unlockAudio(); hall.applause() }
+    hall.ready.then(applyHall)
+    applyHall()
 
     // ── Playing ────────────────────────────────────────────────────────────
     const holders = new Map()   // midi -> Map(source -> hand)
@@ -1157,6 +1199,7 @@
         songTarget.allSoundOff()
         if (loop) { scheduler.seek(0); music.songT = 0; music.wall = performance.now(); scheduler.play(); return }
         setPlaying(false); showTime(0)
+        if ($('applause').checked && offlineT == null) hall.applause()
       })
       return scheduler
     }
@@ -1172,6 +1215,7 @@
       poke()
     }
     async function loadSong(buffer, name) {
+      playShared?.(false)
       try {
         const sch = await ensureScheduler()
         if (sch.playing) sch.stop()
@@ -1195,9 +1239,14 @@
         sch.play(); setPlaying(true); anchorTour()
       } catch (e) { console.error(e); setStatus(`Could not play ${name}: ${e.message}`, true) }
     }
+    let songFile = null    // the built-in song playing (shareable); null for opened files
+    let playShared = null  // set while a song from a shared link waits for a click
     async function loadSongUrl(url, label = url) {
       if (!url) return
+      playShared?.(false)
       markSong(url)
+      songFile = SONGS.some(x => x[0] === url) ? url : null
+      syncUrl()
       setStatus('Loading song…')
       try { await loadSong(await (await fetch(encodeURI(url))).arrayBuffer(), label) }
       catch (e) { setStatus('Could not load song: ' + e.message, true) }
@@ -1205,7 +1254,7 @@
     $('openFile').onclick = () => { closePops(); $('file').click() }
     $('file').onchange = async () => {
       const f = $('file').files[0]
-      if (f) { markSong(null); loadSong(await f.arrayBuffer(), f.name.replace(/\.midi?$/i, '')) }
+      if (f) { markSong(null); songFile = null; syncUrl(); loadSong(await f.arrayBuffer(), f.name.replace(/\.midi?$/i, '')) }
       $('file').value = ''
     }
     addEventListener('dragover', ev => { ev.preventDefault(); document.body.classList.add('dragging') })
@@ -1213,10 +1262,10 @@
     addEventListener('drop', async ev => {
       ev.preventDefault(); document.body.classList.remove('dragging')
       const f = ev.dataTransfer.files[0]
-      if (f) { markSong(null); loadSong(await f.arrayBuffer(), f.name.replace(/\.midi?$/i, '')) }
+      if (f) { markSong(null); songFile = null; syncUrl(); loadSong(await f.arrayBuffer(), f.name.replace(/\.midi?$/i, '')) }
     })
     async function togglePlay() {
-      if (!song) return loadSongUrl(SONGS[0][0], SONGS[0][1])
+      if (!song) return playShared ? playShared(true) : loadSongUrl(SONGS[0][0], SONGS[0][1])
       const sch = await ensureScheduler()
       unlockAudio()
       if (sch.playing) { sch.pause(); songTarget.allSoundOff(); setPlaying(false) }
@@ -1429,6 +1478,7 @@
           bitrate: defaultBitrate(width, height, fps),
           audio: $('exAudio').checked,
           audioOpts: { vendorPath, soundfonts, volume: 1, convertSF3: engine._backend?._convertSF3 ? d => engine._backend._convertSF3(d) : null },
+          audioFx: $('room').value === 'dry' ? null : offlineHall(acousticParams(hallSettings()), 48000),
           tour: null,
           intro: $('exTitle').checked ? { seconds: 3.5, title: song.title, subtitle: 'Concert Stage · MIDIVIZ', style: '2d', overlap: true } : null,
           outro: null,
@@ -1455,16 +1505,122 @@
     }
     $('exCancel').onclick = () => { if (exAbort) exAbort.abort(); else closePops() }
 
+    // ── Shareable link ─────────────────────────────────────────────────────
+    // Every option lives in the query string: the address bar follows your
+    // changes (replaceState, no history spam) and Share copies it with the
+    // camera, the song and the position in it. Only non-default values are
+    // written, so links stay short.
+    const SHARED = [
+      // [param, element id, kind, default for selects]
+      ['scene', 'scene', 'val', 'stage'], ['finish', 'finish', 'val', 'ebony'], ['lid', 'lid', 'val', 'full'],
+      ['desk', 'desk', 'chk'], ['bench', 'bench', 'chk'], ['mirror', 'mirror', 'chk', !!piano.mirror], ['hands', 'hands', 'chk'],
+      ['rh', 'rhColor', 'color'], ['lh', 'lhColor', 'color'], ['glow', 'glowConcert', 'chk'], ['labels', 'labels', 'chk'],
+      ['light', 'light', 'num'], ['ex', 'exposure', 'num'], ['sync', 'tourSync', 'chk'],
+      ['ao', 'ao', 'chk', !LOWQ], ['dof', 'dof', 'chk', !LOWQ], ['bloom', 'bloom', 'chk'], ['grain', 'grain', 'chk'], ['drift', 'drift', 'chk'],
+      ['sf', 'sf', 'val', 'stack'], ['vel', 'velocity', 'num'],
+      ['room', 'room', 'val', 'hall'], ['seat', 'seat', 'val', 'front'], ['rv', 'rvAmt', 'num'], ['decay', 'rvDecay', 'num'],
+      ['tone', 'rvTone', 'num'], ['amb', 'amb', 'num'], ['clap', 'applause', 'chk'],
+      ['res', 'exRes', 'val', '1920x1080'], ['fps', 'exFps', 'val', '60'], ['excam', 'exCam', 'val', 'tour'],
+      ['exaudio', 'exAudio', 'chk'], ['extitle', 'exTitle', 'chk'],
+    ]
+    const OWN = new Set([...SHARED.map(x => x[0]), 'mode', 'view', 'speed', 'loop', 'song', 'cam', 't'])
+    const defOf = ([, id, kind, def]) => kind === 'chk' ? def ?? $(id).defaultChecked : kind === 'val' ? def : $(id).defaultValue
+    const fire = id => { const e = $(id); (e.oninput || e.onchange)?.call(e) }
+    // apply the link (scene, finish, lid, hands, ao, dof and sync were read above)
+    for (const [k, id, kind] of SHARED) {
+      if (!params.has(k)) continue
+      const v = params.get(k), e = $(id)
+      if (kind === 'chk') e.checked = v !== '0'
+      else if (kind === 'color') e.value = '#' + v.replace(/^#/, '')
+      else if (kind === 'num') { if (Number.isFinite(+v)) e.value = v }
+      else if ([...e.options].some(o => o.value === v)) e.value = v
+      if (id !== 'sf' && !e.disabled) fire(id)   // the soundfont is loaded once, below
+    }
+    if (params.has('speed')) { const i = speeds.indexOf(+params.get('speed')); if (i >= 0) { speedI = i; $('speedLbl').textContent = speeds[i] + '×' } }
+    if (params.get('loop') === '1') { loop = true; $('loopBtn').classList.remove('off') }
+    let userCam = false
+    const round = (v, d = 1) => +v.toFixed(d)
+    function shareUrl(withTime = false) {
+      const q = new URLSearchParams()
+      for (const [k, v] of params) if (!OWN.has(k)) q.set(k, v)   // keep q=low etc.
+      for (const e of SHARED) {
+        const [k, id, kind] = e, el = $(id), def = defOf(e)
+        if (kind === 'chk') { if (el.checked !== def) q.set(k, el.checked ? '1' : '0') }
+        else if (kind === 'num') { if (+el.value !== +def) q.set(k, String(+el.value)) }
+        else if (kind === 'color') { if (el.value.toLowerCase() !== def.toLowerCase()) q.set(k, el.value.slice(1)) }
+        else if (el.value !== def) q.set(k, el.value)
+      }
+      if (mode !== 'concert') q.set('mode', mode)
+      if (viewName !== 'view1') q.set('view', viewName)
+      if (userCam && !tour.active && viewName !== 'orbit')
+        q.set('cam', [...camera.position.toArray(), ...controls.target.toArray()].map(v => round(v)).concat(round(camera.fov)).join(','))
+      if (speeds[speedI] !== 1) q.set('speed', String(speeds[speedI]))
+      if (loop) q.set('loop', '1')
+      if (songFile) q.set('song', songFile)
+      if (withTime && songFile && scheduler && songNow() > 1) q.set('t', String(Math.floor(songNow())))
+      const qs = q.toString().replace(/%2C/g, ',')
+      return location.origin + location.pathname + (qs ? '?' + qs : '')
+    }
+    let urlTimer = 0
+    function syncUrl() { clearTimeout(urlTimer); urlTimer = setTimeout(() => history.replaceState(null, '', shareUrl()), 250) }
+    for (const [, id, kind] of SHARED) $(id).addEventListener(kind === 'num' || kind === 'color' ? 'input' : 'change', syncUrl)
+    for (const id of ['modeSeg', 'speedBtn', 'loopBtn']) $(id).addEventListener('click', () => setTimeout(syncUrl))
+    for (const it of $('cameraPop').querySelectorAll('.item')) it.addEventListener('click', () => { userCam = false; syncUrl() })
+    controls.addEventListener('end', () => { if (!tour.active) { userCam = true; syncUrl(); setTimeout(syncUrl, 1200) } })   // again once damping settles
+    $('shareBtn').onclick = async ev => {
+      ev.stopPropagation()
+      const url = shareUrl(true)
+      history.replaceState(null, '', url)
+      let ok = false
+      try { await navigator.clipboard.writeText(url); ok = true } catch {}
+      if (!ok) { prompt('Copy this link:', url); return }
+      $('shareLbl').textContent = 'Link copied'; $('shareBtn').classList.add('on')
+      setTimeout(() => { $('shareLbl').textContent = 'Share'; $('shareBtn').classList.remove('on') }, 1600)
+    }
+
     // ── Start ──────────────────────────────────────────────────────────────
     const startView = VIEWS[params.get('view')] ? params.get('view') : 'view1'
     setMode(params.get('mode') === 'lesson' || ['top', 'first'].includes(startView) ? 'lesson' : 'concert', true)
     setView(startView, true)
     lane.tilt = lane.tiltTarget
+    if (params.has('cam') && startView !== 'tour' && startView !== 'orbit') {
+      const c = params.get('cam').split(',').map(Number)
+      if (c.length === 7 && c.every(Number.isFinite)) {
+        camera.position.set(c[0], c[1], c[2]); controls.target.set(c[3], c[4], c[5])
+        camera.fov = c[6]; camera.updateProjectionMatrix(); controls.update()
+        userCam = true
+      }
+    }
     renderer.setAnimationLoop(animate)
     loadSound($('sf').value)
-    if (params.get('song')) loadSongUrl(params.get('song'))
+    // A shared song waits for a click: browsers only start audio after one.
+    const sharedSong = SONGS.find(x => x[0] === params.get('song')), sharedT = +params.get('t') || 0
+    if (sharedSong) {
+      songFile = sharedSong[0]; markSong(songFile)
+      const start = ev => {
+        if (ev?.type === 'pointerup' && ev.target.closest?.('.ui')) return    // let the menus work first
+        if (ev?.type === 'keydown') { if (ev.code !== 'Space' && ev.code !== 'Enter') return; ev.preventDefault(); ev.stopImmediatePropagation() }
+        playShared(true)
+      }
+      playShared = async go => {
+        removeEventListener('pointerup', start, true); removeEventListener('keydown', start, true)
+        document.body.classList.remove('queued'); $('dropHint').textContent = 'Drop a MIDI file to play it'
+        playShared = null
+        if (!go) return
+        await loadSongUrl(sharedSong[0], sharedSong[1])
+        if (sharedT && scheduler?.duration) {
+          songTarget.allSoundOff(); scheduler.seek(Math.min(sharedT, scheduler.duration - 1))
+          music.songT = scheduler.currentTime; music.wall = performance.now(); anchorTour()
+        }
+      }
+      // (pointerup: a click on a key stops pointerdown, and should start it too)
+      addEventListener('pointerup', start, true); addEventListener('keydown', start, true)
+      $('dropHint').textContent = `Click to play ${sharedSong[1]}${sharedT ? ' from ' + fmt(sharedT) : ''}`
+      document.body.classList.add('queued')
+    }
+    syncUrl()
     // test hook for headless checks
-    window.__stage = { piano, hands, press, release, setView, setMode, setScene, scene, renderer, camera, controls, tour, music, frame, stageAdapter, driveSong, loadSongUrl, get song() { return song }, get scheduler() { return scheduler }, offlineSet(t) { offlineT = t } }
+    window.__stage = { hall, shareUrl, piano, hands, press, release, setView, setMode, setScene, scene, renderer, camera, controls, tour, music, frame, stageAdapter, driveSong, loadSongUrl, get song() { return song }, get scheduler() { return scheduler }, offlineSet(t) { offlineT = t } }
   </script>
 </body>
 </html>

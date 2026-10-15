@@ -327,6 +327,7 @@ export function drawOutroCard(g, w, h, k, secs, { title, subtitle, credits = [] 
  *        - credits card; music 'ring' = after the end, 'fade' = overlaps the ending while the music fades out
  * @param {boolean} o.audio
  * @param {object} o.audioOpts - { vendorPath, soundfonts, convertSF3, volume }
+ * @param {function} [o.audioFx] - (planar Float32Array [L…, R…], frames, sampleRate) => void, processes each audio chunk in place
  * @param {FileSystemWritableFileStream|null} o.fileStream - stream to write to (else buffered)
  * @param {(p:{frame,frames,phase})=>void} o.onProgress
  * @param {AbortSignal} o.signal
@@ -447,6 +448,7 @@ export async function exportVideo(o) {
 							}
 						}
 					}
+					if (o.audioFx) o.audioFx(data, n, SAMPLE_RATE) // optional post-processing (e.g. room reverb), planar in place
 					const ad = new AudioData({ format: 'f32-planar', sampleRate: SAMPLE_RATE, numberOfFrames: n, numberOfChannels: 2, timestamp: Math.round(audioTs * 1e6 / SAMPLE_RATE), data })
 					aenc.encode(ad)
 					ad.close()
