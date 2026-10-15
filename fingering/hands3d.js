@@ -28,14 +28,30 @@ const KEY_TOP = 73
 // segment 0 is the metacarpal (inside the thenar pad, not a visible digit),
 // so it shows two joints, MCP and IP, like a real thumb. It curls across
 // toward the fingers (tilt) instead of straight down.
-const FINGERS = {
-  1: { len: [4.6, 3.2, 2.6], rad: [1.45, 1.05, 0.92], base: [-3.0, -1.9, 5.0], k: 0.8, tilt: 0.75 },
-  2: { len: [4.4, 2.6, 2.0], rad: [0.92, 0.84, 0.76], base: [-2.25, 0, 0.35], k: 0.7 },
-  3: { len: [4.9, 3.0, 2.2], rad: [0.95, 0.87, 0.78], base: [0, 0.25, 0], k: 0.7 },
-  4: { len: [4.6, 2.8, 2.1], rad: [0.9, 0.82, 0.74], base: [2.1, 0, 0.35], k: 0.7 },
-  5: { len: [3.7, 2.1, 1.9], rad: [0.8, 0.72, 0.66], base: [3.9, -0.65, 1.3], k: 0.7 },
+// Range of motion and relaxed pose per finger. yaw: how far each finger may
+// turn sideways from the hand's forward direction (radians, + toward the
+// little finger: the index and little finger spread most, the middle least,
+// and the long fingers can cross over the thumb; the thumb swings far out
+// and passes under the hand); mcp: knuckle lift /
+// bend; rest: relaxed fingertip [across, up, forward] cm from the middle
+// knuckle (a curved hand hovering ~1.2 cm over the keys, as motion.js's KEY).
+export const LIMITS = {
+  1: { yaw: [-1.3, 0.9], rest: [-4.6, -3.6, 5.0] },
+  2: { yaw: [-0.9, 0.25], mcp: [-0.25, 1.45], rest: [-2.3, -3.8, 6.6] },
+  3: { yaw: [-0.6, 0.3], mcp: [-0.25, 1.45], rest: [0, -3.7, 7.1] },
+  4: { yaw: [-0.4, 0.4], mcp: [-0.25, 1.45], rest: [2.3, -3.8, 6.6] },
+  5: { yaw: [-0.2, 0.75], mcp: [-0.25, 1.45], rest: [4.5, -4.2, 5.6] },
 }
-const KNUCKLE_Y = 4.9, KNUCKLE_Z = 3.2   // middle knuckle above the key tops / in front of the key fronts
+const FINGERS = {
+  1: { len: [4.6, 3.2, 2.6], rad: [1.45, 1.05, 0.92], base: [-3.0, -1.9, 5.0], k: 0.8, tilt: 0.75, ...LIMITS[1] },
+  2: { len: [4.4, 2.6, 2.0], rad: [0.92, 0.84, 0.76], base: [-2.25, 0, 0.35], k: 0.7, ...LIMITS[2] },
+  3: { len: [4.9, 3.0, 2.2], rad: [0.95, 0.87, 0.78], base: [0, 0.25, 0], k: 0.7, ...LIMITS[3] },
+  4: { len: [4.6, 2.8, 2.1], rad: [0.9, 0.82, 0.74], base: [2.1, 0, 0.35], k: 0.7, ...LIMITS[4] },
+  5: { len: [3.7, 2.1, 1.9], rad: [0.8, 0.72, 0.66], base: [3.9, -0.65, 1.3], k: 0.7, ...LIMITS[5] },
+}
+const KNUCKLE_Y = 5.6, KNUCKLE_Z = 3.2   // middle knuckle above the key tops / in front of the key fronts
+// (high enough that a finger on its key bends at all three joints, ~10° / 45° / 30°,
+// rather than lifting its knuckle and clawing)
 
 const Y = new THREE.Vector3(0, 1, 0)
 const _v = new THREE.Vector3(), _u = new THREE.Vector3(), _a = new THREE.Vector3(), _b = new THREE.Vector3()
@@ -58,8 +74,20 @@ const _e1 = new THREE.Vector3(), _e2 = new THREE.Vector3(), _sd = new THREE.Vect
  * direction toward the palm (+x for the right hand, -x for the left), tilt
  * how far the bending plane leans that way (radians, 0 = like a finger).
  */
+//
+// Joint limits (all optional, in the same object):
+//   fwd, lat — the hand's forward direction and its sideways direction toward
+//              the little finger (horizontal unit vectors; default -z and
+//              +x). Without a hand yaw these are (0,0,-1) and (±1,0,0).
+//   yaw: [min, max] — how far the finger may turn sideways from fwd (radians,
+//              + toward the little finger). A target outside is swung back
+//              to the limit at the same distance, so the tip falls short and
+//              the caller can move the hand instead of the finger spinning.
+//   mcp: [min, max] — knuckle angle below the target line's horizontal
+//              (negative = lifted / hyperextended), fingers only.
 export function solveFinger(B, T, L, k, out, curl = null) {
   _v.subVectors(T, B)
+  if (curl && curl.yaw) clampYaw(curl)
   if (curl && curl.tilt) return solveTilted(B, L, k, out, curl)
   const dx = Math.hypot(_v.x, _v.z), dy = _v.y
   if (dx > 1e-6) _u.set(_v.x / dx, 0, _v.z / dx); else _u.set(0, 0, -1)
@@ -74,13 +102,39 @@ export function solveFinger(B, T, L, k, out, curl = null) {
   const p = (lo + hi) / 2
   const [cf, cd] = chain(L, k, p)
   const alpha = Math.atan2(-dy, dx), beta = Math.atan2(cd, cf)
-  const a = alpha - beta
+  let a = alpha - beta
+  if (curl && curl.mcp) a = Math.min(curl.mcp[1], Math.max(curl.mcp[0], a))
   const angles = [a, a + p, a + (1 + k) * p]
   out[0].copy(B)
   for (let i = 0; i < 3; i++) {
     out[i + 1].copy(out[i]).addScaledVector(_u, L[i] * Math.cos(angles[i])).addScaledVector(Y, -L[i] * Math.sin(angles[i]))
   }
   return Math.max(0, r - rMax)
+}
+
+const FWD = new THREE.Vector3(0, 0, -1), LAT = new THREE.Vector3(1, 0, 0)
+function clampYaw({ yaw, fwd = FWD, lat = LAT }) {
+  // horizontal part of _v in (fwd, lat) coordinates
+  const f = _v.x * fwd.x + _v.z * fwd.z, l = _v.x * lat.x + _v.z * lat.z
+  const h = Math.hypot(f, l)
+  if (h < 1e-6) return
+  const th = Math.atan2(l, f), c = Math.min(yaw[1], Math.max(yaw[0], th))
+  if (c === th) return
+  const nf = h * Math.cos(c), nl = h * Math.sin(c)
+  _v.x = fwd.x * nf + lat.x * nl
+  _v.z = fwd.z * nf + lat.z * nl
+}
+
+/**
+ * Where a relaxed fingertip sits, in the hand's own frame: origin is the
+ * middle-finger knuckle, rest = [across toward the little finger, up,
+ * forward] in cm (LIMITS[f].rest, times the hand size). Free fingers settle
+ * here, so they stay in place relative to the hand and wrist instead of
+ * pointing wherever their last key was.
+ */
+export function restTip(origin, rest, { fwd = FWD, lat = LAT, size = 1 } = {}, out) {
+  const [x, y, z] = rest
+  return out.set(origin.x + (lat.x * x + fwd.x * z) * size, origin.y + y * size, origin.z + (lat.z * x + fwd.z * z) * size)
 }
 
 function solveTilted(B, L, k, out, { side, tilt }) {
@@ -178,7 +232,11 @@ export function buildHand(side, { scale = 1 } = {}) {
     const label = makeLabel(String(f), FINGER_COLORS[f])
     label.material.opacity = 0
     group.add(label)
-    fingers[f] = { curl: f === 1 ? { side: new THREE.Vector3(s, 0, 0), tilt: d.tilt } : null, d, segs, joints, tip, dot, label, pts: [0, 1, 2, 3].map(() => new THREE.Vector3()), base: new THREE.Vector3(), target: new THREE.Vector3() }
+    // IK options: the hand faces -z, its little-finger side is +x (RH) / -x (LH)
+    const lat = new THREE.Vector3(s, 0, 0), fwd = new THREE.Vector3(0, 0, -1)
+    const curl = { side: lat, tilt: d.tilt, yaw: d.yaw, mcp: d.mcp, fwd, lat }
+    const restOpt = { fwd, lat, size: 1 }
+    fingers[f] = { curl, restOpt, natural: new THREE.Vector3(), miss: new THREE.Vector3(), d, segs, joints, tip, dot, label, pts: [0, 1, 2, 3].map(() => new THREE.Vector3()), base: new THREE.Vector3(), target: new THREE.Vector3() }
   }
   // palm, thenar pad, wrist and forearm
   const palm = new THREE.Mesh(new RoundedBoxGeometry(1, 1, 1, 3, 0.35), mat)
@@ -202,9 +260,13 @@ export function buildHand(side, { scale = 1 } = {}) {
     const { anchor, fingers: tips } = pose
     // where the hand would be: middle knuckle above the anchor, a little further in over black keys
     knuckle.set(anchor.x, KEY_TOP + KNUCKLE_Y * size + 1.2 * anchor.idle, (KNUCKLE_Z - 3.2 * anchor.black) * size + 3 * anchor.idle)
-    // reach compensation: slide toward any pressed key the fingers cannot reach
+    // reach compensation: slide toward the pressed keys the fingers cannot
+    // reach. Each such finger pulls the hand by its shortfall and the pulls
+    // are averaged, so a chord wider than the hand leaves it centred (both
+    // ends a little short) instead of lurching toward one end and folding
+    // the other fingers back under the knuckles.
     const need = _b.set(0, 0, 0)
-    let worst = 0
+    let pulls = 0
     for (const f of [1, 2, 3, 4, 5]) {
       const F = fingers[f], d = F.d, t = tips[f - 1]
       F.base.set(knuckle.x + s * d.base[0] * size, knuckle.y + d.base[1] * size, knuckle.z + d.base[2] * size).add(offset)
@@ -213,16 +275,31 @@ export function buildHand(side, { scale = 1 } = {}) {
         const rMax = Math.hypot(...chain(d.len.map(l => l * size), d.k, 0.5))
         _v.subVectors(F.target, F.base)
         const e = _v.length() - rMax
-        if (e > worst) { worst = e; need.copy(_v).setLength(e) }
+        // ...or that last frame's joint limits kept it from reaching (a key
+        // too far to the side): the hand moves, the finger does not spin
+        const m = F.miss.length()
+        if (m > e && m > 0) { need.add(F.miss); pulls++ }
+        else if (e > 0) { need.addScaledVector(_v, e / _v.length()); pulls++ }
+        else if (t.press > 0.2) pulls += 0.5   // a pressed finger that reaches holds the hand back a little
       }
     }
+    if (pulls) need.multiplyScalar(1 / Math.max(1, pulls))
     const target = _a.copy(offset).add(need)
-    target.y = Math.max(-2, Math.min(1.5, target.y))
+    target.y = Math.max(-1.2, Math.min(1.5, target.y))
+    target.z = Math.max(-3, Math.min(3, target.z))
     offset.lerp(target, Math.min(1, dt * 18))
     for (const f of [1, 2, 3, 4, 5]) {
       const F = fingers[f], d = F.d, t = tips[f - 1]
       F.base.set(knuckle.x + s * d.base[0] * size, knuckle.y + d.base[1] * size, knuckle.z + d.base[2] * size).add(offset)
-      solveFinger(F.base, F.target, d.len.map(l => l * size), d.k, F.pts, F.curl)
+      const L = d.len.map(l => l * size)
+      // a free finger settles into its natural place relative to the knuckles
+      if (t.rest > 0) {
+        F.restOpt.size = size
+        F.target.lerp(restTip(_b.copy(knuckle).add(offset), d.rest, F.restOpt, F.natural), t.rest)
+      }
+      solveFinger(F.base, F.target, L, d.k, F.pts, F.curl)
+      if (t.press > 0.2) F.miss.subVectors(F.target, F.pts[3]); else F.miss.set(0, 0, 0)
+      if (F.miss.lengthSq() < 0.04) F.miss.set(0, 0, 0)
       for (let i = 0; i < 3; i++) {
         place(F.segs[i], F.pts[i], F.pts[i + 1])
         F.joints[i].position.copy(F.pts[i])

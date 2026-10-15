@@ -111,13 +111,16 @@ export function buildMotion(notes, { approach = 0.09, release = 0.03 } = {}) {
     if (cur && t < cur.off) {
       const k = target(cur)
       const press = smooth((t - cur.on + 0.012) / 0.03)
-      return { ...k, y: k.y - KEY.DIP * press, press, pitch: cur.pitch, vel: cur.velocity ?? 0.7, on: cur.on }
+      return { ...k, y: k.y - KEY.DIP * press, press, rest: 0, pitch: cur.pitch, vel: cur.velocity ?? 0.7, on: cur.on }
     }
-    // free: lift off the last key, rest, then fly to the next one
-    let pos = rest
+    // free: lift off the last key, rest, then fly to the next one.
+    // rest (0..1) says how settled the finger is: 1 = nothing to do, so the
+    // renderer may hold it in its natural place relative to the hand
+    let pos = rest, restW = 1
     if (cur) {
       const k = target(cur)
       const u = smooth((t - cur.off) / Math.max(0.04, release + 0.05))
+      restW = u
       pos = { x: k.x + (rest.x - k.x) * u, y: k.y + (rest.y - k.y + 0.6) * u, z: k.z + (rest.z - k.z) * u }
     }
     if (next) {
@@ -126,6 +129,7 @@ export function buildMotion(notes, { approach = 0.09, release = 0.03 } = {}) {
       const u = (t - (next.on - window)) / window
       if (u > 0) {
         const e = smooth(u)
+        restW *= 1 - e
         const arc = Math.sin(Math.PI * Math.min(1, u)) * Math.min(2.5, 0.25 * Math.abs(k.x - pos.x))
         // a thumb passing under the hand travels low and tucked
         const under = f === 1 && Math.abs(k.x - pos.x) > 3 ? 1 : 0
@@ -136,7 +140,7 @@ export function buildMotion(notes, { approach = 0.09, release = 0.03 } = {}) {
         }
       }
     }
-    return { ...pos, press: 0 }
+    return { ...pos, press: 0, rest: restW }
   }
 
   function poseAt(t) {
