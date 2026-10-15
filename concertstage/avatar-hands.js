@@ -2,9 +2,13 @@
 //
 // Concert Creator plays every song with an avatar: smooth skinned hands, a
 // white shirt cuff and a dark sleeve. This is the procedural version. Each
-// hand is ONE continuous SkinnedMesh (palm, thenar pad, five tapered fingers
-// with knuckle bumps and nails, wrist, cuff and jacket sleeve) on 18 bones:
-// upper arm, forearm, palm and three per finger.
+// hand is ONE SkinnedMesh on 18 bones (upper arm, forearm, palm and three per
+// finger). The skin of the hand and forearm is a signed-distance model
+// (sdf-mesh.js) meshed once into a single seamless surface, so fingers grow
+// out of the palm without seams; skin weights come from each vertex's
+// position along the nearest finger, and the skin is blended with dual
+// quaternions (dq-skinning.js) so bent knuckles keep their volume. Nails,
+// cuff and sleeve are separate parts of the same mesh.
 //
 // Motion comes from Experiment #029: fingering/motion.js turns the fingered
 // notes into fingertip targets, and each finger is solved with the coupled-
@@ -20,6 +24,8 @@
 
 import * as THREE from 'three'
 import { solveFinger } from '../fingering/hands3d.js'
+import { roundCone, ellipsoid, Field, surfaceNets, smin } from './sdf-mesh.js'
+import { useDualQuatSkinning } from './dq-skinning.js'
 import { buildMotion, KEY, restOffset } from '../fingering/motion.js'
 
 const KEY_TOP = 73
@@ -36,6 +42,7 @@ const FINGERS = {
   5: { len: [3.7, 2.1, 1.9], rad: [0.8, 0.72, 0.66], base: [3.9, -0.65, 1.3], k: 0.7, dir: [0.12, 0, -1] },
 }
 const KNUCKLE_Y = 5.9, KNUCKLE_Z = 3.6   // an arched hand: knuckles high, fingers curved
+const BIND_SPREAD = [0, 0, -0.1, 0, 0.08, 0.2]   // extra fan in the bind pose (rad, + toward the little finger)
 const UPPER = 29, FORE = 26          // shoulder–elbow, elbow–wrist
 const WRIST = [0.6, -0.8, 8.6]       // wrist from the middle-finger knuckle base
 
@@ -74,6 +81,11 @@ function restJoints(s) {
     const d = FINGERS[f], P = J.fingers[f]
     P[0].set(s * d.base[0], d.base[1], d.base[2])
     const dir = new THREE.Vector3(s * d.dir[0], d.dir[1], d.dir[2]).normalize()
+    // the bind pose fans the fingers a little wider than d.dir, so the skin
+    // is modelled with a gap between them (the mesh is one surface, and
+    // fingers modelled touching would be webbed together)
+    const a = s * BIND_SPREAD[f], c = Math.cos(a), sn = Math.sin(a)
+    dir.set(dir.x * c - dir.z * sn, dir.y, dir.x * sn + dir.z * c)
     for (let i = 0; i < 3; i++) P[i + 1].copy(P[i]).addScaledVector(dir, d.len[i])
   }
   const k3 = J.fingers[3][0]
@@ -117,6 +129,14 @@ class Builder {
   constructor() {
     this.pos = []; this.skinIndex = []; this.skinWeight = []; this.color = []
     this.groups = { skin: [], nail: [], cuff: [], jacket: [] }
+    this.fixedNormals = []   // [start, normals] ranges that keep their own normals
+  }
+  // an indexed mesh with its own (field-gradient) normals; weights(p) → list
+  mesh(group, { positions, normals, index }, weights) {
+    const start = this.pos.length / 3, P = v3()
+    for (let i = 0; i < positions.length; i += 3) this.vertex(P.fromArray(positions, i), weights(P))
+    for (const i of index) this.groups[group].push(start + i)
+    this.fixedNormals.push([start, normals])
   }
   vertex(p, weights, alpha = 1) {
     // weights: [[bone, w], ...] (up to 4)
@@ -185,12 +205,14 @@ class Builder {
     let at = 0
     ;['skin', 'nail', 'cuff', 'jacket'].forEach((k, mi) => {
       const g = this.groups[k]
-      index.push(...g)
+      for (const i of g) index.push(i)
       geo.addGroup(at, g.length, mi)
       at += g.length
     })
     geo.setIndex(index)
     geo.computeVertexNormals()
+    const N = geo.attributes.normal
+    for (const [start, n] of this.fixedNormals) for (let i = 0; i < n.length / 3; i++) N.setXYZ(start + i, n[3 * i], n[3 * i + 1], n[3 * i + 2])
     return geo
   }
 }
@@ -198,115 +220,141 @@ class Builder {
 function buildHandGeometry(s, J, bones) {
   const B = new Builder()
   const boneOf = (f, i) => BONE.finger(f, i)
-  // ── fingers ──
+  // ── skin: one seamless surface ──
+  // The hand, wrist and forearm skin is a signed-distance model (tapered
+  // capsules for the phalanges and metacarpals, pads for the thenar and
+  // hypothenar), meshed once with surface nets. Fingers join the palm through
+  // a smooth union, so the knuckles and the web between the fingers flow
+  // instead of showing seams; fingers are kept apart from each other.
+  const A = v => [v.x, v.y, v.z]
+  const fingerUp = f => v3(0, 1, 0).applyQuaternion(bones[boneOf(f, 0)].quaternion)
+  const chains = {}
+  for (const f of [1, 2, 3, 4, 5]) {
+    const d = FINGERS[f], P = J.fingers[f]
+    const rTip = d.rad[2] * 0.88
+    const dir = v3().subVectors(P[1], P[0]).normalize()
+    const start = v3().copy(P[0]).addScaledVector(dir, f === 1 ? -0.3 : -1.0)
+    chains[f] = {
+      pts: [start, P[1], P[2], P[3]],
+      rad: [d.rad[0] * 1.05, d.rad[1], d.rad[2], rTip],
+      cum: [0, d.len[0], d.len[0] + d.len[1], d.len[0] + d.len[1] + d.len[2]],
+      off: f === 1 ? 0.3 : 1.0,          // how far start sits behind P[0]
+      up: fingerUp(f),
+    }
+  }
+  // grid bounds
+  const lo = v3(Infinity, Infinity, Infinity), hi = v3(-Infinity, -Infinity, -Infinity)
+  for (const f in chains) for (const p of chains[f].pts) { lo.min(p); hi.max(p) }
+  lo.min(v3(J.W.x - 3.4, J.W.y - 2.4, J.W.z - 2)); hi.max(v3(J.W.x + 3.4, J.W.y + 2.4, J.W.z + 11))
+  const H = 0.16              // grid spacing (cm): ~65k triangles a hand
+  const box = [lo.x, lo.y, lo.z, hi.x, hi.y, hi.z]
+  const palmF = new Field(box, H, 1.6), fingF = new Field(box, H, 1.6)
+  const min = Math.min, sm = k => (a, b) => smin(a, b, k)
+  // fingers (hard union between fingers: no webbing)
+  for (const f in chains) {
+    const c = chains[f]
+    for (let i = 0; i < 3; i++) fingF.apply(roundCone(A(c.pts[i]), A(c.pts[i + 1]), c.rad[i], c.rad[i + 1], { up: A(c.up), sy: f === '1' ? 0.92 : 0.88 }), min)
+  }
+  // palm: four flattened capsules from the wrist to the knuckles, blended
+  const Wb = (f, dz = -0.6) => { const t = (f - 2) / 3; return [J.W.x + s * lerp(-2.2, 2.2, t), J.W.y + 0.15, J.W.z + dz] }
+  for (const f of [2, 3, 4, 5]) {
+    const K = J.fingers[f][0]
+    palmF.apply(roundCone(Wb(f), [K.x, K.y - 0.25, K.z + 0.2], 1.5, 1.08, { sy: 0.82 }), sm(1.6), 1.6)
+    // knuckle bump on the back of the hand
+    const u = chains[f].up
+    palmF.apply(ellipsoid([K.x + u.x * 0.55, K.y + u.y * 0.55, K.z + u.z * 0.55 + 0.25], [0.62, 0.42, 0.7]), sm(0.45), 0.5)
+  }
+  {
+    // thenar: the muscle around the thumb's metacarpal, toward the palm
+    const T = J.fingers[1], tf = v3().subVectors(T[1], T[0]).normalize()
+    const tside = v3().crossVectors(tf, v3(0, 1, 0)).normalize(), tup = v3().crossVectors(tside, tf).normalize()
+    const tc = v3().lerpVectors(T[0], T[1], 0.4); tc.x += s * 0.75; tc.y -= 0.3
+    palmF.apply(ellipsoid(A(tc), [1.55, 1.15, FINGERS[1].len[0] * 0.56], A(tside), A(tup), A(tf)), sm(1.2), 1.2)
+    // hypothenar: the little-finger edge of the palm
+    const K5 = J.fingers[5][0], w5 = Wb(5, -0.2)
+    const hc = [lerp(K5.x, w5[0], 0.55) + s * 0.35, lerp(K5.y, w5[1], 0.55) - 0.45, lerp(K5.z, w5[2], 0.55)]
+    palmF.apply(ellipsoid(hc, [1.0, 0.85, 2.7]), sm(1.0), 1.0)
+  }
+  // wrist and forearm
+  palmF.apply(roundCone([J.W.x, J.W.y, J.W.z - 1.2], [J.W.x, J.W.y + 0.05, J.W.z + 10.5], 2.4, 3.0, { sy: 0.66 }), sm(1.8), 1.8)
+  // the thumb joins the palm softly over its metacarpal, the fingers at the knuckles
+  palmF.merge(fingF, sm(0.85))
+  const skin = surfaceNets(palmF)
+
+  // ── skin weights, from the bind-pose geometry ──
+  // Each vertex finds the finger chains it is nearest (softly, so the webs
+  // between fingers split evenly), how far along that chain it sits, and
+  // how much it belongs to the finger rather than the palm. Joint blends
+  // are about a joint-radius wide, centred on the joint.
+  const q = v3(), ab = v3(), ap = v3()
+  function chainHit(f, p) {
+    const c = chains[f]
+    let best = Infinity, x = 0
+    for (let i = 0; i < 3; i++) {
+      const a0 = c.pts[i], b0 = c.pts[i + 1]
+      ab.subVectors(b0, a0); ap.subVectors(p, a0)
+      const L2 = ab.lengthSq(), tRaw = ap.dot(ab) / L2, t = Math.min(1, Math.max(0, tRaw))
+      q.copy(a0).addScaledVector(ab, t)
+      const dd = p.distanceTo(q) - lerp(c.rad[i], c.rad[i + 1], t)
+      if (dd < best) {
+        best = dd
+        const segLen = Math.sqrt(L2)
+        // along-chain position, measured from the knuckle (P[0]); behind the
+        // chain start it keeps going negative so the palm side is graded
+        x = (i === 0 ? (tRaw < 0 ? tRaw : t) * segLen - c.off : c.cum[i] + t * segLen)
+      }
+    }
+    return { d: best, x }
+  }
+  const skinWeights = p => {
+    const hits = [1, 2, 3, 4, 5].map(f => chainHit(f, p))
+    const dmin = Math.min(...hits.map(h => h.d))
+    const soft = hits.map(h => Math.exp(-(h.d - dmin) / 0.22))
+    const tot = soft.reduce((a, b) => a + b, 0)
+    const w = []
+    let fingerSum = 0
+    for (const f of [1, 2, 3, 4, 5]) {
+      const h = hits[f - 1], d = FINGERS[f], L = d.len
+      const share = soft[f - 1] / tot
+      if (share < 0.02) continue
+      // finger vs palm: fingers 2–5 leave the palm at the knuckle; the thumb
+      // carries its metacarpal (and the thenar with it) from the CMC out
+      let m = f === 1 ? smooth(0.6, 3.6, h.x) : smooth(-1.0, 0.7, h.x)
+      m *= 1 - smooth(f === 1 ? 0.5 : 0.35, f === 1 ? 1.6 : 1.3, h.d)
+      const own = share * m
+      if (own < 1e-3) continue
+      fingerSum += own
+      const j1 = L[0], j2 = L[0] + L[1]
+      const w1 = 1.35 * d.rad[1], w2 = 1.2 * d.rad[2]
+      const k1 = smooth(j1 - w1, j1 + w1, h.x), k2 = smooth(j2 - w2, j2 + w2, h.x)
+      w.push([boneOf(f, 0), own * (1 - k1)], [boneOf(f, 1), own * k1 * (1 - k2)], [boneOf(f, 2), own * k2])
+    }
+    // the rest is palm, handing over to the forearm across the wrist
+    const rest = Math.max(0, 1 - fingerSum)
+    const e = p.z - J.W.z
+    const fore = smooth(-1.2, 1.8, e)
+    w.push([BONE.palm, rest * (1 - fore)], [BONE.fore, rest * fore])
+    // merge duplicates (vertex() keeps the four heaviest)
+    const m = new Map()
+    for (const [b, x] of w) m.set(b, (m.get(b) || 0) + x)
+    return [...m]
+  }
+  B.mesh('skin', skin, skinWeights)
+
+  // ── nails ──
   for (const f of [1, 2, 3, 4, 5]) {
     const d = FINGERS[f], P = J.fingers[f], L = d.len
-    const b0 = bones[boneOf(f, 0)]
-    const side = v3().set(1, 0, 0).applyQuaternion(b0.quaternion)
-    const up = v3().set(0, 1, 0).applyQuaternion(b0.quaternion)
-    const dir = v3().subVectors(P[1], P[0]).normalize()
-    const j1 = L[0], j2 = L[0] + L[1], end = L[0] + L[1] + L[2]
-    const rTip = d.rad[2] * 0.88
-    const radiusAt = x => {
-      if (x < j1) return lerp(d.rad[0] * 1.05, d.rad[1], smooth(0, j1, x))
-      if (x < j2) return lerp(d.rad[1], d.rad[2], (x - j1) / L[1])
-      return lerp(d.rad[2], rTip, smooth(j2, end, x))
-    }
-    const thumb = f === 1
-    B.tube('skin', {
-      origin: P[0], dir, side, up, d0: thumb ? -1.6 : -1.4, d1: end, rings: 30, seg: 16, capStart: true, capEnd: true,
-      prof: x => {
-        const r = radiusAt(x)
-        // knuckle bumps on top, a fuller pad under the last segment
-        const bump = 0.09 * (Math.exp(-(((x - j1) / 0.55) ** 2)) + Math.exp(-(((x - j2) / 0.45) ** 2))) + (!thumb && x < 0.6 ? 0.12 * Math.exp(-((x / 0.8) ** 2)) : 0)
-        const pad = x > j2 ? 0.06 * Math.sin(Math.PI * smooth(j2, end, x)) : 0
-        return [r * (thumb ? 1.08 : 1.1), r * (thumb ? 0.95 : 0.9) + bump * 0.5, bump * 0.5 - pad]
-      },
-      weights: x => {
-        // linear blend across each joint, over about a radius
-        const w = []
-        const k0 = smooth(-1.1, 0.5, x)                       // palm → proximal
-        const k1 = smooth(j1 - 0.45, j1 + 0.45, x), k2 = smooth(j2 - 0.4, j2 + 0.4, x)
-        w.push([BONE.palm, 1 - k0])
-        w.push([boneOf(f, 0), k0 * (1 - k1)])
-        w.push([boneOf(f, 1), k1 * (1 - k2)])
-        w.push([boneOf(f, 2), k2])
-        return w
-      },
-    })
-    // nail on the last segment
     const b2 = bones[boneOf(f, 2)]
     const nside = v3().set(1, 0, 0).applyQuaternion(b2.quaternion), nup = v3().set(0, 1, 0).applyQuaternion(b2.quaternion)
     const nf = v3().set(0, 0, -1).applyQuaternion(b2.quaternion)
-    const r2 = radiusAt(j2 + L[2] * 0.6)
-    const c = v3().copy(P[2]).addScaledVector(nf, L[2] * 0.62).addScaledVector(nup, r2 * 0.86)
-    B.ellipsoid('nail', c, nside, nup, nf, [r2 * 0.74, 0.2, L[2] * 0.42], [[boneOf(f, 2), 1]])
-  }
-  // ── palm: a loft from the knuckles to the wrist ──
-  {
-    const k2 = J.fingers[2][0], k5 = J.fingers[5][0], k1 = J.fingers[1][0]
-    const front = Math.min(k2.z, J.fingers[3][0].z) - 0.15, back = J.W.z + 0.6
-    const xc0 = (k2.x + k5.x) / 2, xc1 = J.W.x
-    const half0 = Math.abs(k5.x - k2.x) / 2 + 0.95
-    const N = 22, SEG = 28
-    const start = B.pos.length / 3
-    const P = v3()
-    for (let i = 0; i <= N; i++) {
-      const u = i / N
-      // rounded front edge: the first rings shrink in height
-      const z = lerp(front, back, u)
-      const roundF = Math.sqrt(Math.max(0, 1 - ((1 - smooth(0, 0.12, u)) ** 2))) * 0.6 + 0.4
-      const roundB = Math.sqrt(Math.max(0, 1 - (smooth(0.9, 1, u) ** 2))) * 0.35 + 0.65
-      const half = lerp(half0, 2.9, smooth(0.35, 1, u)) + 0.35 * Math.sin(Math.PI * Math.min(1, u * 1.6))
-      const h = lerp(1.3, 1.05, u) * roundF * roundB
-      const cx = lerp(xc0, xc1, u), cy = lerp(-0.4, J.W.y + 0.05, u)
-      for (let j = 0; j < SEG; j++) {
-        const th = j / SEG * Math.PI * 2
-        const c = Math.cos(th), sn = Math.sin(th)
-        const ex = Math.sign(c) * Math.abs(c) ** (2 / 2.8), ey = Math.sign(sn) * Math.abs(sn) ** (2 / 2.4)
-        let x = cx + ex * half * roundF
-        // thumb side bulges into the thenar pad underneath
-        const thumbSide = Math.max(0, -s * ex)
-        let y = cy + ey * h * (ey < 0 ? 0.85 + 0.35 * thumbSide * Math.sin(Math.PI * smooth(0.15, 0.85, u)) : 1)
-        y += -0.13 * (x - cx) * s * (1 - u)     // little-finger side a touch lower
-        P.set(x, y, z)
-        const w = [[BONE.palm, 1]]
-        // near the knuckles, follow the nearest finger a little
-        if (u < 0.28) {
-          let best = 2, bd = 1e9
-          for (const f of [2, 3, 4, 5]) { const dd = Math.abs(J.fingers[f][0].x - x); if (dd < bd) { bd = dd; best = f } }
-          w.push([BONE.finger(best, 0), 0.35 * (1 - u / 0.28)])
-        }
-        // the thumb side of the palm moves with the thumb
-        if (thumbSide > 0.3 && u > 0.15 && u < 0.85) w.push([BONE.finger(1, 0), 0.25 * thumbSide * Math.sin(Math.PI * (u - 0.15) / 0.7)])
-        if (u > 0.85) w.push([BONE.fore, smooth(0.85, 1.05, u) * 0.5])
-        B.vertex(P, w)
-      }
-    }
-    const idx = B.groups.skin
-    for (let i = 0; i < N; i++) for (let j = 0; j < SEG; j++) {
-      const a = start + i * SEG + j, b = start + (i + 1) * SEG + j, c = start + i * SEG + (j + 1) % SEG, d = start + (i + 1) * SEG + (j + 1) % SEG
-      idx.push(a, c, b, b, c, d)
-    }
-    // close the front with a fan
-    const ctr = B.vertex(P.set(xc0, -0.4, front - 0.1), [[BONE.palm, 1]])
-    for (let j = 0; j < SEG; j++) idx.push(ctr, start + (j + 1) % SEG, start + j)
-    // thenar pad (thumb muscle) between the thumb root and the wrist
-    // it wraps the thumb's metacarpal (CMC → MCP) and blends into the palm
-    const T = J.fingers[1], tf = v3().subVectors(T[1], T[0]).normalize()
-    const tside = v3().crossVectors(tf, v3(0, 1, 0)).normalize(), tup = v3().crossVectors(tside, tf).normalize()
-    // (offset toward the palm, so it fills the web rather than poking through the thumb)
-    const tc = v3().lerpVectors(T[0], T[1], 0.36); tc.x += s * 0.95; tc.y -= 0.3
-    B.ellipsoid('skin', tc, tside, tup, tf, [1.7, 1.25, FINGERS[1].len[0] * 0.58], [[BONE.palm, 0.5], [BONE.finger(1, 0), 0.5]])
+    const r2 = lerp(d.rad[2], d.rad[2] * 0.88, 0.6) * (f === 1 ? 0.92 : 0.88)
+    const c = v3().copy(P[2]).addScaledVector(nf, L[2] * 0.55).addScaledVector(nup, r2 * 0.93)
+    B.ellipsoid('nail', c, nside, nup, nf, [r2 * 0.72, 0.16, L[2] * 0.4], [[boneOf(f, 2), 1]])
   }
   // ── wrist, forearm, cuff, sleeve ──
   {
     const origin = J.W, dir = v3(0, 0, 1), side = v3(1, 0, 0), up = v3(0, 1, 0)
-    const skinR = e => [lerp(2.5, 3.0, smooth(0, 10, e)), lerp(1.55, 2.15, smooth(0, 10, e)), 0.05]
-    B.tube('skin', {
-      origin, dir, side, up, d0: -1.6, d1: 10.5, rings: 16, seg: 22, prof: skinR,
-      weights: e => [[BONE.palm, 1 - smooth(-1.4, 1.6, e)], [BONE.fore, smooth(-1.4, 1.6, e)]],
-    })
+    const skinR = e => [lerp(2.42, 3.0, smooth(-1, 10.5, e)), lerp(1.6, 1.98, smooth(-1, 10.5, e)), 0.05]
     // shirt cuff: rolled front edge
     B.tube('cuff', {
       origin, dir, side, up, d0: 5.2, d1: 10, rings: 10, seg: 24,
@@ -341,6 +389,7 @@ function makeMaterials() {
     sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
       reflectedLight.indirectDiffuse += vec3(0.10, 0.025, 0.012) * diffuseColor.rgb * (1.0 - saturate(dot(normal, normalize(vViewPosition))));`)
   }
+  useDualQuatSkinning(skin)    // bent knuckles keep their volume
   const nail = new THREE.MeshPhysicalMaterial({ color: 0xf2c7ba, roughness: 0.28, clearcoat: 0.9, clearcoatRoughness: 0.12, sheen: 0.3, sheenColor: 0xffffff })
   const cuff = new THREE.MeshPhysicalMaterial({ color: 0xf1efea, roughness: 0.82, sheen: 0.8, sheenRoughness: 0.5, sheenColor: 0xffffff, side: THREE.DoubleSide })
   const jacket = new THREE.MeshPhysicalMaterial({
