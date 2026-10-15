@@ -25,6 +25,7 @@ Midi Visualization Experiments
 [Experiment #030 - Concert Stage](030_concert_stage.html)
 - The #028 grand restaged after [Concert Creator](https://www.concertcreator.ai/)'s renders: black stage, one warm spotlight with dust in the beam, a back light rimming the case, and a warm bounce from the open lid onto the plate
 - Piano forked to [concertstage/concert-grand.js](concertstage/concert-grand.js): mirror fallboard (planar reflection of the keys), red key felt, three staggered rows of coiled tuning pins on red felt, agraffes, capo bar, red stringing braid, hammered bronze-gold plate, orange-peel lacquer
+- Songs: the full MidiViz player list (playback_controls.js: selections, classical, symphonic, modern, video games) with a filter, or any MIDI file
 - Their UI layout: Songs / Camera / Visuals / Render pills and a bottom transport (speed, play, loop, ms clock); chrome fades out while a song plays
 - Cameras from their menu: Top, First Person, Orbit, View 1–4, plus the cinematic tour from #028 (optionally synced to the song); First Person works in both modes; the fixed views glance a little toward where the hands are playing, with a slow wander
 - Lesson mode: keyboard only, falling notes in left / right hand colours with L / R (or finger number) labels, glowing keys, halos and sparks; hands from a quick split, refined by `fingering/` when present

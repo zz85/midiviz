@@ -15,6 +15,7 @@
     The piano is concertstage/concert-grand.js (forked from grandpiano/).
     Everything here is procedural: no HDRIs or texture downloads.
   -->
+  <script src="playback_controls.js"></script>
   <script type="importmap">
     { "imports": {
       "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
@@ -69,7 +70,11 @@
     .seg button { flex: 1; padding: 6px 4px; background: #262626; color: #ccc; border: 0; cursor: pointer; font: inherit; font-size: 12px; }
     .seg button.on { background: #e8e8e8; color: #111; }
 
-    #songsPop { left: 12px; --arrow: 30px; width: 280px; }
+    #songsPop { left: 12px; --arrow: 30px; width: 300px; }
+    #songList { max-height: min(60vh, 520px); overflow-y: auto; }
+    #songList .sect { position: sticky; top: 0; background: rgba(28, 28, 28, 0.97); z-index: 1; }
+    #songList .item { white-space: normal; line-height: 1.25; }
+    #songFilter { width: 100%; box-sizing: border-box; padding: 6px 9px; border-radius: 7px; border: 1px solid #444; background: #1c1c1c; color: #eee; font: inherit; font-size: 13px; }
     #cameraPop { --arrow: 70%; }
     #visualsPop { width: 240px; }
     #renderPop { width: 260px; }
@@ -113,6 +118,7 @@
   </div>
   <div id="songsPop" class="pop ui">
     <div class="sect">Songs</div>
+    <div class="field" style="padding-bottom:6px"><input id="songFilter" type="search" placeholder="Filter songs…" autocomplete="off"></div>
     <div id="songList"></div>
     <div class="item" id="openFile"><svg viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8z"/></svg>Open a MIDI file…</div>
     <input id="file" type="file" accept=".mid,.midi,audio/midi" hidden>
@@ -1140,25 +1146,41 @@
     }
 
     // ── Songs ──────────────────────────────────────────────────────────────
-    const SONGS = [
-      ['chpn-p15.mid', 'Chopin – Raindrop Prelude'],
-      ['liz_liebestraum.mid', 'Liszt – Liebestraum No. 3'],
-      ['minute_waltz.mid', 'Chopin – Minute Waltz'],
-      ['Prelude1.mid', 'Bach – Prelude in C'],
-      ['entertainer.mid', 'Joplin – The Entertainer'],
-      ['C.V.Alkan - Etude sans opus.mid', 'Alkan – Étude sans opus'],
-      ['rachmaninov3.mid', 'Rachmaninov – Concerto No. 3'],
-      ['JVKE - golden hour.mid', 'JVKE – golden hour'],
-    ]
-    for (const [file, label] of SONGS) {
-      const it = document.createElement('div')
-      it.className = 'item'; it.dataset.file = file
-      it.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 3v10.6A4 4 0 1 0 14 17V7h4V3z"/></svg>'
-      it.append(label, Object.assign(document.createElement('span'), { className: 'dot' }))
-      it.onclick = () => { closePops(); loadSongUrl(file, label) }
-      $('songList').append(it)
+    // The MidiViz player's full list (playback_controls.js), in its groups.
+    // Older #030 links named a few files by their old paths; they still open.
+    const SONGS = [], GROUPS = []
+    for (const f of (typeof PlaybackControls !== 'undefined' ? PlaybackControls.defaultMidiFiles : [])) {
+      if (f.disabled || !f.value) GROUPS.push({ name: f.label.replace(/^=+\s*|\s*=+$/g, ''), songs: [] })
+      else { if (!GROUPS.length) GROUPS.push({ name: 'Songs', songs: [] }); SONGS.push([f.value, f.label]); GROUPS.at(-1).songs.push([f.value, f.label]) }
     }
-    const markSong = file => { for (const it of $('songList').children) it.classList.toggle('sel', it.dataset.file === file) }
+    const LEGACY = { 'chpn-p15.mid': 'midis/chpn-p15.mid' }
+    if (!SONGS.length) for (const x of [['midis/chpn-p15.mid', 'Chopin - Raindrop Prelude'], ['minute_waltz.mid', 'Minute Waltz'], ['entertainer.mid', 'The Entertainer']]) { SONGS.push(x); (GROUPS[0] ??= { name: 'Songs', songs: [] }).songs.push(x) }
+    const songOf = v => SONGS.find(x => x[0] === (LEGACY[v] || v))
+    for (const g of GROUPS) {
+      const head = Object.assign(document.createElement('div'), { className: 'sect', textContent: g.name })
+      $('songList').append(head)
+      for (const [file, label] of g.songs) {
+        const it = document.createElement('div')
+        it.className = 'item'; it.dataset.file = file; it.dataset.q = (label + ' ' + g.name).toLowerCase()
+        it.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 3v10.6A4 4 0 1 0 14 17V7h4V3z"/></svg>'
+        it.append(label, Object.assign(document.createElement('span'), { className: 'dot' }))
+        it.onclick = () => { closePops(); loadSongUrl(file, label) }
+        $('songList').append(it)
+      }
+    }
+    $('songFilter').oninput = () => {
+      const q = $('songFilter').value.trim().toLowerCase()
+      let head = null, any = false
+      const flush = () => { if (head) head.style.display = any ? '' : 'none' }
+      for (const el of $('songList').children) {
+        if (el.classList.contains('sect')) { flush(); head = el; any = false; continue }
+        const show = !q || el.dataset.q.includes(q)
+        el.style.display = show ? '' : 'none'; any ||= show
+      }
+      flush()
+    }
+    $('songFilter').addEventListener('keydown', ev => { if (ev.key === 'Enter') { const first = [...$('songList').querySelectorAll('.item')].find(e => e.style.display !== 'none'); first?.click() } })
+    const markSong = file => { for (const it of $('songList').querySelectorAll('.item')) it.classList.toggle('sel', it.dataset.file === file) }
     // per-midi note lists so a scheduler note-on can be matched to its note (and hand)
     let byMidi = new Map()
     function findNote(midi, t) {
@@ -1257,8 +1279,10 @@
     async function loadSongUrl(url, label = url) {
       if (!url) return
       playShared?.(false)
+      url = LEGACY[url] || url
+      if (label === url || LEGACY[label]) label = songOf(url)?.[1] || url
       markSong(url)
-      songFile = SONGS.some(x => x[0] === url) ? url : null
+      songFile = songOf(url) ? url : null
       syncUrl()
       setStatus('Loading song…')
       try { await loadSong(await (await fetch(encodeURI(url))).arrayBuffer(), label) }
@@ -1278,7 +1302,7 @@
       if (f) { markSong(null); songFile = null; syncUrl(); loadSong(await f.arrayBuffer(), f.name.replace(/\.midi?$/i, '')) }
     })
     async function togglePlay() {
-      if (!song) return playShared ? playShared(true) : loadSongUrl(SONGS[0][0], SONGS[0][1])
+      if (!song) { if (playShared) return playShared(true); const d = songOf('entertainer.mid') || SONGS[0]; return loadSongUrl(d[0], d[1]) }
       const sch = await ensureScheduler()
       unlockAudio()
       if (sch.playing) { sch.pause(); songTarget.allSoundOff(); setPlaying(false) }
@@ -1621,7 +1645,7 @@
     renderer.setAnimationLoop(animate)
     loadSound($('sf').value)
     // A shared song waits for a click: browsers only start audio after one.
-    const sharedSong = SONGS.find(x => x[0] === params.get('song')), sharedT = +params.get('t') || 0
+    const sharedSong = songOf(params.get('song')), sharedT = +params.get('t') || 0
     if (sharedSong) {
       songFile = sharedSong[0]; markSong(songFile)
       const start = ev => {
