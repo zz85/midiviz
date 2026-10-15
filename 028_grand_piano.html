@@ -88,6 +88,9 @@
         <span class="chk"><input id="bloom" type="checkbox" checked>Bloom</span>
         <span class="chk"><input id="spin" type="checkbox">Turntable</span>
       </div>
+      <div class="row"><label>Tour</label>
+        <span class="chk" title="While a song plays, the tour moves with the music: its position follows song time (pause, seek and speed included), it leans toward the notes being played and pushes in on loud chords"><input id="tourSync" type="checkbox" checked>Follow the song</span>
+      </div>
       <div class="row"><label></label>
         <span class="chk"><input id="bench" type="checkbox" checked>Bench</span>
         <span class="chk"><input id="bg" type="checkbox" checked>Backdrop</span>
@@ -257,7 +260,7 @@
     const texLoader = new THREE.TextureLoader()
     function parquetMaterial() {
       const load = (f, srgb) => {
-        const t = texLoader.load(`grandpiano/textures/parquet_${f}_2k.jpg`)
+        const t = texLoader.load(`grandpiano/textures/parquet_${f}_1k.jpg`)
         t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(5, 5); t.anisotropy = 8
         if (srgb) t.colorSpace = THREE.SRGBColorSpace
         return t
@@ -433,21 +436,69 @@
         return THREE.MathUtils.lerp(SHOTS[i][2], SHOTS[(i + 1) % n][2], e)
       },
     }
+    // Music reaction (only while a song drives the tour): `lean` is the smoothed
+    // x-centre of the held keys, `energy` a decaying sum of note-on velocities.
+    let scheduler = null, song = null   // song playback state (used by the tour too)
+    const music = { lean: 0, leanW: 0, energy: 0, phase0: 0, songT: 0, wall: 0 }
+    const _d = new THREE.Vector3()
     function placeTour(u) {
       tour.pos.getPoint(u, camera.position)
       tour.target.getPoint(u, controls.target)
-      camera.fov = tour.fov(u)
+      let fov = tour.fov(u)
+      if (music.leanW > 0.001) {
+        // look toward where the music is, a little more on closer shots
+        const near = THREE.MathUtils.clamp(1.6 - camera.position.distanceTo(controls.target) / 250, 0.35, 1)
+        controls.target.x += (music.lean - controls.target.x) * 0.45 * near * music.leanW
+      }
+      const push = Math.min(music.energy, 1.5)
+      if (push > 0.001) {
+        fov *= 1 - 0.035 * push
+        _d.subVectors(controls.target, camera.position).multiplyScalar(0.025 * push)
+        camera.position.add(_d)
+      }
+      camera.fov = fov
       camera.updateProjectionMatrix()
+    }
+    // Song time between the scheduler's 'time' ticks, extrapolated at the playback speed
+    function songNow() {
+      if (!scheduler) return 0
+      if (!scheduler.playing) return scheduler.currentTime
+      return Math.min(scheduler.duration, music.songT + (performance.now() - music.wall) / 1000 * scheduler.speed)
+    }
+    const songDrivesTour = () => tour.active && $('tourSync').checked && scheduler?.playing && scheduler.duration > 0
+    function tourLoops() { return Math.max(1, Math.round(scheduler.duration / tour.period)) }
+    // Anchor the song's t = 0 so the camera continues from where it is now.
+    function anchorTour() {
+      if (!scheduler?.duration) return
+      music.phase0 = (tour.u - songNow() * tourLoops() / scheduler.duration + 10) % 1
+    }
+    function stepTour(dt) {
+      if (songDrivesTour()) {
+        const goal = (music.phase0 + songNow() * tourLoops() / scheduler.duration) % 1
+        let diff = goal - tour.u
+        diff -= Math.round(diff)                     // shortest way round the loop
+        // follow tightly; after a seek, glide there instead of cutting
+        tour.u = (tour.u + diff * Math.min(1, dt * (Math.abs(diff) > 0.01 ? 1.2 : 8)) + 1) % 1
+      } else if (!(scheduler?.playing === false && $('tourSync').checked && song && scheduler.currentTime > 0)) {
+        tour.u = (tour.u + dt / tour.period) % 1   // free-running (paused songs hold the shot)
+      }
+      // held-note centre of mass, weighted by key count
+      let sx = 0, n = 0
+      if ($('tourSync').checked) for (const m of holders.keys()) { sx += piano.keys.get(m).pivot.position.x; n++ }
+      if (n) music.lean += (sx / n - music.lean) * Math.min(1, dt * 1.5)
+      music.leanW += ((n ? 1 : 0) - music.leanW) * Math.min(1, dt * (n ? 1.2 : 0.4))
+      music.energy *= Math.exp(-dt * 2.2)
+      placeTour(tour.u)
     }
     function startTour(instant) {
       tour.u = 0
       controls.autoRotate = false
-      if (instant) { tween = null; placeTour(0); tour.active = true; return }
+      if (instant) { tween = null; placeTour(0); tour.active = true; anchorTour(); return }
       // ease into the first shot, then start moving
       tween = {
         t: 0, dur: 2.5, from: { pos: camera.position.clone(), target: controls.target.clone(), fov: camera.fov },
         to: { pos: tour.pos.getPoint(0), target: tour.target.getPoint(0), fov: tour.fov(0) },
-        done: () => { tour.active = true },
+        done: () => { tour.active = true; anchorTour() },
       }
     }
     function stopTour() {
@@ -461,6 +512,8 @@
     if (params.has('tour')) $('view').value = 'tour'
     $('view').onchange = () => setView($('view').value)
     setView($('view').value, true)
+    $('tourSync').checked = params.get('sync') !== '0'
+    $('tourSync').onchange = () => anchorTour()
     $('spin').onchange = () => { controls.autoRotate = $('spin').checked && !tour.active }
     addEventListener('keydown', ev => {
       if (ev.code !== 'Escape' || ev.target.closest?.('select, input')) return
@@ -646,7 +699,7 @@
       ['JVKE - golden hour.mid', 'JVKE – golden hour'],
     ]
     for (const [v, l] of SONGS) $('song').add(new Option(l, v))
-    let scheduler = null, song = null, seeking = false
+    let seeking = false
     const songTarget = {
       audioContext: audioCtx,
       resume: () => audioCtx.resume(),
@@ -654,6 +707,7 @@
         if (ch === 9) return
         if (soundReady) engine.noteOn(m, v, ch)
         keyDown(m, 'song' + ch, v)
+        if ($('tourSync').checked) music.energy += v * v * 0.16
       },
       noteOff(m, ch) {
         if (ch === 9) return
@@ -677,7 +731,7 @@
       if (scheduler) return scheduler
       scheduler = new MidiScheduler(songTarget)
       await scheduler.init()
-      scheduler.on('time', t => showTime(t))
+      scheduler.on('time', t => { music.songT = t; music.wall = performance.now(); showTime(t) })
       scheduler.on('end', () => { songTarget.allSoundOff(); setPlaying(false); showTime(0) })
       return scheduler
     }
@@ -699,7 +753,8 @@
         sch.speed = +$('speed').value
         showTime(0); setStatus('')
         unlockAudio()
-        sch.play(); setPlaying(true)
+        music.songT = 0; music.wall = performance.now()
+        sch.play(); setPlaying(true); anchorTour()
       } catch (e) { console.error(e); setStatus(`Could not play ${name}: ${e.message}`, true) }
     }
     async function loadSongUrl(url) {
@@ -727,15 +782,16 @@
       const sch = await ensureScheduler()
       unlockAudio()
       if (sch.playing) { sch.pause(); songTarget.allSoundOff(); setPlaying(false) }
-      else { sch.play(); setPlaying(true) }
+      else { music.wall = performance.now(); sch.play(); setPlaying(true) }
     }
-    $('songStop').onclick = () => { scheduler?.stop(); songTarget.allSoundOff(); setPlaying(false); showTime(0) }
+    $('songStop').onclick = () => { scheduler?.stop(); songTarget.allSoundOff(); setPlaying(false); showTime(0); music.songT = 0 }
     $('seek').addEventListener('input', () => { seeking = true; const d = scheduler?.duration || 0; $('songTime').textContent = `${fmt(+$('seek').value * d)} / ${fmt(d)}` })
     $('seek').addEventListener('change', () => {
       seeking = false
       if (!scheduler || !song) return
       songTarget.allSoundOff()
       scheduler.seek(+$('seek').value * scheduler.duration)
+      music.songT = scheduler.currentTime; music.wall = performance.now()
     })
     $('speed').onchange = () => { if (scheduler) scheduler.speed = +$('speed').value }
     $('toggle').onclick = () => {
@@ -762,10 +818,7 @@
         camera.fov = THREE.MathUtils.lerp(tween.from.fov, tween.to.fov, e)
         camera.updateProjectionMatrix()
         if (tween.t >= 1) { const done = tween.done; tween = null; done?.() }
-      } else if (tour.active) {
-        tour.u = (tour.u + dt / tour.period) % 1
-        placeTour(tour.u)
-      }
+      } else if (tour.active) stepTour(dt)
       piano.update(dt)
       controls.update(dt)
       composer.render()
@@ -775,7 +828,7 @@
     renderer.setAnimationLoop(animate)
     loadSound($('sf').value)
     // test hook for headless checks
-    window.__piano = { piano, press, release, setView, setScene, scene, renderer, camera, controls, tour, placeTour }
+    window.__piano = { piano, press, release, setView, setScene, scene, renderer, camera, controls, tour, placeTour, music, get scheduler() { return scheduler } }
   </script>
 </body>
 </html>
