@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>Experiment #028 - Grand Piano</title>
+  <!--
+    Experiment #028 - a physically based concert grand, built entirely in code
+    (grandpiano/grand-piano.js) and lit with real HDR environments.
+
+    No free model had moving keys, hammers and dampers, so the piano is
+    procedural: S-curved rim, lid on a prop stick, gold plate, ~230 strings,
+    88 keys with their hammers and dampers, lyre and pedals. Materials are
+    MeshPhysicalMaterial throughout (clearcoat lacquer, metallic plate and
+    strings, sheen felt). Lighting is image-based (Poly Haven CC0 HDRIs) plus
+    a shadow-casting key light; GTAO and a touch of bloom in post.
+  -->
+  <script type="importmap">
+    { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    } }
+  </script>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #050505; font: 13px/1.35 "Helvetica Neue", Arial, sans-serif; color: #e8e2d6; }
+    canvas { display: block; touch-action: none; }
+    #panel {
+      position: absolute; top: 12px; left: 12px; width: 268px; padding: 10px 12px;
+      background: rgba(14, 13, 12, 0.72); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 10px;
+      backdrop-filter: blur(8px); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+    }
+    #panel h1 { margin: 0 0 2px; font: 300 17px/1.2 Georgia, serif; letter-spacing: 0.04em; color: #f3e6c4; }
+    #panel h1 a { color: inherit; text-decoration: none; }
+    #panel .sub { font-size: 11px; color: #9c958a; margin-bottom: 6px; }
+    #panel.collapsed .body { display: none; }
+    #toggle { float: right; background: none; border: 0; color: #d8b56a; font-size: 15px; cursor: pointer; }
+    hr { border: 0; border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 8px 0; }
+    .row { display: flex; align-items: center; gap: 6px; margin: 5px 0; }
+    .row > label:first-child { flex: 0 0 74px; color: #a9a196; }
+    select, input[type=range] { flex: 1; min-width: 0; }
+    select { background: #1d1b19; color: #eee6d8; border: 1px solid #3d3933; border-radius: 4px; padding: 2px; font: inherit; }
+    input[type=checkbox] { accent-color: #c9a24a; }
+    .chk { display: flex; align-items: center; gap: 3px; color: #cfc6b8; margin-right: 6px; }
+    button.b { background: #26231f; color: #eee6d8; border: 1px solid #4a443b; border-radius: 4px; padding: 3px 8px; cursor: pointer; font: inherit; font-size: 12px; }
+    button.b:hover { background: #35302a; }
+    button.b.on { background: #c9a24a; color: #111; border-color: #c9a24a; }
+    #seek { flex: 1; }
+    #songTime { font: 11px monospace; color: #b9b0a2; min-width: 72px; text-align: right; }
+    #hint { color: #8f887d; font-size: 11px; margin-top: 6px; }
+    #status { position: absolute; top: 12px; right: 12px; padding: 6px 10px; border-radius: 6px; background: rgba(14, 13, 12, 0.8); border: 1px solid #3d3933; font-size: 12px; }
+    #status.hidden { display: none; }
+    #status.error { border-color: #c44; color: #f99; }
+    #credit { position: absolute; right: 10px; bottom: 8px; font-size: 10px; color: rgba(255, 255, 255, 0.35); }
+    #credit a { color: inherit; }
+    #dropHint { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; font: 300 26px Georgia, serif; color: #f3e6c4; background: rgba(0, 0, 0, 0.55); pointer-events: none; }
+    body.dragging #dropHint { display: flex; }
+  </style>
+</head>
+<body>
+  <div id="panel">
+    <button id="toggle" title="Collapse">–</button>
+    <h1><a href="README.md" title="Back to experiments">#028 · Grand Piano</a></h1>
+    <div class="sub">procedural concert grand · PBR · image-based light</div>
+    <div class="body">
+      <div class="row"><label>Scene</label><select id="scene">
+        <option value="studio">Photo studio</option>
+        <option value="salon">Salon (parquet)</option>
+        <option value="hall">Concert hall</option>
+      </select></div>
+      <div class="row"><label>Finish</label><select id="finish"></select></div>
+      <div class="row"><label>Lid</label><select id="lid">
+        <option value="full">Full stick</option><option value="half">Short stick</option><option value="closed">Closed</option>
+      </select></div>
+      <div class="row"><label>Camera</label><select id="view">
+        <option value="hero">Three-quarter</option>
+        <option value="side">Treble side</option>
+        <option value="inside">Inside (strings &amp; dampers)</option>
+        <option value="player">Pianist</option>
+        <option value="keys">Keyboard close-up</option>
+        <option value="low">Low angle</option>
+        <option value="top">Top down</option>
+        <option value="tour">Cinematic tour</option>
+        <option value="free" hidden>Free</option>
+      </select></div>
+      <div class="row"><label>Exposure</label><input id="exposure" type="range" min="0.3" max="2" step="0.01" value="1"></div>
+      <div class="row"><label>Effects</label>
+        <span class="chk"><input id="ao" type="checkbox" checked>AO</span>
+        <span class="chk"><input id="bloom" type="checkbox" checked>Bloom</span>
+        <span class="chk"><input id="spin" type="checkbox">Turntable</span>
+      </div>
+      <div class="row"><label></label>
+        <span class="chk"><input id="bench" type="checkbox" checked>Bench</span>
+        <span class="chk"><input id="bg" type="checkbox" checked>Backdrop</span>
+      </div>
+      <hr>
+      <div class="row"><label>Sound</label><select id="sf"></select></div>
+      <div class="row"><label>Velocity</label><input id="velocity" type="range" min="0.1" max="1" step="0.01" value="0.75"></div>
+      <div class="row"><label>Song</label><select id="song"></select>
+        <button class="b" id="open" title="Open a .mid file (or drop one on the page)">Open…</button>
+        <input id="file" type="file" accept=".mid,.midi,audio/midi" hidden></div>
+      <div class="row">
+        <button class="b" id="songPlay" title="Play / pause">▶</button>
+        <button class="b" id="songStop" title="Stop">■</button>
+        <input id="seek" type="range" min="0" max="1" step="0.001" value="0">
+        <span id="songTime">0:00 / 0:00</span>
+      </div>
+      <div class="row"><label>Speed</label><select id="speed">
+        <option value="0.5">50%</option><option value="0.75">75%</option><option value="1" selected>100%</option><option value="1.25">125%</option>
+      </select>
+        <button class="b" id="pedal" title="Sustain pedal (Space)">Pedal</button>
+        <button class="b" id="midiIn" title="Play from a MIDI keyboard">MIDI in</button></div>
+      <div id="hint">
+        Drag to orbit, scroll to zoom, click the keys to play. <b>Esc</b> hides the panel.
+        Computer keys: <b>Q–\</b> / <b>2 3 5 6 7 9 0 =</b> from <span id="octave">C4</span>,
+        <b>Z–M</b> / <b>A S F G H</b> an octave up. ←/→ octave · Space pedal.
+      </div>
+    </div>
+  </div>
+  <div id="status" class="hidden"></div>
+  <div id="dropHint">Drop a MIDI file to play it</div>
+  <div id="credit">HDRIs &amp; parquet: <a href="https://polyhaven.com" target="_blank" rel="noopener">Poly Haven</a> (CC0)</div>
+
+  <script src="tonejs-midi.js"></script>
+  <script type="module">
+    import * as THREE from 'three'
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+    import { RGBELoader } from 'three/addons/loaders/RGBELoader.js'
+    import { GroundedSkybox } from 'three/addons/objects/GroundedSkybox.js'
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
+    import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js'
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
+    import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
+    import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
+    import { SoundFontEngine, MidiScheduler } from './soundfont-engine/src/index.js'
+    import { midiToSchedule } from './notation3d/midi-score.js'
+    import { buildGrandPiano, FINISHES, LOW, HIGH } from './grandpiano/grand-piano.js'
+
+    const $ = id => document.getElementById(id)
+    const params = new URLSearchParams(location.search)
+    const LOWQ = params.get('q') === 'low'
+
+    function setStatus(msg, isError = false) {
+      const el = $('status')
+      el.textContent = msg || ''
+      el.classList.toggle('hidden', !msg)
+      el.classList.toggle('error', isError)
+    }
+
+    // ── Renderer ───────────────────────────────────────────────────────────
+    const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' })
+    renderer.setPixelRatio(Math.min(devicePixelRatio, LOWQ ? 1 : 2))
+    renderer.setSize(innerWidth, innerHeight)
+    renderer.toneMapping = THREE.AgXToneMapping
+    renderer.toneMappingExposure = 1
+    renderer.shadowMap.enabled = true
+    renderer.shadowMap.type = THREE.VSMShadowMap
+    document.body.appendChild(renderer.domElement)
+
+    const scene = new THREE.Scene()
+    scene.background = new THREE.Color(0x050505)
+    const camera = new THREE.PerspectiveCamera(32, innerWidth / innerHeight, 5, 8000)
+    const controls = new OrbitControls(camera, renderer.domElement)
+    controls.enableDamping = true
+    controls.dampingFactor = 0.08
+    controls.minDistance = 25
+    controls.maxDistance = 1400
+    controls.maxPolarAngle = Math.PI * 0.495
+    controls.autoRotateSpeed = 0.6
+
+    // ── Piano ──────────────────────────────────────────────────────────────
+    const piano = buildGrandPiano()
+    scene.add(piano.root)
+    for (const [k, f] of Object.entries(FINISHES)) $('finish').add(new Option(f.label, k))
+    $('finish').value = params.get('finish') || 'ebony'
+    piano.setFinish($('finish').value)
+    $('finish').onchange = () => piano.setFinish($('finish').value)
+    $('lid').value = params.get('lid') || 'full'
+    piano.setLid($('lid').value)
+    $('lid').onchange = () => piano.setLid($('lid').value)
+    if (params.has('nolid')) { piano.lid.visible = false; piano.lid.scale.setScalar(0.0001) }
+    $('bench').onchange = () => { piano.bench.visible = $('bench').checked }
+
+    // Soft contact shadow: the case outline, blurred, darkening the floor under the piano
+    function contactShadow() {
+      const S = 512, W = 400, c = document.createElement('canvas')
+      c.width = c.height = S
+      const g = c.getContext('2d'), sc = S / W
+      const tx = x => (x + W / 2) * sc, tz = z => (z + W / 2 + 95) * sc
+      g.filter = 'blur(14px)'
+      g.fillStyle = 'rgba(255,255,255,0.75)'
+      g.beginPath()
+      piano.outline.forEach(([x, z], i) => i ? g.lineTo(tx(x), tz(z)) : g.moveTo(tx(x), tz(z)))
+      g.closePath(); g.fill()
+      g.filter = 'blur(5px)'
+      g.fillStyle = 'rgba(255,255,255,1)'
+      for (const [x, z] of piano.feet) { g.beginPath(); g.arc(tx(x), tz(z), 7 * sc, 0, Math.PI * 2); g.fill() }
+      const tex = new THREE.CanvasTexture(c)
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(W, W), new THREE.MeshBasicMaterial({ color: 0x000000, alphaMap: tex, transparent: true, opacity: 0.85, depthWrite: false }))
+      m.rotation.x = -Math.PI / 2
+      m.position.set(0, 0.15, -95)
+      m.renderOrder = 1
+      return m
+    }
+    const blob = contactShadow()
+    scene.add(blob)
+
+    // ── Lights ─────────────────────────────────────────────────────────────
+    const key = new THREE.DirectionalLight(0xfff1e0, 2.2)
+    key.castShadow = true
+    key.shadow.mapSize.set(LOWQ ? 2048 : 4096, LOWQ ? 2048 : 4096)
+    Object.assign(key.shadow.camera, { left: -230, right: 230, top: 230, bottom: -230, near: 50, far: 4000 })
+    key.shadow.bias = -0.0004
+    key.shadow.normalBias = 0.2
+    key.shadow.radius = 10
+    key.shadow.blurSamples = 16
+    key.target.position.set(0, 60, -90)
+    scene.add(key, key.target)
+
+    // ── Environments ───────────────────────────────────────────────────────
+    const pmrem = new THREE.PMREMGenerator(renderer)
+    const hdrLoader = new RGBELoader()
+    const hdrCache = new Map()
+    function loadHDR(name) {
+      if (!hdrCache.has(name)) hdrCache.set(name, hdrLoader.loadAsync(`grandpiano/hdri/${name}_1k.hdr`).then(t => {
+        t.mapping = THREE.EquirectangularReflectionMapping
+        return { equirect: t, pmrem: pmrem.fromEquirectangular(t).texture }
+      }))
+      return hdrCache.get(name)
+    }
+    // A virtual product-photography studio: dark room, big overhead softbox, strip
+    // lights and a kicker. Rendered into a PMREM so the lacquer reflects a dark floor
+    // that matches the cyclorama the piano stands on.
+    let studioEnv = null
+    function makeStudioEnv() {
+      if (studioEnv) return studioEnv
+      const s = new THREE.Scene()
+      const room = new THREE.Mesh(new THREE.BoxGeometry(2400, 1200, 2400), new THREE.MeshBasicMaterial({ color: 0x151515, side: THREE.BackSide }))
+      room.position.y = 510   // the floor sits 90 cm below the piano's centre
+      s.add(room)
+      const floor = new THREE.Mesh(new THREE.PlaneGeometry(2400, 2400), new THREE.MeshBasicMaterial({ color: 0x24221f }))
+      floor.rotation.x = -Math.PI / 2; floor.position.y = -89
+      s.add(floor)
+      const box = (w, h, pos, look, intensity, color = 0xffffff) => {
+        const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(intensity), side: THREE.DoubleSide }))
+        m.position.set(...pos); m.lookAt(...look)
+        s.add(m)
+      }
+      box(520, 300, [0, 600, -60], [0, 0, -60], 6)                 // overhead softbox
+      box(800, 260, [900, 160, -120], [0, 60, -100], 4.5, 0xfff6ee) // wall of light on the treble side
+      box(120, 600, [-800, 250, 100], [0, 60, 0], 7, 0xfff1e2)     // tall strip, front left
+      box(600, 200, [-200, 300, -900], [0, 60, -100], 3.5, 0xe8efff) // kicker behind the tail
+      box(700, 200, [0, 250, 900], [0, 60, 0], 1.8)                // soft fill from the front
+      studioEnv = pmrem.fromScene(s, 0.02, 1, 5000).texture
+      return studioEnv
+    }
+    const texLoader = new THREE.TextureLoader()
+    function parquetMaterial() {
+      const load = (f, srgb) => {
+        const t = texLoader.load(`grandpiano/textures/parquet_${f}_2k.jpg`)
+        t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(5, 5); t.anisotropy = 8
+        if (srgb) t.colorSpace = THREE.SRGBColorSpace
+        return t
+      }
+      // radial fade so the floor melts into the backdrop
+      const c = document.createElement('canvas'); c.width = c.height = 256
+      const g = c.getContext('2d'), gr = g.createRadialGradient(128, 128, 60, 128, 128, 128)
+      gr.addColorStop(0, '#fff'); gr.addColorStop(1, '#000'); g.fillStyle = gr; g.fillRect(0, 0, 256, 256)
+      const fade = new THREE.CanvasTexture(c)
+      const m = new THREE.MeshPhysicalMaterial({
+        map: load('diff', true), normalMap: load('nor_gl'), roughnessMap: load('rough'), aoMap: load('ao'),
+        roughness: 1, normalScale: new THREE.Vector2(0.8, 0.8), clearcoat: 0.35, clearcoatRoughness: 0.2,
+        transparent: true, alphaMap: fade,
+      })
+      // (each map has its own UV transform, so the fade stays unrepeated)
+      return m
+    }
+
+    // Photo-studio cyclorama: floor sweeping up into a back wall
+    function cyclorama() {
+      const floorLen = 2400, R = 300, wall = 5000, segs = 200
+      const geo = new THREE.PlaneGeometry(8000, 1, 1, segs)
+      const pos = geo.attributes.position
+      const total = floorLen + Math.PI / 2 * R + wall
+      for (let i = 0; i < pos.count; i++) {
+        const t = (pos.getY(i) + 0.5) * total
+        let y, z
+        if (t < floorLen) { y = 0; z = 1800 - t }
+        else if (t < floorLen + Math.PI / 2 * R) { const a = (t - floorLen) / R; y = R - R * Math.cos(a); z = 1800 - floorLen - R * Math.sin(a) }
+        else { y = R + (t - floorLen - Math.PI / 2 * R); z = 1800 - floorLen - R }
+        pos.setXYZ(i, pos.getX(i), y, z)
+      }
+      geo.computeVertexNormals()
+      // the plane faces +z before bending; make sure it faces up/forward
+      const m = new THREE.Mesh(geo, new THREE.MeshPhysicalMaterial({ color: 0x161514, roughness: 0.7, clearcoat: 0.3, clearcoatRoughness: 0.35, side: THREE.DoubleSide }))
+      m.receiveShadow = true
+      return m
+    }
+
+    const SCENES = {
+      studio: { hdr: null, envIntensity: 1, rotation: 0, key: [-160, 330, 240], keyI: 1.6, ground: 'cyc', exposure: 1 },
+      salon: { hdr: 'photo_studio_loft_hall', envIntensity: 1, sky: { height: 160, radius: 2400 }, rotation: 2.4, key: [-280, 300, -160], keyI: 1.6, ground: 'parquet', exposure: 1 },
+      hall: { hdr: 'music_hall_01', envIntensity: 0.8, sky: { height: 170, radius: 3000 }, rotation: 0, key: [120, 420, 220], keyI: 1.3, ground: 'catcher', exposure: 1 },
+    }
+    let ground = null, sky = null, sceneName = null
+    const shadowCatcher = new THREE.Mesh(new THREE.PlaneGeometry(1600, 1600), new THREE.ShadowMaterial({ opacity: 0.5 }))
+    shadowCatcher.rotation.x = -Math.PI / 2
+    shadowCatcher.receiveShadow = true
+
+    async function setScene(name) {
+      const cfg = SCENES[name] || SCENES.studio
+      sceneName = name
+      setStatus('Loading lighting…')
+      let hdr = null
+      if (cfg.hdr) {
+        try { hdr = await loadHDR(cfg.hdr) } catch (e) { console.error(e); setStatus('HDR failed to load: ' + e.message, true); return }
+        if (sceneName !== name) return
+      }
+      scene.environment = hdr ? hdr.pmrem : makeStudioEnv()
+      scene.fog = cfg.ground === 'cyc' ? new THREE.FogExp2(0x070707, 0.00055) : null
+      scene.environmentIntensity = cfg.envIntensity
+      scene.environmentRotation.y = cfg.rotation
+      scene.backgroundRotation.y = cfg.rotation
+      if (ground) { scene.remove(ground); ground = null }
+      if (sky) { scene.remove(sky); sky.geometry.dispose(); sky = null }
+      if (cfg.ground === 'cyc') {
+        ground = cyclorama()
+        scene.background = new THREE.Color(0x060606)
+      } else {
+        sky = new GroundedSkybox(hdr.equirect, cfg.sky.height, cfg.sky.radius)
+        sky.position.y = cfg.sky.height - 0.01
+        sky.rotation.y = -cfg.rotation
+        scene.add(sky)
+        scene.background = null
+        if (cfg.ground === 'parquet') {
+          ground = new THREE.Group()
+          const floor = new THREE.Mesh(new THREE.CircleGeometry(520, 96), parquetMaterial())
+          floor.rotation.x = -Math.PI / 2; floor.position.y = 0.05; floor.receiveShadow = true
+          ground.add(floor)
+        } else ground = shadowCatcher
+      }
+      if (ground) scene.add(ground)
+      key.position.set(...cfg.key)
+      key.intensity = cfg.keyI
+      applyBackdrop()
+      setStatus('')
+    }
+    function applyBackdrop() {
+      const on = $('bg').checked
+      if (sky) sky.visible = on
+      if (ground && sceneName !== 'studio') ground.visible = true
+      if (!on && sceneName !== 'studio') scene.background = new THREE.Color(0x070707)
+      else if (sceneName !== 'studio') scene.background = null
+    }
+    $('scene').value = SCENES[params.get('scene')] ? params.get('scene') : 'studio'
+    $('scene').onchange = () => setScene($('scene').value)
+    $('bg').onchange = applyBackdrop
+    $('exposure').oninput = () => { renderer.toneMappingExposure = +$('exposure').value }
+
+    // ── Post-processing ────────────────────────────────────────────────────
+    const rt = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: 4 })
+    const composer = new EffectComposer(renderer, rt)
+    composer.setPixelRatio(renderer.getPixelRatio())
+    composer.addPass(new RenderPass(scene, camera))
+    const gtao = new GTAOPass(scene, camera, innerWidth, innerHeight)
+    gtao.updateGtaoMaterial({ radius: 8, distanceExponent: 1.6, thickness: 6, scale: 1, samples: 16 })
+    gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 16 })
+    gtao.blendIntensity = 0.85
+    composer.addPass(gtao)
+    // Clamp HDR fireflies (sun-bright softboxes in a mirror-like clearcoat) so bloom can't blow up
+    const clampPass = new ShaderPass({
+      uniforms: { tDiffuse: { value: null } },
+      vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: `uniform sampler2D tDiffuse; varying vec2 vUv;
+        void main() { vec4 c = texture2D(tDiffuse, vUv);
+          c.rgb = any(isnan(c.rgb)) || any(isinf(c.rgb)) ? vec3(0.0) : min(c.rgb, vec3(48.0));
+          gl_FragColor = c; }`,
+    })
+    composer.addPass(clampPass)
+    const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.18, 0.5, 0.92)
+    composer.addPass(bloom)
+    composer.addPass(new OutputPass())
+    $('ao').checked = !LOWQ && params.get('ao') !== '0'
+    const applyFx = () => { gtao.enabled = $('ao').checked; bloom.enabled = $('bloom').checked }
+    $('ao').onchange = $('bloom').onchange = applyFx
+    applyFx()
+
+    // ── Cameras ────────────────────────────────────────────────────────────
+    const VIEWS = {
+      hero: { pos: [255, 175, 205], target: [-5, 70, -80], fov: 32 },
+      side: { pos: [360, 125, -70], target: [0, 78, -95], fov: 30 },
+      inside: { pos: [150, 255, -10], target: [0, 86, -100], fov: 34 },
+      player: { pos: [0, 136, 88], target: [0, 80, -24], fov: 48 },
+      keys: { pos: [46, 94, 34], target: [8, 74, -6], fov: 30 },
+      low: { pos: [-150, 42, 230], target: [0, 78, -80], fov: 34 },
+      top: { pos: [0.01, 480, -95], target: [0, 70, -95], fov: 36 },
+    }
+    let tween = null
+    function setView(name, instant = false) {
+      tour.active = false
+      if (name === 'tour') return startTour(instant)
+      if (name === 'free') return
+      const v = VIEWS[name] || VIEWS.hero
+      const to = { pos: new THREE.Vector3(...v.pos), target: new THREE.Vector3(...v.target), fov: v.fov }
+      if (instant) { tween = null; camera.position.copy(to.pos); controls.target.copy(to.target); camera.fov = to.fov; camera.updateProjectionMatrix(); return }
+      tween = { t: 0, dur: 1.4, from: { pos: camera.position.clone(), target: controls.target.clone(), fov: camera.fov }, to }
+    }
+
+    // Cinematic tour: one slow closed spline through a sequence of shots, camera
+    // position and look-at target each on their own curve so the framing glides
+    // rather than cuts. Any orbit/zoom input hands the camera back to you.
+    const SHOTS = [
+      // [position, target, fov]
+      [[310, 185, 250], [0, 74, -90], 30],     // wide three-quarter
+      [[360, 78, -20], [0, 82, -105], 27],     // low along the treble side
+      [[240, 110, -300], [-10, 84, -120], 28], // round the curve of the rim
+      [[60, 210, -400], [-10, 86, -120], 30],  // behind the tail, rising
+      [[175, 245, -95], [-5, 86, -115], 34],   // over the strings, under the lid
+      [[105, 150, -5], [5, 88, -45], 30],      // hammers and dampers
+      [[72, 96, 38], [10, 74, -6], 26],        // glide along the keys (treble)…
+      [[-55, 96, 42], [-25, 74, -6], 26],      // …to the bass
+      [[0, 140, 92], [0, 80, -24], 44],        // the pianist's seat
+      [[-260, 70, 190], [0, 76, -85], 32],     // low wide from the bass side
+      [[-40, 300, 330], [0, 72, -90], 30],     // high front, coming home
+    ]
+    const tour = {
+      active: false, u: 0, period: 110, // seconds per loop
+      pos: new THREE.CatmullRomCurve3(SHOTS.map(s => new THREE.Vector3(...s[0])), true, 'centripetal'),
+      target: new THREE.CatmullRomCurve3(SHOTS.map(s => new THREE.Vector3(...s[1])), true, 'catmullrom', 0.4),
+      fov(u) {
+        const n = SHOTS.length, x = u * n, i = Math.floor(x) % n, f = x - Math.floor(x)
+        const e = f * f * (3 - 2 * f)
+        return THREE.MathUtils.lerp(SHOTS[i][2], SHOTS[(i + 1) % n][2], e)
+      },
+    }
+    function placeTour(u) {
+      tour.pos.getPoint(u, camera.position)
+      tour.target.getPoint(u, controls.target)
+      camera.fov = tour.fov(u)
+      camera.updateProjectionMatrix()
+    }
+    function startTour(instant) {
+      tour.u = 0
+      controls.autoRotate = false
+      if (instant) { tween = null; placeTour(0); tour.active = true; return }
+      // ease into the first shot, then start moving
+      tween = {
+        t: 0, dur: 2.5, from: { pos: camera.position.clone(), target: controls.target.clone(), fov: camera.fov },
+        to: { pos: tour.pos.getPoint(0), target: tour.target.getPoint(0), fov: tour.fov(0) },
+        done: () => { tour.active = true },
+      }
+    }
+    function stopTour() {
+      if (!tour.active && !(tween && tween.done)) return
+      tour.active = false; tween = null
+      $('view').value = 'free'
+      controls.autoRotate = $('spin').checked
+    }
+    controls.addEventListener('start', stopTour)
+    $('view').value = VIEWS[params.get('view')] || params.get('view') === 'tour' ? params.get('view') : 'hero'
+    if (params.has('tour')) $('view').value = 'tour'
+    $('view').onchange = () => setView($('view').value)
+    setView($('view').value, true)
+    $('spin').onchange = () => { controls.autoRotate = $('spin').checked && !tour.active }
+    addEventListener('keydown', ev => {
+      if (ev.code !== 'Escape' || ev.target.closest?.('select, input')) return
+      const hidden = $('panel').style.display === 'none'
+      for (const id of ['panel', 'credit']) $(id).style.display = hidden ? '' : 'none'
+    })
+
+    // ── Sound ──────────────────────────────────────────────────────────────
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+    const engine = new SoundFontEngine({ backend: 'oxisynth', vendorPath: new URL('./vendor', import.meta.url).href, audioContext: audioCtx })
+    const LIVE = 15
+    const SOUNDFONTS = [
+      ['stack', 'Motif ES6 piano + Creative GM'],
+      ['soundfonts/Full Grand Piano.sf2', 'Full Grand Piano'],
+      ['soundfonts/Motif_ES6_Concert_Piano.sf2', 'Motif ES6 Concert Piano'],
+      ['soundfonts/Roland_Super_XP-80.sf2', 'Roland Super XP-80'],
+      ['soundfonts/FluidR3.sf3', 'FluidR3 GM'],
+    ]
+    const STACK = ['soundfonts/Creative(emu10k1)8MBGMSFX.sf2', 'soundfonts/Motif_ES6_Concert_Piano.sf2']
+    for (const [v, l] of SOUNDFONTS) $('sf').add(new Option(l, v))
+    let soundReady = false
+    async function loadSound(v) {
+      soundReady = false
+      engine.allSoundOff?.()
+      setStatus('Loading soundfont…')
+      try {
+        if (v === 'stack') await engine.loadSoundFontStack(STACK)
+        else await engine.loadSoundFont(v)
+        engine.programChange(LIVE, 0)
+        // this is a piano: every melodic channel plays the piano
+        for (let ch = 0; ch < 16; ch++) if (ch !== 9) engine.programChange(ch, 0)
+        soundReady = true
+        setStatus('')
+      } catch (e) { console.error(e); setStatus('Sound failed to load: ' + e.message, true) }
+    }
+    $('sf').onchange = () => loadSound($('sf').value)
+    const unlockAudio = () => { if (audioCtx.state !== 'running') audioCtx.resume().then(() => engine.resume?.()).catch(() => {}) }
+
+    // ── Playing ────────────────────────────────────────────────────────────
+    const holders = new Map()   // midi -> Set of sources holding it down
+    let sustain = false
+    function keyDown(midi, src, vel) {
+      if (midi < LOW || midi > HIGH) return
+      let s = holders.get(midi)
+      if (!s) holders.set(midi, s = new Set())
+      s.add(src)
+      piano.noteOn(midi, vel)
+    }
+    function keyUp(midi, src) {
+      const s = holders.get(midi)
+      if (!s) return
+      s.delete(src)
+      if (!s.size) { holders.delete(midi); piano.noteOff(midi) }
+    }
+    function press(midi, src, vel = +$('velocity').value) {
+      unlockAudio()
+      if (soundReady) engine.noteOn(midi, vel, LIVE)
+      keyDown(midi, src, vel)
+    }
+    function release(midi, src) {
+      engine.noteOff(midi, LIVE)
+      keyUp(midi, src)
+    }
+    let livePedal = false, songPedal = false
+    function updatePedal() {
+      sustain = livePedal || songPedal
+      piano.setSustain(sustain)
+      $('pedal').classList.toggle('on', livePedal)
+    }
+    function setLivePedal(on) {
+      livePedal = on
+      engine.controlChange(LIVE, 64, on ? 127 : 0)
+      updatePedal()
+    }
+    $('pedal').onpointerdown = () => setLivePedal(!livePedal)
+
+    // Pointer: keys take priority over orbiting
+    const raycaster = new THREE.Raycaster(), ndc = new THREE.Vector2(), pointerKey = new Map()
+    const canvas = renderer.domElement
+    function keyAt(ev) {
+      const r = canvas.getBoundingClientRect()
+      ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1)
+      raycaster.setFromCamera(ndc, camera)
+      const hit = raycaster.intersectObjects(piano.keyMeshes, false)[0]
+      if (!hit) return null
+      const front = THREE.MathUtils.clamp(1 + hit.point.z / 15, 0, 1)
+      return { midi: hit.object.userData.midi, vel: +$('velocity').value * (0.75 + 0.25 * front) }
+    }
+    addEventListener('pointerdown', ev => {
+      if (ev.target !== canvas) return
+      unlockAudio()
+      const hit = keyAt(ev)
+      if (!hit) return
+      ev.stopImmediatePropagation()
+      canvas.setPointerCapture(ev.pointerId)
+      pointerKey.set(ev.pointerId, hit.midi)
+      press(hit.midi, 'p' + ev.pointerId, hit.vel)
+    }, true)
+    canvas.addEventListener('pointermove', ev => {
+      if (!pointerKey.has(ev.pointerId)) return
+      const hit = keyAt(ev), prev = pointerKey.get(ev.pointerId), now = hit?.midi ?? null
+      if (now === prev) return
+      if (prev != null) release(prev, 'p' + ev.pointerId)
+      pointerKey.set(ev.pointerId, now)
+      if (now != null) press(now, 'p' + ev.pointerId, hit.vel)
+    })
+    const endPointer = ev => {
+      if (!pointerKey.has(ev.pointerId)) return
+      const m = pointerKey.get(ev.pointerId)
+      if (m != null) release(m, 'p' + ev.pointerId)
+      pointerKey.delete(ev.pointerId)
+    }
+    canvas.addEventListener('pointerup', endPointer)
+    canvas.addEventListener('pointercancel', endPointer)
+    canvas.addEventListener('pointermove', ev => {
+      if (pointerKey.size || ev.buttons) return
+      canvas.style.cursor = keyAt(ev) ? 'pointer' : 'grab'
+    })
+
+    // Computer keyboard (the JabTunes map: Q row whites, number row blacks, Z/A rows an octave up)
+    const KEY_MAP = {
+      Digit2: 1, Digit3: 3, Digit5: 6, Digit6: 8, Digit7: 10, Digit9: 13, Digit0: 15, Equal: 18,
+      KeyQ: 0, KeyW: 2, KeyE: 4, KeyR: 5, KeyT: 7, KeyY: 9, KeyU: 11,
+      KeyI: 12, KeyO: 14, KeyP: 16, BracketLeft: 17, BracketRight: 19, Backslash: 21,
+      KeyA: 13, KeyS: 15, KeyF: 18, KeyG: 20, KeyH: 22,
+      KeyZ: 12, KeyX: 14, KeyC: 16, KeyV: 17, KeyB: 19, KeyN: 21, KeyM: 23,
+    }
+    let baseC = 60
+    const keyHeld = new Map()
+    const showOctave = () => { $('octave').textContent = 'C' + (baseC / 12 - 1) }
+    showOctave()
+    addEventListener('keydown', ev => {
+      if (ev.target.closest?.('select, input')) return
+      if (ev.code === 'Space') { if (!ev.repeat) setLivePedal(true); ev.preventDefault(); return }
+      if (ev.code === 'ArrowLeft' || ev.code === 'ArrowRight') {
+        baseC = THREE.MathUtils.clamp(baseC + (ev.code === 'ArrowLeft' ? -12 : 12), 24, 84); showOctave(); ev.preventDefault(); return
+      }
+      if (ev.repeat || ev.metaKey || ev.ctrlKey || ev.altKey) return
+      const off = KEY_MAP[ev.code]
+      if (off == null || keyHeld.has(ev.code)) return
+      keyHeld.set(ev.code, baseC + off)
+      press(baseC + off, 'k' + ev.code)
+      ev.preventDefault()
+    })
+    addEventListener('keyup', ev => {
+      if (ev.code === 'Space') { setLivePedal(false); return }
+      const m = keyHeld.get(ev.code)
+      if (m == null) return
+      keyHeld.delete(ev.code)
+      release(m, 'k' + ev.code)
+    })
+    addEventListener('blur', () => { for (const [c, m] of keyHeld) release(m, 'k' + c); keyHeld.clear(); setLivePedal(false) })
+
+    // Web MIDI in
+    $('midiIn').onclick = async () => {
+      if (!navigator.requestMIDIAccess) return setStatus('Web MIDI is not available in this browser', true)
+      try {
+        const access = await navigator.requestMIDIAccess()
+        const hook = () => { for (const inp of access.inputs.values()) inp.onmidimessage = onMidi }
+        hook(); access.onstatechange = hook
+        $('midiIn').classList.add('on')
+        setStatus(access.inputs.size ? '' : 'No MIDI inputs found')
+        if (!access.inputs.size) setTimeout(() => setStatus(''), 2500)
+      } catch (e) { setStatus('MIDI access denied', true) }
+    }
+    function onMidi(e) {
+      const [st, d1, d2] = e.data, type = st & 0xf0
+      if (type === 0x90 && d2 > 0) press(d1, 'midi', d2 / 127)
+      else if (type === 0x80 || type === 0x90) release(d1, 'midi')
+      else if (type === 0xb0 && d1 === 64) setLivePedal(d2 >= 64)
+    }
+
+    // ── Songs ──────────────────────────────────────────────────────────────
+    const SONGS = [
+      ['', '— choose a song —'],
+      ['chpn-p15.mid', 'Chopin – Raindrop Prelude'],
+      ['liz_liebestraum.mid', 'Liszt – Liebestraum No. 3'],
+      ['minute_waltz.mid', 'Chopin – Minute Waltz'],
+      ['Prelude1.mid', 'Bach – Prelude in C'],
+      ['entertainer.mid', 'Joplin – The Entertainer'],
+      ['C.V.Alkan - Etude sans opus.mid', 'Alkan – Étude sans opus'],
+      ['rachmaninov3.mid', 'Rachmaninov – Concerto No. 3'],
+      ['JVKE - golden hour.mid', 'JVKE – golden hour'],
+    ]
+    for (const [v, l] of SONGS) $('song').add(new Option(l, v))
+    let scheduler = null, song = null, seeking = false
+    const songTarget = {
+      audioContext: audioCtx,
+      resume: () => audioCtx.resume(),
+      noteOn(m, v, ch) {
+        if (ch === 9) return
+        if (soundReady) engine.noteOn(m, v, ch)
+        keyDown(m, 'song' + ch, v)
+      },
+      noteOff(m, ch) {
+        if (ch === 9) return
+        engine.noteOff(m, ch)
+        keyUp(m, 'song' + ch)
+      },
+      controlChange(ch, cc, v) {
+        engine.controlChange(ch, cc, v)
+        if (cc === 64) { songPedal = v >= 64; updatePedal() }
+        if (cc === 67) piano.setPedal(0, v >= 64)
+        if (cc === 66) piano.setPedal(1, v >= 64)
+      },
+      allSoundOff() {
+        for (let ch = 0; ch < 16; ch++) if (ch !== LIVE) engine.controlChange(ch, 64, 0)
+        engine.allNotesOff?.()
+        for (const [m, s] of holders) for (const src of [...s]) if (String(src).startsWith('song')) keyUp(m, src)
+        songPedal = false; updatePedal(); piano.setPedal(0, false); piano.setPedal(1, false)
+      },
+    }
+    async function ensureScheduler() {
+      if (scheduler) return scheduler
+      scheduler = new MidiScheduler(songTarget)
+      await scheduler.init()
+      scheduler.on('time', t => showTime(t))
+      scheduler.on('end', () => { songTarget.allSoundOff(); setPlaying(false); showTime(0) })
+      return scheduler
+    }
+    const fmt = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`
+    function showTime(t) {
+      const d = scheduler?.duration || 0
+      $('songTime').textContent = `${fmt(t)} / ${fmt(d)}`
+      if (!seeking) $('seek').value = d ? t / d : 0
+    }
+    const setPlaying = on => { $('songPlay').textContent = on ? '❚❚' : '▶'; $('songPlay').classList.toggle('on', on) }
+    async function loadSong(buffer, name) {
+      try {
+        const sch = await ensureScheduler()
+        if (sch.playing) sch.stop()
+        songTarget.allSoundOff()
+        song = midiToSchedule(new Midi(buffer))
+        if (!song.notes.length) throw new Error('no notes in file')
+        sch.load(song)
+        sch.speed = +$('speed').value
+        showTime(0); setStatus('')
+        unlockAudio()
+        sch.play(); setPlaying(true)
+      } catch (e) { console.error(e); setStatus(`Could not play ${name}: ${e.message}`, true) }
+    }
+    async function loadSongUrl(url) {
+      if (!url) return
+      setStatus('Loading song…')
+      try { await loadSong(await (await fetch(encodeURI(url))).arrayBuffer(), url) }
+      catch (e) { setStatus('Could not load song: ' + e.message, true) }
+    }
+    $('song').onchange = () => loadSongUrl($('song').value)
+    $('open').onclick = () => $('file').click()
+    $('file').onchange = async () => {
+      const f = $('file').files[0]
+      if (f) { $('song').value = ''; loadSong(await f.arrayBuffer(), f.name) }
+      $('file').value = ''
+    }
+    addEventListener('dragover', ev => { ev.preventDefault(); document.body.classList.add('dragging') })
+    addEventListener('dragleave', ev => { if (!ev.relatedTarget) document.body.classList.remove('dragging') })
+    addEventListener('drop', async ev => {
+      ev.preventDefault(); document.body.classList.remove('dragging')
+      const f = ev.dataTransfer.files[0]
+      if (f) { $('song').value = ''; loadSong(await f.arrayBuffer(), f.name) }
+    })
+    $('songPlay').onclick = async () => {
+      if (!song) { $('song').value = SONGS[1][0]; return loadSongUrl(SONGS[1][0]) }
+      const sch = await ensureScheduler()
+      unlockAudio()
+      if (sch.playing) { sch.pause(); songTarget.allSoundOff(); setPlaying(false) }
+      else { sch.play(); setPlaying(true) }
+    }
+    $('songStop').onclick = () => { scheduler?.stop(); songTarget.allSoundOff(); setPlaying(false); showTime(0) }
+    $('seek').addEventListener('input', () => { seeking = true; const d = scheduler?.duration || 0; $('songTime').textContent = `${fmt(+$('seek').value * d)} / ${fmt(d)}` })
+    $('seek').addEventListener('change', () => {
+      seeking = false
+      if (!scheduler || !song) return
+      songTarget.allSoundOff()
+      scheduler.seek(+$('seek').value * scheduler.duration)
+    })
+    $('speed').onchange = () => { if (scheduler) scheduler.speed = +$('speed').value }
+    $('toggle').onclick = () => {
+      const c = $('panel').classList.toggle('collapsed')
+      $('toggle').textContent = c ? '+' : '–'
+    }
+
+    // ── Loop ───────────────────────────────────────────────────────────────
+    addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight
+      camera.updateProjectionMatrix()
+      renderer.setSize(innerWidth, innerHeight)
+      composer.setSize(innerWidth, innerHeight)
+      gtao.setSize(innerWidth, innerHeight)
+    })
+    const clock = new THREE.Clock()
+    function animate() {
+      const dt = clock.getDelta()
+      if (tween) {
+        tween.t = Math.min(1, tween.t + dt / tween.dur)
+        const e = tween.t < 0.5 ? 4 * tween.t ** 3 : 1 - (-2 * tween.t + 2) ** 3 / 2
+        camera.position.lerpVectors(tween.from.pos, tween.to.pos, e)
+        controls.target.lerpVectors(tween.from.target, tween.to.target, e)
+        camera.fov = THREE.MathUtils.lerp(tween.from.fov, tween.to.fov, e)
+        camera.updateProjectionMatrix()
+        if (tween.t >= 1) { const done = tween.done; tween = null; done?.() }
+      } else if (tour.active) {
+        tour.u = (tour.u + dt / tour.period) % 1
+        placeTour(tour.u)
+      }
+      piano.update(dt)
+      controls.update(dt)
+      composer.render()
+    }
+
+    await setScene($('scene').value)
+    renderer.setAnimationLoop(animate)
+    loadSound($('sf').value)
+    // test hook for headless checks
+    window.__piano = { piano, press, release, setView, setScene, scene, renderer, camera, controls, tour, placeTour }
+  </script>
+</body>
+</html>

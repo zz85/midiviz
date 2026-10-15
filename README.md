@@ -4,6 +4,19 @@ Midi Visualization Experiments
 
 [WebMscore](webmscore.html) - MuseScore reference renderer (libmscore via WebAssembly)
 
+14 Oct 2026
+
+[Experiment #028 - Grand Piano](028_grand_piano.html)
+- Physically based concert grand built entirely in code ([grandpiano/grand-piano.js](grandpiano/grand-piano.js)), ~211 cm model-B proportions
+- S-curved rim, lid on a prop stick with fold-back flap (full / short stick / closed), cheek blocks, fallboard, music desk with sheet music, turned legs on brass casters, lyre and three pedals, artist bench
+- Inside: gold plate with windows over a spruce soundboard and bridges, ~230 overstrung strings (copper bass crossing the tenor), tuning and hitch pins
+- 88 keys with hammers and dampers that move with them; sustain pedal lifts all dampers and presses the pedal
+- MeshPhysicalMaterial throughout: clearcoat lacquer (ebony, satin, white, walnut, mahogany, red), metallic plate and strings, sheen felt
+- Scenes: virtual photo studio (procedural softbox environment on a cyclorama), salon with PBR parquet, concert hall (Poly Haven CC0 HDRIs, grounded skybox)
+- Soft shadows, contact shadow, GTAO and a little bloom; AgX tone mapping with exposure control
+- Cinematic tour camera: a slow 110 s loop through eleven shots on a spline (tail, under the lid, hammers, along the keys…); drag to take over, Esc hides the UI, `?view=tour` starts in it
+- Play with mouse, QWERTY or Web MIDI, or play songs through soundfont-engine; `?q=low` for slower GPUs
+
 13 Oct 2026
 
 [Experiment #027 - JabTunes Reimagined](027_jabtunes_reimagined.html)
