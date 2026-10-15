@@ -6,6 +6,14 @@ Midi Visualization Experiments
 
 15 Oct 2026
 
+[Experiment #029 - Piano Fingering](029_piano_fingering.html)
+- Automatic fingering from MIDI, typed notes, PIG files or a live MIDI keyboard, shown as simulated hands on the #028 grand (3D) and as a finger-coloured falling-note roll with hands seen from above (2D)
+- Research briefs: [what pianists do](fingering/research/01_pianist_rules.md) (treatises from Couperin to Fraser, scale/arpeggio/chromatic tables, octaves, trills, repeated notes, spans, hand size) and [published algorithms](fingering/research/02_algorithms.md) (Parncutt 1997, Jacobs 2001, Al Kasimi 2007, Balliauw, Nakamura's HMMs and the PIG dataset, neural models, RoboPianist / FürElise hand motion)
+- Engine [fingering/fingering.js](fingering/fingering.js): hand split by beam search, then per hand a beam search over hand configurations (chords and held keys included), Parncutt/Jacobs costs with time awareness, leaps, repeated-note rotation, pattern consistency; the LH is solved as a mirrored RH. Whole pieces in 0.1–0.4 s
+- Motion [fingering/motion.js](fingering/motion.js) and hands [fingering/hands3d.js](fingering/hands3d.js): fingertip trajectories with lift, approach and thumb-under, a gliding hand anchor, exact coupled-joint finger IK
+- Tests: `node --test fingering/test/fingering.test.js` (38 tests: Parncutt's published rule points, textbook exercises, all 24 scales in both hands, hand split, real pieces); `node fingering/test/bench.js` scores the exercise suite (now 14/15 patterns exact, 93.6 % of scale notes match the book; the published Parncutt model: 81 % / 75 %), `test/tune.js` tunes the weights
+- Model switch (ours / published Parncutt), hand size, dashed red marks where it differs from the textbook, Export PIG
+
 [Experiment #030 - Concert Stage](030_concert_stage.html)
 - The #028 grand restaged after [Concert Creator](https://www.concertcreator.ai/)'s renders: black stage, one warm spotlight with dust in the beam, a back light rimming the case, and a warm bounce from the open lid onto the plate
 - Piano forked to [concertstage/concert-grand.js](concertstage/concert-grand.js): mirror fallboard (planar reflection of the keys), red key felt, three staggered rows of coiled tuning pins on red felt, agraffes, capo bar, red stringing braid, hammered bronze-gold plate, orange-peel lacquer

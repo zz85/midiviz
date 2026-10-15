@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>Experiment #029 - Piano Fingering</title>
+  <!--
+    Experiment #029 - automatic piano fingering and simulated hands.
+
+    fingering/fingering.js   hand split + per-hand beam search over hand
+                             configurations, Parncutt 1997 / Jacobs 2001 /
+                             Al Kasimi 2007 costs with time awareness
+    fingering/motion.js      fingering → fingertip and hand trajectories
+    fingering/hands3d.js     procedural hands with exact coupled finger IK
+    fingering/roll2d.js      falling notes coloured by finger + hands from above
+    fingering/research/      what pianists do and what has been published
+    fingering/test/          node --test fingering/test/fingering.test.js
+  -->
+  <script type="importmap">
+    { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    } }
+  </script>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0b0c; font: 13px/1.35 "Helvetica Neue", Arial, sans-serif; color: #e8e2d6; }
+    canvas { display: block; touch-action: none; }
+    #gl { position: absolute; left: 0; top: 0; }
+    #roll { position: absolute; left: 0; bottom: 0; width: 100%; }
+    #panel {
+      position: absolute; top: 12px; left: 12px; width: 292px; padding: 10px 12px; max-height: calc(100% - 44px); overflow: auto;
+      background: rgba(14, 13, 12, 0.78); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 10px;
+      backdrop-filter: blur(8px); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5); z-index: 2;
+    }
+    #panel h1 { margin: 0 0 2px; font: 300 17px/1.2 Georgia, serif; letter-spacing: 0.04em; color: #f3e6c4; }
+    #panel h1 a { color: inherit; text-decoration: none; }
+    #panel .sub { font-size: 11px; color: #9c958a; margin-bottom: 6px; }
+    #panel.collapsed .body { display: none; }
+    #toggle { float: right; background: none; border: 0; color: #d8b56a; font-size: 15px; cursor: pointer; }
+    hr { border: 0; border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 8px 0; }
+    .row { display: flex; align-items: center; gap: 6px; margin: 5px 0; }
+    .row > label:first-child { flex: 0 0 66px; color: #a9a196; }
+    select, input[type=range], input[type=text] { flex: 1; min-width: 0; }
+    select, input[type=text] { background: #1d1b19; color: #eee6d8; border: 1px solid #3d3933; border-radius: 4px; padding: 2px 4px; font: inherit; }
+    input[type=checkbox] { accent-color: #c9a24a; }
+    .chk { display: flex; align-items: center; gap: 3px; color: #cfc6b8; margin-right: 6px; white-space: nowrap; }
+    button.b { background: #26231f; color: #eee6d8; border: 1px solid #4a443b; border-radius: 4px; padding: 3px 8px; cursor: pointer; font: inherit; font-size: 12px; }
+    button.b:hover { background: #35302a; }
+    button.b.on { background: #c9a24a; color: #111; border-color: #c9a24a; }
+    #seek { flex: 1; }
+    #songTime { font: 11px monospace; color: #b9b0a2; min-width: 72px; text-align: right; }
+    #stats { font-size: 11.5px; color: #c9c0b2; }
+    #stats .k { color: #8f887d; }
+    #stats .fing { font: 12px/1.5 monospace; word-break: break-all; margin-top: 3px; }
+    #stats .fing b { color: #ff6b80; }
+    .hist { display: flex; gap: 3px; align-items: flex-end; height: 34px; margin: 4px 0 2px; }
+    .hist div { flex: 1; border-radius: 2px 2px 0 0; position: relative; }
+    .hist span { position: absolute; bottom: -14px; left: 0; right: 0; text-align: center; font-size: 10px; color: #9c958a; }
+    #legend { display: flex; gap: 8px; margin-top: 16px; font-size: 11px; color: #b9b0a2; flex-wrap: wrap; }
+    #legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 3px; vertical-align: -1px; }
+    #hint { color: #8f887d; font-size: 11px; margin-top: 6px; }
+    #status { position: absolute; top: 12px; right: 12px; padding: 6px 10px; border-radius: 6px; background: rgba(14, 13, 12, 0.8); border: 1px solid #3d3933; font-size: 12px; z-index: 3; }
+    #status.hidden { display: none; }
+    #status.error { border-color: #c44; color: #f99; }
+    #dropHint { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; font: 300 26px Georgia, serif; color: #f3e6c4; background: rgba(0, 0, 0, 0.55); pointer-events: none; z-index: 5; }
+    body.dragging #dropHint { display: flex; }
+  </style>
+</head>
+<body>
+  <canvas id="gl"></canvas>
+  <canvas id="roll"></canvas>
+  <div id="panel">
+    <button id="toggle" title="Collapse">–</button>
+    <h1><a href="README.md" title="Back to experiments">#029 · Piano Fingering</a></h1>
+    <div class="sub">automatic fingering · simulated hands · <a href="fingering/research/01_pianist_rules.md" style="color:#9c958a">research</a></div>
+    <div class="body">
+      <div class="row"><label>Exercise</label><select id="exercise"></select></div>
+      <div class="row"><label>Song</label><select id="song"></select>
+        <button class="b" id="open" title="Open a .mid file (or drop one on the page)">Open…</button>
+        <input id="file" type="file" accept=".mid,.midi,audio/midi,.txt" hidden></div>
+      <div class="row"><label>Type</label><input id="typed" type="text" spellcheck="false" title="Notes: C4 D4 E4 · chords C4+E4+G4 · length C4:2 · rest r · switch hand R: / L:"
+        value="R: E5 D5 C5 D5 E5 E5 E5:2 L: C3 G3 E3 G3 C3 G3 E3 G3"><button class="b" id="typedGo">Go</button></div>
+      <hr>
+      <div class="row"><label>Model</label><select id="model">
+        <option value="ours">Ours (Parncutt + Jacobs + time)</option>
+        <option value="parncutt">Parncutt et al. 1997 (published)</option>
+      </select></div>
+      <div class="row"><label>Hand size</label><select id="handSize">
+        <option value="0.85">Small (octave)</option><option value="1" selected>Medium (9th–10th)</option><option value="1.12">Large (10th+)</option>
+      </select></div>
+      <div class="row"><label>Hands</label><select id="hands">
+        <option value="auto">Tracks if two, else split</option><option value="tracks">From tracks / file</option><option value="split">Split automatically</option>
+      </select></div>
+      <hr>
+      <div class="row"><label>View</label><select id="viewMode">
+        <option value="split">3D + 2D roll</option><option value="3d">3D piano</option><option value="2d">2D roll</option>
+      </select></div>
+      <div class="row"><label>Camera</label><select id="cam">
+        <option value="pianist">Over the shoulder</option><option value="close">Hands close-up</option><option value="above">From above</option>
+        <option value="side">Treble side</option><option value="low">Low, along the keys</option><option value="free" hidden>Free</option>
+      </select></div>
+      <div class="row"><label></label>
+        <span class="chk"><input id="follow" type="checkbox" checked>Follow hands</span>
+        <span class="chk"><input id="labels" type="checkbox" checked>Numbers</span>
+        <span class="chk"><input id="ghost" type="checkbox">Ghost</span>
+      </div>
+      <hr>
+      <div class="row">
+        <button class="b" id="play" title="Play / pause (Space)">▶</button>
+        <button class="b" id="stop" title="Stop">■</button>
+        <input id="seek" type="range" min="0" max="1" step="0.0005" value="0">
+        <span id="songTime">0:00 / 0:00</span>
+      </div>
+      <div class="row"><label>Speed</label><select id="speed">
+        <option value="0.25">25%</option><option value="0.5">50%</option><option value="0.75">75%</option><option value="1" selected>100%</option><option value="1.25">125%</option>
+      </select>
+        <span class="chk"><input id="loop" type="checkbox" checked>Loop</span>
+        <span class="chk"><input id="sound" type="checkbox" checked>Sound</span></div>
+      <div class="row">
+        <button class="b" id="midiIn" title="Play from a MIDI keyboard: fingers are chosen as you play">MIDI in</button>
+        <button class="b" id="pig" title="Download the fingering in the PIG dataset format">Export PIG</button>
+      </div>
+      <hr>
+      <div id="stats"></div>
+      <div id="legend"><span><i style="background:#e2483d"></i>1 thumb</span><span><i style="background:#f0a030"></i>2</span><span><i style="background:#48b04c"></i>3</span><span><i style="background:#3f8fe0"></i>4</span><span><i style="background:#a05ad8"></i>5</span></div>
+      <div id="hint">Click keys (or use MIDI in) to play live. Roll: light rim = right hand, dark rim = left; dashed red = differs from the textbook. Space plays, Esc hides the panel.</div>
+    </div>
+  </div>
+  <div id="status" class="hidden"></div>
+  <div id="dropHint">Drop a MIDI file to finger it</div>
+
+  <script src="tonejs-midi.js"></script>
+  <script type="module">
+    import * as THREE from 'three'
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+    import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
+    import { SoundFontEngine, MidiScheduler } from './soundfont-engine/src/index.js'
+    import { buildGrandPiano, LOW, HIGH } from './grandpiano/grand-piano.js'
+    import { fingerPiece, fingerString, toPIG, fromPIG, PARNCUTT } from './fingering/fingering.js'
+    import { exercises } from './fingering/exercises.js'
+    import { buildMotion } from './fingering/motion.js'
+    import { buildHand } from './fingering/hands3d.js'
+    import { createRoll } from './fingering/roll2d.js'
+    import { parseNote, noteName, isBlack } from './fingering/keyboard.js'
+
+    const $ = id => document.getElementById(id)
+    const params = new URLSearchParams(location.search)
+    function setStatus(msg, isError = false) {
+      const el = $('status')
+      el.textContent = msg || ''
+      el.classList.toggle('hidden', !msg)
+      el.classList.toggle('error', isError)
+    }
+
+    // ── 3D scene ───────────────────────────────────────────────────────────
+    const renderer = new THREE.WebGLRenderer({ canvas: $('gl'), antialias: true, powerPreference: 'high-performance' })
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+    renderer.toneMapping = THREE.AgXToneMapping
+    renderer.toneMappingExposure = 1.05
+    renderer.shadowMap.enabled = true
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    const scene = new THREE.Scene()
+    scene.background = new THREE.Color(0x0d0d0f)
+    const pmrem = new THREE.PMREMGenerator(renderer)
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
+    scene.environmentIntensity = 0.6
+    const camera = new THREE.PerspectiveCamera(34, 1, 2, 5000)
+    const controls = new OrbitControls(camera, $('gl'))
+    controls.enableDamping = true
+    controls.dampingFactor = 0.08
+    controls.minDistance = 12
+    controls.maxDistance = 900
+
+    const piano = buildGrandPiano()
+    scene.add(piano.root)
+    piano.setLid('half')
+    piano.bench.visible = false
+    const floor = new THREE.Mesh(new THREE.CircleGeometry(900, 64), new THREE.MeshStandardMaterial({ color: 0x18161a, roughness: 0.9 }))
+    floor.rotation.x = -Math.PI / 2
+    floor.receiveShadow = true
+    scene.add(floor)
+    const key = new THREE.DirectionalLight(0xfff2e2, 2.4)
+    key.position.set(-120, 330, 170)
+    key.target.position.set(0, 73, -10)
+    key.castShadow = true
+    key.shadow.mapSize.set(2048, 2048)
+    Object.assign(key.shadow.camera, { left: -90, right: 90, top: 60, bottom: -60, near: 100, far: 700 })
+    key.shadow.bias = -0.0005
+    key.shadow.normalBias = 0.05
+    key.shadow.radius = 4
+    scene.add(key, key.target)
+    scene.add(new THREE.HemisphereLight(0xdde4ff, 0x201810, 0.35))
+
+    const hands = { L: buildHand('L'), R: buildHand('R') }
+    for (const h of Object.values(hands)) scene.add(h.group)
+
+    // ── 2D roll ────────────────────────────────────────────────────────────
+    const roll = createRoll($('roll'))
+
+    // ── Layout ─────────────────────────────────────────────────────────────
+    function layout() {
+      const mode = $('viewMode').value
+      const W = innerWidth, H = innerHeight
+      const rollH = mode === '2d' ? H : mode === 'split' ? Math.round(H * 0.42) : 0
+      const glH = H - rollH
+      $('gl').style.display = glH ? '' : 'none'
+      $('roll').style.display = rollH ? '' : 'none'
+      if (glH) {
+        renderer.setSize(W, glH)
+        camera.aspect = W / glH
+        camera.updateProjectionMatrix()
+      }
+      const dpr = Math.min(devicePixelRatio, 2)
+      const c = $('roll')
+      c.width = Math.round(W * dpr); c.height = Math.round(rollH * dpr)
+      c.style.height = rollH + 'px'
+      c._dpr = dpr
+    }
+    addEventListener('resize', layout)
+    $('viewMode').onchange = () => { layout(); saveUrl() }
+
+    // ── Cameras ────────────────────────────────────────────────────────────
+    const VIEWS = {
+      pianist: { pos: [0, 128, 74], target: [0, 72, -10], fov: 34 },
+      close: { pos: [0, 104, 40], target: [0, 73, -4], fov: 34 },
+      above: { pos: [0, 175, 22], target: [0, 73, -6], fov: 34 },
+      side: { pos: [88, 92, 26], target: [10, 75, -6], fov: 32 },
+      low: { pos: [-96, 79, 18], target: [0, 75, -5], fov: 30 },
+    }
+    let tween = null, followX = 0
+    function setView(name, instant = false) {
+      const v = VIEWS[name]
+      if (!v) return
+      const to = { pos: new THREE.Vector3(...v.pos), target: new THREE.Vector3(...v.target), fov: v.fov }
+      if (instant) { camera.position.copy(to.pos); controls.target.copy(to.target); camera.fov = to.fov; camera.updateProjectionMatrix(); followX = 0; return }
+      tween = { from: { pos: camera.position.clone(), target: controls.target.clone(), fov: camera.fov }, to, t: 0 }
+      followX = 0
+    }
+    $('cam').onchange = () => { setView($('cam').value); saveUrl() }
+    controls.addEventListener('start', () => { tween = null; if ($('cam').value !== 'free') { $('cam').value = 'free' } })
+
+    // ── Sound ──────────────────────────────────────────────────────────────
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+    const engine = new SoundFontEngine({ backend: 'oxisynth', vendorPath: new URL('./vendor', import.meta.url).href, audioContext: audioCtx })
+    let soundReady = false
+    const LIVE = 15
+    ;(async () => {
+      try {
+        await engine.loadSoundFont('soundfonts/Motif_ES6_Concert_Piano.sf2')
+        for (let ch = 0; ch < 16; ch++) engine.programChange(ch, 0)
+        soundReady = true
+      } catch (e) { console.warn('soundfont', e); setStatus('Sound failed to load: ' + e.message, true); setTimeout(() => setStatus(''), 3000) }
+    })()
+    const unlockAudio = () => { if (audioCtx.state !== 'running') audioCtx.resume().then(() => engine.resume?.()).catch(() => {}) }
+
+    // ── Piece state ────────────────────────────────────────────────────────
+    const state = { notes: [], cc: [], motion: null, duration: 0, title: '', expect: null, tracks: 0, source: null }
+    const clock = { playing: false, t: 0, wall: 0, speed: 1 }
+    const now = () => clock.playing ? Math.min(state.duration + 0.5, clock.t + (performance.now() - clock.wall) / 1000 * clock.speed) : clock.t
+
+    function fingerOptions() {
+      const base = $('model').value === 'parncutt' ? structuredClone(PARNCUTT) : {}
+      return { ...base, handSize: +$('handSize').value }
+    }
+
+    /** raw: [{ pitch, on, off, velocity, hand?, track? }] */
+    function loadPiece(raw, { title = '', cc = [], expect = null, tracks = 0, source = null } = {}) {
+      stopPlayback()
+      const mode = $('hands').value
+      const notes = raw.filter(n => n.pitch >= LOW && n.pitch <= HIGH).map(n => ({ ...n }))
+      // hands from tracks when there are exactly two and the user allows it
+      const useTracks = mode === 'tracks' || (mode === 'auto' && tracks === 2)
+      if (tracks === 2 && useTracks) {
+        const mean = ti => { const ns = notes.filter(n => n.track === ti); return ns.reduce((s, n) => s + n.pitch, 0) / (ns.length || 1) }
+        const rt = mean(0) >= mean(1) ? 0 : 1
+        for (const n of notes) n.hand = n.track === rt ? 'R' : 'L'
+      } else if (!useTracks || mode === 'split') for (const n of notes) if (n.track != null || mode === 'split') delete n.hand
+      setStatus(`Fingering ${notes.length} notes…`)
+      return new Promise(res => setTimeout(() => {
+        const r = fingerPiece(notes, fingerOptions())
+        Object.assign(state, { notes, cc, title, expect, tracks, source, raw, motion: buildMotion(notes), result: r })
+        state.duration = notes.reduce((m, n) => Math.max(m, n.off), 0)
+        let expectMap = null
+        if (expect) {
+          expectMap = new Map()
+          for (const hand of ['R', 'L']) {
+            const want = [].concat(expect[hand] || [])[0]
+            if (!want) continue
+            const own = notes.filter(n => n.hand === hand).sort((a, b) => a.on - b.on || a.pitch - b.pitch)
+            own.forEach((n, i) => { if (want[i]) expectMap.set(n, +want[i]) })
+          }
+        }
+        roll.setNotes(notes, { expect: expectMap })
+        clock.t = 0
+        showStats(r)
+        setStatus('')
+        showTime()
+        res()
+      }, 20))
+    }
+
+    function refinger() { if (state.raw) loadPiece(state.raw, state) }
+    for (const id of ['model', 'handSize', 'hands']) $(id).onchange = () => { refinger(); saveUrl() }
+    $('handSize').addEventListener('change', () => { for (const h of Object.values(hands)) h.setScale(+$('handSize').value) })
+
+    function showStats(r) {
+      const n = state.notes
+      const hist = [0, 0, 0, 0, 0, 0]
+      for (const x of n) hist[x.finger || 0]++
+      const thumbsBlack = n.filter(x => x.finger === 1 && isBlack(x.pitch)).length
+      const max = Math.max(1, ...hist.slice(1))
+      const L = n.filter(x => x.hand === 'L').length
+      let html = `<div><b>${escapeHtml(state.title)}</b></div>
+        <div><span class="k">notes</span> ${n.length} <span class="k">· RH</span> ${n.length - L} <span class="k">· LH</span> ${L}
+        <span class="k">· solved in</span> ${r.ms.toFixed(0)} ms</div>
+        <div><span class="k">cost / note</span> ${(r.cost / Math.max(1, n.length)).toFixed(2)}
+        <span class="k">· thumb on black</span> ${thumbsBlack}${hist[0] ? ` <span class="k">· unfingered</span> ${hist[0]}` : ''}</div>`
+      if (state.tracks === 2) {
+        const mean = ti => { const ns = n.filter(x => x.track === ti); return ns.reduce((s, x) => s + x.pitch, 0) / (ns.length || 1) }
+        const rt = mean(0) >= mean(1) ? 0 : 1
+        const ok = n.filter(x => (x.track === rt) === (x.hand === 'R')).length
+        html += `<div><span class="k">hands agree with the file's tracks</span> ${(100 * ok / n.length).toFixed(1)} %</div>`
+      }
+      html += `<div class="hist">${[1, 2, 3, 4, 5].map(f => `<div style="height:${(100 * hist[f] / max).toFixed(0)}%;background:${['', '#e2483d', '#f0a030', '#48b04c', '#3f8fe0', '#a05ad8'][f]}"><span>${hist[f]}</span></div>`).join('')}</div><div style="height:12px"></div>`
+      if (state.expect) {
+        for (const hand of ['R', 'L']) {
+          const accepted = [].concat(state.expect[hand] || [])
+          if (!accepted.length) continue
+          const got = fingerString(n, hand)
+          const ok = accepted.includes(got)
+          const want = ok ? got : accepted[0]
+          const marked = [...got].map((c, i) => c === want[i] ? c : `<b>${c}</b>`).join('')
+          html += `<div class="fing">${hand}H ${ok ? '✓' : '✗'} ${marked}${ok ? '' : `<br><span class="k">book</span> ${want}${accepted.length > 1 ? ` <span class="k">(+${accepted.length - 1} more accepted)</span>` : ''}`}</div>`
+        }
+      }
+      $('stats').innerHTML = html
+    }
+    const escapeHtml = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+
+    // ── Sources ────────────────────────────────────────────────────────────
+    const EX = exercises()
+    $('exercise').add(new Option('— choose an exercise —', ''))
+    const groups = { core: document.createElement('optgroup'), scales: document.createElement('optgroup') }
+    groups.core.label = 'Patterns'; groups.scales.label = 'Scales (2 octaves)'
+    for (const e of EX) groups[e.suite || 'core'].appendChild(new Option(e.title, e.id))
+    $('exercise').append(groups.core, groups.scales)
+    $('exercise').onchange = () => {
+      const e = EX.find(x => x.id === $('exercise').value)
+      if (!e) return
+      $('song').value = ''
+      loadPiece(e.notes, { title: e.title, expect: e.expect, source: { exercise: e.id } }).then(() => { saveUrl(); play() })
+    }
+
+    const SONGS = [
+      ['', '— choose a song —'],
+      ['Prelude1.mid', 'Bach – Prelude in C (WTC I)'],
+      ['midis/elise.mid', 'Beethoven – Für Elise'],
+      ['midis/mz_545_1.mid', 'Mozart – Sonata K. 545, I'],
+      ['chpn-p15.mid', 'Chopin – Raindrop Prelude'],
+      ['minute_waltz.mid', 'Chopin – Minute Waltz'],
+      ['midis/chpn_op66.mid', 'Chopin – Fantaisie-Impromptu'],
+      ['midis/comptine.mid', 'Tiersen – Comptine d’un autre été'],
+      ['midis/river_flows_in_you.mid', 'Yiruma – River Flows in You'],
+      ['entertainer.mid', 'Joplin – The Entertainer'],
+      ['midis/bach_846.mid', 'Bach – Prelude & Fugue BWV 846'],
+    ]
+    for (const [v, l] of SONGS) $('song').add(new Option(l, v))
+
+    function midiToRaw(buffer) {
+      const midi = new Midi(buffer)
+      const tracks = midi.tracks.filter(t => t.notes.length && t.channel !== 9)
+      const raw = [], cc = []
+      tracks.forEach((t, ti) => {
+        for (const n of t.notes) raw.push({ pitch: n.midi, on: n.time, off: n.time + Math.max(0.03, n.duration), velocity: n.velocity, track: ti })
+        for (const e of t.controlChanges?.[64] || []) cc.push({ time: e.time, channel: 0, controller: 64, value: Math.round(e.value * 127) })
+      })
+      cc.sort((a, b) => a.time - b.time)
+      return { raw, cc, tracks: tracks.length }
+    }
+    async function loadSongUrl(url) {
+      if (!url) return
+      setStatus('Loading song…')
+      try {
+        const buf = await (await fetch(encodeURI(url))).arrayBuffer()
+        const { raw, cc, tracks } = midiToRaw(buf)
+        $('exercise').value = ''
+        await loadPiece(raw, { title: SONGS.find(s => s[0] === url)?.[1] || url, cc, tracks, source: { song: url } })
+        saveUrl()
+      } catch (e) { console.error(e); setStatus('Could not load song: ' + e.message, true) }
+    }
+    $('song').onchange = () => loadSongUrl($('song').value).then(() => play())
+    async function loadFile(f) {
+      try {
+        if (/\.txt$/i.test(f.name)) {
+          // a PIG fingering file: keep its hands, show its fingers as the expectation
+          const notes = fromPIG(await f.text())
+          const expect = {}
+          for (const hand of ['R', 'L']) expect[hand] = notes.filter(n => n.hand === hand).sort((a, b) => a.on - b.on || a.pitch - b.pitch).map(n => n.truth).join('')
+          await loadPiece(notes, { title: f.name, expect, source: null })
+        } else {
+          const { raw, cc, tracks } = midiToRaw(await f.arrayBuffer())
+          await loadPiece(raw, { title: f.name, cc, tracks, source: null })
+        }
+        $('song').value = ''; $('exercise').value = ''
+        play()
+      } catch (e) { console.error(e); setStatus(`Could not read ${f.name}: ${e.message}`, true) }
+    }
+    $('open').onclick = () => $('file').click()
+    $('file').onchange = () => { const f = $('file').files[0]; if (f) loadFile(f); $('file').value = '' }
+    addEventListener('dragover', ev => { ev.preventDefault(); document.body.classList.add('dragging') })
+    addEventListener('dragleave', ev => { if (!ev.relatedTarget) document.body.classList.remove('dragging') })
+    addEventListener('drop', ev => { ev.preventDefault(); document.body.classList.remove('dragging'); const f = ev.dataTransfer.files[0]; if (f) loadFile(f) })
+
+    /** "R: C4 D4 E4+G4:2 r L: C3:4" → notes. One unit = 0.3 s. */
+    function parseTyped(text) {
+      const notes = []
+      let hand = 'R', t = { R: 0, L: 0 }
+      const U = 0.3
+      for (const tok of text.trim().split(/\s+/)) {
+        if (!tok) continue
+        const h = /^([RL]):?$/i.exec(tok)
+        if (h) { hand = h[1].toUpperCase(); continue }
+        const [body, lenS] = tok.split(':')
+        const len = (lenS ? +lenS : 1) * U
+        if (!/^r$/i.test(body)) for (const p of body.split('+')) notes.push({ pitch: parseNote(p), on: t[hand], off: t[hand] + len * 0.95, velocity: 0.7, hand })
+        t[hand] += len
+      }
+      return notes
+    }
+    $('typedGo').onclick = () => {
+      try {
+        const notes = parseTyped($('typed').value)
+        if (!notes.length) throw new Error('no notes')
+        $('song').value = ''; $('exercise').value = ''
+        loadPiece(notes, { title: 'Typed notes', source: { typed: $('typed').value } }).then(() => { saveUrl(); play() })
+      } catch (e) { setStatus(e.message, true); setTimeout(() => setStatus(''), 2500) }
+    }
+    $('typed').addEventListener('keydown', e => { if (e.key === 'Enter') $('typedGo').click() })
+
+    $('pig').onclick = () => {
+      if (!state.notes.length) return
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(new Blob([toPIG(state.notes)], { type: 'text/plain' }))
+      a.download = (state.title || 'fingering').replace(/[^\w.-]+/g, '_') + '_fingering.txt'
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+    }
+
+    // ── Playback ───────────────────────────────────────────────────────────
+    let scheduler = null
+    const songTarget = {
+      audioContext: audioCtx,
+      resume: () => audioCtx.resume(),
+      noteOn(m, v, ch) { if (soundReady && $('sound').checked) engine.noteOn(m, v, ch) },
+      noteOff(m, ch) { engine.noteOff(m, ch) },
+      controlChange(ch, cc, v) { engine.controlChange(ch, cc, v) },
+      allSoundOff() { for (let ch = 0; ch < 15; ch++) engine.controlChange(ch, 64, 0); engine.allNotesOff?.() },
+    }
+    async function ensureScheduler() {
+      if (scheduler) return scheduler
+      scheduler = new MidiScheduler(songTarget)
+      await scheduler.init()
+      scheduler.on('time', t => { if (clock.playing && Math.abs(t - now()) > 0.08) { clock.t = t; clock.wall = performance.now() } })
+      return scheduler
+    }
+    async function play() {
+      if (!state.notes.length) return
+      unlockAudio()
+      if (now() >= state.duration) clock.t = 0
+      const sch = await ensureScheduler()
+      sch.load({ notes: state.notes.map(n => ({ midi: n.pitch, time: n.on, duration: n.off - n.on, velocity: n.velocity ?? 0.7, channel: 0 })), controlChanges: state.cc })
+      sch.speed = clock.speed
+      sch.seek(clock.t)
+      sch.play()
+      clock.wall = performance.now(); clock.playing = true
+      $('play').textContent = '❚❚'; $('play').classList.add('on')
+    }
+    function pause() {
+      clock.t = now(); clock.playing = false
+      scheduler?.pause(); songTarget.allSoundOff()
+      $('play').textContent = '▶'; $('play').classList.remove('on')
+    }
+    function stopPlayback() { pause(); clock.t = 0; scheduler?.stop(); releaseAllKeys() }
+    $('play').onclick = () => clock.playing ? pause() : play()
+    $('stop').onclick = () => { stopPlayback(); showTime() }
+    $('speed').onchange = () => { clock.t = now(); clock.wall = performance.now(); clock.speed = +$('speed').value; if (scheduler) scheduler.speed = clock.speed }
+    let seeking = false
+    $('seek').addEventListener('input', () => { seeking = true; clock.t = +$('seek').value * state.duration; clock.wall = performance.now() })
+    $('seek').addEventListener('change', () => {
+      seeking = false
+      clock.t = +$('seek').value * state.duration; clock.wall = performance.now()
+      if (clock.playing && scheduler) { songTarget.allSoundOff(); scheduler.seek(clock.t) }
+    })
+    const fmt = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`
+    function showTime() {
+      const t = Math.min(now(), state.duration)
+      $('songTime').textContent = `${fmt(t)} / ${fmt(state.duration)}`
+      if (!seeking) $('seek').value = state.duration ? t / state.duration : 0
+    }
+    addEventListener('keydown', ev => {
+      if (ev.target.closest?.('input[type=text], select')) return
+      if (ev.code === 'Space') { ev.preventDefault(); $('play').click() }
+      if (ev.code === 'Escape') $('panel').style.display = $('panel').style.display === 'none' ? '' : 'none'
+    })
+    $('toggle').onclick = () => { const c = $('panel').classList.toggle('collapsed'); $('toggle').textContent = c ? '+' : '–' }
+
+    // ── Live playing (mouse on the keys, or a MIDI keyboard) ───────────────
+    // Each new note is fingered against the last few seconds: earlier notes keep
+    // the hand and finger they were shown with, only the newest is decided.
+    const live = { notes: [], motion: null, active: false, last: 0 }
+    const liveNow = () => performance.now() / 1000
+    function liveOn(pitch, vel = 0.75) {
+      if (pitch < LOW || pitch > HIGH) return
+      unlockAudio()
+      if (clock.playing) pause()
+      if (soundReady && $('sound').checked) engine.noteOn(pitch, vel, LIVE)
+      const t = liveNow()
+      live.notes = live.notes.filter(n => n.off > t - 4 || n.off === Infinity).slice(-48)
+      const n = { pitch, on: t, off: Infinity, velocity: vel }
+      live.notes.push(n)
+      const win = live.notes.map(x => ({ ...x, off: x.off === Infinity ? t + 0.4 : x.off, src: x }))
+      fingerPiece(win, fingerOptions())
+      const mine = win[win.length - 1]
+      n.hand = mine.hand; n.finger = mine.finger
+      // a finger can only be on one key: if the chosen finger still holds an older key, that key is let go visually
+      for (const o of live.notes) if (o !== n && o.off === Infinity && o.hand === n.hand && o.finger === n.finger) o.finger = 0
+      live.active = true; live.last = t
+      live.motion = buildMotion(live.notes.map(x => ({ ...x, off: x.off === Infinity ? 1e9 : x.off })))
+    }
+    function liveOff(pitch) {
+      engine.noteOff(pitch, LIVE)
+      const t = liveNow()
+      for (const n of live.notes) if (n.pitch === pitch && n.off === Infinity) n.off = t
+      live.motion = buildMotion(live.notes.map(x => ({ ...x, off: x.off === Infinity ? 1e9 : x.off })))
+    }
+    const raycaster = new THREE.Raycaster(), ndc = new THREE.Vector2(), pointerKey = new Map()
+    $('gl').addEventListener('pointerdown', ev => {
+      const r = $('gl').getBoundingClientRect()
+      ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1)
+      raycaster.setFromCamera(ndc, camera)
+      const hit = raycaster.intersectObjects(piano.keyMeshes, false)[0]
+      if (!hit) return
+      controls.enabled = false
+      const m = hit.object.userData.midi
+      pointerKey.set(ev.pointerId, m)
+      liveOn(m)
+    })
+    addEventListener('pointerup', ev => {
+      const m = pointerKey.get(ev.pointerId)
+      if (m != null) { liveOff(m); pointerKey.delete(ev.pointerId) }
+      controls.enabled = true
+    })
+    $('midiIn').onclick = async () => {
+      if (!navigator.requestMIDIAccess) return setStatus('Web MIDI is not available in this browser', true)
+      try {
+        const access = await navigator.requestMIDIAccess()
+        const hook = () => { for (const inp of access.inputs.values()) inp.onmidimessage = onMidi }
+        hook(); access.onstatechange = hook
+        $('midiIn').classList.add('on')
+        setStatus(access.inputs.size ? '' : 'No MIDI inputs found')
+        if (!access.inputs.size) setTimeout(() => setStatus(''), 2500)
+      } catch (e) { setStatus('MIDI access denied', true) }
+    }
+    function onMidi(e) {
+      const [st, d1, d2] = e.data, type = st & 0xf0
+      if (type === 0x90 && d2 > 0) liveOn(d1, d2 / 127)
+      else if (type === 0x80 || type === 0x90) liveOff(d1)
+      else if (type === 0xb0 && d1 === 64) engine.controlChange(LIVE, 64, d2)
+    }
+
+    // ── Keys on the 3D piano follow the fingers ────────────────────────────
+    const keysDown = new Map()
+    function syncKeys(pose) {
+      const want = new Map()
+      for (const side of ['L', 'R']) for (const f of pose?.[side]?.fingers || []) if (f.press > 0.25 && f.pitch != null) want.set(f.pitch, f.vel ?? 0.7)
+      for (const [m] of keysDown) if (!want.has(m)) { piano.noteOff(m); keysDown.delete(m) }
+      for (const [m, v] of want) if (!keysDown.has(m)) { piano.noteOn(m, v); keysDown.set(m, v) }
+    }
+    function releaseAllKeys() { for (const [m] of keysDown) piano.noteOff(m); keysDown.clear() }
+
+    // ── URL state ──────────────────────────────────────────────────────────
+    function saveUrl() {
+      const q = new URLSearchParams()
+      const s = state.source || {}
+      if (s.exercise) q.set('ex', s.exercise)
+      if (s.song) q.set('song', s.song)
+      if (s.typed) q.set('notes', s.typed)
+      for (const [id, def] of [['model', 'ours'], ['handSize', '1'], ['hands', 'auto'], ['viewMode', 'split'], ['cam', 'pianist']]) if ($(id).value !== def && $(id).value !== 'free') q.set(id, $(id).value)
+      history.replaceState(null, '', q.toString() ? '?' + q : location.pathname)
+    }
+    for (const id of ['model', 'handSize', 'hands', 'viewMode', 'cam']) if (params.has(id)) $(id).value = params.get(id)
+    for (const h of Object.values(hands)) h.setScale(+$('handSize').value)
+    $('labels').onchange = () => { roll.opt.labels = $('labels').checked; for (const h of Object.values(hands)) h.setLabels($('labels').checked) }
+    $('ghost').onchange = () => { for (const h of Object.values(hands)) h.setStyle($('ghost').checked ? 'ghost' : 'skin') }
+
+    // ── Loop ───────────────────────────────────────────────────────────────
+    const clk = new THREE.Clock()
+    let lastTime = 0
+    function animate() {
+      const dt = Math.min(0.05, clk.getDelta())
+      let t = now()
+      if (clock.playing && t >= state.duration + 0.3) {
+        if ($('loop').checked) { clock.t = 0; clock.wall = performance.now(); scheduler?.seek(0) }
+        else { pause(); clock.t = state.duration }
+        t = now()
+      }
+      // live input takes over while it is recent
+      let pose
+      if (live.active && !clock.playing && liveNow() - live.last < 6) pose = live.motion?.poseAt(liveNow())
+      else { live.active = false; pose = state.motion?.poseAt(t) }
+      syncKeys(pose)
+      if ($('gl').style.display !== 'none') {
+        hands.L.update(pose?.L, dt)
+        hands.R.update(pose?.R, dt)
+        if (tween) {
+          tween.t = Math.min(1, tween.t + dt / 1.1)
+          const e = tween.t < 0.5 ? 4 * tween.t ** 3 : 1 - (-2 * tween.t + 2) ** 3 / 2
+          camera.position.lerpVectors(tween.from.pos, tween.to.pos, e)
+          controls.target.lerpVectors(tween.from.target, tween.to.target, e)
+          camera.fov = THREE.MathUtils.lerp(tween.from.fov, tween.to.fov, e)
+          camera.updateProjectionMatrix()
+          if (tween.t >= 1) tween = null
+        } else if ($('follow').checked && $('cam').value !== 'free' && pose) {
+          // pan along the keyboard to keep both hands in view
+          const xs = ['L', 'R'].map(s => pose[s]).filter(p => p && !p.anchor.idle).map(p => p.anchor.x)
+          if (xs.length) {
+            const reach = $('cam').value === 'close' ? 1 : $('cam').value === 'side' || $('cam').value === 'low' ? 0.35 : 0.6
+            const goal = reach * (Math.min(...xs) + Math.max(...xs)) / 2
+            const dx = (goal - followX) * Math.min(1, dt * 1.5)
+            followX += dx
+            camera.position.x += dx; controls.target.x += dx
+          }
+        }
+        piano.update(dt)
+        controls.update(dt)
+        renderer.render(scene, camera)
+      }
+      if ($('roll').style.display !== 'none') roll.draw(live.active ? 0 : t, pose)
+      if (Math.abs(t - lastTime) > 0.1 || !clock.playing) { showTime(); lastTime = t }
+    }
+
+    layout()
+    setView(VIEWS[$('cam').value] ? $('cam').value : 'pianist', true)
+    renderer.setAnimationLoop(animate)
+    // initial piece: from the URL, else the C major scale
+    if (params.has('song')) { $('song').value = params.get('song'); await loadSongUrl(params.get('song')) }
+    else if (params.has('notes')) { $('typed').value = params.get('notes'); $('typedGo').click() }
+    else {
+      $('exercise').value = EX.some(e => e.id === params.get('ex')) ? params.get('ex') : 'scale-C-R'
+      const e = EX.find(x => x.id === $('exercise').value)
+      await loadPiece(e.notes, { title: e.title, expect: e.expect, source: { exercise: e.id } })
+    }
+    if (params.has('t')) { clock.t = +params.get('t') }
+    if (params.has('play')) play()
+    // test hook for headless checks
+    window.__fing = { state, clock, hands, roll, setView, play, pause, camera, controls, renderer, liveOn, liveOff, loadPiece, now }
+  </script>
+</body>
+</html>
