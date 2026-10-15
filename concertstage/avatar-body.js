@@ -175,9 +175,11 @@ function mergeParts(parts) {
   const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3), si = new Uint16Array(nv * 4), sw = new Float32Array(nv * 4)
   const index = []
   const geo = new THREE.BufferGeometry()
+  const col = parts.some(p => p.alpha) ? new Float32Array(nv * 4).fill(1) : null
   let v0 = 0
-  for (const { part, mat } of parts) {
+  for (const { part, mat, alpha } of parts) {
     pos.set(part.positions, v0 * 3); nor.set(part.normals, v0 * 3); si.set(part.si, v0 * 4); sw.set(part.sw, v0 * 4)
+    if (alpha) for (let i = 0, P = part.positions; i < P.length / 3; i++) col[(v0 + i) * 4 + 3] = alpha(P[3 * i], P[3 * i + 1], P[3 * i + 2])
     const start = index.length
     for (const i of part.index) index.push(v0 + i)
     geo.addGroup(start, part.index.length, mat)
@@ -187,6 +189,7 @@ function mergeParts(parts) {
   geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3))
   geo.setAttribute('skinIndex', new THREE.BufferAttribute(si, 4))
   geo.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4))
+  if (col) geo.setAttribute('color', new THREE.BufferAttribute(col, 4))
   geo.setIndex(index)
   geo.computeBoundingSphere()
   return geo
@@ -230,9 +233,10 @@ function buildBodyGeometry(J) {
     for (const s of [-1, 1]) {
       const Sh = S[s < 0 ? 0 : 1]
       // tailored shoulder: a padded yoke, flat on top and squashed vertically,
-      // sloping from the collar to the arm's pivot, where the sleeve's
-      // rounded top (avatar-hands.js) takes over and turns with the arm
-      ops.push([roundCone(A(v3().copy(J.N).add(v3(s * 2, -4.2, 0.6))), A(v3().copy(Sh).add(v3(-s * 2.2, 0.2, 0.3))), 5.6, 4.6, { up: [0, 1, 0], sy: 0.62 }), 'min', 3])
+      // sloping from the collar a little past the arm's pivot, so it overhangs
+      // the sleeve head like a jacket's shoulder line instead of the sleeve
+      // standing proud of it
+      ops.push([roundCone(A(v3().copy(J.N).add(v3(s * 2, -4.2, 0.6))), A(v3().copy(Sh).add(v3(s * 0.6, 0.3, 0.3))), 5.6, 4.9, { up: [0, 1, 0], sy: 0.64 }), 'min', 3])
       ops.push([ellipsoid([s * 8, 58.4, 45], [8.6, 4.2, 9.5]), 'min', 3])
     }
     // the lapels' V, open over the shirt front: narrow at the button, wide at the collar
@@ -304,6 +308,7 @@ function buildHeadGeometry(J) {
   // head-frame point: (right, up, forward) from the head centre
   const H = (x, y, z) => v3().copy(J.Hc).addScaledVector(r, x).addScaledVector(u, y).addScaledVector(f, z)
   const E = (c, rad) => ellipsoid(A(c), rad, A(r), A(u), A(f))
+  const EYE = s => H(s * 3.1, -0.35, 6.95)
   const parts = []
   {
     const ops = [
@@ -312,8 +317,8 @@ function buildHeadGeometry(J) {
       [E(H(0, -9, 5.3), [2.7, 2.3, 2.3]), 'min', 2],                     // chin
       [E(H(0, 1.9, 7.5), [5.2, 1.3, 1.8]), 'min', 1.2],                  // brow
       [roundCone(A(H(0, 0.4, 8.3)), A(H(0, -3.0, 10.2)), 0.75, 1.25, { up: A(u) }), 'min', 0.9],   // nose
-      [E(H(0, -5.9, 8.0), [2.1, 0.7, 1.0]), 'min', 0.6],                 // lips
-      [E(H(0, -7.0, 7.6), [1.8, 0.65, 0.9]), 'min', 0.6],
+      [E(H(0, -5.0, 7.75), [1.95, 0.5, 0.75]), 'min', 0.9],              // lips
+      [E(H(0, -5.95, 7.45), [1.65, 0.55, 0.75]), 'min', 0.9],
       // neck, from inside the collar to under the skull
       [roundCone(A(v3().copy(J.N).add(v3(0, -3, 0))), A(H(0, -4, -1.5)), 5.3, 5.0), 'min', 3],
     ]
@@ -326,16 +331,26 @@ function buildHeadGeometry(J) {
         ops.push([ellipsoid(A(c), [0.62, 2.6, 1.45], A(ax), A(ay), A(az)), 'min', 0.5])
         ops.push([ellipsoid(A(v3().copy(c).addScaledVector(ax, 0.75).addScaledVector(ay, -0.3)), [0.5, 1.5, 0.85], A(ax), A(ay), A(az)), 'cut', 0.35])
       }
-      ops.push([sphere(H(s * 3.1, -0.2, 8.2), 1.55), 'cut', 0.9])         // eye sockets
+      ops.push([sphere(H(s * 3.1, -0.1, 8.6), 1.3), 'cut', 0.9])          // eye sockets
     }
-    parts.push({ part: skinPart(sculpt(ops, 0.36), [segs[B.chest], segs[B.neck], segs[B.head]], null, 1.6), mat: 0 })
+    // eyelids from the skin itself: a mound over each eyeball, opened by an
+    // almond slot set low, because he looks down at the keys
+    for (const s of [-1, 1]) {
+      const c = EYE(s), ax = v3().copy(r).multiplyScalar(s)
+      ops.push([sphere(c, 1.42), 'min', 0.5])
+      const ay = v3().copy(u).applyAxisAngle(f, -s * 0.08), az = v3().crossVectors(ax, ay)
+      ops.push([ellipsoid(A(v3().copy(c).addScaledVector(f, 1.45).addScaledVector(u, -0.42)), [1.2, 0.46, 0.8], A(ax), A(ay), A(az)), 'cut', 0.25])
+    }
+    parts.push({ part: skinPart(sculpt(ops, 0.28), [segs[B.chest], segs[B.neck], segs[B.head]], null, 1.6), mat: 0 })
   }
-  // eyes
+  // eyes: sclera, then iris and pupil as discs on the ball along the gaze
   {
-    const ops = [-1, 1].map(s => [sphere(H(s * 3.1, -0.35, 7.15), 1.2), 'min'])
-    parts.push({ part: skinPart(sculpt(ops, 0.2, 1), [segs[B.head]], null, 1), mat: 2 })
-    const iris = [-1, 1].map(s => [E(H(s * 3.05, -0.7, 8.05), [0.78, 0.78, 0.3]), 'min'])
-    parts.push({ part: skinPart(sculpt(iris, 0.08, 1), [segs[B.head]], null, 1), mat: 3 })
+    const ops = [-1, 1].map(s => [sphere(EYE(s), 1.2), 'min'])
+    parts.push({ part: skinPart(sculpt(ops, 0.18, 1), [segs[B.head]], null, 1), mat: 2 })
+    const g = v3().copy(f).applyAxisAngle(r, -0.38), gu = v3().crossVectors(g, r).negate()
+    const disc = (rad, out, th) => [-1, 1].map(s => [ellipsoid(A(v3().copy(EYE(s)).addScaledVector(g, out)), [rad, rad, th], A(r), A(gu), A(g)), 'min'])
+    parts.push({ part: skinPart(sculpt(disc(0.58, 1.02, 0.2), 0.06, 1), [segs[B.head]], null, 1), mat: 3 })
+    parts.push({ part: skinPart(sculpt(disc(0.26, 1.12, 0.12), 0.05, 1), [segs[B.head]], null, 1), mat: 5 })
   }
   // hair: a cap over the cranium above a hairline that drops toward the back, and brows
   {
@@ -354,22 +369,31 @@ function buildHeadGeometry(J) {
         const sweep = 0.06 * pf
         const g = 0.05 * Math.sin(a * 40 + sweep) + 0.09 * Math.sin(a * 17 + 0.6 + 0.11 * pf) * smooth(-4, 4, pu)
         const part = 0.45 * Math.exp(-((pr - PART) ** 2) / 0.12) * smooth(2, 6, pf) * smooth(4, 7, pu)
-        return capD(x, y, z) + g + part
+        // feathered edge: toward the hairline the shell settles onto the
+        // skin and (see alpha below) thins out instead of ending in a step
+        const t = smooth(-1.2, 2.4, pu - hairCut(pr, pf))
+        return capD(x, y, z) + g * t + part + 0.4 * (1 - t)
       },
+    }
+    // the line: low at the nape, up at the temples, over the forehead
+    function hairCut(prS, pf) {
+      const pr = Math.abs(prS)
+      return lerp(-6.5, 3.6, smooth(-3, 7.5, pf)) - 1.8 * smooth(4, 7, pr) * (1 - smooth(1, 5, pf)) + 0.9 * smooth(5.5, 7.5, pr) * smooth(2, 5, pf)
     }
     const hairline = {
       bound: cap.bound,
       d(x, y, z) {
         const p = _a.set(x, y, z).sub(J.Hc)
-        const pu = p.dot(u), pf = p.dot(f), pr = Math.abs(p.dot(r))
-        // kept above the cut: low at the nape, up at the temples, over the forehead
-        const cut = lerp(-6.5, 3.6, smooth(-3, 7.5, pf)) - 1.8 * smooth(4, 7, pr) * (1 - smooth(1, 5, pf)) + 0.9 * smooth(5.5, 7.5, pr) * smooth(2, 5, pf)
-        return cut - pu
+        return hairCut(p.dot(r), p.dot(f)) - 1.3 - p.dot(u)
       },
     }
     const ops = [[cap, 'min'], [hairline, 'and', 0.6]]
     for (const s of [-1, 1]) ops.push([E(H(s * 2.9, 1.95, 8.35), [1.45, 0.26, 0.55]), 'min'])
-    parts.push({ part: skinPart(sculpt(ops, 0.28), [segs[B.head]], null, 1), mat: 1 })
+    const hairAlpha = (x, y, z) => {
+      const p = _a.set(x, y, z).sub(J.Hc)
+      return smooth(-0.9, 0.8, p.dot(u) - hairCut(p.dot(r), p.dot(f)))
+    }
+    parts.push({ part: skinPart(sculpt(ops, 0.28), [segs[B.head]], null, 1), mat: 1, alpha: hairAlpha })
   }
   return mergeParts(parts)
 }
@@ -380,11 +404,18 @@ function makeMaterials(skin) {
   const satin = new THREE.MeshPhysicalMaterial({ color: 0x0b0b0e, roughness: 0.38, sheen: 1, sheenRoughness: 0.3, sheenColor: 0x5a5c66 })
   const shirt = new THREE.MeshPhysicalMaterial({ color: 0xf1efea, roughness: 0.82, sheen: 0.8, sheenRoughness: 0.5, sheenColor: 0xffffff })
   const shoes = new THREE.MeshPhysicalMaterial({ color: 0x0a0a0c, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.08 })
-  const hair = new THREE.MeshPhysicalMaterial({ color: 0x241913, roughness: 0.55, sheen: 1, sheenRoughness: 0.4, sheenColor: 0x6b5040 })
-  const eye = new THREE.MeshPhysicalMaterial({ color: 0xd9d2c8, roughness: 0.2, clearcoat: 1, clearcoatRoughness: 0.05 })
-  const iris = new THREE.MeshPhysicalMaterial({ color: 0x2a1c12, roughness: 0.15, clearcoat: 1, clearcoatRoughness: 0.05 })
-  for (const m of [cloth, satin, shirt, shoes, hair, eye, iris]) useDualQuatSkinning(m)
-  return { cloth, satin, shirt, shoes, hair, eye, iris, skin }
+  const hair = new THREE.MeshPhysicalMaterial({ color: 0x241913, vertexColors: true, alphaHash: true, roughness: 0.55, sheen: 1, sheenRoughness: 0.4, sheenColor: 0x6b5040 })
+  const eye = new THREE.MeshPhysicalMaterial({ color: 0xbdb2a6, roughness: 0.35, clearcoat: 1, clearcoatRoughness: 0.08 })
+  const iris = new THREE.MeshPhysicalMaterial({ color: 0x4a2f1c, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.05 })
+  const pupil = new THREE.MeshPhysicalMaterial({ color: 0x050403, roughness: 0.2, clearcoat: 1, clearcoatRoughness: 0.05 })
+  // the face shares the hands' tone but not their strong red glow, which on
+  // the big shadowed planes under the jaw read as paint
+  const face = new THREE.MeshPhysicalMaterial({
+    color: skin.color.clone(), roughness: 0.55, sheen: 0.5, sheenRoughness: 0.5, sheenColor: new THREE.Color(0xff9a80),
+    clearcoat: 0.08, clearcoatRoughness: 0.5, emissive: 0x1a0805, emissiveIntensity: 0.35,
+  })
+  for (const m of [cloth, satin, shirt, shoes, hair, eye, iris, pupil, face]) useDualQuatSkinning(m)
+  return { cloth, satin, shirt, shoes, hair, eye, iris, pupil, face, skin }
 }
 
 /**
@@ -407,7 +438,7 @@ export function buildAvatarBody({ skin }) {
   group.updateMatrixWorld(true)
   const skeleton = new THREE.Skeleton(bones)
   const body = new THREE.SkinnedMesh(buildBodyGeometry(rest), [mats.cloth, mats.satin /* unused slot */, mats.shirt, mats.shoes, mats.satin])
-  const head = new THREE.SkinnedMesh(buildHeadGeometry(rest), [mats.skin, mats.hair, mats.eye, mats.iris])
+  const head = new THREE.SkinnedMesh(buildHeadGeometry(rest), [mats.face, mats.hair, mats.eye, mats.iris, mats.satin, mats.pupil])
   for (const m of [body, head]) {
     m.castShadow = m.receiveShadow = true
     m.frustumCulled = false
