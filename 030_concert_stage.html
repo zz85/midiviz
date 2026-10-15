@@ -142,6 +142,7 @@
     <div class="field"><label>Left Hand Color</label><input type="color" id="lhColor" value="#2f8bff"></div>
     <label class="chk"><input type="checkbox" id="glowConcert">Colour the keys in Concert mode</label>
     <label class="chk"><input type="checkbox" id="labels" checked>Finger / hand labels on notes</label>
+    <label class="chk" title="Pianist's hands and sleeves, playing with the fingering from #029"><input type="checkbox" id="hands" checked>Pianist hands</label>
     <div class="field"><label>Main Light Intensity</label><input type="range" id="light" min="0" max="2" step="0.01" value="1"></div>
     <div class="field"><label>Exposure</label><input type="range" id="exposure" min="0.3" max="2.5" step="0.01" value="1"></div>
     <div class="sect">Piano</div>
@@ -213,6 +214,7 @@
     import { midiToSchedule } from './notation3d/midi-score.js'
     import { exportVideo, exportSupported, defaultBitrate } from './notation3d/video-export.js'
     import { buildGrandPiano, FINISHES, LOW, HIGH, DIM } from './concertstage/concert-grand.js'
+    import { buildAvatarHands } from './concertstage/avatar-hands.js'
 
     const $ = id => document.getElementById(id)
     const params = new URLSearchParams(location.search)
@@ -268,6 +270,13 @@
     $('mirror').checked = !!piano.mirror
     $('mirror').disabled = !piano.mirror
     $('mirror').onchange = () => { if (piano.mirror) piano.mirror.visible = $('mirror').checked }
+
+    // Pianist hands: idle over the keys until a fingered song plays
+    const hands = buildAvatarHands()
+    scene.add(hands.group)
+    $('hands').checked = params.get('hands') !== '0'
+    $('hands').onchange = () => { hands.group.visible = $('hands').checked }
+    hands.group.visible = $('hands').checked
 
     // ── Stage: floor, lights, environment ──────────────────────────────────
     // Dark stage boards: long planks, a little sheen, melting into black.
@@ -1068,6 +1077,7 @@
           if (job !== fingerJob) return
           e.data.forEach(([h, f], i) => { if (h === 'L' || h === 'R') { notes[i].hand = h; notes[i].finger = f } })
           fingerWorker.terminate(); fingerWorker = null
+          hands.setNotes(notes.map(n => ({ pitch: n.midi, on: n.time, off: n.time + n.duration, hand: n.hand, finger: n.finger, velocity: n.velocity })))
         }
         fingerWorker.onerror = ev => { ev.preventDefault(); fingerWorker?.terminate(); fingerWorker = null }
         fingerWorker.postMessage(notes.map(n => ({ pitch: n.midi, on: n.time, off: n.time + n.duration, velocity: n.velocity })))
@@ -1172,6 +1182,7 @@
         s.duration = s.notes.reduce((m, n) => Math.max(m, n.time + n.duration), 0)
         s.title = name
         quickHands(s.notes)
+        hands.clear()
         byMidi = new Map()
         for (const n of s.notes) { if (!byMidi.has(n.midi)) byMidi.set(n.midi, []); byMidi.get(n.midi).push(n) }
         song = s
@@ -1296,6 +1307,7 @@
       stepMusic(dt)
       if (!tween && tour.active) stepTour(dt)
       piano.update(dt)
+      if (hands.group.visible) hands.update(t, dt)
       if (offlineT == null) controls.update(dt)
       else camera.lookAt(controls.target)
       updateNotes(t, dt)
@@ -1452,7 +1464,7 @@
     loadSound($('sf').value)
     if (params.get('song')) loadSongUrl(params.get('song'))
     // test hook for headless checks
-    window.__stage = { piano, press, release, setView, setMode, setScene, scene, renderer, camera, controls, tour, music, frame, stageAdapter, driveSong, loadSongUrl, get song() { return song }, get scheduler() { return scheduler }, offlineSet(t) { offlineT = t } }
+    window.__stage = { piano, hands, press, release, setView, setMode, setScene, scene, renderer, camera, controls, tour, music, frame, stageAdapter, driveSong, loadSongUrl, get song() { return song }, get scheduler() { return scheduler }, offlineSet(t) { offlineT = t } }
   </script>
 </body>
 </html>

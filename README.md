@@ -22,6 +22,7 @@ Midi Visualization Experiments
 - Their UI layout: Songs / Camera / Visuals / Render pills and a bottom transport (speed, play, loop, ms clock); chrome fades out while a song plays
 - Cameras from their menu: Top, First Person, Orbit, View 1–4, plus the song-synced cinematic tour from #028
 - Lesson mode: keyboard only, falling notes in left / right hand colours with L / R (or finger number) labels, glowing keys, halos and sparks; hands from a quick split, refined by `fingering/` when present
+- Pianist hands like Concert Creator's avatars ([concertstage/avatar-hands.js](concertstage/avatar-hands.js)): one skinned mesh per hand (palm, thenar pad, tapered fingers with knuckles and nails, wrist, white shirt cuff, dark jacket sleeve fading toward the shoulder) on 18 bones; fingers follow the #029 fingering and motion model with its finger IK, arms are two-bone IK from a seated shoulder
 - Depth of field with autofocus, bloom, film grain, vignette and a slight handheld drift; fully procedural lighting (no HDRI downloads)
 - Render → offline MP4 export (any resolution, 30/60 fps, with audio) via notation3d/video-export.js
 
