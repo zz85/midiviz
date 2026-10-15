@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>Experiment #031 - RoboPianist vs #029</title>
+  <!--
+    Experiment #031 - our #029 fingering + motion driving RoboPianist's
+    simulated Shadow Hands, next to RoboPianist's own RL policy.
+
+    robopianist/mujoco/   mujoco_wasm (MuJoCo 2.3.1, from kevinzakka/robopianist-demo)
+    robopianist/scene/    their piano + two Shadow Hands scene, meshes, recorded policy actions
+    robopianist/midi/     the two Rousseau clips RoboPianist ships (with human fingering)
+    robopianist/sim.js    world, scoring (RoboPianist's F1), RL replay, our IK planner
+    robopianist/render.js MuJoCo bodies → three.js
+    robopianist/eval.js   node robopianist/eval.js   (the same comparison, headless)
+  -->
+  <script type="importmap">
+    { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    } }
+  </script>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0b0c; font: 13px/1.35 "Helvetica Neue", Arial, sans-serif; color: #e8e2d6; }
+    canvas { display: block; touch-action: none; }
+    #gl { position: absolute; left: 0; top: 0; }
+    #roll { position: absolute; left: 0; bottom: 0; width: 100%; height: 150px; }
+    #panel {
+      position: absolute; top: 12px; left: 12px; width: 300px; padding: 10px 12px; max-height: calc(100% - 190px); overflow: auto;
+      background: rgba(14, 13, 12, 0.8); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 10px;
+      backdrop-filter: blur(8px); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5); z-index: 2;
+    }
+    #panel h1 { margin: 0 0 2px; font: 300 17px/1.2 Georgia, serif; letter-spacing: 0.04em; color: #f3e6c4; }
+    #panel h1 a { color: inherit; text-decoration: none; }
+    #panel .sub { font-size: 11px; color: #9c958a; margin-bottom: 6px; }
+    #panel .sub a { color: #9c958a; }
+    #panel.collapsed .body { display: none; }
+    #toggle { float: right; background: none; border: 0; color: #d8b56a; font-size: 15px; cursor: pointer; }
+    hr { border: 0; border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 8px 0; }
+    .row { display: flex; align-items: center; gap: 6px; margin: 5px 0; }
+    .row > label:first-child { flex: 0 0 66px; color: #a9a196; }
+    select { flex: 1; min-width: 0; background: #1d1b19; color: #eee6d8; border: 1px solid #3d3933; border-radius: 4px; padding: 2px 4px; font: inherit; }
+    input[type=checkbox] { accent-color: #c9a24a; }
+    .chk { display: flex; align-items: center; gap: 3px; color: #cfc6b8; margin-right: 6px; white-space: nowrap; }
+    button.b { background: #26231f; color: #eee6d8; border: 1px solid #4a443b; border-radius: 4px; padding: 3px 8px; cursor: pointer; font: inherit; font-size: 12px; }
+    button.b:hover { background: #35302a; }
+    #clock { font: 11px monospace; color: #b9b0a2; margin-left: auto; }
+    table.score { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 2px; }
+    table.score td, table.score th { padding: 2px 3px; text-align: right; }
+    table.score th { color: #8f887d; font-weight: normal; }
+    table.score td:first-child, table.score th:first-child { text-align: left; }
+    .note { color: #8f887d; font-size: 11px; margin-top: 6px; }
+    #legend { display: flex; gap: 8px; margin-top: 8px; font-size: 11px; color: #b9b0a2; flex-wrap: wrap; }
+    #legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 3px; vertical-align: -1px; }
+    .tag { position: absolute; top: 12px; padding: 4px 9px; border-radius: 6px; background: rgba(14, 13, 12, 0.72); border: 1px solid rgba(255,255,255,0.12); font-size: 12px; z-index: 1; pointer-events: none; }
+    .tag b { font-weight: 600; }
+    #status { position: absolute; top: 12px; right: 12px; padding: 6px 10px; border-radius: 6px; background: rgba(14, 13, 12, 0.85); border: 1px solid #3d3933; font-size: 12px; z-index: 3; }
+    #status.hidden { display: none; }
+    #status.error { border-color: #c44; color: #f99; }
+  </style>
+</head>
+<body>
+  <canvas id="gl"></canvas>
+  <canvas id="roll"></canvas>
+  <div id="tagA" class="tag"></div>
+  <div id="tagB" class="tag"></div>
+  <div id="panel">
+    <button id="toggle" title="Collapse">–</button>
+    <h1><a href="README.md" title="Back to experiments">#031 · RoboPianist vs #029</a></h1>
+    <div class="sub">same MuJoCo hands, same metric · <a href="https://kzakka.com/robopianist/" target="_blank" rel="noopener">RoboPianist</a> · <a href="robopianist/README.md">notes</a></div>
+    <div class="body">
+      <div class="row"><label>Song</label><select id="song"></select></div>
+      <div class="row"><label>Show</label><select id="mode">
+        <option value="compare">RL policy | our planner</option>
+        <option value="rl">RL policy only</option>
+        <option value="ours">Our planner only</option>
+      </select></div>
+      <div class="row"><label>Fingering</label><select id="fing">
+        <option value="shadow">Ours, Shadow Hand spans</option>
+        <option value="pianist">Ours, pianist spans</option>
+        <option value="human">Human labels (RoboPianist's)</option>
+      </select></div>
+      <hr>
+      <div class="row">
+        <button class="b" id="play" title="Play / pause (Space)">▶</button>
+        <button class="b" id="restart" title="Restart from the top (R)">⟲</button>
+        <select id="speed" style="flex:0 0 70px">
+          <option value="0.25">25%</option><option value="0.5">50%</option><option value="1" selected>100%</option>
+        </select>
+        <span id="clock">0.0 s</span>
+      </div>
+      <div class="row"><label>Sound</label><select id="sound">
+        <option value="both">Both (RL left, ours right)</option><option value="a">RL policy</option><option value="b">Our planner</option><option value="off">Off</option>
+      </select></div>
+      <div class="row"><label>Camera</label><select id="cam">
+        <option value="pianist">Pianist</option><option value="above">Above</option><option value="demo">RoboPianist demo</option><option value="low">Low, along the keys</option>
+      </select></div>
+      <div class="row"><label></label><span class="chk"><input id="tint" type="checkbox" checked>Finger colours on keys</span><span class="chk"><input id="loop" type="checkbox">Loop</span></div>
+      <hr>
+      <div id="score"></div>
+      <div id="legend">
+        <span><i style="background:#e2483d"></i>1</span><span><i style="background:#f0a030"></i>2</span><span><i style="background:#48b04c"></i>3</span><span><i style="background:#3f8fe0"></i>4</span><span><i style="background:#a05ad8"></i>5</span>
+        <span><i style="background:#00e5ff"></i>wrong key</span>
+      </div>
+      <div class="note" id="about"></div>
+    </div>
+  </div>
+  <div id="status" class="hidden"></div>
+
+  <script src="tonejs-midi.js"></script>
+  <script type="module">
+    import * as THREE from 'three'
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+    import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
+    import load_mujoco from './robopianist/mujoco/mujoco_wasm.js'
+    import {
+      SCENE_FILES, POLICIES, CONTROL_DT, createWorld, readNpy, trimSilence, goalFrames, framedNotes,
+      releaseOutOfReach, applyRousseauFingering, handsFromTracks, SHADOW_FINGERING,
+      ReplayController, PlannerController,
+    } from './robopianist/sim.js'
+    import { buildView } from './robopianist/render.js'
+    import { fingerPiece } from './fingering/fingering.js'
+    import { SoundFontEngine } from './soundfont-engine/src/index.js'
+
+    const $ = id => document.getElementById(id)
+    const FINGER_COLORS = ['#e2483d', '#f0a030', '#48b04c', '#3f8fe0', '#a05ad8']
+    const WRONG = '#00e5ff'
+    const status = (msg, error = false) => {
+      const el = $('status')
+      el.textContent = msg || ''
+      el.className = msg ? (error ? 'error' : '') : 'hidden'
+    }
+
+    // ── Songs ─────────────────────────────────────────────────────────────
+    // RoboPianist recorded policy actions for five clips; only the two
+    // Rousseau clips ship with their MIDI (the other three come from the
+    // PIG dataset, which may not be redistributed). Any other MIDI runs on
+    // our planner alone.
+    const SONGS = [
+      { id: 'twinkle_twinkle', label: 'Twinkle Twinkle (Rousseau) · RL + MIDI', policy: true, midi: 'robopianist/midi/twinkle-twinkle-trimmed.mid' },
+      { id: 'nocturne', label: 'Chopin Nocturne Op. 9/2 (Rousseau) · RL + MIDI', policy: true, midi: 'robopianist/midi/nocturne-trimmed.mid' },
+      { id: 'fur_elise', label: 'Für Elise · RL only (PIG clip)', policy: true, midi: null, ours: 'midis/elise.mid' },
+      { id: 'turkish_march', label: 'Turkish March · RL only (PIG clip)', policy: true, midi: null },
+      { id: 'k545', label: 'Mozart K. 545 · RL only (PIG clip)', policy: true, midi: null, ours: 'midis/mz_545_1.mid' },
+      { id: 'midis/elise.mid', label: 'Für Elise (full) · ours', midi: 'midis/elise.mid' },
+      { id: 'midis/mz_545_1.mid', label: 'Mozart K. 545, I · ours', midi: 'midis/mz_545_1.mid' },
+      { id: 'Prelude1.mid', label: 'Bach Prelude in C · ours', midi: 'Prelude1.mid' },
+      { id: 'midis/comptine.mid', label: 'Tiersen Comptine · ours', midi: 'midis/comptine.mid' },
+    ]
+    for (const s of SONGS) $('song').add(new Option(s.label, s.id))
+
+    async function fetchBytes(url) {
+      const r = await fetch(url)
+      if (!r.ok) throw new Error(`${url}: ${r.status}`)
+      return new Uint8Array(await r.arrayBuffer())
+    }
+    function midiNotes(bytes) {
+      const midi = new Midi(bytes)
+      const notes = []
+      midi.tracks.filter(t => t.notes.length && t.channel !== 9).forEach((t, ti) => t.notes.forEach(n => {
+        if (n.midi >= 21 && n.midi <= 108) notes.push({ pitch: n.midi, on: n.time, off: n.time + Math.max(0.05, n.duration), velocity: n.velocity, track: ti })
+      }))
+      return trimSilence(notes)
+    }
+
+    // ── Renderer, two scenes for the split view ───────────────────────────
+    const canvas = $('gl')
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
+    renderer.setPixelRatio(Math.min(2, devicePixelRatio))
+    renderer.shadowMap.enabled = true
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    renderer.toneMapping = THREE.AgXToneMapping
+    renderer.toneMappingExposure = 1.1
+    renderer.setScissorTest(true)
+    const pmrem = new THREE.PMREMGenerator(renderer)
+    const envMap = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
+    const camera = new THREE.PerspectiveCamera(38, 1, 0.01, 20)
+    const controls = new OrbitControls(camera, canvas)
+    controls.enableDamping = true
+    controls.dampingFactor = 0.1
+
+    function makeStage() {
+      const scene = new THREE.Scene()
+      scene.background = new THREE.Color(0x111214)
+      scene.environment = envMap
+      scene.environmentIntensity = 0.55
+      const key = new THREE.DirectionalLight(0xfff1dc, 2.2)
+      key.position.set(0.9, 1.6, 0.5)
+      key.castShadow = true
+      key.shadow.mapSize.set(2048, 2048)
+      Object.assign(key.shadow.camera, { left: -0.9, right: 0.9, top: 0.9, bottom: -0.9, near: 0.2, far: 4 })
+      key.shadow.bias = -0.0004
+      scene.add(key, new THREE.HemisphereLight(0xdfe8ff, 0x1a1612, 0.35))
+      const floor = new THREE.Mesh(new THREE.PlaneGeometry(6, 6), new THREE.MeshStandardMaterial({ color: 0x1b1a19, roughness: 0.9 }))
+      floor.rotation.x = -Math.PI / 2
+      floor.receiveShadow = true
+      scene.add(floor)
+      return scene
+    }
+
+    const VIEWS = {
+      pianist: { pos: [0.62, 0.62, 0.0], target: [-0.03, 0.0, 0.0] },
+      above: { pos: [0.18, 1.05, 0.0], target: [0.0, 0.0, 0.0] },
+      demo: { pos: [-0.41, 0.77, -0.75], target: [0.08, -0.01, -0.05] },
+      low: { pos: [0.55, 0.12, 0.85], target: [0.0, 0.04, -0.1] },
+    }
+    function setView(name) {
+      const v = VIEWS[name] || VIEWS.pianist
+      camera.position.set(...v.pos)
+      controls.target.set(...v.target)
+      controls.update()
+    }
+
+    // ── MuJoCo ────────────────────────────────────────────────────────────
+    status('Loading MuJoCo and the RoboPianist scene…')
+    const mujoco = await load_mujoco()
+    const sceneFiles = await Promise.all(SCENE_FILES.map(async f => [f, await fetchBytes('robopianist/scene/' + f)]))
+    // two worlds, one per side of the split view
+    const sides = ['a', 'b'].map((id, i) => {
+      const world = createWorld(mujoco, sceneFiles)
+      const view = buildView(world)
+      const stage = makeStage()
+      stage.add(view.root)
+      return { id, i, world, view, stage, ctl: null, pressed: [], prev: new Set(), label: '', fingerAt: null, active: false, kind: '' }
+    })
+    status('')
+
+    // ── Sound ─────────────────────────────────────────────────────────────
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+    const engine = new SoundFontEngine({ backend: 'oxisynth', vendorPath: new URL('./vendor', import.meta.url).href, audioContext: audioCtx })
+    let soundReady = false
+    ;(async () => {
+      try {
+        await engine.loadSoundFont('soundfonts/Motif_ES6_Concert_Piano.sf2')
+        for (let ch = 0; ch < 16; ch++) engine.programChange(ch, 0)
+        soundReady = true
+        applyPan()
+      } catch (e) { console.warn('soundfont', e) }
+    })()
+    function applyPan() {
+      if (!soundReady) return
+      const both = $('sound').value === 'both' && state.mode === 'compare'
+      engine.controlChange(0, 10, both ? 18 : 64)
+      engine.controlChange(1, 10, both ? 110 : 64)
+    }
+    const unlockAudio = () => { if (audioCtx.state !== 'running') audioCtx.resume().then(() => engine.resume?.()).catch(() => {}) }
+    function audible(side) {
+      const s = $('sound').value
+      if (!soundReady || s === 'off') return false
+      if (state.mode !== 'compare') return true
+      return s === 'both' || s === side.id
+    }
+
+    // ── Piece and controllers ─────────────────────────────────────────────
+    const state = { song: null, mode: 'compare', notes: null, goal: null, frames: 0, step: 0, playing: false, t: 0, fingerStats: null }
+
+    /** Per-frame key → finger (0-based) map, from fingered notes, for tinting. */
+    function frameFingers(notes, frames) {
+      const out = Array.from({ length: frames }, () => new Map())
+      for (const n of notes) {
+        if (!(n.finger >= 1)) continue
+        const s = Math.floor(n.on / CONTROL_DT + 1e-9), e = Math.max(s + 1, Math.ceil(n.off / CONTROL_DT - 1e-9))
+        for (let f = s; f < e && f < frames; f++) out[f].set(n.pitch - 21, n.finger - 1)
+      }
+      return out
+    }
+
+    function fingered(notes, how, songId) {
+      const ns = notes.map(n => ({ ...n }))
+      if (how === 'human' && applyRousseauFingering(songId, ns)) return { notes: ns, how: 'human labels' }
+      const opts = how === 'pianist' ? {} : SHADOW_FINGERING
+      const r = fingerPiece(ns, { ...opts, splitHands: !handsFromTracks(ns) })
+      return { notes: ns, how: how === 'pianist' ? 'ours, pianist spans' : 'ours, Shadow spans', ms: r.ms }
+    }
+
+    async function loadSong(id) {
+      stop()
+      const song = SONGS.find(s => s.id === id) || SONGS[0]
+      state.song = song
+      status(`Loading ${song.label}…`)
+      try {
+        const notes = song.midi ? midiNotes(await fetchBytes(song.midi)) : null
+        const oursNotes = notes || (song.ours ? midiNotes(await fetchBytes(song.ours)) : null)
+        const actions = song.policy ? readNpy(await fetchBytes(`robopianist/scene/${song.id}_actions.npy`)) : null
+        Object.assign(state, { notes, oursNotes, actions })
+        setupSides()
+        status('')
+      } catch (e) {
+        console.error(e)
+        status('Could not load: ' + e.message, true)
+      }
+    }
+
+    function setupSides() {
+      const { song, notes, oursNotes, actions } = state
+      let mode = $('mode').value
+      if (!actions && mode !== 'ours') mode = 'ours'
+      if (!oursNotes && mode !== 'rl') mode = 'rl'
+      state.mode = mode
+      const [A, B] = sides
+      for (const s of sides) { s.ctl?.dispose?.(); s.ctl = null; s.active = false; s.pressed = []; s.prev = new Set(); s.goal = null; s.fingerAt = null }
+      const fing = $('fing').value
+      const human = notes && applyRousseauFingering(song.id, notes.map(n => ({ ...n }))) ? fingered(notes, 'human', song.id).notes : null
+
+      const useA = mode === 'compare' || mode === 'rl'
+      const useB = mode === 'compare' || mode === 'ours'
+      if (useA && actions) {
+        A.active = true
+        A.kind = 'rl'
+        A.ctl = new ReplayController(A.world, actions)
+        A.label = 'RoboPianist RL policy · recorded actions'
+        A.goal = notes ? goalFrames(notes) : null
+        A.frames = A.goal ? A.goal.length : actions.shape[0]
+        A.fingerAt = human ? frameFingers(human, A.frames) : null
+      }
+      const target = mode === 'ours' ? A : B
+      if (useB && oursNotes) {
+        const f = fingered(oursNotes, fing, song.id)
+        target.active = true
+        target.kind = 'ours'
+        target.ctl = new PlannerController(target.world, releaseOutOfReach(framedNotes(f.notes)))
+        target.label = `Our planner · ${f.how}`
+        target.goal = goalFrames(oursNotes)
+        target.frames = target.goal.length
+        target.fingerAt = frameFingers(f.notes, target.frames)
+        if (human && fing !== 'human') {
+          let agree = 0, hand = 0
+          f.notes.forEach((n, i) => { if (n.hand === human[i].hand) { hand++; if (n.finger === human[i].finger) agree++ } })
+          state.fingerStats = { hand: hand / f.notes.length, finger: agree / f.notes.length }
+        } else state.fingerStats = null
+        if (mode === 'ours') B.active = false
+      }
+      state.frames = Math.max(...sides.filter(s => s.active).map(s => s.frames))
+      restart()
+      layout()
+      applyPan()
+      saveUrl()
+      describe()
+    }
+
+    function restart() {
+      state.done = false
+      state.step = 0
+      state.t = 0
+      for (const s of sides) {
+        s.world.reset()
+        if (s.ctl instanceof PlannerController) {
+          const notes = s.ctl.notes, opts = s.ctl.opts
+          s.ctl = new PlannerController(s.world, notes, opts)
+        }
+        s.pressed = []
+        for (const k of s.prev) if (audible(s)) engine.noteOff(k + 21, s.i)
+        s.prev = new Set()
+        s.view.sync()
+        for (let k = 0; k < 88; k++) s.view.tintKey(k, null)
+      }
+      updateScore()
+    }
+
+    // ── Physics loop ──────────────────────────────────────────────────────
+    function stepAll() {
+      const { substeps, timestep } = sides[0].world
+      for (const s of sides) {
+        if (!s.active) continue
+        s.ctl.apply(state.step * timestep, state.step)
+        s.world.sim.step()
+      }
+      state.step++
+      state.t = state.step * timestep
+      if (state.step % substeps === 0) {
+        for (const s of sides) {
+          if (!s.active) continue
+          const act = s.world.activation()
+          s.pressed.push(act)
+          if (audible(s)) {
+            for (const k of act) if (!s.prev.has(k)) engine.noteOn(k + 21, 0.72, s.i)
+            for (const k of s.prev) if (!act.has(k)) engine.noteOff(k + 21, s.i)
+          }
+          s.prev = act
+        }
+        if (state.step / substeps >= state.frames) {
+          if ($('loop').checked) restart()
+          else { stop(); state.done = true; updateScore(true) }
+        }
+      }
+    }
+
+    let lastWall = 0
+    function play() {
+      if (state.step / sides[0].world.substeps >= state.frames) restart()
+      unlockAudio()
+      state.playing = true
+      lastWall = performance.now()
+      $('play').textContent = '❚❚'
+    }
+    function stop() {
+      state.playing = false
+      $('play').textContent = '▶'
+      for (const s of sides) { for (const k of s.prev) engine.noteOff(k + 21, s.i) }
+    }
+
+    // ── Scores ────────────────────────────────────────────────────────────
+    function frameScore(goal, pressed) {
+      let P = 0, R = 0, F = 0, n = 0
+      for (let t = 0; t < pressed.length && t < goal.length; t++) {
+        const g = goal[t], p = pressed[t]
+        let tp = 0
+        for (const k of p) if (g.has(k)) tp++
+        const prec = p.size ? tp / p.size : 1, rec = g.size ? tp / g.size : 1
+        P += prec; R += rec
+        F += !p.size && !g.size ? 1 : !p.size || !g.size ? 0 : prec + rec ? 2 * prec * rec / (prec + rec) : 0
+        n++
+      }
+      return n ? { precision: P / n, recall: R / n, f1: F / n, n } : null
+    }
+    let scoreTick = 0
+    function updateScore(final = false) {
+      const pct = v => v == null ? '–' : (100 * v).toFixed(1)
+      let html = `<table class="score"><tr><th>${final ? 'Final' : 'So far'}</th><th>P</th><th>R</th><th>F1</th></tr>`
+      for (const s of sides) {
+        if (!s.active) continue
+        const sc = s.goal ? frameScore(s.goal, s.pressed) : null
+        html += `<tr><td>${s.kind === 'rl' ? 'RL policy' : 'Our planner'}</td><td>${pct(sc?.precision)}</td><td>${pct(sc?.recall)}</td><td><b>${pct(sc?.f1)}</b></td></tr>`
+      }
+      html += '</table>'
+      if (state.mode === 'compare' && state.song && !state.song.midi) html += '<div class="note">This clip comes from PIG, so its MIDI is not shipped: the RL side cannot be scored, and our side plays the same piece from our own MIDI (not the same excerpt).</div>'
+      if (state.fingerStats) html += `<div class="note">Our fingering vs the human labels: hand ${pct(state.fingerStats.hand)} %, hand + finger ${pct(state.fingerStats.finger)} %</div>`
+      $('score').innerHTML = html
+    }
+
+    function describe() {
+      $('about').innerHTML = `Both sides are the same MuJoCo model at 200 Hz. The RL side replays the 20 Hz actions RoboPianist's authors recorded from their per-song DroQ policy (5M training steps each). Our side has never seen the song: #029's fingering picks the fingers, its motion model plans the fingertips, and a damped-least-squares IK turns that into the 38 servo targets every 10 ms. Scores are RoboPianist's own frame F1. Drag to orbit · Space play · R restart · Esc hide.`
+    }
+
+    // ── Layout and drawing ────────────────────────────────────────────────
+    function layout() {
+      const w = innerWidth, h = innerHeight - 150
+      renderer.setSize(w, h, false)
+      canvas.style.width = w + 'px'
+      canvas.style.height = h + 'px'
+      const split = state.mode === 'compare'
+      camera.aspect = (split ? w / 2 : w) / h
+      camera.updateProjectionMatrix()
+      const roll = $('roll')
+      roll.width = w * devicePixelRatio
+      roll.height = 150 * devicePixelRatio
+      const tags = [$('tagA'), $('tagB')]
+      tags[0].style.left = split ? '330px' : '330px'
+      tags[1].style.left = split ? `${w / 2 + 12}px` : '0'
+      tags[1].style.display = split ? '' : 'none'
+    }
+    addEventListener('resize', layout)
+
+    function tintKeys(s, frame) {
+      const on = $('tint').checked
+      const goal = s.goal?.[frame], fing = s.fingerAt?.[frame], act = s.prev
+      for (let k = 0; k < 88; k++) {
+        let c = null
+        const want = goal ? goal.has(k) : false
+        if (on && fing?.has(k)) c = new THREE.Color(FINGER_COLORS[fing.get(k)]).lerp(new THREE.Color(s.world.keys[k].black ? 0x111111 : 0xeeeeee), act.has(k) ? 0 : 0.55)
+        else if (on && want) c = new THREE.Color(act.has(k) ? 0x7fe07f : 0x8a9a8a)
+        if (act.has(k) && goal && !want) c = new THREE.Color(WRONG)
+        s.view.tintKey(k, c)
+      }
+    }
+
+    function drawRoll() {
+      const roll = $('roll'), g = roll.getContext('2d'), W = roll.width, H = roll.height, dpr = devicePixelRatio
+      g.fillStyle = '#0f0e0d'
+      g.fillRect(0, 0, W, H)
+      const lanes = sides.filter(s => s.active)
+      if (!lanes.length) return
+      const span = 6, t0 = state.t - span * 0.45
+      const px = t => (t - t0) / span * W
+      const laneH = H / lanes.length
+      lanes.forEach((s, li) => {
+        const y0 = li * laneH
+        const goal = s.goal
+        // pitch range of this lane
+        let lo = 87, hi = 0
+        if (goal) for (const fr of goal) for (const k of fr) { lo = Math.min(lo, k); hi = Math.max(hi, k) }
+        for (const fr of s.pressed) for (const k of fr) { lo = Math.min(lo, k); hi = Math.max(hi, k) }
+        if (lo > hi) { lo = 30; hi = 60 }
+        lo -= 1; hi += 1
+        const rowH = (laneH - 16 * dpr) / (hi - lo + 1)
+        const py = k => y0 + 14 * dpr + (hi - k) * rowH
+        const f0 = Math.max(0, Math.floor(t0 / CONTROL_DT)), f1 = Math.ceil((t0 + span) / CONTROL_DT)
+        const cw = Math.max(1, CONTROL_DT / span * W - 0.5)
+        for (let f = f0; f < f1; f++) {
+          const x = px(f * CONTROL_DT)
+          const gset = goal?.[f], pset = s.pressed[f]
+          if (gset) for (const k of gset) {
+            const hit = pset?.has(k)
+            g.fillStyle = pset ? (hit ? '#4fc06a' : '#a0522d') : '#4a4640'
+            g.fillRect(x, py(k), cw, Math.max(1, rowH - 0.5))
+          }
+          if (pset) for (const k of pset) if (!gset || !gset.has(k)) {
+            g.fillStyle = gset ? WRONG : '#7fa0c0'
+            g.fillRect(x, py(k), cw, Math.max(1, rowH - 0.5))
+          }
+        }
+        g.fillStyle = '#b9b0a2'
+        g.font = `${11 * dpr}px Helvetica, Arial`
+        g.fillText(s.kind === 'rl' ? 'RL policy' : 'Our planner', 8 * dpr, y0 + 11 * dpr)
+        if (li) { g.fillStyle = '#2a2724'; g.fillRect(0, y0, W, 1 * dpr) }
+      })
+      g.fillStyle = '#f3e6c4'
+      g.fillRect(px(state.t), 0, 1.5 * dpr, H)
+      g.fillStyle = '#8f887d'
+      g.fillText('grey: to play · green: played · brown: missed · cyan: wrong key', W - 390 * dpr, 11 * dpr)
+    }
+
+    function frame(now) {
+      requestAnimationFrame(frame)
+      if (state.playing) {
+        const wall = Math.min(0.05, (now - lastWall) / 1000)
+        const target = state.t + wall * +$('speed').value
+        const t1 = performance.now()
+        while (state.t < target && state.playing && performance.now() - t1 < 30) stepAll()
+      }
+      lastWall = now
+      controls.update()
+      const fr = Math.max(0, Math.floor(state.t / CONTROL_DT + 1e-9) - 1)
+      for (const s of sides) if (s.active) { s.view.sync(); tintKeys(s, fr) }
+      if (++scoreTick % 10 === 0 && !state.done) updateScore()
+      $('clock').textContent = `${state.t.toFixed(1)} / ${(state.frames * CONTROL_DT).toFixed(1)} s`
+      const w = innerWidth, h = innerHeight - 150
+      const visible = sides.filter(s => s.active)
+      const split = state.mode === 'compare' && visible.length === 2
+      const tags = [$('tagA'), $('tagB')]
+      visible.forEach((s, i) => {
+        const x = split ? i * w / 2 : 0, vw = split ? w / 2 : w
+        renderer.setViewport(x, 0, vw, h)
+        renderer.setScissor(x, 0, vw, h)
+        renderer.render(s.stage, camera)
+        tags[i].innerHTML = `<b>${s.kind === 'rl' ? 'RL policy' : 'Our planner'}</b> · ${s.label.split(' · ').slice(1).join(' · ')}`
+      })
+      tags[0].style.display = visible.length ? '' : 'none'
+      tags[1].style.display = split ? '' : 'none'
+      drawRoll()
+    }
+
+    // ── UI ────────────────────────────────────────────────────────────────
+    function saveUrl() {
+      const p = new URLSearchParams({ song: $('song').value, mode: $('mode').value, fing: $('fing').value, cam: $('cam').value })
+      history.replaceState(null, '', '?' + p)
+    }
+    $('song').onchange = () => loadSong($('song').value)
+    $('mode').onchange = () => setupSides()
+    $('fing').onchange = () => setupSides()
+    $('play').onclick = () => (state.playing ? stop() : play())
+    $('restart').onclick = () => { restart(); }
+    $('sound').onchange = () => applyPan()
+    $('cam').onchange = () => { setView($('cam').value); saveUrl() }
+    $('toggle').onclick = () => { $('panel').classList.toggle('collapsed'); $('toggle').textContent = $('panel').classList.contains('collapsed') ? '+' : '–' }
+    addEventListener('keydown', e => {
+      if (e.target.tagName === 'SELECT') return
+      if (e.code === 'Space') { e.preventDefault(); state.playing ? stop() : play() }
+      else if (e.key === 'r' || e.key === 'R') restart()
+      else if (e.key === 'Escape') $('toggle').click()
+    })
+    addEventListener('pointerdown', unlockAudio)
+
+    const params = new URLSearchParams(location.search)
+    for (const k of ['song', 'mode', 'fing', 'cam']) if (params.get(k) && [...$(k).options].some(o => o.value === params.get(k))) $(k).value = params.get(k)
+    setView($('cam').value)
+    layout()
+    requestAnimationFrame(frame)
+    await loadSong($('song').value)
+    if (params.has('autoplay')) play()
+    window.__rp = { state, sides, stepAll, play, stop }
+  </script>
+</body>
+</html>

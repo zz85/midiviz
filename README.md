@@ -6,6 +6,12 @@ Midi Visualization Experiments
 
 15 Oct 2026
 
+[Experiment #031 - RoboPianist vs #029](031_robopianist.html)
+- [RoboPianist](https://kzakka.com/robopianist/)'s MuJoCo piano and two Shadow Hands in the browser (mujoco_wasm, scene and recorded RL actions from their demo, Apache-2.0), side by side: their per-song DroQ policy replayed vs our #029 fingering + motion driving the same hands through a damped-least-squares IK
+- Scored with RoboPianist's own frame F1: Twinkle 89.1 (RL) vs 86.5 (ours), Nocturne 84.0 vs 57.1; ours needs no training and plays any MIDI ([notes](robopianist/README.md))
+- Shadow Hand span table for the fingering engine (`spanTable` option), measured with the IK; closed-loop pressing, servo feed-forward, active-set joint limits
+- `node robopianist/eval.js [--human] [file.mid…]` runs the comparison headless
+
 [Experiment #029 - Piano Fingering](029_piano_fingering.html)
 - Automatic fingering from MIDI, typed notes, PIG files or a live MIDI keyboard, shown as simulated hands on the #028 grand (3D) and as a finger-coloured falling-note roll with hands seen from above (2D)
 - Research briefs: [what pianists do](fingering/research/01_pianist_rules.md) (treatises from Couperin to Fraser, scale/arpeggio/chromatic tables, octaves, trills, repeated notes, spans, hand size) and [published algorithms](fingering/research/02_algorithms.md) (Parncutt 1997, Jacobs 2001, Al Kasimi 2007, Balliauw, Nakamura's HMMs and the PIG dataset, neural models, RoboPianist / FürElise hand motion)

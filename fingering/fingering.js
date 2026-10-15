@@ -48,6 +48,7 @@ export const HAND_SIZES = { XS: 0.8, S: 0.9, M: 1, L: 1.1, XL: 1.2 }
 
 export const DEFAULTS = {
   handSize: 1,          // scales every span limit (S 0.9, M 1, L 1.1)
+  spanTable: SPAN_TABLE, // finger-pair spans; swap in another hand's (e.g. a robot's)
   distance: 'mixed',    // 'semitone' (Parncutt) | 'physical' (Jacobs) | 'mixed'
   chordTolerance: 0.03, // onsets closer than this (s) form one slice (Nakamura 2020)
   beam: 64,             // hypotheses kept per slice
@@ -115,11 +116,11 @@ function makeDistance(kind) {
 }
 
 /** Span limits for finger f1 on the first note → f2 on the second (RH space). */
-export function spanLimits(f1, f2, scale = 1) {
+export function spanLimits(f1, f2, scale = 1, table = SPAN_TABLE) {
   let t
   if (f1 === f2) t = ZERO
-  else if (f1 < f2) t = SPAN_TABLE[`${f1}-${f2}`]
-  else { const r = SPAN_TABLE[`${f2}-${f1}`]; t = [-r[5], -r[4], -r[3], -r[2], -r[1], -r[0]] }
+  else if (f1 < f2) t = table[`${f1}-${f2}`]
+  else { const r = table[`${f2}-${f1}`]; t = [-r[5], -r[4], -r[3], -r[2], -r[1], -r[0]] }
   return scale === 1 ? t : t.map(v => v * scale)
 }
 
@@ -136,7 +137,7 @@ export function createModel(options = {}) {
   const lim = (f1, f2) => {
     const k = f1 * 8 + f2
     let v = limitCache.get(k)
-    if (!v) limitCache.set(k, v = spanLimits(f1, f2, S))
+    if (!v) limitCache.set(k, v = spanLimits(f1, f2, S, opts.spanTable))
     return v
   }
 

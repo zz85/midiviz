@@ -38,7 +38,7 @@ const smooth = u => (u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u))
  * notes: [{ pitch, on, off, hand: 'L'|'R', finger: 1..5 }]
  * Returns { poseAt(t) → { L, R } , hands }.
  */
-export function buildMotion(notes, { approach = 0.09, release = 0.03 } = {}) {
+export function buildMotion(notes, { approach = 0.09, release = 0.03, travel = 0.004, glide = false } = {}) {
   const hands = {}
   for (const hand of ['L', 'R']) {
     const own = notes.filter(n => n.hand === hand && n.finger >= 1).sort((a, b) => a.on - b.on || a.pitch - b.pitch)
@@ -89,7 +89,8 @@ export function buildMotion(notes, { approach = 0.09, release = 0.03 } = {}) {
     const gap = b.t - a.t
     // in quick passages the hand glides through the whole gap; after a long
     // note it waits and moves late, arriving just before the next onset
-    const dur = gap < 0.3 ? gap : Math.min(0.28, Math.max(0.05, 0.4 * gap))
+    // (glide: always use the whole gap, for hands slower than a pianist's)
+    const dur = glide || gap < 0.3 ? gap : Math.min(0.28, Math.max(0.05, 0.4 * gap))
     const start = b.t - dur
     const u = smooth((t - start) / dur)
     return { x: a.x + (b.x - a.x) * u, black: a.black + (b.black - a.black) * u, idle: 0 }
@@ -125,7 +126,7 @@ export function buildMotion(notes, { approach = 0.09, release = 0.03 } = {}) {
     }
     if (next) {
       const k = target(next)
-      const window = Math.min(approach + 0.004 * Math.abs(k.x - pos.x), Math.max(0.03, next.on - (cur ? cur.off : -1)))
+      const window = Math.min(approach + travel * Math.abs(k.x - pos.x), Math.max(0.03, next.on - (cur ? cur.off : -1)))
       const u = (t - (next.on - window)) / window
       if (u > 0) {
         const e = smooth(u)
