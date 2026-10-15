@@ -1390,7 +1390,7 @@
       // or the busier one, and stays on it until the other clearly wins
       const cand = {}
       for (const h of ['L', 'R']) {
-        const p = hands.joints[h]?.M
+        const p = (hands.joints?.[h] || hands.hands?.[h]?.joints)?.M
         if (!p) continue
         const z = _focus.subVectors(p, camera.position).dot(_fdir)
         if (z < camera.near * 2) continue
