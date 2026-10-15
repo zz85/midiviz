@@ -8,8 +8,9 @@ import {
   SPAN_TABLE, spanLimits, mirror, createModel, makeSlices, splitHands, fingerPiece, fingerString,
   costOf, toPIG, fromPIG, PARNCUTT,
 } from '../fingering.js'
-import { exercises, scale, scaleExpect } from '../exercises.js'
+import { exercises, scale, scaleExpect, line } from '../exercises.js'
 import { runSuite } from './bench.js'
+import { metrics, recombinedCost, loadPiece } from '../pigeval.js'
 
 const ex = id => exercises().find(e => e.id === id)
 const run = (id, opts) => {
@@ -173,18 +174,55 @@ test('black-key pentatonic run stays playable (≤ 3 thumbs on black: there are 
   assert.ok(notes.filter(n => n.finger === 1 && isBlack(n.pitch)).length <= 3, fingerString(notes))
 })
 
-test('chromatic scale: thumb only on white keys (known divergence: groups instead of 1-3)', () => {
-  const { notes } = run('chromatic-R')
-  for (const n of notes) if (n.finger === 1) assert.ok(!isBlack(n.pitch), noteName(n.pitch))
+// Chromatic, research §3.2: 3 on black, 1 on white, 2 on the second of two
+// adjacent white keys (RH F and C, LH E and B). The RH turns at the top on any
+// finger but the thumb (the LH turns on the thumb, as books print it).
+function chromaticOracle(ps, hand) {
+  const ends = hand === 'R' ? Math.max(...ps) : -1
+  const start = hand === 'R' ? Math.min(...ps) : Math.max(...ps)
+  return ps.map(p => {
+    if (isBlack(p)) return '3'
+    if (p === ends && (hand === 'R' ? isBlack(p - 1) : isBlack(p + 1))) return '*'
+    const pair = hand === 'R' ? !isBlack(p - 1) : !isBlack(p + 1)
+    return pair && p !== start ? '2' : '1'
+  })
+}
+test('chromatic scale from all 12 notes, both hands, two octaves up and down', () => {
+  for (const hand of ['R', 'L']) for (let s = 0; s < 12; s++) {
+    const base = (hand === 'R' ? 60 : 48) + s
+    const up = Array.from({ length: 25 }, (_, i) => base + i)
+    const ps = up.concat(up.slice(0, -1).reverse())
+    const notes = line(ps, { hand, dur: 0.12 })
+    fingerPiece(notes)
+    const got = fingerString(notes, hand), want = chromaticOracle(ps, hand)
+    const ok = want.every((w, i) => (w === '*' ? got[i] !== '1' : w === got[i]))
+    assert.ok(ok, `${hand}H from ${noteName(base)}: got ${got}, want ${want.join('')}`)
+  }
+})
+
+test('three-octave scales repeat the one-octave pattern in the middle octave', () => {
+  for (const [t, hand, mid] of [['C4', 'R', '1231234'], ['Eb4', 'R', '3123412'], ['E3', 'L', '1432132'], ['Db3', 'L', '3214321']]) {
+    const notes = line(scale(t, { octaves: 3 }), { hand })
+    fingerPiece(notes)
+    const got = fingerString(notes, hand)
+    assert.equal(got.slice(7, 14), mid, `${t} ${hand}: ${got}`)
+  }
+})
+
+test('a scale that starts on another degree uses the scale fingering', () => {
+  const notes = line(['E4', 'F4', 'G4', 'A4', 'B4', 'C5', 'D5', 'E5', 'F5', 'G5'])
+  fingerPiece(notes)
+  // C major degrees: E3 | F1 G2 A3 B4 | C1 D2 E3 F4 | G5 (the top note takes 5, not the thumb)
+  assert.equal(fingerString(notes), '3123412345')
 })
 
 // ── All 24 scales, both hands (benchmark with floors) ─────────────────────
-test('24 scales × 2 hands: ≥ 90 % of notes and ≥ 22 of 48 scales match the textbook', () => {
+test('24 scales × 2 hands, two octaves: all 48 match the textbook', () => {
   const rows = runSuite({}, e => e.suite === 'scales')
   const exact = rows.filter(r => r.exact).length
   const agree = rows.reduce((a, r) => a + r.agree, 0) / rows.length
-  assert.ok(agree >= 0.9, `agreement ${(agree * 100).toFixed(1)} %`)
-  assert.ok(exact >= 22, `exact ${exact}/48`)
+  assert.equal(exact, 48, rows.filter(r => !r.exact).map(r => `${r.id} ${r.got}`).join('\n'))
+  assert.equal(agree, 1)
 })
 
 test('our model beats the published Parncutt model on the exercise suite', () => {
@@ -192,15 +230,13 @@ test('our model beats the published Parncutt model on the exercise suite', () =>
   assert.ok(score({}) > score(structuredClone(PARNCUTT)) + 0.1)
 })
 
-// Known divergence: B♭ minor LH turns on the top B♭ with the thumb (book: 2).
-test('no scale puts the thumb on a black key in the middle of a run (turning notes excepted)', () => {
+test('no scale puts the thumb on a black key', () => {
   for (const e of exercises().filter(x => x.suite === 'scales')) {
     const notes = e.notes.map(n => ({ ...n }))
     fingerPiece(notes)
     const sorted = notes.sort((a, b) => a.on - b.on)
-    const top = (sorted.length - 1) / 2
-    sorted.slice(1, -1).forEach((n, i) => {
-      if (n.finger === 1 && i + 1 !== top) assert.ok(!isBlack(n.pitch), `${e.id} note ${i + 1} ${noteName(n.pitch)}: ${fingerString(sorted)}`)
+    sorted.forEach((n, i) => {
+      if (n.finger === 1) assert.ok(!isBlack(n.pitch), `${e.id} note ${i} ${noteName(n.pitch)}: ${fingerString(sorted)}`)
     })
   }
 })
@@ -272,4 +308,32 @@ test('PIG format round-trip', () => {
     assert.equal(n.hand, sorted[i].hand)
     assert.equal(n.truth, sorted[i].finger)
   })
+})
+
+// ── PIG metrics (Nakamura 2020 §6.2) ──────────────────────────────────────
+test('PIG metrics: general, highest, soft match rates', () => {
+  const truths = [[1, 2, 3, 4], [1, 2, 4, 5]]
+  const m = metrics([1, 2, 3, 5], truths)
+  assert.equal(m.gen, (0.75 + 0.75) / 2)
+  assert.equal(m.high, 0.75)
+  assert.equal(m.soft, 1)
+})
+
+test('PIG metrics: recombination switches truths only where they agree, at cost 1', () => {
+  // the estimate follows truth A for two notes, then truth B; they agree on note 1
+  const A = [1, 2, 3, 4], B = [5, 2, 1, 2]
+  assert.equal(recombinedCost([1, 2, 1, 2], [A, B]), 1)   // one switch at the agreeing note
+  // first half of A + second half of B would be perfect, but A and B never agree,
+  // so no switch is allowed: the best single truth has 2 errors
+  assert.equal(recombinedCost([1, 2, 1, 2], [[1, 2, 3, 4], [5, 3, 1, 2]]), 2)
+  assert.equal(metrics([1, 2, 3, 4], [A, B]).rec, 1)
+})
+
+test('PIG files: substitutions, LH negatives and annotators are read and aligned', () => {
+  const a = '//Version: PianoFingering_v170101\n0\t0.0\t0.5\tC4\t64\t80\t0\t1_2\n1\t0.5\t1.0\tE3\t64\t80\t1\t-3\n'
+  const b = '//Version: PianoFingering_v170101\n0\t0.0\t0.5\tC4\t64\t80\t0\t2\n1\t0.5\t1.0\tE3\t64\t80\t1\t-2\n'
+  const p = loadPiece([a, b])
+  assert.deepEqual(p.truths, [[1, 3], [2, 2]])
+  assert.deepEqual(p.hands[0], ['R', 'L'])
+  assert.equal(p.notes[1].pitch, 52)
 })

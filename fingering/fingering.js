@@ -23,6 +23,7 @@
 // Pure ES module, no DOM: runs in the browser, a worker or Node (tests).
 
 import { isBlack, keyX, SEMITONE_CM, noteName, parseNote } from './keyboard.js'
+import { scaleTemplate, chromaticTemplate } from './templates.js'
 
 // ── Span table (Parncutt et al. 1997, Table 1, right hand, semitones) ──────
 // [MinPrac, MinComf, MinRel, MaxRel, MaxComf, MaxPrac]; positive = the second
@@ -81,6 +82,7 @@ export const DEFAULTS = {
     natural: 0.2,       // per unit a pair deviates from one-white-key-per-finger
     leap: 3,            // jumping instead of stretching (scaled by distance and time)
     consistency: 2,     // repeated melodic context fingered differently
+    template: 3,        // per note off the standard scale / chromatic fingering
   },
 
 }
@@ -97,7 +99,7 @@ export const PARNCUTT = {
     posChange: 1, posChangeSize: 1, weak4: 1, weak5: 1, threeFourFive: 1, threeToFour: 1,
     fourOnBlack: 1, thumbOnBlack: 1, thumbOnBlackNext: 2, fiveOnBlack: 2, thumbPass: 1,
     cross: null, crossDist: 0, turnaround: 0, repeatShuttle: 0, sameFinger: 1000,
-    repeatSame: 0, repeatChange: 0, anchor: 0, leap: 1000, vertical: 1, natural: 0, consistency: 0,
+    repeatSame: 0, repeatChange: 0, anchor: 0, leap: 1000, template: 0, vertical: 1, natural: 0, consistency: 0,
   },
 }
 
@@ -153,6 +155,9 @@ export function createModel(options = {}) {
    * passes; pianists treat a short pass as routine.
    */
   function spanCost(d, f1, f2, n1, n2) {
+    // Rules are stated for the lower finger first; a reverse pair is the same
+    // pair with the interval negated (so a cramped 3→1 is a small span, not a large one)
+    if (f1 > f2) return spanCost(-d, f2, f1, n2, n1)
     const [minP, minC, minR, maxR, maxC, maxP] = lim(f1, f2)
     const thumb = f1 === 1 || f2 === 1
     // a long finger on a black key sits further in, so it reaches over a
@@ -233,13 +238,21 @@ export function createModel(options = {}) {
     // fast repeated note: rotate three fingers (3-2-1) rather than shuttle two (2-1-2)
     if (a.p === b.p && b.p === c.p && fa === fc && fa !== fb && c.on - a.on < 0.4) cost += W.repeatShuttle
     if (a.p === c.p) return cost   // back on the same key: no position change
+    // the chromatic glide: thumb on two white keys a tone apart, a long finger on
+    // the black key between; the hand stays put while the thumb slides
+    // (and the mirror case: the long finger on two black keys around the thumb)
+    if (Math.abs(c.p - a.p) <= 2 && fa === fc && ((fa === 1 && fb > 1 && fb < 5 && isBlack(b.p) && !isBlack(a.p) && !isBlack(c.p)) ||
+      (fb === 1 && fa > 1 && fa < 5 && !isBlack(b.p) && isBlack(a.p) && isBlack(c.p)))) return cost
     const d = dist(a.p, c.p)
     const [minP, minC, , , maxC, maxP] = lim(fa, fc)
     if (d > maxC || d < minC) {
       const between = (b.p - a.p) * (c.p - b.p) > 0
       const full = fb === 1 && between && (d > maxP || d < minP)
       const size = d > maxC ? d - maxC : minC - d
-      cost += movement(c.on - a.on, 0) * (W.posChange * (full ? 2 : 1) + W.posChangeSize * size)
+      // chromatic steps pivoting on a thumb on a white key (C2 B1 B♭3): the hand
+      // creeps by a semitone rather than changing position
+      const creep = fb === 1 && !isBlack(b.p) && Math.abs(b.p - a.p) === 1 && b.p - a.p === c.p - b.p ? 0.2 : 1
+      cost += creep * movement(c.on - a.on, 0) * (W.posChange * (full ? 2 : 1) + W.posChangeSize * size)
     }
     return cost
   }
@@ -312,10 +325,20 @@ function combosFor(freeMask, k) {
  * Writes n.finger (1..5, or 0 when a slice has more than five new notes) and
  * returns { cost, slices }.
  */
-export function fingerHand(notes, model) {
+export function fingerHand(notes, model, hand = 'R') {
   if (!notes.length) return { cost: 0, slices: 0 }
   const { opts } = model
   const slices = makeSlices(notes, opts.chordTolerance)
+
+  // Templates (research §6.5 G2): standard fingerings for recognised scale and
+  // chromatic runs, as a soft per-slice target finger.
+  const target = new Int8Array(slices.length), targetW = new Float32Array(slices.length)
+  if (model.W.template) {
+    const seq = slices.map(s => ({ p: s.notes[0].p, on: s.on, chord: s.notes.length > 1 }))
+    for (const [i, [f, w]] of chromaticTemplate(seq)) { target[i] = f; targetW[i] = w }
+    const real = seq.map(n => ({ ...n, p: hand === 'L' ? mirror(n.p) : n.p }))
+    for (const [i, [f, w]] of scaleTemplate(real, hand)) { target[i] = f; targetW[i] = w }
+  }
 
   // neighbour colours for the black-key rules: nearest-pitch note of the previous / next slice
   const nearestWhite = (sl, p) => {
@@ -379,6 +402,7 @@ export function fingerHand(notes, model) {
         if (!ok) continue
         let c = h.cost
         for (let i = 0; i < k; i++) c += unary[i][fs[i]]
+        if (target[si] && k === 1 && fs[0] !== target[si]) c += model.W.template * targetW[si]
         // vertical: every pair that includes a new key
         for (let i = 0; i < cfg.length; i++) for (let j = i + 1; j < cfg.length; j++) {
           if (!fresh.includes(cfg[i][0]) && !fresh.includes(cfg[j][0])) continue
@@ -505,7 +529,7 @@ export function fingerPiece(notes, options = {}) {
   for (const hand of ['R', 'L']) {
     const own = notes.filter(n => n.hand === hand)
     const rh = own.map(n => ({ p: hand === 'L' ? mirror(n.pitch) : n.pitch, on: n.on, off: n.off, src: n }))
-    out[hand] = fingerHand(rh, model)
+    out[hand] = fingerHand(rh, model, hand)
     for (const n of rh) n.src.finger = n.finger ?? 0
   }
   const t1 = typeof performance !== 'undefined' ? performance.now() : Date.now()

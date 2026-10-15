@@ -6,6 +6,7 @@
 // accepted finger strings (onset order, chords bottom → top).
 
 import { parseNote } from './keyboard.js'
+import { SCALE_FINGERINGS } from './templates.js'
 
 const MAJOR = [0, 2, 4, 5, 7, 9, 11, 12]
 const HARMONIC_MINOR = [0, 2, 3, 5, 7, 8, 11, 12]
@@ -37,22 +38,8 @@ export function scale(tonic, { octaves = 2, minor = false, updown = true } = {})
   return updown ? up.concat(up.slice(0, -1).reverse()) : up
 }
 
-// ── Textbook scale fingerings (one octave ascending; research §3.1) ─────────
-// Strings per hand for 2 octaves up and down are built from these.
-export const SCALE_FINGERINGS = {
-  major: {
-    C: ['1231234', '5432132'], G: ['1231234', '5432132'], D: ['1231234', '5432132'],
-    A: ['1231234', '5432132'], E: ['1231234', '5432132'], B: ['1231234', '4321432'],
-    F: ['1234123', '5432132'], 'F#': ['2341231', '4321321'], Db: ['2312341', '3214321'],
-    Ab: ['3412312', '3214321'], Eb: ['3123412', '3214321'], Bb: ['2123123', '3214321'],
-  },
-  minor: {
-    A: ['1231234', '5432132'], E: ['1231234', '5432132'], D: ['1231234', '5432132'],
-    G: ['1231234', '5432132'], C: ['1231234', '5432132'], B: ['1231234', '4321432'],
-    F: ['1234123', '5432132'], 'F#': ['3412312', '4321321'], 'C#': ['3412312', '3214321'],
-    'G#': ['3412312', '3214321'], Eb: ['3123412', '2143213'], Bb: ['2123123', '2132143'],
-  },
-}
+// Textbook scale fingerings (one octave ascending; research §3.1) live in templates.js.
+export { SCALE_FINGERINGS }
 
 /**
  * Expected 2-octave up-and-down fingering string for one hand, built from the
@@ -65,7 +52,8 @@ export const SCALE_FINGERINGS = {
 export function scaleExpect(pattern, hand) {
   const f = pattern.split('').map(Number)
   let mid = f[0]
-  if (hand === 'L' && f[0] === 5) mid = 1
+  // LH: after 2 on the leading note the tonic falls to the thumb (C 54321321…, B 43214321…)
+  if (hand === 'L' && f[6] === 2) mid = 1
   if (hand === 'R' && pattern === '2123123') mid = 4
   const top = hand === 'R' && f[0] === 1 ? f[6] + 1 : mid
   const up = [f[0], ...f.slice(1), mid, ...f.slice(1), top]
