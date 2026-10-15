@@ -27,7 +27,9 @@ const KEY_TOP = 73
 // knuckle offset from the middle knuckle (x toward the little finger, y up,
 // z toward the wrist), DIP/PIP coupling.
 const FINGERS = {
-  1: { len: [4.3, 3.1, 2.6], rad: [1.15, 1.0, 0.9], base: [-3.4, -2.2, 4.6], k: 0.8, dir: [-0.5, -0.22, -0.84] },
+  // thumb: from the CMC joint near the wrist; segment 0 is the metacarpal,
+  // buried in the thenar pad, so the visible thumb has two joints (MCP, IP)
+  1: { len: [4.6, 3.2, 2.6], rad: [1.45, 1.05, 0.92], base: [-3.0, -1.9, 5.0], k: 0.8, tilt: 0.75, dir: [-0.42, -0.3, -0.86] },
   2: { len: [4.4, 2.6, 2.0], rad: [0.92, 0.84, 0.76], base: [-2.25, 0, 0.35], k: 0.7, dir: [-0.06, 0, -1] },
   3: { len: [4.9, 3.0, 2.2], rad: [0.95, 0.87, 0.78], base: [0, 0.25, 0], k: 0.7, dir: [0, 0, -1] },
   4: { len: [4.6, 2.8, 2.1], rad: [0.9, 0.82, 0.74], base: [2.1, 0, 0.35], k: 0.7, dir: [0.05, 0, -1] },
@@ -216,7 +218,7 @@ function buildHandGeometry(s, J, bones) {
       prof: x => {
         const r = radiusAt(x)
         // knuckle bumps on top, a fuller pad under the last segment
-        const bump = 0.09 * (Math.exp(-(((x - j1) / 0.55) ** 2)) + Math.exp(-(((x - j2) / 0.45) ** 2))) + (x < 0.6 ? 0.12 * Math.exp(-((x / 0.8) ** 2)) : 0)
+        const bump = 0.09 * (Math.exp(-(((x - j1) / 0.55) ** 2)) + Math.exp(-(((x - j2) / 0.45) ** 2))) + (!thumb && x < 0.6 ? 0.12 * Math.exp(-((x / 0.8) ** 2)) : 0)
         const pad = x > j2 ? 0.06 * Math.sin(Math.PI * smooth(j2, end, x)) : 0
         return [r * (thumb ? 1.08 : 1.1), r * (thumb ? 0.95 : 0.9) + bump * 0.5, bump * 0.5 - pad]
       },
@@ -290,8 +292,12 @@ function buildHandGeometry(s, J, bones) {
     const ctr = B.vertex(P.set(xc0, -0.4, front - 0.1), [[BONE.palm, 1]])
     for (let j = 0; j < SEG; j++) idx.push(ctr, start + (j + 1) % SEG, start + j)
     // thenar pad (thumb muscle) between the thumb root and the wrist
-    const tc = v3().lerpVectors(k1, J.W, 0.42); tc.y += 0.35
-    B.ellipsoid('skin', tc, v3(1, 0, 0), v3(0, 1, 0), v3(0, 0, 1), [1.9, 1.35, 2.7], [[BONE.palm, 0.6], [BONE.finger(1, 0), 0.4]])
+    // it wraps the thumb's metacarpal (CMC → MCP) and blends into the palm
+    const T = J.fingers[1], tf = v3().subVectors(T[1], T[0]).normalize()
+    const tside = v3().crossVectors(tf, v3(0, 1, 0)).normalize(), tup = v3().crossVectors(tside, tf).normalize()
+    // (offset toward the palm, so it fills the web rather than poking through the thumb)
+    const tc = v3().lerpVectors(T[0], T[1], 0.36); tc.x += s * 0.95; tc.y -= 0.3
+    B.ellipsoid('skin', tc, tside, tup, tf, [1.7, 1.25, FINGERS[1].len[0] * 0.58], [[BONE.palm, 0.5], [BONE.finger(1, 0), 0.5]])
   }
   // ── wrist, forearm, cuff, sleeve ──
   {
@@ -367,6 +373,7 @@ function buildHand(side, mats) {
   const J = makeJoints()
   const knuckle = v3(), offset = v3(), need = v3(), target = v3(), tip = v3(), shoulder = v3()
   const SHOULDER = new THREE.Vector3(s * 20, 107, 45)
+  const thumbCurl = { side: new THREE.Vector3(s, 0, 0), tilt: FINGERS[1].tilt }
 
   function armIK(W, out) {
     // two bones from the shoulder to the wrist; lean in when it cannot reach
@@ -409,7 +416,7 @@ function buildHand(side, mats) {
       const d = FINGERS[f], t = tips[f - 1], P = J.fingers[f]
       P[0].set(knuckle.x + s * d.base[0], knuckle.y + d.base[1], knuckle.z + d.base[2]).add(offset)
       tip.set(t.x, KEY_TOP + t.y + d.rad[2] * 0.9, t.z)
-      solveFinger(P[0].clone(), tip, d.len, d.k, P)
+      solveFinger(P[0].clone(), tip, d.len, d.k, P, f === 1 ? thumbCurl : null)
     }
     const k3 = J.fingers[3][0]
     J.W.set(k3.x + s * WRIST[0], k3.y + WRIST[1], k3.z + WRIST[2])

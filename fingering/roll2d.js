@@ -6,8 +6,8 @@ import { keyX, isBlack, WHITE_W, LOW, HIGH } from './keyboard.js'
 
 const COLORS = ['#777', '#e2483d', '#f0a030', '#48b04c', '#3f8fe0', '#a05ad8']
 // knuckle offsets across the hand, same as hands3d.js (cm from the middle knuckle)
-const KNUCKLE = [0, -3.4, -2.25, 0, 2.1, 3.9]
-const KNUCKLE_Z = [0, 7.8, 3.55, 3.2, 3.55, 4.5]
+const KNUCKLE = [0, -3.0, -2.25, 0, 2.1, 3.9]
+const KNUCKLE_Z = [0, 8.2, 3.55, 3.2, 3.55, 4.5]
 const FINGER_W = [0, 2.1, 1.7, 1.75, 1.65, 1.45]
 
 export function createRoll(canvas) {

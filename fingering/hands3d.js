@@ -1,6 +1,7 @@
 // Procedural pianist hands for three.js (Experiment #029).
 //
-// Each hand is a palm, a forearm, four three-joint fingers and a thumb, built
+// Each hand is a palm, a forearm, four three-joint fingers and a two-joint
+// thumb (its metacarpal hidden in the thenar pad), built
 // from tapered cylinders with spheres at the joints. Every frame the motion
 // model (motion.js) gives a fingertip target per finger; each finger is then
 // solved with an exact planar IK:
@@ -23,8 +24,12 @@ const KEY_TOP = 73
 // Adult hand, ~19 cm long (Buchholz et al. 1992 proportions, rounded).
 // Per finger: segment lengths, radii, knuckle offset (x across the hand toward
 // the little finger, y up, z toward the wrist) from the middle-finger knuckle.
+// The thumb's chain starts at its CMC joint, deep in the palm near the wrist:
+// segment 0 is the metacarpal (inside the thenar pad, not a visible digit),
+// so it shows two joints, MCP and IP, like a real thumb. It curls across
+// toward the fingers (tilt) instead of straight down.
 const FINGERS = {
-  1: { len: [4.3, 3.1, 2.6], rad: [1.15, 1.0, 0.9], base: [-3.4, -2.2, 4.6], k: 0.8 },
+  1: { len: [4.6, 3.2, 2.6], rad: [1.45, 1.05, 0.92], base: [-3.0, -1.9, 5.0], k: 0.8, tilt: 0.75 },
   2: { len: [4.4, 2.6, 2.0], rad: [0.92, 0.84, 0.76], base: [-2.25, 0, 0.35], k: 0.7 },
   3: { len: [4.9, 3.0, 2.2], rad: [0.95, 0.87, 0.78], base: [0, 0.25, 0], k: 0.7 },
   4: { len: [4.6, 2.8, 2.1], rad: [0.9, 0.82, 0.74], base: [2.1, 0, 0.35], k: 0.7 },
@@ -41,12 +46,21 @@ function chain(L, k, p) {
 }
 const P_MIN = 0.08, P_MAX = 1.65
 
+const _e1 = new THREE.Vector3(), _e2 = new THREE.Vector3(), _sd = new THREE.Vector3()
+
 /**
  * Solve one finger: base B, target T (Vector3). Writes joint positions into
  * out[0..3] (out[0] = B). Returns how far short the tip falls (0 when reached).
+ *
+ * Fingers bend in the vertical plane through their target. The thumb does
+ * not: its metacarpal sits rotated in the palm, so it flexes down AND across
+ * toward the fingers. Pass curl = { side, tilt }: side is the horizontal
+ * direction toward the palm (+x for the right hand, -x for the left), tilt
+ * how far the bending plane leans that way (radians, 0 = like a finger).
  */
-export function solveFinger(B, T, L, k, out) {
+export function solveFinger(B, T, L, k, out, curl = null) {
   _v.subVectors(T, B)
+  if (curl && curl.tilt) return solveTilted(B, L, k, out, curl)
   const dx = Math.hypot(_v.x, _v.z), dy = _v.y
   if (dx > 1e-6) _u.set(_v.x / dx, 0, _v.z / dx); else _u.set(0, 0, -1)
   const r = Math.hypot(dx, dy)
@@ -65,6 +79,34 @@ export function solveFinger(B, T, L, k, out) {
   out[0].copy(B)
   for (let i = 0; i < 3; i++) {
     out[i + 1].copy(out[i]).addScaledVector(_u, L[i] * Math.cos(angles[i])).addScaledVector(Y, -L[i] * Math.sin(angles[i]))
+  }
+  return Math.max(0, r - rMax)
+}
+
+function solveTilted(B, L, k, out, { side, tilt }) {
+  // _v = target - base. Plane: e1 along it, e2 = the way the chain curls
+  // (down, leaned toward the palm by tilt), both orthonormal.
+  const r = _v.length()
+  _e1.copy(_v).multiplyScalar(1 / (r || 1))
+  _e2.set(0, -1, 0).addScaledVector(_e1, _e1.y)            // -Y without its e1 part
+  if (_e2.lengthSq() < 1e-8) _e2.set(0, 0, 1).addScaledVector(_e1, -_e1.z)
+  _e2.normalize()
+  _sd.copy(side).addScaledVector(_e1, -_e1.dot(side)).addScaledVector(_e2, -_e2.dot(side))
+  if (_sd.lengthSq() > 1e-8) _e2.multiplyScalar(Math.cos(tilt)).addScaledVector(_sd.normalize(), Math.sin(tilt))
+  const rMax = Math.hypot(...chain(L, k, P_MIN)), rMin = Math.hypot(...chain(L, k, P_MAX))
+  const rr = Math.min(rMax, Math.max(rMin, r))
+  let lo = P_MIN, hi = P_MAX
+  for (let i = 0; i < 18; i++) {
+    const m = (lo + hi) / 2
+    if (Math.hypot(...chain(L, k, m)) > rr) lo = m; else hi = m
+  }
+  const p = (lo + hi) / 2
+  const [cf, cd] = chain(L, k, p)
+  const a = -Math.atan2(cd, cf)
+  const angles = [a, a + p, a + (1 + k) * p]
+  out[0].copy(B)
+  for (let i = 0; i < 3; i++) {
+    out[i + 1].copy(out[i]).addScaledVector(_e1, L[i] * Math.cos(angles[i])).addScaledVector(_e2, L[i] * Math.sin(angles[i]))
   }
   return Math.max(0, r - rMax)
 }
@@ -128,6 +170,7 @@ export function buildHand(side, { scale = 1 } = {}) {
     const d = FINGERS[f]
     const segs = d.len.map((_, i) => cyl(d.rad[i], d.rad[i + 1] ?? d.rad[i] * 0.85))
     const joints = d.rad.map(r => ball(r))
+    if (f === 1) joints[0].visible = false        // the CMC joint is buried in the thenar
     const tip = ball(d.rad[2] * 0.88)
     // a coloured nail-side dot that lights up while the finger is down
     const dot = new THREE.Mesh(new THREE.SphereGeometry(d.rad[2] * 0.55, 12, 8), new THREE.MeshBasicMaterial({ color: FINGER_COLORS[f], transparent: true, opacity: 0 }))
@@ -135,7 +178,7 @@ export function buildHand(side, { scale = 1 } = {}) {
     const label = makeLabel(String(f), FINGER_COLORS[f])
     label.material.opacity = 0
     group.add(label)
-    fingers[f] = { d, segs, joints, tip, dot, label, pts: [0, 1, 2, 3].map(() => new THREE.Vector3()), base: new THREE.Vector3(), target: new THREE.Vector3() }
+    fingers[f] = { curl: f === 1 ? { side: new THREE.Vector3(s, 0, 0), tilt: d.tilt } : null, d, segs, joints, tip, dot, label, pts: [0, 1, 2, 3].map(() => new THREE.Vector3()), base: new THREE.Vector3(), target: new THREE.Vector3() }
   }
   // palm, thenar pad, wrist and forearm
   const palm = new THREE.Mesh(new RoundedBoxGeometry(1, 1, 1, 3, 0.35), mat)
@@ -179,7 +222,7 @@ export function buildHand(side, { scale = 1 } = {}) {
     for (const f of [1, 2, 3, 4, 5]) {
       const F = fingers[f], d = F.d, t = tips[f - 1]
       F.base.set(knuckle.x + s * d.base[0] * size, knuckle.y + d.base[1] * size, knuckle.z + d.base[2] * size).add(offset)
-      solveFinger(F.base, F.target, d.len.map(l => l * size), d.k, F.pts)
+      solveFinger(F.base, F.target, d.len.map(l => l * size), d.k, F.pts, F.curl)
       for (let i = 0; i < 3; i++) {
         place(F.segs[i], F.pts[i], F.pts[i + 1])
         F.joints[i].position.copy(F.pts[i])
@@ -200,9 +243,14 @@ export function buildHand(side, { scale = 1 } = {}) {
     palm.lookAt(mid.x, mid.y - 0.35 * size, mid.z)
     // tilt across the hand so the little-finger side drops a little
     palm.rotateZ(-s * Math.atan2(k2.y - k5.y, Math.abs(k5.x - k2.x)))
-    const tb = fingers[1].base
-    thenar.position.lerpVectors(tb, wrist, 0.45).y += 0.2 * size
-    thenar.scale.set(1.9 * size, 1.4 * size, 2.6 * size)
+    // thenar pad: the flesh around the thumb's metacarpal, from the CMC
+    // joint to the MCP knuckle, merging into the palm
+    const tp = fingers[1].pts
+    _v.subVectors(tp[1], tp[0])
+    const mlen = _v.length()
+    thenar.position.lerpVectors(tp[0], tp[1], 0.42)
+    thenar.quaternion.setFromUnitVectors(Y, _v.multiplyScalar(1 / (mlen || 1)))
+    thenar.scale.set(1.75 * size, 0.62 * mlen + 0.6 * size, 1.35 * size)
     wristBall.position.copy(wrist).y -= 0.3 * size
     wristBall.scale.set(1.6 * size, 1.05 * size, 1.1 * size)
     elbow.set(wrist.x + s * 9, wrist.y - 11, wrist.z + 30)
