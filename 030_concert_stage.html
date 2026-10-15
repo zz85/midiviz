@@ -136,7 +136,8 @@
     <div class="item" data-view="view3"><svg viewBox="0 0 24 24"><path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11z"/></svg>View 3<span class="dot"></span></div>
     <div class="item" data-view="view4"><svg viewBox="0 0 24 24"><path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11z"/></svg>View 4<span class="dot"></span></div>
     <div class="item" data-view="tour"><svg viewBox="0 0 24 24"><path d="M4 6h2v12H4zm4 0h12v12H8zm3 3v6l5-3z"/></svg>Cinematic Tour<span class="dot"></span></div>
-    <label class="chk" title="While a song plays the tour follows it: song time drives the camera, it leans toward the notes and pushes in on loud chords"><input type="checkbox" id="tourSync" checked>Tour follows the song</label>
+    <label class="chk" title="While a song plays the tour follows it: song time drives the camera, it leans toward the notes and pushes in on loud chords"><input type="checkbox" id="tourSync">Tour follows the song</label>
+    <label class="chk" title="In the fixed views the camera turns a little toward where the hands are playing, with a slow wander of its own"><input type="checkbox" id="lookHands" checked>Glance at the hands</label>
   </div>
 
   <div id="visualsPop" class="pop ui">
@@ -659,7 +660,7 @@
       applyGlow()
       if (!fromView) {
         if (m === 'lesson' && !['top', 'first', 'orbit'].includes(viewName)) setView('top')
-        if (m === 'concert' && ['top', 'first'].includes(viewName)) setView('view1')
+        if (m === 'concert' && viewName === 'top') setView('view1')
       }
     }
     function applyGlow() { piano.keyGlow = mode === 'lesson' || $('glowConcert').checked ? (mode === 'lesson' ? 1.15 : 0.7) : 0 }
@@ -754,7 +755,7 @@
       const v = VIEWS[name] || VIEWS.view1
       dofScale = v.dof
       lane.tiltTarget = v.tilt ?? 55
-      if ((name === 'top' || name === 'first') && mode !== 'lesson') setMode('lesson', true)
+      if (name === 'top' && mode !== 'lesson') setMode('lesson', true)
       const to = { pos: new THREE.Vector3(...v.pos), target: new THREE.Vector3(...v.target), fov: v.fov }
       const done = () => { controls.autoRotate = !!v.orbit }
       if (instant) { tween = null; camera.position.copy(to.pos); controls.target.copy(to.target); camera.fov = to.fov; camera.updateProjectionMatrix(); done(); return }
@@ -789,6 +790,7 @@
     }
     let scheduler = null, song = null
     const music = { lean: 0, leanW: 0, energy: 0, phase0: 0, songT: 0, wall: 0 }
+    const glance = { x: 0, w: 0, on: 0, drag: false }
     let offlineT = null    // song time while exporting (frames are rendered at fixed steps)
     const _d = new THREE.Vector3()
     function placeTour(u) {
@@ -797,7 +799,7 @@
       let fov = tour.fov(u)
       if (music.leanW > 0.001) {
         const near = THREE.MathUtils.clamp(1.6 - camera.position.distanceTo(controls.target) / 250, 0.35, 1)
-        controls.target.x += (music.lean - controls.target.x) * 0.45 * near * music.leanW
+        if ($('tourSync').checked) controls.target.x += (music.lean - controls.target.x) * 0.45 * near * music.leanW
       }
       const push = Math.min(music.energy, 1.5)
       if (push > 0.001) {
@@ -835,9 +837,12 @@
     }
     function stepMusic(dt) {
       let sx = 0, n = 0
-      if ($('tourSync').checked) for (const m of holders.keys()) { sx += piano.keyX(m); n++ }
+      for (const m of holders.keys()) { sx += piano.keyX(m); n++ }
       if (n) music.lean += (sx / n - music.lean) * Math.min(1, dt * 1.5)
       music.leanW += ((n ? 1 : 0) - music.leanW) * Math.min(1, dt * (n ? 1.2 : 0.4))
+      // the glance: slower still, so it reads as attention rather than tracking
+      if (n) glance.x += (sx / n - glance.x) * Math.min(1, dt * 0.6)
+      glance.w += ((n ? 1 : 0) - glance.w) * Math.min(1, dt * (n ? 0.5 : 0.15))
       music.energy *= Math.exp(-dt * 2.2)
     }
     function startTour(instant) {
@@ -850,11 +855,13 @@
       }
     }
     controls.addEventListener('start', () => {
+      glance.drag = true
       if (tour.active || tween) { tour.active = false; tween = null }
       if (viewName !== 'orbit') controls.autoRotate = false
     })
-    $('tourSync').checked = params.get('sync') !== '0'
+    $('tourSync').checked = params.get('sync') === '1'
     $('tourSync').onchange = () => anchorTour()
+    controls.addEventListener('end', () => { glance.drag = false })
 
     // ── Popovers and UI chrome ─────────────────────────────────────────────
     const POPS = { songsBtn: 'songsPop', cameraBtn: 'cameraPop', visualsBtn: 'visualsPop', audioBtn: 'audioPop', renderBtn: 'renderPop', settingsBtn: 'settingsPop' }
@@ -1346,7 +1353,7 @@
     }
 
     // ── Frame ──────────────────────────────────────────────────────────────
-    const _focus = new THREE.Vector3(), _drift = new THREE.Vector3()
+    const _focus = new THREE.Vector3(), _drift = new THREE.Vector3(), _look = new THREE.Vector3()
     let elapsed = 0
     function frame(dt, t) {
       elapsed += dt
@@ -1365,6 +1372,20 @@
       if (hands.group.visible) hands.update(t, dt)
       if (offlineT == null) controls.update(dt)
       else camera.lookAt(controls.target)
+      // in a fixed view, turn a little toward the hands (and wander slowly):
+      // only the aim changes, for this frame, so the controls are untouched
+      const glancing = $('lookHands').checked && !tour.active && !tween && !glance.drag && !controls.autoRotate
+      glance.on += ((glancing ? 1 : 0) - glance.on) * Math.min(1, dt * 1.5)
+      if (glance.on > 0.002) {
+        const dist = camera.position.distanceTo(controls.target)
+        const reach = THREE.MathUtils.clamp(dist / 10, 4, 16)         // cm the aim may move
+        const toward = THREE.MathUtils.clamp((glance.x - controls.target.x) * 0.3, -reach, reach) * glance.w
+        const wander = Math.sin(elapsed * 0.11) * 0.8 + Math.sin(elapsed * 0.047 + 2) * 0.6
+        _look.copy(controls.target)
+        _look.x += (toward + wander * reach * 0.18) * glance.on
+        _look.y += Math.sin(elapsed * 0.083 + 1) * reach * 0.06 * glance.on
+        camera.lookAt(_look)
+      }
       updateNotes(t, dt)
       dust.material.uniforms.uTime.value = elapsed
       grade.uniforms.uTime.value = elapsed
@@ -1521,7 +1542,7 @@
       ['scene', 'scene', 'val', 'stage'], ['finish', 'finish', 'val', 'ebony'], ['lid', 'lid', 'val', 'full'],
       ['desk', 'desk', 'chk'], ['bench', 'bench', 'chk'], ['mirror', 'mirror', 'chk', !!piano.mirror], ['hands', 'hands', 'chk'],
       ['rh', 'rhColor', 'color'], ['lh', 'lhColor', 'color'], ['glow', 'glowConcert', 'chk'], ['labels', 'labels', 'chk'],
-      ['light', 'light', 'num'], ['ex', 'exposure', 'num'], ['sync', 'tourSync', 'chk'],
+      ['light', 'light', 'num'], ['ex', 'exposure', 'num'], ['sync', 'tourSync', 'chk'], ['glance', 'lookHands', 'chk'],
       ['ao', 'ao', 'chk', !LOWQ], ['dof', 'dof', 'chk', !LOWQ], ['bloom', 'bloom', 'chk'], ['grain', 'grain', 'chk'], ['drift', 'drift', 'chk'],
       ['sf', 'sf', 'val', 'stack'], ['vel', 'velocity', 'num'],
       ['room', 'room', 'val', 'hall'], ['seat', 'seat', 'val', 'front'], ['rv', 'rvAmt', 'num'], ['decay', 'rvDecay', 'num'],
@@ -1586,7 +1607,7 @@
 
     // ── Start ──────────────────────────────────────────────────────────────
     const startView = VIEWS[params.get('view')] ? params.get('view') : 'view1'
-    setMode(params.get('mode') === 'lesson' || ['top', 'first'].includes(startView) ? 'lesson' : 'concert', true)
+    setMode(params.get('mode') === 'lesson' || startView === 'top' ? 'lesson' : 'concert', true)
     setView(startView, true)
     lane.tilt = lane.tiltTarget
     if (params.has('cam') && startView !== 'tour' && startView !== 'orbit') {
