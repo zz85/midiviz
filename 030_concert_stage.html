@@ -1,0 +1,1458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>Experiment #030 - Concert Stage</title>
+  <!--
+    Experiment #030 - Concert Stage. The #028 grand, restaged after Concert
+    Creator (concertcreator.ai): a black stage with one warm spotlight, the
+    lid lit from inside so the bronze plate and chrome pins glow, a mirror
+    fallboard that reflects the keys, depth of field, grain and vignette, the
+    camera presets their app ships (top, first person, orbit, four views), a
+    falling-notes "lesson" mode with left / right hand colours, and MP4 export.
+
+    The piano is concertstage/concert-grand.js (forked from grandpiano/).
+    Everything here is procedural: no HDRIs or texture downloads.
+  -->
+  <script type="importmap">
+    { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    } }
+  </script>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font: 13px/1.35 -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif; color: #eee; }
+    canvas { display: block; touch-action: none; }
+    .ui { transition: opacity 0.6s; }
+    body.idle .ui { opacity: 0; pointer-events: none; }
+    body.idle { cursor: none; }
+    body.hideui .ui { display: none !important; }
+
+    .pill {
+      display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 15px; border-radius: 16px;
+      background: rgba(44, 44, 44, 0.86); color: #f2f2f2; border: 0; cursor: pointer; font: 600 12.5px/1 inherit;
+      letter-spacing: 0.03em; text-transform: uppercase; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4); backdrop-filter: blur(6px);
+    }
+    .pill:hover { background: rgba(64, 64, 64, 0.92); }
+    .pill.on { background: #2fae4a; }
+    .pill svg { width: 15px; height: 15px; fill: currentColor; }
+    #topLeft { position: absolute; top: 12px; left: 12px; display: flex; gap: 8px; }
+    #topRight { position: absolute; top: 12px; right: 12px; display: flex; gap: 8px; }
+    #title { align-self: center; margin-left: 6px; font: 300 15px Georgia, serif; color: rgba(255, 255, 255, 0.55); letter-spacing: 0.04em; }
+    #title a { color: inherit; text-decoration: none; }
+
+    .pop {
+      position: absolute; top: 52px; min-width: 210px; max-height: calc(100vh - 150px); overflow: auto; display: none;
+      background: rgba(30, 30, 30, 0.96); border-radius: 12px; padding: 6px 0; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
+    }
+    .pop.open { display: block; }
+    .pop::before { content: ''; position: absolute; top: -7px; left: var(--arrow, 50%); border: 7px solid transparent; border-top: 0; border-bottom-color: rgba(30, 30, 30, 0.96); }
+    .item { display: flex; align-items: center; gap: 10px; padding: 9px 16px; cursor: pointer; color: #e8e8e8; white-space: nowrap; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+    .item:last-child { border-bottom: 0; }
+    .item:hover { background: rgba(255, 255, 255, 0.06); }
+    .item .dot { margin-left: auto; width: 8px; height: 8px; border-radius: 50%; background: #fff; visibility: hidden; }
+    .item.sel .dot { visibility: visible; }
+    .item svg { width: 17px; height: 17px; fill: #ddd; flex: none; }
+    .sect { padding: 10px 16px 4px; font-size: 11px; color: #8d8d8d; text-transform: uppercase; letter-spacing: 0.06em; }
+    .field { padding: 6px 16px 8px; }
+    .field > label { display: block; font-size: 12px; color: #c8c8c8; margin-bottom: 5px; }
+    .field input[type=color] { width: 100%; height: 24px; border: 0; border-radius: 6px; padding: 0; background: none; cursor: pointer; }
+    .field input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
+    .field input[type=color]::-webkit-color-swatch { border: 0; border-radius: 6px; }
+    .field input[type=range] { width: 100%; accent-color: #9a9a9a; }
+    .field select, .pop select { width: 100%; background: #2b2b2b; color: #eee; border: 1px solid #444; border-radius: 6px; padding: 4px; font: inherit; }
+    .chk { display: flex; align-items: center; gap: 8px; padding: 6px 16px; color: #ddd; cursor: pointer; }
+    .chk input { accent-color: #2fae4a; }
+    .seg { display: flex; gap: 0; margin: 0 16px 8px; border-radius: 8px; overflow: hidden; border: 1px solid #444; }
+    .seg button { flex: 1; padding: 6px 4px; background: #262626; color: #ccc; border: 0; cursor: pointer; font: inherit; font-size: 12px; }
+    .seg button.on { background: #e8e8e8; color: #111; }
+
+    #songsPop { left: 12px; --arrow: 30px; width: 280px; }
+    #cameraPop { --arrow: 70%; }
+    #visualsPop { width: 240px; }
+    #renderPop { width: 260px; }
+
+    #transport { position: absolute; left: 0; right: 0; bottom: 0; padding: 0 26px 14px; background: linear-gradient(transparent, rgba(0, 0, 0, 0.55)); }
+    #times { display: flex; justify-content: space-between; font: 600 10.5px/1 ui-monospace, Menlo, monospace; color: #e6e6e6; margin-bottom: 7px; }
+    #seek { -webkit-appearance: none; appearance: none; width: 100%; height: 2px; background: linear-gradient(to right, #fff var(--p, 0%), rgba(255, 255, 255, 0.35) var(--p, 0%)); outline: none; margin: 0 0 12px; cursor: pointer; }
+    #seek::-webkit-slider-thumb { -webkit-appearance: none; width: 11px; height: 11px; border-radius: 50%; background: #fff; }
+    #seek::-moz-range-thumb { width: 11px; height: 11px; border: 0; border-radius: 50%; background: #fff; }
+    #controls { display: flex; justify-content: center; align-items: center; gap: 22px; }
+    .tbtn { background: none; border: 0; color: #fff; cursor: pointer; padding: 0; display: flex; align-items: center; opacity: 0.92; }
+    .tbtn:hover { opacity: 1; }
+    .tbtn svg { fill: #fff; }
+    .tbtn.off { opacity: 0.45; }
+    #speedLbl { font: 600 10px/1 inherit; margin-left: 3px; }
+    #extra { position: absolute; right: 26px; bottom: 16px; display: flex; gap: 6px; }
+    .mini { background: rgba(44, 44, 44, 0.8); border: 0; color: #ddd; border-radius: 12px; padding: 5px 10px; font: 600 11px inherit; cursor: pointer; }
+    .mini.on { background: #2fae4a; color: #fff; }
+
+    #status { position: absolute; top: 56px; left: 50%; transform: translateX(-50%); padding: 7px 14px; border-radius: 16px; background: rgba(30, 30, 30, 0.9); font-size: 12px; }
+    #status.hidden { display: none; }
+    #status.error { color: #f99; }
+    #dropHint { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; font: 300 26px Georgia, serif; color: #f3e6c4; background: rgba(0, 0, 0, 0.55); pointer-events: none; }
+    body.dragging #dropHint { display: flex; }
+    #help { padding: 8px 16px 10px; font-size: 11px; color: #8e8e8e; line-height: 1.5; white-space: normal; }
+    #help b { color: #bbb; }
+    #exBar { height: 4px; margin: 4px 16px 6px; border-radius: 2px; background: #333; overflow: hidden; }
+    #exBar div { height: 100%; width: 0; background: #2fae4a; }
+    #exStatus { padding: 0 16px 8px; font-size: 11px; color: #aaa; white-space: normal; }
+    .btnrow { display: flex; gap: 8px; padding: 6px 16px 10px; }
+    .btnrow button { flex: 1; padding: 7px; border-radius: 8px; border: 0; background: #2fae4a; color: #fff; font: 600 12px inherit; cursor: pointer; }
+    .btnrow button.sec { background: #3a3a3a; }
+    .btnrow button:disabled { opacity: 0.5; cursor: default; }
+  </style>
+</head>
+<body>
+  <div id="topLeft" class="ui">
+    <button class="pill" id="songsBtn"><svg viewBox="0 0 24 24"><path d="M15.4 7.4 14 6l-6 6 6 6 1.4-1.4L10.8 12z"/></svg>Songs</button>
+    <span id="title"><a href="README.md" title="Back to experiments">#030 · Concert Stage</a></span>
+  </div>
+  <div id="songsPop" class="pop ui">
+    <div class="sect">Songs</div>
+    <div id="songList"></div>
+    <div class="item" id="openFile"><svg viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8z"/></svg>Open a MIDI file…</div>
+    <input id="file" type="file" accept=".mid,.midi,audio/midi" hidden>
+  </div>
+
+  <div id="topRight" class="ui">
+    <button class="pill" id="cameraBtn"><svg viewBox="0 0 24 24"><path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11z"/></svg>Camera</button>
+    <button class="pill" id="visualsBtn"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 0 0 0 18c.8 0 1.5-.7 1.5-1.5 0-.4-.2-.7-.4-1-.2-.3-.4-.6-.4-1 0-.8.7-1.5 1.5-1.5H16a5 5 0 0 0 5-5c0-4.4-4-8-9-8zM6.5 12a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm3-4a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm3 4a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/></svg>Visuals</button>
+    <button class="pill" id="renderBtn"><svg viewBox="0 0 24 24"><circle cx="7" cy="12" r="4"/><circle cx="16" cy="12" r="4" opacity=".55"/></svg>Render</button>
+    <button class="pill" id="settingsBtn" title="Sound and quality" style="padding:0 9px"><svg viewBox="0 0 24 24"><path d="M19.4 13a7.5 7.5 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.6 7.6 0 0 0-1.7-1L15 3h-4l-.4 2.7a7.6 7.6 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.5 7.5 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1c.5.4 1.1.7 1.7 1L11 21h4l.4-2.7c.6-.3 1.2-.6 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg></button>
+  </div>
+
+  <div id="cameraPop" class="pop ui">
+    <div class="item" data-view="top"><svg viewBox="0 0 24 24"><path d="M4 4h3v16H4zm5 0h2v10H9zm4 0h2v16h-2zm4 0h3v10h-3z"/></svg>Top Camera<span class="dot"></span></div>
+    <div class="item" data-view="first"><svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm0 2c-3 0-8 1.5-8 4.5V20h16v-1.5c0-3-5-4.5-8-4.5z"/></svg>First Person Camera<span class="dot"></span></div>
+    <div class="item" data-view="orbit"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16zm0-11a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/></svg>Orbit Camera<span class="dot"></span></div>
+    <div class="item" data-view="view1"><svg viewBox="0 0 24 24"><path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11z"/></svg>View 1<span class="dot"></span></div>
+    <div class="item" data-view="view2"><svg viewBox="0 0 24 24"><path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11z"/></svg>View 2<span class="dot"></span></div>
+    <div class="item" data-view="view3"><svg viewBox="0 0 24 24"><path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11z"/></svg>View 3<span class="dot"></span></div>
+    <div class="item" data-view="view4"><svg viewBox="0 0 24 24"><path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11z"/></svg>View 4<span class="dot"></span></div>
+    <div class="item" data-view="tour"><svg viewBox="0 0 24 24"><path d="M4 6h2v12H4zm4 0h12v12H8zm3 3v6l5-3z"/></svg>Cinematic Tour<span class="dot"></span></div>
+    <label class="chk" title="While a song plays the tour follows it: song time drives the camera, it leans toward the notes and pushes in on loud chords"><input type="checkbox" id="tourSync" checked>Tour follows the song</label>
+  </div>
+
+  <div id="visualsPop" class="pop ui">
+    <div class="sect">Mode</div>
+    <div class="seg" id="modeSeg"><button data-mode="concert">Concert</button><button data-mode="lesson">Lesson</button></div>
+    <div class="field"><label>Right Hand Color</label><input type="color" id="rhColor" value="#ffc93c"></div>
+    <div class="field"><label>Left Hand Color</label><input type="color" id="lhColor" value="#2f8bff"></div>
+    <label class="chk"><input type="checkbox" id="glowConcert">Colour the keys in Concert mode</label>
+    <label class="chk"><input type="checkbox" id="labels" checked>Finger / hand labels on notes</label>
+    <div class="field"><label>Main Light Intensity</label><input type="range" id="light" min="0" max="2" step="0.01" value="1"></div>
+    <div class="field"><label>Exposure</label><input type="range" id="exposure" min="0.3" max="2.5" step="0.01" value="1"></div>
+    <div class="sect">Piano</div>
+    <div class="field"><label>Stage</label><select id="scene"><option value="stage">Black stage (spotlight)</option><option value="studio">Photo studio</option></select></div>
+    <div class="field"><label>Finish</label><select id="finish"></select></div>
+    <div class="field"><label>Lid</label><select id="lid"><option value="full">Full stick</option><option value="half">Short stick</option><option value="closed">Closed</option></select></div>
+    <label class="chk"><input type="checkbox" id="desk">Music desk</label>
+    <label class="chk"><input type="checkbox" id="bench" checked>Bench</label>
+  </div>
+
+  <div id="renderPop" class="pop ui">
+    <div class="sect">Export video (MP4)</div>
+    <div class="field"><label>Resolution</label><select id="exRes"><option value="1280x720">720p</option><option value="1920x1080" selected>1080p</option><option value="2560x1440">1440p</option><option value="3840x2160">4K</option></select></div>
+    <div class="field"><label>Frame rate</label><select id="exFps"><option>30</option><option selected>60</option></select></div>
+    <div class="field"><label>Camera</label><select id="exCam"><option value="current">Current camera</option><option value="tour" selected>Cinematic tour (follows the song)</option></select></div>
+    <label class="chk"><input type="checkbox" id="exAudio" checked>Include audio</label>
+    <label class="chk"><input type="checkbox" id="exTitle" checked>Title card</label>
+    <div id="exBar"><div></div></div>
+    <div id="exStatus">Choose a song first. Rendering is offline, so every frame is smooth regardless of GPU speed.</div>
+    <div class="btnrow"><button id="exStart">Export</button><button id="exCancel" class="sec">Cancel</button></div>
+  </div>
+
+  <div id="settingsPop" class="pop ui" style="width:250px">
+    <div class="sect">Sound</div>
+    <div class="field"><select id="sf"></select></div>
+    <div class="field"><label>Velocity (mouse / keys)</label><input id="velocity" type="range" min="0.1" max="1" step="0.01" value="0.75"></div>
+    <div class="sect">Quality</div>
+    <label class="chk"><input type="checkbox" id="dof" checked>Depth of field</label>
+    <label class="chk"><input type="checkbox" id="mirror" checked>Fallboard reflection</label>
+    <label class="chk"><input type="checkbox" id="ao" checked>Ambient occlusion</label>
+    <label class="chk"><input type="checkbox" id="bloom" checked>Bloom</label>
+    <label class="chk"><input type="checkbox" id="grain" checked>Film grain &amp; vignette</label>
+    <label class="chk"><input type="checkbox" id="drift" checked>Handheld camera drift</label>
+    <div id="help">
+      Drag to orbit, scroll to zoom, click keys to play. <b>Esc</b> hides the interface, <b>Space</b> plays / pauses a song (sustain pedal when no song).
+      Computer keys: <b>Q–\</b> / <b>2 3 5 6 7 9 0 =</b> from <span id="octave">C4</span>, <b>Z–M</b> / <b>A S F G H</b> an octave up, <b>←/→</b> octave.
+    </div>
+  </div>
+
+  <div id="transport" class="ui">
+    <div id="times"><span id="tNow">0:00.000</span><span id="tLeft">-0:00</span></div>
+    <input id="seek" type="range" min="0" max="1" step="0.0005" value="0">
+    <div id="controls">
+      <button class="tbtn" id="speedBtn" title="Playback speed"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M12 4a10 10 0 0 0-8.7 15h17.4A10 10 0 0 0 12 4zm0 2a8 8 0 0 1 7.5 11h-15A8 8 0 0 1 12 6zm4.2 2.4-5 5.2a1.5 1.5 0 1 0 2.1 2.1z"/></svg><span id="speedLbl">1×</span></button>
+      <button class="tbtn" id="playBtn" title="Play / pause"><svg id="playIcon" width="30" height="30" viewBox="0 0 24 24"><path d="M7 4v16l13-8z"/></svg></button>
+      <button class="tbtn off" id="loopBtn" title="Loop"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2z"/></svg></button>
+    </div>
+    <div id="extra">
+      <button class="mini" id="pedal" title="Sustain pedal">Pedal</button>
+      <button class="mini" id="midiIn" title="Play from a MIDI keyboard">MIDI in</button>
+    </div>
+  </div>
+  <div id="status" class="hidden"></div>
+  <div id="dropHint">Drop a MIDI file to play it</div>
+
+  <script src="tonejs-midi.js"></script>
+  <script type="module">
+    import * as THREE from 'three'
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+    import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js'
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
+    import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js'
+    import { BokehPass } from 'three/addons/postprocessing/BokehPass.js'
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
+    import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
+    import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
+    import { SoundFontEngine, MidiScheduler } from './soundfont-engine/src/index.js'
+    import { midiToSchedule } from './notation3d/midi-score.js'
+    import { exportVideo, exportSupported, defaultBitrate } from './notation3d/video-export.js'
+    import { buildGrandPiano, FINISHES, LOW, HIGH, DIM } from './concertstage/concert-grand.js'
+
+    const $ = id => document.getElementById(id)
+    const params = new URLSearchParams(location.search)
+    const LOWQ = params.get('q') === 'low'
+    const vendorPath = new URL('./vendor', import.meta.url).href
+
+    let statusTimer = 0
+    function setStatus(msg, isError = false, ms = 0) {
+      const el = $('status')
+      el.textContent = msg || ''
+      el.classList.toggle('hidden', !msg)
+      el.classList.toggle('error', isError)
+      clearTimeout(statusTimer)
+      if (ms) statusTimer = setTimeout(() => setStatus(''), ms)
+    }
+
+    // ── Renderer ───────────────────────────────────────────────────────────
+    const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' })
+    renderer.setPixelRatio(Math.min(devicePixelRatio, LOWQ ? 1 : 2))
+    renderer.setSize(innerWidth, innerHeight)
+    renderer.toneMapping = THREE.AgXToneMapping
+    renderer.toneMappingExposure = 1
+    renderer.shadowMap.enabled = true
+    renderer.shadowMap.type = THREE.VSMShadowMap
+    document.body.prepend(renderer.domElement)
+    RectAreaLightUniformsLib.init()
+
+    const scene = new THREE.Scene()
+    scene.background = new THREE.Color(0x000000)
+    const camera = new THREE.PerspectiveCamera(34, innerWidth / innerHeight, 5, 8000)
+    const controls = new OrbitControls(camera, renderer.domElement)
+    controls.enableDamping = true
+    controls.dampingFactor = 0.08
+    controls.minDistance = 20
+    controls.maxDistance = 1400
+    controls.maxPolarAngle = Math.PI * 0.495
+    controls.autoRotateSpeed = 0.5
+
+    // ── Piano ──────────────────────────────────────────────────────────────
+    const mirrorSize = () => ({ width: Math.min(2048, innerWidth * renderer.getPixelRatio() * 0.6), height: Math.min(1152, innerHeight * renderer.getPixelRatio() * 0.6) })
+    const piano = buildGrandPiano({ mirror: LOWQ ? false : mirrorSize() })
+    scene.add(piano.root)
+    for (const [k, f] of Object.entries(FINISHES)) $('finish').add(new Option(f.label, k))
+    $('finish').value = params.get('finish') || 'ebony'
+    piano.setFinish($('finish').value)
+    $('finish').onchange = () => piano.setFinish($('finish').value)
+    $('lid').value = params.get('lid') || 'full'
+    piano.setLid($('lid').value)
+    $('lid').onchange = () => { piano.setLid($('lid').value); lidLight.visible = $('lid').value !== 'closed' }
+    $('desk').onchange = () => piano.setDesk($('desk').checked)
+    $('bench').onchange = () => { piano.benchVisible = $('bench').checked }
+    if (piano.mirror) piano.mirror.material.uniforms.strength.value = 0.55
+    $('mirror').checked = !!piano.mirror
+    $('mirror').disabled = !piano.mirror
+    $('mirror').onchange = () => { if (piano.mirror) piano.mirror.visible = $('mirror').checked }
+
+    // ── Stage: floor, lights, environment ──────────────────────────────────
+    // Dark stage boards: long planks, a little sheen, melting into black.
+    function stageFloorMaterial() {
+      const S = 1024, c = document.createElement('canvas'); c.width = c.height = S
+      const g = c.getContext('2d')
+      let seed = 3; const r = () => (seed = (seed * 16807) % 2147483647) / 2147483647
+      g.fillStyle = '#16120f'; g.fillRect(0, 0, S, S)
+      const plank = S / 8
+      for (let i = 0; i < 8; i++) {
+        let y = 0
+        while (y < S) {
+          const len = S * (0.35 + r() * 0.5), v = 14 + r() * 14
+          g.fillStyle = `rgb(${v + 6},${v + 1},${v - 3})`
+          g.fillRect(i * plank + 1, y, plank - 2, len - 2)
+          for (let k = 0; k < 14; k++) {   // grain
+            g.strokeStyle = `rgba(0,0,0,${0.1 + r() * 0.2})`; g.lineWidth = 0.6 + r() * 1.5
+            const x = i * plank + r() * plank
+            g.beginPath(); g.moveTo(x, y); g.bezierCurveTo(x + r() * 6 - 3, y + len * 0.3, x + r() * 6 - 3, y + len * 0.7, x + r() * 4 - 2, y + len - 2); g.stroke()
+          }
+          y += len
+        }
+      }
+      const map = new THREE.CanvasTexture(c)
+      map.colorSpace = THREE.SRGBColorSpace; map.wrapS = map.wrapT = THREE.RepeatWrapping; map.repeat.set(4, 4); map.anisotropy = 8
+      const fc = document.createElement('canvas'); fc.width = fc.height = 256
+      const fg = fc.getContext('2d'), gr = fg.createRadialGradient(128, 128, 20, 128, 128, 128)
+      gr.addColorStop(0, '#fff'); gr.addColorStop(0.55, '#888'); gr.addColorStop(1, '#000'); fg.fillStyle = gr; fg.fillRect(0, 0, 256, 256)
+      return new THREE.MeshPhysicalMaterial({
+        map, roughness: 0.42, clearcoat: 0.6, clearcoatRoughness: 0.22, transparent: true, alphaMap: new THREE.CanvasTexture(fc),
+      })
+    }
+    const floor = new THREE.Mesh(new THREE.CircleGeometry(900, 96), stageFloorMaterial())
+    floor.rotation.x = -Math.PI / 2
+    floor.position.set(0, 0, -60)
+    floor.receiveShadow = true
+    scene.add(floor)
+
+    // Soft contact shadow under the case
+    function contactShadow() {
+      const S = 512, W = 400, c = document.createElement('canvas')
+      c.width = c.height = S
+      const g = c.getContext('2d'), sc = S / W
+      const tx = x => (x + W / 2) * sc, tz = z => (z + W / 2 + 95) * sc
+      g.filter = 'blur(14px)'
+      g.fillStyle = 'rgba(255,255,255,0.75)'
+      g.beginPath()
+      piano.outline.forEach(([x, z], i) => i ? g.lineTo(tx(x), tz(z)) : g.moveTo(tx(x), tz(z)))
+      g.closePath(); g.fill()
+      g.filter = 'blur(5px)'
+      g.fillStyle = 'rgba(255,255,255,1)'
+      for (const [x, z] of piano.feet) { g.beginPath(); g.arc(tx(x), tz(z), 7 * sc, 0, Math.PI * 2); g.fill() }
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(W, W), new THREE.MeshBasicMaterial({ color: 0x000000, alphaMap: new THREE.CanvasTexture(c), transparent: true, opacity: 0.85, depthWrite: false }))
+      m.rotation.x = -Math.PI / 2
+      m.position.set(0, 0.2, -95)
+      m.renderOrder = 1
+      return m
+    }
+    const blob = contactShadow()
+    scene.add(blob)
+
+    // Key light: one warm, soft-edged spot from high over the pianist's left shoulder.
+    const spot = new THREE.SpotLight(0xffd6a6, 9, 0, 0.36, 0.85, 0)
+    spot.position.set(-150, 560, 230)
+    spot.target.position.set(5, 70, -55)
+    spot.castShadow = true
+    spot.shadow.mapSize.set(LOWQ ? 2048 : 4096, LOWQ ? 2048 : 4096)
+    spot.shadow.camera.near = 200; spot.shadow.camera.far = 1200
+    spot.shadow.bias = -0.0003; spot.shadow.normalBias = 0.15
+    spot.shadow.radius = 8; spot.shadow.blurSamples = 16
+    scene.add(spot, spot.target)
+    // Back light: rims the lid edge and the tail out of the black
+    const back = new THREE.SpotLight(0xffe2c0, 5, 0, 0.42, 0.9, 0)
+    back.position.set(120, 460, -560)
+    back.target.position.set(-10, 95, -80)
+    scene.add(back, back.target)
+    // Lid bounce: the open lid throws the spot back down onto the plate, which is
+    // why the frame and pins of a lit grand glow. A warm area light on its underside.
+    const lidLight = new THREE.RectAreaLight(0xffc28a, 1.1, 120, 150)
+    lidLight.position.set(76, -1.5, -115)
+    lidLight.rotation.x = -Math.PI / 2
+    piano.lid.add(lidLight)
+    lidLight.visible = $('lid').value !== 'closed'
+    // A little fill on the keys from the front
+    const keyFill = new THREE.SpotLight(0xfff0e0, 1.6, 0, 0.5, 1, 0)
+    keyFill.position.set(40, 260, 320)
+    keyFill.target.position.set(0, 74, -10)
+    scene.add(keyFill, keyFill.target)
+
+    const pmrem = new THREE.PMREMGenerator(renderer)
+    // The stage as the lacquer sees it: black, with the spotlight's lamp housing,
+    // a few warm practicals in the dark and a faint cool spill from the house.
+    function makeStageEnv() {
+      const s = new THREE.Scene()
+      s.background = new THREE.Color(0x010101)
+      const box = (w, h, pos, intensity, color = 0xffffff) => {
+        const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(intensity), side: THREE.DoubleSide }))
+        m.position.set(...pos); m.lookAt(0, 80, -60)
+        s.add(m)
+      }
+      box(260, 260, [-180, 700, 280], 9, 0xffcf9a)       // the spot's lamp, high front left
+      box(900, 140, [0, 650, -150], 0.9, 0xffd7a8)       // dim overhead batten
+      box(60, 500, [-900, 300, -300], 2.2, 0xffbf80)     // warm practical strip, bass side
+      box(60, 500, [900, 260, -100], 1.6, 0xffc890)      // and treble side
+      box(700, 220, [150, 420, -900], 2.2, 0xffe2c0)     // the back light
+      box(1400, 300, [0, 120, 1100], 0.12, 0x8fa6c8)     // house spill, cool
+      const fl = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000), new THREE.MeshBasicMaterial({ color: 0x060504 }))
+      fl.rotation.x = -Math.PI / 2; fl.position.y = -80
+      s.add(fl)
+      return pmrem.fromScene(s, 0.015, 1, 6000).texture
+    }
+    function makeStudioEnv() {
+      const s = new THREE.Scene()
+      const room = new THREE.Mesh(new THREE.BoxGeometry(2400, 1200, 2400), new THREE.MeshBasicMaterial({ color: 0x151515, side: THREE.BackSide }))
+      room.position.y = 510
+      s.add(room)
+      const fl = new THREE.Mesh(new THREE.PlaneGeometry(2400, 2400), new THREE.MeshBasicMaterial({ color: 0x24221f }))
+      fl.rotation.x = -Math.PI / 2; fl.position.y = -89
+      s.add(fl)
+      const box = (w, h, pos, look, intensity, color = 0xffffff) => {
+        const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(intensity), side: THREE.DoubleSide }))
+        m.position.set(...pos); m.lookAt(...look)
+        s.add(m)
+      }
+      box(520, 300, [0, 600, -60], [0, 0, -60], 6)
+      box(800, 260, [900, 160, -120], [0, 60, -100], 4.5, 0xfff6ee)
+      box(120, 600, [-800, 250, 100], [0, 60, 0], 7, 0xfff1e2)
+      box(600, 200, [-200, 300, -900], [0, 60, -100], 3.5, 0xe8efff)
+      box(700, 200, [0, 250, 900], [0, 60, 0], 1.8)
+      return pmrem.fromScene(s, 0.02, 1, 5000).texture
+    }
+    const envs = {}
+    const SCENES = {
+      stage: { env: makeStageEnv, envI: 0.7, bg: 0x000000, spot: 6, back: 4, fill: 0.9, lid: 0.55, floor: 0x9a8a7a },
+      studio: { env: makeStudioEnv, envI: 0.9, bg: 0x0b0b0b, spot: 4, back: 2, fill: 2.2, lid: 0.5, floor: 0x777777 },
+    }
+    let sceneCfg = SCENES.stage
+    function setScene(name) {
+      sceneCfg = SCENES[name] || SCENES.stage
+      scene.environment = envs[name] ??= sceneCfg.env()
+      scene.environmentIntensity = sceneCfg.envI
+      scene.background = new THREE.Color(sceneCfg.bg)
+      floor.material.color.set(sceneCfg.floor)
+      applyLight()
+    }
+    function applyLight() {
+      const k = +$('light').value
+      spot.intensity = sceneCfg.spot * k
+      back.intensity = sceneCfg.back * Math.sqrt(k)
+      keyFill.intensity = sceneCfg.fill * k
+      lidLight.intensity = sceneCfg.lid * k
+    }
+    $('scene').value = SCENES[params.get('scene')] ? params.get('scene') : 'stage'
+    $('scene').onchange = () => setScene($('scene').value)
+    $('light').oninput = applyLight
+    $('exposure').oninput = () => { renderer.toneMappingExposure = +$('exposure').value }
+    setScene($('scene').value)
+
+    // Dust in the beam: a few hundred motes drifting through the spot
+    const dust = (() => {
+      const N = LOWQ ? 150 : 420, pos = new Float32Array(N * 3), seed = new Float32Array(N)
+      for (let i = 0; i < N; i++) {
+        const t = Math.random(), a = Math.random() * Math.PI * 2, rad = Math.sqrt(Math.random()) * (30 + t * 160)
+        const p = new THREE.Vector3().lerpVectors(spot.target.position, spot.position, t * 0.75)
+        pos.set([p.x + Math.cos(a) * rad, p.y + (Math.random() - 0.5) * 40, p.z + Math.sin(a) * rad], i * 3)
+        seed[i] = Math.random() * 100
+      }
+      const geo = new THREE.BufferGeometry()
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+      geo.setAttribute('seed', new THREE.BufferAttribute(seed, 1))
+      const mat = new THREE.ShaderMaterial({
+        uniforms: { uTime: { value: 0 }, uScale: { value: innerHeight }, uOpacity: { value: 0.18 } },
+        vertexShader: `attribute float seed; uniform float uTime, uScale; varying float vA;
+          void main() {
+            vec3 p = position + vec3(sin(uTime * 0.07 + seed) * 9.0, sin(uTime * 0.05 + seed * 1.7) * 7.0, cos(uTime * 0.06 + seed * 0.7) * 9.0);
+            vec4 mv = modelViewMatrix * vec4(p, 1.0);
+            gl_Position = projectionMatrix * mv;
+            gl_PointSize = clamp(uScale * 0.22 / -mv.z, 1.0, 3.5);
+            vA = 0.4 + 0.6 * abs(sin(uTime * 0.4 + seed * 3.0));
+          }`,
+        fragmentShader: `uniform float uOpacity; varying float vA;
+          void main() { float d = length(gl_PointCoord - 0.5); if (d > 0.5) discard;
+            gl_FragColor = vec4(vec3(1.0, 0.85, 0.65) * 1.4, (1.0 - d * 2.0) * vA * uOpacity); }`,
+        transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      })
+      const pts = new THREE.Points(geo, mat)
+      pts.frustumCulled = false
+      scene.add(pts)
+      return pts
+    })()
+
+    // ── Lesson mode: falling notes, glowing keys, sparks ───────────────────
+    const HIT_Z = DIM.KEY_BACK - 0.6, HIT_Y = DIM.KEY_TOP + DIM.BLACK_RISE + 0.35
+    const LANE_LEN = 150, LOOKAHEAD = 2.6        // cm of lane, seconds it shows
+    const handColor = { R: new THREE.Color(), L: new THREE.Color() }
+    const readColors = () => { handColor.R.set($('rhColor').value); handColor.L.set($('lhColor').value) }
+    readColors()
+    // glyph atlas: L R 1 2 3 4 5
+    const GLYPHS = ['L', 'R', '1', '2', '3', '4', '5']
+    const atlas = (() => {
+      const c = document.createElement('canvas'); c.width = 64 * GLYPHS.length; c.height = 64
+      const g = c.getContext('2d')
+      g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = '700 44px -apple-system, Arial, sans-serif'
+      GLYPHS.forEach((ch, i) => g.fillText(ch, i * 64 + 32, 35))
+      const t = new THREE.CanvasTexture(c); t.anisotropy = 4
+      return t
+    })()
+    const MAX_NOTES = 1600
+    const noteGeo = new THREE.InstancedBufferGeometry()
+    {
+      const base = new THREE.PlaneGeometry(1, 1)
+      noteGeo.index = base.index
+      noteGeo.setAttribute('position', base.attributes.position)
+      noteGeo.setAttribute('uv', base.attributes.uv)
+    }
+    const aRect = new THREE.InstancedBufferAttribute(new Float32Array(MAX_NOTES * 4), 4)
+    const aCol = new THREE.InstancedBufferAttribute(new Float32Array(MAX_NOTES * 3), 3)
+    const aInfo = new THREE.InstancedBufferAttribute(new Float32Array(MAX_NOTES * 2), 2)
+    for (const a of [aRect, aCol, aInfo]) a.setUsage(THREE.DynamicDrawUsage)
+    noteGeo.setAttribute('aRect', aRect); noteGeo.setAttribute('aCol', aCol); noteGeo.setAttribute('aInfo', aInfo)
+    noteGeo.instanceCount = 0
+    const noteMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uHit: { value: new THREE.Vector3(0, HIT_Y, HIT_Z) }, uAlong: { value: new THREE.Vector3(0, 0, -1) },
+        uLane: { value: LANE_LEN }, uAtlas: { value: atlas }, uGlyphs: { value: GLYPHS.length }, uLabels: { value: 1 }, uFade: { value: 1 },
+      },
+      vertexShader: /* glsl */`
+        attribute vec4 aRect; attribute vec3 aCol; attribute vec2 aInfo;
+        uniform vec3 uHit, uAlong;
+        varying vec2 vLocal; varying vec2 vSize; varying vec3 vCol; varying vec2 vInfo; varying float vAlong;
+        void main() {
+          float u = position.x, v = position.y + 0.5;
+          float along = mix(aRect.z, aRect.w, v);
+          vec3 p = uHit + vec3(aRect.x + u * aRect.y, 0.0, 0.0) + uAlong * along;
+          vLocal = vec2(u * aRect.y, along - aRect.z);
+          vSize = vec2(aRect.y, aRect.w - aRect.z);
+          vCol = aCol; vInfo = aInfo; vAlong = along;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+        }`,
+      fragmentShader: /* glsl */`
+        uniform sampler2D uAtlas; uniform float uGlyphs, uLane, uLabels, uFade;
+        varying vec2 vLocal; varying vec2 vSize; varying vec3 vCol; varying vec2 vInfo; varying float vAlong;
+        float rbox(vec2 p, vec2 b, float r) { vec2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
+        void main() {
+          vec2 c = vec2(0.0, vSize.y * 0.5);
+          float r = min(0.55, vSize.x * 0.45);
+          float d = rbox(vLocal - c, vSize * 0.5, r);
+          float aa = fwidth(d) + 1e-4;
+          float a = 1.0 - smoothstep(-aa, aa, d);
+          if (a <= 0.0) discard;
+          float edge = smoothstep(-0.35, 0.0, d);              // bright rim
+          float isOn = vInfo.y;
+          vec3 col = vCol * (0.85 + 0.35 * (1.0 - vLocal.y / max(vSize.y, 1.0))) * (1.0 + isOn * 1.6);
+          col += vCol * edge * 0.9 + vec3(1.0) * edge * 0.15;
+          // label in a dark disc at the leading end
+          if (uLabels > 0.5 && vInfo.x >= 0.0 && vSize.y > vSize.x * 1.05) {
+            vec2 lc = vec2(0.0, vSize.x * 0.5);
+            float rr = vSize.x * 0.36;
+            float dd = length(vLocal - lc) - rr;
+            float disc = 1.0 - smoothstep(-aa, aa, dd);
+            vec2 g = (vLocal - lc) / (rr * 2.0) + 0.5;
+            float glyph = texture2D(uAtlas, vec2((vInfo.x + g.x) / uGlyphs, 1.0 - g.y)).a * disc;
+            col = mix(col, vec3(0.06), disc * 0.85);
+            col = mix(col, vec3(1.0), glyph);
+          }
+          float fade = 1.0 - smoothstep(uLane * 0.8, uLane, vAlong);
+          gl_FragColor = vec4(col, a * fade * uFade);
+        }`,
+      transparent: true, depthWrite: false, depthTest: false, side: THREE.DoubleSide,
+      extensions: { derivatives: true },
+    })
+    const notesMesh = new THREE.Mesh(noteGeo, noteMat)
+    notesMesh.frustumCulled = false
+    notesMesh.renderOrder = 5
+    scene.add(notesMesh)
+    // faint octave guide lines on the lane
+    const laneLines = (() => {
+      const pts = []
+      for (let m = 24; m <= 108; m += 12) { const x = piano.keyX(m) - 1.175; pts.push(x, 0, 0, x, 0, -LANE_LEN * 0.7) }
+      const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3))
+      const l = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: 0x3a3a3a, transparent: true, opacity: 0.25 }))
+      l.position.set(0, HIT_Y - 0.05, HIT_Z)
+      scene.add(l)
+      return l
+    })()
+    // halo at the hit line over each sounding key
+    const haloTex = (() => {
+      const c = document.createElement('canvas'); c.width = c.height = 128
+      const g = c.getContext('2d'), gr = g.createRadialGradient(64, 64, 0, 64, 64, 64)
+      gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.25, 'rgba(255,255,255,0.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)')
+      g.fillStyle = gr; g.fillRect(0, 0, 128, 128)
+      return new THREE.CanvasTexture(c)
+    })()
+    const halos = new Map()
+    for (let m = LOW; m <= HIGH; m++) {
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: haloTex, color: 0xffffff, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, depthTest: false, opacity: 0 }))
+      s.position.set(piano.keyX(m), HIT_Y + 0.6, HIT_Z + 0.6)
+      s.scale.setScalar(9)
+      s.renderOrder = 6
+      s.visible = false
+      scene.add(s)
+      halos.set(m, s)
+    }
+    // sparks rising from where notes land
+    const sparks = (() => {
+      const N = 1800, pos = new Float32Array(N * 3), col = new Float32Array(N * 3), life = new Float32Array(N)
+      const vel = new Float32Array(N * 3)
+      const geo = new THREE.BufferGeometry()
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage))
+      geo.setAttribute('color', new THREE.BufferAttribute(col, 3).setUsage(THREE.DynamicDrawUsage))
+      geo.setAttribute('life', new THREE.BufferAttribute(life, 1).setUsage(THREE.DynamicDrawUsage))
+      const mat = new THREE.ShaderMaterial({
+        uniforms: { uScale: { value: innerHeight } },
+        vertexShader: `attribute vec3 color; attribute float life; uniform float uScale; varying vec3 vC; varying float vL;
+          void main() { vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv;
+            gl_PointSize = life > 0.0 ? clamp(uScale * 0.9 * life / -mv.z, 1.0, 9.0) : 0.0; vC = color; vL = life; }`,
+        fragmentShader: `varying vec3 vC; varying float vL;
+          void main() { float d = length(gl_PointCoord - 0.5); if (d > 0.5 || vL <= 0.0) discard;
+            gl_FragColor = vec4(vC * (2.0 + 2.0 * vL), (1.0 - d * 2.0) * min(1.0, vL * 1.5)); }`,
+        transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      })
+      const pts = new THREE.Points(geo, mat)
+      pts.frustumCulled = false
+      pts.renderOrder = 7
+      scene.add(pts)
+      let next = 0
+      return {
+        pts,
+        emit(x, color, vel0) {
+          const n = 4 + Math.round(vel0 * 8)
+          for (let i = 0; i < n; i++) {
+            const j = next; next = (next + 1) % N
+            pos.set([x + (Math.random() - 0.5) * 1.6, HIT_Y + 0.4, HIT_Z - Math.random() * 1.5], j * 3)
+            vel.set([(Math.random() - 0.5) * 9, 6 + Math.random() * 22 * (0.5 + vel0), -4 - Math.random() * 18], j * 3)
+            col.set([color.r, color.g, color.b], j * 3)
+            life[j] = 0.6 + Math.random() * 0.5
+          }
+        },
+        update(dt) {
+          for (let j = 0; j < N; j++) {
+            if (life[j] <= 0) continue
+            life[j] -= dt * 1.1
+            vel[j * 3 + 1] -= 18 * dt
+            for (let a = 0; a < 3; a++) { vel[j * 3 + a] *= Math.exp(-dt * 1.6); pos[j * 3 + a] += vel[j * 3 + a] * dt }
+          }
+          geo.attributes.position.needsUpdate = geo.attributes.life.needsUpdate = geo.attributes.color.needsUpdate = true
+        },
+      }
+    })()
+
+    let mode = 'concert'
+    const lane = { tilt: 0, tiltTarget: 0, fade: 0 }
+    function setMode(m, fromView = false) {
+      mode = m
+      for (const b of $('modeSeg').children) b.classList.toggle('on', b.dataset.mode === m)
+      piano.keyboardOnly = m === 'lesson'
+      floor.visible = blob.visible = m !== 'lesson'
+      if (fromView) lane.fade = m === 'lesson' ? 1 : 0
+      dust.visible = m !== 'lesson'
+      applyGlow()
+      if (!fromView) {
+        if (m === 'lesson' && !['top', 'first', 'orbit'].includes(viewName)) setView('top')
+        if (m === 'concert' && ['top', 'first'].includes(viewName)) setView('view1')
+      }
+    }
+    function applyGlow() { piano.keyGlow = mode === 'lesson' || $('glowConcert').checked ? (mode === 'lesson' ? 1.15 : 0.7) : 0 }
+    for (const b of $('modeSeg').children) b.onclick = () => setMode(b.dataset.mode)
+    $('glowConcert').onchange = applyGlow
+    $('rhColor').oninput = $('lhColor').oninput = () => { readColors(); for (const [m] of holders) tintKey(m) }
+    $('labels').onchange = () => { noteMat.uniforms.uLabels.value = $('labels').checked ? 1 : 0 }
+
+    // ── Post-processing ────────────────────────────────────────────────────
+    const rt = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: 4 })
+    const composer = new EffectComposer(renderer, rt)
+    composer.setPixelRatio(renderer.getPixelRatio())
+    composer.addPass(new RenderPass(scene, camera))
+    const gtao = new GTAOPass(scene, camera, innerWidth, innerHeight)
+    gtao.updateGtaoMaterial({ radius: 6, distanceExponent: 1.6, thickness: 5, scale: 1, samples: 16 })
+    gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 16 })
+    gtao.blendIntensity = 0.8
+    composer.addPass(gtao)
+    const clampPass = new ShaderPass({
+      uniforms: { tDiffuse: { value: null } },
+      vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: `uniform sampler2D tDiffuse; varying vec2 vUv;
+        void main() { vec4 c = texture2D(tDiffuse, vUv);
+          c.rgb = any(isnan(c.rgb)) || any(isinf(c.rgb)) ? vec3(0.0) : min(c.rgb, vec3(48.0));
+          gl_FragColor = c; }`,
+    })
+    composer.addPass(clampPass)
+    const bokeh = new BokehPass(scene, camera, { focus: 150, aperture: 0.0001, maxblur: 0.008 })
+    composer.addPass(bokeh)
+    const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.2, 0.5, 0.9)
+    composer.addPass(bloom)
+    composer.addPass(new OutputPass())
+    const grade = new ShaderPass({
+      uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uVig: { value: 0.55 }, uGrain: { value: 0.035 }, uRes: { value: new THREE.Vector2(innerWidth, innerHeight) } },
+      vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: `uniform sampler2D tDiffuse; uniform float uTime, uVig, uGrain; uniform vec2 uRes; varying vec2 vUv;
+        float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+        void main() {
+          vec4 c = texture2D(tDiffuse, vUv);
+          vec2 d = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
+          float v = smoothstep(1.05, 0.25, length(d));
+          c.rgb *= mix(1.0, v, uVig);
+          float g = hash(floor(vUv * uRes) + floor(fract(uTime * 0.37) * 97.0) * 13.1) - 0.5;
+          c.rgb += g * uGrain * (0.35 + 0.65 * (1.0 - dot(c.rgb, vec3(0.33))));
+          gl_FragColor = c;
+        }`,
+    })
+    composer.addPass(grade)
+    // GTAO and Bokeh re-render the scene with an override material; keep the
+    // mirror (which renders the scene itself) and the additive effects out of it.
+    const fxOnly = [notesMesh, sparks.pts, dust, laneLines, ...halos.values()]
+    for (const pass of [gtao, bokeh]) {
+      const render = pass.render.bind(pass)
+      pass.render = (...a) => {
+        const was = piano.mirror?.visible, vis = fxOnly.map(o => o.visible)
+        if (piano.mirror) piano.mirror.visible = false
+        fxOnly.forEach(o => { o.visible = false })
+        render(...a)
+        if (piano.mirror) piano.mirror.visible = was
+        fxOnly.forEach((o, i) => { o.visible = vis[i] })
+      }
+    }
+    $('ao').checked = !LOWQ && params.get('ao') !== '0'
+    $('dof').checked = !LOWQ && params.get('dof') !== '0'
+    const applyFx = () => {
+      gtao.enabled = $('ao').checked; bloom.enabled = $('bloom').checked; bokeh.enabled = $('dof').checked
+      grade.uniforms.uVig.value = $('grain').checked ? 0.55 : 0
+      grade.uniforms.uGrain.value = $('grain').checked ? 0.035 : 0
+    }
+    for (const id of ['ao', 'dof', 'bloom', 'grain']) $(id).onchange = applyFx
+    applyFx()
+
+    // ── Cameras ────────────────────────────────────────────────────────────
+    // Named after Concert Creator's camera menu. dof = aperture scale (0 = sharp).
+    const VIEWS = {
+      top: { pos: [0, 205, 38], target: [0, 74, -42], fov: 42, dof: 0, tilt: 0 },
+      first: { pos: [0, 128, 62], target: [0, 79, -34], fov: 52, dof: 0.4, tilt: 62 },
+      orbit: { pos: [255, 175, 205], target: [-5, 74, -80], fov: 32, dof: 0.3, orbit: true },
+      view1: { pos: [-92, 148, 66], target: [22, 80, -36], fov: 36, dof: 1 },     // over the shoulder, along the keys into the plate
+      view2: { pos: [-175, 250, 150], target: [8, 80, -58], fov: 33, dof: 0.6 },  // high, behind the pianist
+      view3: { pos: [6, 124, 52], target: [0, 81, -36], fov: 44, dof: 1 },        // above the keys, looking into the piano
+      view4: { pos: [92, 86, 16], target: [-22, 77, -12], fov: 28, dof: 1.6 },    // low along the keys from the treble end
+      tour: { tour: true },
+    }
+    let viewName = 'view1', tween = null, dofScale = 1
+    function setView(name, instant = false) {
+      tour.active = false
+      viewName = name
+      for (const it of $('cameraPop').querySelectorAll('.item')) it.classList.toggle('sel', it.dataset.view === name)
+      controls.autoRotate = false
+      if (name === 'tour') { dofScale = 0.9; lane.tiltTarget = 55; return startTour(instant) }
+      const v = VIEWS[name] || VIEWS.view1
+      dofScale = v.dof
+      lane.tiltTarget = v.tilt ?? 55
+      if ((name === 'top' || name === 'first') && mode !== 'lesson') setMode('lesson', true)
+      const to = { pos: new THREE.Vector3(...v.pos), target: new THREE.Vector3(...v.target), fov: v.fov }
+      const done = () => { controls.autoRotate = !!v.orbit }
+      if (instant) { tween = null; camera.position.copy(to.pos); controls.target.copy(to.target); camera.fov = to.fov; camera.updateProjectionMatrix(); done(); return }
+      tween = { t: 0, dur: 1.6, from: { pos: camera.position.clone(), target: controls.target.clone(), fov: camera.fov }, to, done }
+    }
+    for (const it of $('cameraPop').querySelectorAll('.item')) it.onclick = () => { setView(it.dataset.view); closePops() }
+
+    // Cinematic tour after the reference renders: slow spline through close
+    // shots of the hands' territory, the plate under the lid and the case.
+    const SHOTS = [
+      [[-92, 148, 66], [22, 80, -36], 36],      // over the shoulder (View 1)
+      [[-40, 150, 30], [40, 84, -60], 34],      // closer, the pins and plate beyond the keys
+      [[60, 175, -20], [10, 88, -95], 38],      // over the treble rim into the strings
+      [[170, 140, -120], [-10, 88, -110], 32],  // along the bentside, under the lid
+      [[260, 120, 60], [0, 78, -60], 28],       // wide treble three-quarter
+      [[92, 86, 16], [-22, 77, -12], 28],       // low along the keys (View 4)
+      [[6, 124, 52], [0, 81, -36], 44],         // above the keys (View 3)
+      [[-60, 92, 36], [30, 76, -8], 30],        // low from the bass end
+      [[-175, 250, 150], [8, 80, -58], 33],     // high behind the pianist (View 2)
+      [[-210, 110, -260], [0, 84, -110], 30],   // round the tail
+      [[-140, 190, 140], [10, 80, -50], 34],    // back over the shoulder
+    ]
+    const tour = {
+      active: false, u: 0, period: 120,
+      pos: new THREE.CatmullRomCurve3(SHOTS.map(s => new THREE.Vector3(...s[0])), true, 'centripetal'),
+      target: new THREE.CatmullRomCurve3(SHOTS.map(s => new THREE.Vector3(...s[1])), true, 'catmullrom', 0.4),
+      fov(u) {
+        const n = SHOTS.length, x = u * n, i = Math.floor(x) % n, f = x - Math.floor(x)
+        const e = f * f * (3 - 2 * f)
+        return THREE.MathUtils.lerp(SHOTS[i][2], SHOTS[(i + 1) % n][2], e)
+      },
+    }
+    let scheduler = null, song = null
+    const music = { lean: 0, leanW: 0, energy: 0, phase0: 0, songT: 0, wall: 0 }
+    let offlineT = null    // song time while exporting (frames are rendered at fixed steps)
+    const _d = new THREE.Vector3()
+    function placeTour(u) {
+      tour.pos.getPoint(u, camera.position)
+      tour.target.getPoint(u, controls.target)
+      let fov = tour.fov(u)
+      if (music.leanW > 0.001) {
+        const near = THREE.MathUtils.clamp(1.6 - camera.position.distanceTo(controls.target) / 250, 0.35, 1)
+        controls.target.x += (music.lean - controls.target.x) * 0.45 * near * music.leanW
+      }
+      const push = Math.min(music.energy, 1.5)
+      if (push > 0.001) {
+        fov *= 1 - 0.035 * push
+        _d.subVectors(controls.target, camera.position).multiplyScalar(0.025 * push)
+        camera.position.add(_d)
+      }
+      camera.fov = fov
+      camera.updateProjectionMatrix()
+    }
+    const isPlaying = () => offlineT != null || !!scheduler?.playing
+    function songNow() {
+      if (offlineT != null) return offlineT
+      if (!scheduler) return 0
+      if (!scheduler.playing) return scheduler.currentTime
+      return Math.min(scheduler.duration, music.songT + (performance.now() - music.wall) / 1000 * scheduler.speed)
+    }
+    const songDuration = () => song?.duration || scheduler?.duration || 0
+    const songDrivesTour = () => tour.active && $('tourSync').checked && isPlaying() && songDuration() > 0
+    const tourLoops = () => Math.max(1, Math.round(songDuration() / tour.period))
+    function anchorTour() {
+      if (!songDuration()) return
+      music.phase0 = (tour.u - songNow() * tourLoops() / songDuration() + 10) % 1
+    }
+    function stepTour(dt) {
+      if (songDrivesTour()) {
+        const goal = (music.phase0 + songNow() * tourLoops() / songDuration()) % 1
+        let diff = goal - tour.u
+        diff -= Math.round(diff)
+        tour.u = (tour.u + diff * Math.min(1, dt * (Math.abs(diff) > 0.01 ? 1.2 : 8)) + 1) % 1
+      } else if (!(scheduler?.playing === false && $('tourSync').checked && song && scheduler.currentTime > 0)) {
+        tour.u = (tour.u + dt / tour.period) % 1
+      }
+      placeTour(tour.u)
+    }
+    function stepMusic(dt) {
+      let sx = 0, n = 0
+      if ($('tourSync').checked) for (const m of holders.keys()) { sx += piano.keyX(m); n++ }
+      if (n) music.lean += (sx / n - music.lean) * Math.min(1, dt * 1.5)
+      music.leanW += ((n ? 1 : 0) - music.leanW) * Math.min(1, dt * (n ? 1.2 : 0.4))
+      music.energy *= Math.exp(-dt * 2.2)
+    }
+    function startTour(instant) {
+      tour.u = 0
+      if (instant) { tween = null; placeTour(0); tour.active = true; anchorTour(); return }
+      tween = {
+        t: 0, dur: 2.5, from: { pos: camera.position.clone(), target: controls.target.clone(), fov: camera.fov },
+        to: { pos: tour.pos.getPoint(0), target: tour.target.getPoint(0), fov: tour.fov(0) },
+        done: () => { tour.active = true; anchorTour() },
+      }
+    }
+    controls.addEventListener('start', () => {
+      if (tour.active || tween) { tour.active = false; tween = null }
+      if (viewName !== 'orbit') controls.autoRotate = false
+    })
+    $('tourSync').checked = params.get('sync') !== '0'
+    $('tourSync').onchange = () => anchorTour()
+
+    // ── Popovers and UI chrome ─────────────────────────────────────────────
+    const POPS = { songsBtn: 'songsPop', cameraBtn: 'cameraPop', visualsBtn: 'visualsPop', renderBtn: 'renderPop', settingsBtn: 'settingsPop' }
+    function closePops(except) { for (const p of Object.values(POPS)) if (p !== except) $(p).classList.remove('open') }
+    for (const [btn, pop] of Object.entries(POPS)) {
+      $(btn).onclick = ev => {
+        ev.stopPropagation()
+        const el = $(pop), open = !el.classList.contains('open')
+        closePops(pop)
+        el.classList.toggle('open', open)
+        if (open && btn !== 'songsBtn') {   // hang it under its button, arrow pointing at it
+          const b = $(btn).getBoundingClientRect(), w = el.offsetWidth
+          const left = Math.min(innerWidth - w - 10, Math.max(10, b.left + b.width / 2 - w / 2))
+          el.style.left = left + 'px'
+          el.style.setProperty('--arrow', (b.left + b.width / 2 - left - 7) + 'px')
+        }
+      }
+    }
+    for (const p of Object.values(POPS)) $(p).addEventListener('pointerdown', ev => ev.stopPropagation())
+    addEventListener('pointerdown', () => closePops())
+    // Hide the chrome while a song plays and the mouse is still
+    let idleTimer = 0
+    function poke() {
+      document.body.classList.remove('idle')
+      clearTimeout(idleTimer)
+      idleTimer = setTimeout(() => { if (isPlaying() && !document.querySelector('.pop.open')) document.body.classList.add('idle') }, 3000)
+    }
+    addEventListener('pointermove', poke)
+    addEventListener('keydown', ev => {
+      if (ev.code !== 'Escape' || ev.target.closest?.('select, input')) return
+      if (document.querySelector('.pop.open')) return closePops()
+      document.body.classList.toggle('hideui')
+    })
+
+    // ── Sound ──────────────────────────────────────────────────────────────
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+    const engine = new SoundFontEngine({ backend: 'oxisynth', vendorPath, audioContext: audioCtx })
+    const LIVE = 15
+    const SOUNDFONTS = [
+      ['stack', 'Motif ES6 piano + Creative GM'],
+      ['soundfonts/Full Grand Piano.sf2', 'Full Grand Piano'],
+      ['soundfonts/Motif_ES6_Concert_Piano.sf2', 'Motif ES6 Concert Piano'],
+      ['soundfonts/Roland_Super_XP-80.sf2', 'Roland Super XP-80'],
+      ['soundfonts/FluidR3.sf3', 'FluidR3 GM'],
+    ]
+    const STACK = ['soundfonts/Creative(emu10k1)8MBGMSFX.sf2', 'soundfonts/Motif_ES6_Concert_Piano.sf2']
+    for (const [v, l] of SOUNDFONTS) $('sf').add(new Option(l, v))
+    let soundReady = false
+    async function loadSound(v) {
+      soundReady = false
+      engine.allSoundOff?.()
+      setStatus('Loading soundfont…')
+      try {
+        if (v === 'stack') await engine.loadSoundFontStack(STACK)
+        else await engine.loadSoundFont(v)
+        for (let ch = 0; ch < 16; ch++) if (ch !== 9) engine.programChange(ch, 0)
+        soundReady = true
+        setStatus('')
+      } catch (e) { console.error(e); setStatus('Sound failed to load: ' + e.message, true) }
+    }
+    $('sf').onchange = () => loadSound($('sf').value)
+    const unlockAudio = () => { if (audioCtx.state !== 'running') audioCtx.resume().then(() => engine.resume?.()).catch(() => {}) }
+
+    // ── Playing ────────────────────────────────────────────────────────────
+    const holders = new Map()   // midi -> Map(source -> hand)
+    function tintKey(m) {
+      const s = holders.get(m)
+      if (!s) { piano.setKeyTint(m, null); return }
+      const hand = [...s.values()].pop()
+      piano.setKeyTint(m, handColor[hand] || handColor.R)
+    }
+    function keyDown(midi, src, vel, hand = midi < 60 ? 'L' : 'R') {
+      if (midi < LOW || midi > HIGH) return
+      let s = holders.get(midi)
+      if (!s) holders.set(midi, s = new Map())
+      s.set(src, hand)
+      tintKey(midi)
+      piano.noteOn(midi, vel)
+      if (mode === 'lesson') sparks.emit(piano.keyX(midi), handColor[hand], vel)
+    }
+    function keyUp(midi, src) {
+      const s = holders.get(midi)
+      if (!s) return
+      s.delete(src)
+      if (!s.size) { holders.delete(midi); piano.noteOff(midi) }
+      tintKey(midi)
+    }
+    function press(midi, src, vel = +$('velocity').value) {
+      unlockAudio()
+      if (soundReady) engine.noteOn(midi, vel, LIVE)
+      keyDown(midi, src, vel)
+    }
+    function release(midi, src) {
+      engine.noteOff(midi, LIVE)
+      keyUp(midi, src)
+    }
+    let livePedal = false, songPedal = false
+    function updatePedal() { piano.setSustain(livePedal || songPedal); $('pedal').classList.toggle('on', livePedal) }
+    function setLivePedal(on) { livePedal = on; engine.controlChange(LIVE, 64, on ? 127 : 0); updatePedal() }
+    $('pedal').onclick = () => setLivePedal(!livePedal)
+
+    // Pointer: keys take priority over orbiting
+    const raycaster = new THREE.Raycaster(), ndc = new THREE.Vector2(), pointerKey = new Map()
+    const canvas = renderer.domElement
+    function keyAt(ev) {
+      const r = canvas.getBoundingClientRect()
+      ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1)
+      raycaster.setFromCamera(ndc, camera)
+      const hit = raycaster.intersectObjects(piano.keyMeshes, false)[0]
+      if (!hit) return null
+      const front = THREE.MathUtils.clamp(1 + hit.point.z / 15, 0, 1)
+      return { midi: hit.object.userData.midi, vel: +$('velocity').value * (0.75 + 0.25 * front) }
+    }
+    addEventListener('pointerdown', ev => {
+      if (ev.target !== canvas) return
+      unlockAudio()
+      const hit = keyAt(ev)
+      if (!hit) return
+      ev.stopImmediatePropagation()
+      closePops()
+      canvas.setPointerCapture(ev.pointerId)
+      pointerKey.set(ev.pointerId, hit.midi)
+      press(hit.midi, 'p' + ev.pointerId, hit.vel)
+    }, true)
+    canvas.addEventListener('pointermove', ev => {
+      if (!pointerKey.has(ev.pointerId)) return
+      const hit = keyAt(ev), prev = pointerKey.get(ev.pointerId), now = hit?.midi ?? null
+      if (now === prev) return
+      if (prev != null) release(prev, 'p' + ev.pointerId)
+      pointerKey.set(ev.pointerId, now)
+      if (now != null) press(now, 'p' + ev.pointerId, hit.vel)
+    })
+    const endPointer = ev => {
+      if (!pointerKey.has(ev.pointerId)) return
+      const m = pointerKey.get(ev.pointerId)
+      if (m != null) release(m, 'p' + ev.pointerId)
+      pointerKey.delete(ev.pointerId)
+    }
+    canvas.addEventListener('pointerup', endPointer)
+    canvas.addEventListener('pointercancel', endPointer)
+    canvas.addEventListener('pointermove', ev => {
+      if (pointerKey.size || ev.buttons) return
+      canvas.style.cursor = keyAt(ev) ? 'pointer' : 'grab'
+    })
+
+    const KEY_MAP = {
+      Digit2: 1, Digit3: 3, Digit5: 6, Digit6: 8, Digit7: 10, Digit9: 13, Digit0: 15, Equal: 18,
+      KeyQ: 0, KeyW: 2, KeyE: 4, KeyR: 5, KeyT: 7, KeyY: 9, KeyU: 11,
+      KeyI: 12, KeyO: 14, KeyP: 16, BracketLeft: 17, BracketRight: 19, Backslash: 21,
+      KeyA: 13, KeyS: 15, KeyF: 18, KeyG: 20, KeyH: 22,
+      KeyZ: 12, KeyX: 14, KeyC: 16, KeyV: 17, KeyB: 19, KeyN: 21, KeyM: 23,
+    }
+    let baseC = 60
+    const keyHeld = new Map()
+    const showOctave = () => { $('octave').textContent = 'C' + (baseC / 12 - 1) }
+    showOctave()
+    addEventListener('keydown', ev => {
+      if (ev.target.closest?.('select, input')) return
+      if (ev.code === 'Space') {
+        ev.preventDefault()
+        if (ev.repeat) return
+        if (song) togglePlay(); else setLivePedal(true)
+        return
+      }
+      if (ev.code === 'ArrowLeft' || ev.code === 'ArrowRight') {
+        baseC = THREE.MathUtils.clamp(baseC + (ev.code === 'ArrowLeft' ? -12 : 12), 24, 84); showOctave(); ev.preventDefault(); return
+      }
+      if (ev.repeat || ev.metaKey || ev.ctrlKey || ev.altKey) return
+      const off = KEY_MAP[ev.code]
+      if (off == null || keyHeld.has(ev.code)) return
+      keyHeld.set(ev.code, baseC + off)
+      press(baseC + off, 'k' + ev.code)
+      ev.preventDefault()
+    })
+    addEventListener('keyup', ev => {
+      if (ev.code === 'Space') { if (!song) setLivePedal(false); return }
+      const m = keyHeld.get(ev.code)
+      if (m == null) return
+      keyHeld.delete(ev.code)
+      release(m, 'k' + ev.code)
+    })
+    addEventListener('blur', () => { for (const [c, m] of keyHeld) release(m, 'k' + c); keyHeld.clear(); setLivePedal(false) })
+
+    $('midiIn').onclick = async () => {
+      if (!navigator.requestMIDIAccess) return setStatus('Web MIDI is not available in this browser', true, 2500)
+      try {
+        const access = await navigator.requestMIDIAccess()
+        const hook = () => { for (const inp of access.inputs.values()) inp.onmidimessage = onMidi }
+        hook(); access.onstatechange = hook
+        $('midiIn').classList.add('on')
+        if (!access.inputs.size) setStatus('No MIDI inputs found', false, 2500)
+      } catch (e) { setStatus('MIDI access denied', true, 2500) }
+    }
+    function onMidi(e) {
+      const [st, d1, d2] = e.data, type = st & 0xf0
+      if (type === 0x90 && d2 > 0) press(d1, 'midi', d2 / 127)
+      else if (type === 0x80 || type === 0x90) release(d1, 'midi')
+      else if (type === 0xb0 && d1 === 64) setLivePedal(d2 >= 64)
+    }
+
+    // ── Hands: who plays which note ────────────────────────────────────────
+    // A quick split runs immediately; if the fingering engine is present
+    // (fingering/fingering.js) it runs in a worker and replaces it with hands
+    // and finger numbers when it finishes.
+    function quickHands(notes) {
+      let L = 48, R = 72
+      const sorted = [...notes].sort((a, b) => a.time - b.time || a.midi - b.midi)
+      for (let i = 0; i < sorted.length;) {
+        let j = i
+        while (j < sorted.length && sorted[j].time - sorted[i].time < 0.03) j++
+        const sl = sorted.slice(i, j).sort((a, b) => a.midi - b.midi)
+        let best = null
+        for (let cut = 0; cut <= sl.length; cut++) {
+          const lo = sl.slice(0, cut), hi = sl.slice(cut)
+          const mean = a => a.reduce((s, n) => s + n.midi, 0) / a.length
+          let c = 0
+          if (lo.length) { c += Math.abs(mean(lo) - L) + Math.max(0, lo.at(-1).midi - lo[0].midi - 13) * 4 + Math.max(0, lo.length - 5) * 20 }
+          if (hi.length) { c += Math.abs(mean(hi) - R) + Math.max(0, hi.at(-1).midi - hi[0].midi - 13) * 4 + Math.max(0, hi.length - 5) * 20 }
+          if (lo.length && hi.length && lo.at(-1).midi > hi[0].midi) c += 50
+          if (!best || c < best.c) best = { c, cut }
+        }
+        sl.forEach((n, k) => { n.hand = k < best.cut ? 'L' : 'R'; n.finger = 0 })
+        const lo = sl.slice(0, best.cut), hi = sl.slice(best.cut)
+        if (lo.length) L += (lo.reduce((s, n) => s + n.midi, 0) / lo.length - L) * 0.6
+        if (hi.length) R += (hi.reduce((s, n) => s + n.midi, 0) / hi.length - R) * 0.6
+        if (R - L < 7) { const m = (L + R) / 2; L = m - 3.5; R = m + 3.5 }
+        i = j
+      }
+    }
+    let fingerWorker = null, fingerJob = 0
+    function fingerInWorker(notes) {
+      const job = ++fingerJob
+      try {
+        fingerWorker?.terminate()
+        const url = new URL('./fingering/fingering.js', import.meta.url).href
+        const src = `import { fingerPiece } from ${JSON.stringify(url)}
+          onmessage = e => { const r = fingerPiece(e.data); postMessage(r.notes.map(n => [n.hand, n.finger || 0])) }`
+        fingerWorker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })), { type: 'module' })
+        fingerWorker.onmessage = e => {
+          if (job !== fingerJob) return
+          e.data.forEach(([h, f], i) => { if (h === 'L' || h === 'R') { notes[i].hand = h; notes[i].finger = f } })
+          fingerWorker.terminate(); fingerWorker = null
+        }
+        fingerWorker.onerror = ev => { ev.preventDefault(); fingerWorker?.terminate(); fingerWorker = null }
+        fingerWorker.postMessage(notes.map(n => ({ pitch: n.midi, on: n.time, off: n.time + n.duration, velocity: n.velocity })))
+      } catch (e) { console.warn('fingering engine unavailable', e) }
+    }
+
+    // ── Songs ──────────────────────────────────────────────────────────────
+    const SONGS = [
+      ['chpn-p15.mid', 'Chopin – Raindrop Prelude'],
+      ['liz_liebestraum.mid', 'Liszt – Liebestraum No. 3'],
+      ['minute_waltz.mid', 'Chopin – Minute Waltz'],
+      ['Prelude1.mid', 'Bach – Prelude in C'],
+      ['entertainer.mid', 'Joplin – The Entertainer'],
+      ['C.V.Alkan - Etude sans opus.mid', 'Alkan – Étude sans opus'],
+      ['rachmaninov3.mid', 'Rachmaninov – Concerto No. 3'],
+      ['JVKE - golden hour.mid', 'JVKE – golden hour'],
+    ]
+    for (const [file, label] of SONGS) {
+      const it = document.createElement('div')
+      it.className = 'item'; it.dataset.file = file
+      it.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 3v10.6A4 4 0 1 0 14 17V7h4V3z"/></svg>'
+      it.append(label, Object.assign(document.createElement('span'), { className: 'dot' }))
+      it.onclick = () => { closePops(); loadSongUrl(file, label) }
+      $('songList').append(it)
+    }
+    const markSong = file => { for (const it of $('songList').children) it.classList.toggle('sel', it.dataset.file === file) }
+    // per-midi note lists so a scheduler note-on can be matched to its note (and hand)
+    let byMidi = new Map()
+    function findNote(midi, t) {
+      const list = byMidi.get(midi)
+      if (!list) return null
+      let lo = 0, hi = list.length - 1, best = null
+      while (lo <= hi) { const m = (lo + hi) >> 1; if (list[m].time <= t + 0.08) { best = list[m]; lo = m + 1 } else hi = m - 1 }
+      return best
+    }
+    let seeking = false
+    const songTarget = {
+      audioContext: audioCtx,
+      resume: () => audioCtx.resume(),
+      noteOn(m, v, ch) {
+        if (ch === 9) return
+        if (soundReady) engine.noteOn(m, v, ch)
+        const n = findNote(m, songNow())
+        keyDown(m, 'song' + ch, v, n?.hand)
+        if ($('tourSync').checked) music.energy += v * v * 0.16
+      },
+      noteOff(m, ch) {
+        if (ch === 9) return
+        engine.noteOff(m, ch)
+        keyUp(m, 'song' + ch)
+      },
+      controlChange(ch, cc, v) {
+        engine.controlChange(ch, cc, v)
+        songCC(cc, v)
+      },
+      allSoundOff() {
+        for (let ch = 0; ch < 16; ch++) if (ch !== LIVE) engine.controlChange(ch, 64, 0)
+        engine.allNotesOff?.()
+        releaseSongKeys()
+      },
+    }
+    function songCC(cc, v) {
+      if (cc === 64) { songPedal = v >= 64; updatePedal() }
+      if (cc === 67) piano.setPedal(0, v >= 64)
+      if (cc === 66) piano.setPedal(1, v >= 64)
+    }
+    function releaseSongKeys() {
+      for (const [m, s] of holders) for (const src of [...s.keys()]) if (String(src).startsWith('song') || src === 'off') keyUp(m, src)
+      songPedal = false; updatePedal(); piano.setPedal(0, false); piano.setPedal(1, false)
+    }
+    async function ensureScheduler() {
+      if (scheduler) return scheduler
+      scheduler = new MidiScheduler(songTarget)
+      await scheduler.init()
+      scheduler.on('time', t => { music.songT = t; music.wall = performance.now(); showTime(t) })
+      scheduler.on('end', () => {
+        songTarget.allSoundOff()
+        if (loop) { scheduler.seek(0); music.songT = 0; music.wall = performance.now(); scheduler.play(); return }
+        setPlaying(false); showTime(0)
+      })
+      return scheduler
+    }
+    const fmt = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`
+    function showTime(t) {
+      const d = songDuration()
+      $('tNow').textContent = `${fmt(t)}.${String(Math.floor((t % 1) * 1000)).padStart(3, '0')}`
+      $('tLeft').textContent = '-' + fmt(Math.max(0, d - t))
+      if (!seeking) { $('seek').value = d ? t / d : 0; $('seek').style.setProperty('--p', (d ? t / d * 100 : 0) + '%') }
+    }
+    const setPlaying = on => {
+      $('playIcon').innerHTML = on ? '<path d="M6 4h4v16H6zm8 0h4v16h-4z"/>' : '<path d="M7 4v16l13-8z"/>'
+      poke()
+    }
+    async function loadSong(buffer, name) {
+      try {
+        const sch = await ensureScheduler()
+        if (sch.playing) sch.stop()
+        songTarget.allSoundOff()
+        const s = midiToSchedule(new Midi(buffer))
+        s.notes = s.notes.filter(n => n.channel !== 9 && n.midi >= LOW && n.midi <= HIGH)
+        if (!s.notes.length) throw new Error('no notes in file')
+        s.duration = s.notes.reduce((m, n) => Math.max(m, n.time + n.duration), 0)
+        s.title = name
+        quickHands(s.notes)
+        byMidi = new Map()
+        for (const n of s.notes) { if (!byMidi.has(n.midi)) byMidi.set(n.midi, []); byMidi.get(n.midi).push(n) }
+        song = s
+        fingerInWorker(s.notes)
+        sch.load(s)
+        sch.speed = speeds[speedI]
+        showTime(0); setStatus('')
+        unlockAudio()
+        music.songT = 0; music.wall = performance.now()
+        sch.play(); setPlaying(true); anchorTour()
+      } catch (e) { console.error(e); setStatus(`Could not play ${name}: ${e.message}`, true) }
+    }
+    async function loadSongUrl(url, label = url) {
+      if (!url) return
+      markSong(url)
+      setStatus('Loading song…')
+      try { await loadSong(await (await fetch(encodeURI(url))).arrayBuffer(), label) }
+      catch (e) { setStatus('Could not load song: ' + e.message, true) }
+    }
+    $('openFile').onclick = () => { closePops(); $('file').click() }
+    $('file').onchange = async () => {
+      const f = $('file').files[0]
+      if (f) { markSong(null); loadSong(await f.arrayBuffer(), f.name.replace(/\.midi?$/i, '')) }
+      $('file').value = ''
+    }
+    addEventListener('dragover', ev => { ev.preventDefault(); document.body.classList.add('dragging') })
+    addEventListener('dragleave', ev => { if (!ev.relatedTarget) document.body.classList.remove('dragging') })
+    addEventListener('drop', async ev => {
+      ev.preventDefault(); document.body.classList.remove('dragging')
+      const f = ev.dataTransfer.files[0]
+      if (f) { markSong(null); loadSong(await f.arrayBuffer(), f.name.replace(/\.midi?$/i, '')) }
+    })
+    async function togglePlay() {
+      if (!song) return loadSongUrl(SONGS[0][0], SONGS[0][1])
+      const sch = await ensureScheduler()
+      unlockAudio()
+      if (sch.playing) { sch.pause(); songTarget.allSoundOff(); setPlaying(false) }
+      else { music.wall = performance.now(); sch.play(); setPlaying(true) }
+    }
+    $('playBtn').onclick = togglePlay
+    $('seek').addEventListener('input', () => {
+      seeking = true
+      $('seek').style.setProperty('--p', $('seek').value * 100 + '%')
+      const d = songDuration(); $('tNow').textContent = fmt(+$('seek').value * d)
+    })
+    $('seek').addEventListener('change', () => {
+      seeking = false
+      if (!scheduler || !song) return
+      songTarget.allSoundOff()
+      scheduler.seek(+$('seek').value * scheduler.duration)
+      music.songT = scheduler.currentTime; music.wall = performance.now()
+    })
+    const speeds = [0.5, 0.75, 1, 1.25]
+    let speedI = 2, loop = false
+    $('speedBtn').onclick = () => {
+      speedI = (speedI + 1) % speeds.length
+      $('speedLbl').textContent = speeds[speedI] + '×'
+      if (scheduler) { music.songT = songNow(); music.wall = performance.now(); scheduler.speed = speeds[speedI] }
+    }
+    $('loopBtn').onclick = () => { loop = !loop; $('loopBtn').classList.toggle('off', !loop) }
+
+    // ── Falling notes, per frame ───────────────────────────────────────────
+    function updateNotes(t, dt) {
+      lane.tilt += (lane.tiltTarget - lane.tilt) * Math.min(1, dt * 3)
+      lane.fade += ((mode === 'lesson' ? 1 : 0) - lane.fade) * Math.min(1, dt * 4)
+      const a = THREE.MathUtils.degToRad(lane.tilt)
+      noteMat.uniforms.uAlong.value.set(0, Math.sin(a), -Math.cos(a))
+      noteMat.uniforms.uFade.value = lane.fade
+      laneLines.rotation.x = a
+      laneLines.material.opacity = 0.25 * lane.fade
+      laneLines.visible = notesMesh.visible = lane.fade > 0.01
+      let n = 0
+      if (song && lane.fade > 0.01) {
+        const speed = LANE_LEN / LOOKAHEAD
+        const notes = song.notes
+        // binary search the first note that could still be visible (sorted by time)
+        let lo = 0, hi = notes.length
+        const tMin = t - 8
+        while (lo < hi) { const m = (lo + hi) >> 1; notes[m].time < tMin ? lo = m + 1 : hi = m }
+        for (let i = lo; i < notes.length && n < MAX_NOTES; i++) {
+          const nt = notes[i]
+          if (nt.time > t + LOOKAHEAD) break
+          const end = nt.time + Math.max(nt.duration, 0.06)
+          if (end < t) continue
+          const d0 = Math.max(0, (nt.time - t) * speed), d1 = Math.min(LANE_LEN, (end - t) * speed)
+          if (d1 <= d0 + 0.05) continue
+          const black = (nt.midi % 12) in { 1: 1, 3: 1, 6: 1, 8: 1, 10: 1 }
+          aRect.setXYZW(n, piano.keyX(nt.midi), black ? 1.35 : 2.1, d0, d1)
+          const c = handColor[nt.hand] || handColor.R
+          aCol.setXYZ(n, c.r, c.g, c.b)
+          const glyph = nt.finger ? 1 + nt.finger : (nt.hand === 'L' ? 0 : 1)
+          aInfo.setXY(n, (nt.time - t) * speed < 0.5 ? -1 : glyph, nt.time <= t ? 1 : 0)
+          n++
+        }
+      }
+      noteGeo.instanceCount = n
+      aRect.needsUpdate = aCol.needsUpdate = aInfo.needsUpdate = true
+      for (const [m, s] of halos) {
+        const k = piano.keys.get(m)
+        const on = mode === 'lesson' && k.held && k.tint
+        if (on) s.material.color.copy(k.tint)
+        s.material.opacity += ((on ? 0.85 : 0) - s.material.opacity) * Math.min(1, dt * (on ? 30 : 6))
+        s.visible = s.material.opacity > 0.01
+      }
+      sparks.update(dt)
+    }
+
+    // ── Frame ──────────────────────────────────────────────────────────────
+    const _focus = new THREE.Vector3(), _drift = new THREE.Vector3()
+    let elapsed = 0
+    function frame(dt, t) {
+      elapsed += dt
+      if (tween) {
+        tween.t = Math.min(1, tween.t + dt / tween.dur)
+        const e = tween.t < 0.5 ? 4 * tween.t ** 3 : 1 - (-2 * tween.t + 2) ** 3 / 2
+        camera.position.lerpVectors(tween.from.pos, tween.to.pos, e)
+        controls.target.lerpVectors(tween.from.target, tween.to.target, e)
+        camera.fov = THREE.MathUtils.lerp(tween.from.fov, tween.to.fov, e)
+        camera.updateProjectionMatrix()
+        if (tween.t >= 1) { const done = tween.done; tween = null; done?.() }
+      }
+      stepMusic(dt)
+      if (!tween && tour.active) stepTour(dt)
+      piano.update(dt)
+      if (offlineT == null) controls.update(dt)
+      else camera.lookAt(controls.target)
+      updateNotes(t, dt)
+      dust.material.uniforms.uTime.value = elapsed
+      grade.uniforms.uTime.value = elapsed
+      // autofocus on the look-at point; aperture opens on close shots
+      const dist = camera.position.distanceTo(controls.target)
+      bokeh.uniforms.focus.value = dist
+      bokeh.uniforms.aperture.value = 0.00011 * dofScale * THREE.MathUtils.clamp(220 / dist, 0.4, 1.6)
+      // a slow handheld drift on top of the framing (not while orbiting by hand)
+      const drift = $('drift').checked && !controls.autoRotate
+      if (drift) {
+        _drift.set(Math.sin(elapsed * 0.31) * 0.9 + Math.sin(elapsed * 0.83) * 0.3, Math.sin(elapsed * 0.27 + 1) * 0.6, Math.cos(elapsed * 0.23) * 0.7)
+        camera.position.add(_drift)
+      }
+      composer.render()
+      if (drift) camera.position.sub(_drift)
+    }
+    const clock = new THREE.Clock()
+    let exporting = false
+    function animate() {
+      const dt = Math.min(clock.getDelta(), 0.1)
+      if (exporting) return
+      frame(dt, songNow())
+    }
+    function resize(w, h) {
+      camera.aspect = w / h
+      camera.updateProjectionMatrix()
+      renderer.setSize(w, h, offlineT == null)
+      composer.setPixelRatio(renderer.getPixelRatio())
+      composer.setSize(w, h)
+      gtao.setSize(w, h)
+      grade.uniforms.uRes.value.set(w * renderer.getPixelRatio(), h * renderer.getPixelRatio())
+      dust.material.uniforms.uScale.value = sparks.pts.material.uniforms.uScale.value = h * renderer.getPixelRatio()
+    }
+    addEventListener('resize', () => { if (!exporting) resize(innerWidth, innerHeight) })
+
+    // ── Video export ───────────────────────────────────────────────────────
+    // notation3d/video-export.js renders frame by frame at a fixed timestep with
+    // offline audio. It expects a "stage"; this adapter drives the piano from the
+    // song at the requested time instead of from the live scheduler.
+    const offline = { idx: 0, cc: 0, active: [], t: null }
+    function driveSong(t) {
+      const notes = song.notes, ccs = song.controlChanges || []
+      if (offline.t == null || t < offline.t) {   // (re)start: press whatever is sounding at t
+        releaseSongKeys(); offline.active = []
+        offline.idx = 0; offline.cc = 0
+        while (offline.idx < notes.length && notes[offline.idx].time < t) {
+          const n = notes[offline.idx++]
+          if (n.time + n.duration > t) { keyDown(n.midi, 'off', n.velocity, n.hand); offline.active.push(n) }
+        }
+        while (offline.cc < ccs.length && ccs[offline.cc].time <= t) { const c = ccs[offline.cc++]; songCC(c.controller, c.value) }
+      } else {
+        for (let i = offline.active.length - 1; i >= 0; i--) {
+          const n = offline.active[i]
+          if (n.time + n.duration <= t) { keyUp(n.midi, 'off'); offline.active.splice(i, 1) }
+        }
+        while (offline.cc < ccs.length && ccs[offline.cc].time <= t) { const c = ccs[offline.cc++]; songCC(c.controller, c.value) }
+        while (offline.idx < notes.length && notes[offline.idx].time <= t) {
+          const n = notes[offline.idx++]
+          if (holders.get(n.midi)?.has('off')) keyUp(n.midi, 'off')   // re-strike
+          keyDown(n.midi, 'off', n.velocity, n.hand)
+          offline.active.push(n)
+          if ($('tourSync').checked) music.energy += n.velocity * n.velocity * 0.16
+        }
+      }
+      offline.t = t
+    }
+    let prevPR = 1
+    const stageAdapter = {
+      renderer, opts: { transition: null, view: null }, tour: null,
+      setTour() {}, setView() {},
+      beginOffline(w, h) {
+        prevPR = renderer.getPixelRatio()
+        offlineT = 0; offline.t = null
+        renderer.setPixelRatio(1)
+        resize(w, h)
+        if ($('exCam').value === 'tour') { setView('tour', true); anchorTour() }
+        tween = null
+      },
+      endOffline() {
+        releaseSongKeys()
+        offlineT = null; offline.t = null
+        renderer.setPixelRatio(prevPR)
+        resize(innerWidth, innerHeight)
+        clock.getDelta()
+      },
+      update(t, dt) {
+        offlineT = Math.max(0, t)
+        driveSong(offlineT)
+        frame(dt, offlineT)
+      },
+    }
+    let exAbort = null
+    $('exStart').onclick = async () => {
+      if (!song) return void ($('exStatus').textContent = 'Load a song first (Songs, top left).')
+      if (!exportSupported()) return void ($('exStatus').textContent = 'This browser has no WebCodecs video encoder; try Chrome or Edge.')
+      const [width, height] = $('exRes').value.split('x').map(Number), fps = +$('exFps').value
+      const name = (song.title || 'concert').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_') + `_${height}p${fps}.mp4`
+      let fileStream = null
+      if (window.showSaveFilePicker) {
+        try {
+          const handle = await showSaveFilePicker({ suggestedName: name, types: [{ description: 'MP4 video', accept: { 'video/mp4': ['.mp4'] } }] })
+          fileStream = await handle.createWritable()
+        } catch (e) { if (e.name === 'AbortError') return; console.warn(e) }
+      }
+      if (scheduler?.playing) { scheduler.pause(); songTarget.allSoundOff(); setPlaying(false) }
+      exAbort = new AbortController()
+      exporting = true
+      $('exStart').disabled = true
+      const sfv = $('sf').value
+      const soundfonts = sfv === 'stack' ? STACK : [sfv]
+      const programs = new Map(); for (let ch = 0; ch < 16; ch++) if (ch !== 9) programs.set(ch, 0)
+      try {
+        const blob = await exportVideo({
+          stage: stageAdapter,
+          song: { schedule: { notes: song.notes, controlChanges: (song.controlChanges || []).filter(c => c.controller !== 7) }, programs, duration: song.duration, title: song.title },
+          width, height, fps, start: 0, end: song.duration,
+          bitrate: defaultBitrate(width, height, fps),
+          audio: $('exAudio').checked,
+          audioOpts: { vendorPath, soundfonts, volume: 1, convertSF3: engine._backend?._convertSF3 ? d => engine._backend._convertSF3(d) : null },
+          tour: null,
+          intro: $('exTitle').checked ? { seconds: 3.5, title: song.title, subtitle: 'Concert Stage · MIDIVIZ', style: '2d', overlap: true } : null,
+          outro: null,
+          fileStream, signal: exAbort.signal,
+          onProgress: p => {
+            $('exBar').firstElementChild.style.width = (p.frame / p.frames * 100).toFixed(1) + '%'
+            $('exStatus').textContent = p.phase === 'finalizing' ? 'Finalizing…'
+              : `${p.frame}/${p.frames} frames · ${(p.frame / p.elapsed).toFixed(1)} fps · ${fmt(p.eta)} left`
+          },
+        })
+        if (blob) {
+          const a = document.createElement('a')
+          a.href = URL.createObjectURL(blob); a.download = name; a.click()
+          setTimeout(() => URL.revokeObjectURL(a.href), 60000)
+        }
+        $('exStatus').textContent = 'Done: ' + name
+      } catch (e) {
+        console.error(e)
+        $('exStatus').textContent = e.name === 'AbortError' ? 'Cancelled' : 'Failed: ' + e.message
+      } finally {
+        exporting = false; exAbort = null
+        $('exStart').disabled = false
+      }
+    }
+    $('exCancel').onclick = () => { if (exAbort) exAbort.abort(); else closePops() }
+
+    // ── Start ──────────────────────────────────────────────────────────────
+    const startView = VIEWS[params.get('view')] ? params.get('view') : 'view1'
+    setMode(params.get('mode') === 'lesson' || ['top', 'first'].includes(startView) ? 'lesson' : 'concert', true)
+    setView(startView, true)
+    lane.tilt = lane.tiltTarget
+    renderer.setAnimationLoop(animate)
+    loadSound($('sf').value)
+    if (params.get('song')) loadSongUrl(params.get('song'))
+    // test hook for headless checks
+    window.__stage = { piano, press, release, setView, setMode, setScene, scene, renderer, camera, controls, tour, music, frame, stageAdapter, driveSong, loadSongUrl, get song() { return song }, get scheduler() { return scheduler }, offlineSet(t) { offlineT = t } }
+  </script>
+</body>
+</html>

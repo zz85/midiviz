@@ -4,6 +4,17 @@ Midi Visualization Experiments
 
 [WebMscore](webmscore.html) - MuseScore reference renderer (libmscore via WebAssembly)
 
+15 Oct 2026
+
+[Experiment #030 - Concert Stage](030_concert_stage.html)
+- The #028 grand restaged after [Concert Creator](https://www.concertcreator.ai/)'s renders: black stage, one warm spotlight with dust in the beam, a back light rimming the case, and a warm bounce from the open lid onto the plate
+- Piano forked to [concertstage/concert-grand.js](concertstage/concert-grand.js): mirror fallboard (planar reflection of the keys), red key felt, three staggered rows of coiled tuning pins on red felt, agraffes, capo bar, red stringing braid, hammered bronze-gold plate, orange-peel lacquer
+- Their UI layout: Songs / Camera / Visuals / Render pills and a bottom transport (speed, play, loop, ms clock); chrome fades out while a song plays
+- Cameras from their menu: Top, First Person, Orbit, View 1–4, plus the song-synced cinematic tour from #028
+- Lesson mode: keyboard only, falling notes in left / right hand colours with L / R (or finger number) labels, glowing keys, halos and sparks; hands from a quick split, refined by `fingering/` when present
+- Depth of field with autofocus, bloom, film grain, vignette and a slight handheld drift; fully procedural lighting (no HDRI downloads)
+- Render → offline MP4 export (any resolution, 30/60 fps, with audio) via notation3d/video-export.js
+
 14 Oct 2026
 
 [Experiment #028 - Grand Piano](028_grand_piano.html)
