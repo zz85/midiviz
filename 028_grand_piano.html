@@ -54,6 +54,7 @@
     #credit a { color: inherit; }
     #dropHint { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; font: 300 26px Georgia, serif; color: #f3e6c4; background: rgba(0, 0, 0, 0.55); pointer-events: none; }
     body.dragging #dropHint { display: flex; }
+    body.queued #dropHint { display: flex; align-items: flex-end; padding-bottom: 9vh; background: none; font-size: 20px; text-shadow: 0 1px 6px #000; }
   </style>
 </head>
 <body>
@@ -64,8 +65,8 @@
     <div class="body">
       <div class="row"><label>Scene</label><select id="scene">
         <option value="studio">Photo studio</option>
-        <option value="salon">Salon (parquet)</option>
-        <option value="hall">Concert hall</option>
+        <option value="salon">Ballroom salon</option>
+        <option value="hall">Concert stage</option>
       </select></div>
       <div class="row"><label>Finish</label><select id="finish"></select></div>
       <div class="row"><label>Lid</label><select id="lid">
@@ -89,7 +90,8 @@
         <span class="chk"><input id="spin" type="checkbox">Turntable</span>
       </div>
       <div class="row"><label>Tour</label>
-        <span class="chk" title="While a song plays, the tour moves with the music: its position follows song time (pause, seek and speed included), it leans toward the notes being played and pushes in on loud chords"><input id="tourSync" type="checkbox" checked>Follow the song</span>
+        <span class="chk" title="While a song plays, the tour moves with the music: its position follows song time (pause, seek and speed included), it leans toward the notes being played and pushes in on loud chords"><input id="tourSync" type="checkbox" checked>Follow song</span>
+        <button class="b" id="share" style="margin-left:auto;white-space:nowrap" title="Copy a link that reopens the page with these settings, this camera angle and the current song">Copy link</button>
       </div>
       <div class="row"><label></label>
         <span class="chk"><input id="bench" type="checkbox" checked>Bench</span>
@@ -121,7 +123,7 @@
   </div>
   <div id="status" class="hidden"></div>
   <div id="dropHint">Drop a MIDI file to play it</div>
-  <div id="credit">HDRIs &amp; parquet: <a href="https://polyhaven.com" target="_blank" rel="noopener">Poly Haven</a> (CC0)</div>
+  <div id="credit">HDRIs, veneers &amp; parquet: <a href="https://polyhaven.com" target="_blank" rel="noopener">Poly Haven</a> (CC0)</div>
 
   <script src="tonejs-midi.js"></script>
   <script type="module">
@@ -224,8 +226,8 @@
     const pmrem = new THREE.PMREMGenerator(renderer)
     const hdrLoader = new RGBELoader()
     const hdrCache = new Map()
-    function loadHDR(name) {
-      if (!hdrCache.has(name)) hdrCache.set(name, hdrLoader.loadAsync(`grandpiano/hdri/${name}_1k.hdr`).then(t => {
+    function loadHDR(name, res = '1k') {
+      if (!hdrCache.has(name)) hdrCache.set(name, hdrLoader.loadAsync(`grandpiano/hdri/${name}_${res}.hdr`).then(t => {
         t.mapping = THREE.EquirectangularReflectionMapping
         return { equirect: t, pmrem: pmrem.fromEquirectangular(t).texture }
       }))
@@ -234,34 +236,33 @@
     // A virtual product-photography studio: dark room, big overhead softbox, strip
     // lights and a kicker. Rendered into a PMREM so the lacquer reflects a dark floor
     // that matches the cyclorama the piano stands on.
+    // A real photo studio (Poly Haven studio_small_08: octaboxes, strip lights,
+    // dark walls) for the lacquer to reflect, with its bright floor covered by a
+    // dark one so the reflections match the cyclorama the piano stands on.
     let studioEnv = null
     function makeStudioEnv() {
       if (studioEnv) return studioEnv
-      const s = new THREE.Scene()
-      const room = new THREE.Mesh(new THREE.BoxGeometry(2400, 1200, 2400), new THREE.MeshBasicMaterial({ color: 0x151515, side: THREE.BackSide }))
-      room.position.y = 510   // the floor sits 90 cm below the piano's centre
-      s.add(room)
-      const floor = new THREE.Mesh(new THREE.PlaneGeometry(2400, 2400), new THREE.MeshBasicMaterial({ color: 0x24221f }))
-      floor.rotation.x = -Math.PI / 2; floor.position.y = -89
-      s.add(floor)
-      const box = (w, h, pos, look, intensity, color = 0xffffff) => {
-        const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(intensity), side: THREE.DoubleSide }))
-        m.position.set(...pos); m.lookAt(...look)
-        s.add(m)
-      }
-      box(520, 300, [0, 600, -60], [0, 0, -60], 6)                 // overhead softbox
-      box(800, 260, [900, 160, -120], [0, 60, -100], 4.5, 0xfff6ee) // wall of light on the treble side
-      box(120, 600, [-800, 250, 100], [0, 60, 0], 7, 0xfff1e2)     // tall strip, front left
-      box(600, 200, [-200, 300, -900], [0, 60, -100], 3.5, 0xe8efff) // kicker behind the tail
-      box(700, 200, [0, 250, 900], [0, 60, 0], 1.8)                // soft fill from the front
-      studioEnv = pmrem.fromScene(s, 0.02, 1, 5000).texture
+      studioEnv = loadHDR('studio_small_08').then(({ equirect }) => {
+        const s = new THREE.Scene()
+        s.background = equirect
+        s.backgroundRotation.y = 1.2
+        const floor = new THREE.Mesh(new THREE.CircleGeometry(3000, 64), new THREE.MeshBasicMaterial({ color: 0x1a1917 }))
+        floor.rotation.x = -Math.PI / 2; floor.position.y = -89   // floor sits 89 cm below the piano's centre
+        s.add(floor)
+        // a big overhead softbox: the classic long highlight down the lid and rim
+        const top = new THREE.Mesh(new THREE.PlaneGeometry(520, 300), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffffff).multiplyScalar(5), side: THREE.DoubleSide }))
+        top.position.set(0, 600, -60); top.lookAt(0, 0, -60)
+        s.add(top)
+        return pmrem.fromScene(s, 0, 1, 8000).texture
+      })
       return studioEnv
     }
     const texLoader = new THREE.TextureLoader()
     function parquetMaterial() {
       const load = (f, srgb) => {
-        const t = texLoader.load(`grandpiano/textures/parquet_${f}_1k.jpg`)
-        t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(5, 5); t.anisotropy = 8
+        const t = texLoader.load(`grandpiano/textures/parquet_${f}_2k.jpg`)
+        // real scale: the scan is 3.4 m across, the floor disc 10.4 m
+        t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.setScalar(1040 / 340); t.anisotropy = 16
         if (srgb) t.colorSpace = THREE.SRGBColorSpace
         return t
       }
@@ -271,7 +272,7 @@
       gr.addColorStop(0, '#fff'); gr.addColorStop(1, '#000'); g.fillStyle = gr; g.fillRect(0, 0, 256, 256)
       const fade = new THREE.CanvasTexture(c)
       const m = new THREE.MeshPhysicalMaterial({
-        map: load('diff', true), normalMap: load('nor_gl'), roughnessMap: load('rough'), aoMap: load('ao'),
+        map: load('diff', true), normalMap: load('nor_gl'), roughnessMap: load('rough'),
         roughness: 1, normalScale: new THREE.Vector2(0.8, 0.8), clearcoat: 0.35, clearcoatRoughness: 0.2,
         transparent: true, alphaMap: fade,
       })
@@ -301,9 +302,9 @@
     }
 
     const SCENES = {
-      studio: { hdr: null, envIntensity: 1, rotation: 0, key: [-160, 330, 240], keyI: 1.6, ground: 'cyc', exposure: 1 },
-      salon: { hdr: 'photo_studio_loft_hall', envIntensity: 1, sky: { height: 160, radius: 2400 }, rotation: 2.4, key: [-280, 300, -160], keyI: 1.6, ground: 'parquet', exposure: 1 },
-      hall: { hdr: 'music_hall_01', envIntensity: 0.8, sky: { height: 170, radius: 3000 }, rotation: 0, key: [120, 420, 220], keyI: 1.3, ground: 'catcher', exposure: 1 },
+      studio: { hdr: null, envIntensity: 0.9, rotation: 0, key: [-160, 330, 240], keyI: 1.6, ground: 'cyc', exposure: 1 },
+      salon: { hdr: 'ballroom', res: '2k', envIntensity: 0.85, sky: { height: 150, radius: 1400 }, rotation: -1.7, key: [-280, 300, -160], keyI: 1.6, ground: 'parquet', exposure: 1 },
+      hall: { hdr: 'school_hall', res: '2k', envIntensity: 1, sky: { height: 160, radius: 2600 }, rotation: 2.1, key: [120, 420, 220], keyI: 1.3, ground: 'catcher', exposure: 1 },
     }
     let ground = null, sky = null, sceneName = null
     const shadowCatcher = new THREE.Mesh(new THREE.PlaneGeometry(1600, 1600), new THREE.ShadowMaterial({ opacity: 0.5 }))
@@ -316,10 +317,11 @@
       setStatus('Loading lighting…')
       let hdr = null
       if (cfg.hdr) {
-        try { hdr = await loadHDR(cfg.hdr) } catch (e) { console.error(e); setStatus('HDR failed to load: ' + e.message, true); return }
+        try { hdr = await loadHDR(cfg.hdr, cfg.res) } catch (e) { console.error(e); setStatus('HDR failed to load: ' + e.message, true); return }
         if (sceneName !== name) return
       }
-      scene.environment = hdr ? hdr.pmrem : makeStudioEnv()
+      scene.environment = hdr ? hdr.pmrem : await makeStudioEnv()
+      if (sceneName !== name) return
       scene.fog = cfg.ground === 'cyc' ? new THREE.FogExp2(0x070707, 0.00055) : null
       scene.environmentIntensity = cfg.envIntensity
       scene.environmentRotation.y = cfg.rotation
@@ -778,7 +780,7 @@
       if (f) { $('song').value = ''; loadSong(await f.arrayBuffer(), f.name) }
     })
     $('songPlay').onclick = async () => {
-      if (!song) { $('song').value = SONGS[1][0]; return loadSongUrl(SONGS[1][0]) }
+      if (!song) { const v = $('song').value || SONGS[1][0]; $('song').value = v; return loadSongUrl(v) }
       const sch = await ensureScheduler()
       unlockAudio()
       if (sch.playing) { sch.pause(); songTarget.allSoundOff(); setPlaying(false) }
@@ -824,11 +826,98 @@
       composer.render()
     }
 
+    // ── Shareable link ─────────────────────────────────────────────────────
+    // Every setting lives in the query string. The address bar is kept up to date
+    // as you change things (replaceState, so no history spam) and "Copy link"
+    // copies it, adding the song position. Only non-default values are written.
+    const SHARED = [
+      // [param, element id, kind, default]
+      ['scene', 'scene', 'val', 'studio'], ['finish', 'finish', 'val', 'ebony'], ['lid', 'lid', 'val', 'full'],
+      ['view', 'view', 'val', 'hero'], ['ex', 'exposure', 'num', '1'],
+      ['ao', 'ao', 'chk', !LOWQ], ['bloom', 'bloom', 'chk', true], ['spin', 'spin', 'chk', false],
+      ['sync', 'tourSync', 'chk', true], ['bench', 'bench', 'chk', true], ['bg', 'bg', 'chk', true],
+      ['sf', 'sf', 'val', $('sf').value], ['vel', 'velocity', 'num', $('velocity').value],
+      ['speed', 'speed', 'val', '1'], ['song', 'song', 'val', ''],
+    ]
+    const OWN = new Set([...SHARED.map(s => s[0]), 'cam', 't', 'tour'])
+    // (scene, finish, lid, view, ao and sync were already read above; apply the rest)
+    const fire = id => { const e = $(id); (e.oninput || e.onchange)?.call(e) }
+    if (params.has('ex')) { $('exposure').value = params.get('ex'); renderer.toneMappingExposure = +$('exposure').value }
+    for (const [k, id] of [['bloom', 'bloom'], ['spin', 'spin'], ['bench', 'bench'], ['bg', 'bg']])
+      if (params.has(k)) { $(id).checked = params.get(k) !== '0'; fire(id) }
+    for (const [k, id] of [['sf', 'sf'], ['vel', 'velocity'], ['speed', 'speed']])
+      if (params.has(k)) $(id).value = params.get(k)   // sf is loaded below, vel/speed are read when used
+    let userCam = false
+    if (params.has('cam')) {
+      const c = params.get('cam').split(',').map(Number)
+      if (c.length === 7 && c.every(Number.isFinite)) {
+        tour.active = false; tween = null
+        camera.position.set(c[0], c[1], c[2]); controls.target.set(c[3], c[4], c[5])
+        camera.fov = c[6]; camera.updateProjectionMatrix(); controls.update()
+        $('view').value = 'free'; userCam = true
+      }
+    }
+    // A shared song is queued rather than started: browsers only allow audio after a click.
+    const sharedSong = params.get('song'), sharedT = +params.get('t') || 0
+    if (sharedSong && [...$('song').options].some(o => o.value === sharedSong)) {
+      $('song').value = sharedSong
+      const start = async ev => {
+        if (ev.target.closest?.('#panel')) return    // let panel clicks do their own thing
+        removeEventListener('pointerdown', start, true); removeEventListener('keydown', start, true)
+        $('dropHint').textContent = 'Drop a MIDI file to play it'; document.body.classList.remove('queued')
+        await loadSongUrl(sharedSong)
+        if (sharedT && scheduler?.duration) {
+          songTarget.allSoundOff(); scheduler.seek(Math.min(sharedT, scheduler.duration - 1))
+          music.songT = scheduler.currentTime; music.wall = performance.now(); anchorTour()
+        }
+      }
+      addEventListener('pointerdown', start, true); addEventListener('keydown', start, true)
+      $('song').addEventListener('change', () => { removeEventListener('pointerdown', start, true); removeEventListener('keydown', start, true); $('dropHint').textContent = 'Drop a MIDI file to play it'; document.body.classList.remove('queued') }, { once: true })
+      $('dropHint').textContent = `Click to play ${$('song').selectedOptions[0].text}`
+      document.body.classList.add('queued')
+    }
+    const round = (v, d = 1) => +v.toFixed(d)
+    function shareUrl(withTime = false) {
+      const q = new URLSearchParams()
+      for (const [k, v] of params) if (!OWN.has(k)) q.set(k, v)   // keep q=low, nwc=… etc.
+      for (const [k, id, kind, def] of SHARED) {
+        const e = $(id)
+        if (kind === 'chk') { if (e.checked !== def) q.set(k, e.checked ? '1' : '0') }
+        else if (kind === 'num') { if (+e.value !== +def) q.set(k, String(+e.value)) }
+        else if (e.value !== def && e.value !== 'free') q.set(k, e.value)
+      }
+      if (!tour.active && (userCam || $('view').value === 'free')) {
+        q.delete('view')
+        q.set('cam', [...camera.position.toArray(), ...controls.target.toArray()].map(v => round(v)).concat(round(camera.fov)).join(','))
+      }
+      if (!$('song').value) q.delete('song')
+      if (withTime && $('song').value && scheduler?.currentTime > 1) q.set('t', String(Math.floor(scheduler.currentTime)))
+      const qs = q.toString().replace(/%2C/g, ',')
+      return location.origin + location.pathname + (qs ? '?' + qs : '')
+    }
+    let urlTimer = 0
+    const syncUrl = () => { clearTimeout(urlTimer); urlTimer = setTimeout(() => history.replaceState(null, '', shareUrl()), 250) }
+    for (const [, id] of SHARED) $(id).addEventListener(id === 'exposure' || id === 'velocity' ? 'input' : 'change', () => {
+      if (id === 'view') userCam = false
+      syncUrl()
+    })
+    controls.addEventListener('end', () => { userCam = true; syncUrl(); setTimeout(syncUrl, 1200) })   // again once damping settles
+    $('share').onclick = async () => {
+      const url = shareUrl(true)
+      history.replaceState(null, '', url)
+      let ok = false
+      try { await navigator.clipboard.writeText(url); ok = true } catch {}
+      if (!ok) { prompt('Copy this link:', url); return }
+      $('share').textContent = 'Copied ✓'; $('share').classList.add('on')
+      setTimeout(() => { $('share').textContent = 'Copy link'; $('share').classList.remove('on') }, 1500)
+    }
+
     await setScene($('scene').value)
     renderer.setAnimationLoop(animate)
+    syncUrl()
     loadSound($('sf').value)
     // test hook for headless checks
-    window.__piano = { piano, press, release, setView, setScene, scene, renderer, camera, controls, tour, placeTour, music, get scheduler() { return scheduler } }
+    window.__piano = { piano, press, release, setView, setScene, scene, renderer, camera, controls, tour, placeTour, music, shareUrl, get scheduler() { return scheduler } }
   </script>
 </body>
 </html>

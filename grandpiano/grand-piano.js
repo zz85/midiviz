@@ -15,6 +15,7 @@
 // three pedals, and an artist bench.
 
 import * as THREE from 'three'
+import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js'
 
 // ── Dimensions ───────────────────────────────────────────────────────────
 export const DIM = {
@@ -118,6 +119,17 @@ function clipZ(poly, lo, hi) {
 // THREE.Shape lives in XY; we use (x, -z) and rotate the result flat afterwards.
 const toShape = pts => new THREE.Shape(pts.map(([x, z]) => new THREE.Vector2(x, -z)))
 const toPath = pts => new THREE.Path(pts.map(([x, z]) => new THREE.Vector2(x, -z)))
+// ExtrudeGeometry is non-indexed, so computeVertexNormals() leaves every triangle
+// flat and a mirror lacquer shows each facet. Average normals across shared
+// positions, but keep edges sharper than `crease` hard (cap corners, case corners).
+function smooth(geo, crease = 35) {
+  const out = toCreasedNormals(geo, THREE.MathUtils.degToRad(crease))
+  // non-indexed input comes back as the same object, groups and all
+  if (out === geo) return out
+  for (const g of geo.groups) out.addGroup(g.start, g.count, g.materialIndex)
+  geo.dispose()
+  return out
+}
 // Extrude a top-view shape upward from y0 by height h (bevel included in h).
 function extrudeUp(shape, y0, h, bevel = 0, segs = 3, curveSegments = 12) {
   const geo = new THREE.ExtrudeGeometry(shape, {
@@ -126,8 +138,7 @@ function extrudeUp(shape, y0, h, bevel = 0, segs = 3, curveSegments = 12) {
   })
   geo.rotateX(-Math.PI / 2)    // shape y (= -z) -> world -z, extrusion -> +y
   geo.translate(0, y0 + bevel, 0)
-  geo.computeVertexNormals()
-  return geo
+  return smooth(geo)
 }
 function roundedRect(w, h, r) {
   const s = new THREE.Shape(), x = -w / 2, y = -h / 2
@@ -142,8 +153,7 @@ function roundedBox(w, h, d, r, segs = 3) {
     depth: d - 2 * r, bevelEnabled: true, bevelThickness: r, bevelSize: r, bevelSegments: segs, curveSegments: 4,
   })
   geo.translate(0, 0, -(d - 2 * r) / 2)
-  geo.computeVertexNormals()
-  return geo
+  return smooth(geo)
 }
 
 // ── Procedural textures ──────────────────────────────────────────────────
@@ -156,6 +166,38 @@ function canvasTex(w, h, draw, srgb = true) {
   t.wrapS = t.wrapT = THREE.RepeatWrapping
   t.anisotropy = 8
   return t
+}
+// Photo-scanned veneers (Poly Haven, CC0) in grandpiano/wood/. `size` is the
+// real-world width of the scan in cm; our UVs are in cm, so repeat = 1 / size.
+const WOOD_DIR = new URL('wood/', import.meta.url)
+const WOODS = {
+  spruce: { file: 'ash_veneer_diff_1k.jpg', size: 100 },        // straight, pale, tight grain
+  maple: { file: 'white_maple_veneer_diff_1k.jpg', size: 100 },
+  raw: { file: 'black_walnut_veneer_02_diff_1k.jpg', size: 100 },
+  walnut: { file: 'smoked_walnut_veneer_diff_2k.jpg', size: 150 },
+  mahogany: { file: 'sapele_veneer_diff_2k.jpg', size: 70 },    // sapele = African mahogany, ribbon stripe
+  rosewood: { file: 'rosewood_veneer1_diff_2k.jpg', size: 160 },
+}
+const woodCache = new Map()
+let texLoader = null, finishToken = 0
+// Swap a material's map for the scanned veneer once it has loaded (the
+// procedural canvas stays as a placeholder until then, or if loading fails).
+function scannedWood(material, name, rotation = 0) {
+  const w = WOODS[name]
+  texLoader ??= new THREE.TextureLoader()
+  if (!woodCache.has(name)) woodCache.set(name, texLoader.loadAsync(new URL(w.file, WOOD_DIR).href).then(t => {
+    t.colorSpace = THREE.SRGBColorSpace
+    t.wrapS = t.wrapT = THREE.RepeatWrapping
+    t.anisotropy = 16
+    return t
+  }))
+  return woodCache.get(name).then(base => {
+    const t = base.clone()                 // own repeat/rotation, shared image
+    t.repeat.set(1 / w.size, 1 / w.size); t.rotation = rotation
+    t.needsUpdate = true
+    material.map = t; material.needsUpdate = true
+    return t
+  }).catch(e => console.warn('wood texture', name, e))
 }
 // Quarter-sawn spruce: straight, tight grain lines.
 function spruceTexture() {
@@ -260,8 +302,9 @@ export const FINISHES = {
   ebony: { label: 'Polished ebony', color: 0x050505, roughness: 0.28, clearcoat: 1, clearcoatRoughness: 0.025 },
   satin: { label: 'Satin ebony', color: 0x0a0a0a, roughness: 0.5, clearcoat: 0.35, clearcoatRoughness: 0.35 },
   white: { label: 'Polished white', color: 0xefece6, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.03 },
-  walnut: { label: 'Figured walnut', wood: ['#4a2a16', 'rgba(150,95,55,A)', 'rgba(20,8,2,A)'], roughness: 0.32, clearcoat: 1, clearcoatRoughness: 0.04 },
-  mahogany: { label: 'Mahogany', wood: ['#5a1f10', 'rgba(170,70,40,A)', 'rgba(30,5,0,A)'], roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.04 },
+  walnut: { label: 'Figured walnut', wood: ['#4a2a16', 'rgba(150,95,55,A)', 'rgba(20,8,2,A)'], scan: 'walnut', tint: 0x7a5844, roughness: 0.32, clearcoat: 1, clearcoatRoughness: 0.04 },
+  mahogany: { label: 'Mahogany', wood: ['#5a1f10', 'rgba(170,70,40,A)', 'rgba(30,5,0,A)'], scan: 'mahogany', tint: 0x6e3424, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.04 },
+  rosewood: { label: 'Rosewood', wood: ['#4a1a0c', 'rgba(160,70,35,A)', 'rgba(25,5,0,A)'], scan: 'rosewood', tint: 0xd0a090, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.035 },
   red: { label: 'Lacquer red', color: 0x6a0a0c, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.03 },
 }
 
@@ -279,13 +322,18 @@ function makeMaterials() {
   m.brass = new THREE.MeshPhysicalMaterial({ color: 0xf0c060, metalness: 1, roughness: 0.16, clearcoat: 0.5, clearcoatRoughness: 0.1 })
   const spruce = spruceTexture(); spruce.repeat.set(1 / 70, 1 / 70); spruce.rotation = 0.55
   m.soundboard = new THREE.MeshPhysicalMaterial({ map: spruce, roughness: 0.45, clearcoat: 0.5, clearcoatRoughness: 0.25 })
+  // scanned grain runs along u, the canvas spruce along v: turn it a quarter
+  scannedWood(m.soundboard, 'spruce', 0.55 + Math.PI / 2).then(() => m.soundboard.color.set(0xffcf80))
   const maple = woodTexture('#b98b52', 'rgba(230,190,130,A)', 'rgba(90,55,20,A)', 21)
   maple.repeat.set(1 / 40, 1 / 40)
   m.bridge = new THREE.MeshPhysicalMaterial({ map: maple, roughness: 0.4, clearcoat: 0.6, clearcoatRoughness: 0.2, color: 0x9a7040 })
   m.wood = new THREE.MeshStandardMaterial({ map: maple, roughness: 0.55, color: 0xe0c090 })
+  scannedWood(m.bridge, 'maple').then(() => m.bridge.color.set(0xb07a40))
+  scannedWood(m.wood, 'maple').then(() => m.wood.color.set(0xf0d0a0))
   const raw = woodTexture('#3a2414', 'rgba(110,70,40,A)', 'rgba(10,4,0,A)', 31)
   raw.repeat.set(1 / 80, 1 / 80)
   m.raw = new THREE.MeshStandardMaterial({ map: raw, roughness: 0.85 })
+  scannedWood(m.raw, 'raw').then(() => m.raw.color.set(0x8a6a58))
   m.felt = new THREE.MeshPhysicalMaterial({ color: 0x6e0a14, roughness: 1, sheen: 1, sheenRoughness: 0.6, sheenColor: new THREE.Color(0xd04050) })
   m.damperFelt = new THREE.MeshPhysicalMaterial({ color: 0xe9e3d6, roughness: 1, sheen: 1, sheenRoughness: 0.7, sheenColor: 0xffffff })
   m.hammerFelt = new THREE.MeshPhysicalMaterial({ color: 0xf1ede2, roughness: 1, sheen: 1, sheenRoughness: 0.6, sheenColor: 0xffffff })
@@ -319,9 +367,8 @@ function whiteKeyGeometry(leftCut, rightCut, L) {
   const geo = new THREE.ExtrudeGeometry(s, { depth: D.WHITE_H - 2 * KB, bevelEnabled: true, bevelThickness: KB, bevelSize: KB, bevelSegments: 3, curveSegments: 1 })
   geo.rotateX(Math.PI / 2)
   geo.translate(0, D.WHITE_H - KB, 0)
-  geo.computeVertexNormals()
-  keyGeoCache.set(id, geo)
-  return geo
+  keyGeoCache.set(id, smooth(geo))
+  return keyGeoCache.get(id)
 }
 function blackKeyGeometry() {
   if (keyGeoCache.has('black')) return keyGeoCache.get('black')
@@ -338,9 +385,8 @@ function blackKeyGeometry() {
     const y = pos.getY(i), t = THREE.MathUtils.clamp((y - bottom) / (top - bottom), 0, 1)
     pos.setX(i, pos.getX(i) * (1 - 0.14 * t))
   }
-  geo.computeVertexNormals()
-  keyGeoCache.set('black', geo)
-  return geo
+  keyGeoCache.set('black', smooth(geo))
+  return keyGeoCache.get('black')
 }
 
 // ── Lathe-turned parts ───────────────────────────────────────────────────
@@ -438,8 +484,7 @@ export function buildGrandPiano({ bench = true } = {}) {
       const w = 74 - 61.8
       const geo = new THREE.ExtrudeGeometry(s, { depth: w - 1.2, bevelEnabled: true, bevelThickness: 0.6, bevelSize: 0.6, bevelSegments: 4, curveSegments: 16 })
       geo.rotateY(-Math.PI / 2)        // shape (z, y, extrude) -> world (-extrude -> x, y, z)
-      geo.computeVertexNormals()
-      addCase(geo).position.x = side > 0 ? 74 - 0.6 : -61.8 - 0.6
+      addCase(smooth(geo)).position.x = side > 0 ? 74 - 0.6 : -61.8 - 0.6
     }
   }
   // Fallboard (open, resting against the nameboard), with the gold logo
@@ -819,9 +864,9 @@ export function buildGrandPiano({ bench = true } = {}) {
     const ps = new THREE.Shape()       // top view (x, z): narrow neck widening to a rounded foot
     ps.moveTo(-1.1, 0); ps.lineTo(1.1, 0); ps.lineTo(1.4, 7); ps.quadraticCurveTo(3.1, 9, 2.6, 13.5)
     ps.quadraticCurveTo(0, 15.8, -2.6, 13.5); ps.quadraticCurveTo(-3.1, 9, -1.4, 7); ps.lineTo(-1.1, 0)
-    const pg = new THREE.ExtrudeGeometry(ps, { depth: 0.8, bevelEnabled: true, bevelThickness: 0.35, bevelSize: 0.3, bevelSegments: 3, curveSegments: 12 })
+    let pg = new THREE.ExtrudeGeometry(ps, { depth: 0.8, bevelEnabled: true, bevelThickness: 0.35, bevelSize: 0.3, bevelSegments: 3, curveSegments: 12 })
     pg.rotateX(Math.PI / 2)
-    pg.computeVertexNormals()
+    pg = smooth(pg)
     for (const [i, x] of [[0, -7.5], [1, 0], [2, 7.5]]) {
       const pivot = new THREE.Group()
       pivot.position.set(x, boxY - 1.4, 3.5)
@@ -890,8 +935,17 @@ export function buildGrandPiano({ bench = true } = {}) {
       const f = FINISHES[name] || FINISHES.ebony
       const m = mat.case
       m.map?.dispose(); m.map = null
-      if (f.wood) { m.map = woodTexture(...f.wood, 77); m.map.repeat.set(1 / 90, 1 / 90); m.color.set(0xffffff) }
-      else m.color.set(f.color)
+      const token = ++finishToken
+      if (f.wood) {
+        m.map = woodTexture(...f.wood, 77); m.map.repeat.set(1 / 90, 1 / 90); m.color.set(0xffffff)
+        if (f.scan) {
+          const placeholder = m.map, probe = {}
+          scannedWood(probe, f.scan).then(t => {
+            if (!t || token !== finishToken) return   // finish changed meanwhile
+            placeholder.dispose(); m.map = t; m.color.set(f.tint ?? 0xffffff); m.needsUpdate = true
+          })
+        }
+      } else m.color.set(f.color)
       m.roughness = f.roughness; m.clearcoat = f.clearcoat; m.clearcoatRoughness = f.clearcoatRoughness
       m.needsUpdate = true
     },
