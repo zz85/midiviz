@@ -361,14 +361,17 @@ function buildHandGeometry(s, J, bones) {
       prof: e => { const [rx, ry] = skinR(e); const roll = 0.42 - 0.22 * (1 - smooth(5.2, 5.8, e)); return [rx + roll, ry + roll, 0.05] },
       weights: e => [[BONE.palm, 0.25 * (1 - smooth(5, 7, e))], [BONE.fore, 1]],
     })
-    // jacket sleeve, past the elbow and up the upper arm, fading toward the shoulder
+    // jacket sleeve, past the elbow and up the upper arm, fading toward the shoulder (capped there when the body is on)
     const E = FORE, S = FORE + UPPER
     B.tube('jacket', {
-      origin, dir, side, up, d0: 8.4, d1: S - 1, rings: 48, seg: 26,
+      origin, dir, side, up, d0: 8.4, d1: S + 1.2, rings: 54, seg: 26,
       prof: e => {
         const r = e < E ? lerp(3.45, 4.1, smooth(8.4, E, e)) : lerp(4.1, 4.6, smooth(E, S, e))
         const lip = 0.18 * (1 - smooth(8.4, 9.2, e))
-        return [r * 1.08 - lip, r * 0.95 - lip, 0.05]
+        // the top rounds over into the shoulder: a cap that turns with the arm
+        // (the deltoid), so the body's shoulder needs no ball of its own
+        const c = Math.min(1, Math.max(0, (e - (S - 4.6)) / 5.8)), cap = Math.sqrt(Math.max(0.0025, 1 - c * c))
+        return [r * 1.08 * cap - lip, r * 0.95 * cap - lip, 0.05]
       },
       weights: e => [[BONE.fore, 1 - smooth(E - 3, E + 3, e)], [BONE.upper, smooth(E - 3, E + 3, e)]],
       alpha: e => 1 - smooth(E + 9, S - 2, e),
@@ -667,6 +670,10 @@ export function buildAvatarHands() {
     setNotes(notes) { motion = buildMotion(notes.filter(n => n.finger >= 1)) },
     clear() { motion = buildMotion([]) },
     setSleeves(on) { sleeves = on; mats.jacket.visible = on; mats.cuff.visible = on },
+    /** With a body the sleeve runs solid to the shoulder (no fade). */
+    setBody(on) { mats.jacket.vertexColors = !on; mats.jacket.transparent = !on; mats.jacket.needsUpdate = true },
+    /** Shoulder and wrist joints, for the body to follow: { L: { S, W }, R: { S, W } }. */
+    joints: { L: L.joints, R: R.joints },
     update(t, dt) {
       const pose = motion.poseAt(t)
       L.update(pose.L, dt); R.update(pose.R, dt)

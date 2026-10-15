@@ -154,6 +154,7 @@
     <label class="chk"><input type="checkbox" id="glowConcert">Colour the keys in Concert mode</label>
     <label class="chk"><input type="checkbox" id="labels" checked>Finger / hand labels on notes</label>
     <label class="chk" title="Pianist's hands and sleeves, playing with the fingering from #029"><input type="checkbox" id="hands" checked>Pianist hands</label>
+    <label class="chk" title="The seated pianist: torso, head and legs on the pedals (concert mode)"><input type="checkbox" id="body">Pianist body</label>
     <div class="field"><label>Main Light Intensity</label><input type="range" id="light" min="0" max="2" step="0.01" value="1"></div>
     <div class="field"><label>Exposure</label><input type="range" id="exposure" min="0.3" max="2.5" step="0.01" value="1"></div>
     <div class="sect">Piano</div>
@@ -197,8 +198,8 @@
     <div class="field"><label>Velocity (mouse / keys)</label><input id="velocity" type="range" min="0.1" max="1" step="0.01" value="0.75"></div>
     <div class="sect">Quality</div>
     <label class="chk"><input type="checkbox" id="dof" checked>Depth of field</label>
-    <label class="chk"><input type="checkbox" id="mirror" checked>Fallboard reflection</label>
     <label class="chk" title="Keep the pianist's hands sharp; off focuses on the camera's aim point"><input type="checkbox" id="focusHands" checked>Focus on the hands</label>
+    <label class="chk"><input type="checkbox" id="mirror" checked>Fallboard reflection</label>
     <label class="chk"><input type="checkbox" id="ao" checked>Ambient occlusion</label>
     <label class="chk"><input type="checkbox" id="bloom" checked>Bloom</label>
     <label class="chk"><input type="checkbox" id="grain" checked>Film grain &amp; vignette</label>
@@ -242,6 +243,7 @@
     import { exportVideo, exportSupported, defaultBitrate } from './notation3d/video-export.js'
     import { buildGrandPiano, FINISHES, LOW, HIGH, DIM } from './concertstage/concert-grand.js'
     import { buildAvatarHands } from './concertstage/avatar-hands.js'
+    import { buildAvatarBody } from './concertstage/avatar-body.js'
     import { installAcoustics, offlineHall, acousticParams, rt60Of, ROOMS, SEATS } from './concertstage/acoustics.js'
 
     const $ = id => document.getElementById(id)
@@ -303,8 +305,20 @@
     const hands = buildAvatarHands()
     scene.add(hands.group)
     $('hands').checked = params.get('hands') !== '0'
-    $('hands').onchange = () => { hands.group.visible = $('hands').checked }
+    $('hands').onchange = () => { hands.group.visible = $('hands').checked; showBody() }
     hands.group.visible = $('hands').checked
+    // the seated pianist around the hands (concert mode only)
+    // (off by default; built on first use, ~1 s)
+    let body = null
+    $('body').checked = params.get('body') === '1'
+    function showBody() {
+      const on = $('body').checked && hands.group.visible && mode !== 'lesson'
+      if (on && !body) { body = buildAvatarBody({ skin: hands.materials.skin }); scene.add(body.group) }
+      if (body) body.group.visible = on
+      hands.setBody(on)
+    }
+    $('body').onchange = showBody
+    const pedalsDown = [false, false]      // una corda, sostenuto (cc 67, 66), for the feet
 
     // ── Stage: floor, lights, environment ──────────────────────────────────
     // Dark stage boards: long planks, a little sheen, melting into black.
@@ -664,6 +678,7 @@
       floor.visible = blob.visible = m !== 'lesson'
       if (fromView) lane.fade = m === 'lesson' ? 1 : 0
       dust.visible = m !== 'lesson'
+      showBody()
       applyGlow()
       if (!fromView) {
         if (m === 'lesson' && !['top', 'first', 'orbit'].includes(viewName)) setView('top')
@@ -1219,12 +1234,12 @@
     }
     function songCC(cc, v) {
       if (cc === 64) { songPedal = v >= 64; updatePedal() }
-      if (cc === 67) piano.setPedal(0, v >= 64)
-      if (cc === 66) piano.setPedal(1, v >= 64)
+      if (cc === 67) piano.setPedal(0, pedalsDown[0] = v >= 64)
+      if (cc === 66) piano.setPedal(1, pedalsDown[1] = v >= 64)
     }
     function releaseSongKeys() {
       for (const [m, s] of holders) for (const src of [...s.keys()]) if (String(src).startsWith('song') || src === 'off') keyUp(m, src)
-      songPedal = false; updatePedal(); piano.setPedal(0, false); piano.setPedal(1, false)
+      songPedal = false; updatePedal(); piano.setPedal(0, false); piano.setPedal(1, false); pedalsDown[0] = pedalsDown[1] = false
     }
     async function ensureScheduler() {
       if (scheduler) return scheduler
@@ -1425,6 +1440,10 @@
       if (!tween && tour.active) stepTour(dt)
       piano.update(dt)
       if (hands.group.visible) hands.update(t, dt)
+      if (body?.group.visible) {
+        const { L, R } = hands.joints
+        body.update([L.S, R.S], [L.W, R.W], [pedalsDown[0], pedalsDown[1], livePedal || songPedal], camera, dt)
+      }
       if (offlineT == null) controls.update(dt)
       else camera.lookAt(controls.target)
       // in a fixed view, turn a little toward the hands (and wander slowly):
@@ -1598,7 +1617,7 @@
     const SHARED = [
       // [param, element id, kind, default for selects]
       ['scene', 'scene', 'val', 'stage'], ['finish', 'finish', 'val', 'ebony'], ['lid', 'lid', 'val', 'full'],
-      ['desk', 'desk', 'chk'], ['bench', 'bench', 'chk'], ['mirror', 'mirror', 'chk', !!piano.mirror], ['hands', 'hands', 'chk'],
+      ['desk', 'desk', 'chk'], ['bench', 'bench', 'chk'], ['mirror', 'mirror', 'chk', !!piano.mirror], ['hands', 'hands', 'chk'], ['body', 'body', 'chk'],
       ['rh', 'rhColor', 'color'], ['lh', 'lhColor', 'color'], ['glow', 'glowConcert', 'chk'], ['labels', 'labels', 'chk'],
       ['light', 'light', 'num'], ['ex', 'exposure', 'num'], ['sync', 'tourSync', 'chk'], ['glance', 'lookHands', 'chk'],
       ['ao', 'ao', 'chk', !LOWQ], ['dof', 'dof', 'chk', !LOWQ], ['focus', 'focusHands', 'chk'], ['bloom', 'bloom', 'chk'], ['grain', 'grain', 'chk'], ['drift', 'drift', 'chk'],
