@@ -22,7 +22,7 @@
 //
 // Pure ES module, no DOM: runs in the browser, a worker or Node (tests).
 
-import { isBlack, keyX, SEMITONE_CM, noteName, parseNote } from './keyboard.js'
+import { isBlack, keyX, SEMITONE_CM, WHITE_W, noteName, parseNote } from './keyboard.js'
 import { scaleTemplate, chromaticTemplate } from './templates.js'
 
 // ── Span table (Parncutt et al. 1997, Table 1, right hand, semitones) ──────
@@ -84,6 +84,14 @@ export const DEFAULTS = {
     leap: 3,            // jumping instead of stretching (scaled by distance and time)
     consistency: 2,     // repeated melodic context fingered differently
     template: 3,        // per note off the standard scale / chromatic fingering
+    // Whole-hand span, over every key down at once (held keys included), in
+    // white-key widths: an average hand spans an octave and a note or two, so
+    // past a ninth (8 widths) it costs, past a tenth (9) it is a wall.
+    handSpan: 4,        // per white key beyond a ninth (×4 beyond a tenth)
+    // A held key the hand cannot keep down while reaching a new one is let go
+    // early (the pedal, or simply the release, covers it) rather than held at
+    // an impossible stretch. null = never (Parncutt: keys are held to the end).
+    release: 3,         // per key released early
   },
 
 }
@@ -101,6 +109,7 @@ export const PARNCUTT = {
     fourOnBlack: 1, thumbOnBlack: 1, thumbOnBlackNext: 2, fiveOnBlack: 2, thumbPass: 1,
     cross: null, crossDist: 0, turnaround: 0, repeatShuttle: 0, sameFinger: 1000,
     repeatSame: 0, repeatChange: 0, anchor: 0, leap: 1000, template: 0, vertical: 1, natural: 0, consistency: 0,
+    handSpan: 0, release: null,
   },
 }
 
@@ -389,10 +398,29 @@ export function fingerHand(notes, model, hand = 'R') {
       return [0, 1, 2, 3, 4, 5].map(f => (f ? model.noteCost(n, f, pw, nw) : 0))
     })
     const next = new Map()
+    const wx = p => keyX(p) / WHITE_W
+    const reach = 8 * opts.handSize, wall = 9 * opts.handSize
+    const lo = wx(fresh[0].p), hi = wx(fresh[k - 1].p)
     for (const h of beam) {
       // keys still held down from earlier slices keep their finger
-      let held = h.down.filter(([n]) => n.off - sl.on > holdTol && !fresh.includes(n))
-      if (held.length + k > 5) held = held.sort((a, b) => b[0].off - a[0].off).slice(0, 5 - k).sort((a, b) => a[0].p - b[0].p)
+      let heldAll = h.down.filter(([n]) => n.off - sl.on > holdTol && !fresh.includes(n))
+      // (five fingers: past that the keys ending soonest are let go)
+      let forced = []
+      if (heldAll.length + k > 5) {
+        const byOff = heldAll.sort((a, b) => b[0].off - a[0].off)
+        forced = byOff.slice(5 - k).map(([n]) => n)
+        heldAll = byOff.slice(0, 5 - k).sort((a, b) => a[0].p - b[0].p)
+      }
+      // ...unless keeping one down would stretch the hand past a ninth: then it
+      // may also be let go as the new keys are struck
+      const variants = [[heldAll, []]]
+      if (model.W.release != null && heldAll.length) {
+        const keep = [], cut = []
+        for (const e of heldAll) (Math.max(hi, wx(e[0].p)) - Math.min(lo, wx(e[0].p)) > reach ? cut : keep).push(e)
+        if (cut.length) variants.push([keep, cut.map(([n]) => n)])
+      }
+      for (const [held, cutHeld] of variants) {
+      const cut = forced.length ? forced.concat(cutHeld) : cutHeld
       let mask = 0b111110
       for (const [, f] of held) mask &= ~(1 << f)
       for (const fs of combosFor(mask, k)) {
@@ -401,8 +429,11 @@ export function fingerHand(notes, model, hand = 'R') {
         let ok = true
         for (let i = 1; i < cfg.length; i++) if (cfg[i][1] <= cfg[i - 1][1] || cfg[i][0].p === cfg[i - 1][0].p) { ok = false; break }
         if (!ok) continue
-        let c = h.cost
+        let c = h.cost + cutHeld.length * (model.W.release || 0)
         for (let i = 0; i < k; i++) c += unary[i][fs[i]]
+        // the whole hand, held keys included
+        const span = wx(cfg[cfg.length - 1][0].p) - wx(cfg[0][0].p)
+        if (span > reach) c += model.W.handSpan * ((span - reach) + 3 * Math.max(0, span - wall))
         if (target[si] && k === 1 && fs[0] !== target[si]) c += model.W.template * targetW[si]
         // vertical: every pair that includes a new key
         for (let i = 0; i < cfg.length; i++) for (let j = i + 1; j < cfg.length; j++) {
@@ -435,7 +466,8 @@ export function fingerHand(notes, model, hand = 'R') {
         }
         const key = cfg.map(([n, f]) => n.p * 8 + f).join(',') + '|' + fs.join('') + '|' + (h.struck && h.struck.length === 1 ? h.struck[0][1] : '')
         const old = next.get(key)
-        if (!old || c < old.cost) next.set(key, { cost: c, down: cfg, struck, parent: h, fingers: fs, fresh })
+        if (!old || c < old.cost) next.set(key, { cost: c, down: cfg, struck, parent: h, fingers: fs, fresh, cut, on: sl.on })
+      }
       }
     }
     if (!next.size) {
@@ -449,7 +481,11 @@ export function fingerHand(notes, model, hand = 'R') {
   })
   // back-trace
   const best = beam[0]
-  for (let h = best; h && h.fingers; h = h.parent) h.fresh.forEach((n, i) => { n.finger = h.fingers[i] })
+  for (let h = best; h && h.fingers; h = h.parent) {
+    h.fresh.forEach((n, i) => { n.finger = h.fingers[i] })
+    // a held key let go early: its finger lifts here (the note may sound on)
+    for (const n of h.cut || []) n.release = Math.min(n.release ?? Infinity, h.on)
+  }
   return { cost: best.cost, slices: slices.length }
 }
 
@@ -531,7 +567,11 @@ export function fingerPiece(notes, options = {}) {
     const own = notes.filter(n => n.hand === hand)
     const rh = own.map(n => ({ p: hand === 'L' ? mirror(n.pitch) : n.pitch, on: n.on, off: n.off, src: n }))
     out[hand] = fingerHand(rh, model, hand)
-    for (const n of rh) n.src.finger = n.finger ?? 0
+    for (const n of rh) {
+      n.src.finger = n.finger ?? 0
+      // the finger lets go before the note ends (see W.release); else absent
+      if (n.release != null && n.release < n.off) n.src.release = n.release; else delete n.src.release
+    }
   }
   const t1 = typeof performance !== 'undefined' ? performance.now() : Date.now()
   return { notes, cost: out.R.cost + out.L.cost, ms: t1 - t0, hands: out }

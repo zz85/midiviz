@@ -31,6 +31,10 @@ const SPACING = WHITE_W * 0.98
 /** Rest offset of finger f from the hand anchor (the middle finger), RH; LH is mirrored. */
 export const restOffset = (hand, f) => (hand === 'L' ? -1 : 1) * (f - 3) * SPACING
 
+// when the finger leaves the key: the fingering may let a held key go early
+// (note.release, see fingering.js W.release); the sound can ring on
+const up = n => n.release ?? n.off
+
 const smooth = u => (u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u))
 
 /**
@@ -55,13 +59,13 @@ export function buildMotion(notes, { approach = 0.09, release = 0.03, travel = 0
       let sx = 0, sz = 0, w = 0
       for (let k = Math.max(0, i - 24); k < j; k++) {
         const n = own[k]
-        if (k >= i || (n.off > t + 0.02 && n.on <= t)) {
+        if (k >= i || (up(n) > t + 0.02 && n.on <= t)) {
           sx += keyX(n.pitch) - restOffset(hand, n.finger)
           sz += isBlack(n.pitch) ? 1 : 0
           w++
         }
       }
-      keys.push({ t, x: sx / w, black: sz / w, end: Math.max(...own.slice(i, j).map(n => n.off)) })
+      keys.push({ t, x: sx / w, black: sz / w, end: Math.max(...own.slice(i, j).map(up)) })
       i = j
     }
     hands[hand] = { hand, fingers, keys, ptr: fingers.map(() => 0), kptr: 0 }
@@ -109,7 +113,7 @@ export function buildMotion(notes, { approach = 0.09, release = 0.03, travel = 0
       return { x: keyX(n.pitch), y: black ? KEY.BLACK_Y : 0, z: black ? KEY.BLACK_Z + (f === 1 || f === 5 ? 1.2 : 0) : KEY.WHITE_Z[f], black }
     }
     // pressing (or holding) its current key
-    if (cur && t < cur.off) {
+    if (cur && t < up(cur)) {
       const k = target(cur)
       const press = smooth((t - cur.on + 0.012) / 0.03)
       return { ...k, y: k.y - KEY.DIP * press, press, rest: 0, pitch: cur.pitch, vel: cur.velocity ?? 0.7, on: cur.on }
@@ -120,13 +124,13 @@ export function buildMotion(notes, { approach = 0.09, release = 0.03, travel = 0
     let pos = rest, restW = 1
     if (cur) {
       const k = target(cur)
-      const u = smooth((t - cur.off) / Math.max(0.04, release + 0.05))
+      const u = smooth((t - up(cur)) / Math.max(0.04, release + 0.05))
       restW = u
       pos = { x: k.x + (rest.x - k.x) * u, y: k.y + (rest.y - k.y + 0.6) * u, z: k.z + (rest.z - k.z) * u }
     }
     if (next) {
       const k = target(next)
-      const window = Math.min(approach + travel * Math.abs(k.x - pos.x), Math.max(0.03, next.on - (cur ? cur.off : -1)))
+      const window = Math.min(approach + travel * Math.abs(k.x - pos.x), Math.max(0.03, next.on - (cur ? up(cur) : -1)))
       const u = (t - (next.on - window)) / window
       if (u > 0) {
         const e = smooth(u)

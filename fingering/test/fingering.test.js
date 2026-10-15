@@ -337,3 +337,16 @@ test('PIG files: substitutions, LH negatives and annotators are read and aligned
   assert.deepEqual(p.hands[0], ['R', 'L'])
   assert.equal(p.notes[1].pitch, 52)
 })
+
+test('a held key out of reach is let go early; an octave is held', () => {
+  // Raindrop Prelude b. ~43 s: F5 held by 5, then C#4 + F4 (a tenth and more below)
+  const far = [{ pitch: 77, on: 0, off: 2 }, { pitch: 61, on: 0.8, off: 1.2 }, { pitch: 65, on: 0.8, off: 1.2 }].map(n => ({ ...n, hand: 'R' }))
+  fingerPiece(far, { splitHands: false })
+  assert.ok(Math.abs(far[0].release - 0.8) < 1e-9, 'F5 lifts when C#4 is struck')
+  assert.equal(far[1].release, undefined)
+  // C5 held, C4 + E4 struck: an octave stays down
+  const near = [{ pitch: 72, on: 0, off: 2 }, { pitch: 60, on: 0.8, off: 1.2 }, { pitch: 64, on: 0.8, off: 1.2 }].map(n => ({ ...n, hand: 'R' }))
+  fingerPiece(near, { splitHands: false })
+  assert.equal(near[0].release, undefined)
+  assert.equal(near[0].finger, 5)
+})

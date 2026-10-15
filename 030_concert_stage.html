@@ -1071,13 +1071,13 @@
         fingerWorker?.terminate()
         const url = new URL('./fingering/fingering.js', import.meta.url).href
         const src = `import { fingerPiece } from ${JSON.stringify(url)}
-          onmessage = e => { const r = fingerPiece(e.data); postMessage(r.notes.map(n => [n.hand, n.finger || 0])) }`
+          onmessage = e => { const r = fingerPiece(e.data); postMessage(r.notes.map(n => [n.hand, n.finger || 0, n.release])) }`
         fingerWorker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })), { type: 'module' })
         fingerWorker.onmessage = e => {
           if (job !== fingerJob) return
-          e.data.forEach(([h, f], i) => { if (h === 'L' || h === 'R') { notes[i].hand = h; notes[i].finger = f } })
+          e.data.forEach(([h, f, rel], i) => { if (h === 'L' || h === 'R') { notes[i].hand = h; notes[i].finger = f; notes[i].release = rel } })
           fingerWorker.terminate(); fingerWorker = null
-          hands.setNotes(notes.map(n => ({ pitch: n.midi, on: n.time, off: n.time + n.duration, hand: n.hand, finger: n.finger, velocity: n.velocity })))
+          hands.setNotes(notes.map(n => ({ pitch: n.midi, on: n.time, off: n.time + n.duration, release: n.release, hand: n.hand, finger: n.finger, velocity: n.velocity })))
         }
         fingerWorker.onerror = ev => { ev.preventDefault(); fingerWorker?.terminate(); fingerWorker = null }
         fingerWorker.postMessage(notes.map(n => ({ pitch: n.midi, on: n.time, off: n.time + n.duration, velocity: n.velocity })))
