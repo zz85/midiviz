@@ -488,7 +488,10 @@ function buildHand(side, mats) {
         x = s * r[0] + THREE.MathUtils.clamp(x - s * r[0], box[0], box[1])
         z = r[1] + THREE.MathUtils.clamp(z - r[1], -box[2], box[2])
       }
-      lx.push(x); lz.push(z); ty.push(KEY_TOP + t.y + d.rad[2] * 0.9)
+      let y = KEY_TOP + t.y + d.rad[2] * 0.9
+      // a lifted finger stays curled: its tip never rises to knuckle height
+      if (!held[f - 1]) y = Math.min(y, hand.y + slide.y + d.base[1] - (f === 1 ? 2.2 : 3.3))
+      lx.push(x); lz.push(z); ty.push(y)
     }
     // fingers 2–5 keep their order across the hand: a free finger never sits
     // on top of, or beyond, its neighbour (the thumb passes under; it is free)
@@ -512,6 +515,15 @@ function buildHand(side, mats) {
         tip.x = P[0].x + cx; tip.z = P[0].z + cz
       }
       diag.err[i] = solveFinger(P[0].clone(), tip, d.len, d.k, P, f === 1 ? thumbCurl : null)
+      // knuckle limit: a finger may not bend back more than ~14° at the MCP;
+      // lower its target until it doesn't (pressed fingers already point down)
+      if (f > 1) for (let it = 0; it < 4; it++) {
+        const ex = P[1].x - P[0].x, ey = P[1].y - P[0].y, ez = P[1].z - P[0].z
+        const fwd = ex * Math.sin(hand.yaw) - ez * Math.cos(hand.yaw)
+        if (Math.atan2(ey, fwd) <= 0.25) break
+        tip.y -= 0.8
+        diag.err[i] = solveFinger(P[0].clone(), tip, d.len, d.k, P, null)
+      }
     }
     const k3 = J.fingers[3][0]
     const [wx, wz] = rot(s * WRIST[0], WRIST[2], hand.yaw)
