@@ -52,12 +52,12 @@ Visuals → Model, or `?model=vrm` / `?model=quaternius`. `alt-model.js` loads a
 
 ## Outfits
 
-`?outfit=` or the Outfit menu sets the dress, fabric, colour, shoes and hair at once. The circled numbers along the top of the page pick them in one click (the menu's order; hover for the name), and so do the keys 1–9 and 0 (the first ten):
+`?outfit=` or the Outfit menu sets the dress, fabric, colour, shoes and hair at once. The circled numbers along the top of the page pick twelve featured ones in one click (hover for the name; the rest stay in the menu), and so do the keys 1–9 and 0 (the first ten):
 `reference` (the red knit halter), `sequin-mini` / `sequin-gown` (sequins, stiletto booties, long dark hair; old `yuja-*` links still load), `covered` (long sleeves), `tee`.
 
 - Long hair (mesh hair simulated as cloth) with our simulated floor-length skirt and slits from the knee: `braid-halter` (champagne satin halter, braid), `ponytail-qipao` (red satin qipao with gold trim, black ponytail), `braid-qipao` (ivory qipao with navy trim, brunette braid).
-- Bobs: `bob-shift` (blush shift dress), `bob-bodycon` (gold sequin bodycon, brunette bob), `bob-cocktail` (black satin cocktail dress, platinum bob), `bob-tee` (white T-shirt and skirt, blonde bob), `bob-turtleneck` (black sleeveless turtleneck, auburn bob).
-- Evening gowns: `long-gown` (midnight velvet evening gown, long loose hair; old `bob-gown` links load it), `updo-gown` (plum velvet gown with long sleeves, fifties updo).
+- Bobs: `shift-long` (blush shift dress, long hair; was `bob-shift`), `bob-bodycon` (gold sequin bodycon, brunette bob), `bob-cocktail` (black satin cocktail dress, platinum bob), `bob-tee` (white T-shirt and skirt, blonde bob), `bob-turtleneck` (black sleeveless turtleneck, auburn bob).
+- Evening gowns: `long-gown` (midnight velvet evening gown, long blonde hair; old `bob-gown` links load it), `updo-gown` (sapphire satin gown with long sleeves, blonde fifties updo).
 - An outfit can also set the gown slits and the qipao's trim colour.
 
 ## Dresses
