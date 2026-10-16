@@ -26,6 +26,50 @@ A curated collection of classical, modern, and video game piano pieces in MIDI f
 | `grieg_halling.mid` | Grieg | Halling |
 | `pachelbel_canon.mid` | Pachelbel | Canon in D |
 | `bach_toccata.mid` | J.S. Bach | Toccata & Fugue in D minor |
+| `bach_850.mid` | J.S. Bach | Prelude & Fugue in D major BWV 850 (WTC I No.5) |
+| `bach_goldberg_aria.mid` | J.S. Bach | Goldberg Variations - Aria * |
+| `bach_goldberg.mid` | J.S. Bach | Goldberg Variations BWV 988 (complete, 44 min) * |
+| `bach_wtc1_03.mid` | J.S. Bach | WTC I No.3 in C-sharp major BWV 848 * |
+| `bach_wtc1_04.mid` | J.S. Bach | WTC I No.4 in C-sharp minor BWV 849 * |
+| `bach_wtc1_06.mid` | J.S. Bach | WTC I No.6 in D minor BWV 851 * |
+| `bach_wtc1_08.mid` | J.S. Bach | WTC I No.8 in E-flat minor BWV 853 * |
+| `bach_wtc1_10.mid` | J.S. Bach | WTC I No.10 in E minor BWV 855 * |
+| `bach_wtc1_11.mid` | J.S. Bach | WTC I No.11 in F major BWV 856 * |
+| `bach_wtc1_12.mid` | J.S. Bach | WTC I No.12 in F minor BWV 857 * |
+| `bach_wtc1_15.mid` | J.S. Bach | WTC I No.15 in G major BWV 860 * |
+| `bach_wtc1_16.mid` | J.S. Bach | WTC I No.16 in G minor BWV 861 * |
+| `bach_wtc1_17.mid` | J.S. Bach | WTC I No.17 in A-flat major BWV 862 * |
+| `bach_wtc1_20.mid` | J.S. Bach | WTC I No.20 in A minor BWV 865 * |
+| `bach_wtc1_24.mid` | J.S. Bach | WTC I No.24 in B minor BWV 869 * |
+| `bach_wtc2_01.mid` | J.S. Bach | WTC II No.1 in C major BWV 870 * |
+| `bach_wtc2_02.mid` | J.S. Bach | WTC II No.2 in C minor BWV 871 * |
+| `bach_wtc2_06p.mid` | J.S. Bach | WTC II No.6 in D minor BWV 875 (Prelude) * |
+| `schuim-1.mid` | Schubert | Impromptu Op.90 No.1 (D.899) |
+| `schuim-2.mid` | Schubert | Impromptu Op.90 No.2 |
+| `schuim-4.mid` | Schubert | Impromptu Op.90 No.4 |
+| `schumm-3.mid` | Schubert | Moment Musical No.3 |
+| `schubert_d935_2.mid` | Schubert | Impromptu Op.142 No.2 (D.935) |
+| `schubert_d935_3.mid` | Schubert | Impromptu Op.142 No.3 (Rosamunde variations) |
+| `schub_d760_1.mid` | Schubert | Wanderer Fantasy (1st mvt) |
+| `schu_143_1.mid` | Schubert | Piano Sonata D.784 (1st mvt) |
+| `schub_d960_1.mid` | Schubert | Piano Sonata D.960 (1st mvt) |
+| `scn15_1.mid` | Schumann | Of Foreign Lands and Peoples (Kinderszenen) |
+| `scn15_6.mid` | Schumann | An Important Event (Kinderszenen) |
+| `scn15_12.mid` | Schumann | Child Falling Asleep (Kinderszenen) |
+| `scn16_1.mid` | Schumann | Kreisleriana No.1 |
+| `scn16_2.mid` | Schumann | Kreisleriana No.2 |
+| `scn68_10.mid` | Schumann | The Happy Farmer (Album for the Young) |
+| `schum_abegg.mid` | Schumann | Abegg Variations Op.1 |
+| `rac_op3_2.mid` | Rachmaninoff | Prelude in C-sharp minor Op.3 No.2 |
+| `rac_op23_2.mid` | Rachmaninoff | Prelude in B-flat major Op.23 No.2 |
+| `rac_op23_3.mid` | Rachmaninoff | Prelude in D minor Op.23 No.3 |
+| `rac_op23_5.mid` | Rachmaninoff | Prelude in G minor Op.23 No.5 |
+| `rac_op23_7.mid` | Rachmaninoff | Prelude in C minor Op.23 No.7 |
+| `rac_op32_1.mid` | Rachmaninoff | Prelude in C major Op.32 No.1 |
+| `rac_op32_13.mid` | Rachmaninoff | Prelude in D-flat major Op.32 No.13 |
+| `rac_op33_5.mid` | Rachmaninoff | Etude-Tableau Op.33 No.5 |
+| `rac_op33_6.mid` | Rachmaninoff | Etude-Tableau Op.33 No.6 |
+| `rac_op33_8.mid` | Rachmaninoff | Etude-Tableau Op.33 No.8 |
 | `liz_rhap02.mid` | Liszt | Hungarian Rhapsody No.2 (lassan and friska) |
 | `liz_et3.mid` | Liszt | La Campanella (Paganini Etude No.3) |
 | `liz_et6.mid` | Liszt | Paganini Etude No.6 (Theme and variations) |
@@ -116,6 +160,8 @@ A curated collection of classical, modern, and video game piano pieces in MIDI f
 
 **Classical pieces:** [piano-midi.de](http://www.piano-midi.de) by Bernd Krueger  
 License: [CC BY-SA 3.0](http://creativecommons.org/licenses/by-sa/3.0/de/deed.en)
+
+**Bach: Goldberg Variations and the Well-Tempered Clavier (marked \*):** typeset by the [Mutopia Project](https://www.mutopiaproject.org) (Hajo Dezelski, Stelios Samelis, Davide Castellone, JD Erickson, Sven Reichard, Andrew Hawryluk and others), each piece CC BY-SA 3.0 / 4.0 or public domain. Joined here into one file per prelude and fugue (the Goldberg as the Aria, the 30 variations and the Aria again, 2.5 s apart). These are engraved scores, not performances: every note has the same loudness, so they sound and look more even than the piano-midi.de pieces.
 
 **Symphonic works:** [mfiles.co.uk](https://www.mfiles.co.uk)  
 Classical MIDI files for educational use.
