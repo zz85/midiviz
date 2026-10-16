@@ -49,6 +49,8 @@ export const SPOTS = {
   above: { label: 'From above', subj: 'hands', az: -8, el: 72, dist: 150, fov: 38, size: 1, moves: ['orbit', 'dollyIn', 'zoomOut'] },
   side: { label: 'Side, wide', subj: 'figure', az: 90, el: 3, dist: 395, fov: 30, size: 2, flat: true, moves: ['dollyIn', 'zoomOut', 'dollyZoom', 'still'] },
   back: { label: 'Behind', subj: 'figure', az: 3, el: 15, dist: 240, fov: 38, size: 1, moves: ['dollyIn', 'orbit', 'crane'] },
+  // straight down over the piano, turning slowly about the vertical
+  top: { label: 'Top down', subj: 'piano', az: 0, el: 82, dist: 560, fov: 30, size: 2, moves: ['orbit'], orbitSpan: 40, orbitMax: 50 },
   high: { label: 'High, over the lid', subj: 'piano', az: 120, el: 38, dist: 520, fov: 30, size: 2, moves: ['orbit', 'dollyOut', 'dollyIn'] },
   feet: { label: 'Pedals', subj: 'feet', az: 58, el: 8, dist: 180, fov: 30, size: 1, moves: ['still', 'dollyIn'] },
 }
@@ -70,7 +72,7 @@ function applyMove(s, move, u, amt, dir, out) {
   out.az = s.az; out.el = s.el; out.dist = s.dist; out.fov = s.fov
   const e = sstep(u, 0, 1)
   switch (move) {
-    case 'orbit': out.az += dir * Math.min(s.orbitMax ?? 30, 22 * amt) * (e - 0.5); break
+    case 'orbit': out.az += dir * Math.min(s.orbitMax ?? 30, (s.orbitSpan ?? 22) * amt) * (e - 0.5); break
     case 'zoomIn': out.fov *= lerp(1.08, 1.08 - 0.3 * amt, e); break
     case 'zoomOut': out.fov *= lerp(1 - 0.22 * amt, 1.06, e); break
     case 'dollyIn': out.dist *= lerp(1.12, 1.12 - 0.32 * amt, e); break
@@ -147,6 +149,7 @@ function addTake(q, mode, s, view) {
     if (!cand.length) cand = fs.filter(f => f !== prev.frame)
     if (!cand.length) cand = fs
     const w = cand.map(f => FRAMES[f][0] / (1 + (q.uses[f] || 0))
+      * (f === 'fingers' ? 1.6 : f === 'face' ? 0.6 : 1)          // fingers over the face
       // far ↔ close, except straight after a close-up: back out to a
       // medium framing (the piano, the keys), not all the way to the hall
       * (prev.size === 0 ? (size(f) === 1 ? 3 : 0.3) : Math.abs(size(f) - prev.size) === 2 ? 1.5 : 1)
@@ -231,9 +234,12 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
         const s = SPOTS[n], kind = SUBJ_KIND[s.subj]
         let x = kind === 'hands' ? 0.35 + 0.7 * E - 0.3 * bias : kind === 'pianist' ? 0.5 - 0.25 * E + 0.3 * bias : 0.18
         if (n === 'feet') x *= 0.25
+        if (n === 'top') x = 0.4
+        // after the opening, the fingers over her face
+        if (i > 1) x *= kind === 'hands' ? 1.6 : s.subj === 'head' ? 0.6 : 1
         if (n === 'establish') x = 0   // only to open and close
         // she looks up from the keys: be on her face
-        if (up) x *= s.subj === 'head' ? 4 : 0.12
+        if (up) x *= s.subj === 'head' ? 2.5 : 0.3
         // the last shot pulls out wide
         if (last) x = s.size === 2 || n === 'audience' || n === 'tail' ? 1 : 0
         if (prev) {
