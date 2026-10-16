@@ -217,15 +217,23 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
   // above the hips: the same skin as the bodice under it
   const WAISTV = []
   for (let v = 0; v < NV; v++) if (P[v * 3 + 1] > hipY - 1 && P[v * 3 + 1] < hipY + TOP + 3 && weightOf(v, ARM) < 0.05) WAISTV.push(v)
-  const nearestV = (x, y, z) => { let best = -1, bd = 1e9; for (const v of (y > hipY - 7 ? (y > hipY ? WAISTV : HIPV) : LEGV)) { const d = (P[v * 3] - x) ** 2 + (P[v * 3 + 1] - y) ** 2 + (P[v * 3 + 2] - z) ** 2; if (d < bd) { bd = d; best = v } } return best }
+  const nearestIn = (list, x, y, z) => { let best = -1, bd = 1e9; for (const v of list) { const d = (P[v * 3] - x) ** 2 + (P[v * 3 + 1] - y) ** 2 + (P[v * 3 + 2] - z) ** 2; if (d < bd) { bd = d; best = v } } return best }
   const weights = []
   for (let i = 0; i < NPt; i++) {
     const x = rest[i * 3], y = rest[i * 3 + 1], z = rest[i * 3 + 2]
     const acc = new Map()
     const add = (v, f) => { for (let k = 0; k < 4; k++) if (SW[v * 4 + k] > 0) acc.set(SI[v * 4 + k], (acc.get(SI[v * 4 + k]) || 0) + SW[v * 4 + k] * f) }
     const s = Math.max(0.5 * (1 - THREE.MathUtils.smoothstep(Math.abs(x), 0, 9)), 0.5 * (1 - THREE.MathUtils.smoothstep(y, hipY - 16, hipY - 4)))
-    add(nearestV(x, y, z), 1 - s)
-    if (s > 0.01) add(nearestV(-x, y, z), s)
+    // across the hip crease the pelvis hands over to the thighs gradually
+    // (a sharp switch folds the cloth over itself there when she sits)
+    const tl = y > hipY ? 0 : 1 - THREE.MathUtils.smoothstep(y, hipY - 18, hipY - 1)
+    const on = (x, f) => {
+      if (y > hipY) { add(nearestIn(WAISTV, x, y, z), f); return }
+      if (tl < 0.99) add(nearestIn(HIPV, x, y, z), f * (1 - tl))
+      if (tl > 0.01) add(nearestIn(LEGV, x, y, z), f * tl)
+    }
+    on(x, 1 - s)
+    if (s > 0.01) on(-x, s)
     weights.push(acc)
   }
   // soften along the grid
@@ -307,10 +315,16 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
     }
   }
   const CI = new Int32Array(cons.length * 2), CL = new Float32Array(cons.length), CK = new Float32Array(cons.length)
-  cons.forEach(([a, b, l, k], i) => { CI[i * 2] = a; CI[i * 2 + 1] = b; CL[i] = l; CK[i] = k })
+  // compression (bunching) resists only weakly, and not at all over the hip
+  // crease: seated, the front of the hip shortens and the cloth would buckle
+  const CKc = new Float32Array(cons.length)
+  cons.forEach(([a, b, l, k], i) => { CI[i * 2] = a; CI[i * 2 + 1] = b; CL[i] = l; CK[i] = k
+    CKc[i] = k * 0.25 * (1 - THREE.MathUtils.smoothstep(Math.max(rest[a * 3 + 1], rest[b * 3 + 1]), hipY - 18, hipY - 4)) })
   // pull toward the fitted shape: firm near the waist, free at the hem
   const kneeRow = Math.round((hipY - J['lowerleg01.L____head'].y) / seg)
-  const PULL = new Float32Array(R).map((_, r) => 0.35 * Math.max(0, 1 - r / (kneeRow + 5)) ** 1.5 + 0.004)
+  // (and held close over the hip crease, where loose cloth crumples into folds)
+  const PULL = new Float32Array(R).map((_, r) => Math.max(0.35 * Math.max(0, 1 - r / (kneeRow + 5)) ** 1.5 + 0.004,
+    0.85 * THREE.MathUtils.smoothstep(hipY + TOP - r * seg, hipY - 20, hipY - 10)))
   const PIN = 2
 
   // collision surface: the skin of the hips and legs, carried by bones
@@ -393,7 +407,7 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
           const dx = X[jb] - X[ja], dy = X[jb + 1] - X[ja + 1], dz = X[jb + 2] - X[ja + 2]
           const d = Math.hypot(dx, dy, dz) || 1e-6
           // stretch resists strongly, compression (bunching) only weakly
-          const e = (d - CL[q]) / d * (d > CL[q] ? CK[q] : CK[q] * 0.25)
+          const e = (d - CL[q]) / d * (d > CL[q] ? CK[q] : CKc[q])
           const wa = a < PIN * C ? 0 : 1, wb = b < PIN * C ? 0 : 1, ws = wa + wb
           if (!ws) continue
           const ka = e * wa / ws, kb = e * wb / ws
