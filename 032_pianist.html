@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>Experiment #032 - Pianist</title>
+  <!--
+    Experiment #032 - Pianist. A Concert Creator-style performer at the #030
+    concert grand: a MakeHuman (CC0) young woman on a 163-bone skeleton, posed
+    every frame from the #029 fingering and motion model (hands, arms, spine,
+    head and eyes, feet on the pedals), with simulated strand hair (shoulder
+    length, the top half tied up in a bun) and a red knit dress whose skirt
+    is cloth. See pianist/README.md.
+  -->
+  <script src="playback_controls.js"></script>
+  <script type="importmap">
+    { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    } }
+  </script>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font: 13px/1.35 -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif; color: #eee; }
+    canvas { display: block; touch-action: none; }
+    .ui { transition: opacity 0.6s; }
+    body.idle .ui { opacity: 0; pointer-events: none; }
+    body.idle { cursor: none; }
+    body.hideui .ui { display: none !important; }
+    .pill {
+      display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 15px; border-radius: 16px;
+      background: rgba(44, 44, 44, 0.86); color: #f2f2f2; border: 0; cursor: pointer; font: 600 12.5px/1 inherit;
+      letter-spacing: 0.03em; text-transform: uppercase; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4); backdrop-filter: blur(6px);
+    }
+    .pill:hover { background: rgba(64, 64, 64, 0.92); }
+    .pill svg { width: 15px; height: 15px; fill: currentColor; }
+    #topLeft { position: absolute; top: 12px; left: 12px; display: flex; gap: 8px; }
+    #topRight { position: absolute; top: 12px; right: 12px; display: flex; gap: 8px; }
+    #title { align-self: center; margin-left: 6px; font: 300 15px Georgia, serif; color: rgba(255, 255, 255, 0.55); letter-spacing: 0.04em; }
+    #title a { color: inherit; text-decoration: none; }
+    .pop { position: absolute; top: 52px; min-width: 210px; max-height: calc(100vh - 150px); overflow: auto; display: none;
+      background: rgba(30, 30, 30, 0.96); border-radius: 12px; padding: 6px 0; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6); }
+    .pop.open { display: block; }
+    .item { display: flex; align-items: center; gap: 10px; padding: 9px 16px; cursor: pointer; color: #e8e8e8; white-space: nowrap; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+    .item:last-child { border-bottom: 0; }
+    .item:hover { background: rgba(255, 255, 255, 0.06); }
+    .item .dot { margin-left: auto; width: 8px; height: 8px; border-radius: 50%; background: #fff; visibility: hidden; }
+    .item.sel .dot { visibility: visible; }
+    .sect { padding: 10px 16px 4px; font-size: 11px; color: #8d8d8d; text-transform: uppercase; letter-spacing: 0.06em; }
+    .field { padding: 6px 16px 8px; }
+    .field > label { display: block; font-size: 12px; color: #c8c8c8; margin-bottom: 5px; }
+    .field input[type=range] { width: 100%; accent-color: #9a9a9a; }
+    .field select { width: 100%; background: #2b2b2b; color: #eee; border: 1px solid #444; border-radius: 6px; padding: 4px; font: inherit; }
+    .field input[type=color] { width: 100%; height: 24px; border: 0; border-radius: 6px; padding: 0; background: none; cursor: pointer; }
+    .chk { display: flex; align-items: center; gap: 8px; padding: 6px 16px; color: #ddd; cursor: pointer; }
+    .chk input { accent-color: #2fae4a; }
+    #songsPop { left: 12px; width: 300px; }
+    #songList { max-height: min(60vh, 520px); overflow-y: auto; }
+    #songList .sect { position: sticky; top: 0; background: rgba(28, 28, 28, 0.97); z-index: 1; }
+    #songList .item { white-space: normal; line-height: 1.25; }
+    #songFilter { width: 100%; box-sizing: border-box; padding: 6px 9px; border-radius: 7px; border: 1px solid #444; background: #1c1c1c; color: #eee; font: inherit; }
+    #cameraPop { right: 190px; }
+    #visualsPop { right: 12px; width: 250px; }
+    #transport { position: absolute; left: 0; right: 0; bottom: 0; padding: 0 26px 14px; background: linear-gradient(transparent, rgba(0, 0, 0, 0.55)); }
+    #times { display: flex; justify-content: space-between; font: 600 10.5px/1 ui-monospace, Menlo, monospace; color: #e6e6e6; margin-bottom: 7px; }
+    #seek { -webkit-appearance: none; appearance: none; width: 100%; height: 2px; background: linear-gradient(to right, #fff var(--p, 0%), rgba(255, 255, 255, 0.35) var(--p, 0%)); outline: none; margin: 0 0 12px; cursor: pointer; }
+    #seek::-webkit-slider-thumb { -webkit-appearance: none; width: 11px; height: 11px; border-radius: 50%; background: #fff; }
+    #controls { display: flex; justify-content: center; align-items: center; gap: 22px; }
+    .tbtn { background: none; border: 0; color: #fff; cursor: pointer; padding: 0; display: flex; align-items: center; opacity: 0.92; }
+    .tbtn svg { fill: #fff; }
+    .tbtn.off { opacity: 0.45; }
+    #speedLbl { font: 600 10px/1 inherit; margin-left: 3px; }
+    #status { position: absolute; top: 56px; left: 50%; transform: translateX(-50%); padding: 7px 14px; border-radius: 16px; background: rgba(30, 30, 30, 0.9); font-size: 12px; }
+    #status.hidden { display: none; }
+    #status.error { color: #f99; }
+    #caption { position: absolute; left: 0; right: 0; top: 36%; text-align: center; font: 600 22px/1 Poppins, "Helvetica Neue", Arial, sans-serif; letter-spacing: 0.08em; color: #fff; pointer-events: none; opacity: 0; transition: opacity 1.2s; }
+    #caption b { color: #f3a53a; font-weight: 600; }
+    body.captioned #caption { opacity: 1; }
+  </style>
+</head>
+<body>
+  <div id="topLeft" class="ui">
+    <button class="pill" id="songsBtn"><svg viewBox="0 0 24 24"><path d="M12 3v10.6A4 4 0 1 0 14 17V7h4V3z"/></svg>Songs</button>
+    <span id="title"><a href="README.md" title="Back to experiments">#032 · Pianist</a></span>
+  </div>
+  <div id="songsPop" class="pop ui">
+    <div class="field" style="padding-bottom:6px"><input id="songFilter" type="search" placeholder="Filter songs…" autocomplete="off"></div>
+    <div id="songList"></div>
+    <div class="item" id="openFile">Open a MIDI file…</div>
+    <input id="file" type="file" accept=".mid,.midi,audio/midi" hidden>
+  </div>
+  <div id="topRight" class="ui">
+    <button class="pill" id="cameraBtn"><svg viewBox="0 0 24 24"><path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11z"/></svg>Camera</button>
+    <button class="pill" id="visualsBtn"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>Visuals</button>
+  </div>
+  <div id="cameraPop" class="pop ui">
+    <div class="item" data-view="shoulder">Over the shoulder<span class="dot"></span></div>
+    <div class="item" data-view="side">Side, wide<span class="dot"></span></div>
+    <div class="item" data-view="profile">Profile<span class="dot"></span></div>
+    <div class="item" data-view="front">Face, from the piano<span class="dot"></span></div>
+    <div class="item" data-view="hands">Hands<span class="dot"></span></div>
+    <div class="item" data-view="back">Behind<span class="dot"></span></div>
+    <div class="item" data-view="orbit">Orbit<span class="dot"></span></div>
+    <div class="item" data-view="cycle">Cycle the views<span class="dot"></span></div>
+  </div>
+  <div id="visualsPop" class="pop ui">
+    <div class="sect">Pianist</div>
+    <div class="field"><label>Look</label><select id="look"><option value="realistic">Realistic</option><option value="stylized">Stylized (animated feature)</option><option value="cel">Cel shaded (outlines)</option></select></div>
+    <div class="field"><label>Hair style</label><select id="hairStyle">
+      <option value="halfup">Half-up bun · strands, simulated</option>
+      <option value="updo">Bun · strands, no simulation</option>
+      <option value="ponytail01">Ponytail · mesh</option>
+      <option value="braid01">Braid · mesh</option>
+      <option value="bob01">Bob · mesh</option>
+      <option value="bob02">Sleek bob · mesh</option>
+      <option value="long01">Long · mesh</option>
+    </select></div>
+    <div class="field"><label>Dress</label><select id="dressStyle">
+      <option value="midi-fitted">Midi · fitted, no simulation</option>
+      <option value="midi-cloth">Midi · cloth skirt</option>
+      <option value="gown-cloth">Gown · cloth skirt</option>
+      <option value="gown-fitted">Gown · fitted, no simulation</option>
+    </select></div>
+    <label class="chk"><input type="checkbox" id="hairOn" checked>Hair</label>
+    <label class="chk"><input type="checkbox" id="hairSim" checked>Hair simulation</label>
+    <label class="chk"><input type="checkbox" id="dressOn" checked>Dress</label>
+    <label class="chk"><input type="checkbox" id="clothSim" checked>Skirt simulation</label>
+    <label class="chk"><input type="checkbox" id="shoesOn" checked>Shoes</label>
+    <div class="field"><label>Body expression</label><input type="range" id="expr" min="0" max="2" step="0.1" value="1"></div>
+    <div class="field"><label>Weight shift (one hip)</label><input type="range" id="hips" min="0" max="2" step="0.1" value="1"></div>
+    <div class="field"><label>Bench distance</label><input type="range" id="benchDist" min="-8" max="12" step="1" value="0"><span id="benchDistV">0 cm</span></div>
+    <div class="field"><label>Strand density</label><select id="hairDensity"><option value="0.5">Light</option><option value="1" selected>Full</option><option value="1.6">Dense</option></select></div>
+    <div class="field"><label>Hair colour</label><input type="color" id="hairColor" value="#5a3e2a"></div>
+    <div class="field"><label>Dress colour</label><input type="color" id="dressColor" value="#8e1d1b"></div>
+    <div class="sect">Stage</div>
+    <div class="field"><label>Main light</label><input type="range" id="light" min="0" max="2" step="0.01" value="1"></div>
+    <div class="field"><label>Weight shift (one hip)</label><input type="range" id="hips" min="0" max="2" step="0.1" value="1"></div>
+    <div class="field"><label>Bench distance</label><input type="range" id="benchDist" min="-8" max="12" step="1" value="0"><span id="benchDistV">0 cm</span></div>
+    <div class="field"><label>Exposure</label><input type="range" id="exposure" min="0.3" max="2.5" step="0.01" value="1"></div>
+    <div class="field"><label>Weight shift (one hip)</label><input type="range" id="hips" min="0" max="2" step="0.1" value="1"></div>
+    <div class="field"><label>Bench distance</label><input type="range" id="benchDist" min="-8" max="12" step="1" value="0"><span id="benchDistV">0 cm</span></div>
+    <label class="chk"><input type="checkbox" id="dof" checked>Depth of field</label>
+    <label class="chk"><input type="checkbox" id="caption">Caption</label>
+    <div class="field"><label>Sound</label><select id="sf"></select></div>
+  </div>
+  <div id="transport" class="ui">
+    <div id="times"><span id="tNow">0:00.000</span><span id="tLeft">-0:00</span></div>
+    <input id="seek" type="range" min="0" max="1" step="0.0005" value="0">
+    <div id="controls">
+      <button class="tbtn" id="speedBtn" title="Playback speed"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M12 4a10 10 0 0 0-8.7 15h17.4A10 10 0 0 0 12 4zm0 2a8 8 0 0 1 7.5 11h-15A8 8 0 0 1 12 6zm4.2 2.4-5 5.2a1.5 1.5 0 1 0 2.1 2.1z"/></svg><span id="speedLbl">1×</span></button>
+      <button class="tbtn" id="playBtn" title="Play / pause"><svg id="playIcon" width="30" height="30" viewBox="0 0 24 24"><path d="M7 4v16l13-8z"/></svg></button>
+      <button class="tbtn off" id="loopBtn" title="Loop"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2z"/></svg></button>
+    </div>
+  </div>
+  <div id="status" class="hidden"></div>
+  <div id="caption">MEET YOUR NEW AI <b>PIANIST</b></div>
+
+  <script src="tonejs-midi.js"></script>
+  <script type="module">
+    import * as THREE from 'three'
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+    import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js'
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
+    import { BokehPass } from 'three/addons/postprocessing/BokehPass.js'
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
+    import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
+    import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
+    import { SoundFontEngine, MidiScheduler } from './soundfont-engine/src/index.js'
+    import { midiToSchedule } from './notation3d/midi-score.js'
+    import { buildGrandPiano, LOW, HIGH } from './concertstage/concert-grand.js'
+    import { loadCharacter } from './pianist/character.js'
+    import { createRig } from './pianist/rig.js'
+    import { createHair } from './pianist/hair.js'
+    import { createDress } from './pianist/dress.js'
+    import { createMeshHair } from './pianist/hair-mesh.js'
+    import { createShoes } from './pianist/shoes.js'
+    import { createLook } from './pianist/look.js'
+    import { createCommunity, communityList } from './pianist/community.js'
+
+    const $ = id => document.getElementById(id)
+    const params = new URLSearchParams(location.search)
+    const LOWQ = params.get('q') === 'low'
+    const vendorPath = new URL('./vendor', import.meta.url).href
+    let statusTimer = 0
+    function setStatus(msg, isError = false, ms = 0) {
+      const el = $('status'); el.textContent = msg || ''
+      el.classList.toggle('hidden', !msg); el.classList.toggle('error', isError)
+      clearTimeout(statusTimer); if (ms) statusTimer = setTimeout(() => setStatus(''), ms)
+    }
+
+    // ── Renderer ─────────────────────────────────────────────────────────
+    const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: params.has('shot') })
+    renderer.setPixelRatio(Math.min(devicePixelRatio, LOWQ ? 1 : 2))
+    renderer.setSize(innerWidth, innerHeight)
+    renderer.toneMapping = THREE.AgXToneMapping
+    renderer.shadowMap.enabled = true
+    renderer.shadowMap.type = THREE.VSMShadowMap
+    document.body.prepend(renderer.domElement)
+    RectAreaLightUniformsLib.init()
+    const scene = new THREE.Scene()
+    scene.background = new THREE.Color(0x000000)
+    const camera = new THREE.PerspectiveCamera(34, innerWidth / innerHeight, 2, 6000)
+    const controls = new OrbitControls(camera, renderer.domElement)
+    controls.enableDamping = true; controls.dampingFactor = 0.08
+    controls.minDistance = 10; controls.maxDistance = 1400
+
+    // ── Piano and stage ──────────────────────────────────────────────────
+    const piano = buildGrandPiano({ mirror: LOWQ ? false : { width: 1600, height: 900 } })
+    scene.add(piano.root)
+    piano.setFinish('ebony'); piano.setLid('full')
+    if (piano.mirror) piano.mirror.material.uniforms.strength.value = 0.55
+    // her bench, moved in to fit a 165 cm pianist
+    piano.bench.position.z = 47
+    const SEAT_Y = 55.4
+
+    const floorMat = new THREE.MeshPhysicalMaterial({ color: 0x1a1512, roughness: 0.45, clearcoat: 0.5, clearcoatRoughness: 0.25 })
+    {
+      const fc = document.createElement('canvas'); fc.width = fc.height = 256
+      const fg = fc.getContext('2d'), gr = fg.createRadialGradient(128, 128, 10, 128, 128, 128)
+      gr.addColorStop(0, '#fff'); gr.addColorStop(0.5, '#777'); gr.addColorStop(1, '#000'); fg.fillStyle = gr; fg.fillRect(0, 0, 256, 256)
+      floorMat.alphaMap = new THREE.CanvasTexture(fc); floorMat.transparent = true
+    }
+    const floor = new THREE.Mesh(new THREE.CircleGeometry(800, 96), floorMat)
+    floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0, -40); floor.receiveShadow = true
+    scene.add(floor)
+
+    // Lights (after Concert Creator): a warm spot from high behind her left
+    // shoulder lights her hair, shoulders and the keys; a softer key from
+    // above the music desk shapes the face; a back light rims the hair and the
+    // lid; the open lid bounces warm light onto the plate.
+    const spot = new THREE.SpotLight(0xffd2a0, 7, 0, 0.3, 0.8, 0)
+    spot.position.set(-170, 520, 260); spot.target.position.set(0, 85, 10)
+    spot.castShadow = true
+    spot.shadow.mapSize.set(LOWQ ? 2048 : 4096, LOWQ ? 2048 : 4096)
+    spot.shadow.camera.near = 250; spot.shadow.camera.far = 1000
+    spot.shadow.bias = -0.0002; spot.shadow.normalBias = 0.06; spot.shadow.radius = 5; spot.shadow.blurSamples = 12
+    scene.add(spot, spot.target)
+    const faceKey = new THREE.SpotLight(0xffd9b8, 2.2, 0, 0.32, 0.9, 0)
+    faceKey.position.set(60, 330, -140); faceKey.target.position.set(0, 120, 30)
+    faceKey.castShadow = true; faceKey.shadow.mapSize.set(1024, 1024); faceKey.shadow.bias = -0.0003; faceKey.shadow.normalBias = 0.05; faceKey.shadow.radius = 6
+    scene.add(faceKey, faceKey.target)
+    const rim = new THREE.SpotLight(0xffe6c8, 6, 0, 0.25, 0.9, 0)
+    rim.position.set(-60, 300, 380); rim.target.position.set(0, 125, 35)
+    scene.add(rim, rim.target)
+    const back = new THREE.SpotLight(0xffe2c0, 4, 0, 0.42, 0.9, 0)
+    back.position.set(120, 460, -560); back.target.position.set(-10, 95, -80)
+    scene.add(back, back.target)
+    const lidLight = new THREE.RectAreaLight(0xffc28a, 0.55, 120, 150)
+    lidLight.position.set(76, -1.5, -115); lidLight.rotation.x = -Math.PI / 2
+    piano.lid.add(lidLight)
+    const keyFill = new THREE.SpotLight(0xfff0e0, 0.8, 0, 0.5, 1, 0)
+    keyFill.position.set(40, 260, 320); keyFill.target.position.set(0, 74, -10)
+    scene.add(keyFill, keyFill.target)
+    const LIGHTS = [[spot, 4.2], [faceKey, 1.6], [rim, 4], [back, 4], [keyFill, 0.8]]
+    const applyLight = () => { const k = +$('light').value; for (const [l, i] of LIGHTS) l.intensity = i * k; lidLight.intensity = 0.55 * k }
+    $('light').oninput = applyLight
+    applyLight()
+    $('exposure').oninput = () => { renderer.toneMappingExposure = +$('exposure').value }
+
+    const pmrem = new THREE.PMREMGenerator(renderer)
+    {
+      const s = new THREE.Scene(); s.background = new THREE.Color(0x010101)
+      const box = (w, h, p, k, c = 0xffffff) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(c).multiplyScalar(k), side: THREE.DoubleSide })); m.position.set(...p); m.lookAt(0, 90, 0); s.add(m) }
+      box(260, 260, [-200, 640, 300], 8, 0xffcf9a)
+      box(900, 140, [0, 650, -150], 0.8, 0xffd7a8)
+      box(60, 500, [-900, 300, -300], 2, 0xffbf80)
+      box(60, 500, [900, 260, -100], 1.4, 0xffc890)
+      box(700, 220, [150, 420, -900], 2, 0xffe2c0)
+      box(1400, 300, [0, 120, 1100], 0.1, 0x8fa6c8)
+      scene.environment = pmrem.fromScene(s, 0.015, 1, 6000).texture
+      scene.environmentIntensity = 0.55
+    }
+
+    // ── The pianist ──────────────────────────────────────────────────────
+    setStatus('Loading the pianist…')
+    const ch = await loadCharacter(new URL('./pianist/assets/', import.meta.url).href)
+    scene.add(ch.group)
+    const SEAT = new THREE.Vector3(0, SEAT_Y + 8.6, 44)
+    const rig = createRig(ch, { seat: SEAT })
+    rig.update(0, 1 / 60)
+    ch.group.updateMatrixWorld(true)
+    // community styles (MakeHuman community repository) join the menus
+    // flared community skirts tear on a seated pose (fitted, not simulated)
+    const POOR_FIT = new Set(['c1922'])
+    for (const [sel, kinds, label] of [['hairStyle', ['hair'], 'Community hair (mesh)'], ['dressStyle', ['dress', 'top'], 'Community dresses / tops']]) {
+      const list = kinds.flatMap(k => communityList(ch, k))
+      if (!list.length) continue
+      const og = document.createElement('optgroup'); og.label = label
+      for (const e of list) { const o = document.createElement('option'); o.value = e.key; o.textContent = `${e.title}${e.kind === 'top' ? ' + our skirt' : ''}${POOR_FIT.has(e.key) ? ' (poor seated fit)' : ''} · ${e.license}`; og.appendChild(o) }
+      $(sel).appendChild(og)
+    }
+    // wardrobe: ?hair=…&dress=…&look=… (or the Visuals menu)
+    for (const [k, id] of [['hair', 'hairStyle'], ['dress', 'dressStyle'], ['look', 'look']]) if (params.get(k)) $(id).value = params.get(k)
+    let hair = null, dress = null
+    const shoes = createShoes(ch)
+    scene.add(shoes.object)
+    const look = createLook(ch)
+    const applyLook = () => look.apply($('look').value, [dress?.object])
+    async function setHair(style) {
+      const color = $('hairColor').value
+      hair?.dispose()
+      hair = style === 'halfup' || style === 'updo'
+        ? createHair(ch, rig, { density: +$('hairDensity').value, color, style })
+        : style[0] === 'c' ? await createCommunity(ch, style, { color })
+        : await createMeshHair(ch, style, { color })
+      scene.add(hair.object)
+      hair.object.visible = $('hairOn').checked
+      hair.simulate = $('hairSim').checked
+      if (hair.kind === 'strands') hair.settle(style === 'halfup' ? 2 : 0.05)
+      if (window.__pianist) window.__pianist.hair = hair
+      applyLook()
+    }
+    let dressJob = 0
+    async function setDress(v) {
+      const job = ++dressJob
+      dress?.dispose(); dress = null
+      const color = $('dressColor').value
+      if (v[0] === 'c') {
+        const entry = communityList(ch).find(e => e.key === v)
+        const item = await createCommunity(ch, v, { color })
+        if (job !== dressJob) { item.dispose(); return }
+        if (entry.kind === 'top') {
+          // their top over our fitted skirt
+          const skirt = createDress(ch, rig, { seatY: SEAT_Y, bench: piano.bench, length: 'midi', skirt: 'fitted', color, bodice: false, waist: 13 })
+          skirt.object.add(item.object)
+          dress = { ...skirt, update(dt) { item.object.visible = skirt.object.visible; item.update(dt); skirt.update(dt) }, setColor(c) { skirt.setColor(c); item.setColor(c) }, dispose() { item.dispose(); skirt.dispose() } }
+        } else dress = item
+      } else {
+        const [length, skirt] = v.split('-')
+        dress = createDress(ch, rig, { seatY: SEAT_Y, bench: piano.bench, length, skirt, color })
+      }
+      scene.add(dress.object)
+      dress.object.visible = $('dressOn').checked
+      dress.simulate = $('clothSim').checked
+      dress.settle(3)
+      if (window.__pianist) window.__pianist.dress = dress
+      applyLook()
+    }
+    await setDress($('dressStyle').value)
+    await setHair($('hairStyle').value)
+    function wardrobeUpdate(dt) { hair.update(dt); dress?.update(dt); shoes.update(dt); look.update() }
+    window.__pianist = { ch, rig, hair, dress, shoes, look, scene, camera }
+    for (const n of (params.get('hide') || '').split(',')) if (ch.meshes[n]) ch.meshes[n].visible = false
+    if (params.get('hide')?.includes('hair')) hair.object.visible = false
+    setStatus('')
+    $('hairStyle').onchange = () => setHair($('hairStyle').value)
+    $('dressStyle').onchange = () => setDress($('dressStyle').value)
+    $('look').onchange = applyLook
+    $('hairOn').onchange = () => { hair.object.visible = $('hairOn').checked }
+    $('hairSim').onchange = () => { hair.simulate = $('hairSim').checked }
+    $('dressOn').onchange = () => { dress.object.visible = $('dressOn').checked }
+    $('clothSim').onchange = () => { dress.simulate = $('clothSim').checked }
+    $('expr').value = params.get('expr') ?? 1
+    rig.state.expression = +$('expr').value
+    $('expr').oninput = () => { rig.state.expression = +$('expr').value }
+    $('hips').value = params.get('hips') ?? 1
+    rig.state.hipShift = +$('hips').value
+    $('hips').oninput = () => { rig.state.hipShift = +$('hips').value }
+    // bench and pianist move together (cm, + = further from the keys)
+    const setBench = d => { piano.bench.position.z = 47 + d; SEAT.z = 44 + d; $('benchDistV').textContent = `${d > 0 ? '+' : ''}${d} cm` }
+    $('benchDist').value = params.get('bench') ?? 0
+    setBench(+$('benchDist').value)
+    $('benchDist').oninput = () => setBench(+$('benchDist').value)
+    $('shoesOn').onchange = () => { shoes.object.visible = $('shoesOn').checked }
+    $('hairColor').oninput = () => hair.setColor($('hairColor').value)
+    $('dressColor').oninput = () => dress.setColor($('dressColor').value)
+    $('hairDensity').onchange = () => hair.setDensity(+$('hairDensity').value)
+    $('caption').onchange = () => document.body.classList.toggle('captioned', $('caption').checked)
+
+    // ── Post ─────────────────────────────────────────────────────────────
+    const rt = new THREE.WebGLRenderTarget(innerWidth * renderer.getPixelRatio(), innerHeight * renderer.getPixelRatio(), { type: THREE.HalfFloatType, samples: LOWQ ? 0 : 4 })
+    const composer = new EffectComposer(renderer, rt)
+    composer.addPass(new RenderPass(scene, camera))
+    const bokeh = new BokehPass(scene, camera, { focus: 150, aperture: 0.00011, maxblur: 0.006 })
+    composer.addPass(bokeh)
+    const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.12, 0.4, 0.92)
+    composer.addPass(bloom)
+    composer.addPass(new OutputPass())
+    const grain = new ShaderPass({
+      uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uAmount: { value: 0.035 }, uVig: { value: 0.55 } },
+      vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: `uniform sampler2D tDiffuse; uniform float uTime, uAmount, uVig; varying vec2 vUv;
+        float h(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233)) + uTime * 7.13) * 43758.5453); }
+        void main() { vec4 c = texture2D(tDiffuse, vUv); vec2 q = vUv - 0.5; float v = 1.0 - uVig * dot(q, q) * 1.6;
+          c.rgb *= v; c.rgb += (h(vUv * 1000.0) - 0.5) * uAmount; gl_FragColor = c; }`,
+    })
+    composer.addPass(grain)
+    $('dof').onchange = () => { bokeh.enabled = $('dof').checked }
+
+    // ── Cameras (framed after Concert Creator's shots) ───────────────────
+    const VIEWS = {
+      shoulder: { pos: [-42, 178, 104], target: [8, 82, -12], fov: 40 },
+      side: { pos: [420, 118, 70], target: [30, 98, 10], fov: 30 },
+      profile: { pos: [120, 132, 2], target: [0, 120, 34], fov: 30 },
+      front: { pos: [-28, 112, -70], target: [0, 118, 32], fov: 34 },
+      face: { pos: [-10, 118, -18], target: [0, 124, 24], fov: 26 },
+      hands: { pos: [-55, 125, 42], target: [0, 76, -4], fov: 40 },
+      back: { pos: [10, 160, 230], target: [0, 100, 0], fov: 38 },
+      headside: { pos: [60, 140, 45], target: [0, 130, 35], fov: 30 },
+      lap: { pos: [-110, 95, 10], target: [0, 55, 40], fov: 38 },
+      orbit: { pos: [260, 230, 260], target: [0, 90, 0], fov: 34 },
+    }
+    let view = VIEWS[params.get('view')] ? params.get('view') : 'shoulder'
+    const camGoal = { pos: new THREE.Vector3(), target: new THREE.Vector3(), fov: 34 }
+    let cut = true, cycleT = 0, cycling = false
+    function setView(v, instant = true) {
+      cycling = v === 'cycle'
+      if (cycling) { cycleT = 0; v = 'shoulder' }
+      view = v
+      const d = VIEWS[v]
+      camGoal.pos.set(...d.pos); camGoal.target.set(...d.target); camGoal.fov = d.fov
+      controls.autoRotate = v === 'orbit'
+      cut = instant
+      for (const it of document.querySelectorAll('#cameraPop .item')) it.classList.toggle('sel', it.dataset.view === (cycling ? 'cycle' : v))
+    }
+    for (const it of document.querySelectorAll('#cameraPop .item')) it.onclick = () => { setView(it.dataset.view); closePops() }
+    setView(params.get('view') === 'cycle' ? 'cycle' : view)
+    const CYCLE = ['shoulder', 'profile', 'side', 'hands', 'front']
+    let userCam = false
+    controls.addEventListener('start', () => { userCam = true })
+
+    // popups
+    const pops = { songsBtn: 'songsPop', cameraBtn: 'cameraPop', visualsBtn: 'visualsPop' }
+    function closePops() { for (const p of Object.values(pops)) $(p).classList.remove('open') }
+    for (const [b, p] of Object.entries(pops)) $(b).onclick = ev => { ev.stopPropagation(); const o = $(p).classList.contains('open'); closePops(); if (!o) $(p).classList.add('open') }
+    for (const p of Object.values(pops)) $(p).addEventListener('pointerdown', ev => ev.stopPropagation())
+    addEventListener('pointerdown', closePops)
+    let idleT = 0
+    const poke = () => { idleT = performance.now(); document.body.classList.remove('idle') }
+    addEventListener('pointermove', poke)
+    addEventListener('keydown', ev => {
+      if (ev.key === 'Escape') document.body.classList.toggle('hideui')
+      if (ev.key === ' ' && ev.target === document.body) { ev.preventDefault(); togglePlay() }
+    })
+
+    // ── Sound ────────────────────────────────────────────────────────────
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+    const engine = new SoundFontEngine({ backend: 'oxisynth', vendorPath, audioContext: audioCtx })
+    const SOUNDFONTS = [['soundfonts/Motif_ES6_Concert_Piano.sf2', 'Motif ES6 Concert Piano'], ['soundfonts/Full Grand Piano.sf2', 'Full Grand Piano'], ['soundfonts/FluidR3.sf3', 'FluidR3 GM']]
+    for (const [v, l] of SOUNDFONTS) $('sf').add(new Option(l, v))
+    let soundReady = false, soundLoading = null
+    async function loadSound(v) {
+      soundReady = false
+      try { await engine.loadSoundFont(v); for (let ch = 0; ch < 16; ch++) if (ch !== 9) engine.programChange(ch, 0); soundReady = true }
+      catch (e) { console.error(e); setStatus('Sound failed to load: ' + e.message, true, 4000) }
+    }
+    $('sf').onchange = () => { soundLoading = loadSound($('sf').value) }
+    const ensureSound = () => (soundLoading ??= loadSound($('sf').value))
+    const unlockAudio = () => { if (audioCtx.state !== 'running') audioCtx.resume().then(() => engine.resume?.()).catch(() => {}) }
+
+    // ── Songs ────────────────────────────────────────────────────────────
+    const SONGS = [], GROUPS = []
+    for (const f of (typeof PlaybackControls !== 'undefined' ? PlaybackControls.defaultMidiFiles : [])) {
+      if (f.disabled || !f.value) GROUPS.push({ name: f.label.replace(/^=+\s*|\s*=+$/g, ''), songs: [] })
+      else { if (!GROUPS.length) GROUPS.push({ name: 'Songs', songs: [] }); SONGS.push([f.value, f.label]); GROUPS.at(-1).songs.push([f.value, f.label]) }
+    }
+    if (!SONGS.length) for (const x of [['midis/chpn-p15.mid', 'Chopin - Raindrop Prelude'], ['minute_waltz.mid', 'Minute Waltz'], ['entertainer.mid', 'The Entertainer']]) { SONGS.push(x); (GROUPS[0] ??= { name: 'Songs', songs: [] }).songs.push(x) }
+    for (const g of GROUPS) {
+      $('songList').append(Object.assign(document.createElement('div'), { className: 'sect', textContent: g.name }))
+      for (const [file, label] of g.songs) {
+        const it = document.createElement('div')
+        it.className = 'item'; it.dataset.file = file; it.dataset.q = (label + ' ' + g.name).toLowerCase()
+        it.append(label, Object.assign(document.createElement('span'), { className: 'dot' }))
+        it.onclick = () => { closePops(); loadSongUrl(file, label) }
+        $('songList').append(it)
+      }
+    }
+    $('songFilter').oninput = () => {
+      const q = $('songFilter').value.trim().toLowerCase()
+      for (const el of $('songList').children) if (!el.classList.contains('sect')) el.style.display = !q || el.dataset.q.includes(q) ? '' : 'none'
+    }
+    const markSong = file => { for (const it of $('songList').querySelectorAll('.item')) it.classList.toggle('sel', it.dataset.file === file) }
+
+    let song = null, scheduler = null
+    const music = { songT: 0, wall: 0 }
+    const songNow = () => !scheduler ? 0 : !scheduler.playing ? scheduler.currentTime : Math.min(scheduler.duration, music.songT + (performance.now() - music.wall) / 1000 * scheduler.speed)
+    const pedals = [false, false, false]
+    const held = new Map()
+    const songTarget = {
+      audioContext: audioCtx,
+      resume: () => audioCtx.resume(),
+      noteOn(m, v, c) { if (c === 9) return; if (soundReady) engine.noteOn(m, v, c); if (m >= LOW && m <= HIGH) { held.set(m, (held.get(m) || 0) + 1); piano.noteOn(m, v) } },
+      noteOff(m, c) { if (c === 9) return; engine.noteOff(m, c); const n = (held.get(m) || 1) - 1; if (n <= 0) { held.delete(m); piano.noteOff(m) } else held.set(m, n) },
+      controlChange(c, cc, v) {
+        engine.controlChange(c, cc, v)
+        if (cc === 64) { pedals[2] = v >= 64; piano.setSustain(pedals[2]) }
+        if (cc === 67) piano.setPedal(0, pedals[0] = v >= 64)
+        if (cc === 66) piano.setPedal(1, pedals[1] = v >= 64)
+      },
+      allSoundOff() {
+        for (let c = 0; c < 16; c++) engine.controlChange(c, 64, 0)
+        engine.allNotesOff?.()
+        for (const m of held.keys()) piano.noteOff(m)
+        held.clear(); pedals.fill(false); piano.setSustain(false); piano.setPedal(0, false); piano.setPedal(1, false)
+      },
+    }
+    async function ensureScheduler() {
+      if (scheduler) return scheduler
+      scheduler = new MidiScheduler(songTarget)
+      await scheduler.init()
+      scheduler.on('time', t => { music.songT = t; music.wall = performance.now(); showTime(t) })
+      scheduler.on('end', () => {
+        songTarget.allSoundOff()
+        if (loop) { scheduler.seek(0); music.songT = 0; music.wall = performance.now(); scheduler.play(); return }
+        setPlaying(false)
+      })
+      return scheduler
+    }
+    // fingering in a worker (fingering/fingering.js), then the rig plays it
+    let fingerWorker = null, fingerJob = 0
+    function quickHands(notes) {
+      // until the fingering arrives: split at middle C, fingers by position
+      return notes.map(n => ({ pitch: n.midi, on: n.time, off: n.time + n.duration, hand: n.midi < 60 ? 'L' : 'R', finger: 0, velocity: n.velocity }))
+    }
+    function fingerInWorker(notes) {
+      const job = ++fingerJob
+      fingerWorker?.terminate()
+      const url = new URL('./fingering/fingering.js', import.meta.url).href
+      const src = `import { fingerPiece } from ${JSON.stringify(url)}
+        onmessage = e => { const r = fingerPiece(e.data); postMessage(r.notes.map(n => [n.hand, n.finger || 0, n.release])) }`
+      fingerWorker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })), { type: 'module' })
+      fingerWorker.onmessage = e => {
+        if (job !== fingerJob) return
+        const out = notes.map((n, i) => { const [h, f, rel] = e.data[i]; return { pitch: n.midi, on: n.time, off: n.time + n.duration, release: rel, hand: h, finger: f, velocity: n.velocity } })
+        fingerWorker.terminate(); fingerWorker = null
+        rig.setNotes(out)
+        fingered = true
+      }
+      fingerWorker.postMessage(notes.map(n => ({ pitch: n.midi, on: n.time, off: n.time + n.duration, velocity: n.velocity })))
+    }
+    let fingered = false
+    async function loadSong(buffer, name) {
+      try {
+        const sch = await ensureScheduler()
+        if (sch.playing) sch.stop()
+        songTarget.allSoundOff()
+        const s = midiToSchedule(new Midi(buffer))
+        s.notes = s.notes.filter(n => n.channel !== 9 && n.midi >= LOW && n.midi <= HIGH)
+        if (!s.notes.length) throw new Error('no notes in file')
+        s.duration = s.notes.reduce((m, n) => Math.max(m, n.time + n.duration), 0)
+        song = s; fingered = false
+        rig.clear()
+        fingerInWorker(s.notes)
+        await ensureSound()
+        sch.load(s); sch.speed = speeds[speedI]
+        unlockAudio()
+        music.songT = 0; music.wall = performance.now()
+        sch.play(); setPlaying(true); setStatus('')
+      } catch (e) { console.error(e); setStatus(`Could not play ${name}: ${e.message}`, true, 5000) }
+    }
+    async function loadSongUrl(url, label) {
+      markSong(url)
+      setStatus('Loading song…')
+      try { await loadSong(await (await fetch(encodeURI(url))).arrayBuffer(), label) }
+      catch (e) { setStatus('Could not load song: ' + e.message, true, 5000) }
+    }
+    $('openFile').onclick = () => { closePops(); $('file').click() }
+    $('file').onchange = async () => { const f = $('file').files[0]; if (f) { markSong(null); loadSong(await f.arrayBuffer(), f.name) } $('file').value = '' }
+    addEventListener('dragover', ev => ev.preventDefault())
+    addEventListener('drop', async ev => { ev.preventDefault(); const f = ev.dataTransfer.files[0]; if (f) { markSong(null); loadSong(await f.arrayBuffer(), f.name) } })
+    const fmt = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`
+    let seeking = false
+    function showTime(t) {
+      const d = song?.duration || 0
+      $('tNow').textContent = `${fmt(t)}.${String(Math.floor((t % 1) * 1000)).padStart(3, '0')}`
+      $('tLeft').textContent = '-' + fmt(Math.max(0, d - t))
+      if (!seeking) { $('seek').value = d ? t / d : 0; $('seek').style.setProperty('--p', (d ? t / d * 100 : 0) + '%') }
+    }
+    const setPlaying = on => { $('playIcon').innerHTML = on ? '<path d="M6 4h4v16H6zm8 0h4v16h-4z"/>' : '<path d="M7 4v16l13-8z"/>'; poke() }
+    async function togglePlay() {
+      if (!song) { const d = SONGS.find(x => /chpn-p15|nocturne/i.test(x[0])) || SONGS[0]; return loadSongUrl(d[0], d[1]) }
+      const sch = await ensureScheduler(); unlockAudio()
+      if (sch.playing) { sch.pause(); songTarget.allSoundOff(); setPlaying(false) }
+      else { music.wall = performance.now(); sch.play(); setPlaying(true) }
+    }
+    $('playBtn').onclick = togglePlay
+    $('seek').addEventListener('input', () => { seeking = true })
+    $('seek').addEventListener('change', () => {
+      seeking = false
+      if (!scheduler || !song) return
+      songTarget.allSoundOff(); scheduler.seek(+$('seek').value * scheduler.duration)
+      music.songT = scheduler.currentTime; music.wall = performance.now()
+    })
+    const speeds = [0.5, 0.75, 1, 1.25]
+    let speedI = 2, loop = false
+    $('speedBtn').onclick = () => { speedI = (speedI + 1) % speeds.length; $('speedLbl').textContent = speeds[speedI] + '×'; if (scheduler) { music.songT = songNow(); music.wall = performance.now(); scheduler.speed = speeds[speedI] } }
+    $('loopBtn').onclick = () => { loop = !loop; $('loopBtn').classList.toggle('off', !loop) }
+
+    // ── Frame ────────────────────────────────────────────────────────────
+    const clock = new THREE.Clock()
+    let fixedT = null   // ?t= for headless stills: song time to pose at
+    const head = new THREE.Vector3(), handsC = new THREE.Vector3()
+    function frame() {
+      const dt = Math.min(clock.getDelta(), 1 / 20)
+      const t = fixedT ?? songNow()
+      piano.update(dt)
+      rig.setPedals(pedals[0], pedals[1], pedals[2])
+      rig.update(t, dt)
+      ch.group.updateMatrixWorld(true)
+      wardrobeUpdate(dt)
+      // camera
+      if (cycling && !userCam) {
+        cycleT += dt
+        if (cycleT > 9) { cycleT = 0; const i = (CYCLE.indexOf(view) + 1) % CYCLE.length; const v = CYCLE[i]; view = v; const d = VIEWS[v]; camGoal.pos.set(...d.pos); camGoal.target.set(...d.target); camGoal.fov = d.fov; cut = true }
+        camGoal.pos.x += Math.sin(cycleT * 0.2) * 0.02
+      }
+      if (cut) { camera.position.copy(camGoal.pos); controls.target.copy(camGoal.target); camera.fov = camGoal.fov; camera.updateProjectionMatrix(); cut = false; userCam = false }
+      controls.update()
+      // focus: the face in close shots, the hands looking down at the keys
+      head.copy(rig.pos('head'))
+      const hd = rig.hands
+      handsC.set(0, 76, 0); let n = 0
+      for (const d of [hd.L, hd.R]) if (d.visible) { if (!n) handsC.set(0, 0, 0); handsC.add(d.joints.W); n++ }
+      if (n) handsC.multiplyScalar(1 / n)
+      const focusOn = view === 'shoulder' || view === 'hands' ? handsC : head
+      const fd = camera.position.distanceTo(focusOn)
+      bokeh.uniforms.focus.value += (fd - bokeh.uniforms.focus.value) * 0.1
+      bokeh.uniforms.aperture.value = view === 'side' ? 0.00003 : 0.0001
+      grain.uniforms.uTime.value = performance.now() / 1000
+      if (scheduler?.playing && performance.now() - idleT > 2500) document.body.classList.add('idle')
+      composer.render()
+    }
+    renderer.setAnimationLoop(frame)
+    addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix()
+      renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight)
+    })
+
+    // ── Headless stills: ?shot&song=…&t=12&view=profile ─────────────────
+    if (params.has('shot')) {
+      document.body.classList.add('hideui')
+      if (params.has('caption')) document.body.classList.add('captioned')
+      window.__shot = async () => {
+        const file = params.get('song')
+        if (file) {
+          const s = midiToSchedule(new Midi(await (await fetch(file)).arrayBuffer()))
+          s.notes = s.notes.filter(n => n.channel !== 9 && n.midi >= LOW && n.midi <= HIGH)
+          song = s
+          fingerInWorker(s.notes)
+          for (let i = 0; i < 400 && !fingered; i++) await new Promise(r => setTimeout(r, 50))
+        }
+        const T = +(params.get('t') || 0)
+        // settle hair and cloth: run the simulation up to T at 60 fps (2 s at most)
+        renderer.setAnimationLoop(null)
+        const steps = Math.round(Math.min(T, 2.5) * 60)
+        for (let i = steps; i >= 0; i--) {
+          fixedT = T - i / 60
+          for (const m of held.keys()) piano.noteOff(m)
+          rig.update(fixedT, 1 / 60); ch.group.updateMatrixWorld(true); wardrobeUpdate(1 / 60)
+        }
+        // keys down where notes are held at T
+        if (song) for (const n of song.notes) if (n.time <= T && n.time + n.duration > T) piano.noteOn(n.midi, 0.7)
+        for (let i = 0; i < 30; i++) piano.update(1 / 60)
+        const d = VIEWS[view]
+        camera.position.set(...d.pos); controls.target.set(...d.target); camera.fov = d.fov; camera.updateProjectionMatrix(); controls.update()
+        const focusOn = view === 'shoulder' || view === 'hands' ? (() => { const c = new THREE.Vector3(); for (const h of [rig.hands.L, rig.hands.R]) c.add(h.joints.W); return c.multiplyScalar(0.5) })() : rig.pos('head')
+        bokeh.uniforms.focus.value = camera.position.distanceTo(focusOn)
+        bokeh.uniforms.aperture.value = view === 'side' ? 0.00003 : 0.0001
+        bokeh.enabled = !params.has('nodof')
+        composer.render()
+        return true
+      }
+    }
+  </script>
+</body>
+</html>
