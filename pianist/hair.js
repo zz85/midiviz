@@ -687,7 +687,38 @@ export function createHair(ch, rig, { density = 1, color = '#5a3e2a', style = 'h
 
 // A hair-coloured scalp (the skin above the hairline, pushed out a little),
 // for the mesh hair styles: no skin shows between their cards.
-export function hairCap(ch, color = 0x1c120b) {
+// hairGeo (mesh hair): the scalp only where the cards lie over it (within
+// 1.2 cm), so a style that leaves the forehead bare (a ponytail pulled back)
+// does not get a dark band of scalp below its hairline
+// Sample each hair triangle (corners, edges, centre and more for big ones)
+// and keep the points whose texel is opaque. Without a readable texture every
+// vertex counts.
+function opaqueHairPoints(geo, map) {
+  const P = geo.attributes.position.array
+  const img = map?.image
+  if (!img || !geo.attributes.uv) return P
+  const W = 512, H = 512, c = document.createElement('canvas'); c.width = W; c.height = H
+  const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0, W, H)
+  const A = g.getImageData(0, 0, W, H).data
+  const UV = geo.attributes.uv.array, idx = geo.index ? geo.index.array : null
+  const nT = (idx ? idx.length : P.length / 3) / 3, out = []
+  const flipY = map.flipY !== false
+  const N = 4
+  for (let t = 0; t < nT; t++) {
+    const a = idx ? idx[t * 3] : t * 3, b = idx ? idx[t * 3 + 1] : t * 3 + 1, cc = idx ? idx[t * 3 + 2] : t * 3 + 2
+    for (let i = 0; i <= N; i++) for (let j = 0; j <= N - i; j++) {
+      const u = i / N, v = j / N, w = 1 - u - v
+      const tu = UV[a * 2] * w + UV[b * 2] * u + UV[cc * 2] * v, tv = UV[a * 2 + 1] * w + UV[b * 2 + 1] * u + UV[cc * 2 + 1] * v
+      const px = Math.min(W - 1, Math.max(0, Math.floor((tu - Math.floor(tu)) * W)))
+      const fy = tv - Math.floor(tv), py = Math.min(H - 1, Math.max(0, Math.floor((flipY ? 1 - fy : fy) * H)))
+      if (A[(py * W + px) * 4 + 3] < 160) continue
+      for (let k = 0; k < 3; k++) out.push(P[a * 3 + k] * w + P[b * 3 + k] * u + P[cc * 3 + k] * v)
+    }
+  }
+  return out.length ? out : P
+}
+
+export function hairCap(ch, color = 0x1c120b, hairGeo = null, hairMap = null) {
   const headI = ch.bones.findIndex(b => b.name === 'head')
   const body = ch.parts.body.geometry
   const P = body.attributes.position.array
@@ -701,11 +732,29 @@ export function hairCap(ch, color = 0x1c120b) {
   const C = lo.clone().add(hi).multiplyScalar(0.5), R = hi.clone().sub(lo).multiplyScalar(0.5)
   C.y = hi.y - R.y
   const ERy = R.y * 1.05
+  let nearHair = null
+  const REACH = 0.7
+  if (hairGeo) {
+    // (measured to the cards' own points, not cells: the cards fade out at
+    // the hairline, so the scalp stops a little inside it)
+    // Points where the cards are actually opaque: the front cards run to the
+    // old hairline but their texture is transparent there, so their vertices
+    // alone would keep the band.
+    const HP = opaqueHairPoints(hairGeo, hairMap), CELL = 1.5, R2 = REACH * REACH, grid = new Map(), k = (x, y, z) => `${x},${y},${z}`
+    for (let i = 0; i < HP.length / 3; i++) { const key = k(Math.floor(HP[i * 3] / CELL), Math.floor(HP[i * 3 + 1] / CELL), Math.floor(HP[i * 3 + 2] / CELL)); let l = grid.get(key); if (!l) grid.set(key, l = []); l.push(i) }
+    nearHair = v => {
+      const x = P[v * 3], y = P[v * 3 + 1], z = P[v * 3 + 2]
+      const cx = Math.floor(x / CELL), cy = Math.floor(y / CELL), cz = Math.floor(z / CELL)
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) for (const i of grid.get(k(cx + dx, cy + dy, cz + dz)) || []) if ((HP[i * 3] - x) ** 2 + (HP[i * 3 + 1] - y) ** 2 + (HP[i * 3 + 2] - z) ** 2 < R2) return true
+      return false
+    }
+  }
   const shell = cutShell(ch, v => {
     if (headW(v) < 0.9) return false
+    if (nearHair && !nearHair(v)) return false
     const x = P[v * 3] - C.x, y = P[v * 3 + 1] - C.y, z = P[v * 3 + 2] - C.z
     const a = Math.atan2(x, -z)
     return y / ERy > -0.62 + 0.74 * Math.max(0, Math.cos(a)) ** 1.4 - 0.25 * Math.max(0, -Math.cos(a))
-  }, { gap: 0.1, offset: 0.15, iterations: 4, edgeIterations: 40 })
+  }, { gap: 0.1, offset: 0.15, iterations: 4, edgeIterations: 40, ...(hairGeo ? { fillHoles: 200, dropIslands: 40, smoothCut: 4 } : {}) })
   return skinned(ch, shell.geometry, new THREE.MeshStandardMaterial({ color, roughness: 0.8 }))
 }

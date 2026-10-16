@@ -38,7 +38,7 @@ export async function createMeshHair(ch, style = 'ponytail01', { color = '#5a3e2
   mesh.geometry.computeTangents()
   mesh.renderOrder = 1
   // scalp under the cards
-  const cap = hairCap(ch)
+  const cap = hairCap(ch, undefined, mesh.geometry, map)
   const capMat = cap.material
 
   const object = new THREE.Group()

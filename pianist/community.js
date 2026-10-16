@@ -101,7 +101,7 @@ export async function createCommunity(ch, key, { color = null } = {}) {
     if (del.size) for (let t = 0; t < idx.length; t += 3) if (del.has(src[idx[t]]) || del.has(src[idx[t + 1]]) || del.has(src[idx[t + 2]])) tris.push(t)
     hideBody(ch, hideKey, [...new Set([...tris, ...underGarment(ch, mesh.geometry, tris)])]); hidden = true
   }
-  const cap = hair ? hairCap(ch) : null
+  const cap = hair ? hairCap(ch, undefined, mesh.geometry, alpha ? map : null) : null
 
   let grey = null
   function setColor(hex) {

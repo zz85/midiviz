@@ -55,9 +55,9 @@ Visuals → Model, or `?model=vrm` / `?model=quaternius`. `alt-model.js` loads a
 `?outfit=` or the Outfit menu sets the dress, fabric, colour, shoes and hair at once. The circled numbers along the top of the page pick eight featured ones in one click (hover for the name; the rest stay in the menu), and so do the keys 1–9 and 0 (the first ten):
 `reference` (the red knit halter), `sequin-mini` / `sequin-gown` (sequins, stiletto booties, long dark hair; old `yuja-*` links still load), `covered` (long sleeves), `tee`.
 
-- Long hair (mesh hair simulated as cloth) with our simulated floor-length skirt and slits from the knee: `braid-halter` (champagne satin halter, braid), `ponytail-qipao` (red satin qipao with gold trim, black ponytail), `braid-qipao` (ivory qipao with navy trim, brunette braid).
-- Bobs: `shift-long` (blush shift dress, long hair; was `bob-shift`), `bob-bodycon` (gold sequin bodycon, brunette bob), `bob-cocktail` (black satin cocktail dress, platinum bob), `bob-tee` (white T-shirt and skirt, auburn bob), `bob-turtleneck` (black sleeveless turtleneck, blonde bob).
-- Evening gowns: `long-gown` (midnight velvet evening gown, long blonde hair; old `bob-gown` links load it), `updo-gown` (sapphire satin gown with long sleeves, blonde fifties updo).
+- Long hair (mesh hair simulated as cloth) with our simulated floor-length skirt and slits from the knee: `braid-halter` (champagne satin halter, braid), `ponytail-qipao` (red satin qipao with gold trim, black ponytail), `braid-qipao` (fitted floor-length ivory qipao with navy trim, brunette braid).
+- Bobs: `shift-long` (blush shift dress, long hair; was `bob-shift`), `bob-bodycon` (gold sequin bodycon, brunette bob), `bob-cocktail` (black satin cocktail dress, auburn bob), `bob-tee` (white T-shirt and skirt, platinum bob), `bob-turtleneck` (black sleeveless turtleneck, ash-grey bob).
+- Evening gowns: `long-gown` (midnight velvet evening gown, blonde ponytail; old `bob-gown` links load it), `updo-gown` (sapphire satin gown with long sleeves, blonde sleek bob).
 - An outfit can also set the gown slits and the qipao's trim colour.
 
 ## Dresses
