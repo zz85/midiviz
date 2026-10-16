@@ -38,13 +38,15 @@ export const SPOTS = {
   // Across the piano is low, under the lid over the strings; minDist keeps
   // its moves from carrying the camera in past the tail
   tail: { label: 'Across the piano', subj: 'head', az: 180, el: 2, dist: 380, fov: 18, size: 1, flat: true, minDist: 320, moves: ['dollyIn', 'zoomIn', 'dollyZoom', 'zoomOut'] },
-  front: { label: 'Face, from the piano', subj: 'head', az: 161, el: 8, dist: 106, fov: 34, size: 0, moves: ['dollyIn', 'orbit', 'dollyZoom', 'still'] },
-  face: { label: 'Face, close', subj: 'head', az: 198, el: -4, dist: 75, fov: 28, size: 0, moves: ['still', 'orbit', 'dollyOut'] },
-  profile: { label: 'Profile', subj: 'head', az: 105, el: 5, dist: 125, fov: 30, size: 0, moves: ['orbit', 'dollyIn', 'dollyZoom', 'still'] },
-  headside: { label: 'Profile, close', subj: 'head', az: 96, el: 8, dist: 72, fov: 30, size: 0, moves: ['orbit', 'still'] },
+  // face close-ups mostly zoom or pull out; an orbit or a still frame now and then
+  front: { label: 'Face, from the piano', subj: 'head', az: 161, el: 8, dist: 106, fov: 34, size: 0, moves: ['dollyOut', 'zoomOut', 'orbit', 'still'] },
+  face: { label: 'Face, close', subj: 'head', az: 198, el: -4, dist: 75, fov: 28, size: 0, moves: ['dollyOut', 'zoomOut', 'orbit', 'still'] },
+  profile: { label: 'Profile', subj: 'head', az: 105, el: 5, dist: 125, fov: 30, size: 0, moves: ['dollyOut', 'zoomOut', 'orbit', 'still'] },
+  headside: { label: 'Profile, close', subj: 'head', az: 96, el: 8, dist: 72, fov: 30, size: 0, moves: ['zoomOut', 'dollyOut', 'orbit'] },
   shoulder: { label: 'Over the shoulder', subj: 'hands', az: -23, el: 37, dist: 160, fov: 40, size: 1, moves: ['dollyIn', 'orbit', 'crane', 'zoomIn'] },
-  hands: { label: 'Hands', subj: 'hands', az: -50, el: 34, dist: 90, fov: 40, size: 0, moves: ['orbit', 'dollyOut', 'still'] },
+  hands: { label: 'Hands, bass side', subj: 'hands', az: -50, el: 34, dist: 90, fov: 40, size: 0, moves: ['orbit', 'dollyOut', 'still'] },
   treble: { label: 'Hands, treble side', subj: 'hands', az: 62, el: 30, dist: 100, fov: 38, size: 0, moves: ['orbit', 'dollyIn', 'still'] },
+  bassKeys: { label: 'Along the keys, from the bass', subj: 'hands', az: -93, el: 9, dist: 125, fov: 30, size: 0, moves: ['zoomOut', 'still', 'dollyOut'], orbitMax: 6 },
   keys: { label: 'Along the keys', subj: 'hands', az: 93, el: 7, dist: 120, fov: 30, size: 0, moves: ['zoomIn', 'still', 'dollyOut', 'dollyZoom'], orbitMax: 6 },
   above: { label: 'From above', subj: 'hands', az: -8, el: 72, dist: 150, fov: 38, size: 1, moves: ['orbit', 'dollyIn', 'zoomOut'] },
   side: { label: 'Side, wide', subj: 'figure', az: 90, el: 3, dist: 395, fov: 30, size: 2, flat: true, moves: ['dollyIn', 'zoomOut', 'dollyZoom', 'still'] },
@@ -201,12 +203,61 @@ function takeAt(s, tk, u, out) {
   return out
 }
 
+// ── Screen-time balance ──
+// The director keeps a running tally (seconds on screen, the last ~2 minutes
+// weighing most) on three axes and favours whatever is behind its share:
+//   what:  the fingers and keys / her (face, figure) / the piano
+//   where: from behind her / from in front of her (the side and straight
+//          down count half to each)
+//   size:  close / medium / wide
+// Favour (hands / pianist) moves the "what" targets.
+const AXES = {
+  what: s => SUBJ_KIND[s.subj] === 'hands' ? 'keys' : SUBJ_KIND[s.subj] === 'pianist' ? 'her' : 'piano',
+  where: s => { if (s.el > 65) return { back: 0.5, front: 0.5 }; const a = Math.abs(wrap(s.az)); return a < 70 ? 'back' : a > 110 ? 'front' : { back: 0.5, front: 0.5 } },
+  size: s => ['close', 'medium', 'wide'][s.size],
+}
+const TARGETS = { what: { keys: 0.5, her: 0.38, piano: 0.12 }, where: { back: 0.5, front: 0.5 }, size: { close: 0.4, medium: 0.35, wide: 0.25 } }
+const TALLY_TAU = 120
+export const screenAxes = s => Object.fromEntries(Object.entries(AXES).map(([k, f]) => [k, f(s)]))
+function tallyAdd(tally, s, d) {
+  const k = Math.exp(-d / TALLY_TAU)
+  for (const [ax, f] of Object.entries(AXES)) {
+    for (const c in tally[ax]) tally[ax][c] *= k
+    const v = f(s), parts = typeof v === 'string' ? { [v]: 1 } : v
+    for (const [c, w] of Object.entries(parts)) tally[ax][c] += w * d
+  }
+}
+// how much a spot would fill what's been missing: > 1 behind target, < 1 ahead
+function tallyGain(tally, targets, s) {
+  let g = 1
+  for (const [ax, f] of Object.entries(AXES)) {
+    const tot = Object.values(tally[ax]).reduce((a, b) => a + b, 0)
+    if (tot < 20) continue   // nothing to balance yet
+    const v = f(s), parts = typeof v === 'string' ? { [v]: 1 } : v
+    let d = 0
+    for (const [c, w] of Object.entries(parts)) d += w * (targets[ax][c] - tally[ax][c] / tot)
+    g *= Math.exp(10 * d)
+  }
+  return g
+}
+
+// a number from the song itself: its length and where its phrases begin
+export function songSeed({ duration = 0, phrases = [] }) {
+  if (!phrases.length) return 0
+  let x = duration * 7.31 + phrases.length * 3.17
+  for (const [a, b] of phrases.slice(0, 40)) x = (x * 1.618 + a * 13.7 + b * 5.3) % 9973
+  return Math.floor(x % 997) + 1
+}
+
 /**
  * opts.pace: 0.5 (long takes) .. 2 (lively); opts.bias: -1 (hands) .. 1 (pianist);
  * opts.trans: 'mix' | 'cuts' | 'glides'
  */
 export function planShots({ duration, phrases = [], glances = [], energyAt = () => 0.3 }, opts = {}) {
   const pace = opts.pace ?? 1, bias = opts.bias ?? 0, trans = opts.trans ?? 'mix'
+  // every choice is a hash of the shot number and the song, so a song always
+  // gets the same film (seek, export) and different songs get different ones
+  const seed = songSeed({ duration, phrases }), hs = (k, n) => hash(k + seed, n)
   const starts = phrases.map(p => p[0]).filter(t => t > 0.5)
   const mean = (a, b) => { let s = 0, n = 0; for (let t = a; t < b; t += 0.25) { s += energyAt(t); n++ } return n ? s / n : 0 }
   const lookUp = (a, b) => glances.some(g => g.a < b - 1 && g.b > a + 0.5 && !g.quiet)
@@ -216,10 +267,14 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
   // and when her face was last in view (from the front half, not from behind)
   const faceSeen = s => SUBJ_KIND[s.subj] === 'pianist' && Math.abs(wrap(s.az)) >= 80 && s.el < 45
   let lastWide = 0, lastFace = 0
+  const lastUsed = {}, uses = {}
+  const tally = Object.fromEntries(Object.entries(TARGETS).map(([ax, cs]) => [ax, Object.fromEntries(Object.keys(cs).map(c => [c, 0]))]))
+  const b = clamp(bias, -1, 1) * 0.15
+  const targets = { ...TARGETS, what: { keys: TARGETS.what.keys - b, her: TARGETS.what.her + b, piano: TARGETS.what.piano } }
   let t = 0
   for (let i = 0; t < duration; i++) {
     const E = mean(t, t + 6)
-    const h = hash(i, 1)
+    const h = hs(i, 1)
     let L = lerp(13, 4.5, clamp(E, 0, 1)) * (0.8 + 0.45 * h) / pace
     // cut on a phrase start near the planned length
     let end = t + L
@@ -230,17 +285,23 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
     if (last) end = duration + 6
     const prev = shots[i - 1], prev2 = shots[i - 2]
     let name, move
-    if (i === 0) { name = hash(7, 2) < 0.6 ? 'establish' : 'audience'; move = 'dollyIn' }
+    if (i === 0) { name = hs(7, 2) < 0.6 ? 'establish' : 'audience'; move = 'dollyIn' }
     else {
       // score every spot for this stretch of music
       const up = lookUp(t, end)
       const w = names.map(n => {
         const s = SPOTS[n], kind = SUBJ_KIND[s.subj]
         let x = kind === 'hands' ? 0.35 + 0.7 * E - 0.3 * bias : kind === 'pianist' ? 0.5 - 0.25 * E + 0.3 * bias : 0.18
-        if (n === 'feet') x *= 0.25
-        if (n === 'top') x = 0.4
-        // after the opening, the fingers over her face
-        if (i > 1) x *= kind === 'hands' ? 1.6 : s.subj === 'head' ? 0.6 : 1
+        if (n === 'feet') x *= 0.1
+        if (n === 'top') x = 0.1   // a treat, not a habit
+        // spread the work over every spot: one shown in the last ~60 s is
+        // less likely, the more often the less likely
+        const ago = t - (lastUsed[n] ?? -1e9)
+        if (ago < 60 / pace) x *= 0.3
+        x /= 1 + 0.08 * (uses[n] || 0)
+        // after the opening: what the screen time is short of (fingers / her /
+        // piano, behind / in front, close / medium / wide)
+        if (i > 0) x *= tallyGain(tally, targets, s)
         if (n === 'establish') x = 0   // only to open and close
         // she looks up from the keys: be on her face
         if (up) x *= s.subj === 'head' ? 2.5 : 0.3
@@ -255,7 +316,7 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
           // face, or over her shoulder onto the keys
           if (i === 1) x *= s.size === 0 || n === 'shoulder' ? 4 : 0.25
           // after a close-up: a medium shot (back to the keys), not the hall
-          else if (ps.size === 0) x *= s.size === 1 ? 3 : s.size === 2 ? 0.3 : 0.15
+          else if (ps.size === 0) x *= s.size === 1 ? 2.5 : s.size === 2 ? 0.8 : 0.15
           else if (s.size !== ps.size) x *= 1.4
           // too long close or behind her: pull out wide, or come round to her face.
           // Overrides the size grammar above; grows from ~25 s / ~35 s on
@@ -272,15 +333,17 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
         }
         return Math.max(0, x)
       })
-      let r = hash(i, 3) * w.reduce((a, b) => a + b, 0), k = 0
+      let r = hs(i, 3) * w.reduce((a, b) => a + b, 0), k = 0
       while (k < w.length - 1 && (r -= w[k]) > 0) k++
       name = names[k]
       // a move: mostly continuous ones, a still frame now and then
       // (close up: never push or zoom in further)
       let ms = SPOTS[name].moves
       if (SPOTS[name].size === 0) { const ok = ms.filter(m => m !== 'zoomIn' && m !== 'dollyIn' && m !== 'dollyZoom'); ms = ok.length ? ok : ['orbit', 'still'] }
-      const mw = ms.map(m => m === 'still' ? 0.25 : m === 'dollyZoom' ? 0.45 : 1)
-      let q = hash(i, 4) * mw.reduce((a, b) => a + b, 0), j = 0
+      // on her face close up the zooms and pull-outs lead
+      const faceClose = SPOTS[name].subj === 'head' && SPOTS[name].size === 0
+      const mw = ms.map(m => m === 'still' ? (faceClose ? 0.15 : 0.25) : m === 'dollyZoom' ? 0.45 : faceClose && m === 'orbit' ? 0.35 : 1)
+      let q = hs(i, 4) * mw.reduce((a, b) => a + b, 0), j = 0
       while (j < ms.length - 1 && (q -= mw[j]) > 0) j++
       move = last ? 'dollyOut' : ms[j]
     }
@@ -292,15 +355,17 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
       // a flat spot is reached (or left) by turning, so it glides further and more often
       const flat = SPOTS[name].flat || SPOTS[prev.name].flat
       const canGlide = dAz <= (flat ? 100 : 80) && dD < (flat ? 1.4 : 1.1) && trans !== 'cuts'
-      const wantGlide = trans === 'glides' || hash(i, 5) < (E < 0.55 ? 0.75 : 0.4) + (flat ? 0.2 : 0)
+      const wantGlide = trans === 'glides' || hs(i, 5) < (E < 0.55 ? 0.75 : 0.4) + (flat ? 0.2 : 0)
       if (canGlide && wantGlide) glide = clamp((lerp(3.5, 1.8, E) + 0.012 * dAz + 1.2 * dD) / Math.sqrt(pace), 1.4, Math.min(5, 0.5 * (end - t)))
     }
+    lastUsed[name] = end; uses[name] = (uses[name] || 0) + 1
+    tallyAdd(tally, SPOTS[name], Math.min(end, duration) - t)
     if (SPOTS[name].size === 2) lastWide = end
     if (faceSeen(SPOTS[name])) lastFace = end
     shots.push({
       i, name, move, t0: t, t1: end, glide,
       amt: clamp((end - t) / 10, 0.45, 1.3) * (0.7 + 0.5 * E),
-      dir: hash(i, 6) < 0.5 ? -1 : 1,
+      dir: hs(i, 6) < 0.5 ? -1 : 1,
     })
     t = end
   }
@@ -434,7 +499,7 @@ export function createDirector(opts = {}) {
       const s = { az: Math.atan2(tb.x, tb.z) / D2R, el: Math.asin(tb.y / dist) / D2R, dist, fov: view.fov, orbitMax: view.orbitMax }
       // a new view (or going back in time) starts the takes again
       const key = view.pov ? 'pov' : view.pos.join() + view.target.join()
-      if (w < q.lastW || !q.takes.length || q.key !== key) { q.takes = []; q.uses = {}; q.key = key; q.seed = mode === 'random' ? Math.random() * 1000 : 17; q.hands = null }
+      if (w < q.lastW || !q.takes.length || q.key !== key) { q.takes = []; q.uses = {}; q.key = key; q.seed = mode === 'random' ? Math.random() * 1000 : 17 + (source ? songSeed(source) : 0); q.hands = null }
       const dw = clamp(w - (q.lastW ?? w), 0, 0.1)
       q.lastW = w
       while (!q.takes.length || q.takes[q.takes.length - 1].t1 <= w) addTake(q, mode, s, view)
