@@ -4,7 +4,7 @@
 //  • as made  — the garment's own material (the knit for ours);
 //  • satin    — smooth, low roughness, a bright sheen;
 //  • velvet   — rough, deep, a strong coloured sheen at grazing angles;
-//  • sequins  — Yuja Wang's stage dresses: a tiled normal map of small
+//  • sequins  — concert stage dresses: a tiled normal map of small
 //    overlapping discs, each tilted at random, on a metallic, glossy base,
 //    so every disc catches the spotlight at its own angle and the dress
 //    glitters as she moves. Tiled in the garment's own UVs; `scale` sets the

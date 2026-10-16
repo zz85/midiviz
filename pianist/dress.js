@@ -77,11 +77,12 @@ function knitTextures(size = 256, cells = 16) {
 //           and a round neck) or 'long' (to the wrist, round neck) — the
 //           sleeves are cut from the arm's skin like the bodice, so they
 //           are skinned to the arm and bend with it
-//   slits:  side slits (left and right) from the knee to the
-//           hem; on by default for the gown
+//   slits:  side slits (left and right) down to the hem; on by default
+//           for the gown. slitAt: where they start, cm above (+) or
+//           below (−) the knee joint (default −14, mid-calf)
 //   Fabric: plain jersey by default (no pattern, a faint fine weave);
 //           setFabric('knit') brings back the diamond knit
-export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1d1b', length = 'midi', skirt: skirtMode = 'cloth', bodice: withBodice = true, waist = 4, sleeves = 'none', slits = length === 'gown' } = {}) {
+export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1d1b', length = 'midi', skirt: skirtMode = 'cloth', bodice: withBodice = true, waist = 4, sleeves = 'none', slits = length === 'gown', slitAt = -14 } = {}) {
   const body = ch.parts.body.geometry
   const P = body.attributes.position.array, Nn = body.attributes.normal.array
   const SI = body.attributes.skinIndex.array, SW = body.attributes.skinWeight.array
@@ -204,8 +205,9 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
     rest[i] = ctr.x + Math.cos(a) * rad; rest[i + 1] = y; rest[i + 2] = ctr.z + Math.sin(a) * rad
   }
   // side slits: the tube is open between the columns at her left and right
-  // (x extremes: angle 0 and ±π) from mid-calf (slitRow) down to the hem
-  const slitRow = slits ? Math.max(2, Math.round((hipY + TOP - (J['lowerleg01.L____head'].y - 14)) / seg)) : R
+  // (x extremes: angle 0 and ±π) from slitAt cm about the knee (default
+  // mid-calf) down to the hem
+  const slitRow = slits ? Math.max(2, Math.round((hipY + TOP - (J['lowerleg01.L____head'].y + slitAt)) / seg)) : R
   const SEAMS = [C / 2, C]   // a seam b lies between columns b − 1 and b
   const cut = (r, c, k) => r >= slitRow && SEAMS.some(b => c < b && c + k >= b)
   // skin weights: the nearest leg / hip skin, and for the panel between the

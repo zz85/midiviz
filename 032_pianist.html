@@ -587,7 +587,7 @@
       let closeT = 0, hoverAt = 0, hold = false
       const anyOpen = () => Object.values(pops).some(p => $(p).classList.contains('open'))
       const cancel = () => { clearTimeout(closeT); hold = false }
-      const later = () => { clearTimeout(closeT); closeT = setTimeout(() => { if (!hold) closePops() }, 350) }
+      const later = () => { clearTimeout(closeT); closeT = setTimeout(() => { if (!hold && ![...Object.keys(pops), ...Object.values(pops)].some(id => $(id).matches(':hover'))) closePops() }, 400) }
       for (const [b, p] of Object.entries(pops)) {
         $(b).addEventListener('pointerenter', ev => {
           if (ev.pointerType !== 'mouse') return

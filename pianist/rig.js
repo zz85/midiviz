@@ -341,11 +341,15 @@ export function createRig(ch, { seat = v3(0, 64, 42) } = {}) {
       if (gl.g.quiet && hash(gl.g.a, 10) < 0.3) inner = gl.w          // eyes nearly closed, inward
       else {
         w = gl.w
-        if (k < 0.7) glanceP.copy(GLANCE_AT.find(([lim]) => k < lim)[1])
+        // horizon mode: one very slow pan across the hall, left to right and
+        // back (~45 s a round trip), wherever she happens to look up
+        if (state.gazeMode === 'horizon') sweepAt(0.5 - 0.5 * Math.cos(state.songT * 2 * Math.PI / 45), glanceP)
+        else if (k < 0.7) glanceP.copy(GLANCE_AT.find(([lim]) => k < lim)[1])
         else { const u = THREE.MathUtils.smootherstep(gl.u, 0.1, 0.9); sweepAt(hash(gl.g.a, 9) < 0.5 ? u : 1 - u, glanceP) }
       }
     }
-    glanceW += (w - glanceW) * (1 - Math.exp(-dt * 6))
+    const slow = state.gazeMode === 'horizon'
+    glanceW += (w - glanceW) * (1 - Math.exp(-dt * (slow ? 1.6 : 6)))
     state.lidDrop += (inner * 0.8 - state.lidDrop) * (1 - Math.exp(-dt * 3))
     look.copy(handsAt).lerp(glanceP, glanceW)
     // eyes: a quick saccade when the target jumps, smooth pursuit otherwise;
@@ -354,7 +358,13 @@ export function createRig(ch, { seat = v3(0, 64, 42) } = {}) {
     const shift = _d1.subVectors(eyeT, top).normalize().angleTo(_d2.subVectors(look, top).normalize())
     eyeT.lerp(look, 1 - Math.exp(-dt * (shift > 0.06 ? 28 : 7)))
     if (shift > 0.3) blinkSoon(0.5)
-    state.gaze.lerp(look, 1 - Math.exp(-dt * (2.2 + 1.5 * glanceW)))
+    if (slow) {
+      // the head turns no faster than ~14°/s (the eyes lead, as they do)
+      const g0 = _d1.subVectors(state.gaze, top), d0 = g0.length()
+      state.gaze.lerp(look, 1 - Math.exp(-dt * 1.4))
+      const g1 = _d2.subVectors(state.gaze, top), d1 = g1.length(), ang = g0.angleTo(g1), lim = 0.25 * dt
+      if (ang > lim && d0 > 1) state.gaze.copy(top).add(g0.normalize().lerp(g1.normalize(), lim / ang).normalize().multiplyScalar(THREE.MathUtils.lerp(d0, d1, lim / ang)))
+    } else state.gaze.lerp(look, 1 - Math.exp(-dt * (2.2 + 1.5 * glanceW)))
     // a blink at the end of most phrases
     const sT = state.songT
     if (state.playing) for (const [k, [, b]] of phrases.entries()) { if (b + 0.12 > lastSong && b + 0.12 <= sT && hash(k, 8) < 0.4) blinkSoon(1) }
@@ -614,9 +624,20 @@ export function createRig(ch, { seat = v3(0, 64, 42) } = {}) {
   const GLANCE = { music: 0.5, horizon: 0.92, hands: 0 }
   function glanceAt(t) {
     const p = GLANCE[state.gazeMode] ?? 0.5
-    for (const g of glances) {
+    const horizon = state.gazeMode === 'horizon'
+    for (const [gi, g] of glances.entries()) {
       if (g.a > t) break
       if (t > g.b || g.r > p) continue
+      if (horizon) {
+        // back-to-back windows join into one held look (no quick checks of
+        // the keys between them), eased in and out over ~1 s
+        let a = g.a, b = g.b
+        for (let j = gi - 1; j >= 0 && glances[j].b > a - 0.5 && glances[j].r <= p; j--) a = glances[j].a
+        for (let j = gi + 1; j < glances.length && glances[j].a < b + 0.5 && glances[j].r <= p; j++) b = glances[j].b
+        const e = Math.min(1, (b - a) / 3)
+        const w = THREE.MathUtils.smoothstep(t, a, a + e) * (1 - THREE.MathUtils.smoothstep(t, b - e, b))
+        return { w, g, u: clamp((t - a) / (b - a), 0, 1) }
+      }
       // a held glance (horizon mode) or a 1.2–3 s one (music)
       const b = state.gazeMode === 'horizon' ? g.b : Math.min(g.b, g.a + (g.kind >= 0.7 ? 2.6 : 1.2) + 1.8 * hash(g.a * 7, 6))
       if (t > b) continue
