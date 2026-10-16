@@ -53,11 +53,11 @@ Visuals → Model, or `?model=vrm` / `?model=quaternius`. `alt-model.js` loads a
 ## Outfits
 
 `?outfit=` or the Outfit menu sets the dress, fabric, colour, shoes and hair at once. The numbered thumbnails along the top of the page pick eight featured ones in one click (hover for the name; the rest stay in the menu). The thumbnails are side-view renders (`?shot&view=side&outfit=<key>` at 900×900, cropped to the pianist) saved as `assets/presets/<key>.webp`; a preset without one shows a plain number, and so do the keys 1–9 and 0 (the first ten):
-`reference` (the red knit halter), `sequin-mini` / `sequin-gown` (sequins, stiletto booties, long dark hair; old `yuja-*` links still load), `covered` (long sleeves), `tee`.
+`reference` (the red knit halter), `sequin-mini` / `sequin-gown` (sequins, stiletto booties, long dark hair; old `yuja-*` links still load), `covered` (long sleeves), `tee` (T-shirt and skirt, long dark hair).
 
 - Long hair (mesh hair simulated as cloth) with our simulated floor-length skirt and slits from the knee: `braid-halter` (champagne satin halter, braid), `ponytail-qipao` (red satin qipao with gold trim, black ponytail), `braid-qipao` (fitted floor-length ivory qipao with navy trim, brunette braid).
-- Bobs: `shift-long` (blush shift dress, long hair; was `bob-shift`), `bob-bodycon` (gold sequin bodycon, brunette bob), `bob-cocktail` (black satin cocktail dress, auburn bob), `bob-tee` (white T-shirt and skirt, platinum bob), `bob-turtleneck` (black sleeveless turtleneck, ash-grey bob).
-- Evening gowns: `long-gown` (midnight velvet evening gown, blonde ponytail; old `bob-gown` links load it), `updo-gown` (sapphire satin gown with long sleeves, blonde sleek bob).
+- Bobs: `shift-long` (blush shift dress, long hair; was `bob-shift`), `bob-bodycon` (gold sequin bodycon, brunette bob), `bob-cocktail` (black satin cocktail dress, auburn fifties updo), `bob-tee` (white T-shirt and skirt, platinum bob), `bob-turtleneck` (black sleeveless turtleneck, ash-grey bob).
+- Evening gowns: `long-gown` (midnight velvet evening gown, blonde fifties updo; old `bob-gown` links load it), `updo-gown` (sapphire satin gown with long sleeves, blonde ponytail).
 - An outfit can also set the gown slits and the qipao's trim colour.
 
 ## Dresses
