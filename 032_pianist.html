@@ -36,14 +36,15 @@
     .pill svg { width: 15px; height: 15px; fill: currentColor; }
     #topLeft { position: absolute; top: 12px; left: 12px; display: flex; gap: 8px; }
     /* one-click outfit presets: circled numbers along the top */
-    #presets { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 5px; padding: 4px 6px; border-radius: 12px; background: rgba(24, 24, 24, 0.72); backdrop-filter: blur(6px); }
+    #presets { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 5px; padding: 4px 6px; border-radius: 999px; background: rgba(24, 24, 24, 0.72); backdrop-filter: blur(6px); }
     #presets button { width: 28px; height: 28px; border-radius: 50%; border: 1.5px solid rgba(255, 255, 255, 0.35); background: transparent; color: #eee; font: 600 13px/1 system-ui, sans-serif; cursor: pointer; padding: 0; }
     #presets button:hover { background: rgba(255, 255, 255, 0.14); border-color: rgba(255, 255, 255, 0.7); }
     #presets button.on { background: #e8e2d6; color: #1a1a1a; border-color: #e8e2d6; }
     #presets button:disabled { opacity: 0.35; cursor: default; }
-    #presets button.thumb { width: 40px; height: 56px; border-radius: 8px; background: #111 center / cover no-repeat; position: relative; display: flex; align-items: flex-end; justify-content: flex-start; padding: 2px 4px; font-size: 11px; text-shadow: 0 0 3px #000, 0 0 2px #000; }
-    #presets button.thumb:hover { border-color: rgba(255, 255, 255, 0.8); background-color: #111; }
-    #presets button.thumb.on { border: 2px solid #e8e2d6; color: #fff; background-color: #111; }
+    #presetPeek { position: fixed; z-index: 20; transform: translateX(-50%); pointer-events: none; opacity: 0; transition: opacity 0.12s; background: rgba(24, 24, 24, 0.9); border-radius: 10px; padding: 6px; text-align: center; }
+    #presetPeek.show { opacity: 1; }
+    #presetPeek img { display: block; width: 132px; height: 184px; border-radius: 6px; }
+    #presetPeek span { display: block; max-width: 132px; margin-top: 5px; color: #ddd; font: 11px/1.3 system-ui, sans-serif; }
     body.altmodel #presets { display: none; }
     #topRight { position: absolute; top: 12px; right: 12px; display: flex; gap: 8px; }
     #title { align-self: center; margin-left: 6px; font: 300 15px Georgia, serif; color: rgba(255, 255, 255, 0.55); letter-spacing: 0.04em; }
@@ -101,7 +102,8 @@
     <div class="item" id="openFile">Open a MIDI file…</div>
     <input id="file" type="file" accept=".mid,.midi,audio/midi" hidden>
   </div>
-  <div id="presets" class="ui" title="Outfit presets (keys 1–9, 0)"></div>
+  <div id="presets" class="ui" aria-label="Outfit presets (keys 1–9, 0)"></div>
+  <div id="presetPeek"><img alt=""><span></span></div>
   <div id="topRight" class="ui">
     <button class="pill" id="cameraBtn"><svg viewBox="0 0 24 24"><path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11z"/></svg>Camera</button>
     <button class="pill" id="visualsBtn"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>Visuals</button>
@@ -566,11 +568,19 @@
     presetKeys.forEach((k, i) => {
       const b = document.createElement('button')
       b.textContent = i + 1; b.dataset.k = k
-      // a thumbnail from pianist/assets/presets/ (side view); plain number if missing
-      const img = new Image()
-      img.onload = () => { b.classList.add('thumb'); b.style.backgroundImage = `url(${img.src})` }
-      img.src = `pianist/assets/presets/${k}.webp`
-      b.title = `${i + 1} · ${[...$('outfit').options].find(o => o.value === k).textContent}`
+      // hover: a preview from pianist/assets/presets/ (side view), if there is one
+      const img = new Image(); img.src = `pianist/assets/presets/${k}.webp`
+      b.onmouseenter = () => {
+        if (!img.complete || !img.naturalWidth) return
+        const pk = $('presetPeek'), r = b.getBoundingClientRect()
+        pk.querySelector('img').src = img.src
+        pk.querySelector('span').textContent = b.dataset.name
+        b.removeAttribute('title')   // (the preview carries the name; no native tooltip on top)
+        pk.style.left = `${r.left + r.width / 2}px`; pk.style.top = `${r.bottom + 8}px`
+        pk.classList.add('show')
+      }
+      b.onmouseleave = () => { $('presetPeek').classList.remove('show'); b.title = b.dataset.name }
+      b.title = b.dataset.name = `${i + 1} · ${[...$('outfit').options].find(o => o.value === k).textContent}`
       b.onclick = () => pickPreset(k)
       $('presets').appendChild(b)
     })
