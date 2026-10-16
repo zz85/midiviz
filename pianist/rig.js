@@ -626,7 +626,8 @@ export function createRig(ch, { seat = v3(0, 64, 42) } = {}) {
   // where the eyes go: 0 = the hands, 1 = the glance target (with its kind)
   const GLANCE = { music: 0.5, horizon: 0.92, hands: 0 }
   function glanceAt(t) {
-    const p = GLANCE[state.gazeMode] ?? 0.5
+    // glances: how often she looks up (× the gaze mode's own rate)
+    const p = Math.min(1, (GLANCE[state.gazeMode] ?? 0.5) * state.glances)
     const horizon = state.gazeMode === 'horizon'
     for (const [gi, g] of glances.entries()) {
       if (g.a > t) break
@@ -677,26 +678,27 @@ export function createRig(ch, { seat = v3(0, 64, 42) } = {}) {
     const E = energyAt(t), A = accentAt(t), playing = state.playing
     const g = x * (playing ? 1 : 0.35)
     // into the keys with the energy (back off in quiet passages), dips on accents
-    state.exLean = spring('lean', g * (0.11 * (E - 0.45) + 0.07 * A + 0.03 * wander(t * 0.7, 1) - 0.06 * phraseEndAt(t)), dt, 1.1, 0.5)
+    // style: rock (forward / back), sway (side to side), nod (the head)
+    state.exLean = spring('lean', g * state.rock * (0.11 * (E - 0.45) + 0.07 * A + 0.03 * wander(t * 0.7, 1) - 0.06 * phraseEndAt(t)), dt, 1.1, 0.5)
     // slow side-to-side sway, larger when the music is moving
-    state.exSide = spring('side', g * (0.03 + 0.04 * E) * wander(t * 0.35, 4), dt, 0.8, 0.6)
-    state.exTurn = spring('turn', g * 0.05 * wander(t * 0.27, 7), dt, 0.8, 0.6)
+    state.exSide = spring('side', g * state.sway * (0.03 + 0.04 * E) * wander(t * 0.35, 4), dt, 0.8, 0.6)
+    state.exTurn = spring('turn', g * state.sway * 0.05 * wander(t * 0.27, 7), dt, 0.8, 0.6)
     // the head nods into accents and lags the torso (follow-through)
-    state.exNod = spring('nod', g * (0.09 * A + 0.04 * (E - 0.4) + 0.025 * wander(t * 0.9, 9)), dt, 2.2, 0.45)
-    state.exRoll = spring('roll', g * (-0.6 * state.exSide + 0.04 * wander(t * 0.5, 12)), dt, 1.2, 0.5)
+    state.exNod = spring('nod', g * state.nod * (0.09 * A + 0.04 * (E - 0.4) + 0.025 * wander(t * 0.9, 9)), dt, 2.2, 0.45)
+    state.exRoll = spring('roll', g * (-0.6 * state.exSide + 0.04 * state.nod * wander(t * 0.5, 12)), dt, 1.2, 0.5)
     // rocking onto one buttock: committed to a side (tanh) toward the register
     // the hands are working in, plus slow expressive rocking in moving passages
     // the reach (where the hands are) and the phrase's own weight move, which
     // may go toward the register or away from it
     const reach = Math.tanh(state.handSide / 0.04)
     const move = playing ? hipMoveAt(t) : 0
-    state.hipRoll = spring('hip', x * state.hipShift * (0.045 * reach + 0.05 * move + (playing ? 0.02 + 0.02 * E : 0.01) * wander(t * 0.22, 15)), dt, 0.55, 0.7)
+    state.hipRoll = spring('hip', x * state.hipShift * (0.045 * reach * Math.min(1.5, state.reach) + 0.05 * move + state.sway * (playing ? 0.02 + 0.02 * E : 0.01) * wander(t * 0.22, 15)), dt, 0.55, 0.7)
     // shoulders lift a little in loud passages, drop on the accent
     state.exShrug = spring('shrug', g * (0.02 * E - 0.025 * A), dt, 2.5, 0.6)
     // breathing deepens with the phrase
     state.breathAmp = 1 + 1.2 * x * E
   }
-  Object.assign(state, { songT: 0, playing: false, exLean: 0, exSide: 0, exTurn: 0, exNod: 0, exRoll: 0, exShrug: 0, breathAmp: 1, hipRoll: 0, hipShift: 1, posture: 0.5, gazeMode: 'music', blink: 0, lidDrop: 0 })
+  Object.assign(state, { songT: 0, playing: false, exLean: 0, exSide: 0, exTurn: 0, exNod: 0, exRoll: 0, exShrug: 0, breathAmp: 1, hipRoll: 0, hipShift: 1, posture: 0.5, reach: 1, rock: 1, sway: 1, nod: 1, glances: 1, gazeMode: 'music', blink: 0, lidDrop: 0 })
 
   /** Posture from the hands: lean / turn toward them, further when out of reach. */
   function body(dt) {
@@ -709,15 +711,17 @@ export function createRig(ch, { seat = v3(0, 64, 42) } = {}) {
       dz += d.joints.S.z - d.shoulder.z; dx += d.joints.S.x - d.shoulder.x
     }
     const k = 1 - Math.exp(-dt * 3)
-    let lean = 0.02 + 0.28 * state.posture, side = 0.18 * (state.sideLean || 0), turn = 0
+    let lean = 0.02 + 0.28 * state.posture, side = 0, turn = 0
     if (n) {
       mx /= n
       // posture: 0 upright (just off vertical) … 1 well over the keys
       // (the slider goes past both: −0.5 leaning back, 1.6 hunched over)
       const base = 0.02 + 0.28 * state.posture
       lean = clamp(base + Math.max(0, -dz) * 0.02, base - 0.06, 0.65)
-      side = clamp(mx * 0.004 + dx * 0.01, -0.16, 0.16) + 0.18 * (state.sideLean || 0)
-      turn = clamp(mx * 0.004, -0.2, 0.2)
+      // reach: how far she leans and turns toward the register being played
+      // (0 = stays square to the keyboard, 2 = leans well into it)
+      side = clamp(mx * 0.004 + dx * 0.01, -0.16, 0.16) * state.reach
+      turn = clamp(mx * 0.004, -0.2, 0.2) * state.reach
     }
     state.handLean = (state.handLean ?? 0.2) + (lean - (state.handLean ?? 0.2)) * k
     state.handSide = (state.handSide ?? 0) + (side - (state.handSide ?? 0)) * k

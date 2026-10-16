@@ -104,7 +104,7 @@ Every option is in the address bar as a short query key, written only when it di
 
 | Key | Control | Key | Control |
 |---|---|---|---|
-| `outfit` | Outfit | `gaze` `expr` `hips` `posture` `sidelean` | Pose |
+| `outfit` | Outfit | `gaze` `expr` `hips` `posture` `reach` `rock` `sway` `nod` `glances` | Pose and playing style |
 | `dress` `slit` `fabric` `dcol` | Dress, gown slits, fabric, colour (hex without `#`) | `bench` `benchh` | Bench distance / height |
 | `shoes` | Shoes | `light` `exposure` `dof` | Visuals |
 | `hair` `hcol` `density` | Hair style, colour, strands | `view` `cam` | Camera view; a dragged camera as `x,y,z,tx,ty,tz` |
