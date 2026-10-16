@@ -11,7 +11,7 @@
 // skirt stays), 'hair'.
 
 import * as THREE from 'three'
-import { bodyIndex, hideBody } from './shell.js'
+import { bodyIndex, hideBody, underGarment } from './shell.js'
 import { hairCap } from './hair.js'
 import { createHairCloth } from './hair-cloth.js'
 import { applyFabric } from './fabric.js'
@@ -94,11 +94,12 @@ export async function createCommunity(ch, key, { color = null } = {}) {
   const delVerts = ch.partArray(key, 'deleteVerts', Uint16Array)
   let hidden = false
   const hideKey = key + '#' + (++serial)   // (the old garment and the new overlap while switching)
-  if (delVerts && !hair) {
-    const del = new Set(delVerts)
+  if (!hair) {
+    // (some assets ship no delete group: then only what lies under the fabric)
+    const del = new Set(delVerts || [])
     const src = ch.parts.body.source, idx = bodyIndex(ch), tris = []
-    for (let t = 0; t < idx.length; t += 3) if (del.has(src[idx[t]]) || del.has(src[idx[t + 1]]) || del.has(src[idx[t + 2]])) tris.push(t)
-    hideBody(ch, hideKey, tris); hidden = true
+    if (del.size) for (let t = 0; t < idx.length; t += 3) if (del.has(src[idx[t]]) || del.has(src[idx[t + 1]]) || del.has(src[idx[t + 2]])) tris.push(t)
+    hideBody(ch, hideKey, [...new Set([...tris, ...underGarment(ch, mesh.geometry, tris)])]); hidden = true
   }
   const cap = hair ? hairCap(ch) : null
 

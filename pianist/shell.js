@@ -36,7 +36,7 @@ export function hideBody(ch, key, tris) {
   ch.parts.body.visibleTris = vis
 }
 
-export function cutShell(ch, keep, { gap = 0.25, offset = 0.3, iterations = 24, edgeIterations = 30, obstacleSmooth = 0, minLoop = 12, part = 'body', spatial = 0, fillHoles = 0, dropIslands = 0, close = 0, smoothCut = 0 } = {}) {
+export function cutShell(ch, keep, { gap = 0.25, offset = 0.3, iterations = 24, edgeIterations = 30, obstacleSmooth = 0, minLoop = 12, part = 'body', spatial = 0, fillHoles = 0, dropIslands = 0, close = 0, smoothCut = 0, tidy = 0 } = {}) {
   const body = ch.parts[part].geometry
   const P = body.attributes.position.array
   let Nn = body.attributes.normal.array
@@ -101,7 +101,40 @@ export function cutShell(ch, keep, { gap = 0.25, offset = 0.3, iterations = 24, 
   }
 
   const tri = [], triAt = []
-  for (let t = 0; t < index.length; t += 3) if (wkeep[wid[index[t]]] && wkeep[wid[index[t + 1]]] && wkeep[wid[index[t + 2]]]) { tri.push(index[t], index[t + 1], index[t + 2]); triAt.push(t) }
+  const tk = new Uint8Array(index.length / 3)
+  for (let t = 0; t < index.length; t += 3) tk[t / 3] = wkeep[wid[index[t]]] && wkeep[wid[index[t + 1]]] && wkeep[wid[index[t + 2]]] ? 1 : 0
+  // tidy: a clean cut line, a triangle at a time. A cut along the mesh's
+  // own triangles is a staircase with teeth (a triangle hanging on by one
+  // edge), notches (a missing one between two kept) and bowties (two
+  // stretches of edge through one vertex); those break the edge into
+  // pieces the edge smoothing cannot straighten. Fill the notches, drop
+  // the teeth, then untie the bowties.
+  if (tidy) {
+    const NT = tk.length, ekey = (a, b) => a < b ? a * W + b : b * W + a
+    const eTris = new Map()
+    for (let i = 0; i < NT; i++) for (let e = 0; e < 3; e++) {
+      const k = ekey(wid[index[i * 3 + e]], wid[index[i * 3 + (e + 1) % 3]])
+      let l = eTris.get(k); if (!l) eTris.set(k, l = []); l.push(i)
+    }
+    const keptOn = k => { let c = 0; for (const i of eTris.get(k)) c += tk[i]; return c }
+    const edgesOf = i => [0, 1, 2].map(e => ekey(wid[index[i * 3 + e]], wid[index[i * 3 + (e + 1) % 3]]))
+    for (let it = 0; it < tidy; it++) {
+      let changed = 0
+      // notches in, teeth out
+      for (let i = 0; i < NT; i++) if (!tk[i] && edgesOf(i).filter(k => keptOn(k) > 0).length >= 2) { tk[i] = 1; changed++ }
+      for (let i = 0; i < NT; i++) if (tk[i] && edgesOf(i).filter(k => keptOn(k) === 1).length >= 2) { tk[i] = 0; changed++ }
+      // bowties: a vertex on more than two boundary edges
+      const bdeg = new Map()
+      for (const [k, l] of eTris) if (keptOn(k) === 1) { const a = Math.floor(k / W), b = k % W; bdeg.set(a, (bdeg.get(a) || 0) + 1); bdeg.set(b, (bdeg.get(b) || 0) + 1) }
+      for (let i = 0; i < NT; i++) {
+        if (!tk[i]) continue
+        const vs = [wid[index[i * 3]], wid[index[i * 3 + 1]], wid[index[i * 3 + 2]]]
+        if (vs.some(a => bdeg.get(a) > 2) && edgesOf(i).some(k => keptOn(k) === 1)) { tk[i] = 0; changed++ }
+      }
+      if (!changed) break
+    }
+  }
+  for (let t = 0; t < index.length; t += 3) if (tk[t / 3]) { tri.push(index[t], index[t + 1], index[t + 2]); triAt.push(t) }
 
   // boundary edges (welded): used by exactly one kept triangle
   const ecount = new Map()
@@ -201,7 +234,8 @@ export function cutShell(ch, keep, { gap = 0.25, offset = 0.3, iterations = 24, 
   // (junctions of boundary edges are not part of a clean cut: smooth them as surface)
   const interior = used.filter(a => !bnb.has(a) || bnb.get(a).length !== 2)
   // cut edges as smooth curves first, then the surface with the edges held
-  for (let i = 0; i < edgeIterations; i++) smooth(edgeIds, a => bnb.get(a), 0.5)
+  // (tidy cuts: Taubin's λ|μ steps, so a long smoothing does not shrink the line)
+  for (let i = 0; i < edgeIterations; i++) smooth(edgeIds, a => bnb.get(a), tidy && i % 2 ? -0.53 : 0.5)
   for (let i = 0; i < iterations; i++) smooth(interior, a => [...nb.get(a)], 0.5)
   // spatial smoothing (by distance, not by connectivity): irons out small
   // features the mesh models as separate islands (the nipples)
@@ -378,4 +412,54 @@ function weld(g) {
     const len = Math.hypot(x, y, z) || 1
     for (const i of l) { n[i * 3] = x / len; n[i * 3 + 1] = y / len; n[i * 3 + 2] = z / len }
   }
+}
+
+// Body triangles lying just under a garment that its author's delete group
+// missed (they poke through the fabric: the turtleneck's chest). A body
+// vertex is under the garment when the nearest garment vertex (not within `rings`
+// rings of the garment's open edges) is within `reach` cm and lies out along the skin's normal; a
+// triangle goes when all three of its vertices are. Rest pose for both.
+export function underGarment(ch, gg, already = [], { rings = 2, reach = 2 } = {}) {
+  const GP = gg.attributes.position.array
+  const n = GP.length / 3, q = 0.01
+  // weld by position, count edge uses: vertices on an open edge are skipped
+  const wid = new Int32Array(n), keyOf = new Map()
+  for (let i = 0; i < n; i++) { const k = `${Math.round(GP[i * 3] / q)},${Math.round(GP[i * 3 + 1] / q)},${Math.round(GP[i * 3 + 2] / q)}`; let w = keyOf.get(k); if (w === undefined) keyOf.set(k, w = keyOf.size); wid[i] = w }
+  const ix = gg.index ? gg.index.array : [...Array(n).keys()], edges = new Map()
+  for (let t = 0; t < ix.length; t += 3) for (let k = 0; k < 3; k++) {
+    const a = wid[ix[t + k]], b = wid[ix[t + (k + 1) % 3]], e = a < b ? a * 1e7 + b : b * 1e7 + a
+    edges.set(e, (edges.get(e) || 0) + 1)
+  }
+  const open = new Set()
+  for (const [e, c] of edges) if (c === 1) { open.add(Math.floor(e / 1e7)); open.add(e % 1e7) }
+  // two rings in from the open edge too (the hem: skin past it must stay)
+  for (let ring = 0; ring < rings; ring++) {
+    const add = []
+    for (const e of edges.keys()) { const a = Math.floor(e / 1e7), b = e % 1e7; if (open.has(a) !== open.has(b)) add.push(open.has(a) ? b : a) }
+    for (const v of add) open.add(v)
+  }
+  const CELL = 2, grid = new Map(), gk = (x, y, z) => `${x},${y},${z}`
+  for (let i = 0; i < n; i++) {
+    if (open.has(wid[i])) continue
+    const k = gk(Math.floor(GP[i * 3] / CELL), Math.floor(GP[i * 3 + 1] / CELL), Math.floor(GP[i * 3 + 2] / CELL))
+    let l = grid.get(k); if (!l) grid.set(k, l = []); l.push(i)
+  }
+  const BP = ch.parts.body.geometry.attributes.position.array, BN = ch.parts.body.geometry.attributes.normal.array, NB = BP.length / 3
+  const under = new Uint8Array(NB)
+  for (let v = 0; v < NB; v++) {
+    const x = BP[v * 3], y = BP[v * 3 + 1], z = BP[v * 3 + 2]
+    const cx = Math.floor(x / CELL), cy = Math.floor(y / CELL), cz = Math.floor(z / CELL)
+    let best = -1, bd = reach * reach
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) for (const i of grid.get(gk(cx + dx, cy + dy, cz + dz)) || []) {
+      const d = (GP[i * 3] - x) ** 2 + (GP[i * 3 + 1] - y) ** 2 + (GP[i * 3 + 2] - z) ** 2
+      if (d < bd) { bd = d; best = i }
+    }
+    if (best < 0) continue
+    // the garment point lies out from the skin (along the body's normal), not beside it
+    const s = (GP[best * 3] - x) * BN[v * 3] + (GP[best * 3 + 1] - y) * BN[v * 3 + 1] + (GP[best * 3 + 2] - z) * BN[v * 3 + 2]
+    if (s > -0.25 && s * s > bd * 0.25) under[v] = 1
+  }
+  const idx = bodyIndex(ch), have = new Set(already), out = []
+  for (let t = 0; t < idx.length; t += 3) if (!have.has(t) && under[idx[t]] && under[idx[t + 1]] && under[idx[t + 2]]) out.push(t)
+  return out
 }

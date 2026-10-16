@@ -26,7 +26,7 @@
 // Units: centimetres in the piano's frame.
 
 import * as THREE from 'three'
-import { cutShell, piping, skinned, hideBody } from './shell.js'
+import { cutShell, piping, skinned, hideBody, underGarment } from './shell.js'
 import { applyFabric } from './fabric.js'
 
 let serial = 0   // each dress hides the body under it under its own key (two can overlap while switching)
@@ -122,7 +122,7 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
       // a stand collar to the halter's height, the shoulders covered, and
       // cut-in armholes just inside the shoulder joint
       if (y > neckY + 0.6 || y < hipY - 4) return false
-      if (w(/^(upperarm|lowerarm|wrist|finger|metacarpal)/) > 0.3 + 0.35 * THREE.MathUtils.smoothstep(armpitY + 4 - y, 0, 6)) return false
+      if (w(/^(upperarm|lowerarm|wrist|finger|metacarpal)/) > 0.15 + 0.4 * THREE.MathUtils.smoothstep(armpitY + 4 - y, 0, 6)) return false
       if (w(/^(head|jaw|neck02|neck03|lowerleg|foot|toe)/) > 0.4 || w(/^upperleg/) > 0.75) return false
       return true
     }
@@ -137,9 +137,9 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
   }
   // the fabric: MakeHuman's tights helper (a smooth shell over the body made
   // for clothing); the body under it is hidden
-  const armGap = (v, g) => { let w = 0; for (let k = 0; k < 4; k++) { const n = boneName(g.SI[v * 4 + k]); if (/^(upperarm|shoulder)/.test(n)) w += g.SW[v * 4 + k] } const y = g.P[v * 3 + 1]; return 0.3 + 0.8 * Math.min(1, w * 2) * THREE.MathUtils.smoothstep(neckY - y, 3, 8) }
-  const bodiceShell = cutShell(ch, bodiceKeep, { gap: armGap, offset: 0.35, iterations: 60, obstacleSmooth: roundNeck ? 40 : 20, minLoop: 25, spatial: roundNeck ? 3.2 : 1.6, fillHoles: 400, dropIslands: 60, close: 3, smoothCut: 6 })
-  const under = cutShell(ch, bodiceKeep, { iterations: 0, edgeIterations: 0, fillHoles: 400, dropIslands: 60, close: 3, smoothCut: 6 })
+  const armGap = qipao ? (v, g) => { let w = 0; for (let k = 0; k < 4; k++) if (/^(upperarm|shoulder)/.test(boneName(g.SI[v * 4 + k]))) w += g.SW[v * 4 + k]; return 0.3 + 0.35 * Math.min(1, w * 2) } : (v, g) => { let w = 0; for (let k = 0; k < 4; k++) { const n = boneName(g.SI[v * 4 + k]); if (/^(upperarm|shoulder)/.test(n)) w += g.SW[v * 4 + k] } const y = g.P[v * 3 + 1]; return 0.3 + 0.8 * Math.min(1, w * 2) * THREE.MathUtils.smoothstep(neckY - y, 3, 8) }
+  const bodiceShell = cutShell(ch, bodiceKeep, { gap: armGap, offset: 0.35, iterations: 60, obstacleSmooth: roundNeck ? 40 : 20, minLoop: 25, spatial: roundNeck ? 3.2 : 1.6, fillHoles: 400, dropIslands: 60, close: 3, smoothCut: qipao ? 16 : 6, tidy: 6, edgeIterations: 80 })
+  const under = cutShell(ch, bodiceKeep, { iterations: 0, edgeIterations: 0, fillHoles: 400, dropIslands: 60, close: 3, smoothCut: qipao ? 16 : 6, tidy: 6 })
   // knit UVs: a cylinder round the torso, one tile = 5.6 cm (16 stitches)
   {
     const p = bodiceShell.geometry.attributes.position.array, uv = bodiceShell.geometry.attributes.uv.array
@@ -152,7 +152,12 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
   const fullIdx = ch.parts.body.index0 || body.index.array
   const armRing = under.coveredAll.filter(t => { const y = (P[fullIdx[t] * 3 + 1] + P[fullIdx[t + 1] * 3 + 1] + P[fullIdx[t + 2] * 3 + 1]) / 3; return y < neckY - 5 })
   const HIDE_KEY = 'bodice#' + (++serial)
-  hideBody(ch, HIDE_KEY, withBodice ? [...(roundNeck ? under.coveredAll : [...under.covered, ...armRing]), ...underWaist.covered] : underWaist.covered)
+  // the skin under the halter / qipao: everything inside the cut, and along
+  // the cut whatever the finished (smoothed) fabric lies over, so the edge
+  // and the hidden skin agree (the old ring of edge triangles could show
+  // through as a gap where the smoothed edge pulls in)
+  const underTop = qipao || !roundNeck ? underGarment(ch, bodiceShell.geometry, [], { rings: 0, reach: 2.5 }) : null
+  hideBody(ch, HIDE_KEY, withBodice ? [...new Set([...(roundNeck ? under.coveredAll : [...under.covered, ...armRing, ...underTop]), ...underWaist.covered])] : underWaist.covered)
 
   const tex = knitTextures()
   const base = new THREE.MeshPhysicalMaterial({
@@ -197,6 +202,20 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
       const t = k / 40
       const e = at(side * 0.82 * Math.sin(t * Math.PI / 2) ** 0.9, y0 - (y0 - y1) * t ** 1.7)
       if (!path.length || path[path.length - 1].p.distanceTo(e.p) > 0.4) path.push(e)
+    }
+    // (snapped to vertices the path zigzags: smooth it along itself, ends held)
+    for (let it = 0; it < 30; it++) {
+      const o = path.map(e => e.p.clone())
+      for (let i = 1; i + 1 < path.length; i++) path[i].p.copy(o[i - 1]).add(o[i + 1]).multiplyScalar(0.25).addScaledVector(o[i], 0.5)
+    }
+    // (smoothing a curve pulls it toward its chord, under the bust: lift each
+    // point back to the fabric along the normal of the nearest shell point)
+    for (const e of path) {
+      let best = -1, bd = 1e9
+      for (let i = 0; i < gp.length / 3; i++) { const d = (gp[i * 3] - e.p.x) ** 2 + (gp[i * 3 + 1] - e.p.y) ** 2 + (gp[i * 3 + 2] - e.p.z) ** 2; if (d < bd) { bd = d; best = i } }
+      e.n.fromArray(gn, best * 3)
+      const depth = (gp[best * 3] - e.p.x) * e.n.x + (gp[best * 3 + 1] - e.p.y) * e.n.y + (gp[best * 3 + 2] - e.p.z) * e.n.z
+      e.p.addScaledVector(e.n, Math.max(0, depth) + 0.15)
     }
     const geos = [piping(topLoops, 0.42, 8), piping([path], 0.3, 6, true)]
     // knot buttons along the opening
