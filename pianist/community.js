@@ -44,10 +44,21 @@ function greyCopy(tex, target = 200) {
   c.width = img.width; c.height = img.height
   const g = c.getContext('2d'); g.drawImage(img, 0, 0)
   const d = g.getImageData(0, 0, c.width, c.height), a = d.data
-  let sum = 0, n = 0
-  for (let i = 0; i < a.length; i += 4) if (a[i + 3] > 128) { sum += 0.3 * a[i] + 0.59 * a[i + 1] + 0.11 * a[i + 2]; n++ }
-  const gain = n ? Math.min(3, target / (sum / n)) : 1    // mean grey near 0.8 (the tint carries the colour)
-  for (let i = 0; i < a.length; i += 4) { const l = Math.min(255, (0.3 * a[i] + 0.59 * a[i + 1] + 0.11 * a[i + 2]) * gain); a[i] = a[i + 1] = a[i + 2] = l }
+  // mean grey near target/255 (the tint carries the colour). Dark textures are
+  // lifted by a gamma rather than a gain: a gain clips their highlights, so a
+  // black-dyed gown with bright sheen in its texture stayed dark whatever the tint
+  const L = i => 0.3 * a[i] + 0.59 * a[i + 1] + 0.11 * a[i + 2]
+  const hist = new Float64Array(256)
+  let n = 0
+  for (let i = 0; i < a.length; i += 4) if (a[i + 3] > 128) { hist[Math.round(L(i))]++; n++ }
+  const meanAt = g => { let s = 0; for (let v = 0; v < 256; v++) if (hist[v]) s += hist[v] * 255 * (v / 255) ** g; return s / n }
+  let map = l => l
+  if (n && meanAt(1) < target) {
+    let lo = 0.08, hi = 1
+    for (let k = 0; k < 30; k++) { const g = (lo + hi) / 2; if (meanAt(g) < target) hi = g; else lo = g }
+    const g = (lo + hi) / 2; map = l => 255 * (l / 255) ** g
+  } else if (n) { const gain = target / meanAt(1); map = l => Math.min(255, l * gain) }
+  for (let i = 0; i < a.length; i += 4) { const l = map(L(i)); a[i] = a[i + 1] = a[i + 2] = l }
   g.putImageData(d, 0, 0)
   const t = new THREE.CanvasTexture(c)
   t.colorSpace = THREE.SRGBColorSpace; t.flipY = tex.flipY; t.anisotropy = 8; t.wrapS = tex.wrapS; t.wrapT = tex.wrapT
