@@ -52,11 +52,11 @@ Visuals → Model, or `?model=vrm` / `?model=quaternius`. `alt-model.js` loads a
 
 ## Outfits
 
-`?outfit=` or the Outfit menu sets the dress, fabric, colour, shoes and hair at once. The circled numbers along the top of the page pick twelve featured ones in one click (hover for the name; the rest stay in the menu), and so do the keys 1–9 and 0 (the first ten):
+`?outfit=` or the Outfit menu sets the dress, fabric, colour, shoes and hair at once. The circled numbers along the top of the page pick eight featured ones in one click (hover for the name; the rest stay in the menu), and so do the keys 1–9 and 0 (the first ten):
 `reference` (the red knit halter), `sequin-mini` / `sequin-gown` (sequins, stiletto booties, long dark hair; old `yuja-*` links still load), `covered` (long sleeves), `tee`.
 
 - Long hair (mesh hair simulated as cloth) with our simulated floor-length skirt and slits from the knee: `braid-halter` (champagne satin halter, braid), `ponytail-qipao` (red satin qipao with gold trim, black ponytail), `braid-qipao` (ivory qipao with navy trim, brunette braid).
-- Bobs: `shift-long` (blush shift dress, long hair; was `bob-shift`), `bob-bodycon` (gold sequin bodycon, brunette bob), `bob-cocktail` (black satin cocktail dress, platinum bob), `bob-tee` (white T-shirt and skirt, blonde bob), `bob-turtleneck` (black sleeveless turtleneck, auburn bob).
+- Bobs: `shift-long` (blush shift dress, long hair; was `bob-shift`), `bob-bodycon` (gold sequin bodycon, brunette bob), `bob-cocktail` (black satin cocktail dress, platinum bob), `bob-tee` (white T-shirt and skirt, auburn bob), `bob-turtleneck` (black sleeveless turtleneck, blonde bob).
 - Evening gowns: `long-gown` (midnight velvet evening gown, long blonde hair; old `bob-gown` links load it), `updo-gown` (sapphire satin gown with long sleeves, blonde fifties updo).
 - An outfit can also set the gown slits and the qipao's trim colour.
 
@@ -100,7 +100,9 @@ Each asset gets its own `assets/community/<key>.bin` plus WebP / JPEG textures, 
 - Camera → Director (auto), `?view=auto`: plans the whole song from the score (`rig.music`, `rig.form()`). Cuts land on phrase starts; takes are long in quiet passages and short in intense ones; it stays on the hands when they are busy and goes to her face when she looks up; opens on a wide shot from the hall and pulls out at the end. No repeated spot, no jump cuts (< 30° and no change of size), sizes alternate. Deterministic in song time; without a song it runs on its own clock. Dragging takes the camera; it comes back 8 s later.
 - Director options: Pace (`?pace=0.6|1|1.6`), Favour hands / pianist (`?favour=-0.8..0.8`), Transitions (`?trans=mix|cuts|glides`), Show shot names (`?shotnames`).
 - New views looking back at her from in front of the piano: From the audience (through the open lid, `?view=audience`) and Across the piano (over the plate from beyond the tail, `?view=tail`).
-- Move (on a view), `?move=orbit|zoomIn|zoomOut|dollyIn|dollyOut|crane`: any fixed view drifts there and back.
+- Top down (`?view=top`) and Player's view (`?view=player`: from just in front of her eyes down to the keys, riding with her head, smoothed).
+- Move (on a view), `?move=orbit|zoomIn|zoomOut|dollyIn|dollyOut|dollyZoom|crane|random|cut`: a fixed view drifts there and back; Random draws a new move every 7–16 s; Director's cut (the default) keeps the view's angle but weaves far and close framings take by take (the whole scene, the piano, her fingers, her face, or her figure from behind, and the view's own), never two of the same size running, every subject in turn; a change of size is a cut. Its moves are mostly slow orbits, sometimes a zoom, a crane rarely. Fingers are shot from beside her (her shoulder hides them from behind), the face only from the front half.
+- Unless Follow her movement is on, every shot (director and Director's cut) frames its subjects where they were when it began, the hands included, and holds still while she moves.
 - Headless: `?shot&view=auto&t=…` renders the director's frame at `t` (`window.__shotInfo` names the shot).
 
 ## Sharing a scene

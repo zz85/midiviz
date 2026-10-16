@@ -94,12 +94,64 @@ function applyMove(s, move, u, amt, dir, out) {
 }
 
 // ── Takes on a fixed view (sequence) ──
-// the director's cut: orbit often, a zoom on her sometimes, a crane rarely
+// The director's cut works from the chosen view's angle but changes the
+// framing take by take, weaving far and close: the whole scene, the piano,
+// her fingers, her face (or, from behind, her figure) and the view's own
+// framing. The size alternates (a wide take is never followed by another wide
+// one), every subject gets its turn, and a change of size is a cut while
+// takes of the same size glide into each other. Moves: mostly a slow orbit,
+// sometimes a zoom in or out, a crane rarely (and only on medium or wide).
+// Random keeps the view's framing and draws any move.
 const CUT_MOVES = [['orbit', 0.5], ['zoom', 0.37], ['dollyIn', 0.06], ['crane', 0.07]]
 const ANY_MOVES = Object.keys({ orbit: 1, zoomIn: 1, zoomOut: 1, dollyIn: 1, dollyOut: 1, dollyZoom: 1, crane: 1, still: 1 })
-function addTake(q, mode) {
+// framings: base weight (balance), label
+const FRAMES = { home: [1.3, 'the view'], scene: [0.8, 'the scene'], piano: [0.9, 'the piano'], fingers: [1.1, 'fingers'], face: [1.1, 'face'], figure: [0.8, 'her figure'] }
+export const FRAME_LABELS = Object.fromEntries(Object.entries(FRAMES).map(([k, [, l]]) => [k, l]))
+// size class from the half-height of the frame at the subject (cm)
+const sizeOf = (dist, fov) => { const h = dist * Math.tan(fov * D2R / 2); return h < 45 ? 0 : h < 110 ? 1 : 2 }
+function frameBase(f, s) {
+  // the framing's distance / fov / elevation from the view's angle
+  switch (f) {
+    case 'scene': return { az: s.az, el: clamp(s.el, 6, 70), dist: Math.max(600, s.dist * 1.5), fov: 28 }
+    case 'piano': return { az: s.az, el: clamp(s.el, 8, 70), dist: 300, fov: 30 }
+    // from behind her own shoulders hide the hands: beside her, from above
+    case 'fingers': { const az = wrap(s.az), sg = az > 0 ? 1 : -1; return { az: Math.abs(az) < 60 ? sg * 60 : az, el: clamp(s.el, 38, 52), dist: 85, fov: 34 } }
+    case 'face': return { az: s.az, el: clamp(s.el, -4, 20), dist: 80, fov: 30 }
+    case 'figure': return { az: s.az, el: clamp(s.el, 8, 40), dist: 175, fov: 32 }
+    default: return { az: s.az, el: s.el, dist: s.dist, fov: s.fov }
+  }
+}
+// which framings work from this angle: her face only from the front half and
+// not from high up; her fingers only from behind or beside her (from the
+// front the music desk is in the way); her figure when her face can't be seen
+function framesFor(s, pov) {
+  if (pov) return ['home']
+  const faceOk = Math.abs(wrap(s.az - 180)) < 115 && s.el < 45
+  const fs = ['home', 'scene', 'piano']
+  if (Math.abs(wrap(s.az)) <= 105) fs.push('fingers')
+  fs.push(faceOk ? 'face' : 'figure')
+  return fs
+}
+function addTake(q, mode, s, view) {
   const i = q.takes.length, prev = q.takes[i - 1], t0 = prev ? prev.t1 : 0
   const r = n => mode === 'random' ? Math.random() : hash(q.seed + i, n)
+  let frame = 'home'
+  if (mode === 'cut' && i > 0) {
+    const fs = framesFor(s, view.pov)
+    const size = f => { const b = frameBase(f, s); return sizeOf(b.dist, b.fov) }
+    q.uses ??= {}
+    let cand = fs.filter(f => f !== prev.frame && size(f) !== prev.size)
+    if (!cand.length) cand = fs.filter(f => f !== prev.frame)
+    if (!cand.length) cand = fs
+    const w = cand.map(f => FRAMES[f][0] / (1 + (q.uses[f] || 0))
+      * (Math.abs(size(f) - prev.size) === 2 ? 1.5 : 1)          // far ↔ close
+      * (q.takes[i - 2]?.frame === f ? 0.4 : 1))
+    let x = r(7) * w.reduce((a, b) => a + b, 0), j = 0
+    while (j < cand.length - 1 && (x -= w[j]) > 0) j++
+    frame = cand[j]
+  }
+  const base = frameBase(frame, s), size = sizeOf(base.dist, base.fov)
+  if (mode === 'cut') { q.uses ??= {}; q.uses[frame] = (q.uses[frame] || 0) + 1 }
   let move, tries = 0
   if (mode === 'random') { do move = ANY_MOVES[Math.floor(r(1) * ANY_MOVES.length)]; while (prev && move === prev.move && move !== 'orbit') }
   else {
@@ -109,26 +161,33 @@ function addTake(q, mode) {
       while (j < CUT_MOVES.length - 1 && (x -= CUT_MOVES[j][1]) > 0) j++
       move = CUT_MOVES[j][0]
       if (move === 'zoom') move = hash(q.seed + i, 5 + 10 * tries) < 0.5 ? 'zoomIn' : 'zoomOut'
-    // never two cranes or two zooms in a row; the first take is an orbit
-    // and no more than three orbits running
-    } while (prev && (move !== 'orbit' ? move === prev.move || (move.startsWith('zoom') && prev.move.startsWith('zoom')) : q.takes.slice(-3).filter(t => t.move === 'orbit').length === 3))
+      if (view.pov && (move === 'crane' || move === 'dollyIn')) move = 'orbit'
+      if (tries > 20) break
+    // never two cranes or two zooms in a row, no crane close up, no more than
+    // three orbits running; the first take is an orbit
+    } while ((move === 'crane' && size === 0) || (prev && (move !== 'orbit' ? move === prev.move || (move.startsWith('zoom') && prev.move.startsWith('zoom')) : q.takes.slice(-3).filter(t => t.move === 'orbit').length === 3)))
     if (!i) move = 'orbit'
   }
   const len = mode === 'random' ? 7 + 9 * r(2)
-    : move === 'orbit' ? 15 + 8 * r(2) : move === 'crane' ? 10 + 4 * r(2) : 9 + 5 * r(2)
+    : (size === 0 ? 7 + 4 * r(2) : size === 1 ? 9 + 5 * r(2) : 10 + 5 * r(2)) + (move === 'orbit' ? 3 : 0)
   // orbits keep turning the same way for a while, then swing back
   const dir = move === 'orbit' && prev?.move === 'orbit' && r(3) < 0.7 ? prev.dir : r(3) < 0.5 ? -1 : 1
-  q.takes.push({ i, t0, t1: t0 + len, move, dir, amt: mode === 'random' ? 0.6 + 0.6 * r(4) : 0.8 + 0.3 * r(4), onHer: mode === 'cut' && move.startsWith('zoom') })
+  q.takes.push({
+    i, t0, t1: t0 + len, move, dir, frame, size,
+    amt: view.pov ? 0.4 : mode === 'random' ? 0.6 + 0.6 * r(4) : 0.8 + 0.3 * r(4),
+    // a change of size is a cut; the same size glides
+    blend: !!prev && prev.size === size,
+    onHer: mode === 'cut' && frame === 'home' && move.startsWith('zoom'),
+  })
 }
-// a take's offset from the view's framing at u (0..1), centred on its middle
+// a take's camera at u (0..1): its framing plus its move, centred on the move's middle
 const _P = {}, _P0 = {}
-function takeDelta(s, tk, u, facing) {
-  applyMove(s, tk.move, u, tk.amt, tk.dir, _P); applyMove(s, tk.move, 0.5, tk.amt, tk.dir, _P0)
-  // the director's cut's zooms turn onto her face over the first third
-  return {
-    az: _P.az - _P0.az, el: _P.el - _P0.el, ld: Math.log(_P.dist / _P0.dist), lf: Math.log(_P.fov / _P0.fov),
-    head: tk.onHer && facing ? sstep(u, 0, 0.35) : 0,
-  }
+function takeAt(s, tk, u, out) {
+  const b = frameBase(tk.frame, s); b.orbitMax = s.orbitMax
+  applyMove(b, tk.move, u, tk.amt, tk.dir, _P); applyMove(b, tk.move, 0.5, tk.amt, tk.dir, _P0)
+  out.az = b.az + _P.az - _P0.az; out.el = b.el + _P.el - _P0.el
+  out.dist = b.dist * _P.dist / _P0.dist; out.fov = b.fov * _P.fov / _P0.fov
+  return out
 }
 
 /**
@@ -238,8 +297,14 @@ export function createDirector(opts = {}) {
   }
   function subjectPoint(s, target, sh) {
     const a = anchor[s.subj]
-    if (!o.follow && sh?.lock && s.subj === 'head') return target.copy(sh.lock)
-    if (!o.follow && sh?.lock && s.subj === 'figure') return target.lerpVectors(anchor.hands, sh.lock, 0.55).add(tb.set(0, -6, 4))
+    // not following: every subject is where it was when the shot began
+    if (!o.follow && sh?.lock) {
+      const H = sh.lockHands ?? anchor.hands
+      if (s.subj === 'head') return target.copy(sh.lock)
+      if (s.subj === 'hands') return target.copy(H)
+      if (s.subj === 'figure') return target.lerpVectors(H, sh.lock, 0.55).add(tb.set(0, -6, 4))
+      if (s.subj === 'piano') return target.set(H.x * 0.3, 90, -70)
+    }
     return target.copy(a)
   }
   let lockIdx = -1
@@ -274,8 +339,8 @@ export function createDirector(opts = {}) {
       // a new shot locks onto where she is now (the shot gliding out keeps its own)
       if (idx !== lockIdx) {
         for (const x of shots) if (x !== sh && x !== shots[idx - 1]) x.lock = null
-        sh.lock = anchor.head.clone()
-        if (idx > 0 && !shots[idx - 1].lock) shots[idx - 1].lock = anchor.head.clone()
+        sh.lock = anchor.head.clone(); sh.lockHands = anchor.hands.clone()
+        if (idx > 0 && !shots[idx - 1].lock) { shots[idx - 1].lock = anchor.head.clone(); shots[idx - 1].lockHands = anchor.hands.clone() }
         lockIdx = idx
       }
       shotParams(sh, t, A, ta)
@@ -328,29 +393,58 @@ export function createDirector(opts = {}) {
      */
     sequence(view, mode, w, live, res = out) {
       const q = seqs[mode] ??= { takes: [], seed: 0 }
-      if (w < q.lastW || !q.takes.length) { q.takes = []; q.seed = mode === 'random' ? Math.random() * 1000 : 17 }
-      q.lastW = w
-      while (!q.takes.length || q.takes[q.takes.length - 1].t1 <= w) addTake(q, mode)
       ta.fromArray(view.target); tb.fromArray(view.pos).sub(ta)
       const dist = tb.length()
       const s = { az: Math.atan2(tb.x, tb.z) / D2R, el: Math.asin(tb.y / dist) / D2R, dist, fov: view.fov, orbitMax: view.orbitMax }
+      // a new view (or going back in time) starts the takes again
+      const key = view.pov ? 'pov' : view.pos.join() + view.target.join()
+      if (w < q.lastW || !q.takes.length || q.key !== key) { q.takes = []; q.uses = {}; q.key = key; q.seed = mode === 'random' ? Math.random() * 1000 : 17; q.hands = null }
+      const dw = clamp(w - (q.lastW ?? w), 0, 0.1)
+      q.lastW = w
+      while (!q.takes.length || q.takes[q.takes.length - 1].t1 <= w) addTake(q, mode, s, view)
+      // the operator follows the hands with a little lag
+      if (live?.hands) { if (!q.hands) q.hands = live.hands.clone(); else q.hands.lerp(live.hands, 1 - Math.exp(-dw / 0.6)) }
       // she can be seen from the front half: zooms there frame her face
       const facing = Math.abs(wrap(s.az)) > 75
       let k = 0
       while (q.takes[k].t1 <= w) k++
-      const tk = q.takes[k], cur = takeDelta(s, tk, (w - tk.t0) / (tk.t1 - tk.t0), facing)
-      const g = k > 0 ? sstep(w - tk.t0, 0, 3) : 1
-      const prev = g < 1 ? takeDelta(s, q.takes[k - 1], 1, facing) : cur
-      const mix = (a, b) => a + (b - a) * g
-      A.az = s.az + mix(prev.az, cur.az); A.el = clamp(s.el + mix(prev.el, cur.el), -10, 80)
-      A.dist = s.dist * Math.exp(mix(prev.ld, cur.ld)); A.fov = clamp(s.fov * Math.exp(mix(prev.lf, cur.lf)), 8, 75)
-      res.target.copy(ta)
-      const h = mix(prev.head, cur.head)
+      const tk = q.takes[k]
       // (each take locks onto her head where it starts, unless following)
       if (live?.head && !tk.lock) tk.lock = live.head.clone()
-      if (h > 0 && live?.head) res.target.lerp(o.follow ? live.head : tk.lock, h)
-      place(A, ta, res.pos); res.fov = A.fov
-      res.shot = tk; res.move = tk.move
+      if (!tk.lockHands && q.hands) tk.lockHands = q.hands.clone()
+      const headAt = () => o.follow || !tk.lock ? live?.head ?? tk.lock : tk.lock
+      const targetOf = (t, out) => {
+        // not following: the hands are where they were when the take began
+        const hands = (o.follow ? q.hands : t.lockHands ?? q.hands) ?? ta
+        switch (t.frame) {
+          case 'scene': return out.set(0, 80, -55)
+          case 'piano': return out.set(0.4 * hands.x, 86, -45)
+          case 'fingers': return out.copy(hands)
+          case 'face': return out.copy(t.lock ?? headAt())
+          case 'figure': return out.copy(t.lock ?? headAt()).lerp(hands, 0.45)
+          default: {
+            out.fromArray(view.target)
+            const h = t.onHer && facing ? sstep((w - t.t0) / (t.t1 - t.t0), 0, 0.35) : 0
+            if (h > 0 && live?.head) out.lerp(o.follow ? live.head : t.lock ?? live.head, h)
+            return out
+          }
+        }
+      }
+      takeAt(s, tk, (w - tk.t0) / (tk.t1 - tk.t0), A)
+      targetOf(tk, res.target)
+      const g = k > 0 && tk.blend ? sstep(w - tk.t0, 0, 3) : 1
+      if (g < 1) {
+        const pk = q.takes[k - 1]
+        takeAt(s, pk, 1, B)
+        A.az = B.az + wrap(A.az - B.az) * g; A.el = lerp(B.el, A.el, g)
+        A.dist = Math.exp(lerp(Math.log(B.dist), Math.log(A.dist), g)); A.fov = lerp(B.fov, A.fov, g)
+        res.target.lerpVectors(targetOf(pk, tb), res.target, g)
+      }
+      A.el = clamp(A.el, -10, 86); A.fov = clamp(A.fov, 8, 75)
+      place(A, res.target, res.pos); res.fov = A.fov
+      res.shot = tk; res.move = tk.move; res.frame = tk.frame
+      res.focus = tk.frame === 'fingers' || tk.frame === 'piano' ? 'hands' : tk.frame === 'home' ? null : 'head'
+      res.wide = tk.size === 2
       return res
     },
   }

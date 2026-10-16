@@ -115,8 +115,10 @@
     <div class="item" data-view="front">Face, from the piano<span class="dot"></span></div>
     <div class="item" data-view="hands">Hands<span class="dot"></span></div>
     <div class="item" data-view="back">Behind<span class="dot"></span></div>
+    <div class="item" data-view="top">Top down<span class="dot"></span></div>
+    <div class="item" data-view="player">Player's view<span class="dot"></span></div>
     <div class="item" data-view="orbit">Orbit<span class="dot"></span></div>
-    <div class="field"><label>Move (on a view)</label><select id="camMove"><option value="still">Still</option><option value="orbit">Slow orbit</option><option value="zoomIn">Zoom in</option><option value="zoomOut">Zoom out</option><option value="dollyIn">Push in</option><option value="dollyOut">Pull out</option><option value="dollyZoom">Dolly zoom</option><option value="crane">Crane</option><option value="random">Random</option><option value="cut">Director's cut</option></select></div>
+    <div class="field"><label>Move (on a view)</label><select id="camMove"><option value="still">Still</option><option value="orbit">Slow orbit</option><option value="zoomIn">Zoom in</option><option value="zoomOut">Zoom out</option><option value="dollyIn">Push in</option><option value="dollyOut">Pull out</option><option value="dollyZoom">Dolly zoom</option><option value="crane">Crane</option><option value="random">Random</option><option value="cut" selected>Director's cut</option></select></div>
     <div class="sect">Director</div>
     <div class="field"><label>Pace</label><select id="dirPace"><option value="0.6">Long takes</option><option value="1" selected>Normal</option><option value="1.6">Lively</option></select></div>
     <div class="field"><label>Favour</label><select id="dirBias"><option value="-0.8">The hands</option><option value="0" selected>Balanced</option><option value="0.8">The pianist</option></select></div>
@@ -142,8 +144,8 @@
       <option value="shift-long">Blush shift dress, long hair</option>
       <option value="bob-bodycon">Gold sequin bodycon, brunette bob</option>
       <option value="bob-cocktail">Black cocktail dress, platinum bob</option>
-      <option value="bob-tee">White T-shirt and skirt, blonde bob</option>
-      <option value="bob-turtleneck">Black sleeveless turtleneck, auburn bob</option>
+      <option value="bob-tee">White T-shirt and skirt, auburn bob</option>
+      <option value="bob-turtleneck">Black sleeveless turtleneck, blonde bob</option>
       </optgroup>
       <optgroup label="Evening gowns">
       <option value="long-gown">Midnight velvet evening gown, long blonde hair</option>
@@ -252,7 +254,7 @@
     import { createLook } from './pianist/look.js'
     import { createCommunity, communityList } from './pianist/community.js'
     import { createSmoother } from './pianist/subdivide.js'
-    import { createDirector, SPOTS, MOVES } from './pianist/director.js'
+    import { createDirector, SPOTS, MOVES, FRAME_LABELS } from './pianist/director.js'
 
     const $ = id => document.getElementById(id)
     const params = new URLSearchParams(location.search)
@@ -414,8 +416,8 @@
       'shift-long': { dress: 'c1724', fabric: 'made', color: '#e4a9a0', shoes: 'flats', hair: 'long01', hairColor: '#4a2f1f' },
       'bob-bodycon': { dress: 'c2802', fabric: 'sequin', color: '#c9a24a', shoes: 'c1822', hair: 'c3694', hairColor: '#3b2618' },
       'bob-cocktail': { dress: 'c379', fabric: 'satin', color: '#121214', shoes: 'c1039', hair: 'bob02', hairColor: '#d9c7a3' },
-      'bob-tee': { dress: 'c894', fabric: 'made', color: '#f2efe9', shoes: 'flats', hair: 'c3694', hairColor: '#d1b27a' },
-      'bob-turtleneck': { dress: 'c3471', fabric: 'made', color: '#1b1b1e', shoes: 'flats', hair: 'c3694', hairColor: '#7a3b22' },
+      'bob-tee': { dress: 'c894', fabric: 'made', color: '#f2efe9', shoes: 'flats', hair: 'c3694', hairColor: '#7a3b22' },
+      'bob-turtleneck': { dress: 'c3471', fabric: 'made', color: '#1b1b1e', shoes: 'flats', hair: 'c3694', hairColor: '#d1b27a' },
       // evening gowns: long hair worn loose, and a fifties updo
       'long-gown': { dress: 'c806', fabric: 'velvet', color: '#1a2a5e', shoes: 'c1822', hair: 'long01', hairColor: '#d1b27a' },
       'updo-gown': { dress: 'c1424', fabric: 'satin', color: '#1d3f8f', shoes: 'c1822', hair: 'c2001', hairColor: '#d1b27a' },   // (velvet greys this gown out)
@@ -548,7 +550,7 @@
     // one-click presets: a circled number for each featured outfit (the rest
     // stay in the Outfit menu), the menu's name as the tooltip; keys 1–9 and
     // 0 pick the first ten
-    const FEATURED = ['braid-halter', 'ponytail-qipao', 'braid-qipao', 'shift-long', 'bob-bodycon', 'bob-cocktail', 'bob-tee', 'bob-turtleneck', 'long-gown', 'updo-gown', 'reference', 'tee']
+    const FEATURED = ['braid-qipao', 'shift-long', 'bob-cocktail', 'bob-tee', 'bob-turtleneck', 'long-gown', 'updo-gown', 'tee']
     const presetKeys = FEATURED.filter(k => OUTFITS[k] && [...$('outfit').options].some(o => o.value === k))
     let presetBusy = false
     async function pickPreset(k) {
@@ -668,6 +670,26 @@
       // the hall, and square on down the piano from beyond the tail
       audience: { pos: [331, 151, -226], target: [0, 122, 32], fov: 20 },
       tail: { pos: [0, 135, -348], target: [0, 122, 32], fov: 18, orbitMax: 7, minDist: 320 },
+      // straight down over the piano, the keyboard at the bottom of the frame
+      top: { pos: [0, 625, 20], target: [0, 70, -55], fov: 30 },
+      // through her eyes down to the keys: placed every frame (playerView)
+      player: { pos: [0, 128, 24], target: [0, 73, -2], fov: 52, pov: true, orbitMax: 4 },
+    }
+    // the player's view: a little in front of her eyes (the eye bones sit on
+    // the corneas), looking down at where the hands are, both smoothed so her
+    // head's small moves read as a steady gaze
+    const pvEye = new THREE.Vector3(), pvLook = new THREE.Vector3(), _pv = new THREE.Vector3()
+    let pvPrimed = false
+    function playerView(hands, dt) {
+      _pv.copy(rig.pos('eye.L')).add(rig.pos('eye.R')).multiplyScalar(0.5)
+      const k = pvPrimed ? 1 - Math.exp(-dt / 0.15) : 1, kl = pvPrimed ? 1 - Math.exp(-dt / 0.7) : 1
+      pvEye.lerp(_pv, k)
+      pvLook.lerp(_pv.set(hands.x * 0.8, 73, -4), kl)
+      pvPrimed = true
+      // 4 cm out from the eyes toward the keys, clear of brows and lashes
+      _pv.subVectors(pvLook, pvEye).normalize().multiplyScalar(4).add(pvEye)
+      VIEWS.player.pos[0] = _pv.x; VIEWS.player.pos[1] = _pv.y; VIEWS.player.pos[2] = _pv.z
+      VIEWS.player.target[0] = pvLook.x; VIEWS.player.target[1] = pvLook.y; VIEWS.player.target[2] = pvLook.z
     }
     // the director: shots that move, cut or glide on the music (pianist/director.js)
     const director = createDirector({ pace: +(params.get('pace') ?? 1), bias: +(params.get('favour') ?? 0), trans: params.get('trans') || 'mix' })
@@ -676,7 +698,7 @@
     $('dirBias').onchange = () => director.set('bias', +$('dirBias').value)
     $('dirTrans').onchange = () => director.set('trans', $('dirTrans').value)
     const SEQ_MOVES = { random: 'Random', cut: "Director's cut" }
-    $('camMove').value = MOVES[params.get('move')] || SEQ_MOVES[params.get('move')] ? params.get('move') : 'still'
+    $('camMove').value = MOVES[params.get('move')] || SEQ_MOVES[params.get('move')] ? params.get('move') : 'cut'
     $('camMove').onchange = () => { moveT = 0; userCam = false; lastShot = null; $('shotName').textContent = '' }
     $('shotLbl').checked = params.has('shotnames')
     $('camFollow').checked = params.get('follow') === '1'
@@ -1083,6 +1105,7 @@
       let focusOn = view === 'shoulder' || view === 'hands' ? handsC : head, wide = view === 'side', snapFocus = false
       if (cut) { camera.position.copy(camGoal.pos); controls.target.copy(camGoal.target); camera.fov = camGoal.fov; camera.updateProjectionMatrix(); cut = false; userCam = false; snapFocus = true }
       const live = { hands: handsC, head }
+      if (view === 'player') playerView(handsC, dt)
       const dirShot = view === 'auto' ? director.update(song ? t : null, dt, live) : null   // runs even while dragged, so the subjects stay tracked
       let driven = null
       if (dirShot && !userCam) {
@@ -1099,8 +1122,17 @@
         const mv = $('camMove').value
         if (SEQ_MOVES[mv]) {
           driven = director.sequence(VIEWS[view], mv, moveT, live, camOut)
-          if (driven.shot !== lastShot) { lastShot = driven.shot; $('shotName').textContent = `${SEQ_MOVES[mv]} · ${MOVES[driven.move].toLowerCase()}` }
+          if (driven.focus) focusOn = driven.focus === 'hands' ? handsC : head
+          if (driven.frame !== 'home') wide = driven.wide
+          if (driven.shot !== lastShot) {
+            if (!driven.shot.blend) snapFocus = true
+            lastShot = driven.shot
+            $('shotName').textContent = `${SEQ_MOVES[mv]} · ${driven.frame === 'home' ? '' : FRAME_LABELS[driven.frame] + ', '}${MOVES[driven.move].toLowerCase()}${driven.shot.blend ? ' (glide)' : ''}`
+          }
         } else driven = director.fixed(VIEWS[view], mv, moveT, camOut)
+      } else if (!dirShot && view === 'player' && !userCam) {
+        // a still player's view still rides with her head
+        camOut.pos.fromArray(VIEWS.player.pos); camOut.target.fromArray(VIEWS.player.target); camOut.fov = VIEWS.player.fov; driven = camOut
       }
       if (driven) {
         camera.position.copy(driven.pos); controls.target.copy(driven.target); camera.lookAt(driven.target)
@@ -1147,6 +1179,7 @@
         for (let i = 0; i < 30; i++) piano.update(1 / 60)
         const handsAt = (() => { const c = new THREE.Vector3(); for (const h of [rig.hands.L, rig.hands.R]) c.add(h.joints.W); return c.multiplyScalar(0.5) })()
         let focusOn = view === 'shoulder' || view === 'hands' ? handsAt : rig.pos('head'), wide = view === 'side'
+        if (view === 'player') playerView(handsAt, 1 / 60)
         if (view === 'auto') {
           // the director's frame at T (a ?move= on a fixed view is shown at its far end)
           const c = director.update(T, 1 / 60, { hands: handsAt, head: rig.pos('head') })
@@ -1154,9 +1187,11 @@
           focusOn = c.focus === 'hands' ? handsAt : rig.pos('head'); wide = c.wide
           window.__shotInfo = { ...c.shot, label: SPOTS[c.shot.name].label }
         } else if (SEQ_MOVES[params.get('move')]) {
-          const c = director.sequence(VIEWS[view], params.get('move'), T, { head: rig.pos('head') }, camOut)
+          const c = director.sequence(VIEWS[view], params.get('move'), T, { head: rig.pos('head'), hands: handsAt }, camOut)
           camera.position.copy(c.pos); controls.target.copy(c.target); camera.fov = c.fov; camera.updateProjectionMatrix(); camera.lookAt(c.target)
-          window.__shotInfo = { ...c.shot }
+          if (c.focus) focusOn = c.focus === 'hands' ? handsAt : rig.pos('head')
+          if (c.frame !== 'home') wide = c.wide
+          window.__shotInfo = { ...c.shot, lock: undefined }
         } else if (MOVES[params.get('move')] && params.get('move') !== 'still') {
           const c = director.fixed(VIEWS[view], params.get('move'), 14, camOut)
           camera.position.copy(c.pos); controls.target.copy(c.target); camera.fov = c.fov; camera.updateProjectionMatrix(); camera.lookAt(c.target)
