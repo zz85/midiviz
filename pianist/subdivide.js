@@ -150,6 +150,22 @@ export function loopOnce(geo) {
   return { geometry: g, apply, count: NN }
 }
 
+// face normals of the mesh as it is, averaged across welded positions (so a
+// UV seam does not crease)
+function cageNormals(g) {
+  g.computeVertexNormals()
+  const P = g.attributes.position.array, N = g.attributes.normal.array, acc = new Map()
+  const key = v => `${Math.round(P[v * 3] * 1e3)},${Math.round(P[v * 3 + 1] * 1e3)},${Math.round(P[v * 3 + 2] * 1e3)}`
+  for (let v = 0; v < P.length / 3; v++) {
+    const k = key(v), a = acc.get(k) || [0, 0, 0]
+    a[0] += N[v * 3]; a[1] += N[v * 3 + 1]; a[2] += N[v * 3 + 2]; acc.set(k, a)
+  }
+  for (let v = 0; v < P.length / 3; v++) {
+    const a = acc.get(key(v)), l = Math.hypot(a[0], a[1], a[2]) || 1
+    N[v * 3] = a[0] / l; N[v * 3 + 1] = a[1] / l; N[v * 3 + 2] = a[2] / l
+  }
+}
+
 /**
  * levels of Loop subdivision. full: an optional full index (the body's,
  * before garments hid triangles) to subdivide instead of geo.index.
@@ -158,7 +174,7 @@ export function loopOnce(geo) {
  * (0 = as modelled).
  * Returns { geometry, levels, update(srcPositions, srcNormals?), childIndex(visibleTris) }.
  */
-export function subdivide(geo, levels = 1, full = null, ref = null, simplify = 0, weight = null) {
+export function subdivide(geo, levels = 1, full = null, ref = null, simplify = 0, weight = null, lock = null) {
   // ref: positions to read the topology from, for a mesh whose current
   // vertices are not yet meaningful (the cloth before its first step)
   let g = geo
@@ -168,8 +184,12 @@ export function subdivide(geo, levels = 1, full = null, ref = null, simplify = 0
   // low-poly cage: a selection of the source vertices (see simplify.js)
   let simp = null, simpOf = null
   if (simplify > 0) {
-    simp = simplifyMesh(g, { ratio: 0.002, maxError: simplify, weight })
+    simp = simplifyMesh(g, { ratio: 0.002, maxError: simplify, weight, lock })
     g = simp.geometry
+    // the kept vertices still carry the modelled mesh's normals, which point
+    // into folds the cage no longer has (eye sockets, the lip crease): long
+    // cage triangles would shade dark across. Shade the cage as it is.
+    cageNormals(g)
     simpOf = new Int32Array(Math.floor((full || geo.index.array).length / 3)).fill(-1)
     simp.origin.forEach((t, j) => { simpOf[t / 3] = j })
   }
@@ -222,6 +242,15 @@ export function subdivide(geo, levels = 1, full = null, ref = null, simplify = 0
 // a face and hands while the limbs and torso go to a few planes
 const DETAIL = /^(jaw|levator|oculi|orbicularis|oris|risorius|temporalis|special0|eye|tongue|finger|metacarpal|toe)/
 const DETAIL_COST = 8
+// the lids and lips stay as modelled: they carry the blink and the mouth,
+// and folding across their rims opens the lips and pulls the lids back
+const EXPRESSION = /^(orbicularis|oris|special0[14])/
+function expressionLock(geo, skeleton) {
+  const SI = geo.attributes.skinIndex?.array, SW = geo.attributes.skinWeight?.array
+  if (!SI || !skeleton) return null
+  const on = skeleton.bones.map(b => EXPRESSION.test(b.name))
+  return v => { let w = 0; for (let k = 0; k < 4; k++) if (on[SI[v * 4 + k]]) w += SW[v * 4 + k]; return w > 0.25 }
+}
 function detailWeight(geo, skeleton) {
   const SI = geo.attributes.skinIndex?.array, SW = geo.attributes.skinWeight?.array
   if (!SI || !skeleton) return null
@@ -265,7 +294,7 @@ export function createSmoother(ch) {
       // a slider makes many cages: keep only the current one
       if (sr) for (const k of Object.keys(cache)) if (k.includes(':') && k !== String(ck)) delete cache[k]
       if (!sub) {
-        try { sub = cache[ck] = subdivide(base, lv, isBody ? (ch.parts.body.index0 || base.index.array) : null, base.userData.topologyFrom || null, sr, isBody ? detailWeight(base, o.skeleton) : null) }
+        try { sub = cache[ck] = subdivide(base, lv, isBody ? (ch.parts.body.index0 || base.index.array) : null, base.userData.topologyFrom || null, sr, isBody ? detailWeight(base, o.skeleton) : null, isBody ? expressionLock(base, o.skeleton) : null) }
         catch (e) { console.warn('smooth: skipped', o.name || o.parent?.name, e.message); continue }
         sub.geometry.userData.isSmooth = true
       }
