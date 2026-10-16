@@ -57,7 +57,7 @@ Visuals → Model, or `?model=vrm` / `?model=quaternius`. `alt-model.js` loads a
 
 - Long hair (mesh hair simulated as cloth) with our simulated floor-length skirt and slits from the knee: `braid-halter` (champagne satin halter, braid), `ponytail-qipao` (red satin qipao with gold trim, black ponytail), `braid-qipao` (fitted floor-length ivory qipao with navy trim, brunette braid).
 - Bobs: `shift-long` (blush shift dress, long hair; was `bob-shift`), `bob-bodycon` (gold sequin bodycon, brunette bob), `bob-cocktail` (black satin cocktail dress, auburn fifties updo), `bob-tee` (white T-shirt and skirt, platinum bob), `bob-turtleneck` (black sleeveless turtleneck, ash-grey bob).
-- Evening gowns: `long-gown` (red satin evening gown, blonde fifties updo; old `bob-gown` links load it), `updo-gown` (hot magenta satin gown with long sleeves, blonde ponytail).
+- Evening gowns: `long-gown` (red velvet evening gown, blonde fifties updo; old `bob-gown` links load it), `updo-gown` (hot magenta satin gown with long sleeves, blonde ponytail).
 - An outfit can also set the gown slits and the qipao's trim colour.
 
 ## Dresses

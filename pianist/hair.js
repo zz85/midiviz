@@ -756,5 +756,7 @@ export function hairCap(ch, color = 0x1c120b, hairGeo = null, hairMap = null) {
     const a = Math.atan2(x, -z)
     return y / ERy > -0.62 + 0.74 * Math.max(0, Math.cos(a)) ** 1.4 - 0.25 * Math.max(0, -Math.cos(a))
   }, { gap: 0.1, offset: 0.15, iterations: 4, edgeIterations: 40, ...(hairGeo ? { fillHoles: 200, dropIslands: 40, smoothCut: 4 } : {}) })
-  return skinned(ch, shell.geometry, new THREE.MeshStandardMaterial({ color, roughness: 0.8 }))
+  const cap = skinned(ch, shell.geometry, new THREE.MeshStandardMaterial({ color, roughness: 0.8 }))
+  cap.name = 'hair-cap'
+  return cap
 }

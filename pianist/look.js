@@ -68,8 +68,16 @@ export function createLook(ch) {
           side: src.side, alphaToCoverage: src.alphaToCoverage,
           polygonOffset: src.polygonOffset, polygonOffsetFactor: src.polygonOffsetFactor, polygonOffsetUnits: src.polygonOffsetUnits,
         })
-        // brighter, flatter colour, as painted
-        m.color = src.color.clone().multiplyScalar(src === ch.materials.skin ? 0.78 : 1.1)
+        // flat colour, as painted. Toon shading has no falloff to darken it,
+        // so the clothes would read pastel (a magenta gown as candy pink):
+        // deepen them (AgX also pales a bright saturated colour)
+        if (src === ch.materials.skin) m.color = src.color.clone().multiplyScalar(0.78)
+        else if (/hair|eye|brow|lash|teeth|tongue/.test(o.name)) m.color = src.color.clone().multiplyScalar(1.1)
+        else {
+          // the clothes, by how saturated they are: whites and greys stay as they are
+          const hsl = {}; src.color.getHSL(hsl)
+          m.color = src.color.clone().multiplyScalar(1 - 0.82 * hsl.s)
+        }
       } else {
         m = src.clone()
         if (src === ch.materials.skin) {
