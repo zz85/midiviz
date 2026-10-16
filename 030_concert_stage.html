@@ -1484,7 +1484,10 @@
     function animate() {
       const dt = Math.min(clock.getDelta(), 0.1)
       if (exporting) return
-      frame(dt, songNow())
+      // the scheduler's worklet posts each note 50 ms ahead of its own clock
+      // and the synth and the keys act on it as it arrives, so the hands and
+      // the falling notes run that far ahead too, or they trail the keys
+      frame(dt, songNow() + (scheduler?.playing ? 0.05 : 0))
     }
     function resize(w, h) {
       camera.aspect = w / h
