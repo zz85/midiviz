@@ -247,8 +247,9 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
           if (n === prev.name) return 0
           if (prev2 && n === prev2.name) x *= 0.3
           if (prev2 && SUBJ_KIND[ps.subj] === kind && SUBJ_KIND[SPOTS[prev2.name].subj] === kind) x *= 0.35
-          // after the opening (the hall, the audience): close, her fingers or her face
-          if (i === 1) x *= s.size === 0 ? 4 : 0.25
+          // after the opening (the hall, the audience): close, her fingers or her
+          // face, or over her shoulder onto the keys
+          if (i === 1) x *= s.size === 0 || n === 'shoulder' ? 4 : 0.25
           // after a close-up: a medium shot (back to the keys), not the hall
           else if (ps.size === 0) x *= s.size === 1 ? 3 : s.size === 2 ? 0.3 : 0.15
           else if (s.size !== ps.size) x *= 1.4
