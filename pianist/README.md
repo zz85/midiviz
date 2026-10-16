@@ -1,6 +1,54 @@
-# #032 Pianist: wardrobe and hair
+# #032 Pianist
 
-Notes on the clothes and hair in `032_pianist.html` (Visuals → Pianist).
+Notes on the character, clothes and hair in `032_pianist.html` (Visuals → Pianist).
+
+## The character
+
+She is built from [MakeHuman](http://www.makehumancommunity.org/)'s CC0 assets by `build/build-character.mjs`. No ready-made character file is used.
+
+- Body: MakeHuman's hm08 base mesh (~13k vertices), blended with three body-shape files ("targets") the way MakeHuman's sliders would mix them: `caucasian-female-young` 1.0, `universal-female-young-averagemuscle-minweight` 0.4, `female-young-averagemuscle-minweight-idealproportions` 0.7. The result is scaled to 165 cm.
+- Skeleton: MakeHuman's default 163-bone rig (full fingers and toes, jaw, tongue, face) with its own skin weights, top 4 per vertex. `rig.js` poses it every frame; `hand-driver.js` drives the fingers and arms from the #029 fingering and motion model.
+- From the system asset pack: the young light-skinned female skin, high-poly eyes, eyebrow001, eyelashes01 and five hair meshes (bob01, bob02, ponytail01, braid01, long01). They are fitted the way MakeHuman fits them: each vertex is a barycentric point on three body vertices plus an offset, and inherits their weights.
+- Helper shells: MakeHuman's base mesh has hidden fitting shells for the scalp, tights and skirt. They are kept as the hair roots and the base of our dress.
+- The strand hair (`hair.js`), our dress, the shoes, the looks (realistic, stylized, cel) and all the materials are written in this repo.
+
+Output: `assets/character.json` (bones, joints, part layout) + `assets/character.bin` (~2 MB) and re-encoded textures. Units are cm, y up, the figure facing +z with her feet on y = 0. Licence: MakeHuman, CC0 1.0. Community assets have their own licences, listed in `assets/community/CREDITS.md`.
+
+## Rebuilding the character
+
+The MakeHuman sources are not in the repo (the system pack alone is ~280 MB). Put them in one folder, `~/test/mh-assets` by default:
+
+```
+mh-assets/
+  base/     base.obj, default.mhskel, default_weights.mhw and the three .target files
+  sys/      makehuman_system_assets_cc0.zip, unpacked
+  community/<nid>/   optional, see Community assets below
+```
+
+Where to get them (all CC0):
+
+- `base/`, from the [MakeHuman 1.x repository](https://github.com/makehumancommunity/makehuman) (`makehuman/data/…`):
+  - [3dobjs/base.obj](https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/3dobjs/base.obj)
+  - [rigs/default.mhskel](https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/rigs/default.mhskel), [rigs/default_weights.mhw](https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/rigs/default_weights.mhw)
+  - [targets/macrodetails/caucasian-female-young.target](https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/caucasian-female-young.target), [targets/macrodetails/universal-female-young-averagemuscle-minweight.target](https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-female-young-averagemuscle-minweight.target), [targets/macrodetails/proportions/female-young-averagemuscle-minweight-idealproportions.target](https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/proportions/female-young-averagemuscle-minweight-idealproportions.target)
+- `sys/`: [makehuman_system_assets_cc0.zip](http://files.makehumancommunity.org/asset_packs/makehuman_system_assets/makehuman_system_assets_cc0.zip), unzipped so that `sys/skins`, `sys/eyes`, `sys/hair`… exist.
+
+Then run:
+
+```sh
+node pianist/build/build-character.mjs [path/to/mh-assets]   # needs ffmpeg on PATH for the textures
+```
+
+To change her build, edit `TARGETS` and `HEIGHT` at the top of the script. Any other MakeHuman macro target works the same way.
+
+## Other models (`?model=`)
+
+Visuals → Model, or `?model=vrm` / `?model=quaternius`. `alt-model.js` loads any rigged glTF or VRM humanoid. It builds a proxy skeleton with MakeHuman's bone names on the model's own joints (scaled so legs and arms match the MakeHuman woman, turned to face the keys). `rig.js` poses the proxy unchanged, and every frame each model bone takes its proxy bone's world rotation times a fixed rest offset. VRM bones come from the VRM humanoid; plain glTF bones are matched by name (Mixamo, Blender `.L/.R`, Quaternius, UE styles). These models keep their own clothes and hair, so the wardrobe menus are hidden.
+
+- `vrm`: `assets/models/vrm1-constraint-twist-sample.vrm`, pixiv's VRM 1.0 sample from the [three-vrm repo](https://github.com/pixiv/three-vrm/tree/dev/packages/three-vrm/examples/models), VRM Public License 1.0 (redistribution and modification allowed). Loaded with `@pixiv/three-vrm` 3.5.5 from jsDelivr. Its spring-bone hair, twist constraints and blink expression run after the rig. MToon colours are scaled down (`MTOON_GAIN`) so it doesn't burn out under the stage lights, and spring gravity is scaled with the model.
+- `quaternius`: put `Formal.gltf` from Quaternius' [Ultimate Modular Women](https://quaternius.com/packs/ultimatemodularwomen.html) (CC0; Google Drive → Individual Characters → glTF) at `assets/models/quaternius-formal.gltf`. If the file is missing the page falls back to MakeHuman with a message.
+
+# Wardrobe and hair
 
 ## Outfits
 

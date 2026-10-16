@@ -16,7 +16,8 @@
   <script type="importmap">
     { "imports": {
       "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+      "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.5.5/lib/three-vrm.module.min.js"
     } }
   </script>
   <style>
@@ -116,6 +117,7 @@
   </div>
   <div id="visualsPop" class="pop ui">
     <div class="sect">Pianist</div>
+    <div class="field"><label>Model</label><select id="model"><option value="">MakeHuman (realistic, CC0)</option></select></div>
     <div class="field"><label>Look</label><select id="look"><option value="realistic">Realistic</option><option value="stylized">Stylized (animated feature)</option><option value="cel">Cel shaded (outlines)</option></select></div>
     <div class="field"><label>Smooth (subdivided)</label><select id="smooth"><option value="0">Off</option><option value="1">1× (4× the triangles)</option><option value="2">2× (16×)</option></select></div>
     <div class="field"><label>Outfit</label><select id="outfit">
@@ -201,6 +203,7 @@
     import { midiToSchedule } from './notation3d/midi-score.js'
     import { buildGrandPiano, LOW, HIGH } from './concertstage/concert-grand.js'
     import { loadCharacter } from './pianist/character.js'
+    import { loadAltCharacter, MODELS } from './pianist/alt-model.js'
     import { createRig } from './pianist/rig.js'
     import { createHair } from './pianist/hair.js'
     import { createDress } from './pianist/dress.js'
@@ -307,10 +310,25 @@
 
     // ── The pianist ──────────────────────────────────────────────────────
     setStatus('Loading the pianist…')
-    const ch = await loadCharacter(new URL('./pianist/assets/', import.meta.url).href)
+    // ?model=quaternius|vrm: another rigged model (pianist/alt-model.js) with
+    // its own clothes and hair; the wardrobe below is MakeHuman's only
+    for (const [k, m] of Object.entries(MODELS)) $('model').appendChild(new Option(m.label, k))
+    let ALT = MODELS[params.get('model')] ? params.get('model') : ''
+    $('model').value = ALT
+    $('model').onchange = () => { const q = new URLSearchParams(location.search); if ($('model').value) q.set('model', $('model').value); else q.delete('model'); location.search = q.toString() }
+    let ch = null
+    if (ALT) try { ch = await loadAltCharacter(ALT, new URL('./pianist/assets/', import.meta.url).href) }
+    catch (e) { console.error(e); setStatus(`Could not load ${MODELS[ALT].label} (${e.message}): see pianist/README.md`, true, 8000) }
+    if (!ch) { ALT = ''; $('model').value = ''; ch = await loadCharacter(new URL('./pianist/assets/', import.meta.url).href) }
     scene.add(ch.group)
+    if (ALT) {
+      // the wardrobe fields (Look … up to Pose) are MakeHuman's: hide them
+      document.body.classList.add('altmodel')
+      for (let el = $('model').closest('.field').nextElementSibling; el && !(el.classList.contains('sect') && el.textContent === 'Pose'); el = el.nextElementSibling) el.style.display = 'none'
+    }
     const SEAT = new THREE.Vector3(0, SEAT_Y + 8.6, 44)
     const rig = createRig(ch, { seat: SEAT })
+    ch.attachRig?.(rig)
     rig.update(0, 1 / 60)
     ch.group.updateMatrixWorld(true)
     // community styles (MakeHuman community repository) join the menus,
@@ -359,6 +377,7 @@
     let hair = null, dress = null
     let shoes = null, shoeJob = 0
     async function setShoes(v) {
+      if (ALT) { shoes = { object: new THREE.Group(), kind: 'none', update() {}, dispose() {}, settle() {}, setColor() {}, setFabric() {} }; return }
       const job = ++shoeJob
       const next = v === 'none' ? { object: Object.assign(new THREE.Group(), { name: 'barefoot' }), update() {}, dispose() {} }
         : v === 'flats' || !v ? createShoes(ch) : await createCommunity(ch, v, { color: '#151214' })   // (black: their textures vary)
@@ -370,11 +389,12 @@
       if (window.__pianist) window.__pianist.shoes = shoes
       applyLook()
     }
-    const look = createLook(ch)
-    const smoother = createSmoother(ch)
+    const look = ALT ? { apply() {}, update() {} } : createLook(ch)
+    const smoother = ALT ? { apply() {}, update() {} } : createSmoother(ch)
     // geometry first (the cel outlines are built on whatever geometry is shown)
-    const applyLook = () => { look.apply('realistic', [dress?.object, shoes?.object]); smoother.apply(+$('smooth').value, [dress?.object, shoes?.object]); look.apply($('look').value, [dress?.object]) }
+    const applyLook = () => { if (ALT) return;  look.apply('realistic', [dress?.object, shoes?.object]); smoother.apply(+$('smooth').value, [dress?.object, shoes?.object]); look.apply($('look').value, [dress?.object]) }
     async function setHair(style) {
+      if (ALT) { hair = { object: new THREE.Group(), kind: 'none', update() {}, dispose() {}, settle() {}, setColor() {}, setFabric() {} }; return }
       const color = $('hairColor').value
       hair?.dispose()
       hair = style === 'halfup' || style === 'updo'
@@ -418,6 +438,7 @@
       return createDress(ch, rig, { seatY: SEAT_Y, bench: piano.bench, length: length === 'knee' ? 'midi' : length, skirt, sleeves, color, slits: slit !== 'off', slitAt: SLIT_AT[slit] ?? -14 })
     }
     async function setDress(v) {
+      if (ALT) { dress = { object: new THREE.Group(), kind: 'none', update() {}, dispose() {}, settle() {}, setColor() {}, setFabric() {} }; return }
       const job = ++dressJob
       if (!dress) coverBody(false)
       let next
@@ -439,7 +460,7 @@
     await setHair($('hairStyle').value)
     // (the modesty flag wins over whatever else shows the body)
     const keepModest = () => { for (const o of skinMeshes()) if (o.userData.modest) o.visible = false }
-    function wardrobeUpdate(dt) { keepModest(); hair.update(dt); dress?.update(dt); shoes?.update(dt); smoother.update(); look.update() }
+    function wardrobeUpdate(dt) { ch.update?.(dt); keepModest(); hair.update(dt); dress?.update(dt); shoes?.update(dt); smoother.update(); look.update() }
     window.__pianist = { ch, rig, hair, dress, shoes, look, scene, camera, smoother }
     for (const n of (params.get('hide') || '').split(',')) if (ch.meshes[n]) ch.meshes[n].visible = false
     if (params.get('hide')?.includes('hair')) hair.object.visible = false

@@ -1,0 +1,336 @@
+// Other character models for the #032 pianist (?model=…): any rigged glTF or
+// VRM humanoid, played by the same rig as the MakeHuman character.
+//
+// rig.js is written against MakeHuman's skeleton (bone names, five spine
+// bones, split upper and lower arms…). Rather than teach it every rig, this
+// builds a *proxy* skeleton with MakeHuman's names whose joints sit on the
+// model's own joints, scaled and turned into the piano's frame. The rig poses
+// the proxy; every frame each of the model's bones takes the world rotation of
+// its proxy bone (times the constant rest offset between the two), so the
+// fingertips land where the rig put them. Bones without a proxy (hair, skirt,
+// twist and face bones) keep their rest pose, or whatever the model's own
+// systems do with them (VRM spring bones and constraints run after).
+//
+// The model: a humanoid map { hips, spine, chest, upperChest?, neck, head,
+// leftEye?, leftShoulder?, leftUpperArm, leftLowerArm, leftHand, leftThumb
+// Metacarpal / Proximal / Distal, leftIndex/Middle/Ring/Little Proximal /
+// Intermediate / Distal, leftUpperLeg, leftLowerLeg, leftFoot, leftToes,
+// and right… } of THREE.Bones, from VRM's humanoid or from bone names.
+
+import * as THREE from 'three'
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+
+const v3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z)
+
+export const MODELS = {
+  quaternius: {
+    label: 'Quaternius · Formal (CC0)', url: 'models/quaternius-formal.gltf', kind: 'gltf',
+    credit: 'Ultimate Modular Women by Quaternius, CC0 — quaternius.com',
+  },
+  vrm: {
+    label: 'VRM · pixiv sample (VRM PL 1.0)', url: 'models/vrm1-constraint-twist-sample.vrm', kind: 'vrm',
+    credit: 'VRM1_Constraint_Twist_Sample, © pixiv Inc., VRM Public License 1.0',
+  },
+}
+
+// MakeHuman reference proportions (the build's 165 cm woman), for the scale
+const MH_LEG = 78.9   // hip joint → ankle, cm
+const MH_ARM = 43.7   // shoulder joint → wrist, cm
+const MTOON_GAIN = 0.42
+
+const FINGER = { 1: 'Thumb', 2: 'Index', 3: 'Middle', 4: 'Ring', 5: 'Little' }
+const PHAL = { 1: ['Metacarpal', 'Proximal', 'Distal'], 2: ['Proximal', 'Intermediate', 'Distal'] }
+const phal = f => PHAL[f === 1 ? 1 : 2]
+
+// ── Humanoid from bone names (glTF without VRM) ──────────────────────────
+// Covers Mixamo (mixamorig:LeftHandIndex1), Blender / Rigify-style
+// (UpperArm.L, upper_arm.L), Quaternius (Index1.L, Thumb1.L) and UE-style
+// (upperarm_l) names. Matched on a normalised name: lower case, no
+// separators, the side moved to the front as "l"/"r".
+function norm(name) {
+  let n = name.replace(/^mixamorig\d*[:_]?/i, '').replace(/^(def|org|mch)[-_.]/i, '')
+  let side = ''
+  const m = n.match(/^(left|right)(?=[A-Z_.\- ]|$)/i) || n.match(/^(left|right)/i)
+  if (m) { side = m[1][0].toLowerCase(); n = n.slice(m[1].length) }
+  else {
+    const t = n.match(/[._\- ]([LRlr])$|[._\- ](left|right)$/i) || n.match(/([LR])$/)
+    if (t) { side = (t[1] || t[2])[0].toLowerCase(); n = n.slice(0, n.length - t[0].length) }
+  }
+  return side + ':' + n.toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+const NAME_RULES = {
+  hips: [/^:(hips?|pelvis|root)$/],
+  spine: [/^:(spine|spine0?1|abdomen|waist|lowerback)$/],
+  chest: [/^:(chest|spine0?2|torso)$/],
+  upperChest: [/^:(upperchest|spine0?3|chest2)$/],
+  neck: [/^:(neck|neck0?1)$/],
+  head: [/^:head$/],
+  Eye: [/^[lr]:eye$/],
+  Shoulder: [/^[lr]:(shoulder|clavicle|collar(bone)?)$/],
+  UpperArm: [/^[lr]:(upperarm|arm|uparm)$/],
+  LowerArm: [/^[lr]:(lowerarm|forearm|elbow)$/],
+  Hand: [/^[lr]:(hand|wrist)$/],
+  UpperLeg: [/^[lr]:(upperleg|upleg|thigh)$/],
+  LowerLeg: [/^[lr]:(lowerleg|leg|shin|calf|knee)$/],
+  Foot: [/^[lr]:(foot|ankle)$/],
+  Toes: [/^[lr]:(toes?|toebase|ball)$/],
+}
+const FINGER_RX = { 1: 'thumb', 2: 'index', 3: 'middle', 4: 'ring', 5: '(little|pinky)' }
+function humanoidFromNames(root) {
+  const bones = []
+  root.traverse(o => { if (o.isBone) bones.push(o) })
+  const byNorm = new Map()
+  for (const b of bones) { const k = norm(b.name); if (!byNorm.has(k)) byNorm.set(k, b) }
+  const H = {}
+  const find = rx => { for (const [k, b] of byNorm) if (rx.test(k)) return b; return null }
+  for (const [key, rules] of Object.entries(NAME_RULES)) {
+    const sided = key[0] === key[0].toUpperCase()
+    for (const side of sided ? ['l', 'r'] : ['']) {
+      const name = sided ? (side === 'l' ? 'left' : 'right') + key : key
+      for (const r of rules) {
+        const rx = sided ? new RegExp(r.source.replace('^[lr]', '^' + side)) : r
+        const b = find(rx); if (b) { H[name] = b; break }
+      }
+    }
+  }
+  // fingers: <finger>1..4 (Mixamo: handindex1, Quaternius: index1); the
+  // thumb's first bone is its metacarpal
+  for (const side of ['l', 'r']) for (const f of [1, 2, 3, 4, 5]) {
+    const chain = []
+    for (let i = 1; i <= 4; i++) {
+      const b = find(new RegExp(`^${side}:(hand)?${FINGER_RX[f]}(finger)?0?${i}$`))
+      if (b) chain.push(b)
+    }
+    // Quaternius / Mixamo-style chains start at the proximal phalanx for the
+    // four fingers; a fourth bone is the tip
+    phal(f).forEach((p, k) => { if (chain[k]) H[(side === 'l' ? 'left' : 'right') + FINGER[f] + p] = chain[k] })
+    if (chain[3]) H[(side === 'l' ? 'left' : 'right') + FINGER[f] + 'Tip'] = chain[3]
+  }
+  return H
+}
+
+/**
+ * Load a model. key: a MODELS key. base: URL of pianist/assets/.
+ * Returns a character object shaped like loadCharacter()'s, for createRig().
+ */
+export async function loadAltCharacter(key, base = new URL('./assets/', import.meta.url).href) {
+  const spec = MODELS[key]
+  if (!spec) throw new Error(`unknown model ${key}`)
+  const loader = new GLTFLoader()
+  let vrm = null, VRMUtils = null
+  if (spec.kind === 'vrm') {
+    const mod = await import('@pixiv/three-vrm')
+    VRMUtils = mod.VRMUtils
+    loader.register(p => new mod.VRMLoaderPlugin(p))
+  }
+  const gltf = await loader.loadAsync(base + spec.url)
+  let model = gltf.scene
+  let H
+  if (spec.kind === 'vrm') {
+    vrm = gltf.userData.vrm
+    VRMUtils.removeUnnecessaryVertices(gltf.scene)
+    VRMUtils.combineSkeletons?.(gltf.scene)
+    model = vrm.scene
+    // we pose the raw bones ourselves; no copying from the normalised rig
+    vrm.humanoid.autoUpdateHumanBones = false
+    if (vrm.lookAt) vrm.lookAt.autoUpdate = false
+    H = {}
+    for (const name of Object.keys(vrm.humanoid.humanBones)) { const b = vrm.humanoid.getRawBoneNode(name); if (b) H[name] = b }
+  } else H = humanoidFromNames(model)
+  for (const need of ['hips', 'head', 'leftUpperArm', 'leftLowerArm', 'leftHand', 'leftUpperLeg', 'leftLowerLeg', 'leftFoot', 'leftIndexProximal', 'leftMiddleProximal', 'leftLittleProximal', 'leftThumbProximal'])
+    if (!H[need]) throw new Error(`${key}: no ${need} bone found`)
+
+  // ── Into the piano frame: centimetres, facing -z, standing on y = 0 ──
+  const group = new THREE.Group(); group.name = 'pianist'
+  const holder = new THREE.Group(); holder.name = 'model'
+  holder.add(model); group.add(holder)
+  model.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false } })
+  const wp = b => { group.updateMatrixWorld(true); return b.getWorldPosition(v3()) }
+  // her left must be at -x (she faces -z): turn the model round if not
+  if (wp(H.leftUpperArm).x > wp(H.rightUpperArm || H.leftUpperArm).x + 1e-6 || (!H.rightUpperArm && wp(H.leftUpperArm).x > 0)) holder.rotation.y = Math.PI
+  // scale: legs and arms as long as the MakeHuman woman's (on average), so she
+  // fits the bench, the pedals and the keyboard
+  {
+    const leg = wp(H.leftUpperLeg).distanceTo(wp(H.leftFoot))
+    const arm = wp(H.leftUpperArm).distanceTo(wp(H.leftHand))
+    holder.scale.setScalar(0.5 * (MH_LEG / leg + MH_ARM / arm))
+    group.updateMatrixWorld(true)
+    const box = new THREE.Box3().setFromObject(model)
+    holder.position.y -= box.min.y
+    group.updateMatrixWorld(true)
+  }
+  const box = new THREE.Box3().setFromObject(model)
+  if (vrm) {
+    // spring bones (hair, skirt) start from the scaled, turned rest pose
+    // gravity is in world units per second: scale it with the model (×~100,
+    // metres to centimetres), or the hair floats
+    for (const j of vrm.springBoneManager?.joints ?? []) j.settings.gravityPower *= holder.scale.x
+    vrm.springBoneManager?.setInitState?.()
+    vrm.springBoneManager?.reset?.()
+    // MToon is close to unlit: under the stage's spotlights it burns out, so
+    // take its lit and shade colours down to the scene's exposure
+    model.traverse(o => {
+      if (!o.isMesh) return
+      for (const mt of [].concat(o.material)) {
+        if (!mt.isMToonMaterial) continue
+        mt.color?.multiplyScalar(MTOON_GAIN)
+        mt.shadeColorFactor?.multiplyScalar(MTOON_GAIN)
+      }
+    })
+  }
+
+  // ── Target joint positions (rest, piano frame) ──
+  const P = name => H[name] ? wp(H[name]) : null
+  const S = side => side === 'L' ? 'left' : 'right'
+  const J = {}
+  const put = (n, head, tail) => { J[n + '____head'] = head.clone(); J[n + '____tail'] = tail.clone() }
+  const lerp = (a, b, t) => a.clone().lerp(b, t)
+  const hips = P('hips'), neck = P('neck') || lerp(P('head'), P('leftUpperArm').add(P('rightUpperArm') || P('leftUpperArm')).multiplyScalar(0.5), 0.5), head = P('head')
+  // spine: MakeHuman's five bones, at its proportions along the model's
+  // column hips → (spine, chest, upper chest) → neck
+  const col = [hips, ...['spine', 'chest', 'upperChest'].map(P).filter(Boolean), neck]
+  const lens = col.slice(1).map((p, i) => p.distanceTo(col[i])), total = lens.reduce((a, b) => a + b, 0)
+  const along = u => { let d = u * total; for (let i = 0; i < lens.length; i++) { if (d <= lens[i] || i === lens.length - 1) return lerp(col[i], col[i + 1], Math.min(1, d / lens[i])); d -= lens[i] } }
+  const SPINE_AT = [0, 0.135, 0.253, 0.417, 0.712, 1]
+  const SPINES = ['spine05', 'spine04', 'spine03', 'spine02', 'spine01']
+  SPINES.forEach((n, i) => put(n, along(SPINE_AT[i]), along(SPINE_AT[i + 1])))
+  put('root', hips, hips.clone().add(v3(0, 0, -8)))
+  const top = v3(head.x, box.max.y, head.z)
+  for (let i = 0; i < 3; i++) put(`neck0${i + 1}`, lerp(neck, head, i / 3), lerp(neck, head, (i + 1) / 3))
+  put('head', head, top)
+  const fwd = v3(0, 0, -1)
+  for (const side of ['L', 'R']) {
+    const s = S(side), d = '.' + side
+    // eyes: the model's eye bones, or guessed in front of the head
+    const eye = P(s + 'Eye') || head.clone().add(v3(side === 'L' ? -3.2 : 3.2, 0.3 * (top.y - head.y), -0.45 * (top.y - head.y)))
+    put('eye' + d, eye, eye.clone().addScaledVector(fwd, 4))
+    const ua = P(s + 'UpperArm'), el = P(s + 'LowerArm'), wr = P(s + 'Hand')
+    const sh = P(s + 'Shoulder') || lerp(neck, ua, 0.25)
+    put('clavicle' + d, sh, ua)
+    put('upperarm01' + d, ua, lerp(ua, el, 0.5)); put('upperarm02' + d, lerp(ua, el, 0.5), el)
+    put('lowerarm01' + d, el, lerp(el, wr, 0.5)); put('lowerarm02' + d, lerp(el, wr, 0.5), wr)
+    put('wrist' + d, wr, P(s + 'MiddleProximal'))
+    for (const f of [1, 2, 3, 4, 5]) {
+      const names = phal(f).map(p => s + FINGER[f] + p)
+      const pts = names.map(P)
+      if (!pts[0]) throw new Error(`${key}: no ${names[0]} bone`)
+      // a missing joint: along the previous segment
+      for (let k = 1; k < 3; k++) if (!pts[k]) pts[k] = pts[k - 1].clone().add(pts[k - 1].clone().sub(k > 1 ? pts[k - 2] : wr).multiplyScalar(0.7))
+      // the tip: an end bone if there is one, else the last segment again (shorter)
+      const tip = P(s + FINGER[f] + 'Tip') || childTip(H[names[2]], wp) || pts[2].clone().add(pts[2].clone().sub(pts[1]).multiplyScalar(0.85))
+      for (let k = 0; k < 3; k++) put(`finger${f}-${k + 1}${d}`, pts[k], k < 2 ? pts[k + 1] : tip)
+    }
+    const hip = P(s + 'UpperLeg'), kn = P(s + 'LowerLeg'), an = P(s + 'Foot')
+    const toe = P(s + 'Toes') || an.clone().add(v3(0, -an.y * 0.7, -0.6 * an.distanceTo(kn) * 0.3))
+    const toeTip = childTip(H[s + 'Toes'], wp) || toe.clone().add(v3(0, 0, -4))
+    put('pelvis' + d, hips, hip)
+    put('upperleg01' + d, hip, lerp(hip, kn, 0.2)); put('upperleg02' + d, lerp(hip, kn, 0.2), kn)
+    put('lowerleg01' + d, kn, lerp(kn, an, 0.5)); put('lowerleg02' + d, lerp(kn, an, 0.5), an)
+    put('foot' + d, an, toe)
+    put('toe2-1' + d, toe, toeTip)
+  }
+
+  // ── The proxy skeleton (MakeHuman names), in the piano frame ──
+  const PARENT = { root: null, spine05: 'root', spine04: 'spine05', spine03: 'spine04', spine02: 'spine03', spine01: 'spine02', neck01: 'spine01', neck02: 'neck01', neck03: 'neck02', head: 'neck03' }
+  for (const d of ['.L', '.R']) {
+    Object.assign(PARENT, {
+      ['eye' + d]: 'head', ['clavicle' + d]: 'spine01', ['upperarm01' + d]: 'clavicle' + d, ['upperarm02' + d]: 'upperarm01' + d,
+      ['lowerarm01' + d]: 'upperarm02' + d, ['lowerarm02' + d]: 'lowerarm01' + d, ['wrist' + d]: 'lowerarm02' + d,
+      ['pelvis' + d]: 'root', ['upperleg01' + d]: 'pelvis' + d, ['upperleg02' + d]: 'upperleg01' + d, ['lowerleg01' + d]: 'upperleg02' + d,
+      ['lowerleg02' + d]: 'lowerleg01' + d, ['foot' + d]: 'lowerleg02' + d, ['toe2-1' + d]: 'foot' + d,
+    })
+    for (const f of [1, 2, 3, 4, 5]) for (let k = 1; k <= 3; k++) PARENT[`finger${f}-${k}${d}`] = k === 1 ? 'wrist' + d : `finger${f}-${k - 1}${d}`
+  }
+  const bones = [], byName = {}, restWorld = []
+  const inv = new THREE.Matrix4(), m = new THREE.Matrix4()
+  for (const [name, par] of Object.entries(PARENT)) {
+    const h = J[name + '____head'], t = J[name + '____tail']
+    const y = t.clone().sub(h)
+    if (y.lengthSq() < 1e-8) y.set(0, 1, 0)
+    y.normalize()
+    // roll: x as close to the world x as the bone allows (z if it runs along x)
+    const x = Math.abs(y.x) > 0.9 ? v3(0, 0, 1) : v3(1, 0, 0)
+    x.addScaledVector(y, -x.dot(y)).normalize()
+    const z = v3().crossVectors(x, y)
+    const W = new THREE.Matrix4().makeBasis(x, y, z).setPosition(h)
+    const bone = new THREE.Bone(); bone.name = name
+    if (par) { inv.copy(restWorld[bones.indexOf(byName[par])]).invert(); m.multiplyMatrices(inv, W) } else m.copy(W)
+    m.decompose(bone.position, bone.quaternion, bone.scale)
+    if (par) byName[par].add(bone)
+    bones.push(bone); byName[name] = bone; restWorld.push(W)
+  }
+  const proxyRoot = byName.root
+  group.add(proxyRoot)
+  group.updateMatrixWorld(true)
+
+  // ── Which proxy bone drives each model bone ──
+  // [model bone, proxy bone(s), blend]: the forearm takes the average of the
+  // two proxy forearm halves (they carry the pronation twist 45 % / 85 %)
+  const DRIVE = [['hips', 'root']]
+  // spine bones: the proxy segment their head sits on
+  const segOf = p => { let best = 'spine05', bd = Infinity; for (const n of SPINES) { const h = J[n + '____head'], t = J[n + '____tail'], seg = t.clone().sub(h), u = THREE.MathUtils.clamp(p.clone().sub(h).dot(seg) / seg.lengthSq(), 0, 1), dd = h.clone().addScaledVector(seg, u).distanceTo(p); if (dd < bd - 1e-6) { bd = dd; best = n } } return best }
+  for (const n of ['spine', 'chest', 'upperChest']) if (H[n]) DRIVE.push([n, segOf(P(n).add(v3(0, 0.5, 0)))])
+  DRIVE.push(['neck', 'neck02'], ['head', 'head'])
+  for (const side of ['L', 'R']) {
+    const s = S(side), d = '.' + side
+    DRIVE.push([s + 'Eye', 'eye' + d], [s + 'Shoulder', 'clavicle' + d], [s + 'UpperArm', 'upperarm01' + d], [s + 'LowerArm', ['lowerarm01' + d, 'lowerarm02' + d, 0.5]],
+      [s + 'Hand', 'wrist' + d], [s + 'UpperLeg', 'upperleg02' + d], [s + 'LowerLeg', 'lowerleg02' + d], [s + 'Foot', 'foot' + d])
+    for (const f of [1, 2, 3, 4, 5]) phal(f).forEach((p, k) => DRIVE.push([s + FINGER[f] + p, `finger${f}-${k + 1}${d}`]))
+  }
+  // in hierarchy order (parents before children)
+  const depth = o => { let n = 0; while (o.parent) { n++; o = o.parent } return n }
+  const drive = DRIVE.filter(([t]) => H[t]).map(([t, p]) => {
+    const target = H[t], [a, b, k] = Array.isArray(p) ? p : [p, p, 0]
+    const tq = target.getWorldQuaternion(new THREE.Quaternion())
+    const pq = byName[a].getWorldQuaternion(new THREE.Quaternion())
+    return { target, a: byName[a], b: byName[b], k, offset: pq.invert().multiply(tq), depth: depth(target) }
+  }).sort((x, y) => x.depth - y.depth)
+  const hipsBone = H.hips, rootRest = byName.root.getWorldPosition(v3()), hipsRest = wp(hipsBone)
+  const _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion(), _qp = new THREE.Quaternion(), _p = v3()
+
+  function sync() {
+    // proxy world transforms are current (the caller updated group)
+    for (const d of drive) {
+      d.a.getWorldQuaternion(_qa)
+      if (d.k) { d.b.getWorldQuaternion(_qb); _qa.slerp(_qb, d.k) }
+      _qa.multiply(d.offset)
+      d.target.parent.getWorldQuaternion(_qp)
+      d.target.quaternion.copy(_qp.invert().multiply(_qa))
+      if (d.target === hipsBone) {
+        byName.root.getWorldPosition(_p).sub(rootRest).add(hipsRest)
+        d.target.position.copy(d.target.parent.worldToLocal(_p))
+      }
+      d.target.updateMatrixWorld(true)
+    }
+  }
+
+  // the rig reads the eyeball centres from the eye geometry: two points
+  const eyeGeo = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([...J['eye.L____head'].toArray(), ...J['eye.R____head'].toArray()], 3))
+
+  let rig = null
+  const ch = {
+    kind: key, credit: spec.credit, alt: true, vrm,
+    group, bones, byName, restWorld, joints: J, skeleton: new THREE.Skeleton(bones),
+    meshes: {}, materials: {}, meta: { community: [] }, parts: { eyes: { geometry: eyeGeo } },
+    model, humanoid: H,
+    addPart: () => null, ensurePart: async () => {}, partArray: () => null,
+    /** let the model follow the rig (blinks too, on a VRM) */
+    attachRig(r) { rig = r },
+    update(dt) {
+      group.updateMatrixWorld(true)
+      sync()
+      if (vrm) {
+        const em = vrm.expressionManager
+        if (em && rig) { em.setValue('blink', Math.max(rig.state.blink || 0, rig.state.lidDrop || 0)) }
+        vrm.update(dt)
+      }
+    },
+  }
+  return ch
+}
+
+// the end of a bone: its first child bone's head, if any
+function childTip(bone, wp) {
+  const c = bone?.children.find(o => o.isBone)
+  return c ? wp(c) : null
+}

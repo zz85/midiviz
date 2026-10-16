@@ -134,7 +134,10 @@ export function createRig(ch, { seat = v3(0, 64, 42) } = {}) {
   for (const side of ['L', 'R']) {
     const S = side === 'R' ? '.R' : '.L', s = side === 'R' ? 1 : -1
     const ua = J[`upperarm01${S}____head`], el = J[`lowerarm01${S}____head`], wr = J[`wrist${S}____head`]
-    const hinge = new THREE.Vector3().crossVectors(el.clone().sub(ua), wr.clone().sub(el)).normalize()
+    const hinge = new THREE.Vector3().crossVectors(el.clone().sub(ua), wr.clone().sub(el))
+    // a straight arm (a T-pose model): the elbow bends the forearm forward
+    if (hinge.length() < 0.05 * el.distanceTo(ua) * wr.distanceTo(el)) hinge.crossVectors(el.clone().sub(ua), v3(0, 0, -1))
+    hinge.normalize()
     const f = handDims[side].frame
     const restBasis = new THREE.Matrix4().makeBasis(f.lat, f.up, f.back)
     const i = n => B(n + S)
