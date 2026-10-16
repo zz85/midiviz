@@ -184,7 +184,7 @@ export function createRig(ch, { seat = v3(0, 64, 42) } = {}) {
   const rootFromHip = rootRestP.clone().sub(hipMid)
   const state = {
     lean: 0.2, side: 0, turn: 0, demand: v3(), headYaw: 0, headPitch: 0, breath: 0,
-    pedal: [0, 0, 0], leftOnUna: 0, eyeLimit: 0.16, gaze: v3(0, 76, 2), t: 0,
+    pedal: [0, 0, 0], leftOnUna: 0, eyeLimit: 0.16, lidClose: 0.56, lidSign: -1, gaze: v3(0, 76, 2), t: 0,
   }
   const Rb = new THREE.Quaternion(), e = new THREE.Euler(0, 0, 0, 'YXZ')
   const tmpQ = new THREE.Quaternion()
@@ -234,7 +234,7 @@ export function createRig(ch, { seat = v3(0, 64, 42) } = {}) {
     // arms and hands
     for (const side of ['L', 'R']) armPose(arm[side])
     // head: look toward the hands, partly (the eyes take the rest)
-    headPose()
+    headPose(dt)
     // legs onto the pedals
     for (const side of ['L', 'R']) legPose(side)
     // write locals
@@ -317,26 +317,54 @@ export function createRig(ch, { seat = v3(0, 64, 42) } = {}) {
     aim(a.la1, fo, a.hingeLA, hingeNow); aim(a.la2, fo, a.hingeLA2, hingeNow)
   }
 
-  const look = v3()
-  function headPose() {
-    // gaze: between the hands (or where they rest)
+  const look = v3(), handsAt = v3(0, 76, 2), glanceP = v3(), eyeT = v3(0, 76, 2), _d1 = v3(), _d2 = v3()
+  // glance targets, by kind: the audience (her right, past the lid), the far
+  // wall over the piano, up and away to the left
+  const GLANCE_AT = [[0.45, v3(300, 150, -160)], [0.8, v3(-20, 160, -520)], [1.01, v3(-220, 168, -420)]]
+  let glanceW = 0, lastSong = 0
+  function headPose(dt) {
+    // the hands: between them (or where they rest)
     const L = arm.L.drv, R = arm.R.drv
     if (L.visible || R.visible) {
-      look.set(0, 0, 0); let n = 0
-      for (const d of [L, R]) if (d.visible) { look.add(d.joints.M); n++ }
-      look.multiplyScalar(1 / n)
-      state.gaze.lerp(look, 0.06)
+      handsAt.set(0, 0, 0); let n = 0
+      for (const d of [L, R]) if (d.visible) { handsAt.add(d.joints.M); n++ }
+      handsAt.multiplyScalar(1 / n)
     }
+    // a glance away while the music lets go of the keys
+    const gl = state.playing && state.gazeMode !== 'hands' ? glanceAt(state.songT) : null
+    let w = 0, inner = 0
+    if (gl) {
+      const k = gl.g.kind
+      if (gl.g.quiet && k > 0.72) inner = gl.w          // eyes nearly closed, inward
+      else { w = gl.w; glanceP.copy(GLANCE_AT.find(([lim]) => k < lim)[1]) }
+    }
+    glanceW += (w - glanceW) * (1 - Math.exp(-dt * 6))
+    state.lidDrop += (inner * 0.8 - state.lidDrop) * (1 - Math.exp(-dt * 3))
+    look.copy(handsAt).lerp(glanceP, glanceW)
+    // eyes: a quick saccade when the target jumps, smooth pursuit otherwise;
+    // the head follows more slowly. A big gaze shift often comes with a blink
     const top = pos('neck01')
+    const shift = _d1.subVectors(eyeT, top).normalize().angleTo(_d2.subVectors(look, top).normalize())
+    eyeT.lerp(look, 1 - Math.exp(-dt * (shift > 0.06 ? 28 : 7)))
+    if (shift > 0.3) blinkSoon(0.5)
+    state.gaze.lerp(look, 1 - Math.exp(-dt * (2.2 + 1.5 * glanceW)))
+    // a blink at the end of most phrases
+    const sT = state.songT
+    if (state.playing) for (const [k, [, b]] of phrases.entries()) { if (b + 0.12 > lastSong && b + 0.12 <= sT && hash(k, 8) < 0.4) blinkSoon(1) }
+    lastSong = sT
     const want = _v.subVectors(state.gaze, top).normalize()
     // current face direction (rest faces -z) after the spine
     const q0 = base(NECK[0], new THREE.Quaternion())
     const face = v3(0, 0, -1).applyQuaternion(q0.clone().multiply(restQ[NECK[0]].clone().invert()))
     let yaw = Math.atan2(-want.x, -want.z) - Math.atan2(-face.x, -face.z)
     let pitch = Math.asin(clamp(want.y, -1, 1)) - Math.asin(clamp(face.y, -1, 1))
-    yaw = clamp(yaw * 0.7, -0.6, 0.6); pitch = clamp(pitch * 0.5, -0.36, 0.2)
-    state.headYaw += (yaw - state.headYaw) * 0.08
-    state.headPitch += (pitch - state.headPitch) * 0.08
+    // the head takes a larger share of a glance than of looking at the keys
+    yaw = clamp(yaw * (0.7 + 0.1 * glanceW), -0.55, 0.55); pitch = clamp(pitch * (0.5 + 0.25 * glanceW), -0.36, 0.2 + 0.15 * glanceW)
+    // inward moments: the head drops and tilts a little
+    pitch -= 0.08 * state.lidDrop
+    const kh = 1 - Math.exp(-dt * 4.5)
+    state.headYaw += (yaw - state.headYaw) * kh
+    state.headPitch += (pitch - state.headPitch) * kh
     const fr = [0.18, 0.18, 0.2, 0.44]
     const list = [...NECK, HEAD]
     for (let k = 0; k < 4; k++) {
@@ -351,17 +379,61 @@ export function createRig(ch, { seat = v3(0, 64, 42) } = {}) {
     for (const [k, i] of EYES.entries()) {
       solve(i)
       const q = base(i, new THREE.Quaternion())
-      const d = _v.subVectors(state.gaze, wP[i]).normalize()
+      const d = _v.subVectors(eyeT, wP[i]).normalize()
       const cur = _w.copy(Y).applyQuaternion(q)
       const sw = _q.setFromUnitVectors(cur, d)
       // limit how far the eyes turn
       const ang = 2 * Math.acos(clamp(sw.w, -1, 1))
-      if (ang > state.eyeLimit) sw.slerp(new THREE.Quaternion(), 1 - state.eyeLimit / ang)
+      const lim = state.eyeLimit + 0.12 * glanceW
+      if (ang > lim) sw.slerp(new THREE.Quaternion(), 1 - lim / ang)
       // world centre stays where the unturned eye had it
       const c0 = eyeCenterLocal[k].clone().applyQuaternion(q).add(wP[i])
       setQ(i, q.premultiply(sw))
       wP[i].copy(c0).sub(eyeCenterLocal[k].clone().applyQuaternion(wQ[i]))
       eyeMoved[i] = 1
+    }
+    lidPose(dt)
+  }
+
+  // ── Blinks and lids ──
+  // Blinks: ~every 4.5 s while playing (concentration lowers the rate), ~3 s
+  // at rest, an occasional double blink, plus blinks on big gaze shifts and at
+  // phrase ends. The shape is asymmetric: shut in ~75 ms, open over ~170 ms.
+  // The upper lid also follows the eye's pitch (looking down at the keys
+  // lowers it), and drops for the inward, eyes-closed moments.
+  const LIDS = [['orbicularis03.L', 1], ['orbicularis03.R', 1], ['orbicularis04.L', -1], ['orbicularis04.R', -1]].map(([n, up]) => [B(n), up]).filter(([i]) => i !== undefined)
+  let seed = 9371
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647
+  const blk = { t0: -9, next: 1.5 }
+  function blinkSoon(p) { if (state.t - blk.t0 > 0.7 && rnd() < p) blk.next = Math.min(blk.next, state.t + 0.03 + 0.05 * rnd()) }
+  function lidPose(dt) {
+    const t = state.t
+    if (t >= blk.next) {
+      blk.t0 = t
+      const mean = state.playing ? 5.5 : 3.4
+      blk.next = t + 0.8 + mean * 0.8 * -Math.log(1 - 0.97 * rnd())
+      if (rnd() < 0.12) blk.next = t + 0.36     // double blink
+    }
+    const d = t - blk.t0
+    const b = d < 0.075 ? (d / 0.075) ** 2 : d < 0.11 ? 1 : d < 0.28 ? (1 - (d - 0.11) / 0.17) ** 2 : 0
+    state.blink = b
+    // eye pitch in the head's frame, from the left eye
+    const hq = _q.copy(wQ[HEAD]).multiply(restQ[HEAD].clone().invert()).invert()
+    const ed = _v.copy(Y).applyQuaternion(wQ[EYES[0]]).applyQuaternion(hq)
+    const er = _w.copy(Y).applyQuaternion(restQ[EYES[0]])
+    const ePitch = Math.asin(clamp(ed.y, -1, 1)) - Math.asin(clamp(er.y, -1, 1))
+    const shut = Math.max(b, state.lidDrop)
+    // the head's x axis (world) to swing the lids about
+    const ax = v3(1, 0, 0).applyQuaternion(_q.copy(wQ[HEAD]).multiply(restQ[HEAD].clone().invert()))
+    for (const [i, up] of LIDS) {
+      base(i, tmpQ)
+      // + closes: the upper lid comes down, the lower one up a little
+      const close = up > 0
+        ? state.lidClose * shut + (1 - shut) * (-0.6 * Math.min(0, ePitch) - 0.25 * Math.max(0, ePitch))
+        : 0.12 * shut + (1 - shut) * 0.15 * Math.min(0, ePitch)
+      const a = up * state.lidSign * close
+      tmpQ.premultiply(_q.setFromAxisAngle(ax, a))
+      setQ(i, tmpQ)
     }
   }
 
@@ -435,6 +507,116 @@ export function createRig(ch, { seat = v3(0, 64, 42) } = {}) {
       if (a > 0.15) accents.push([on[i].on, a])
       i = j
     }
+    analyseForm(on)
+  }
+
+  // ── Phrases, glances and weight moves, read from the score ──
+  // All deterministic in song time (a hash per phrase / window, no Math.random),
+  // so a seek or an export replays the same performance.
+  let phrases = [], glances = [], hipMoves = [], free = new Uint8Array(1)
+  const hash = (k, s = 0) => { const x = Math.sin(k * 127.1 + s * 311.7 + 0.5) * 43758.5453; return x - Math.floor(x) }
+  function analyseForm(on) {
+    // onset clusters (chords) with their range, per hand
+    const cl = []
+    for (let i = 0; i < on.length;) {
+      let j = i, end = 0
+      const h = { L: [], R: [] }
+      while (j < on.length && on[j].on - on[i].on < 0.04) { h[on[j].hand === 'L' ? 'L' : 'R'].push(on[j].pitch); end = Math.max(end, on[j].off ?? on[j].on + 0.3); j++ }
+      cl.push({ t: on[i].on, end, h, mean: on.slice(i, j).reduce((s, n) => s + n.pitch, 0) / (j - i) })
+      i = j
+    }
+    phrases = []; glances = []; hipMoves = []
+    if (!cl.length) return
+    // phrase boundaries: a gap that is long for the local pulse, or a long
+    // note followed by a breath; phrases shorter than 1.5 s are merged
+    const ioi = cl.slice(1).map((c, k) => c.t - cl[k].t).sort((a, b) => a - b)
+    const med = ioi[Math.floor(ioi.length / 2)] || 0.25
+    let start = cl[0].t, lastSplit = cl[0].t
+    for (let k = 1; k < cl.length; k++) {
+      const gap = cl[k].t - cl[k - 1].t, held = cl[k - 1].end - cl[k - 1].t
+      const brk = gap > Math.max(0.32, 2.6 * med) || (held > Math.max(0.6, 3 * med) && gap > 1.6 * med)
+      // never longer than ~9 s without a breath: split at the biggest gap
+      if ((brk && cl[k].t - start > 1.5) || cl[k].t - lastSplit > 9) {
+        phrases.push([start, cl[k - 1].end, k]); start = lastSplit = cl[k].t
+      }
+    }
+    phrases.push([start, cl[cl.length - 1].end, cl.length])
+    // free time: no leap coming, not too busy, so the eyes can leave the keys
+    const N = energy.length
+    free = new Uint8Array(N)
+    const busy = new Float32Array(N), need = new Uint8Array(N)
+    const prev = { L: null, R: null }
+    for (const c of cl) {
+      const i = Math.round(c.t * ER_HZ); if (i >= N) break
+      busy[i] += 1
+      for (const s of ['L', 'R']) {
+        const ps = c.h[s]; if (!ps.length) continue
+        const m = ps.reduce((a, b) => a + b, 0) / ps.length
+        // a jump of more than ~a sixth, or a hand coming in after a rest: look
+        if (prev[s] === null || Math.abs(m - prev[s][0]) > 9 || c.t - prev[s][1] > 2.5) {
+          for (let k = Math.max(0, i - Math.round(0.8 * ER_HZ)); k <= Math.min(N - 1, i + Math.round(0.25 * ER_HZ)); k++) need[k] = 1
+        }
+        prev[s] = [m, c.t]
+      }
+    }
+    // onsets per second, over a second
+    let acc = 0; const W = ER_HZ
+    for (let i = 0; i < N; i++) {
+      acc += busy[i] - (i >= W ? busy[i - W] : 0)
+      free[i] = !need[i] && acc < 7 ? 1 : 0
+    }
+    // glances: candidate windows inside free runs of at least a second
+    for (let i = 0, run = 0; i <= N; i++) {
+      if (i < N && free[i]) { run++; continue }
+      // a long run is cut into 3.5–6.5 s candidates, each its own chance; in
+      // horizon mode they join up, with a quick check of the keys between
+      if (run >= ER_HZ) {
+        const A = (i - run) / ER_HZ, B = i / ER_HZ
+        for (let a = A; B - a >= 1;) {
+          const key = Math.round(a * 10), b = B - a < 8 ? B : a + 3.5 + 3 * hash(key, 7)
+          glances.push({ a: a + 0.15, b: b - 0.2, r: hash(key, 1), quiet: energyAt((a + b) / 2) < 0.35, kind: hash(key, 2) })
+          a = b
+        }
+      }
+      run = 0
+    }
+    // weight moves: each phrase settles onto a sit bone — usually toward the
+    // register it is played in, sometimes away (or back to centre)
+    for (const [k, [a, b, ci]] of phrases.entries()) {
+      let m = 0, n = 0
+      for (const c of cl) { if (c.t < a) continue; if (c.t > b) break; m += c.mean; n++ }
+      const reg = n ? Math.tanh((m / n - 62) / 10) : 0
+      const r = hash(k, 3), dir = r < 0.15 ? 0 : r < 0.32 ? -Math.sign(reg || 1) : Math.sign(reg || (hash(k, 4) - 0.5))
+      hipMoves.push([a - 0.35, dir * (0.5 + 0.5 * hash(k, 5))])
+    }
+  }
+  const isFree = t => { const i = Math.round(t * ER_HZ); return i >= 0 && i < free.length && free[i] === 1 }
+  // the current weight move (smoothed over ~0.8 s around each phrase start)
+  function hipMoveAt(t) {
+    let v = 0
+    for (const [a, d] of hipMoves) { if (a > t) break; v = v + (d - v) * THREE.MathUtils.smootherstep(t, a, a + 0.8) }
+    return v
+  }
+  // phrase shape for the lean: in during a phrase, a small release at its end
+  function phraseEndAt(t) {
+    let s = 0
+    for (const [, b] of phrases) { const d = t - b; if (d < -0.8) break; if (d > 1.5) continue; s = Math.max(s, Math.exp(-0.5 * ((d - 0.2) / 0.45) ** 2)) }
+    return s
+  }
+  // where the eyes go: 0 = the hands, 1 = the glance target (with its kind)
+  const GLANCE = { music: 0.5, horizon: 0.92, hands: 0 }
+  function glanceAt(t) {
+    const p = GLANCE[state.gazeMode] ?? 0.5
+    for (const g of glances) {
+      if (g.a > t) break
+      if (t > g.b || g.r > p) continue
+      // a held glance (horizon mode) or a 1.2–3 s one (music)
+      const b = state.gazeMode === 'horizon' ? g.b : Math.min(g.b, g.a + 1.2 + 1.8 * hash(g.a * 7, 6))
+      if (t > b) continue
+      const w = THREE.MathUtils.smoothstep(t, g.a, g.a + 0.3) * (1 - THREE.MathUtils.smoothstep(t, b - 0.25, b))
+      return { w, g }
+    }
+    return null
   }
   const energyAt = t => { const x = t * ER_HZ, i = Math.floor(x); if (i < 0 || i >= energy.length - 1) return 0; return energy[i] + (energy[i + 1] - energy[i]) * (x - i) }
   function accentAt(t) {
@@ -464,7 +646,7 @@ export function createRig(ch, { seat = v3(0, 64, 42) } = {}) {
     const E = energyAt(t), A = accentAt(t), playing = state.playing
     const g = x * (playing ? 1 : 0.35)
     // into the keys with the energy (back off in quiet passages), dips on accents
-    state.exLean = spring('lean', g * (0.11 * (E - 0.45) + 0.07 * A + 0.03 * wander(t * 0.7, 1)), dt, 1.1, 0.5)
+    state.exLean = spring('lean', g * (0.11 * (E - 0.45) + 0.07 * A + 0.03 * wander(t * 0.7, 1) - 0.06 * phraseEndAt(t)), dt, 1.1, 0.5)
     // slow side-to-side sway, larger when the music is moving
     state.exSide = spring('side', g * (0.03 + 0.04 * E) * wander(t * 0.35, 4), dt, 0.8, 0.6)
     state.exTurn = spring('turn', g * 0.05 * wander(t * 0.27, 7), dt, 0.8, 0.6)
@@ -473,14 +655,17 @@ export function createRig(ch, { seat = v3(0, 64, 42) } = {}) {
     state.exRoll = spring('roll', g * (-0.6 * state.exSide + 0.04 * wander(t * 0.5, 12)), dt, 1.2, 0.5)
     // rocking onto one buttock: committed to a side (tanh) toward the register
     // the hands are working in, plus slow expressive rocking in moving passages
+    // the reach (where the hands are) and the phrase's own weight move, which
+    // may go toward the register or away from it
     const reach = Math.tanh(state.handSide / 0.04)
-    state.hipRoll = spring('hip', x * (state.hipShift * (0.07 * reach + (playing ? 0.035 + 0.03 * E : 0.01) * wander(t * 0.22, 15))), dt, 0.55, 0.7)
+    const move = playing ? hipMoveAt(t) : 0
+    state.hipRoll = spring('hip', x * state.hipShift * (0.045 * reach + 0.05 * move + (playing ? 0.02 + 0.02 * E : 0.01) * wander(t * 0.22, 15)), dt, 0.55, 0.7)
     // shoulders lift a little in loud passages, drop on the accent
     state.exShrug = spring('shrug', g * (0.02 * E - 0.025 * A), dt, 2.5, 0.6)
     // breathing deepens with the phrase
     state.breathAmp = 1 + 1.2 * x * E
   }
-  Object.assign(state, { songT: 0, playing: false, exLean: 0, exSide: 0, exTurn: 0, exNod: 0, exRoll: 0, exShrug: 0, breathAmp: 1, hipRoll: 0, hipShift: 1 })
+  Object.assign(state, { songT: 0, playing: false, exLean: 0, exSide: 0, exTurn: 0, exNod: 0, exRoll: 0, exShrug: 0, breathAmp: 1, hipRoll: 0, hipShift: 1, posture: 0.5, gazeMode: 'music', blink: 0, lidDrop: 0 })
 
   /** Posture from the hands: lean / turn toward them, further when out of reach. */
   function body(dt) {
@@ -493,10 +678,12 @@ export function createRig(ch, { seat = v3(0, 64, 42) } = {}) {
       dz += d.joints.S.z - d.shoulder.z; dx += d.joints.S.x - d.shoulder.x
     }
     const k = 1 - Math.exp(-dt * 3)
-    let lean = 0.2, side = 0, turn = 0
+    let lean = 0.02 + 0.28 * state.posture, side = 0, turn = 0
     if (n) {
       mx /= n
-      lean = clamp(0.16 + Math.max(0, -dz) * 0.02, 0.1, 0.5)
+      // posture: 0 upright (just off vertical) … 1 well over the keys
+      const base = 0.02 + 0.28 * state.posture
+      lean = clamp(base + Math.max(0, -dz) * 0.02, base - 0.06, 0.6)
       side = clamp(mx * 0.004 + dx * 0.01, -0.16, 0.16)
       turn = clamp(mx * 0.004, -0.2, 0.2)
     }
@@ -510,7 +697,7 @@ export function createRig(ch, { seat = v3(0, 64, 42) } = {}) {
   }
 
   return {
-    hands, state, dims: handDims,
+    hands, state, dims: handDims, form: () => ({ phrases, glances, hipMoves }),
     setNotes: notes => { hands.setNotes(notes); analyse(notes) },
     clear: () => hands.clear(),
     setPedals(una, sost, sus) { const k = 0.35; state.pedal[0] += ((una ? 1 : 0) - state.pedal[0]) * k; state.pedal[1] += ((sost ? 1 : 0) - state.pedal[1]) * k; state.pedal[2] += ((sus ? 1 : 0) - state.pedal[2]) * k },

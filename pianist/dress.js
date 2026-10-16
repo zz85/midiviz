@@ -328,9 +328,9 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
       }
     }
     if (bench) {
-      const bz = bench.position.z
-      if (Math.abs(X[j]) < 37 && Math.abs(X[j + 2] - bz) < 17 && X[j + 1] < seatY + THICK && X[j + 1] > seatY - 8) {
-        X[j + 1] = seatY + THICK
+      const bz = bench.position.z, sy = seatY + (bench.userData.lift || 0)   // bench height set by the page
+      if (Math.abs(X[j]) < 37 && Math.abs(X[j + 2] - bz) < 17 && X[j + 1] < sy + THICK && X[j + 1] > sy - 8) {
+        X[j + 1] = sy + THICK
         Xp[j] += (X[j] - Xp[j]) * 0.7; Xp[j + 2] += (X[j + 2] - Xp[j + 2]) * 0.7
       }
     }
