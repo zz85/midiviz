@@ -350,7 +350,10 @@
     if (ALT) {
       // the wardrobe fields (Look … up to Pose) are MakeHuman's: hide them
       document.body.classList.add('altmodel')
-      for (let el = $('model').closest('.field').nextElementSibling; el && !(el.classList.contains('sect') && el.textContent === 'Pose'); el = el.nextElementSibling) el.style.display = 'none'
+      for (let el = $('model').closest('.field').nextElementSibling; el && !(el.classList.contains('sect') && el.textContent === 'Pose'); el = el.nextElementSibling) if (!el.querySelector('#smooth')) el.style.display = 'none'
+      // Smooth subdivides the model's own meshes (its default from MODELS)
+      if (!params.has('smooth') && MODELS[ALT].smooth != null) $('smooth').value = String(MODELS[ALT].smooth)
+      ch.smoothFrom = () => +$('smooth').value
     }
     const SEAT = new THREE.Vector3(0, SEAT_Y + 8.6, 44)
     const rig = createRig(ch, { seat: SEAT })

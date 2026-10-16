@@ -19,6 +19,7 @@
 
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { subdivide } from './subdivide.js'
 
 const v3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z)
 
@@ -26,6 +27,10 @@ export const MODELS = {
   quaternius: {
     label: 'Quaternius · Formal (CC0)', url: 'models/quaternius-formal.gltf', kind: 'gltf',
     credit: 'Ultimate Modular Women by Quaternius, CC0 — quaternius.com',
+    // her A-line skirt is skinned rigidly to the thighs, so seated its front
+    // stands up off the lap: drape it (see drapeSkirt)
+    drape: { material: /LimeGreen/, under: /Legs/ },
+    smooth: 1,   // low poly: one level of subdivision by default (?smooth=0 for the original facets)
   },
   vrm: {
     label: 'VRM · pixiv sample (VRM PL 1.0)', url: 'models/vrm1-constraint-twist-sample.vrm', kind: 'vrm',
@@ -277,6 +282,13 @@ export async function loadAltCharacter(key, base = new URL('./assets/', import.m
   const segOf = p => { let best = 'spine05', bd = Infinity; for (const n of SPINES) { const h = J[n + '____head'], t = J[n + '____tail'], seg = t.clone().sub(h), u = THREE.MathUtils.clamp(p.clone().sub(h).dot(seg) / seg.lengthSq(), 0, 1), dd = h.clone().addScaledVector(seg, u).distanceTo(p); if (dd < bd - 1e-6) { bd = dd; best = n } } return best }
   for (const n of ['spine', 'chest', 'upperChest']) if (H[n]) DRIVE.push([n, segOf(P(n).add(v3(0, 0.5, 0)))])
   DRIVE.push(['neck', 'neck02'], ['head', 'head'])
+  // a bone between the hips and the root that the legs hang from (Quaternius'
+  // "Body"): it moves with the pelvis too, or what it carries (the waist of
+  // the skirt) stays where she stood
+  {
+    const lp = H.leftUpperLeg.parent
+    if (lp?.isBone && lp !== H.hips && !Object.values(H).includes(lp)) { H.legRoot = lp; DRIVE.push(['legRoot', 'root']) }
+  }
   for (const side of ['L', 'R']) {
     const s = S(side), d = '.' + side
     DRIVE.push([s + 'Eye', 'eye' + d], [s + 'Shoulder', 'clavicle' + d], [s + 'UpperArm', 'upperarm01' + d], [s + 'LowerArm', ['lowerarm01' + d, 'lowerarm02' + d, 0.5]],
@@ -316,7 +328,30 @@ export async function loadAltCharacter(key, base = new URL('./assets/', import.m
   // the rig reads the eyeball centres from the eye geometry: two points
   const eyeGeo = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([...J['eye.L____head'].toArray(), ...J['eye.R____head'].toArray()], 3))
 
-  let rig = null
+  let rig = null, draped = false
+  // ── Smoothing: Loop subdivision of the skinned meshes (subdivide.js), in
+  // their bind pose, so the GPU skins the result. Cached per level; meshes
+  // with morph targets (a VRM face) or alpha cards are left alone.
+  const smoothable = []
+  model.traverse(o => {
+    if (!o.isSkinnedMesh || !o.geometry.index || Object.keys(o.geometry.morphAttributes).length) return
+    const m = [].concat(o.material)[0]
+    if (m.transparent || m.alphaTest > 0) return
+    smoothable.push({ mesh: o, cache: { 0: o.geometry } })
+  })
+  let smoothLevel = 0
+  function setSmooth(lv) {
+    lv = Math.max(0, Math.min(2, lv | 0))
+    if (lv === smoothLevel) return
+    smoothLevel = lv
+    for (const s of smoothable) {
+      if (!s.cache[lv]) {
+        try { s.cache[lv] = smoothNormals(subdivide(s.cache[0], lv).geometry) }
+        catch (e) { console.warn(`smooth ${s.mesh.name}: ${e.message}`); s.cache[lv] = s.cache[0] }
+      }
+      s.mesh.geometry = s.cache[lv]
+    }
+  }
   const ch = {
     kind: key, credit: spec.credit, alt: true, vrm,
     group, bones, byName, restWorld, joints: J, skeleton: new THREE.Skeleton(bones),
@@ -325,9 +360,13 @@ export async function loadAltCharacter(key, base = new URL('./assets/', import.m
     addPart: () => null, ensurePart: async () => {}, partArray: () => null,
     /** let the model follow the rig (blinks too, on a VRM) */
     attachRig(r) { rig = r },
+    /** read the smoothing level from here every frame (the page's Smooth menu) */
+    smoothFrom: null,
     update(dt) {
       group.updateMatrixWorld(true)
       sync()
+      if (!draped) { draped = true; if (spec.drape) { group.updateMatrixWorld(true); drapeSkirt(model, H, spec.drape) } }
+      setSmooth(ch.smoothFrom ? ch.smoothFrom() : spec.smooth || 0)
       if (vrm) {
         const em = vrm.expressionManager
         if (em && rig) { em.setValue('blink', Math.max(rig.state.blink || 0, rig.state.lidDrop || 0)) }
@@ -342,4 +381,101 @@ export async function loadAltCharacter(key, base = new URL('./assets/', import.m
 function childTip(bone, wp) {
   const c = bone?.children.find(o => o.isBone)
   return c ? wp(c) : null
+}
+
+// smooth shading across the welded positions (the low-poly source is flat
+// shaded: every face has its own vertices and normals)
+function smoothNormals(g) {
+  g.computeVertexNormals()
+  const P = g.attributes.position.array, N = g.attributes.normal.array, acc = new Map()
+  const key = v => `${Math.round(P[v * 3] * 1e4)},${Math.round(P[v * 3 + 1] * 1e4)},${Math.round(P[v * 3 + 2] * 1e4)}`
+  const n = P.length / 3
+  for (let v = 0; v < n; v++) { const k = key(v), a = acc.get(k) || [0, 0, 0]; a[0] += N[v * 3]; a[1] += N[v * 3 + 1]; a[2] += N[v * 3 + 2]; acc.set(k, a) }
+  for (let v = 0; v < n; v++) { const a = acc.get(key(v)), l = Math.hypot(...a) || 1; N[v * 3] = a[0] / l; N[v * 3 + 1] = a[1] / l; N[v * 3 + 2] = a[2] / l }
+  return g
+}
+
+// ── Seated skirt ────────────────────────────────────────────────────────────
+// A skirt skinned to the thighs keeps its standing flare when she sits: the
+// cloth that stood off the front of each thigh now stands up off her lap.
+// Once, in the seated pose, every skirt vertex carried by a thigh is pulled in
+// over the top of that thigh (its distance from the thigh's axis capped at
+// the thigh's radius plus a little, fully on top, not at all underneath, so
+// the sides still fall), and the new position is solved back into the bind
+// pose through the vertex's own blended skinning matrix. Skinned again, the
+// skirt drapes the lap in this pose and stays close to it as the legs work
+// the pedals.
+const _M = new THREE.Matrix4(), _B = new THREE.Matrix4(), _v = new THREE.Vector3()
+function skinMatrix(mesh, si, sw, v, out) {
+  const sk = mesh.skeleton
+  out.set(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+  for (let k = 0; k < 4; k++) {
+    const w = sw[v * 4 + k]; if (!w) continue
+    const b = si[v * 4 + k]
+    _B.multiplyMatrices(sk.bones[b].matrixWorld, sk.boneInverses[b])
+    for (let e = 0; e < 16; e++) out.elements[e] += w * _B.elements[e]
+  }
+  return out.multiply(mesh.bindMatrix)
+}
+function drapeSkirt(model, H, spec) {
+  const thighs = ['left', 'right'].map(s => {
+    const a = H[s + 'UpperLeg'], b = H[s + 'LowerLeg']
+    const hip = a.getWorldPosition(new THREE.Vector3()), knee = b.getWorldPosition(new THREE.Vector3())
+    return { bone: a, hip, knee, L: hip.distanceTo(knee), u: knee.clone().sub(hip).normalize(), R: [] }
+  })
+  const skirts = [], skins = []
+  model.traverse(o => {
+    if (!o.isSkinnedMesh) return
+    let under = false; for (let p = o; p; p = p.parent) if (spec.under.test(p.name)) under = true
+    if (!under) return
+    const name = [].concat(o.material)[0].name
+    if (spec.material.test(name)) skirts.push(o); else skins.push(o)
+  })
+  if (!skirts.length) return
+  const axis = (T, p) => {
+    const t = THREE.MathUtils.clamp(_v.copy(p).sub(T.hip).dot(T.u) / T.L, 0, 1)
+    const c = T.hip.clone().addScaledVector(T.u, t * T.L)
+    return { t, c, r: p.clone().sub(c) }
+  }
+  const thighOf = (mesh, si, sw, v) => {
+    const bones = mesh.skeleton.bones, w = [0, 0]
+    for (let k = 0; k < 4; k++) { const b = bones[si[v * 4 + k]]; thighs.forEach((T, i) => { if (b === T.bone) w[i] += sw[v * 4 + k] }) }
+    return w
+  }
+  // the thighs' radius: the leg skin carried by one thigh, around its middle
+  for (const m of skins) {
+    const P = m.geometry.attributes.position, si = m.geometry.attributes.skinIndex.array, sw = m.geometry.attributes.skinWeight.array
+    for (let v = 0; v < P.count; v++) {
+      const w = thighOf(m, si, sw, v), i = w[0] > 0.9 ? 0 : w[1] > 0.9 ? 1 : -1
+      if (i < 0) continue
+      const p = _v.fromBufferAttribute(P, v).applyMatrix4(skinMatrix(m, si, sw, v, _M)).clone()
+      const a = axis(thighs[i], p)
+      if (a.t > 0.3 && a.t < 0.7) thighs[i].R.push(a.r.length())
+    }
+  }
+  for (const T of thighs) { T.R.sort((a, b) => a - b); T.radius = T.R.length ? T.R[Math.floor(T.R.length * 0.75)] : 0.09 * T.L }
+  for (const m of skirts) {
+    const g = m.geometry, P = g.attributes.position, si = g.attributes.skinIndex.array, sw = g.attributes.skinWeight.array
+    for (let v = 0; v < P.count; v++) {
+      const w = thighOf(m, si, sw, v), tw = w[0] + w[1]
+      if (tw < 0.3) continue
+      const M = skinMatrix(m, si, sw, v, _M)
+      const p = _v.fromBufferAttribute(P, v).applyMatrix4(M).clone()
+      const goal = new THREE.Vector3()
+      thighs.forEach((T, i) => {
+        if (!w[i]) return
+        const a = axis(T, p), len = a.r.length() || 1e-6
+        // on top (r up) fully, the sides partly, underneath not at all
+        const f = THREE.MathUtils.smoothstep(a.r.y / len, -0.45, 0.35)
+        const cap = Math.min(len, T.radius * 1.12 + 0.6)
+        goal.add(a.c.addScaledVector(a.r, THREE.MathUtils.lerp(len, cap, f) / len).multiplyScalar(w[i] / tw))
+      })
+      p.lerp(goal, Math.min(1, tw))
+      // back into the bind pose
+      p.applyMatrix4(M.invert())
+      P.setXYZ(v, p.x, p.y, p.z)
+    }
+    P.needsUpdate = true
+    g.computeVertexNormals()
+  }
 }
