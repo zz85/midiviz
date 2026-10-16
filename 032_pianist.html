@@ -74,6 +74,15 @@
     #shotName { position: absolute; left: 26px; bottom: 92px; font: 600 11px/1 ui-monospace, Menlo, monospace; color: rgba(255, 255, 255, 0.7); letter-spacing: 0.04em; pointer-events: none; display: none; }
     body.shotlbl #shotName { display: block; }
     #visualsPop { right: 12px; width: 250px; }
+    #audioPop, #renderPop { width: 260px; }
+    .field > label .val { float: right; color: #8f8f8f; font-variant-numeric: tabular-nums; }
+    #exBar { height: 4px; margin: 4px 16px 6px; border-radius: 2px; background: #333; overflow: hidden; }
+    #exBar div { height: 100%; width: 0; background: #2fae4a; }
+    #exStatus { padding: 0 16px 8px; font-size: 11px; color: #aaa; white-space: normal; }
+    .btnrow { display: flex; gap: 8px; padding: 6px 16px 10px; }
+    .btnrow button { flex: 1; padding: 7px; border-radius: 8px; border: 0; background: #2fae4a; color: #fff; font: 600 12px inherit; cursor: pointer; }
+    .btnrow button.sec { background: #3a3a3a; }
+    .btnrow button:disabled { opacity: 0.5; cursor: default; }
     #transport { position: absolute; left: 0; right: 0; bottom: 0; padding: 0 26px 14px; background: linear-gradient(transparent, rgba(0, 0, 0, 0.55)); }
     #times { display: flex; justify-content: space-between; font: 600 10.5px/1 ui-monospace, Menlo, monospace; color: #e6e6e6; margin-bottom: 7px; }
     #seek { -webkit-appearance: none; appearance: none; width: 100%; height: 2px; background: linear-gradient(to right, #fff var(--p, 0%), rgba(255, 255, 255, 0.35) var(--p, 0%)); outline: none; margin: 0 0 12px; cursor: pointer; }
@@ -107,6 +116,8 @@
   <div id="topRight" class="ui">
     <button class="pill" id="cameraBtn"><svg viewBox="0 0 24 24"><path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11z"/></svg>Camera</button>
     <button class="pill" id="visualsBtn"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>Visuals</button>
+    <button class="pill" id="audioBtn" title="Hall acoustics: room, seat, reverb, room boost, applause"><svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9zm13.5 3A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z"/></svg>Hall</button>
+    <button class="pill" id="renderBtn" title="Export the song as an MP4 video"><svg viewBox="0 0 24 24"><circle cx="7" cy="12" r="4"/><circle cx="16" cy="12" r="4" opacity=".55"/></svg>Render</button>
     <button class="pill" id="shareBtn" title="Copy a link to this exact scene: wardrobe, look, camera, sound and the song at this moment"><svg viewBox="0 0 24 24"><path d="M18 16a3 3 0 0 0-2.4 1.2l-6.7-3.4a3 3 0 0 0 0-1.6l6.7-3.4A3 3 0 1 0 15 7c0 .3 0 .5.1.8L8.4 11.2a3 3 0 1 0 0 3.6l6.7 3.4A3 3 0 1 0 18 16z"/></svg>Share</button>
   </div>
   <div id="cameraPop" class="pop ui">
@@ -218,9 +229,43 @@
     <div class="sect">Stage</div>
     <div class="field"><label>Main light</label><input type="range" id="light" min="0" max="2" step="0.01" value="1"></div>
     <div class="field"><label>Exposure</label><input type="range" id="exposure" min="0.3" max="2.5" step="0.01" value="1"></div>
+    <div class="sect">Post-processing</div>
     <label class="chk"><input type="checkbox" id="dof" checked>Depth of field</label>
+    <div class="field" title="How soft the out-of-focus parts get"><label>Blur <span class="val" id="dofAmtV"></span></label><input type="range" id="dofAmt" min="0.2" max="4" step="0.05" value="1"></div>
+    <label class="chk"><input type="checkbox" id="bloom" checked>Bloom</label>
+    <div class="field"><label>Bloom strength <span class="val" id="bloomAmtV"></span></label><input type="range" id="bloomAmt" min="0" max="1.2" step="0.01" value="0.12"></div>
+    <label class="chk"><input type="checkbox" id="filmGrain" checked>Film grain &amp; vignette</label>
+    <div class="field"><label>Grain <span class="val" id="grainAmtV"></span></label><input type="range" id="grainAmt" min="0" max="0.12" step="0.002" value="0.035"></div>
+    <div class="field"><label>Vignette <span class="val" id="vigV"></span></label><input type="range" id="vig" min="0" max="1.2" step="0.01" value="0.55"></div>
+    <label class="chk" title="Dust motes drifting through the spotlight"><input type="checkbox" id="dust" checked>Dust in the light</label>
+    <div class="field"><label>Dust <span class="val" id="dustAmtV"></span></label><input type="range" id="dustAmt" min="0" max="0.6" step="0.01" value="0.18"></div>
     <div class="field"><label>Sound</label><select id="sf"></select></div>
     <div class="field" title="Fine-tune when the hands and keys move against the sound, if your speakers or headphones report their delay wrongly (Bluetooth often does). Positive = the picture later."><label>Picture vs sound</label><input type="range" id="avsync" min="-200" max="200" step="5" value="0"><span id="avsyncV">0 ms</span></div>
+  </div>
+  <div id="audioPop" class="pop ui">
+    <div class="sect">Hall acoustics</div>
+    <div class="field"><label>Volume <span class="val" id="volV"></span></label><input type="range" id="vol" min="0" max="2" step="0.01" value="1"></div>
+    <div class="field"><label>Room</label><select id="room"></select></div>
+    <div class="field"><label>Seat</label><select id="seat"></select></div>
+    <div class="field"><label>Reverb <span class="val" id="rvAmtV"></span></label><input type="range" id="rvAmt" min="0" max="2" step="0.01" value="1"></div>
+    <div class="field"><label>Decay <span class="val" id="rvDecayV"></span></label><input type="range" id="rvDecay" min="0.4" max="2" step="0.01" value="1"></div>
+    <div class="field"><label>Tone <span class="val" id="rvToneV"></span></label><input type="range" id="rvTone" min="0" max="1" step="0.01" value="0.5"></div>
+    <div class="field" title="Raises the room (reverb, ambience, applause) relative to the piano"><label>Room boost <span class="val" id="boostV"></span></label><input type="range" id="boost" min="-12" max="12" step="0.5" value="0"></div>
+    <div class="sect">Audience</div>
+    <div class="field"><label>Hall ambience <span class="val" id="ambV"></span></label><input type="range" id="amb" min="0" max="1" step="0.01" value="0"></div>
+    <label class="chk"><input type="checkbox" id="applause" checked>Applause when a song ends</label>
+    <div class="btnrow"><button id="clapNow" class="sec">Applaud now</button></div>
+  </div>
+  <div id="renderPop" class="pop ui">
+    <div class="sect">Export video (MP4)</div>
+    <div class="field"><label>Resolution</label><select id="exRes"><option value="1280x720">720p</option><option value="1920x1080" selected>1080p</option><option value="2560x1440">1440p</option><option value="3840x2160">4K</option></select></div>
+    <div class="field"><label>Frame rate</label><select id="exFps"><option>30</option><option selected>60</option></select></div>
+    <div class="field"><label>Camera</label><select id="exCam"><option value="auto" selected>Director (auto)</option><option value="current">As on screen</option></select></div>
+    <label class="chk"><input type="checkbox" id="exAudio" checked>Include audio (with the hall)</label>
+    <label class="chk"><input type="checkbox" id="exTitle" checked>Title card</label>
+    <div id="exBar"><div></div></div>
+    <div id="exStatus">Choose a song first. Rendering is offline, so every frame is smooth however fast the GPU is.</div>
+    <div class="btnrow"><button id="exStart">Export</button><button id="exCancel" class="sec">Cancel</button></div>
   </div>
   <div id="transport" class="ui">
     <div id="times"><span id="tNow">0:00.000</span><span id="tLeft">-0:00</span></div>
@@ -248,6 +293,8 @@
     import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
     import { SoundFontEngine, MidiScheduler } from './soundfont-engine/src/index.js'
     import { midiToSchedule } from './notation3d/midi-score.js'
+    import { exportVideo, exportSupported, defaultBitrate } from './notation3d/video-export.js'
+    import { installAcoustics, offlineHall, acousticParams, rt60Of, ROOMS, SEATS } from './concertstage/acoustics.js'
     import { buildGrandPiano, LOW, HIGH } from './concertstage/concert-grand.js'
     import { loadCharacter } from './pianist/character.js'
     import { loadAltCharacter, MODELS } from './pianist/alt-model.js'
@@ -668,7 +715,64 @@
           c.rgb *= v; c.rgb += (h(vUv * 1000.0) - 0.5) * uAmount; gl_FragColor = c; }`,
     })
     composer.addPass(grain)
-    $('dof').onchange = () => { bokeh.enabled = $('dof').checked }
+
+    // Dust in the beam (from #030): a few hundred motes drifting through the spot
+    const dust = (() => {
+      const N = LOWQ ? 150 : 420, pos = new Float32Array(N * 3), seed = new Float32Array(N)
+      for (let i = 0; i < N; i++) {
+        const t = Math.random(), a = Math.random() * Math.PI * 2, rad = Math.sqrt(Math.random()) * (30 + t * 160)
+        const p = new THREE.Vector3().lerpVectors(spot.target.position, spot.position, t * 0.75)
+        pos.set([p.x + Math.cos(a) * rad, p.y + (Math.random() - 0.5) * 40, p.z + Math.sin(a) * rad], i * 3)
+        seed[i] = Math.random() * 100
+      }
+      const geo = new THREE.BufferGeometry()
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+      geo.setAttribute('seed', new THREE.BufferAttribute(seed, 1))
+      const mat = new THREE.ShaderMaterial({
+        uniforms: { uTime: { value: 0 }, uScale: { value: innerHeight * renderer.getPixelRatio() }, uOpacity: { value: 0.18 } },
+        vertexShader: `attribute float seed; uniform float uTime, uScale; varying float vA;
+          void main() {
+            vec3 p = position + vec3(sin(uTime * 0.07 + seed) * 9.0, sin(uTime * 0.05 + seed * 1.7) * 7.0, cos(uTime * 0.06 + seed * 0.7) * 9.0);
+            vec4 mv = modelViewMatrix * vec4(p, 1.0);
+            gl_Position = projectionMatrix * mv;
+            gl_PointSize = clamp(uScale * 0.22 / -mv.z, 1.0, 3.5);
+            vA = 0.4 + 0.6 * abs(sin(uTime * 0.4 + seed * 3.0));
+          }`,
+        fragmentShader: `uniform float uOpacity; varying float vA;
+          void main() { float d = length(gl_PointCoord - 0.5); if (d > 0.5) discard;
+            gl_FragColor = vec4(vec3(1.0, 0.85, 0.65) * 1.4, (1.0 - d * 2.0) * vA * uOpacity); }`,
+        transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      })
+      const pts = new THREE.Points(geo, mat)
+      pts.frustumCulled = false
+      scene.add(pts)
+      return pts
+    })()
+    // the depth of field re-renders the scene for depth: keep the motes out of it
+    {
+      const render = bokeh.render.bind(bokeh)
+      bokeh.render = (...a) => { const v = dust.visible; dust.visible = false; render(...a); dust.visible = v }
+    }
+    const pct = x => Math.round(x * 100) + '%'
+    function applyFx() {
+      bokeh.enabled = $('dof').checked
+      bloom.enabled = $('bloom').checked; bloom.strength = +$('bloomAmt').value
+      const g = $('filmGrain').checked
+      grain.uniforms.uAmount.value = g ? +$('grainAmt').value : 0; grain.uniforms.uVig.value = g ? +$('vig').value : 0
+      dust.visible = $('dust').checked; dust.material.uniforms.uOpacity.value = +$('dustAmt').value
+      $('dofAmtV').textContent = (+$('dofAmt').value).toFixed(2).replace(/0$/, '') + '×'
+      $('bloomAmtV').textContent = (+$('bloomAmt').value).toFixed(2)
+      $('grainAmtV').textContent = pct(+$('grainAmt').value / 0.035)
+      $('vigV').textContent = pct(+$('vig').value / 0.55)
+      $('dustAmtV').textContent = pct(+$('dustAmt').value / 0.18)
+      for (const id of ['dofAmt']) $(id).disabled = !$('dof').checked
+      $('bloomAmt').disabled = !$('bloom').checked
+      $('grainAmt').disabled = $('vig').disabled = !g
+      $('dustAmt').disabled = !$('dust').checked
+    }
+    for (const id of ['dof', 'bloom', 'filmGrain', 'dust']) $(id).onchange = applyFx
+    for (const id of ['dofAmt', 'bloomAmt', 'grainAmt', 'vig', 'dustAmt']) $(id).oninput = applyFx
+    applyFx()
 
     // ── Cameras (framed after Concert Creator's shots) ───────────────────
     const VIEWS = {
@@ -748,7 +852,16 @@
     controls.addEventListener('end', () => { camTouched = performance.now() })
 
     // popups
-    const pops = { songsBtn: 'songsPop', cameraBtn: 'cameraPop', visualsBtn: 'visualsPop' }
+    const pops = { songsBtn: 'songsPop', cameraBtn: 'cameraPop', visualsBtn: 'visualsPop', audioBtn: 'audioPop', renderBtn: 'renderPop' }
+    // the right-hand menus open under their own pill
+    for (const [b, p] of Object.entries(pops)) {
+      if (b === 'songsBtn') continue
+      new MutationObserver(() => {
+        if (!$(p).classList.contains('open')) return
+        const r = $(b).getBoundingClientRect(), w = $(p).offsetWidth
+        $(p).style.right = Math.max(12, Math.min(innerWidth - w - 12, innerWidth - r.right)) + 'px'
+      }).observe($(p), { attributes: true, attributeFilter: ['class'] })
+    }
     function closePops() { for (const p of Object.values(pops)) $(p).classList.remove('open') }
     for (const [b, p] of Object.entries(pops)) $(b).onclick = ev => { ev.stopPropagation(); const o = $(p).classList.contains('open'); closePops(); if (!o) $(p).classList.add('open') }
     for (const p of Object.values(pops)) $(p).addEventListener('pointerdown', ev => ev.stopPropagation())
@@ -791,12 +904,15 @@
     // WASM: catch that one construction (as #030's acoustics.js does) so the
     // picture can measure how late its sound reaches the speakers
     const avs = { ctx: null, end: 0, lag: 0, measured: false, t: null }
+    // ...and to put the hall (concertstage/acoustics.js: reverb, room boost,
+    // ambience, applause, master volume and limiter) in its output
+    const hall = installAcoustics()
     {
       const Base = window.AudioContext
-      window.AudioContext = class extends Base {
+      const Measured = window.AudioContext = class extends Base {
         constructor(...a) {
           super(...a)
-          window.AudioContext = Base   // one-shot
+          if (window.AudioContext === Measured) window.AudioContext = Base   // one-shot (the hall's own restores the original)
           avs.ctx = this
           const make = this.createBufferSource.bind(this)
           this.createBufferSource = () => {
@@ -822,7 +938,31 @@
     }
     $('sf').onchange = () => { soundLoading = loadSound($('sf').value) }
     const ensureSound = () => (soundLoading ??= loadSound($('sf').value))
-    const unlockAudio = () => { if (audioCtx.state !== 'running') audioCtx.resume().then(() => engine.resume?.()).catch(() => {}) }
+    const unlockAudio = () => { if (audioCtx.state !== 'running') audioCtx.resume().then(() => engine.resume?.()).catch(() => {}); if (hall.ctx && hall.ctx.state !== 'running') hall.ctx.resume().catch(() => {}) }
+
+    // ── Hall acoustics (as #030) ─────────────────────────────────────────
+    for (const [k, r] of Object.entries(ROOMS)) $('room').add(new Option(r.label, k, k === 'hall', k === 'hall'))
+    for (const [k, r] of Object.entries(SEATS)) $('seat').add(new Option(r.label, k, k === 'front', k === 'front'))
+    const hallSettings = () => ({ room: $('room').value, seat: $('seat').value, amount: +$('rvAmt').value, decay: +$('rvDecay').value, tone: +$('rvTone').value, boost: +$('boost').value })
+    function applyHall() {
+      const h = hallSettings(), dry = h.room === 'dry'
+      $('rvAmtV').textContent = Math.round(h.amount * 100) + '%'
+      $('rvDecayV').textContent = dry ? '–' : rt60Of(h.room, h.decay).toFixed(1) + ' s'
+      $('rvToneV').textContent = h.tone < 0.35 ? 'warm' : h.tone > 0.65 ? 'bright' : 'neutral'
+      $('ambV').textContent = +$('amb').value ? Math.round(+$('amb').value * 100) + '%' : 'off'
+      for (const id of ['seat', 'rvAmt', 'rvDecay', 'rvTone']) $(id).disabled = dry
+      const vol = +$('vol').value
+      $('volV').textContent = vol ? Math.round(vol * 100) + '%' : 'muted'
+      $('boostV').textContent = (h.boost > 0 ? '+' : '') + h.boost + ' dB'
+      hall.setLevels({ volume: vol, boost: h.boost })
+      hall.set(acousticParams(h))
+      hall.setAmbience(+$('amb').value)
+    }
+    for (const id of ['room', 'seat']) $(id).onchange = applyHall
+    for (const id of ['vol', 'boost', 'rvAmt', 'rvDecay', 'rvTone', 'amb']) $(id).oninput = applyHall
+    $('clapNow').onclick = () => { unlockAudio(); hall.applause() }
+    hall.ready.then(applyHall)
+    applyHall()
 
     // ── Songs ────────────────────────────────────────────────────────────
     const SONGS = [], GROUPS = []
@@ -929,6 +1069,7 @@
         songTarget.allSoundOff()
         if (loop) { scheduler.seek(0); music.songT = 0; music.wall = performance.now(); scheduler.play(); return }
         setPlaying(false)
+        if ($('applause').checked && !exporting) hall.applause()
       })
       return scheduler
     }
@@ -965,6 +1106,7 @@
         s.notes = s.notes.filter(n => n.channel !== 9 && n.midi >= LOW && n.midi <= HIGH)
         if (!s.notes.length) throw new Error('no notes in file')
         s.duration = s.notes.reduce((m, n) => Math.max(m, n.time + n.duration), 0)
+        s.title = s.title || String(name || '').replace(/\.midi?$/i, '')
         song = s; fingered = false
         rig.clear()
         fingerInWorker(s.notes)
@@ -1032,6 +1174,9 @@
       ['light', 'light'], ['exposure', 'exposure'], ['dof', 'dof'],
       ['move', 'camMove'], ['pace', 'dirPace'], ['favour', 'dirBias'], ['trans', 'dirTrans'], ['shotnames', 'shotLbl'], ['follow', 'camFollow'],
       ['sf', 'sf'], ['avsync', 'avsync'],
+      ['dofamt', 'dofAmt'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
+      ['vol', 'vol'], ['room', 'room'], ['seat', 'seat'], ['rv', 'rvAmt'], ['decay', 'rvDecay'], ['tone', 'rvTone'], ['boost', 'boost'], ['amb', 'amb'], ['applause', 'applause'],
+      ['excam', 'exCam'],
     ].filter(([, id]) => $(id))
     const OUTFIT_KEYS = { dress: 'dress', slit: 'slit', fabric: 'fabric', dcol: 'color', shoes: 'shoes', hair: 'hair', hcol: 'hairColor' }
     // (colours without their #, so links stay readable)
@@ -1102,10 +1247,16 @@
     const clock = new THREE.Clock()
     let fixedT = null   // ?t= for headless stills: song time to pose at
     const head = new THREE.Vector3(), handsC = new THREE.Vector3()
+    let fxT = 0, exporting = false
     function frame() {
       const dt = Math.min(clock.getDelta(), 1 / 20)
-      const t = fixedT ?? pictureTime(dt)
-      if (fixedT == null && song && scheduler?.playing) driveKeys(t + KEY_LEAD)
+      step(dt, fixedT ?? pictureTime(dt), false)
+    }
+    // offline: the export drives song time and the keys itself (see stageAdapter)
+    function step(dt, t, offline) {
+      if (offline || (fixedT == null && song && scheduler?.playing)) driveKeys(t + KEY_LEAD)
+      fxT += dt
+      dust.material.uniforms.uTime.value = fxT
       piano.update(dt)
       rig.setPedals(pedals[0], pedals[1], pedals[2])
       rig.update(t, dt)
@@ -1159,15 +1310,99 @@
       const fd = camera.position.distanceTo(focusOn)
       bokeh.uniforms.focus.value += (fd - bokeh.uniforms.focus.value) * (snapFocus ? 1 : 0.1)
       bokeh.uniforms.aperture.value = wide ? 0.00003 : 0.0001
-      grain.uniforms.uTime.value = performance.now() / 1000
-      if (scheduler?.playing && performance.now() - idleT > 2500) document.body.classList.add('idle')
+      bokeh.uniforms.aperture.value *= +$('dofAmt').value
+      grain.uniforms.uTime.value = fxT
+      if (!offline && scheduler?.playing && performance.now() - idleT > 2500) document.body.classList.add('idle')
       composer.render()
     }
     renderer.setAnimationLoop(frame)
-    addEventListener('resize', () => {
-      camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix()
-      renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight)
-    })
+    function resize(w, h, style = true) {
+      camera.aspect = w / h; camera.updateProjectionMatrix()
+      renderer.setSize(w, h, style); composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(w, h)
+      dust.material.uniforms.uScale.value = h * renderer.getPixelRatio()
+    }
+    addEventListener('resize', () => { if (!exporting) resize(innerWidth, innerHeight) })
+
+    // ── Video export (as #030) ───────────────────────────────────────────
+    // notation3d/video-export.js renders frame by frame at a fixed timestep
+    // with the audio synthesised offline and run through the same hall. The
+    // picture is a function of song time (fingering, body, director), so the
+    // film is the one you'd see live, without dropped frames.
+    let prevPR = 1, prevView = null
+    const stageAdapter = {
+      renderer, opts: { transition: null, view: null }, tour: null,
+      setTour() {}, setView() {},
+      beginOffline(w, h) {
+        prevPR = renderer.getPixelRatio(); prevView = view
+        renderer.setAnimationLoop(null)
+        renderer.setPixelRatio(1)
+        resize(w, h, false)
+        if ($('exCam').value === 'auto' && view !== 'auto') setView('auto')
+        userCam = false; releaseKeys()
+      },
+      endOffline() {
+        releaseKeys()
+        if (view !== prevView) setView(prevView)
+        renderer.setPixelRatio(prevPR)
+        resize(innerWidth, innerHeight)
+        clock.getDelta()
+        renderer.setAnimationLoop(frame)
+      },
+      update(t, dt) { step(dt, Math.max(0, t), true) },
+    }
+    let exAbort = null
+    $('exStart').onclick = async () => {
+      if (!song || !fingered) return void ($('exStatus').textContent = song ? 'Still working out the fingering, try again in a moment.' : 'Load a song first (Songs, top left).')
+      if (!exportSupported()) return void ($('exStatus').textContent = 'This browser has no WebCodecs video encoder; try Chrome or Edge.')
+      const [width, height] = $('exRes').value.split('x').map(Number), fps = +$('exFps').value
+      const name = (song.title || 'pianist').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_') + `_${height}p${fps}.mp4`
+      let fileStream = null
+      if (window.showSaveFilePicker) {
+        try {
+          const handle = await showSaveFilePicker({ suggestedName: name, types: [{ description: 'MP4 video', accept: { 'video/mp4': ['.mp4'] } }] })
+          fileStream = await handle.createWritable()
+        } catch (e) { if (e.name === 'AbortError') return; console.warn(e) }
+      }
+      if (scheduler?.playing) { scheduler.pause(); songTarget.allSoundOff(); setPlaying(false) }
+      exAbort = new AbortController()
+      exporting = true
+      $('exStart').disabled = true
+      const programs = new Map(); for (let ch = 0; ch < 16; ch++) if (ch !== 9) programs.set(ch, 0)
+      try {
+        const blob = await exportVideo({
+          stage: stageAdapter,
+          song: { schedule: { notes: song.notes, controlChanges: (song.controlChanges || []).filter(c => c.controller !== 7) }, programs, duration: song.duration, title: song.title },
+          width, height, fps, start: 0, end: song.duration,
+          bitrate: defaultBitrate(width, height, fps),
+          audio: $('exAudio').checked,
+          audioOpts: { vendorPath, soundfonts: [$('sf').value], volume: 1, convertSF3: engine._backend?._convertSF3 ? d => engine._backend._convertSF3(d) : null },
+          audioFx: offlineHall($('room').value === 'dry' ? null : acousticParams(hallSettings()), 48000, { volume: +$('vol').value }),
+          tour: null,
+          intro: $('exTitle').checked ? { seconds: 3.5, title: song.title, subtitle: 'Pianist · MIDIVIZ', style: '2d', overlap: true } : null,
+          outro: null,
+          fileStream, signal: exAbort.signal,
+          onProgress: p => {
+            $('exBar').firstElementChild.style.width = (p.frame / p.frames * 100).toFixed(1) + '%'
+            $('exStatus').textContent = p.phase === 'finalizing' ? 'Finalizing…'
+              : `${p.frame}/${p.frames} frames · ${(p.frame / p.elapsed).toFixed(1)} fps · ${fmt(p.eta)} left`
+          },
+        })
+        if (blob) {
+          const a = document.createElement('a')
+          a.href = URL.createObjectURL(blob); a.download = name; a.click()
+          setTimeout(() => URL.revokeObjectURL(a.href), 60000)
+        }
+        $('exStatus').textContent = 'Done: ' + name
+      } catch (e) {
+        console.error(e)
+        $('exStatus').textContent = e.name === 'AbortError' ? 'Cancelled' : 'Failed: ' + e.message
+      } finally {
+        exporting = false; exAbort = null
+        $('exStart').disabled = false
+      }
+    }
+    $('exCancel').onclick = () => { if (exAbort) exAbort.abort(); else closePops() }
+    window.__pianist.exportStage = stageAdapter
 
     // ── Headless stills: ?shot&song=…&t=12&view=profile ─────────────────
     if (params.has('shot')) {

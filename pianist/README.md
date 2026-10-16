@@ -93,6 +93,12 @@ node pianist/build/build-character.mjs
 
 Each asset gets its own `assets/community/<key>.bin` plus WebP / JPEG textures, fetched only when chosen. `character.bin` stays ~2 MB.
 
+## Render, hall and post-processing (from #030)
+
+- Render → MP4 export (720p–4K, 30/60 fps) through `notation3d/video-export.js`: offline, frame by frame, with the audio synthesised offline and run through the same hall. Camera: Director (auto) or as on screen; optional title card. The picture is a function of song time, so the film matches what plays live.
+- Hall (`concertstage/acoustics.js`): volume (to 200 %, limited), room (dry … cathedral), seat, reverb, decay, tone, room boost (±12 dB of reverb / ambience / applause against the piano), hall ambience, applause at the end of a song.
+- Visuals → Post-processing: depth of field and its blur, bloom and its strength, film grain and vignette, dust in the spotlight. All of these are in shared links.
+
 ## Camera and the director
 
 `director.js` frames shots on a live subject (hands, head, figure, piano, feet) in spherical coordinates and gives each one a slow move: orbit, zoom in/out, push in, pull out, crane, or a still frame with a handheld breath. Shots end in a cut or a glide into the next spot (glides only between spots on the same side and of similar size, so the camera never flies through the piano).

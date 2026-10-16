@@ -64,7 +64,7 @@ test('the camera stays outside the piano and holds still within a shot', () => {
     expect(Math.abs(p.x) < 82 && p.y < 106 && p.z > -215 && p.z < 4).toBe(false)
     const sh = d.shots.find(s => s.t0 <= t && s.t1 > t)
     if (sh !== shot || t < sh.t0 + sh.glide + 0.05) { shot = sh; aim = o.target.clone() }
-    else expect(o.target.distanceTo(aim)).toBeLessThan(0.5)
+    else expect(o.target.distanceTo(aim)).toBeLessThan(2)   // (the handheld sway moves it a few mm)
   }
 })
 

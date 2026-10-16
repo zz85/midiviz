@@ -388,7 +388,7 @@ export function createDirector(opts = {}) {
   const o = { pace: 1, bias: 0, trans: 'mix', follow: false, ...opts }
   let shots = planShots({ duration: 600 }, o), source = null, idleT = 0
   const anchor = { hands: new THREE.Vector3(0, 76, 0), head: new THREE.Vector3(0, 122, 32), figure: new THREE.Vector3(), piano: new THREE.Vector3(), feet: new THREE.Vector3(0, 12, 18) }
-  let primed = false
+  let primed = false, swayT = 0
   const seqs = {}   // take lists for sequence(): random / the director's cut
   const A = {}, B = {}, out = { pos: new THREE.Vector3(), target: new THREE.Vector3(), fov: 34, focus: 'head', wide: false, shot: null }
   const ta = new THREE.Vector3(), tb = new THREE.Vector3()
@@ -465,7 +465,9 @@ export function createDirector(opts = {}) {
       out.target.copy(ta)
       place(A, ta, out.pos)
       // handheld breath, scaled to the framing
-      const w = performance.now() / 1000, amp = 0.0035 * A.dist * (A.fov / 34)
+      // (on the frame clock, so an offline render breathes at the same rate)
+      swayT += dt
+      const w = swayT, amp = 0.0035 * A.dist * (A.fov / 34)
       out.pos.x += amp * (Math.sin(w * 0.53) + 0.5 * Math.sin(w * 1.31 + 1))
       out.pos.y += amp * 0.7 * (Math.sin(w * 0.71 + 2) + 0.4 * Math.sin(w * 1.7))
       out.target.x += amp * 0.25 * Math.sin(w * 0.43 + 3)
