@@ -2,19 +2,46 @@
 
 From the MakeHuman community asset repository, fitted by pianist/build/build-character.mjs.
 
+- Dress Mini 01 by frankyaye (CC0) — http://www.makehumancommunity.org/node/141
+- Dress Mini 02 by frankyaye (CC0) — http://www.makehumancommunity.org/node/151
+- black cocktail dress by punkduck (CC-BY) — http://www.makehumancommunity.org/node/379
 - Tube dress by punkduck (CC-BY) — http://www.makehumancommunity.org/node/411
+- Loosed T-shirt by reizibarrientos (CC0) — http://www.makehumancommunity.org/node/416
+- Hairstyle Long (alpha 7 adaptation) by punkduck (CC-BY) — http://www.makehumancommunity.org/node/482
+- Hairstyle Long2 (alpha 7 adaptation) by punkduck (CC-BY) — http://www.makehumancommunity.org/node/492
+- Qipao by MistressSaeko (CC-BY) — http://www.makehumancommunity.org/node/533
+- Puff Shoulder Dress by MistressSaeko (CC-BY) — http://www.makehumancommunity.org/node/563
 - hair_female_medium by grinsegold (CC-BY) — http://www.makehumancommunity.org/node/572
+- Evening gown by punkduck (CC-BY) — http://www.makehumancommunity.org/node/806
+- Middle Length Qipao by punkduck (CC-BY) — http://www.makehumancommunity.org/node/857
+- Crude T-shirt (female) by Joel Palmius (CC0) — http://www.makehumancommunity.org/node/894
+- Peep-toe Pumps by MargaretToigo (CC0) — http://www.makehumancommunity.org/node/1039
+- T-shirt Basic Tucked by MargaretToigo (CC0) — http://www.makehumancommunity.org/node/1203
+- Elvs Evening Gown1 by Elvaerwyn (CC-BY) — http://www.makehumancommunity.org/node/1419
 - F Dress 08 by Mindfront (CC-BY) — http://www.makehumancommunity.org/node/1422
+- F Dress 09 by Mindfront (CC-BY) — http://www.makehumancommunity.org/node/1424
+- O4saken long01 by punkduck (CC0) — http://www.makehumancommunity.org/node/1471
+- Elvs simple 60s Dress1 by Elvaerwyn (CC-BY) — http://www.makehumancommunity.org/node/1515
+- Elvs simple fashion dress2 by Elvaerwyn (CC-BY) — http://www.makehumancommunity.org/node/1517
+- Keyhole Neck Dress by MargaretToigo (CC0) — http://www.makehumancommunity.org/node/1613
+- Dress with Tiered Skirt by MargaretToigo (CC0) — http://www.makehumancommunity.org/node/1640
 - Turtleneck Halter Top by MargaretToigo (CC0) — http://www.makehumancommunity.org/node/1642
 - Blunt Bob by MargaretToigo (CC0) — http://www.makehumancommunity.org/node/1669
 - Inverted Bob by MargaretToigo (CC0) — http://www.makehumancommunity.org/node/1673
+- Stiletto Booties by MargaretToigo (CC0) — http://www.makehumancommunity.org/node/1694
 - Shift Dress by MargaretToigo (CC0) — http://www.makehumancommunity.org/node/1724
+- Elvs 6in Stilletto pumps1 by Elvaerwyn (CC-BY) — http://www.makehumancommunity.org/node/1822
 - Knee-length Halter Dress by MargaretToigo (CC0) — http://www.makehumancommunity.org/node/1853
 - Midi Halter Dress by MargaretToigo (CC0) — http://www.makehumancommunity.org/node/1854
+- Elvs Daisy Hair1 by Elvaerwyn (CC-BY) — http://www.makehumancommunity.org/node/1859
+- Elvs Adrienne hair1 by Elvaerwyn (CC-BY) — http://www.makehumancommunity.org/node/1862
 - Elvs Knee length Halter dress1 by Elvaerwyn (CC-BY) — http://www.makehumancommunity.org/node/1922
 - Elvs 50s updo1 by Elvaerwyn (CC-BY) — http://www.makehumancommunity.org/node/2001
 - Elvs Braid Bun 1 by Elvaerwyn (CC-BY) — http://www.makehumancommunity.org/node/2177
 - Brown hair with bun and red velvet tie by RehmanPolanski (CC0) — http://www.makehumancommunity.org/node/2477
+- Sequind Bodikon Dress by Cortu (CC0) — http://www.makehumancommunity.org/node/2802
+- Elvs Hazel Hair by Elvaerwyn (CC-BY) — http://www.makehumancommunity.org/node/2816
 - Turtleneck Sweater - Sleeveless by WojackOWL (CC-BY) — http://www.makehumancommunity.org/node/3471
+- T Shirt by WojackOWL (CC-BY) — http://www.makehumancommunity.org/node/3508
 - Messy Bun by Umongus (CC0) — http://www.makehumancommunity.org/node/3542
 - bob02_alternative by culturalibre (CC0) — http://www.makehumancommunity.org/node/3694

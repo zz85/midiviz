@@ -281,13 +281,16 @@ if (fs.existsSync(COMMUNITY_DIR)) for (const nid of fs.readdirSync(COMMUNITY_DIR
   }
   if (!mat.diffuseTexture && info.files?.diffuse) { const f = path.basename(info.files.diffuse); if (fs.existsSync(path.join(dir, f))) mat.diffuseTexture = f }
   if (!mat.diffuseTexture && info.files?.alpha) { const f = path.basename(info.files.alpha); if (fs.existsSync(path.join(dir, f))) mat.diffuseTexture = f }
-  const kind = info.category === 'Hair' || KINDS.hair.test(info.title) ? 'hair' : KINDS.top.test(info.title) ? 'top' : 'dress'
+  const kind = info.category === 'Hair' || KINDS.hair.test(info.title) ? 'hair'
+    : /^Shoes/.test(info.category) ? 'shoes'
+    : /^Shirt/.test(info.category) || KINDS.top.test(info.title) ? 'top' : 'dress'
   community.push({ key, nid: +nid, kind, title: info.title.trim(), author: info.username, license: info.license, url: `http://www.makehumancommunity.org/node/${nid}`, dir, mat })
 }
 
 // ── Write ──────────────────────────────────────────────────────────────────
-const chunks = []
-let offset = 0
+// community parts go to their own files (community/<key>.bin), fetched only
+// when chosen; everything else to character.bin
+let chunks = [], offset = 0
 function put(typed) {
   const pad = (4 - (offset % 4)) % 4
   if (pad) { chunks.push(Buffer.alloc(pad)); offset += pad }
@@ -307,10 +310,15 @@ const meta = {
   parts: {},
   community: [],
 }
-for (const p of parts) {
+const communityBins = []
+const ownBin = p => /^c\d+$/.test(p.name)
+for (const p of [...parts.filter(p => !ownBin(p)), ...parts.filter(ownBin)]) {
+  const own = ownBin(p)
+  if (own) { communityBins.push([p.name, chunks, offset]); chunks = []; offset = 0 }
   const nv = p.position.length / 3
   meta.parts[p.name] = {
     count: nv,
+    ...(own ? { bin: `community/${p.name}.bin` } : {}),
     position: put(new Float32Array(p.position)),
     uv: put(new Float32Array(p.uv)),
     skinIndex: put(new Uint16Array(p.skinIndex)),
@@ -320,6 +328,7 @@ for (const p of parts) {
     source: put(new Uint16Array(p.source)), // base-mesh vertex each came from (body / helpers)
     ...(p.deleteVerts?.length ? { deleteVerts: put(new Uint16Array(p.deleteVerts)) } : {}),
   }
+  if (own) { fs.mkdirSync(path.join(OUT, 'community'), { recursive: true }); fs.writeFileSync(path.join(OUT, meta.parts[p.name].bin), Buffer.concat(chunks)); const prev = communityBins.pop(); chunks = prev[1]; offset = prev[2] }
 }
 fs.writeFileSync(path.join(OUT, 'character.bin'), Buffer.concat(chunks))
 fs.writeFileSync(path.join(OUT, 'character.json'), JSON.stringify(meta))
@@ -335,12 +344,14 @@ fs.copyFileSync(path.join(SYS, 'eyelashes/eyelashes01/eyelashes01.png'), path.jo
 // hair cards: luminance + alpha only (recoloured in the shader), 1024²
 for (const h of HAIR_MESHES)
   ff(['-i', path.join(SYS, `hair/${h}/${h}_diffuse.png`), '-vf', 'scale=1024:1024,format=ya8', path.join(OUT, `hair_${h}.png`)])
-// community textures: diffuse ≤1024² PNG (alpha kept), normal map ≤1024² JPEG
+// community textures: diffuse as WebP (alpha kept), normal map as JPEG
 fs.mkdirSync(path.join(OUT, 'community'), { recursive: true })
 for (const c of community) {
   const e = { key: c.key, nid: c.nid, kind: c.kind, title: c.title, author: c.author, license: c.license, url: c.url }
-  if (c.mat.diffuseTexture) { ff(['-i', path.join(c.dir, c.mat.diffuseTexture), '-vf', "scale='min(1024,iw)':-1", path.join(OUT, 'community', c.key + '.png')]); e.map = `community/${c.key}.png` }
-  if (c.mat.normalmapTexture) { ff(['-i', path.join(c.dir, c.mat.normalmapTexture), '-vf', "scale='min(1024,iw)':-1", '-q:v', '3', path.join(OUT, 'community', c.key + '_n.jpg')]); e.normalMap = `community/${c.key}_n.jpg` }
+  // (hair cards keep 1024 px; clothes and shoes read fine at 512)
+  const px = c.kind === 'hair' ? 1024 : 512
+  if (c.mat.diffuseTexture) { ff(['-i', path.join(c.dir, c.mat.diffuseTexture), '-vf', `scale='min(${px},iw)':-1`, '-c:v', 'libwebp', '-quality', '85', path.join(OUT, 'community', c.key + '.webp')]); e.map = `community/${c.key}.webp` }
+  if (c.mat.normalmapTexture) { ff(['-i', path.join(c.dir, c.mat.normalmapTexture), '-vf', `scale='min(${px},iw)':-1`, '-q:v', '3', path.join(OUT, 'community', c.key + '_n.jpg')]); e.normalMap = `community/${c.key}_n.jpg` }
   meta.community.push(e)
 }
 fs.writeFileSync(path.join(OUT, 'character.json'), JSON.stringify(meta))

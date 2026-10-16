@@ -95,7 +95,9 @@ export async function loadCharacter(base = new URL('./assets/', import.meta.url)
     fetch(base + 'character.json').then(r => r.json()),
     fetch(base + 'character.bin').then(r => r.arrayBuffer()),
   ])
-  const arr = (T, ref) => new T(bin, ref.offset, ref.length)
+  // community parts live in their own .bin files, fetched on demand (ensurePart)
+  const bins = {}
+  const arr = (T, ref, name) => new T(bins[name] || bin, ref.offset, ref.length)
   const tl = new THREE.TextureLoader()
   const tex = (f, srgb = true) => new Promise(res => tl.load(base + f, t => { if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; res(t) }, undefined, () => res(null)))
   const [skinMap, eyeMap, browMap, lashMap] = await Promise.all([tex('skin.jpg'), tex('eye.png'), tex('eyebrow.png'), tex('eyelashes.png')])
@@ -127,15 +129,16 @@ export async function loadCharacter(base = new URL('./assets/', import.meta.url)
   function geometry(name) {
     const p = meta.parts[name]
     const g = new THREE.BufferGeometry()
-    g.setAttribute('position', new THREE.BufferAttribute(flip(arr(Float32Array, p.position).slice()), 3))
-    g.setAttribute('uv', new THREE.BufferAttribute(arr(Float32Array, p.uv).slice(), 2))
-    g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(arr(Uint16Array, p.skinIndex).slice(), 4))
-    g.setAttribute('skinWeight', new THREE.BufferAttribute(arr(Float32Array, p.skinWeight).slice(), 4))
-    g.setIndex(new THREE.BufferAttribute(p.indexType === 'u32' ? arr(Uint32Array, p.index).slice() : arr(Uint16Array, p.index).slice(), 1))
+    const a = (T, ref) => arr(T, ref, name).slice()
+    g.setAttribute('position', new THREE.BufferAttribute(flip(a(Float32Array, p.position)), 3))
+    g.setAttribute('uv', new THREE.BufferAttribute(a(Float32Array, p.uv), 2))
+    g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(a(Uint16Array, p.skinIndex), 4))
+    g.setAttribute('skinWeight', new THREE.BufferAttribute(a(Float32Array, p.skinWeight), 4))
+    g.setIndex(new THREE.BufferAttribute(p.indexType === 'u32' ? a(Uint32Array, p.index) : a(Uint16Array, p.index), 1))
     // smooth normals across UV seams: average by position
     g.computeVertexNormals()
     weldNormals(g)
-    parts[name] = { geometry: g, source: arr(Uint16Array, p.source).slice() }
+    parts[name] = { geometry: g, source: arr(Uint16Array, p.source, name).slice() }
     return g
   }
 
@@ -177,9 +180,14 @@ export async function loadCharacter(base = new URL('./assets/', import.meta.url)
 
   // extra skinned parts on demand (the mesh hair styles)
   const addPart = (name, mat, shadow = true) => meta.parts[name] ? mk(name, mat, shadow) : null
-  return { group, skeleton, bones, byName, restWorld, meshes, materials: { skin, eye, brow, lash }, meta, parts, joints, addPart, loadTexture: tex, baseUrl: base,
+  /** fetch a part's own .bin (community assets) before addPart / partArray */
+  const ensurePart = async name => {
+    const f = meta.parts[name]?.bin
+    if (f && !bins[name]) bins[name] = await fetch(base + f).then(r => { if (!r.ok) throw new Error(`${f}: ${r.status}`); return r.arrayBuffer() })
+  }
+  return { group, skeleton, bones, byName, restWorld, meshes, materials: { skin, eye, brow, lash }, meta, parts, joints, addPart, ensurePart, loadTexture: tex, baseUrl: base,
     /** a raw array of a part (e.g. a garment's deleteVerts) */
-    partArray: (name, field, T) => meta.parts[name]?.[field] ? arr(T, meta.parts[name][field]).slice() : null }
+    partArray: (name, field, T) => meta.parts[name]?.[field] ? arr(T, meta.parts[name][field], name).slice() : null }
 }
 
 // Average normals of vertices that share a position (UV seams).

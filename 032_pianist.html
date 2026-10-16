@@ -105,6 +105,15 @@
   <div id="visualsPop" class="pop ui">
     <div class="sect">Pianist</div>
     <div class="field"><label>Look</label><select id="look"><option value="realistic">Realistic</option><option value="stylized">Stylized (animated feature)</option><option value="cel">Cel shaded (outlines)</option></select></div>
+    <div class="field"><label>Smooth (subdivided)</label><select id="smooth"><option value="0">Off</option><option value="1">1× (4× the triangles)</option><option value="2">2× (16×)</option></select></div>
+    <div class="field"><label>Outfit</label><select id="outfit">
+      <option value="">Custom (pick below)</option>
+      <option value="reference">The reference: red knit halter, half-up hair</option>
+      <option value="yuja-mini">Yuja Wang-inspired: sequin mini, stilettos</option>
+      <option value="yuja-gown">Yuja Wang-inspired: sequin gown, long hair</option>
+      <option value="covered">Long sleeves, below the knee</option>
+      <option value="tee">T-shirt and skirt</option>
+    </select></div>
     <div class="field"><label>Hair style</label><select id="hairStyle">
       <option value="halfup">Half-up bun · strands, simulated</option>
       <option value="updo">Bun · strands, no simulation</option>
@@ -115,16 +124,24 @@
       <option value="long01">Long · mesh</option>
     </select></div>
     <div class="field"><label>Dress</label><select id="dressStyle">
-      <option value="midi-fitted">Midi · fitted, no simulation</option>
-      <option value="midi-cloth">Midi · cloth skirt</option>
-      <option value="gown-cloth">Gown · cloth skirt</option>
-      <option value="gown-fitted">Gown · fitted, no simulation</option>
+      <optgroup label="Red knit (ours)">
+      <option value="knee-fitted">Below the knee · fitted</option>
+      <option value="knee-cloth">Below the knee · simulated skirt</option>
+      <option value="gown-cloth">Floor length · simulated skirt</option>
+      <option value="gown-fitted">Floor length · fitted</option>
+      <option value="knee-fitted-short">Short sleeves · below the knee</option>
+      <option value="knee-fitted-long">Long sleeves · below the knee</option>
+      <option value="knee-cloth-long">Long sleeves · simulated skirt</option>
+      <option value="gown-fitted-long">Long sleeves · floor length</option>
+      <option value="gown-cloth-long">Long sleeves · floor length, simulated</option>
+      </optgroup>
     </select></div>
+    <div class="field"><label>Fabric</label><select id="fabric"><option value="made">As made</option><option value="satin">Satin</option><option value="velvet">Velvet</option><option value="sequin">Sequins</option></select></div>
+    <div class="field"><label>Shoes</label><select id="shoeStyle"><option value="flats">Black flats (ours)</option></select></div>
     <label class="chk"><input type="checkbox" id="hairOn" checked>Hair</label>
-    <label class="chk"><input type="checkbox" id="hairSim" checked>Hair simulation</label>
+    <label class="chk"><input type="checkbox" id="hairSim" checked>Hair simulation (strands, or mesh hair as cloth)</label>
     <label class="chk"><input type="checkbox" id="dressOn" checked>Dress</label>
     <label class="chk"><input type="checkbox" id="clothSim" checked>Skirt simulation</label>
-    <label class="chk"><input type="checkbox" id="shoesOn" checked>Shoes</label>
     <div class="field"><label>Strand density</label><select id="hairDensity"><option value="0.5">Light</option><option value="1" selected>Full</option><option value="1.6">Dense</option></select></div>
     <div class="field"><label>Hair colour</label><input type="color" id="hairColor" value="#5a3e2a"></div>
     <div class="field"><label>Dress colour</label><input type="color" id="dressColor" value="#8e1d1b"></div>
@@ -176,6 +193,7 @@
     import { createShoes } from './pianist/shoes.js'
     import { createLook } from './pianist/look.js'
     import { createCommunity, communityList } from './pianist/community.js'
+    import { createSmoother } from './pianist/subdivide.js'
 
     const $ = id => document.getElementById(id)
     const params = new URLSearchParams(location.search)
@@ -279,23 +297,64 @@
     const rig = createRig(ch, { seat: SEAT })
     rig.update(0, 1 / 60)
     ch.group.updateMatrixWorld(true)
-    // community styles (MakeHuman community repository) join the menus
-    // flared community skirts tear on a seated pose (fitted, not simulated)
-    const POOR_FIT = new Set(['c1922'])
-    for (const [sel, kinds, label] of [['hairStyle', ['hair'], 'Community hair (mesh)'], ['dressStyle', ['dress', 'top'], 'Community dresses / tops']]) {
-      const list = kinds.flatMap(k => communityList(ch, k))
-      if (!list.length) continue
-      const og = document.createElement('optgroup'); og.label = label
-      for (const e of list) { const o = document.createElement('option'); o.value = e.key; o.textContent = `${e.title}${e.kind === 'top' ? ' + our skirt' : ''}${POOR_FIT.has(e.key) ? ' (poor seated fit)' : ''} · ${e.license}`; og.appendChild(o) }
-      $(sel).appendChild(og)
+    // community styles (MakeHuman community repository) join the menus,
+    // grouped and with plain names (their titles are the authors')
+    const COMMUNITY_MENU = {
+      // dresses that cover the shoulders (sleeves or a high, wide neck)
+      covered: ['Covered shoulders and sleeves', { c563: 'Puff-shoulder dress · long sleeves', c533: 'Qipao · long', c857: 'Qipao · knee length', c1613: 'Keyhole-neck dress', c1515: 'Sixties shift dress', c1517: 'Fashion dress', c1424: 'Velvet evening gown', c806: 'Evening gown', c1640: 'Tiered-skirt dress', c1724: 'Shift dress', c411: 'Tube dress' }],
+      // Yuja Wang's stage look: short, fitted, often sequinned, high heels
+      yuja: ['Yuja Wang-inspired (short, fitted, sparkly)', { c2802: 'Sequin bodycon mini', c141: 'Mini dress', c151: 'Mini dress II', c379: 'Black cocktail dress', c1419: 'Long evening gown' }],
+      sleeveless: ['Sleeveless and halter', { c1422: 'Knit dress (F Dress 08)', c1853: 'Halter dress · knee length', c1854: 'Halter dress · below the knee', c1922: 'Halter dress · flared (poor seated fit)' }],
+      top: ['Tops and T-shirts + our skirt', { c894: 'T-shirt', c3508: 'T-shirt II', c1203: 'T-shirt · tucked', c416: 'Loose T-shirt', c1642: 'Turtleneck halter top', c3471: 'Sleeveless turtleneck' }],
+      hair: ['Community hair (mesh)', { c1471: 'Long, shaggy layers', c2816: 'Long · Hazel', c1859: 'Long · Daisy', c1862: 'Long, side part', c482: 'Long, layered', c492: 'Long, wavy', c572: 'Medium', c1669: 'Blunt bob', c1673: 'Inverted bob', c3694: 'Bob II', c2001: 'Fifties updo', c2177: 'Braided bun', c2477: 'Bun with a velvet tie', c3542: 'Messy bun' }],
+      shoes: ['Community shoes', { c1694: 'Stiletto booties', c1822: 'Pumps', c1039: 'Peep-toe pumps' }],
+    }
+    {
+      const have = new Map(communityList(ch).map(e => [e.key, e]))
+      const add = (sel, group) => {
+        const [label, items] = COMMUNITY_MENU[group]
+        const og = document.createElement('optgroup'); og.label = label
+        for (const [k, title] of Object.entries(items)) { const e = have.get(k); if (!e) continue; have.delete(k); og.appendChild(new Option(`${title} · ${e.license}`, k)) }
+        if (og.children.length) $(sel).appendChild(og)
+      }
+      for (const g of ['covered', 'yuja', 'sleeveless', 'top']) add('dressStyle', g)
+      add('hairStyle', 'hair'); add('shoeStyle', 'shoes')
+      // anything new in the build the menu does not list yet
+      for (const e of have.values()) $(e.kind === 'hair' ? 'hairStyle' : e.kind === 'shoes' ? 'shoeStyle' : 'dressStyle').appendChild(new Option(`${e.title} · ${e.license}`, e.key))
+    }
+    // outfits: a dress, fabric, colour, shoes and hair in one go
+    const OUTFITS = {
+      reference: { dress: 'knee-fitted', fabric: 'made', color: '#8e1d1b', shoes: 'flats', hair: 'halfup', hairColor: '#5a3e2a' },
+      'yuja-mini': { dress: 'c2802', fabric: 'sequin', color: '#b8b0a4', shoes: 'c1694', hair: 'c2816', hairColor: '#1c1410' },
+      'yuja-gown': { dress: 'gown-fitted', fabric: 'sequin', color: '#1d4f86', shoes: 'c1694', hair: 'c2816', hairColor: '#1c1410' },
+      covered: { dress: 'knee-fitted-long', fabric: 'made', color: '#20242e', shoes: 'flats', hair: 'c2177', hairColor: '#4a3324' },
+      tee: { dress: 'c894', fabric: 'made', color: '#e9e4da', shoes: 'flats', hair: 'ponytail01', hairColor: '#5a3e2a' },
+    }
+    if (OUTFITS[params.get('outfit')]) {
+      const o = OUTFITS[params.get('outfit')]; $('outfit').value = params.get('outfit')
+      $('dressStyle').value = o.dress; $('fabric').value = o.fabric; $('dressColor').value = o.color
+      $('shoeStyle').value = o.shoes; $('hairStyle').value = o.hair; $('hairColor').value = o.hairColor
     }
     // wardrobe: ?hair=…&dress=…&look=… (or the Visuals menu)
-    for (const [k, id] of [['hair', 'hairStyle'], ['dress', 'dressStyle'], ['look', 'look']]) if (params.get(k)) $(id).value = params.get(k)
+    for (const [k, id] of [['fabric', 'fabric'], ['hair', 'hairStyle'], ['dress', 'dressStyle'], ['shoes', 'shoeStyle'], ['look', 'look'], ['smooth', 'smooth']]) if (params.get(k)) $(id).value = params.get(k).replace(/^midi-/, 'knee-')   // (old links: "midi" is now "knee")
+    if (!$('dressStyle').value) $('dressStyle').value = 'knee-fitted'
     let hair = null, dress = null
-    const shoes = createShoes(ch)
-    scene.add(shoes.object)
+    let shoes = null, shoeJob = 0
+    async function setShoes(v) {
+      const job = ++shoeJob
+      const next = v === 'flats' || !v ? createShoes(ch) : await createCommunity(ch, v, { color: '#151214' })   // (black: their textures vary)
+      if (job !== shoeJob) { next.dispose?.(); return }
+      shoes?.dispose?.(); shoes?.object.removeFromParent()
+      shoes = next
+      scene.add(shoes.object)
+      shoes.object.visible = !params.get('hide')?.split(',').includes('shoes')
+      if (window.__pianist) window.__pianist.shoes = shoes
+      applyLook()
+    }
     const look = createLook(ch)
-    const applyLook = () => look.apply($('look').value, [dress?.object])
+    const smoother = createSmoother(ch)
+    // geometry first (the cel outlines are built on whatever geometry is shown)
+    const applyLook = () => { look.apply('realistic', [dress?.object, shoes?.object]); smoother.apply(+$('smooth').value, [dress?.object, shoes?.object]); look.apply($('look').value, [dress?.object]) }
     async function setHair(style) {
       const color = $('hairColor').value
       hair?.dispose()
@@ -310,45 +369,75 @@
       if (window.__pianist) window.__pianist.hair = hair
       applyLook()
     }
+    // Modesty while dressing: a new dress is built (its files fetched) with
+    // the old one still on, and only then swapped in. Whenever nothing would
+    // cover her — the first load, a failed load, the dress turned off — the
+    // body (every skin mesh, the smooth one too) stays hidden.
+    const skinMeshes = () => { const l = []; ch.group.traverse(o => { if (o.isMesh && (o.material === ch.materials.skin || o.userData.origMat === ch.materials.skin || o.name === 'body')) l.push(o) }); return l }
+    const coverBody = on => {
+      const hidden = (params.get('hide') || '').split(',')
+      for (const o of skinMeshes()) { o.userData.modest = !on; o.visible = on && !hidden.includes(o.name) }
+    }
     let dressJob = 0
-    async function setDress(v) {
-      const job = ++dressJob
-      dress?.dispose(); dress = null
+    async function buildDress(v) {
       const color = $('dressColor').value
       if (v[0] === 'c') {
         const entry = communityList(ch).find(e => e.key === v)
         const item = await createCommunity(ch, v, { color })
-        if (job !== dressJob) { item.dispose(); return }
-        if (entry.kind === 'top') {
-          // their top over our fitted skirt
-          const skirt = createDress(ch, rig, { seatY: SEAT_Y, bench: piano.bench, length: 'midi', skirt: 'fitted', color, bodice: false, waist: 13 })
-          skirt.object.add(item.object)
-          dress = { ...skirt, update(dt) { item.object.visible = skirt.object.visible; item.update(dt); skirt.update(dt) }, setColor(c) { skirt.setColor(c); item.setColor(c) }, dispose() { item.dispose(); skirt.dispose() } }
-        } else dress = item
-      } else {
-        const [length, skirt] = v.split('-')
-        dress = createDress(ch, rig, { seatY: SEAT_Y, bench: piano.bench, length, skirt, color })
+        if (entry.kind !== 'top') return item
+        // their top over our fitted skirt
+        const skirt = createDress(ch, rig, { seatY: SEAT_Y, bench: piano.bench, length: 'midi', skirt: 'fitted', color, bodice: false, waist: 13 })
+        skirt.object.add(item.object)
+        return { ...skirt, update(dt) { item.object.visible = skirt.object.visible; item.update(dt); skirt.update(dt) }, setColor(c) { skirt.setColor(c); item.setColor(c) }, dispose() { item.dispose(); skirt.dispose() } }
       }
+      const [length, skirt, sleeves = 'none'] = v.split('-')
+      return createDress(ch, rig, { seatY: SEAT_Y, bench: piano.bench, length: length === 'knee' ? 'midi' : length, skirt, sleeves, color })
+    }
+    async function setDress(v) {
+      const job = ++dressJob
+      if (!dress) coverBody(false)
+      let next
+      try { next = await buildDress(v) }
+      catch (e) { console.error(e); setStatus('Could not load that dress: ' + e.message, true, 4000); return }
+      if (job !== dressJob) { next.dispose(); return }
+      dress?.dispose()
+      dress = next
       scene.add(dress.object)
       dress.object.visible = $('dressOn').checked
       dress.simulate = $('clothSim').checked
+      dress.setFabric?.($('fabric').value)
       dress.settle(3)
       if (window.__pianist) window.__pianist.dress = dress
       applyLook()
+      coverBody(dress.object.visible)
     }
-    await setDress($('dressStyle').value)
+    await Promise.all([setDress($('dressStyle').value), setShoes($('shoeStyle').value)])
     await setHair($('hairStyle').value)
-    function wardrobeUpdate(dt) { hair.update(dt); dress?.update(dt); shoes.update(dt); look.update() }
-    window.__pianist = { ch, rig, hair, dress, shoes, look, scene, camera }
+    // (the modesty flag wins over whatever else shows the body)
+    const keepModest = () => { for (const o of skinMeshes()) if (o.userData.modest) o.visible = false }
+    function wardrobeUpdate(dt) { keepModest(); hair.update(dt); dress?.update(dt); shoes?.update(dt); smoother.update(); look.update() }
+    window.__pianist = { ch, rig, hair, dress, shoes, look, scene, camera, smoother }
     for (const n of (params.get('hide') || '').split(',')) if (ch.meshes[n]) ch.meshes[n].visible = false
     if (params.get('hide')?.includes('hair')) hair.object.visible = false
     setStatus('')
     $('hairStyle').onchange = () => setHair($('hairStyle').value)
     $('dressStyle').onchange = () => setDress($('dressStyle').value)
+    $('shoeStyle').onchange = () => setShoes($('shoeStyle').value)
+    $('fabric').onchange = () => { dress.setFabric?.($('fabric').value); applyLook() }
+    async function setOutfit(k) {
+      const o = OUTFITS[k]; if (!o) return
+      $('dressStyle').value = o.dress; $('fabric').value = o.fabric; $('dressColor').value = o.color
+      $('shoeStyle').value = o.shoes; $('hairStyle').value = o.hair; $('hairColor').value = o.hairColor
+      await Promise.all([setDress(o.dress), setShoes(o.shoes), setHair(o.hair)])
+    }
+    $('outfit').onchange = () => setOutfit($('outfit').value)
+    for (const id of ['dressStyle', 'fabric', 'shoeStyle', 'hairStyle', 'dressColor', 'hairColor']) $(id).addEventListener('input', () => { $('outfit').value = '' })
     $('look').onchange = applyLook
+    $('smooth').onchange = applyLook
     $('hairOn').onchange = () => { hair.object.visible = $('hairOn').checked }
+    if (params.get('hairsim') === '0') { $('hairSim').checked = false; hair.simulate = false }
     $('hairSim').onchange = () => { hair.simulate = $('hairSim').checked }
-    $('dressOn').onchange = () => { dress.object.visible = $('dressOn').checked }
+    $('dressOn').onchange = () => { dress.object.visible = $('dressOn').checked; coverBody(dress.object.visible) }
     $('clothSim').onchange = () => { dress.simulate = $('clothSim').checked }
     $('expr').value = params.get('expr') ?? 1
     rig.state.expression = +$('expr').value
@@ -383,7 +472,6 @@
     $('gaze').value = params.get('gaze') ?? 'music'
     rig.state.gazeMode = $('gaze').value
     $('gaze').onchange = () => { rig.state.gazeMode = $('gaze').value }
-    $('shoesOn').onchange = () => { shoes.object.visible = $('shoesOn').checked }
     $('hairColor').oninput = () => hair.setColor($('hairColor').value)
     $('dressColor').oninput = () => dress.setColor($('dressColor').value)
     $('hairDensity').onchange = () => hair.setDensity(+$('hairDensity').value)
@@ -420,6 +508,7 @@
       back: { pos: [10, 160, 230], target: [0, 100, 0], fov: 38 },
       headside: { pos: [60, 140, 45], target: [0, 130, 35], fov: 30 },
       lap: { pos: [-110, 95, 10], target: [0, 55, 40], fov: 38 },
+      feet: { pos: [150, 35, 110], target: [0, 10, 15], fov: 30 },
       orbit: { pos: [260, 230, 260], target: [0, 90, 0], fov: 34 },
     }
     let view = VIEWS[params.get('view')] ? params.get('view') : 'shoulder'

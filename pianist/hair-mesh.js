@@ -10,6 +10,7 @@
 
 import * as THREE from 'three'
 import { hairCap } from './hair.js'
+import { createHairCloth } from './hair-cloth.js'
 
 export const MESH_HAIR = { bob01: 'Bob', bob02: 'Bob (sleek)', ponytail01: 'Ponytail', braid01: 'Braid', long01: 'Long' }
 
@@ -49,11 +50,15 @@ export async function createMeshHair(ch, style = 'ponytail01', { color = '#5a3e2
     capMat.color.copy(c).multiplyScalar(0.45)
   }
   setColor(color)
+  // simulated like a piece of cloth pinned at the scalp (hair-cloth.js)
+  const cloth = createHairCloth(ch, mesh)
   return {
-    kind: 'mesh', style, object, mesh, cap, simulate: false,
-    setColor, setDensity() {}, settle() {},
-    update() { mesh.visible = cap.visible = object.visible },
+    kind: 'mesh', style, object, mesh, cap, cloth,
+    get simulate() { return cloth.active }, set simulate(v) { cloth.active = v },
+    setColor, setDensity() {}, settle(s) { if (cloth.active) cloth.settle(s) },
+    update(dt = 1 / 60) { cap.visible = object.visible; cloth.update(dt, object.visible) },
     dispose() {
+      cloth.dispose()
       for (const m of [mesh, cap]) m.removeFromParent()
       mesh.geometry.dispose(); cap.geometry.dispose(); mat.dispose(); capMat.dispose(); map?.dispose()
     },

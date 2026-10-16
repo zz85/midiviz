@@ -27,6 +27,9 @@
 
 import * as THREE from 'three'
 import { cutShell, piping, skinned, hideBody } from './shell.js'
+import { applyFabric } from './fabric.js'
+
+let serial = 0   // each dress hides the body under it under its own key (two can overlap while switching)
 
 const v3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z)
 
@@ -70,7 +73,11 @@ function knitTextures(size = 256, cells = 16) {
 //   length: 'midi' (below the knee, the reference) or 'gown' (to the floor)
 //   skirt:  'cloth' (simulated, pulled softly toward the fitted shape) or
 //           'fitted' (skinned only — no simulation at all)
-export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1d1b', length = 'midi', skirt: skirtMode = 'cloth', bodice: withBodice = true, waist = 4 } = {}) {
+//   sleeves: 'none' (the reference's halter), 'short' (a T-shirt sleeve
+//           and a round neck) or 'long' (to the wrist, round neck) — the
+//           sleeves are cut from the arm's skin like the bodice, so they
+//           are skinned to the arm and bend with it
+export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1d1b', length = 'midi', skirt: skirtMode = 'cloth', bodice: withBodice = true, waist = 4, sleeves = 'none' } = {}) {
   const body = ch.parts.body.geometry
   const P = body.attributes.position.array, Nn = body.attributes.normal.array
   const SI = body.attributes.skinIndex.array, SW = body.attributes.skinWeight.array
@@ -84,9 +91,23 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
   const armpitY = J['upperarm01.L____head'].y - 8
   const hipY = J['upperleg01.L____head'].y + 4
   const ARM = /^(upperarm|lowerarm|wrist|finger|metacarpal|clavicle|shoulder)/
+  // sleeves: how far down the arm (distance from the shoulder joint, rest pose)
+  const sh = { L: J['upperarm01.L____head'], R: J['upperarm01.R____head'] }
+  const wristD = sh.L.distanceTo(J['wrist.L____head'])
+  const sleeveTo = sleeves === 'long' ? wristD - 2.5 : sleeves === 'short' ? 13 : 0
+  const roundNeck = sleeves !== 'none'
   const bodiceKeep = (v, g) => {
     const x = g.P[v * 3], y = g.P[v * 3 + 1]
     const w = re => { let s = 0; for (let k = 0; k < 4; k++) if (re.test(boneName(g.SI[v * 4 + k]))) s += g.SW[v * 4 + k]; return s }
+    if (roundNeck) {
+      // a round neck a little below the throat, and the arm down to the cuff
+      if (y > neckY - 1.5 || y < hipY - 4) return false
+      if (w(/^(head|jaw|neck02|neck03|lowerleg|foot|toe|finger|metacarpal)/) > 0.3 || w(/^upperleg/) > 0.75) return false
+      if (w(/^wrist/) > 0.25) return false
+      const s0 = x > 0 === sh.L.x > 0 ? sh.L : sh.R
+      if (w(ARM) > 0.3) return Math.hypot(x - s0.x, y - s0.y, g.P[v * 3 + 2] - s0.z) < sleeveTo
+      return true
+    }
     if (y > neckY || y < hipY - 4) return false
     // armholes: the halter line above the armpit, the arm's weight below it
     if (w(ARM) > 0.45 + 0.4 * THREE.MathUtils.smoothstep(y - armpitY, 0, 8)) return false
@@ -99,7 +120,7 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
   // the fabric: MakeHuman's tights helper (a smooth shell over the body made
   // for clothing); the body under it is hidden
   const armGap = (v, g) => { let w = 0; for (let k = 0; k < 4; k++) { const n = boneName(g.SI[v * 4 + k]); if (/^(upperarm|shoulder)/.test(n)) w += g.SW[v * 4 + k] } const y = g.P[v * 3 + 1]; return 0.3 + 0.8 * Math.min(1, w * 2) * THREE.MathUtils.smoothstep(neckY - y, 3, 8) }
-  const bodiceShell = cutShell(ch, bodiceKeep, { gap: armGap, offset: 0.35, iterations: 60, obstacleSmooth: 20, minLoop: 25, spatial: 1.6, fillHoles: 400, dropIslands: 60, close: 3, smoothCut: 6 })
+  const bodiceShell = cutShell(ch, bodiceKeep, { gap: armGap, offset: 0.35, iterations: 60, obstacleSmooth: roundNeck ? 40 : 20, minLoop: 25, spatial: roundNeck ? 3.2 : 1.6, fillHoles: 400, dropIslands: 60, close: 3, smoothCut: 6 })
   const under = cutShell(ch, bodiceKeep, { iterations: 0, edgeIterations: 0, fillHoles: 400, dropIslands: 60, close: 3, smoothCut: 6 })
   // knit UVs: a cylinder round the torso, one tile = 5.6 cm (16 stitches)
   {
@@ -112,7 +133,8 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
   // and pokes through); round the neck the edge skin stays (it shows past the hem)
   const fullIdx = ch.parts.body.index0 || body.index.array
   const armRing = under.coveredAll.filter(t => { const y = (P[fullIdx[t] * 3 + 1] + P[fullIdx[t + 1] * 3 + 1] + P[fullIdx[t + 2] * 3 + 1]) / 3; return y < neckY - 5 })
-  hideBody(ch, 'bodice', withBodice ? [...under.covered, ...armRing, ...underWaist.covered] : underWaist.covered)
+  const HIDE_KEY = 'bodice#' + (++serial)
+  hideBody(ch, HIDE_KEY, withBodice ? [...(roundNeck ? under.coveredAll : [...under.covered, ...armRing]), ...underWaist.covered] : underWaist.covered)
 
   const tex = knitTextures()
   const base = new THREE.MeshPhysicalMaterial({
@@ -238,6 +260,7 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
   const cPos = new THREE.BufferAttribute(new Float32Array(NVt * 3), 3)
   cPos.setUsage(THREE.DynamicDrawUsage)
   cg.setAttribute('position', cPos); cg.setAttribute('uv', sg.attributes.uv); cg.setIndex(sg.index)
+  cg.userData.topologyFrom = sg.attributes.position.array   // for the smooth option (cPos starts at zero)
   const cloth = new THREE.Mesh(cg, skirtMat)
   cloth.castShadow = cloth.receiveShadow = true
   cloth.frustumCulled = false
@@ -406,7 +429,8 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
   object.add(cloth)
   const api = {
     simulate: true, mode: skirtMode, object, bodice, hem, fitted, cloth, X,
-    setColor(c) { for (const m of [bodiceMat, skirtMat]) m.color.set(c) },
+    setColor(c) { for (const m of [bodiceMat, skirtMat]) { m.color.set(c); m.sheenColor.set(c).lerp(new THREE.Color(0xffd8c8), 0.25) } },
+    setFabric(kind) { applyFabric([bodiceMat, skirtMat].map(material => ({ material, scale: 0.5 })), kind) },
     setMode(m) { api.mode = m; if (m === 'cloth') started = false },
     settle(seconds = 3) { if (api.mode !== 'cloth') return; start(); for (let i = 0; i < seconds * 60; i++) step(1 / 60); upload() },
     update(dt) {
@@ -421,11 +445,12 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
       upload()
     },
     dispose() {
-      hideBody(ch, 'bodice', null)
+      hideBody(ch, HIDE_KEY, null)
       for (const m of [bodice, hem, fitted]) { m.removeFromParent(); m.geometry.dispose() }
       object.removeFromParent(); cg.dispose()
       for (const m of [bodiceMat, skirtMat]) { m.map.dispose(); m.normalMap.dispose(); m.dispose() }
     },
   }
+  api.setColor(color)
   return api
 }
