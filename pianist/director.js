@@ -141,10 +141,15 @@ function addTake(q, mode, s, view) {
     const size = f => { const b = frameBase(f, s); return sizeOf(b.dist, b.fov) }
     q.uses ??= {}
     let cand = fs.filter(f => f !== prev.frame && size(f) !== prev.size)
+    // after the opening take (the view's own framing, usually medium or
+    // wide), go close: her fingers or her face
+    if (i === 1 && prev.size > 0) { const close = cand.filter(f => size(f) === 0); if (close.length) cand = close }
     if (!cand.length) cand = fs.filter(f => f !== prev.frame)
     if (!cand.length) cand = fs
     const w = cand.map(f => FRAMES[f][0] / (1 + (q.uses[f] || 0))
-      * (Math.abs(size(f) - prev.size) === 2 ? 1.5 : 1)          // far ↔ close
+      // far ↔ close, except straight after a close-up: back out to a
+      // medium framing (the piano, the keys), not all the way to the hall
+      * (prev.size === 0 ? (size(f) === 1 ? 3 : 0.3) : Math.abs(size(f) - prev.size) === 2 ? 1.5 : 1)
       * (q.takes[i - 2]?.frame === f ? 0.4 : 1))
     let x = r(7) * w.reduce((a, b) => a + b, 0), j = 0
     while (j < cand.length - 1 && (x -= w[j]) > 0) j++
@@ -153,7 +158,10 @@ function addTake(q, mode, s, view) {
   const base = frameBase(frame, s), size = sizeOf(base.dist, base.fov)
   if (mode === 'cut') { q.uses ??= {}; q.uses[frame] = (q.uses[frame] || 0) + 1 }
   let move, tries = 0
-  if (mode === 'random') { do move = ANY_MOVES[Math.floor(r(1) * ANY_MOVES.length)]; while (prev && move === prev.move && move !== 'orbit') }
+  // close up (her face, her fingers) the camera never pushes or zooms in
+  // further: an orbit, a still frame or a pull out only
+  const tooClose = m => size === 0 && (m === 'zoomIn' || m === 'dollyIn' || m === 'dollyZoom')
+  if (mode === 'random') { let n = 0; do move = ANY_MOVES[Math.floor((n++ ? Math.random() : r(1)) * ANY_MOVES.length)]; while ((prev && move === prev.move && move !== 'orbit') || tooClose(move)) }
   else {
     do {
       // a fresh draw on every retry (the hash alone would repeat the same pick)
@@ -162,10 +170,10 @@ function addTake(q, mode, s, view) {
       move = CUT_MOVES[j][0]
       if (move === 'zoom') move = hash(q.seed + i, 5 + 10 * tries) < 0.5 ? 'zoomIn' : 'zoomOut'
       if (view.pov && (move === 'crane' || move === 'dollyIn')) move = 'orbit'
-      if (tries > 20) break
+      if (tries > 20) { if (tooClose(move)) move = 'orbit'; break }
     // never two cranes or two zooms in a row, no crane close up, no more than
     // three orbits running; the first take is an orbit
-    } while ((move === 'crane' && size === 0) || (prev && (move !== 'orbit' ? move === prev.move || (move.startsWith('zoom') && prev.move.startsWith('zoom')) : q.takes.slice(-3).filter(t => t.move === 'orbit').length === 3)))
+    } while ((move === 'crane' && size === 0) || tooClose(move) || (prev && (move !== 'orbit' ? move === prev.move || (move.startsWith('zoom') && prev.move.startsWith('zoom')) : q.takes.slice(-3).filter(t => t.move === 'orbit').length === 3)))
     if (!i) move = 'orbit'
   }
   const len = mode === 'random' ? 7 + 9 * r(2)
@@ -233,7 +241,11 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
           if (n === prev.name) return 0
           if (prev2 && n === prev2.name) x *= 0.3
           if (prev2 && SUBJ_KIND[ps.subj] === kind && SUBJ_KIND[SPOTS[prev2.name].subj] === kind) x *= 0.35
-          if (s.size !== ps.size) x *= 1.4
+          // after the opening (the hall, the audience): close, her fingers or her face
+          if (i === 1) x *= s.size === 0 ? 4 : 0.25
+          // after a close-up: a medium shot (back to the keys), not the hall
+          else if (ps.size === 0) x *= s.size === 1 ? 3 : s.size === 2 ? 0.3 : 0.15
+          else if (s.size !== ps.size) x *= 1.4
           // no jump cuts: too little change of angle and size
           const dAz = Math.abs(wrap(s.az - ps.az)), dSize = Math.abs(Math.log(s.dist / ps.dist))
           if (dAz < 30 && dSize < 0.4) x *= 0.15
@@ -244,7 +256,9 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
       while (k < w.length - 1 && (r -= w[k]) > 0) k++
       name = names[k]
       // a move: mostly continuous ones, a still frame now and then
-      const ms = SPOTS[name].moves
+      // (close up: never push or zoom in further)
+      let ms = SPOTS[name].moves
+      if (SPOTS[name].size === 0) { const ok = ms.filter(m => m !== 'zoomIn' && m !== 'dollyIn' && m !== 'dollyZoom'); ms = ok.length ? ok : ['orbit', 'still'] }
       const mw = ms.map(m => m === 'still' ? 0.25 : m === 'dollyZoom' ? 0.45 : 1)
       let q = hash(i, 4) * mw.reduce((a, b) => a + b, 0), j = 0
       while (j < ms.length - 1 && (q -= mw[j]) > 0) j++
