@@ -121,8 +121,8 @@
     <div class="field"><label>Outfit</label><select id="outfit">
       <option value="">Custom (pick below)</option>
       <option value="reference">The reference: red knit halter, half-up hair</option>
-      <option value="yuja-mini">Yuja Wang-inspired: sequin mini, stilettos</option>
-      <option value="yuja-gown">Yuja Wang-inspired: sequin gown, long hair</option>
+      <option value="sequin-mini">Sequin mini, stiletto booties</option>
+      <option value="sequin-gown">Sequin gown, long hair</option>
       <option value="covered">Long sleeves, below the knee</option>
       <option value="tee">T-shirt and skirt</option>
     </select></div>
@@ -148,8 +148,9 @@
       <option value="gown-cloth-long">Long sleeves · floor length, simulated</option>
       </optgroup>
     </select></div>
+    <div class="field" title="Floor-length dresses of ours: side slits, left and right, from here down to the hem"><label>Gown slits</label><select id="slit"><option value="off">Closed</option><option value="ankle">From the ankle</option><option value="calf" selected>From mid-calf</option><option value="knee">From the knee</option><option value="thigh">From above the knee (high)</option></select></div>
     <div class="field"><label>Fabric</label><select id="fabric"><option value="made">Plain (as made)</option><option value="knit">Knit (diamond)</option><option value="satin">Satin</option><option value="velvet">Velvet</option><option value="sequin">Sequins</option></select></div>
-    <div class="field"><label>Shoes</label><select id="shoeStyle"><option value="flats">Black flats (ours)</option></select></div>
+    <div class="field"><label>Shoes</label><select id="shoeStyle"><option value="flats">Black flats (ours)</option><option value="none">Barefoot</option></select></div>
     <label class="chk"><input type="checkbox" id="hairOn" checked>Hair</label>
     <label class="chk"><input type="checkbox" id="hairSim" checked>Hair simulation (strands, or mesh hair as cloth)</label>
     <label class="chk"><input type="checkbox" id="dressOn" checked>Dress</label>
@@ -170,6 +171,7 @@
     <label class="chk"><input type="checkbox" id="dof" checked>Depth of field</label>
     <label class="chk"><input type="checkbox" id="caption">Caption</label>
     <div class="field"><label>Sound</label><select id="sf"></select></div>
+    <div class="field" title="Fine-tune when the hands and keys move against the sound, if your speakers or headphones report their delay wrongly (Bluetooth often does). Positive = the picture later."><label>Picture vs sound</label><input type="range" id="avsync" min="-200" max="200" step="5" value="0"><span id="avsyncV">0 ms</span></div>
   </div>
   <div id="transport" class="ui">
     <div id="times"><span id="tNow">0:00.000</span><span id="tLeft">-0:00</span></div>
@@ -316,8 +318,8 @@
     const COMMUNITY_MENU = {
       // dresses that cover the shoulders (sleeves or a high, wide neck)
       covered: ['Covered shoulders and sleeves', { c563: 'Puff-shoulder dress · long sleeves', c533: 'Qipao · long', c857: 'Qipao · knee length', c1613: 'Keyhole-neck dress', c1515: 'Sixties shift dress', c1517: 'Fashion dress', c1424: 'Velvet evening gown', c806: 'Evening gown', c1640: 'Tiered-skirt dress', c1724: 'Shift dress', c411: 'Tube dress' }],
-      // Yuja Wang's stage look: short, fitted, often sequinned, high heels
-      yuja: ['Yuja Wang-inspired (short, fitted, sparkly)', { c2802: 'Sequin bodycon mini', c141: 'Mini dress', c151: 'Mini dress II', c379: 'Black cocktail dress', c1419: 'Long evening gown' }],
+      // short and fitted, often sequinned, worn with high heels
+      cocktail: ['Short and fitted (cocktail)', { c2802: 'Sequin bodycon mini', c141: 'Mini dress', c151: 'Mini dress II', c379: 'Black cocktail dress', c1419: 'Long evening gown' }],
       sleeveless: ['Sleeveless and halter', { c1422: 'Knit dress (F Dress 08)', c1853: 'Halter dress · knee length', c1854: 'Halter dress · below the knee', c1922: 'Halter dress · flared (poor seated fit)' }],
       top: ['Tops and T-shirts + our skirt', { c894: 'T-shirt', c3508: 'T-shirt II', c1203: 'T-shirt · tucked', c416: 'Loose T-shirt', c1642: 'Turtleneck halter top', c3471: 'Sleeveless turtleneck' }],
       hair: ['Community hair (mesh)', { c1471: 'Long, shaggy layers', c2816: 'Long · Hazel', c1859: 'Long · Daisy', c1862: 'Long, side part', c482: 'Long, layered', c492: 'Long, wavy', c572: 'Medium', c1669: 'Blunt bob', c1673: 'Inverted bob', c3694: 'Bob II', c2001: 'Fifties updo', c2177: 'Braided bun', c2477: 'Bun with a velvet tie', c3542: 'Messy bun' }],
@@ -331,7 +333,7 @@
         for (const [k, title] of Object.entries(items)) { const e = have.get(k); if (!e) continue; have.delete(k); og.appendChild(new Option(`${title} · ${e.license}`, k)) }
         if (og.children.length) $(sel).appendChild(og)
       }
-      for (const g of ['covered', 'yuja', 'sleeveless', 'top']) add('dressStyle', g)
+      for (const g of ['covered', 'cocktail', 'sleeveless', 'top']) add('dressStyle', g)
       add('hairStyle', 'hair'); add('shoeStyle', 'shoes')
       // anything new in the build the menu does not list yet
       for (const e of have.values()) $(e.kind === 'hair' ? 'hairStyle' : e.kind === 'shoes' ? 'shoeStyle' : 'dressStyle').appendChild(new Option(`${e.title} · ${e.license}`, e.key))
@@ -339,11 +341,13 @@
     // outfits: a dress, fabric, colour, shoes and hair in one go
     const OUTFITS = {
       reference: { dress: 'knee-fitted', fabric: 'made', color: '#8e1d1b', shoes: 'flats', hair: 'halfup', hairColor: '#5a3e2a' },
-      'yuja-mini': { dress: 'c2802', fabric: 'sequin', color: '#b8b0a4', shoes: 'c1694', hair: 'c2816', hairColor: '#1c1410' },
-      'yuja-gown': { dress: 'gown-fitted', fabric: 'sequin', color: '#1d4f86', shoes: 'c1694', hair: 'c2816', hairColor: '#1c1410' },
+      'sequin-mini': { dress: 'c2802', fabric: 'sequin', color: '#b8b0a4', shoes: 'c1694', hair: 'c2816', hairColor: '#1c1410' },
+      'sequin-gown': { dress: 'gown-fitted', fabric: 'sequin', color: '#1d4f86', shoes: 'c1694', hair: 'c2816', hairColor: '#1c1410' },
       covered: { dress: 'knee-fitted-long', fabric: 'made', color: '#20242e', shoes: 'flats', hair: 'c2177', hairColor: '#4a3324' },
       tee: { dress: 'c894', fabric: 'made', color: '#e9e4da', shoes: 'flats', hair: 'ponytail01', hairColor: '#5a3e2a' },
     }
+    // (old links: yuja-mini / yuja-gown)
+    if (/^yuja-/.test(params.get('outfit'))) params.set('outfit', params.get('outfit').replace('yuja-', 'sequin-'))
     if (OUTFITS[params.get('outfit')]) {
       const o = OUTFITS[params.get('outfit')]; $('outfit').value = params.get('outfit')
       $('dressStyle').value = o.dress; $('fabric').value = o.fabric; $('dressColor').value = o.color
@@ -356,7 +360,8 @@
     let shoes = null, shoeJob = 0
     async function setShoes(v) {
       const job = ++shoeJob
-      const next = v === 'flats' || !v ? createShoes(ch) : await createCommunity(ch, v, { color: '#151214' })   // (black: their textures vary)
+      const next = v === 'none' ? { object: Object.assign(new THREE.Group(), { name: 'barefoot' }), update() {}, dispose() {} }
+        : v === 'flats' || !v ? createShoes(ch) : await createCommunity(ch, v, { color: '#151214' })   // (black: their textures vary)
       if (job !== shoeJob) { next.dispose?.(); return }
       shoes?.dispose?.(); shoes?.object.removeFromParent()
       shoes = next
@@ -393,6 +398,10 @@
       for (const o of skinMeshes()) { o.userData.modest = !on; o.visible = on && !hidden.includes(o.name) }
     }
     let dressJob = 0
+    // gown slits: where they start, cm about the knee joint (?slit=; old ?slits=0 closes them)
+    const SLIT_AT = { ankle: -30, calf: -14, knee: -3, thigh: 8 }
+    if (params.get('slits') === '0') $('slit').value = 'off'
+    if (SLIT_AT[params.get('slit')] !== undefined || params.get('slit') === 'off') $('slit').value = params.get('slit')
     async function buildDress(v) {
       const color = $('dressColor').value
       if (v[0] === 'c') {
@@ -405,7 +414,8 @@
         return { ...skirt, update(dt) { item.object.visible = skirt.object.visible; item.update(dt); skirt.update(dt) }, setColor(c) { skirt.setColor(c); item.setColor(c) }, dispose() { item.dispose(); skirt.dispose() } }
       }
       const [length, skirt, sleeves = 'none'] = v.split('-')
-      return createDress(ch, rig, { seatY: SEAT_Y, bench: piano.bench, length: length === 'knee' ? 'midi' : length, skirt, sleeves, color, slits: params.has('slits') ? params.get('slits') !== '0' : undefined })
+      const slit = $('slit').value
+      return createDress(ch, rig, { seatY: SEAT_Y, bench: piano.bench, length: length === 'knee' ? 'midi' : length, skirt, sleeves, color, slits: slit !== 'off', slitAt: SLIT_AT[slit] ?? -14 })
     }
     async function setDress(v) {
       const job = ++dressJob
@@ -436,6 +446,7 @@
     setStatus('')
     $('hairStyle').onchange = () => setHair($('hairStyle').value)
     $('dressStyle').onchange = () => setDress($('dressStyle').value)
+    $('slit').onchange = () => { if (/^gown-/.test($('dressStyle').value)) setDress($('dressStyle').value) }
     $('shoeStyle').onchange = () => setShoes($('shoeStyle').value)
     $('fabric').onchange = () => { dress.setFabric?.($('fabric').value); applyLook() }
     async function setOutfit(k) {
@@ -569,6 +580,30 @@
     function closePops() { for (const p of Object.values(pops)) $(p).classList.remove('open') }
     for (const [b, p] of Object.entries(pops)) $(b).onclick = ev => { ev.stopPropagation(); const o = $(p).classList.contains('open'); closePops(); if (!o) $(p).classList.add('open') }
     for (const p of Object.values(pops)) $(p).addEventListener('pointerdown', ev => ev.stopPropagation())
+    // with a mouse the menus also open on hover and close a moment after the
+    // pointer leaves both the pill and the menu (not while a dropdown, colour
+    // picker or the song filter inside it is in use)
+    {
+      let closeT = 0, hoverAt = 0, hold = false
+      const anyOpen = () => Object.values(pops).some(p => $(p).classList.contains('open'))
+      const cancel = () => { clearTimeout(closeT); hold = false }
+      const later = () => { clearTimeout(closeT); closeT = setTimeout(() => { if (!hold) closePops() }, 350) }
+      for (const [b, p] of Object.entries(pops)) {
+        $(b).addEventListener('pointerenter', ev => {
+          if (ev.pointerType !== 'mouse') return
+          cancel()
+          if (!$(p).classList.contains('open')) { closePops(); $(p).classList.add('open'); hoverAt = performance.now() }
+        })
+        // a click right after hovering open keeps it open (no toggle back)
+        $(b).addEventListener('click', ev => { if ((ev.pointerType === 'mouse' || performance.now() - hoverAt < 1500) && !$(p).classList.contains('open')) $(p).classList.add('open') })
+        for (const el of [$(b), $(p)]) el.addEventListener('pointerleave', ev => { if (ev.pointerType === 'mouse' && anyOpen()) later() })
+        $(p).addEventListener('pointerenter', cancel)
+        $(p).addEventListener('pointerdown', ev => { if (ev.target.tagName === 'SELECT' || ev.target.type === 'color') hold = true })
+        $(p).addEventListener('focusin', ev => { if (ev.target.type === 'search') hold = true })
+        $(p).addEventListener('change', () => { hold = false })
+        $(p).addEventListener('focusout', () => { hold = false })
+      }
+    }
     addEventListener('pointerdown', closePops)
     let idleT = 0
     const poke = () => { idleT = performance.now(); document.body.classList.remove('idle') }
@@ -580,6 +615,30 @@
 
     // ── Sound ────────────────────────────────────────────────────────────
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+    // OxiSynth plays through an AudioContext of its own, built inside its
+    // WASM: catch that one construction (as #030's acoustics.js does) so the
+    // picture can measure how late its sound reaches the speakers
+    const avs = { ctx: null, end: 0, lag: 0, measured: false, t: null }
+    {
+      const Base = window.AudioContext
+      window.AudioContext = class extends Base {
+        constructor(...a) {
+          super(...a)
+          window.AudioContext = Base   // one-shot
+          avs.ctx = this
+          const make = this.createBufferSource.bind(this)
+          this.createBufferSource = () => {
+            const n = make(), start = n.start.bind(n)
+            n.start = (when = 0, ...rest) => {
+              const d = n.buffer?.duration || 0   // the synth's audio chunks
+              if (d > 0 && d < 0.5) avs.end = Math.max(when, this.currentTime) + d
+              return start(when, ...rest)
+            }
+            return n
+          }
+        }
+      }
+    }
     const engine = new SoundFontEngine({ backend: 'oxisynth', vendorPath, audioContext: audioCtx })
     const SOUNDFONTS = [['soundfonts/Motif_ES6_Concert_Piano.sf2', 'Motif ES6 Concert Piano'], ['soundfonts/Full Grand Piano.sf2', 'Full Grand Piano'], ['soundfonts/FluidR3.sf3', 'FluidR3 GM']]
     for (const [v, l] of SOUNDFONTS) $('sf').add(new Option(l, v))
@@ -624,21 +683,71 @@
     const songTarget = {
       audioContext: audioCtx,
       resume: () => audioCtx.resume(),
-      noteOn(m, v, c) { if (c === 9) return; if (soundReady) engine.noteOn(m, v, c); if (m >= LOW && m <= HIGH) { held.set(m, (held.get(m) || 0) + 1); piano.noteOn(m, v) } },
-      noteOff(m, c) { if (c === 9) return; engine.noteOff(m, c); const n = (held.get(m) || 1) - 1; if (n <= 0) { held.delete(m); piano.noteOff(m) } else held.set(m, n) },
-      controlChange(c, cc, v) {
-        engine.controlChange(c, cc, v)
-        if (cc === 64) { pedals[2] = v >= 64; piano.setSustain(pedals[2]) }
-        if (cc === 67) piano.setPedal(0, pedals[0] = v >= 64)
-        if (cc === 66) piano.setPedal(1, pedals[1] = v >= 64)
-      },
+      // sound only: the keys and pedals follow the picture's clock (driveKeys)
+      noteOn(m, v, c) { if (c === 9) return; if (soundReady) engine.noteOn(m, v, c) },
+      noteOff(m, c) { if (c === 9) return; engine.noteOff(m, c) },
+      controlChange(c, cc, v) { engine.controlChange(c, cc, v) },
       allSoundOff() {
         for (let c = 0; c < 16; c++) engine.controlChange(c, 64, 0)
         engine.allNotesOff?.()
-        for (const m of held.keys()) piano.noteOff(m)
-        held.clear(); pedals.fill(false); piano.setSustain(false); piano.setPedal(0, false); piano.setPedal(1, false)
+        releaseKeys()
       },
     }
+    function songCC(cc, v) {
+      if (cc === 64) { pedals[2] = v >= 64; piano.setSustain(pedals[2]) }
+      if (cc === 67) piano.setPedal(0, pedals[0] = v >= 64)
+      if (cc === 66) piano.setPedal(1, pedals[1] = v >= 64)
+    }
+    function releaseKeys() {
+      for (const m of held.keys()) piano.noteOff(m)
+      held.clear(); pedals.fill(false); piano.setSustain(false); piano.setPedal(0, false); piano.setPedal(1, false)
+      keysAt.t = null; keysAt.active = []
+    }
+    // the keys and pedals at song time t (forward steps; a jump restarts)
+    const keysAt = { t: null, idx: 0, cc: 0, active: [] }
+    const keyOn = n => { held.set(n.midi, (held.get(n.midi) || 0) + 1); piano.noteOn(n.midi, n.velocity) }
+    const keyOff = n => { const k = (held.get(n.midi) || 1) - 1; if (k <= 0) { held.delete(n.midi); piano.noteOff(n.midi) } else held.set(n.midi, k) }
+    function driveKeys(t) {
+      const notes = song.notes, ccs = song.controlChanges || [], K = keysAt
+      if (K.t == null || t < K.t || t > K.t + 0.5) {
+        releaseKeys(); K.idx = 0; K.cc = 0
+        while (K.idx < notes.length && notes[K.idx].time < t) { const n = notes[K.idx++]; if (n.time + n.duration > t) { keyOn(n); K.active.push(n) } }
+        while (K.cc < ccs.length && ccs[K.cc].time <= t) { const c = ccs[K.cc++]; songCC(c.controller, c.value) }
+      } else {
+        for (let i = K.active.length - 1; i >= 0; i--) if (K.active[i].time + K.active[i].duration <= t) { keyOff(K.active[i]); K.active.splice(i, 1) }
+        while (K.cc < ccs.length && ccs[K.cc].time <= t) { const c = ccs[K.cc++]; songCC(c.controller, c.value) }
+        while (K.idx < notes.length && notes[K.idx].time <= t) { const n = notes[K.idx++]; keyOn(n); K.active.push(n) }
+      }
+      K.t = t
+    }
+    // ── Picture / sound sync (as #030) ───────────────────────────────────
+    // The picture runs on the time of the note being HEARD: the scheduler's
+    // worklet posts each note POST_AHEAD early and the synth plays it on
+    // arrival into the next buffer of its chain; the chain's end, measured
+    // against the speakers' output timestamp, gives the rest of the delay.
+    const POST_AHEAD = 0.05    // soundfont-engine/src/scheduler-worklet.js
+    const KEY_LEAD = 0.03      // a key starts down this long before its note, to bottom out on it
+    function heardNow(c) {
+      const ts = c.getOutputTimestamp?.()
+      if (ts?.contextTime > 0 && ts.performanceTime > 0) return ts.contextTime + (performance.now() - ts.performanceTime) / 1000
+      return c.currentTime - (c.outputLatency || 0) - (c.baseLatency || 0)
+    }
+    function pictureTime(dt) {
+      if (!scheduler?.playing) { avs.t = null; return songNow() }
+      if (avs.ctx && avs.end) {
+        const lag = avs.end - heardNow(avs.ctx)
+        if (lag > -0.05 && lag < 1) { avs.lag = avs.measured ? avs.lag + (lag - avs.lag) * Math.min(1, dt * 2) : lag; avs.measured = true }
+      }
+      const sp = scheduler.speed || 1
+      const goal = songNow() + POST_AHEAD - (Math.max(0, avs.lag) + +$('avsync').value / 1000) * sp
+      if (avs.t == null || Math.abs(goal - avs.t) > 0.15) avs.t = goal
+      else { avs.t += dt * sp; avs.t += (goal - avs.t) * Math.min(1, dt * 3) }
+      return avs.t
+    }
+    $('avsync').value = params.get('avsync') ?? 0
+    $('avsync').oninput = () => { const v = +$('avsync').value; $('avsyncV').textContent = (v > 0 ? '+' : '') + v + ' ms' }
+    $('avsync').oninput()
+    window.__pianist.avs = avs
     async function ensureScheduler() {
       if (scheduler) return scheduler
       scheduler = new MidiScheduler(songTarget)
@@ -744,7 +853,7 @@
     // song position (&at=); a shared song starts on the first click.
     const STATE = [
       // key, control (selects / ranges / colours: value; checkboxes: 1 / 0)
-      ['outfit', 'outfit'], ['dress', 'dressStyle'], ['fabric', 'fabric'], ['dcol', 'dressColor'], ['shoes', 'shoeStyle'],
+      ['outfit', 'outfit'], ['dress', 'dressStyle'], ['slit', 'slit'], ['fabric', 'fabric'], ['dcol', 'dressColor'], ['shoes', 'shoeStyle'],
       ['hair', 'hairStyle'], ['hcol', 'hairColor'], ['density', 'hairDensity'], ['hairon', 'hairOn'], ['hairsim', 'hairSim'],
       ['dresson', 'dressOn'], ['clothsim', 'clothSim'], ['look', 'look'], ['smooth', 'smooth'],
       ['gaze', 'gaze'], ['expr', 'expr'], ['hips', 'hips'], ['posture', 'posture'], ['bench', 'benchDist'], ['benchh', 'benchH'],
@@ -815,7 +924,8 @@
     const head = new THREE.Vector3(), handsC = new THREE.Vector3()
     function frame() {
       const dt = Math.min(clock.getDelta(), 1 / 20)
-      const t = fixedT ?? songNow()
+      const t = fixedT ?? pictureTime(dt)
+      if (fixedT == null && song && scheduler?.playing) driveKeys(t + KEY_LEAD)
       piano.update(dt)
       rig.setPedals(pedals[0], pedals[1], pedals[2])
       rig.update(t, dt)

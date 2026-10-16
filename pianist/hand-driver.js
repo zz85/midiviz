@@ -128,17 +128,9 @@ export function createHandDriver(side, dims) {
     return out.set(hand.x + bx, hand.y + d.base[1], hand.z + bz).add(slide)
   }
 
-  function update(pose, dt) {
-    if (!pose) { visible = false; return }
-    visible = true
-    const { anchor, fingers: tips } = pose
-    const fit = fitHand(tips, anchor)
-    if (!hand.init) { Object.assign(hand, fit, { init: true }) }
-    const k = Math.min(1, dt * 14)
-    hand.x += (fit.x - hand.x) * k; hand.z += (fit.z - hand.z) * k
-    hand.yaw += (fit.yaw - hand.yaw) * k; hand.y = fit.y
-    // what the fit cannot cover, a slide does (and it relaxes back to zero):
-    // a held key out of reach, or so far sideways the finger would splay
+  // What the fit cannot cover, a slide does (and it relaxes back to zero):
+  // a held key out of reach, or so far sideways the finger would splay.
+  function computeSlideGoal(tips) {
     slideGoal.set(0, 0, 0)
     let worst = 0
     const saved = slide.clone(); slide.set(0, 0, 0)
@@ -160,7 +152,82 @@ export function createHandDriver(side, dims) {
     slideGoal.y = THREE.MathUtils.clamp(slideGoal.y, -2, 1.5)
     // ...but never forward over the keys: that only hooks every finger
     slideGoal.z = THREE.MathUtils.clamp(slideGoal.z, -4.5, 2)
-    slide.copy(saved).lerp(slideGoal, Math.min(1, dt * 18))
+    slide.copy(saved)
+    return slideGoal
+  }
+
+  // The hand's placement and slide, baked over the whole song ahead of time.
+  // Smoothed as they play (a low-pass each frame) they make the hand trail
+  // the notes on runs and leaps; baked, they are smoothed forward and
+  // backward, which settles the hand just as well with no lag.
+  // (Same as concertstage/avatar-hands.js.)
+  let track = null
+  const COLS = 6   // x, z, yaw, slide x, y, z
+  const trackOut = new Float32Array(COLS)
+  function trackAt(t) {
+    if (!track || t == null) return null
+    const u = (t - track.t0) / track.h, i = Math.floor(u)
+    if (i < 0 || i >= track.n - 1) return null
+    const a = i * COLS, b = a + COLS, w = u - i, X = track.X
+    if (Number.isNaN(X[a]) || Number.isNaN(X[b])) return null
+    for (let c = 0; c < COLS; c++) trackOut[c] = X[a + c] + (X[b + c] - X[a + c]) * w
+    return trackOut
+  }
+  // forward-backward one-pole over columns [c0, c1) (zero phase); NaN = no pose
+  function zeroPhase(X, n, c0, c1, k) {
+    for (let c = c0; c < c1; c++) {
+      for (const [from, to, step] of [[0, n, 1], [n - 1, -1, -1]]) {
+        let y = NaN
+        for (let i = from; i !== to; i += step) {
+          const x = X[i * COLS + c]
+          if (Number.isNaN(x)) { y = NaN; continue }
+          y = Number.isNaN(y) ? x : y + (x - y) * k
+          X[i * COLS + c] = y
+        }
+      }
+    }
+  }
+  /** poseAt(t) → this hand's pose; samples [t0, t0 + (n-1)·h]. */
+  function bakeTrack(poseAt, t0, n, h) {
+    const X = new Float32Array(n * COLS).fill(NaN)
+    const keep = { ...hand }, keepSlide = slide.clone()
+    for (let i = 0; i < n; i++) {
+      const pose = poseAt(t0 + i * h); if (!pose) continue
+      const f = fitHand(pose.fingers, pose.anchor)
+      X[i * COLS] = f.x; X[i * COLS + 1] = f.z; X[i * COLS + 2] = f.yaw
+    }
+    zeroPhase(X, n, 0, 3, 1 - Math.exp(-14 * h))
+    for (let i = 0; i < n; i++) {
+      if (Number.isNaN(X[i * COLS])) continue
+      const pose = poseAt(t0 + i * h)
+      hand.x = X[i * COLS]; hand.z = X[i * COLS + 1]; hand.yaw = X[i * COLS + 2]
+      hand.y = KEY_TOP + KNUCKLE_Y + 1.2 * pose.anchor.idle
+      const g = computeSlideGoal(pose.fingers)
+      X[i * COLS + 3] = g.x; X[i * COLS + 4] = g.y; X[i * COLS + 5] = g.z
+    }
+    zeroPhase(X, n, 3, 6, 1 - Math.exp(-18 * h))
+    Object.assign(hand, keep); slide.copy(keepSlide)
+    track = { t0, h, n, X }
+  }
+  function clearTrack() { track = null }
+
+  function update(pose, dt, t) {
+    if (!pose) { visible = false; return }
+    visible = true
+    const { anchor, fingers: tips } = pose
+    const fit = fitHand(tips, anchor)
+    const tr = trackAt(t)
+    if (tr) {
+      hand.x = tr[0]; hand.z = tr[1]; hand.yaw = tr[2]; hand.y = fit.y; hand.init = true
+      slide.set(tr[3], tr[4], tr[5])
+    } else {
+      // live (or outside the baked song): smooth as it plays
+      if (!hand.init) { Object.assign(hand, fit, { init: true }) }
+      const k = Math.min(1, dt * 14)
+      hand.x += (fit.x - hand.x) * k; hand.z += (fit.z - hand.z) * k
+      hand.yaw += (fit.yaw - hand.yaw) * k; hand.y = fit.y
+      slide.lerp(computeSlideGoal(tips), Math.min(1, dt * 18))
+    }
     // fingertip targets in the hand frame (lx toward the little finger = s·x)
     const lx = [], lz = [], held = [], ty = []
     for (const f of [1, 2, 3, 4, 5]) {
@@ -283,9 +350,13 @@ export function createHandDriver(side, dims) {
     J.R.normalize()
     armIK(J.W, J.E)
   }
-  return { update, side, diag, hand, joints: J, shoulder: SHOULDER, get visible() { return visible } }
+  return { update, bakeTrack, clearTrack, side, diag, hand, joints: J, shoulder: SHOULDER, get visible() { return visible } }
 }
 
+
+// fingering/motion.js: a press runs from 12 ms before to 18 ms after the
+// note; the hands run this far ahead so the fingertip bottoms out on it
+const PRESS_LEAD = 0.018
 
 /** Both hands, driven by a fingered song. */
 export function createHandsDriver(dims) {
@@ -293,8 +364,20 @@ export function createHandsDriver(dims) {
   let motion = buildMotion([])
   return {
     L, R,
-    setNotes(notes) { motion = buildMotion(notes.filter(n => n.finger >= 1)) },
-    clear() { motion = buildMotion([]) },
-    update(t, dt) { const p = motion.poseAt(t); L.update(p.L, dt); R.update(p.R, dt) },
+    setNotes(notes) {
+      const own = notes.filter(n => n.finger >= 1)
+      motion = buildMotion(own)
+      // bake the hands' placement over the song (60 Hz, interpolated)
+      if (!own.length) { L.clearTrack(); R.clearTrack(); return }
+      const h = 1 / 60
+      let t0 = Infinity, t1 = -Infinity
+      for (const m of own) { t0 = Math.min(t0, m.on - 2); t1 = Math.max(t1, m.off + 2) }
+      const n = Math.ceil((t1 - t0) / h) + 1, poses = []
+      for (let i = 0; i < n; i++) poses.push(motion.poseAt(t0 + i * h))
+      L.bakeTrack(t => poses[Math.round((t - t0) / h)]?.L, t0, n, h)
+      R.bakeTrack(t => poses[Math.round((t - t0) / h)]?.R, t0, n, h)
+    },
+    clear() { motion = buildMotion([]); L.clearTrack(); R.clearTrack() },
+    update(t, dt) { const tm = t + PRESS_LEAD, p = motion.poseAt(tm); L.update(p.L, dt, tm); R.update(p.R, dt, tm) },
   }
 }
