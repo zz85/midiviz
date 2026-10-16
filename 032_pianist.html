@@ -93,6 +93,7 @@
   <div id="topRight" class="ui">
     <button class="pill" id="cameraBtn"><svg viewBox="0 0 24 24"><path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11z"/></svg>Camera</button>
     <button class="pill" id="visualsBtn"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>Visuals</button>
+    <button class="pill" id="shareBtn" title="Copy a link to this exact scene: wardrobe, look, camera, sound and the song at this moment"><svg viewBox="0 0 24 24"><path d="M18 16a3 3 0 0 0-2.4 1.2l-6.7-3.4a3 3 0 0 0 0-1.6l6.7-3.4A3 3 0 1 0 15 7c0 .3 0 .5.1.8L8.4 11.2a3 3 0 1 0 0 3.6l6.7 3.4A3 3 0 1 0 18 16z"/></svg>Share</button>
   </div>
   <div id="cameraPop" class="pop ui">
     <div class="item" data-view="auto">Director (auto)<span class="dot"></span></div>
@@ -558,8 +559,9 @@
     for (const it of document.querySelectorAll('#cameraPop .item')) it.onclick = () => { setView(it.dataset.view); closePops() }
     setView(view)
     // dragging takes the camera; the director (or the move) takes it back after 8 s
-    let userCam = false
-    controls.addEventListener('start', () => { userCam = true; camTouched = performance.now() })
+    let userCam = false, camFree = false   // camFree: a dragged camera on a fixed view (shared as ?cam=)
+    controls.addEventListener('start', () => { userCam = true; camFree = view !== 'auto'; camTouched = performance.now() })
+    for (const it of document.querySelectorAll('#cameraPop .item')) it.addEventListener('click', () => { camFree = false })
     controls.addEventListener('end', () => { camTouched = performance.now() })
 
     // popups
@@ -673,7 +675,7 @@
       fingerWorker.postMessage(notes.map(n => ({ pitch: n.midi, on: n.time, off: n.time + n.duration, velocity: n.velocity })))
     }
     let fingered = false
-    async function loadSong(buffer, name) {
+    async function loadSong(buffer, name, at = 0) {
       try {
         const sch = await ensureScheduler()
         if (sch.playing) sch.stop()
@@ -687,21 +689,23 @@
         fingerInWorker(s.notes)
         await ensureSound()
         sch.load(s); sch.speed = speeds[speedI]
+        if (at > 0 && at < s.duration) sch.seek(at)
         unlockAudio()
-        music.songT = 0; music.wall = performance.now()
+        music.songT = sch.currentTime; music.wall = performance.now()
         sch.play(); setPlaying(true); setStatus('')
       } catch (e) { console.error(e); setStatus(`Could not play ${name}: ${e.message}`, true, 5000) }
     }
-    async function loadSongUrl(url, label) {
-      markSong(url)
+    let songFile = null   // the list song playing (for shared links)
+    async function loadSongUrl(url, label, at = 0) {
+      markSong(url); songFile = url
       setStatus('Loading song…')
-      try { await loadSong(await (await fetch(encodeURI(url))).arrayBuffer(), label) }
+      try { await loadSong(await (await fetch(encodeURI(url))).arrayBuffer(), label, at) }
       catch (e) { setStatus('Could not load song: ' + e.message, true, 5000) }
     }
     $('openFile').onclick = () => { closePops(); $('file').click() }
-    $('file').onchange = async () => { const f = $('file').files[0]; if (f) { markSong(null); loadSong(await f.arrayBuffer(), f.name) } $('file').value = '' }
+    $('file').onchange = async () => { const f = $('file').files[0]; if (f) { markSong(null); songFile = null; loadSong(await f.arrayBuffer(), f.name) } $('file').value = '' }
     addEventListener('dragover', ev => ev.preventDefault())
-    addEventListener('drop', async ev => { ev.preventDefault(); const f = ev.dataTransfer.files[0]; if (f) { markSong(null); loadSong(await f.arrayBuffer(), f.name) } })
+    addEventListener('drop', async ev => { ev.preventDefault(); const f = ev.dataTransfer.files[0]; if (f) { markSong(null); songFile = null; loadSong(await f.arrayBuffer(), f.name) } })
     const fmt = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`
     let seeking = false
     function showTime(t) {
@@ -712,7 +716,10 @@
     }
     const setPlaying = on => { $('playIcon').innerHTML = on ? '<path d="M6 4h4v16H6zm8 0h4v16h-4z"/>' : '<path d="M7 4v16l13-8z"/>'; poke() }
     async function togglePlay() {
-      if (!song) { const d = SONGS.find(x => /chpn-p15|nocturne/i.test(x[0])) || SONGS[0]; return loadSongUrl(d[0], d[1]) }
+      if (!song) {
+        if (sharedSong) { const [f, at] = sharedSong; sharedSong = null; return loadSongUrl(f, SONGS.find(x => x[0] === f)?.[1] || f.split('/').pop(), at) }
+        const d = SONGS.find(x => /chpn-p15|nocturne/i.test(x[0])) || SONGS[0]; return loadSongUrl(d[0], d[1])
+      }
       const sch = await ensureScheduler(); unlockAudio()
       if (sch.playing) { sch.pause(); songTarget.allSoundOff(); setPlaying(false) }
       else { music.wall = performance.now(); sch.play(); setPlaying(true) }
@@ -729,6 +736,78 @@
     let speedI = 2, loop = false
     $('speedBtn').onclick = () => { speedI = (speedI + 1) % speeds.length; $('speedLbl').textContent = speeds[speedI] + '×'; if (scheduler) { music.songT = songNow(); music.wall = performance.now(); scheduler.speed = speeds[speedI] } }
     $('loopBtn').onclick = () => { loop = !loop; $('loopBtn').classList.toggle('off', !loop) }
+
+    // ── Shareable state ──────────────────────────────────────────────────
+    // Every option lives in the address bar as a short query key (only the
+    // ones that differ from the default, or from the chosen outfit), so a
+    // reload or a copied link brings back the same scene. Share adds the
+    // song position (&at=); a shared song starts on the first click.
+    const STATE = [
+      // key, control (selects / ranges / colours: value; checkboxes: 1 / 0)
+      ['outfit', 'outfit'], ['dress', 'dressStyle'], ['fabric', 'fabric'], ['dcol', 'dressColor'], ['shoes', 'shoeStyle'],
+      ['hair', 'hairStyle'], ['hcol', 'hairColor'], ['density', 'hairDensity'], ['hairon', 'hairOn'], ['hairsim', 'hairSim'],
+      ['dresson', 'dressOn'], ['clothsim', 'clothSim'], ['look', 'look'], ['smooth', 'smooth'],
+      ['gaze', 'gaze'], ['expr', 'expr'], ['hips', 'hips'], ['posture', 'posture'], ['bench', 'benchDist'], ['benchh', 'benchH'],
+      ['light', 'light'], ['exposure', 'exposure'], ['dof', 'dof'], ['caption', 'caption'],
+      ['move', 'camMove'], ['pace', 'dirPace'], ['favour', 'dirBias'], ['trans', 'dirTrans'], ['shotnames', 'shotLbl'],
+      ['sf', 'sf'], ['avsync', 'avsync'],
+    ].filter(([, id]) => $(id))
+    const OUTFIT_KEYS = { dress: 'dress', fabric: 'fabric', dcol: 'color', shoes: 'shoes', hair: 'hair', hcol: 'hairColor' }
+    // (colours without their #, so links stay readable)
+    const hex = v => String(v).replace(/^#/, '')
+    const ctlGet = el => el.type === 'checkbox' ? (el.checked ? '1' : '0') : el.type === 'color' ? hex(el.value) : String(el.value)
+    const ctlDefault = el => el.type === 'checkbox' ? (el.defaultChecked ? '1' : '0')
+      : el.tagName === 'SELECT' ? ([...el.options].find(o => o.defaultSelected) || el.options[0])?.value ?? ''
+      : el.type === 'color' ? hex(el.defaultValue) : el.defaultValue
+    const same = (a, b) => a === b || (a !== '' && b !== '' && !isNaN(a) && !isNaN(b) && +a === +b) || a.toLowerCase?.() === b.toLowerCase?.()
+    // load: controls the start-up code did not already take from the URL
+    // (the wardrobe, pose and director keys are read above) get their value
+    // and their own handler, exactly as if picked in the menu
+    for (const [k, id] of STATE) {
+      if (!params.has(k)) continue
+      const el = $(id), v = params.get(k)
+      if (same(ctlGet(el), el.type === 'color' ? hex(v) : v === '' && el.type === 'checkbox' ? '1' : v)) continue
+      if (el.tagName === 'SELECT' && ![...el.options].some(o => o.value === v)) continue   // (unknown or old value: keep what the page chose)
+      if (el.type === 'color' && !/^#?[0-9a-f]{6}$/i.test(v)) continue
+      if (el.type === 'checkbox') el.checked = v !== '0'; else el.value = el.type === 'color' ? '#' + hex(v) : v
+      el.dispatchEvent(new Event(el.type === 'range' || el.type === 'color' ? 'input' : 'change'))
+    }
+    if (params.get('speed') && speeds.includes(+params.get('speed'))) { speedI = speeds.indexOf(+params.get('speed')); $('speedLbl').textContent = speeds[speedI] + '×' }
+    if (params.get('loop') === '1') { loop = true; $('loopBtn').classList.remove('off') }
+    {
+      const c = (params.get('cam') || '').split(',').map(Number)
+      if (c.length === 6 && c.every(Number.isFinite) && view !== 'auto') { camGoal.pos.set(c[0], c[1], c[2]); camGoal.target.set(c[3], c[4], c[5]); controls.autoRotate = false; camFree = true }
+    }
+    let sharedSong = !params.has('shot') && params.get('song') ? [params.get('song'), +(params.get('at') || 0)] : null
+    if (sharedSong) { markSong(sharedSong[0]); songFile = sharedSong[0] }
+    function stateQuery(withTime = false) {
+      const q = new URLSearchParams(location.search)
+      const o = OUTFITS[$('outfit').value]
+      for (const [k, id] of STATE) {
+        const el = $(id), v = ctlGet(el)
+        const base = o && OUTFIT_KEYS[k] ? (el.type === 'color' ? hex(o[OUTFIT_KEYS[k]]) : o[OUTFIT_KEYS[k]]) : ctlDefault(el)
+        if (same(v, base)) q.delete(k); else q.set(k, v)
+      }
+      if (view === 'shoulder') q.delete('view'); else q.set('view', view)
+      const r = x => Math.round(x * 10) / 10
+      if (camFree && view !== 'auto') q.set('cam', [...camera.position.toArray(), ...controls.target.toArray()].map(r).join(',')); else q.delete('cam')
+      if (speeds[speedI] === 1) q.delete('speed'); else q.set('speed', speeds[speedI])
+      if (loop) q.set('loop', '1'); else q.delete('loop')
+      if (songFile) q.set('song', songFile); else q.delete('song')
+      const t = song ? songNow() : sharedSong?.[1] || 0
+      if ((withTime || sharedSong) && songFile && t > 0.5) q.set('at', t.toFixed(1)); else q.delete('at')   // (a shared position stays until it plays)
+      return q.toString().replace(/%2F/g, '/').replace(/%2C/g, ',')
+    }
+    // keep the address bar current (cheap: a string build twice a second)
+    if (!params.has('shot')) setInterval(() => {
+      const q = stateQuery(), url = location.pathname + (q ? '?' + q : '') + location.hash
+      if (url !== location.pathname + location.search + location.hash) history.replaceState(null, '', url)
+    }, 500)
+    $('shareBtn').onclick = async () => {
+      const q = stateQuery(true), url = location.origin + location.pathname + (q ? '?' + q : '')
+      try { await navigator.clipboard.writeText(url); setStatus('Link copied' + (q.includes('at=') ? ' (with the song position)' : ''), false, 2500) }
+      catch { prompt('Copy this link:', url) }
+    }
 
     // ── Frame ────────────────────────────────────────────────────────────
     const clock = new THREE.Clock()

@@ -49,3 +49,16 @@ Each asset gets its own `assets/community/<key>.bin` plus WebP / JPEG textures, 
 - New views looking back at her from in front of the piano: From the audience (through the open lid, `?view=audience`) and Across the piano (over the plate from beyond the tail, `?view=tail`).
 - Move (on a view), `?move=orbit|zoomIn|zoomOut|dollyIn|dollyOut|crane`: any fixed view drifts there and back.
 - Headless: `?shot&view=auto&t=…` renders the director's frame at `t` (`window.__shotInfo` names the shot).
+
+## Sharing a scene
+
+Every option is in the address bar as a short query key, written only when it differs from the default (or from the chosen outfit), so reloading or copying the address brings the same scene back. **Share** copies the link with the song position (`&at=`); a shared song starts there on the first click (browsers need a click before sound).
+
+| Key | Control | Key | Control |
+|---|---|---|---|
+| `outfit` | Outfit | `gaze` `expr` `hips` `posture` | Pose |
+| `dress` `fabric` `dcol` | Dress, fabric, colour (hex without `#`) | `bench` `benchh` | Bench distance / height |
+| `shoes` | Shoes | `light` `exposure` `dof` `caption` | Visuals |
+| `hair` `hcol` `density` | Hair style, colour, strands | `view` `cam` | Camera view; a dragged camera as `x,y,z,tx,ty,tz` |
+| `hairon` `hairsim` `dresson` `clothsim` | Checkboxes (`1` / `0`) | `move` `pace` `favour` `trans` `shotnames` | Moves and the director |
+| `look` `smooth` | Look, subdivision | `song` `at` `speed` `loop` `sf` `avsync` | Song, position, transport, sound |
