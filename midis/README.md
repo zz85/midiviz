@@ -26,6 +26,47 @@ A curated collection of classical, modern, and video game piano pieces in MIDI f
 | `grieg_halling.mid` | Grieg | Halling |
 | `pachelbel_canon.mid` | Pachelbel | Canon in D |
 | `bach_toccata.mid` | J.S. Bach | Toccata & Fugue in D minor |
+| `liz_rhap02.mid` | Liszt | Hungarian Rhapsody No.2 (lassan and friska) |
+| `liz_et3.mid` | Liszt | La Campanella (Paganini Etude No.3) |
+| `liz_et6.mid` | Liszt | Paganini Etude No.6 (Theme and variations) |
+| `liz_et_trans4.mid` | Liszt | Transcendental Etude No.4 (Mazeppa) |
+| `liz_et_trans5.mid` | Liszt | Transcendental Etude No.5 (Feux follets) |
+| `liz_rhap10.mid` | Liszt | Hungarian Rhapsody No.10 |
+| `liz_rhap12.mid` | Liszt | Hungarian Rhapsody No.12 |
+| `liz_rhap15.mid` | Liszt | Hungarian Rhapsody No.15 (Rakoczy March) |
+| `deb_prel.mid` | Debussy | Suite bergamasque - Prelude |
+| `deb_menu.mid` | Debussy | Suite bergamasque - Menuet |
+| `debussy_cc_1.mid` | Debussy | Doctor Gradus ad Parnassum (Children's Corner) |
+| `debussy_cc_2.mid` | Debussy | Jimbo's Lullaby (Children's Corner) |
+| `debussy_cc_3.mid` | Debussy | Serenade for the Doll (Children's Corner) |
+| `debussy_cc_4.mid` | Debussy | The Snow is Dancing (Children's Corner) |
+| `debussy_cc_5.mid` | Debussy | The Little Shepherd (Children's Corner) |
+| `debussy_cc_6.mid` | Debussy | Golliwogg's Cakewalk (Children's Corner) |
+| `mond_2.mid` | Beethoven | Moonlight Sonata (2nd mvt) |
+| `mond_3.mid` | Beethoven | Moonlight Sonata (3rd mvt) |
+| `pathetique_2.mid` | Beethoven | Pathetique Sonata (2nd mvt, Adagio) |
+| `pathetique_3.mid` | Beethoven | Pathetique Sonata (3rd mvt) |
+| `appass_1.mid` | Beethoven | Appassionata Sonata (1st mvt) |
+| `appass_3.mid` | Beethoven | Appassionata Sonata (3rd mvt) |
+| `waldstein_1.mid` | Beethoven | Waldstein Sonata (1st mvt) |
+| `chpn_op10_e01.mid` | Chopin | Etude Op.10 No.1 |
+| `chpn_op10_e05.mid` | Chopin | Black Key Etude Op.10 No.5 |
+| `chpn_op25_e1.mid` | Chopin | Aeolian Harp Etude Op.25 No.1 |
+| `chpn_op25_e11.mid` | Chopin | Winter Wind Etude Op.25 No.11 |
+| `chpn_op23.mid` | Chopin | Ballade No.1 Op.23 |
+| `chp_op31.mid` | Chopin | Scherzo No.2 Op.31 |
+| `chpn_op53.mid` | Chopin | Heroic Polonaise Op.53 |
+| `chpn_op35_3.mid` | Chopin | Funeral March (Sonata No.2) |
+| `chpn-p4.mid` | Chopin | Prelude in E minor Op.28 No.4 |
+| `chpn-p7.mid` | Chopin | Prelude in A major Op.28 No.7 |
+| `chpn_op7_1.mid` | Chopin | Mazurka Op.7 No.1 |
+| `mz_331_3.mid` | Mozart | Rondo alla Turca (K.331, 3rd mvt) |
+| `mz_545_2.mid` | Mozart | Piano Sonata K.545 (2nd mvt) |
+| `mz_545_3.mid` | Mozart | Piano Sonata K.545 (3rd mvt) |
+| `mz_330_1.mid` | Mozart | Piano Sonata K.330 (1st mvt) |
+| `mz_332_1.mid` | Mozart | Piano Sonata K.332 (1st mvt) |
+| `mz_333_1.mid` | Mozart | Piano Sonata K.333 (1st mvt) |
+| `mz_570_1.mid` | Mozart | Piano Sonata K.570 (1st mvt) |
 
 ## Symphonic Works
 
