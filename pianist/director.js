@@ -212,6 +212,10 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
   const lookUp = (a, b) => glances.some(g => g.a < b - 1 && g.b > a + 0.5 && !g.quiet)
   const names = Object.keys(SPOTS)
   const shots = []
+  // what the audience has been shown lately: when the last wide shot ended,
+  // and when her face was last in view (from the front half, not from behind)
+  const faceSeen = s => SUBJ_KIND[s.subj] === 'pianist' && Math.abs(wrap(s.az)) >= 80 && s.el < 45
+  let lastWide = 0, lastFace = 0
   let t = 0
   for (let i = 0; t < duration; i++) {
     const E = mean(t, t + 6)
@@ -253,6 +257,15 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
           // after a close-up: a medium shot (back to the keys), not the hall
           else if (ps.size === 0) x *= s.size === 1 ? 3 : s.size === 2 ? 0.3 : 0.15
           else if (s.size !== ps.size) x *= 1.4
+          // too long close or behind her: pull out wide, or come round to her face.
+          // Overrides the size grammar above; grows from ~25 s / ~35 s on
+          const needWide = clamp((t - lastWide - 25 / pace) / (20 / pace), 0, 1)
+          const needFace = clamp((t - lastFace - 35 / pace) / (20 / pace), 0, 1)
+          if (s.size === 2) x *= 1 + 8 * needWide
+          if (faceSeen(s)) x *= 1 + 6 * needFace
+          // and past ~45 s it must: only those shots are left
+          if (needWide >= 1 && s.size !== 2) x *= 0.02
+          else if (needFace >= 1 && !faceSeen(s)) x *= 0.02
           // no jump cuts: too little change of angle and size
           const dAz = Math.abs(wrap(s.az - ps.az)), dSize = Math.abs(Math.log(s.dist / ps.dist))
           if (dAz < 30 && dSize < 0.4) x *= 0.15
@@ -282,6 +295,8 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
       const wantGlide = trans === 'glides' || hash(i, 5) < (E < 0.55 ? 0.75 : 0.4) + (flat ? 0.2 : 0)
       if (canGlide && wantGlide) glide = clamp((lerp(3.5, 1.8, E) + 0.012 * dAz + 1.2 * dD) / Math.sqrt(pace), 1.4, Math.min(5, 0.5 * (end - t)))
     }
+    if (SPOTS[name].size === 2) lastWide = end
+    if (faceSeen(SPOTS[name])) lastFace = end
     shots.push({
       i, name, move, t0: t, t1: end, glide,
       amt: clamp((end - t) / 10, 0.45, 1.3) * (0.7 + 0.5 * E),
