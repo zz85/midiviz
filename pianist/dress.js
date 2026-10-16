@@ -77,7 +77,11 @@ function knitTextures(size = 256, cells = 16) {
 //           and a round neck) or 'long' (to the wrist, round neck) — the
 //           sleeves are cut from the arm's skin like the bodice, so they
 //           are skinned to the arm and bend with it
-export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1d1b', length = 'midi', skirt: skirtMode = 'cloth', bodice: withBodice = true, waist = 4, sleeves = 'none' } = {}) {
+//   slits:  side slits (left and right) from the knee to the
+//           hem; on by default for the gown
+//   Fabric: plain jersey by default (no pattern, a faint fine weave);
+//           setFabric('knit') brings back the diamond knit
+export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1d1b', length = 'midi', skirt: skirtMode = 'cloth', bodice: withBodice = true, waist = 4, sleeves = 'none', slits = length === 'gown' } = {}) {
   const body = ch.parts.body.geometry
   const P = body.attributes.position.array, Nn = body.attributes.normal.array
   const SI = body.attributes.skinIndex.array, SW = body.attributes.skinWeight.array
@@ -138,13 +142,14 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
 
   const tex = knitTextures()
   const base = new THREE.MeshPhysicalMaterial({
-    color, map: tex.color, normalMap: tex.normal, normalScale: new THREE.Vector2(0.8, 0.8),
-    roughness: 0.88, sheen: 0.45, sheenRoughness: 0.5, sheenColor: new THREE.Color(0xc0503c), side: THREE.DoubleSide,
+    color, normalMap: tex.normal, normalScale: new THREE.Vector2(0.12, 0.12),
+    roughness: 0.82, sheen: 0.4, sheenRoughness: 0.5, sheenColor: new THREE.Color(0xc0503c), side: THREE.DoubleSide,
   })
   const withRepeat = (r) => {
+    // plain: no colour pattern, the weave only as a faint, finer normal
     const m = base.clone()
-    m.map = tex.color.clone(); m.normalMap = tex.normal.clone()
-    for (const t of [m.map, m.normalMap]) { t.repeat.set(r, r); t.needsUpdate = true }
+    m.map = null; m.normalMap = tex.normal.clone()
+    m.normalMap.repeat.set(r * 3, r * 3); m.normalMap.needsUpdate = true
     return m
   }
   const bodiceMat = withRepeat(1)
@@ -181,6 +186,8 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
     const rs = rr.slice(); for (let b = 0; b < C; b++) rr[b] = (rs[(b + C - 1) % C] + 2 * rs[b] + rs[(b + 1) % C]) / 4 + pad
     return rr
   }
+  const gown = length === 'gown'
+  // (the gown's waistband hugs the waist a little tighter)
   const ringR = ringAt(hipY, 0.9)
   const ringOf = new Map()   // rows above the hips: follow the waist, over the bodice
   const NPt = C * R
@@ -190,12 +197,17 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
   for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) {
     const a = (c + 0.5) / C * 2 * Math.PI - Math.PI
     const y = hipY + TOP - r * seg
-    const t = Math.max(0, (hipY - y) / (L - TOP)), flare = 1 + (length === 'gown' ? 0.55 : 0.3) * t * t + 0.12 * t
+    const t = Math.max(0, (hipY - y) / (L - TOP)), flare = 1 + (gown ? 0.55 : 0.3) * t * t + 0.12 * t
     let rad = ringR[c] * flare
-    if (y > hipY) { if (!ringOf.has(r)) ringOf.set(r, ringAt(y, 1.5)); rad = Math.max(ringOf.get(r)[c], 0) * (1 - (hipY - y) / -TOP * 0) ; rad = THREE.MathUtils.lerp(ringR[c], ringOf.get(r)[c], (y - hipY) / TOP) }
+    if (y > hipY) { if (!ringOf.has(r)) ringOf.set(r, ringAt(y, gown ? 0.8 : 1.5)); rad = Math.max(ringOf.get(r)[c], 0) * (1 - (hipY - y) / -TOP * 0) ; rad = THREE.MathUtils.lerp(ringR[c], ringOf.get(r)[c], (y - hipY) / TOP) }
     const i = id(r, c) * 3
     rest[i] = ctr.x + Math.cos(a) * rad; rest[i + 1] = y; rest[i + 2] = ctr.z + Math.sin(a) * rad
   }
+  // side slits: the tube is open between the columns at her left and right
+  // (x extremes: angle 0 and ±π) from slitRow down to the hem
+  const slitRow = slits ? Math.max(2, Math.round((hipY + TOP - (J['lowerleg01.L____head'].y - 3)) / seg)) : R
+  const SEAMS = [C / 2, C]   // a seam b lies between columns b − 1 and b
+  const cut = (r, c, k) => r >= slitRow && SEAMS.some(b => c < b && c + k >= b)
   // skin weights: the nearest leg / hip skin, and for the panel between the
   // legs a blend of both legs (so seated it spans the lap, knee to knee)
   const LEGV = []
@@ -244,7 +256,7 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
     const uvA = new Float32Array(NVt * 2), idx = []
     const circ = 2 * Math.PI * 22
     for (let r = 0; r < R; r++) for (let c = 0; c <= C; c++) { const v = vid(r, c); uvA[v * 2] = c / C * circ / 5.6; uvA[v * 2 + 1] = r * seg / 5.6 }
-    for (let r = 0; r + 1 < R; r++) for (let c = 0; c < C; c++) { const a = vid(r, c), b = vid(r, c + 1), d = vid(r + 1, c), e = vid(r + 1, c + 1); idx.push(a, d, b, b, d, e) }
+    for (let r = 0; r + 1 < R; r++) for (let c = 0; c < C; c++) { if (cut(r, c, 1)) continue; const a = vid(r, c), b = vid(r, c + 1), d = vid(r + 1, c), e = vid(r + 1, c + 1); idx.push(a, d, b, b, d, e) }
     sg.setAttribute('uv', new THREE.BufferAttribute(uvA, 2))
     sg.setIndex(idx)
   }
@@ -288,10 +300,10 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
     const d = (a, b) => Math.hypot(rest[a * 3] - rest[b * 3], rest[a * 3 + 1] - rest[b * 3 + 1], rest[a * 3 + 2] - rest[b * 3 + 2])
     const add = (a, b, k) => cons.push([a, b, d(a, b), k])
     for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) {
-      add(id(r, c), id(r, c + 1), 1)
-      if (r + 1 < R) { add(id(r, c), id(r + 1, c), 1); add(id(r, c), id(r + 1, c + 1), 0.5); add(id(r, c + 1), id(r + 1, c), 0.5) }
+      if (!cut(r, c, 1)) add(id(r, c), id(r, c + 1), 1)
+      if (r + 1 < R) { add(id(r, c), id(r + 1, c), 1); if (!cut(r, c, 1)) { add(id(r, c), id(r + 1, c + 1), 0.5); add(id(r, c + 1), id(r + 1, c), 0.5) } }
       if (r + 2 < R) add(id(r, c), id(r + 2, c), 0.15)
-      add(id(r, c), id(r, c + 2), 0.15)
+      if (!cut(r, c, 2)) add(id(r, c), id(r, c + 2), 0.15)
     }
   }
   const CI = new Int32Array(cons.length * 2), CL = new Float32Array(cons.length), CK = new Float32Array(cons.length)
@@ -421,7 +433,7 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
     cPos.needsUpdate = true
     cg.computeVertexNormals()
     const nA = cg.attributes.normal.array
-    for (let r = 0; r < R; r++) { const i = r * C, j = NPt + r; for (let k = 0; k < 3; k++) { const m = (nA[i * 3 + k] + nA[j * 3 + k]) / 2; nA[i * 3 + k] = nA[j * 3 + k] = m } }
+    for (let r = 0; r < Math.min(R, slitRow); r++) { const i = r * C, j = NPt + r; for (let k = 0; k < 3; k++) { const m = (nA[i * 3 + k] + nA[j * 3 + k]) / 2; nA[i * 3 + k] = nA[j * 3 + k] = m } }
   }
 
   const object = new THREE.Group()
@@ -430,7 +442,18 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
   const api = {
     simulate: true, mode: skirtMode, object, bodice, hem, fitted, cloth, X,
     setColor(c) { for (const m of [bodiceMat, skirtMat]) { m.color.set(c); m.sheenColor.set(c).lerp(new THREE.Color(0xffd8c8), 0.25) } },
-    setFabric(kind) { applyFabric([bodiceMat, skirtMat].map(material => ({ material, scale: 0.5 })), kind) },
+    setFabric(kind) {
+      applyFabric([bodiceMat, skirtMat].map(material => ({ material, scale: 0.5 })), kind === 'knit' ? 'made' : kind)
+      // the diamond knit (the reference's texture)
+      for (const m of [bodiceMat, skirtMat]) {
+        m.map?.dispose(); m.map = null
+        if (kind === 'knit') {
+          m.map = tex.color.clone(); m.map.needsUpdate = true
+          m.normalMap = tex.normal.clone(); m.normalMap.needsUpdate = true; m.normalScale.set(0.8, 0.8)
+        }
+        m.needsUpdate = true
+      }
+    },
     setMode(m) { api.mode = m; if (m === 'cloth') started = false },
     settle(seconds = 3) { if (api.mode !== 'cloth') return; start(); for (let i = 0; i < seconds * 60; i++) step(1 / 60); upload() },
     update(dt) {
@@ -448,7 +471,7 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
       hideBody(ch, HIDE_KEY, null)
       for (const m of [bodice, hem, fitted]) { m.removeFromParent(); m.geometry.dispose() }
       object.removeFromParent(); cg.dispose()
-      for (const m of [bodiceMat, skirtMat]) { m.map.dispose(); m.normalMap.dispose(); m.dispose() }
+      for (const m of [bodiceMat, skirtMat]) { m.map?.dispose(); m.normalMap?.dispose(); m.dispose() }
     },
   }
   api.setColor(color)

@@ -10,7 +10,8 @@ Notes on the clothes and hair in `032_pianist.html` (Visuals → Pianist).
 ## Dresses
 
 - Ours (`dress.js`), now with sleeves: `knee-` or `gown-`, then `fitted` or `cloth`, then optionally `short` or `long`, e.g. `?dress=knee-fitted-long`. Old links using `midi-` still work: "midi" was renamed "below the knee".
-- Fabric (`fabric.js`, `?fabric=`): as made, satin, velvet or sequins. Sequins are a tiled normal map of tilted discs on a metallic base, so they glint as she moves.
+- Our dress is plain jersey by default (no pattern, a faint fine weave); the diamond knit is Fabric → Knit. The gown hugs the waist a little tighter and has side slits from the knee to the hem (`?slits=0` to close them).
+- Fabric (`fabric.js`, `?fabric=`): plain, knit, satin, velvet or sequins. Sequins are a tiled normal map of tilted discs on a metallic base, so they glint as she moves.
 - Community dresses, grouped in the menu: covered shoulders, Yuja Wang-inspired, sleeveless/halter, and tops or T-shirts worn over our skirt.
 - Modesty: a new dress is built while the old one stays on, and only then swapped in. The body stays hidden while nothing covers it (the first load, a failed load, or the Dress box unticked).
 

@@ -136,7 +136,7 @@
       <option value="gown-cloth-long">Long sleeves · floor length, simulated</option>
       </optgroup>
     </select></div>
-    <div class="field"><label>Fabric</label><select id="fabric"><option value="made">As made</option><option value="satin">Satin</option><option value="velvet">Velvet</option><option value="sequin">Sequins</option></select></div>
+    <div class="field"><label>Fabric</label><select id="fabric"><option value="made">Plain (as made)</option><option value="knit">Knit (diamond)</option><option value="satin">Satin</option><option value="velvet">Velvet</option><option value="sequin">Sequins</option></select></div>
     <div class="field"><label>Shoes</label><select id="shoeStyle"><option value="flats">Black flats (ours)</option></select></div>
     <label class="chk"><input type="checkbox" id="hairOn" checked>Hair</label>
     <label class="chk"><input type="checkbox" id="hairSim" checked>Hair simulation (strands, or mesh hair as cloth)</label>
@@ -391,7 +391,7 @@
         return { ...skirt, update(dt) { item.object.visible = skirt.object.visible; item.update(dt); skirt.update(dt) }, setColor(c) { skirt.setColor(c); item.setColor(c) }, dispose() { item.dispose(); skirt.dispose() } }
       }
       const [length, skirt, sleeves = 'none'] = v.split('-')
-      return createDress(ch, rig, { seatY: SEAT_Y, bench: piano.bench, length: length === 'knee' ? 'midi' : length, skirt, sleeves, color })
+      return createDress(ch, rig, { seatY: SEAT_Y, bench: piano.bench, length: length === 'knee' ? 'midi' : length, skirt, sleeves, color, slits: params.has('slits') ? params.get('slits') !== '0' : undefined })
     }
     async function setDress(v) {
       const job = ++dressJob
