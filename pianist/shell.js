@@ -23,13 +23,17 @@ export function hideBody(ch, key, tris) {
   const g = ch.parts.body.geometry, full = bodyIndex(ch)
   const hidden = (ch.parts.body.hidden ||= new Map())
   if (tris) hidden.set(key, new Set(tris)); else hidden.delete(key)
-  const out = []
+  const out = [], vis = []
   for (let t = 0; t < full.length; t += 3) {
     let h = false
     for (const set of hidden.values()) if (set.has(t)) { h = true; break }
-    if (!h) out.push(full[t], full[t + 1], full[t + 2])
+    if (!h) { out.push(full[t], full[t + 1], full[t + 2]); vis.push(t) }
   }
   g.setIndex(new THREE.BufferAttribute(new full.constructor(out), 1))
+  // the smooth (subdivided) body, when shown, hides the same triangles' children
+  const sm = ch.parts.body.smooth
+  if (sm) sm.geometry.setIndex(new THREE.BufferAttribute(sm.childIndex(vis), 1))
+  ch.parts.body.visibleTris = vis
 }
 
 export function cutShell(ch, keep, { gap = 0.25, offset = 0.3, iterations = 24, edgeIterations = 30, obstacleSmooth = 0, minLoop = 12, part = 'body', spatial = 0, fillHoles = 0, dropIslands = 0, close = 0, smoothCut = 0 } = {}) {

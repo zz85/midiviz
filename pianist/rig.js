@@ -320,7 +320,10 @@ export function createRig(ch, { seat = v3(0, 64, 42) } = {}) {
   const look = v3(), handsAt = v3(0, 76, 2), glanceP = v3(), eyeT = v3(0, 76, 2), _d1 = v3(), _d2 = v3()
   // glance targets, by kind: the audience (her right, past the lid), the far
   // wall over the piano, up and away to the left
-  const GLANCE_AT = [[0.45, v3(300, 150, -160)], [0.8, v3(-20, 160, -520)], [1.01, v3(-220, 168, -420)]]
+  const GLANCE_AT = [[0.3, v3(300, 150, -160)], [0.55, v3(-20, 160, -520)], [0.7, v3(-220, 168, -420)]]
+  // or a slow sweep across the hall, far left to far right (or back)
+  const SWEEP = [v3(-420, 162, -300), v3(-60, 158, -520), v3(380, 150, -180)]
+  const sweepAt = (u, out) => { const x = u * 2, k = Math.min(1, Math.floor(x)); return out.lerpVectors(SWEEP[k], SWEEP[k + 1], x - k) }
   let glanceW = 0, lastSong = 0
   function headPose(dt) {
     // the hands: between them (or where they rest)
@@ -335,8 +338,12 @@ export function createRig(ch, { seat = v3(0, 64, 42) } = {}) {
     let w = 0, inner = 0
     if (gl) {
       const k = gl.g.kind
-      if (gl.g.quiet && k > 0.72) inner = gl.w          // eyes nearly closed, inward
-      else { w = gl.w; glanceP.copy(GLANCE_AT.find(([lim]) => k < lim)[1]) }
+      if (gl.g.quiet && hash(gl.g.a, 10) < 0.3) inner = gl.w          // eyes nearly closed, inward
+      else {
+        w = gl.w
+        if (k < 0.7) glanceP.copy(GLANCE_AT.find(([lim]) => k < lim)[1])
+        else { const u = THREE.MathUtils.smootherstep(gl.u, 0.1, 0.9); sweepAt(hash(gl.g.a, 9) < 0.5 ? u : 1 - u, glanceP) }
+      }
     }
     glanceW += (w - glanceW) * (1 - Math.exp(-dt * 6))
     state.lidDrop += (inner * 0.8 - state.lidDrop) * (1 - Math.exp(-dt * 3))
@@ -611,10 +618,10 @@ export function createRig(ch, { seat = v3(0, 64, 42) } = {}) {
       if (g.a > t) break
       if (t > g.b || g.r > p) continue
       // a held glance (horizon mode) or a 1.2–3 s one (music)
-      const b = state.gazeMode === 'horizon' ? g.b : Math.min(g.b, g.a + 1.2 + 1.8 * hash(g.a * 7, 6))
+      const b = state.gazeMode === 'horizon' ? g.b : Math.min(g.b, g.a + (g.kind >= 0.7 ? 2.6 : 1.2) + 1.8 * hash(g.a * 7, 6))
       if (t > b) continue
       const w = THREE.MathUtils.smoothstep(t, g.a, g.a + 0.3) * (1 - THREE.MathUtils.smoothstep(t, b - 0.25, b))
-      return { w, g }
+      return { w, g, u: clamp((t - g.a) / (b - g.a), 0, 1) }
     }
     return null
   }
