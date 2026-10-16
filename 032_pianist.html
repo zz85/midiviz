@@ -120,6 +120,7 @@
     <div class="field"><label>Model</label><select id="model"><option value="">MakeHuman (realistic, CC0)</option></select></div>
     <div class="field"><label>Look</label><select id="look"><option value="realistic">Realistic</option><option value="stylized">Stylized (animated feature)</option><option value="cel">Cel shaded (outlines)</option></select></div>
     <div class="field"><label>Smooth (subdivided)</label><select id="smooth"><option value="0">Off</option><option value="1">1× (4× the triangles)</option><option value="2">2× (16×)</option></select></div>
+    <div class="field" title="Fold the body down to a low-poly cage first (pianist/simplify.js), then smooth that: the slider is how far (cm) the cage may stray from the modelled shape. It goes as low as it can within that; the face and hands are held 8× tighter. 0 = as modelled"><label>Low poly first <span id="simplifyV">off</span></label><input type="range" id="simplify" min="0" max="3" step="0.05" value="0"></div>
     <div class="field"><label>Outfit</label><select id="outfit">
       <option value="">Custom (pick below)</option>
       <option value="reference">Red knit halter, half-up hair</option>
@@ -372,7 +373,7 @@
       $('shoeStyle').value = o.shoes; $('hairStyle').value = o.hair; $('hairColor').value = o.hairColor
     }
     // wardrobe: ?hair=…&dress=…&look=… (or the Visuals menu)
-    for (const [k, id] of [['fabric', 'fabric'], ['hair', 'hairStyle'], ['dress', 'dressStyle'], ['shoes', 'shoeStyle'], ['look', 'look'], ['smooth', 'smooth']]) if (params.get(k)) $(id).value = params.get(k).replace(/^midi-/, 'knee-')   // (old links: "midi" is now "knee")
+    for (const [k, id] of [['fabric', 'fabric'], ['hair', 'hairStyle'], ['dress', 'dressStyle'], ['shoes', 'shoeStyle'], ['look', 'look'], ['smooth', 'smooth'], ['simplify', 'simplify']]) if (params.get(k)) $(id).value = params.get(k).replace(/^midi-/, 'knee-')   // (old links: "midi" is now "knee")
     if (!$('dressStyle').value) $('dressStyle').value = 'knee-fitted'
     let hair = null, dress = null
     let shoes = null, shoeJob = 0
@@ -392,7 +393,11 @@
     const look = ALT ? { apply() {}, update() {} } : createLook(ch)
     const smoother = ALT ? { apply() {}, update() {} } : createSmoother(ch)
     // geometry first (the cel outlines are built on whatever geometry is shown)
-    const applyLook = () => { if (ALT) return;  look.apply('realistic', [dress?.object, shoes?.object]); smoother.apply(+$('smooth').value, [dress?.object, shoes?.object]); look.apply($('look').value, [dress?.object]) }
+    function showSimplify() {
+      const v = +$('simplify').value, n = smoother.cageTris
+      $('simplifyV').textContent = v ? `${v} cm${n ? ` · ${n.toLocaleString()} tris` : ''}` : 'off'
+    }
+    const applyLook = () => { if (ALT) return;  look.apply('realistic', [dress?.object, shoes?.object]); smoother.apply(+$('smooth').value, [dress?.object, shoes?.object], +$('simplify').value); showSimplify(); look.apply($('look').value, [dress?.object]) }
     async function setHair(style) {
       if (ALT) { hair = { object: new THREE.Group(), kind: 'none', update() {}, dispose() {}, settle() {}, setColor() {}, setFabric() {} }; return }
       const color = $('hairColor').value
@@ -480,6 +485,13 @@
     for (const id of ['dressStyle', 'fabric', 'shoeStyle', 'hairStyle', 'dressColor', 'hairColor']) $(id).addEventListener('input', () => { $('outfit').value = '' })
     $('look').onchange = applyLook
     $('smooth').onchange = applyLook
+    // the tolerance; the cage is rebuilt when the slider rests (~1 s)
+    let simpTimer = 0
+    $('simplify').oninput = () => {
+      const v = +$('simplify').value
+      $('simplifyV').textContent = v ? `${v} cm…` : 'off'
+      clearTimeout(simpTimer); simpTimer = setTimeout(applyLook, 350)
+    }
     $('hairOn').onchange = () => { hair.object.visible = $('hairOn').checked }
     if (params.get('hairsim') === '0') { $('hairSim').checked = false; hair.simulate = false }
     $('hairSim').onchange = () => { hair.simulate = $('hairSim').checked }
@@ -880,7 +892,7 @@
       // key, control (selects / ranges / colours: value; checkboxes: 1 / 0)
       ['outfit', 'outfit'], ['dress', 'dressStyle'], ['slit', 'slit'], ['fabric', 'fabric'], ['dcol', 'dressColor'], ['shoes', 'shoeStyle'],
       ['hair', 'hairStyle'], ['hcol', 'hairColor'], ['density', 'hairDensity'], ['hairon', 'hairOn'], ['hairsim', 'hairSim'],
-      ['dresson', 'dressOn'], ['clothsim', 'clothSim'], ['look', 'look'], ['smooth', 'smooth'],
+      ['dresson', 'dressOn'], ['clothsim', 'clothSim'], ['look', 'look'], ['smooth', 'smooth'], ['simplify', 'simplify'],
       ['gaze', 'gaze'], ['expr', 'expr'], ['hips', 'hips'], ['posture', 'posture'], ['sidelean', 'sideLean'], ['bench', 'benchDist'], ['benchh', 'benchH'],
       ['light', 'light'], ['exposure', 'exposure'], ['dof', 'dof'],
       ['move', 'camMove'], ['pace', 'dirPace'], ['favour', 'dirBias'], ['trans', 'dirTrans'], ['shotnames', 'shotLbl'],

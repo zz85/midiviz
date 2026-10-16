@@ -22,6 +22,7 @@
 // garments shrink with the body, so their gap is kept.
 
 import * as THREE from 'three'
+import { simplifyMesh } from './simplify.js'
 
 /** One level. geo: indexed BufferGeometry. Returns { geometry, apply, rows }. */
 export function loopOnce(geo) {
@@ -152,15 +153,27 @@ export function loopOnce(geo) {
 /**
  * levels of Loop subdivision. full: an optional full index (the body's,
  * before garments hid triangles) to subdivide instead of geo.index.
+ * simplify: fold the mesh to a low-poly cage first (simplify.js), the surface
+ * moving at most this far (cm), so the subdivision rounds off the cage
+ * (0 = as modelled).
  * Returns { geometry, levels, update(srcPositions, srcNormals?), childIndex(visibleTris) }.
  */
-export function subdivide(geo, levels = 1, full = null, ref = null) {
+export function subdivide(geo, levels = 1, full = null, ref = null, simplify = 0, weight = null) {
   // ref: positions to read the topology from, for a mesh whose current
   // vertices are not yet meaningful (the cloth before its first step)
   let g = geo
   if (full || ref) g = geo.clone()
   if (full) g.setIndex(new THREE.BufferAttribute(full.slice(), 1))
   if (ref) g.setAttribute('position', new THREE.BufferAttribute(ref.slice(), 3))
+  // low-poly cage: a selection of the source vertices (see simplify.js)
+  let simp = null, simpOf = null
+  if (simplify > 0) {
+    simp = simplifyMesh(g, { ratio: 0.002, maxError: simplify, weight })
+    g = simp.geometry
+    simpOf = new Int32Array(Math.floor((full || geo.index.array).length / 3)).fill(-1)
+    simp.origin.forEach((t, j) => { simpOf[t / 3] = j })
+  }
+  const simpP = simp && new Float32Array(simp.count * 3), simpN = simp && new Float32Array(simp.count * 3)
   const steps = []
   for (let l = 0; l < levels; l++) { const s = loopOnce(g); steps.push(s); g = s.geometry }
   const tmpP = steps.map(s => new Float32Array(s.count * 3)), tmpN = steps.map(s => new Float32Array(s.count * 3))
@@ -168,10 +181,15 @@ export function subdivide(geo, levels = 1, full = null, ref = null) {
   // a mesh that only gets normals later (the cloth computes them per step)
   if (!g.attributes.normal) g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 3), 3))
   return {
-    geometry: g, levels,
+    geometry: g, levels, cageTris: simp ? simp.geometry.index.count / 3 : null,
     /** re-smooth from moved source positions (and normals) */
     update(srcP, srcN) {
       let p = srcP, n = srcN
+      if (simp) {
+        const last = !steps.length
+        const dp = last ? g.attributes.position.array : simpP, dn = last ? g.attributes.normal?.array : simpN
+        simp.update(p, n, dp, dn); p = dp; if (n) n = dn
+      }
       for (let l = 0; l < steps.length; l++) {
         const last = l === steps.length - 1
         const dp = last ? g.attributes.position.array : tmpP[l]
@@ -183,6 +201,8 @@ export function subdivide(geo, levels = 1, full = null, ref = null) {
     },
     /** the subdivided index for a list of visible source triangles (index offsets, multiples of 3) */
     childIndex(tris) {
+      // source triangles → the cage's (a folded-away triangle has none)
+      if (simpOf) { const c = []; for (const t of tris) { const j = simpOf[t / 3]; if (j >= 0) c.push(j * 3) } tris = c }
       const per = 4 ** levels * 3, out = new fullOut.constructor(tris.length * per)
       let o = 0
       for (const t of tris) { const s = (t / 3) * per; out.set(fullOut.subarray(s, s + per), o); o += per }
@@ -197,9 +217,22 @@ export function subdivide(geo, levels = 1, full = null, ref = null) {
  * meshes (the cloth skirt) re-smoothed every frame. Alpha-card meshes (mesh
  * hair, brows, lashes), the eyes and the strand hair are left alone.
  */
+// the body's detail: what the face rig, the fingers and the toes move folds
+// later and within a DETAIL_COST times tighter tolerance, so a low cage keeps
+// a face and hands while the limbs and torso go to a few planes
+const DETAIL = /^(jaw|levator|oculi|orbicularis|oris|risorius|temporalis|special0|eye|tongue|finger|metacarpal|toe)/
+const DETAIL_COST = 8
+function detailWeight(geo, skeleton) {
+  const SI = geo.attributes.skinIndex?.array, SW = geo.attributes.skinWeight?.array
+  if (!SI || !skeleton) return null
+  const fine = skeleton.bones.map(b => DETAIL.test(b.name))
+  return v => { let w = 0; for (let k = 0; k < 4; k++) if (fine[SI[v * 4 + k]]) w += SW[v * 4 + k]; return 1 + (DETAIL_COST - 1) * Math.min(1, w * 2) }
+}
+
 export function createSmoother(ch) {
   const SKIP = /eyes|eyebrows|eyelashes|hair|cap|outline/
-  let level = 0
+  let level = 0, simplify = 0
+  const info = { cageTris: null }
   const dynamic = new Set()
   function eligible(o) {
     if (!(o.isMesh || o.isSkinnedMesh) || o.isInstancedMesh || o.userData.outline) return false
@@ -215,17 +248,24 @@ export function createSmoother(ch) {
     add(ch.group); for (const x of extra) add(x)
     return [...out]
   }
-  function apply(lv, extra = []) {
-    level = lv
+  // lv: subdivision levels; simp: keep this fraction of the triangles first
+  // (a low-poly cage for the subdivision to round off), 0 = as modelled
+  function apply(lv, extra = [], simp = simplify) {
+    level = lv; simplify = simp
     dynamic.clear()
     for (const o of list(extra)) {
-      const base = o.userData.baseGeo || o.geometry
-      if (!lv) { if (o.userData.baseGeo) { o.geometry = base; delete o.userData.baseGeo } continue }
-      const cache = (base.userData.smooth ||= {})
-      let sub = cache[lv]
+      const base = o.userData.baseGeo || o.geometry, isBody = o === ch.meshes.body
+      // the cage is the body's: the garments are shells fitted to the
+      // modelled skin and keep its vertices, and the face and hands keep
+      // the detail their expressions and fingers move
+      const sr = isBody ? simp : 0
+      if (!lv && !sr) { if (o.userData.baseGeo) { o.geometry = base; delete o.userData.baseGeo } if (isBody) ch.parts.body.smooth = null; continue }
+      const cache = (base.userData.smooth ||= {}), ck = sr ? `${lv}:${sr}` : lv
+      let sub = cache[ck]
+      // a slider makes many cages: keep only the current one
+      if (sr) for (const k of Object.keys(cache)) if (k.includes(':') && k !== String(ck)) delete cache[k]
       if (!sub) {
-        const isBody = o === ch.meshes.body
-        try { sub = cache[lv] = subdivide(base, lv, isBody ? (ch.parts.body.index0 || base.index.array) : null, base.userData.topologyFrom || null) }
+        try { sub = cache[ck] = subdivide(base, lv, isBody ? (ch.parts.body.index0 || base.index.array) : null, base.userData.topologyFrom || null, sr, isBody ? detailWeight(base, o.skeleton) : null) }
         catch (e) { console.warn('smooth: skipped', o.name || o.parent?.name, e.message); continue }
         sub.geometry.userData.isSmooth = true
       }
@@ -233,15 +273,19 @@ export function createSmoother(ch) {
         ch.parts.body.smooth = sub
         if (ch.parts.body.visibleTris) sub.geometry.setIndex(new THREE.BufferAttribute(sub.childIndex(ch.parts.body.visibleTris), 1))
       }
+      if (isBody) info.cageTris = sub.cageTris ?? null
       o.userData.baseGeo = base
       o.geometry = sub.geometry
       // vertices moved on the CPU (not skinned): follow the source each frame
       if (!o.isSkinnedMesh && base.attributes.position.usage === THREE.DynamicDrawUsage) { dynamic.add([base, sub]); sub.update(base.attributes.position.array, base.attributes.normal?.array) }
     }
-    if (!lv) ch.parts.body.smooth = null
+    if (!lv && !simp) ch.parts.body.smooth = null
   }
   return {
     get level() { return level },
+    get simplify() { return simplify },
+    /** triangles in the body's low-poly cage (null = not simplified) */
+    get cageTris() { return simplify ? info.cageTris : null },
     apply,
     update() { for (const [base, sub] of dynamic) sub.update(base.attributes.position.array, base.attributes.normal?.array) },
   }
