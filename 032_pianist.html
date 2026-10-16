@@ -36,11 +36,14 @@
     .pill svg { width: 15px; height: 15px; fill: currentColor; }
     #topLeft { position: absolute; top: 12px; left: 12px; display: flex; gap: 8px; }
     /* one-click outfit presets: circled numbers along the top */
-    #presets { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 5px; padding: 4px 6px; border-radius: 999px; background: rgba(24, 24, 24, 0.72); backdrop-filter: blur(6px); }
+    #presets { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 5px; padding: 4px 6px; border-radius: 12px; background: rgba(24, 24, 24, 0.72); backdrop-filter: blur(6px); }
     #presets button { width: 28px; height: 28px; border-radius: 50%; border: 1.5px solid rgba(255, 255, 255, 0.35); background: transparent; color: #eee; font: 600 13px/1 system-ui, sans-serif; cursor: pointer; padding: 0; }
     #presets button:hover { background: rgba(255, 255, 255, 0.14); border-color: rgba(255, 255, 255, 0.7); }
     #presets button.on { background: #e8e2d6; color: #1a1a1a; border-color: #e8e2d6; }
     #presets button:disabled { opacity: 0.35; cursor: default; }
+    #presets button.thumb { width: 40px; height: 56px; border-radius: 8px; background: #111 center / cover no-repeat; position: relative; display: flex; align-items: flex-end; justify-content: flex-start; padding: 2px 4px; font-size: 11px; text-shadow: 0 0 3px #000, 0 0 2px #000; }
+    #presets button.thumb:hover { border-color: rgba(255, 255, 255, 0.8); background-color: #111; }
+    #presets button.thumb.on { border: 2px solid #e8e2d6; color: #fff; background-color: #111; }
     body.altmodel #presets { display: none; }
     #topRight { position: absolute; top: 12px; right: 12px; display: flex; gap: 8px; }
     #title { align-self: center; margin-left: 6px; font: 300 15px Georgia, serif; color: rgba(255, 255, 255, 0.55); letter-spacing: 0.04em; }
@@ -550,7 +553,7 @@
     // one-click presets: a circled number for each featured outfit (the rest
     // stay in the Outfit menu), the menu's name as the tooltip; keys 1–9 and
     // 0 pick the first ten
-    const FEATURED = ['braid-qipao', 'shift-long', 'bob-cocktail', 'bob-tee', 'bob-turtleneck', 'long-gown', 'updo-gown', 'tee']
+    const FEATURED = ['bob-tee', 'bob-turtleneck', 'bob-cocktail', 'shift-long', 'braid-qipao', 'long-gown', 'updo-gown', 'tee']
     const presetKeys = FEATURED.filter(k => OUTFITS[k] && [...$('outfit').options].some(o => o.value === k))
     let presetBusy = false
     async function pickPreset(k) {
@@ -563,6 +566,10 @@
     presetKeys.forEach((k, i) => {
       const b = document.createElement('button')
       b.textContent = i + 1; b.dataset.k = k
+      // a thumbnail from pianist/assets/presets/ (side view); plain number if missing
+      const img = new Image()
+      img.onload = () => { b.classList.add('thumb'); b.style.backgroundImage = `url(${img.src})` }
+      img.src = `pianist/assets/presets/${k}.webp`
       b.title = `${i + 1} · ${[...$('outfit').options].find(o => o.value === k).textContent}`
       b.onclick = () => pickPreset(k)
       $('presets').appendChild(b)
