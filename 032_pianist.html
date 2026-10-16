@@ -129,6 +129,19 @@
       <option value="sequin-gown">Sequin gown, long hair</option>
       <option value="covered">Long sleeves, below the knee</option>
       <option value="tee">T-shirt and skirt</option>
+      <optgroup label="Long hair · simulated gown, slits from the knee">
+      <option value="braid-halter">Champagne halter gown, braid</option>
+      <option value="ponytail-qipao">Red qipao gown, ponytail</option>
+      <option value="braid-qipao">Ivory qipao gown, braid</option>
+      </optgroup>
+      <optgroup label="Bob">
+      <option value="bob-shift">Blush shift dress, bob</option>
+      <option value="bob-gown">Midnight velvet evening gown, sleek bob</option>
+      <option value="bob-bodycon">Emerald bodycon, black bob</option>
+      <option value="bob-cocktail">Black cocktail dress, platinum bob</option>
+      <option value="bob-tee">White T-shirt and skirt, bob</option>
+      <option value="bob-turtleneck">Black sleeveless turtleneck, auburn bob</option>
+      </optgroup>
     </select></div>
     <div class="field"><label>Hair style</label><select id="hairStyle">
       <option value="halfup">Half-up bun · strands, simulated</option>
@@ -151,8 +164,14 @@
       <option value="gown-fitted-long">Long sleeves · floor length</option>
       <option value="gown-cloth-long">Long sleeves · floor length, simulated</option>
       </optgroup>
+      <optgroup label="Qipao (ours: stand collar, contrast trim)">
+      <option value="gown-cloth-qipao">Qipao · floor length, simulated</option>
+      <option value="gown-fitted-qipao">Qipao · floor length, fitted</option>
+      <option value="knee-cloth-qipao">Qipao · below the knee, simulated</option>
+      <option value="knee-fitted-qipao">Qipao · below the knee, fitted</option>
+      </optgroup>
     </select></div>
-    <div class="field" title="Floor-length dresses of ours: side slits, left and right, from here down to the hem"><label>Gown slits</label><select id="slit"><option value="off">Closed</option><option value="ankle">From the ankle</option><option value="calf" selected>From mid-calf</option><option value="knee">From the knee</option><option value="thigh">From above the knee (high)</option><option value="hip">From the hip (very high)</option></select></div>
+    <div class="field" title="Our dresses (not the community ones): side slits, left and right, from here down to the hem"><label>Gown slits</label><select id="slit"><option value="off">Closed</option><option value="ankle">From the ankle</option><option value="calf" selected>From mid-calf</option><option value="knee">From the knee</option><option value="thigh">From above the knee (high)</option><option value="hip">From the hip (very high)</option></select></div>
     <div class="field"><label>Fabric</label><select id="fabric"><option value="made">Plain (as made)</option><option value="knit">Knit (diamond)</option><option value="satin">Satin</option><option value="velvet">Velvet</option><option value="sequin">Sequins</option></select></div>
     <div class="field"><label>Shoes</label><select id="shoeStyle"><option value="flats">Black flats (ours)</option><option value="none">Barefoot</option></select></div>
     <label class="chk"><input type="checkbox" id="hairOn" checked>Hair</label>
@@ -370,13 +389,27 @@
       'sequin-gown': { dress: 'gown-fitted', fabric: 'sequin', color: '#1d4f86', shoes: 'c1694', hair: 'c2816', hairColor: '#1c1410' },
       covered: { dress: 'knee-fitted-long', fabric: 'made', color: '#20242e', shoes: 'flats', hair: 'c2177', hairColor: '#4a3324' },
       tee: { dress: 'c894', fabric: 'made', color: '#e9e4da', shoes: 'flats', hair: 'ponytail01', hairColor: '#5a3e2a' },
+      // long hair (mesh hair simulated as cloth) and our simulated gown, slits from the knee
+      'braid-halter': { dress: 'gown-cloth', slit: 'knee', fabric: 'satin', color: '#e6d2ae', shoes: 'c1822', hair: 'braid01', hairColor: '#4a2f1f' },
+      'ponytail-qipao': { dress: 'gown-cloth-qipao', slit: 'knee', fabric: 'satin', color: '#9b1b25', trim: '#d4ae5a', shoes: 'c1822', hair: 'ponytail01', hairColor: '#17110d' },
+      'braid-qipao': { dress: 'gown-cloth-qipao', slit: 'knee', fabric: 'satin', color: '#efe6d6', trim: '#1f2a44', shoes: 'flats', hair: 'braid01', hairColor: '#4a2f1f' },
+      // bobs
+      'bob-shift': { dress: 'c1724', fabric: 'made', color: '#e4a9a0', shoes: 'flats', hair: 'bob02', hairColor: '#4a2f1f' },
+      'bob-gown': { dress: 'c806', fabric: 'velvet', color: '#1a2a5e', shoes: 'c1822', hair: 'bob02', hairColor: '#17110d' },
+      'bob-bodycon': { dress: 'c2802', fabric: 'made', color: '#1e5b4a', shoes: 'c1822', hair: 'c3694', hairColor: '#17110d' },
+      'bob-cocktail': { dress: 'c379', fabric: 'satin', color: '#121214', shoes: 'c1039', hair: 'bob02', hairColor: '#d9c7a3' },
+      'bob-tee': { dress: 'c894', fabric: 'made', color: '#f2efe9', shoes: 'flats', hair: 'c3694', hairColor: '#4a2f1f' },
+      'bob-turtleneck': { dress: 'c3471', fabric: 'made', color: '#1b1b1e', shoes: 'flats', hair: 'c3694', hairColor: '#7a3b22' },
     }
+    // the qipao's contrast trim (an outfit's; otherwise a deep shade of the dress)
+    let trimColor = null
     // (old links: yuja-mini / yuja-gown)
     if (/^yuja-/.test(params.get('outfit'))) params.set('outfit', params.get('outfit').replace('yuja-', 'sequin-'))
     if (OUTFITS[params.get('outfit')]) {
       const o = OUTFITS[params.get('outfit')]; $('outfit').value = params.get('outfit')
       $('dressStyle').value = o.dress; $('fabric').value = o.fabric; $('dressColor').value = o.color
       $('shoeStyle').value = o.shoes; $('hairStyle').value = o.hair; $('hairColor').value = o.hairColor
+      $('slit').value = o.slit || 'calf'; trimColor = o.trim || null
     }
     // wardrobe: ?hair=…&dress=…&look=… (or the Visuals menu)
     for (const [k, id] of [['fabric', 'fabric'], ['hair', 'hairStyle'], ['dress', 'dressStyle'], ['shoes', 'shoeStyle'], ['look', 'look'], ['smooth', 'smooth'], ['simplify', 'simplify']]) if (params.get(k)) $(id).value = params.get(k).replace(/^midi-/, 'knee-')   // (old links: "midi" is now "knee")
@@ -444,9 +477,11 @@
         skirt.object.add(item.object)
         return { ...skirt, update(dt) { item.object.visible = skirt.object.visible; item.update(dt); skirt.update(dt) }, setColor(c) { skirt.setColor(c); item.setColor(c) }, dispose() { item.dispose(); skirt.dispose() } }
       }
-      const [length, skirt, sleeves = 'none'] = v.split('-')
+      let [length, skirt, sleeves = 'none'] = v.split('-')
+      const neck = sleeves === 'qipao' ? 'qipao' : 'halter'
+      if (neck === 'qipao') sleeves = 'none'
       const slit = $('slit').value
-      return createDress(ch, rig, { seatY: SEAT_Y, bench: piano.bench, length: length === 'knee' ? 'midi' : length, skirt, sleeves, color, slits: slit !== 'off', slitAt: SLIT_AT[slit] ?? -14 })
+      return createDress(ch, rig, { seatY: SEAT_Y, bench: piano.bench, length: length === 'knee' ? 'midi' : length, skirt, sleeves, neck, trim: trimColor, color, slits: slit !== 'off', slitAt: SLIT_AT[slit] ?? -14 })
     }
     async function setDress(v) {
       if (ALT) { dress = { object: new THREE.Group(), kind: 'none', update() {}, dispose() {}, settle() {}, setColor() {}, setFabric() {} }; return }
@@ -478,17 +513,18 @@
     setStatus('')
     $('hairStyle').onchange = () => setHair($('hairStyle').value)
     $('dressStyle').onchange = () => setDress($('dressStyle').value)
-    $('slit').onchange = () => { if (/^gown-/.test($('dressStyle').value)) setDress($('dressStyle').value) }
+    $('slit').onchange = () => { if ($('dressStyle').value[0] !== 'c') setDress($('dressStyle').value) }
     $('shoeStyle').onchange = () => setShoes($('shoeStyle').value)
     $('fabric').onchange = () => { dress.setFabric?.($('fabric').value); applyLook() }
     async function setOutfit(k) {
       const o = OUTFITS[k]; if (!o) return
       $('dressStyle').value = o.dress; $('fabric').value = o.fabric; $('dressColor').value = o.color
       $('shoeStyle').value = o.shoes; $('hairStyle').value = o.hair; $('hairColor').value = o.hairColor
+      $('slit').value = o.slit || 'calf'; trimColor = o.trim || null
       await Promise.all([setDress(o.dress), setShoes(o.shoes), setHair(o.hair)])
     }
     $('outfit').onchange = () => setOutfit($('outfit').value)
-    for (const id of ['dressStyle', 'fabric', 'shoeStyle', 'hairStyle', 'dressColor', 'hairColor']) $(id).addEventListener('input', () => { $('outfit').value = '' })
+    for (const id of ['dressStyle', 'fabric', 'shoeStyle', 'hairStyle', 'dressColor', 'hairColor', 'slit']) $(id).addEventListener('input', () => { $('outfit').value = ''; trimColor = null })
     $('look').onchange = applyLook
     $('smooth').onchange = applyLook
     // the tolerance; the cage is rebuilt when the slider rests (~1 s)
@@ -906,7 +942,7 @@
       ['move', 'camMove'], ['pace', 'dirPace'], ['favour', 'dirBias'], ['trans', 'dirTrans'], ['shotnames', 'shotLbl'],
       ['sf', 'sf'], ['avsync', 'avsync'],
     ].filter(([, id]) => $(id))
-    const OUTFIT_KEYS = { dress: 'dress', fabric: 'fabric', dcol: 'color', shoes: 'shoes', hair: 'hair', hcol: 'hairColor' }
+    const OUTFIT_KEYS = { dress: 'dress', slit: 'slit', fabric: 'fabric', dcol: 'color', shoes: 'shoes', hair: 'hair', hcol: 'hairColor' }
     // (colours without their #, so links stay readable)
     const hex = v => String(v).replace(/^#/, '')
     const ctlGet = el => el.type === 'checkbox' ? (el.checked ? '1' : '0') : el.type === 'color' ? hex(el.value) : String(el.value)
@@ -939,7 +975,7 @@
       const o = OUTFITS[$('outfit').value]
       for (const [k, id] of STATE) {
         const el = $(id), v = ctlGet(el)
-        const base = o && OUTFIT_KEYS[k] ? (el.type === 'color' ? hex(o[OUTFIT_KEYS[k]]) : o[OUTFIT_KEYS[k]]) : ctlDefault(el)
+        const base = o && o[OUTFIT_KEYS[k]] != null ? (el.type === 'color' ? hex(o[OUTFIT_KEYS[k]]) : o[OUTFIT_KEYS[k]]) : ctlDefault(el)
         if (same(v, base)) q.delete(k); else q.set(k, v)
       }
       if (view === 'shoulder') q.delete('view'); else q.set('view', view)

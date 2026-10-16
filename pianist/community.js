@@ -18,6 +18,22 @@ import { applyFabric } from './fabric.js'
 
 let serial = 0
 
+// computeTangents leaves zero tangents where a triangle's UVs are degenerate;
+// the shader normalises them to NaN, and bloom spreads that over the whole
+// frame (a black picture). Give those a tangent perpendicular to the normal.
+function fixTangents(g) {
+  const t = g.attributes.tangent, n = g.attributes.normal
+  if (!t || !n) return
+  const N = new THREE.Vector3(), T = new THREE.Vector3()
+  for (let i = 0; i < t.count; i++) {
+    if (Math.hypot(t.getX(i), t.getY(i), t.getZ(i)) > 1e-6) continue
+    N.fromBufferAttribute(n, i)
+    T.set(0, 1, 0).cross(N); if (T.lengthSq() < 1e-6) T.set(1, 0, 0).cross(N)
+    T.normalize(); t.setXYZW(i, T.x, T.y, T.z, 1)
+  }
+  t.needsUpdate = true
+}
+
 export function communityList(ch, kind) {
   return (ch.meta.community || []).filter(e => !kind || e.kind === kind)
 }
@@ -69,7 +85,7 @@ export async function createCommunity(ch, key, { color = null } = {}) {
   if (normalMap) mat.normalScale.set(0.8, 0.8)
   const mesh = ch.addPart(key, mat)
   if (hair) mesh.name = 'hair-' + key   // (styles key off the name: no smoothing, no outline)
-  if (hair || normalMap) mesh.geometry.computeTangents()
+  if (hair || normalMap) { mesh.geometry.computeTangents(); fixTangents(mesh.geometry) }
   mesh.renderOrder = hair ? 1 : 0
   // fabric over the skin it lies on (sub-millimetre pokes at grazing angles)
   if (!hair) { mat.polygonOffset = true; mat.polygonOffsetFactor = -1; mat.polygonOffsetUnits = -2 }

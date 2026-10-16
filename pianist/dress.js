@@ -80,9 +80,14 @@ function knitTextures(size = 256, cells = 16) {
 //   slits:  side slits (left and right) down to the hem; on by default
 //           for the gown. slitAt: where they start, cm above (+) or
 //           below (−) the knee joint (default −14, mid-calf)
+//   neck:   'halter' (the reference) or 'qipao': a high stand collar with
+//           cut-in sleeveless armholes (shoulders covered), a slimmer skirt,
+//           and a contrast trim (trim colour) round the collar and armholes
+//           and along the diagonal front opening, with three knot buttons
 //   Fabric: plain jersey by default (no pattern, a faint fine weave);
 //           setFabric('knit') brings back the diamond knit
-export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1d1b', length = 'midi', skirt: skirtMode = 'cloth', bodice: withBodice = true, waist = 4, sleeves = 'none', slits = length === 'gown', slitAt = -14 } = {}) {
+export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1d1b', length = 'midi', skirt: skirtMode = 'cloth', bodice: withBodice = true, waist = 4, sleeves = 'none', slits = length === 'gown', slitAt = -14, neck = 'halter', trim: trimColor = null } = {}) {
+  const qipao = neck === 'qipao' && sleeves === 'none'
   const body = ch.parts.body.geometry
   const P = body.attributes.position.array, Nn = body.attributes.normal.array
   const SI = body.attributes.skinIndex.array, SW = body.attributes.skinWeight.array
@@ -111,6 +116,14 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
       if (w(/^wrist/) > 0.25) return false
       const s0 = x > 0 === sh.L.x > 0 ? sh.L : sh.R
       if (w(ARM) > 0.3) return Math.hypot(x - s0.x, y - s0.y, g.P[v * 3 + 2] - s0.z) < sleeveTo
+      return true
+    }
+    if (qipao) {
+      // a stand collar to the halter's height, the shoulders covered, and
+      // cut-in armholes just inside the shoulder joint
+      if (y > neckY + 0.6 || y < hipY - 4) return false
+      if (w(/^(upperarm|lowerarm|wrist|finger|metacarpal)/) > 0.3 + 0.35 * THREE.MathUtils.smoothstep(armpitY + 4 - y, 0, 6)) return false
+      if (w(/^(head|jaw|neck02|neck03|lowerleg|foot|toe)/) > 0.4 || w(/^upperleg/) > 0.75) return false
       return true
     }
     if (y > neckY || y < hipY - 4) return false
@@ -158,7 +171,48 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
   bodiceMat.polygonOffset = true; bodiceMat.polygonOffsetFactor = -1; bodiceMat.polygonOffsetUnits = -2
   const bodice = skinned(ch, bodiceShell.geometry, bodiceMat)
   // (no hem along the lower edge: it is under the skirt's waistband)
-  const hem = skinned(ch, piping(bodiceShell.loops.filter(l => l.reduce((s, e) => s + e.p.y, 0) / l.length > hipY + 8), 0.32), bodiceMat)
+  const topLoops = bodiceShell.loops.filter(l => l.reduce((s, e) => s + e.p.y, 0) / l.length > hipY + 8)
+  const hem = skinned(ch, piping(qipao ? [] : topLoops, 0.32), bodiceMat)
+  // qipao: contrast piping round the collar and armholes, and the opening
+  // that runs from the collar across to under her right arm, with knots
+  let trimMat = null, trim = null
+  if (qipao) {
+    trimMat = base.clone(); trimMat.normalMap = null; trimMat.roughness = 0.4; trimMat.sheen = 0.6
+    trimMat.polygonOffset = true; trimMat.polygonOffsetFactor = -2; trimMat.polygonOffsetUnits = -4
+    const g = bodiceShell.geometry, gp = g.attributes.position.array, gn = g.attributes.normal.array
+    const gi = g.attributes.skinIndex.array, gw = g.attributes.skinWeight.array
+    const at = (x, y) => {   // the front-most shell point at (x, y)
+      let best = -1, bd = 1e9
+      for (let i = 0; i < gp.length / 3; i++) {
+        if (gn[i * 3 + 2] > -0.25) continue
+        const d = (gp[i * 3] - x) ** 2 + (gp[i * 3 + 1] - y) ** 2
+        if (d < bd) { bd = d; best = i }
+      }
+      return { p: new THREE.Vector3().fromArray(gp, best * 3), n: new THREE.Vector3().fromArray(gn, best * 3),
+        si: [...gi.slice(best * 4, best * 4 + 4)], sw: [...gw.slice(best * 4, best * 4 + 4)] }
+    }
+    const side = sh.R.x, y0 = neckY - 2.5, y1 = armpitY + 1
+    const path = []
+    for (let k = 0; k <= 40; k++) {
+      const t = k / 40
+      const e = at(side * 0.82 * Math.sin(t * Math.PI / 2) ** 0.9, y0 - (y0 - y1) * t ** 1.7)
+      if (!path.length || path[path.length - 1].p.distanceTo(e.p) > 0.4) path.push(e)
+    }
+    const geos = [piping(topLoops, 0.42, 8), piping([path], 0.3, 6, true)]
+    // knot buttons along the opening
+    for (const t of [0.12, 0.45, 0.8]) {
+      const e = path[Math.round(t * (path.length - 1))]
+      const sg = new THREE.SphereGeometry(0.62, 10, 8).toNonIndexed(); sg.deleteAttribute('uv')
+      const sp = sg.attributes.position.array, m = sp.length / 3
+      for (let i = 0; i < m; i++) { sp[i * 3] += e.p.x + e.n.x * 0.5; sp[i * 3 + 1] += e.p.y + e.n.y * 0.5; sp[i * 3 + 2] += e.p.z + e.n.z * 0.5 }
+      sg.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(m * 2), 2))
+      sg.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(Array.from({ length: m }, () => e.si).flat(), 4))
+      sg.setAttribute('skinWeight', new THREE.Float32BufferAttribute(Array.from({ length: m }, () => e.sw).flat(), 4))
+      sg.setIndex([...Array(m).keys()])
+      geos.push(sg)
+    }
+    trim = skinned(ch, mergeSkinned(geos), trimMat)
+  }
 
   // ── Skirt: a tube from a ring round the hips ──
   // the waistband starts above the bodice's lower edge, so the join is
@@ -198,7 +252,7 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
   for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) {
     const a = (c + 0.5) / C * 2 * Math.PI - Math.PI
     const y = hipY + TOP - r * seg
-    const t = Math.max(0, (hipY - y) / (L - TOP)), flare = 1 + (gown ? 0.55 : 0.3) * t * t + 0.12 * t
+    const t = Math.max(0, (hipY - y) / (L - TOP)), flare = 1 + (gown ? 0.55 : 0.3) * (qipao ? 0.5 : 1) * t * t + 0.12 * t
     let rad = ringR[c] * flare
     if (y > hipY) { if (!ringOf.has(r)) ringOf.set(r, ringAt(y, gown ? 0.8 : 1.5)); rad = Math.max(ringOf.get(r)[c], 0) * (1 - (hipY - y) / -TOP * 0) ; rad = THREE.MathUtils.lerp(ringR[c], ringOf.get(r)[c], (y - hipY) / TOP) }
     const i = id(r, c) * 3
@@ -467,7 +521,11 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
   object.add(cloth)
   const api = {
     simulate: true, mode: skirtMode, object, bodice, hem, fitted, cloth, X,
-    setColor(c) { for (const m of [bodiceMat, skirtMat]) { m.color.set(c); m.sheenColor.set(c).lerp(new THREE.Color(0xffd8c8), 0.25) } },
+    setColor(c) {
+      for (const m of [bodiceMat, skirtMat]) { m.color.set(c); m.sheenColor.set(c).lerp(new THREE.Color(0xffd8c8), 0.25) }
+      // the trim: its own colour, or a deep shade of the dress
+      if (trimMat) { trimMat.color.set(trimColor || new THREE.Color(c).multiplyScalar(0.35)); trimMat.sheenColor.copy(trimMat.color).lerp(new THREE.Color(0xffffff), 0.3) }
+    },
     setFabric(kind) {
       applyFabric([bodiceMat, skirtMat].map(material => ({ material, scale: 0.5 })), kind === 'knit' ? 'made' : kind)
       // the diamond knit (the reference's texture)
@@ -485,6 +543,7 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
     update(dt) {
       const vis = object.visible
       bodice.visible = hem.visible = vis && withBodice
+      if (trim) trim.visible = vis && withBodice
       fitted.visible = false
       cloth.visible = vis
       if (!vis) return
@@ -495,11 +554,33 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
     },
     dispose() {
       hideBody(ch, HIDE_KEY, null)
-      for (const m of [bodice, hem, fitted]) { m.removeFromParent(); m.geometry.dispose() }
+      for (const m of [bodice, hem, fitted, trim]) if (m) { m.removeFromParent(); m.geometry.dispose() }
+      trimMat?.dispose()
       object.removeFromParent(); cg.dispose()
       for (const m of [bodiceMat, skirtMat]) { m.map?.dispose(); m.normalMap?.dispose(); m.dispose() }
     },
   }
   api.setColor(color)
   return api
+}
+
+// several skinned geometries (position, normal, uv, skin attributes) as one
+function mergeSkinned(geos) {
+  const names = ['position', 'normal', 'uv', 'skinIndex', 'skinWeight'], out = {}, idx = []
+  let base = 0
+  for (const g of geos) {
+    if (!g.attributes.normal) g.computeVertexNormals()
+    for (const n of names) (out[n] ||= []).push(...g.attributes[n].array)
+    const ix = g.index ? g.index.array : [...Array(g.attributes.position.count).keys()]
+    for (const i of ix) idx.push(i + base)
+    base += g.attributes.position.count
+  }
+  const m = new THREE.BufferGeometry()
+  m.setAttribute('position', new THREE.Float32BufferAttribute(out.position, 3))
+  m.setAttribute('normal', new THREE.Float32BufferAttribute(out.normal, 3))
+  m.setAttribute('uv', new THREE.Float32BufferAttribute(out.uv, 2))
+  m.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(out.skinIndex, 4))
+  m.setAttribute('skinWeight', new THREE.Float32BufferAttribute(out.skinWeight, 4))
+  m.setIndex(idx)
+  return m
 }

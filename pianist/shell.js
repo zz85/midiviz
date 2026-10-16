@@ -295,13 +295,14 @@ export function cutShell(ch, keep, { gap = 0.25, offset = 0.3, iterations = 24, 
 }
 
 // A rolled hem along each loop: a tube of radius r, skinned like the edge.
-export function piping(loops, r = 0.3, sides = 6) {
+// open: the loops are paths (not closed), e.g. a trim across the front.
+export function piping(loops, r = 0.3, sides = 6, open = false) {
   const pos = [], nor = [], si = [], sw = [], uv = [], idx = []
   const T = new THREE.Vector3(), B = new THREE.Vector3(), q = new THREE.Vector3()
   for (const loop of loops) {
     const L = loop.length, base = pos.length / 3
     for (let i = 0; i < L; i++) {
-      const a = loop[(i + L - 1) % L], c = loop[(i + 1) % L], e = loop[i]
+      const a = open ? loop[Math.max(0, i - 1)] : loop[(i + L - 1) % L], c = open ? loop[Math.min(L - 1, i + 1)] : loop[(i + 1) % L], e = loop[i]
       T.copy(c.p).sub(a.p).normalize()
       B.copy(T).cross(e.n).normalize()
       const N = e.n.clone().addScaledVector(T, -e.n.dot(T)).normalize()
@@ -314,7 +315,7 @@ export function piping(loops, r = 0.3, sides = 6) {
         uv.push(i * 0.05, s / sides)
       }
     }
-    for (let i = 0; i < L; i++) for (let s = 0; s < sides; s++) {
+    for (let i = 0; i < (open ? L - 1 : L); i++) for (let s = 0; s < sides; s++) {
       const a = base + i * sides + s, b = base + i * sides + (s + 1) % sides
       const c = base + ((i + 1) % L) * sides + s, d = base + ((i + 1) % L) * sides + (s + 1) % sides
       idx.push(a, c, b, b, c, d)

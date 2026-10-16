@@ -55,10 +55,14 @@ Visuals → Model, or `?model=vrm` / `?model=quaternius`. `alt-model.js` loads a
 `?outfit=` or the Outfit menu sets the dress, fabric, colour, shoes and hair at once:
 `reference` (the red knit halter), `sequin-mini` / `sequin-gown` (sequins, stiletto booties, long dark hair; old `yuja-*` links still load), `covered` (long sleeves), `tee`.
 
+- Long hair (mesh hair simulated as cloth) with our simulated floor-length skirt and slits from the knee: `braid-halter` (champagne satin halter, braid), `ponytail-qipao` (red satin qipao with gold trim, black ponytail), `braid-qipao` (ivory qipao with navy trim, brunette braid).
+- Bobs: `bob-shift` (blush shift dress), `bob-gown` (midnight velvet evening gown, sleek black bob), `bob-bodycon` (emerald bodycon), `bob-cocktail` (black satin cocktail dress, platinum bob), `bob-tee` (white T-shirt and skirt), `bob-turtleneck` (black sleeveless turtleneck, auburn bob).
+- An outfit can also set the gown slits and the qipao's trim colour.
+
 ## Dresses
 
-- Ours (`dress.js`), now with sleeves: `knee-` or `gown-`, then `fitted` or `cloth`, then optionally `short` or `long`, e.g. `?dress=knee-fitted-long`. Old links using `midi-` still work: "midi" was renamed "below the knee".
-- Our dress is plain jersey by default (no pattern, a faint fine weave); the diamond knit is Fabric → Knit. The gown hugs the waist a little tighter and has side slits down to the hem; Gown slits (`?slit=off|ankle|calf|knee|thigh|hip`, default mid-calf) sets where they start.
+- Ours (`dress.js`), now with sleeves: `knee-` or `gown-`, then `fitted` or `cloth`, then optionally `short` or `long`, e.g. `?dress=knee-fitted-long`. A `qipao` neck in place of the sleeves (`?dress=gown-cloth-qipao`) gives a stand collar, cut-in sleeveless armholes, a slimmer skirt, and contrast piping round the collar and armholes and along the diagonal front opening, with three knot buttons. Old links using `midi-` still work: "midi" was renamed "below the knee".
+- Our dress is plain jersey by default (no pattern, a faint fine weave); the diamond knit is Fabric → Knit. The gown hugs the waist a little tighter and has side slits down to the hem; Slits (`?slit=off|ankle|calf|knee|thigh|hip`, default mid-calf) sets where they start.
 - Fabric (`fabric.js`, `?fabric=`): plain, knit, satin, velvet or sequins. Sequins are a tiled normal map of tilted discs on a metallic base, so they glint as she moves.
 - Community dresses, grouped in the menu: covered shoulders, short and fitted (cocktail), sleeveless/halter, and tops or T-shirts worn over our skirt.
 - Modesty: a new dress is built while the old one stays on, and only then swapped in. The body stays hidden while nothing covers it (the first load, a failed load, or the Dress box unticked).
