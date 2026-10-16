@@ -10,7 +10,7 @@ Notes on the clothes and hair in `032_pianist.html` (Visuals → Pianist).
 ## Dresses
 
 - Ours (`dress.js`), now with sleeves: `knee-` or `gown-`, then `fitted` or `cloth`, then optionally `short` or `long`, e.g. `?dress=knee-fitted-long`. Old links using `midi-` still work: "midi" was renamed "below the knee".
-- Our dress is plain jersey by default (no pattern, a faint fine weave); the diamond knit is Fabric → Knit. The gown hugs the waist a little tighter and has side slits down to the hem; Gown slits (`?slit=off|ankle|calf|knee|thigh`, default mid-calf) sets where they start.
+- Our dress is plain jersey by default (no pattern, a faint fine weave); the diamond knit is Fabric → Knit. The gown hugs the waist a little tighter and has side slits down to the hem; Gown slits (`?slit=off|ankle|calf|knee|thigh|hip`, default mid-calf) sets where they start.
 - Fabric (`fabric.js`, `?fabric=`): plain, knit, satin, velvet or sequins. Sequins are a tiled normal map of tilted discs on a metallic base, so they glint as she moves.
 - Community dresses, grouped in the menu: covered shoulders, short and fitted (cocktail), sleeveless/halter, and tops or T-shirts worn over our skirt.
 - Modesty: a new dress is built while the old one stays on, and only then swapped in. The body stays hidden while nothing covers it (the first load, a failed load, or the Dress box unticked).
@@ -56,9 +56,9 @@ Every option is in the address bar as a short query key, written only when it di
 
 | Key | Control | Key | Control |
 |---|---|---|---|
-| `outfit` | Outfit | `gaze` `expr` `hips` `posture` | Pose |
+| `outfit` | Outfit | `gaze` `expr` `hips` `posture` `sidelean` | Pose |
 | `dress` `slit` `fabric` `dcol` | Dress, gown slits, fabric, colour (hex without `#`) | `bench` `benchh` | Bench distance / height |
-| `shoes` | Shoes | `light` `exposure` `dof` `caption` | Visuals |
+| `shoes` | Shoes | `light` `exposure` `dof` | Visuals |
 | `hair` `hcol` `density` | Hair style, colour, strands | `view` `cam` | Camera view; a dragged camera as `x,y,z,tx,ty,tz` |
 | `hairon` `hairsim` `dresson` `clothsim` | Checkboxes (`1` / `0`) | `move` `pace` `favour` `trans` `shotnames` | Moves and the director |
 | `look` `smooth` | Look, subdivision | `song` `at` `speed` `loop` `sf` `avsync` | Song, position, transport, sound |

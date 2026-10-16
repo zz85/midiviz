@@ -706,13 +706,14 @@ export function createRig(ch, { seat = v3(0, 64, 42) } = {}) {
       dz += d.joints.S.z - d.shoulder.z; dx += d.joints.S.x - d.shoulder.x
     }
     const k = 1 - Math.exp(-dt * 3)
-    let lean = 0.02 + 0.28 * state.posture, side = 0, turn = 0
+    let lean = 0.02 + 0.28 * state.posture, side = 0.18 * (state.sideLean || 0), turn = 0
     if (n) {
       mx /= n
       // posture: 0 upright (just off vertical) … 1 well over the keys
+      // (the slider goes past both: −0.5 leaning back, 1.6 hunched over)
       const base = 0.02 + 0.28 * state.posture
-      lean = clamp(base + Math.max(0, -dz) * 0.02, base - 0.06, 0.6)
-      side = clamp(mx * 0.004 + dx * 0.01, -0.16, 0.16)
+      lean = clamp(base + Math.max(0, -dz) * 0.02, base - 0.06, 0.65)
+      side = clamp(mx * 0.004 + dx * 0.01, -0.16, 0.16) + 0.18 * (state.sideLean || 0)
       turn = clamp(mx * 0.004, -0.2, 0.2)
     }
     state.handLean = (state.handLean ?? 0.2) + (lean - (state.handLean ?? 0.2)) * k

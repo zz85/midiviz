@@ -29,5 +29,7 @@ export function createShoes(ch, { color = '#0d0c0d' } = {}) {
   return {
     object, setColor(c) { mat.color.set(c) },
     update() { shoe.visible = edge.visible = object.visible },
+    // (the meshes are skinned to the body, so they live in ch.group, not in object)
+    dispose() { for (const m of [shoe, edge]) { m.removeFromParent(); m.geometry.dispose() } mat.dispose() },
   }
 }

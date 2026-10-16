@@ -120,7 +120,7 @@
     <div class="field"><label>Smooth (subdivided)</label><select id="smooth"><option value="0">Off</option><option value="1">1× (4× the triangles)</option><option value="2">2× (16×)</option></select></div>
     <div class="field"><label>Outfit</label><select id="outfit">
       <option value="">Custom (pick below)</option>
-      <option value="reference">The reference: red knit halter, half-up hair</option>
+      <option value="reference">Red knit halter, half-up hair</option>
       <option value="sequin-mini">Sequin mini, stiletto booties</option>
       <option value="sequin-gown">Sequin gown, long hair</option>
       <option value="covered">Long sleeves, below the knee</option>
@@ -148,7 +148,7 @@
       <option value="gown-cloth-long">Long sleeves · floor length, simulated</option>
       </optgroup>
     </select></div>
-    <div class="field" title="Floor-length dresses of ours: side slits, left and right, from here down to the hem"><label>Gown slits</label><select id="slit"><option value="off">Closed</option><option value="ankle">From the ankle</option><option value="calf" selected>From mid-calf</option><option value="knee">From the knee</option><option value="thigh">From above the knee (high)</option></select></div>
+    <div class="field" title="Floor-length dresses of ours: side slits, left and right, from here down to the hem"><label>Gown slits</label><select id="slit"><option value="off">Closed</option><option value="ankle">From the ankle</option><option value="calf" selected>From mid-calf</option><option value="knee">From the knee</option><option value="thigh">From above the knee (high)</option><option value="hip">From the hip (very high)</option></select></div>
     <div class="field"><label>Fabric</label><select id="fabric"><option value="made">Plain (as made)</option><option value="knit">Knit (diamond)</option><option value="satin">Satin</option><option value="velvet">Velvet</option><option value="sequin">Sequins</option></select></div>
     <div class="field"><label>Shoes</label><select id="shoeStyle"><option value="flats">Black flats (ours)</option><option value="none">Barefoot</option></select></div>
     <label class="chk"><input type="checkbox" id="hairOn" checked>Hair</label>
@@ -162,14 +162,14 @@
     <div class="field"><label>Gaze</label><select id="gaze"><option value="hands">At the hands</option><option value="music" selected>With the music (hands + horizon)</option><option value="horizon">Mostly the horizon</option></select></div>
     <div class="field"><label>Body expression</label><input type="range" id="expr" min="0" max="2" step="0.1" value="1"></div>
     <div class="field"><label>Weight shift (one hip)</label><input type="range" id="hips" min="0" max="2" step="0.1" value="1"></div>
-    <div class="field"><label>Posture</label><input type="range" id="posture" min="0" max="1" step="0.05" value="0.5"><span id="postureV">between</span></div>
-    <div class="field"><label>Bench distance</label><input type="range" id="benchDist" min="-8" max="12" step="1" value="0"><span id="benchDistV">0 cm</span></div>
-    <div class="field"><label>Bench height</label><input type="range" id="benchH" min="-8" max="6" step="1" value="0"><span id="benchHV">0 cm</span></div>
+    <div class="field"><label>Posture</label><input type="range" id="posture" min="-0.5" max="1.6" step="0.05" value="0.5"><span id="postureV">between</span></div>
+    <div class="field"><label>Lean sideways</label><input type="range" id="sideLean" min="-1" max="1" step="0.05" value="0"><span id="sideLeanV">centre</span></div>
+    <div class="field"><label>Bench distance</label><input type="range" id="benchDist" min="-20" max="25" step="1" value="0"><span id="benchDistV">0 cm</span></div>
+    <div class="field"><label>Bench height</label><input type="range" id="benchH" min="-15" max="15" step="1" value="0"><span id="benchHV">0 cm</span></div>
     <div class="sect">Stage</div>
     <div class="field"><label>Main light</label><input type="range" id="light" min="0" max="2" step="0.01" value="1"></div>
     <div class="field"><label>Exposure</label><input type="range" id="exposure" min="0.3" max="2.5" step="0.01" value="1"></div>
     <label class="chk"><input type="checkbox" id="dof" checked>Depth of field</label>
-    <label class="chk"><input type="checkbox" id="caption">Caption</label>
     <div class="field"><label>Sound</label><select id="sf"></select></div>
     <div class="field" title="Fine-tune when the hands and keys move against the sound, if your speakers or headphones report their delay wrongly (Bluetooth often does). Positive = the picture later."><label>Picture vs sound</label><input type="range" id="avsync" min="-200" max="200" step="5" value="0"><span id="avsyncV">0 ms</span></div>
   </div>
@@ -399,7 +399,7 @@
     }
     let dressJob = 0
     // gown slits: where they start, cm about the knee joint (?slit=; old ?slits=0 closes them)
-    const SLIT_AT = { ankle: -30, calf: -14, knee: -3, thigh: 8 }
+    const SLIT_AT = { ankle: -30, calf: -14, knee: -3, thigh: 8, hip: 30 }
     if (params.get('slits') === '0') $('slit').value = 'off'
     if (SLIT_AT[params.get('slit')] !== undefined || params.get('slit') === 'off') $('slit').value = params.get('slit')
     async function buildDress(v) {
@@ -490,17 +490,21 @@
     setBenchH(+$('benchH').value)
     $('benchH').oninput = () => setBenchH(+$('benchH').value)
     // posture: 0 = upright, 1 = well forward over the keys
-    const setPosture = v => { rig.state.posture = v; $('postureV').textContent = v < 0.25 ? 'upright' : v > 0.75 ? 'forward' : 'between' }
+    const setPosture = v => { rig.state.posture = v; $('postureV').textContent = v < -0.1 ? 'leaning back' : v < 0.25 ? 'upright' : v > 1.15 ? 'hunched over' : v > 0.75 ? 'forward' : 'between' }
     $('posture').value = params.get('posture') ?? 0.5
     setPosture(+$('posture').value)
     $('posture').oninput = () => setPosture(+$('posture').value)
+    // sideways: − toward the bass (her left), + toward the treble
+    const setSideLean = v => { rig.state.sideLean = v; $('sideLeanV').textContent = Math.abs(v) < 0.05 ? 'centre' : v < 0 ? 'to the bass' : 'to the treble' }
+    $('sideLean').value = params.get('sidelean') ?? 0
+    setSideLean(+$('sideLean').value)
+    $('sideLean').oninput = () => setSideLean(+$('sideLean').value)
     $('gaze').value = params.get('gaze') ?? 'music'
     rig.state.gazeMode = $('gaze').value
     $('gaze').onchange = () => { rig.state.gazeMode = $('gaze').value }
     $('hairColor').oninput = () => hair.setColor($('hairColor').value)
     $('dressColor').oninput = () => dress.setColor($('dressColor').value)
     $('hairDensity').onchange = () => hair.setDensity(+$('hairDensity').value)
-    $('caption').onchange = () => document.body.classList.toggle('captioned', $('caption').checked)
 
     // ── Post ─────────────────────────────────────────────────────────────
     const rt = new THREE.WebGLRenderTarget(innerWidth * renderer.getPixelRatio(), innerHeight * renderer.getPixelRatio(), { type: THREE.HalfFloatType, samples: LOWQ ? 0 : 4 })
@@ -856,8 +860,8 @@
       ['outfit', 'outfit'], ['dress', 'dressStyle'], ['slit', 'slit'], ['fabric', 'fabric'], ['dcol', 'dressColor'], ['shoes', 'shoeStyle'],
       ['hair', 'hairStyle'], ['hcol', 'hairColor'], ['density', 'hairDensity'], ['hairon', 'hairOn'], ['hairsim', 'hairSim'],
       ['dresson', 'dressOn'], ['clothsim', 'clothSim'], ['look', 'look'], ['smooth', 'smooth'],
-      ['gaze', 'gaze'], ['expr', 'expr'], ['hips', 'hips'], ['posture', 'posture'], ['bench', 'benchDist'], ['benchh', 'benchH'],
-      ['light', 'light'], ['exposure', 'exposure'], ['dof', 'dof'], ['caption', 'caption'],
+      ['gaze', 'gaze'], ['expr', 'expr'], ['hips', 'hips'], ['posture', 'posture'], ['sidelean', 'sideLean'], ['bench', 'benchDist'], ['benchh', 'benchH'],
+      ['light', 'light'], ['exposure', 'exposure'], ['dof', 'dof'],
       ['move', 'camMove'], ['pace', 'dirPace'], ['favour', 'dirBias'], ['trans', 'dirTrans'], ['shotnames', 'shotLbl'],
       ['sf', 'sf'], ['avsync', 'avsync'],
     ].filter(([, id]) => $(id))
