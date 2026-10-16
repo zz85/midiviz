@@ -160,7 +160,9 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
  * anchors: { hands, head } (Vector3, live); smoothed here like an operator.
  */
 export function createDirector(opts = {}) {
-  const o = { pace: 1, bias: 0, trans: 'mix', ...opts }
+  // follow: false = each shot frames her where she is when it starts and
+  // holds that framing (her rocking and sway move within a still frame)
+  const o = { pace: 1, bias: 0, trans: 'mix', follow: false, ...opts }
   let shots = planShots({ duration: 600 }, o), source = null, idleT = 0
   const anchor = { hands: new THREE.Vector3(0, 76, 0), head: new THREE.Vector3(0, 122, 32), figure: new THREE.Vector3(), piano: new THREE.Vector3(), feet: new THREE.Vector3(0, 12, 18) }
   let primed = false
@@ -175,14 +177,17 @@ export function createDirector(opts = {}) {
     while (lo < hi) { const m = (lo + hi + 1) >> 1; if (shots[m].t0 <= t) lo = m; else hi = m - 1 }
     return lo
   }
-  function subjectPoint(s, target) {
+  function subjectPoint(s, target, sh) {
     const a = anchor[s.subj]
+    if (!o.follow && sh?.lock && s.subj === 'head') return target.copy(sh.lock)
+    if (!o.follow && sh?.lock && s.subj === 'figure') return target.lerpVectors(anchor.hands, sh.lock, 0.55).add(tb.set(0, -6, 4))
     return target.copy(a)
   }
+  let lockIdx = -1
   function shotParams(sh, t, P, target) {
     const s = SPOTS[sh.name]
     applyMove(s, sh.move, clamp((t - sh.t0) / (sh.t1 - sh.t0), 0, 1), sh.amt, sh.dir, P)
-    subjectPoint(s, target)
+    subjectPoint(s, target, sh)
     return P
   }
   function place(P, target, pos) {
@@ -195,7 +200,7 @@ export function createDirector(opts = {}) {
     get shots() { return shots },
     /** song: { duration, phrases, glances, energyAt } or null for the idle plan */
     setSong(song) { source = song; replan() },
-    set(k, v) { o[k] = v; replan() },
+    set(k, v) { o[k] = v; if (k !== 'follow') { replan(); lockIdx = -1 } },
     /** t: song time, or null to run on the director's own clock */
     update(t, dt, live) {
       // the operator follows the subjects with a little lag (~0.5 s)
@@ -207,6 +212,13 @@ export function createDirector(opts = {}) {
       primed = true
       if (t == null) { idleT += dt; t = idleT % shots[shots.length - 1].t1 }
       const idx = shotAt(t), sh = shots[idx]
+      // a new shot locks onto where she is now (the shot gliding out keeps its own)
+      if (idx !== lockIdx) {
+        for (const x of shots) if (x !== sh && x !== shots[idx - 1]) x.lock = null
+        sh.lock = anchor.head.clone()
+        if (idx > 0 && !shots[idx - 1].lock) shots[idx - 1].lock = anchor.head.clone()
+        lockIdx = idx
+      }
       shotParams(sh, t, A, ta)
       const u = sh.glide ? clamp((t - sh.t0) / sh.glide, 0, 1) : 1
       if (u < 1 && idx > 0) {

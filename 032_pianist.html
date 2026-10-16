@@ -113,6 +113,7 @@
     <div class="field"><label>Pace</label><select id="dirPace"><option value="0.6">Long takes</option><option value="1" selected>Normal</option><option value="1.6">Lively</option></select></div>
     <div class="field"><label>Favour</label><select id="dirBias"><option value="-0.8">The hands</option><option value="0" selected>Balanced</option><option value="0.8">The pianist</option></select></div>
     <div class="field"><label>Transitions</label><select id="dirTrans"><option value="mix" selected>Cuts and glides</option><option value="cuts">Cuts only</option><option value="glides">Glides where possible</option></select></div>
+    <label class="chk" title="Off: each shot frames her as it starts and holds still while she moves. On: the camera operator follows her head"><input type="checkbox" id="camFollow"> Follow her movement</label>
     <label class="chk"><input type="checkbox" id="shotLbl"> Show shot names</label>
   </div>
   <div id="visualsPop" class="pop ui">
@@ -633,6 +634,9 @@
     $('camMove').value = MOVES[params.get('move')] ? params.get('move') : 'still'
     $('camMove').onchange = () => { moveT = 0; userCam = false }
     $('shotLbl').checked = params.has('shotnames')
+    $('camFollow').checked = params.get('follow') === '1'
+    director.set('follow', $('camFollow').checked)
+    $('camFollow').onchange = () => director.set('follow', $('camFollow').checked)
     const applyShotLbl = () => document.body.classList.toggle('shotlbl', $('shotLbl').checked)
     $('shotLbl').onchange = applyShotLbl; applyShotLbl()
     let moveT = 0, lastShot = null, camTouched = 0
@@ -942,7 +946,7 @@
       ['dresson', 'dressOn'], ['clothsim', 'clothSim'], ['look', 'look'], ['smooth', 'smooth'], ['simplify', 'simplify'],
       ['gaze', 'gaze'], ['expr', 'expr'], ['hips', 'hips'], ['posture', 'posture'], ['reach', 'reach'], ['rock', 'rock'], ['sway', 'sway'], ['nod', 'nod'], ['glances', 'glances'], ['bench', 'benchDist'], ['benchh', 'benchH'],
       ['light', 'light'], ['exposure', 'exposure'], ['dof', 'dof'],
-      ['move', 'camMove'], ['pace', 'dirPace'], ['favour', 'dirBias'], ['trans', 'dirTrans'], ['shotnames', 'shotLbl'],
+      ['move', 'camMove'], ['pace', 'dirPace'], ['favour', 'dirBias'], ['trans', 'dirTrans'], ['shotnames', 'shotLbl'], ['follow', 'camFollow'],
       ['sf', 'sf'], ['avsync', 'avsync'],
     ].filter(([, id]) => $(id))
     const OUTFIT_KEYS = { dress: 'dress', slit: 'slit', fabric: 'fabric', dcol: 'color', shoes: 'shoes', hair: 'hair', hcol: 'hairColor' }
