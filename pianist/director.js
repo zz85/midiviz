@@ -31,19 +31,23 @@ const hash = (k, s = 0) => { const x = Math.sin(k * 127.1 + s * 311.7 + 0.5) * 4
 const wrap = a => ((a + 540) % 360) - 180
 
 // size: 0 = close, 1 = medium, 2 = wide. moves: what suits the spot.
+// fav: a favourite (weight ×fav), rest: seconds before it's fresh again (60)
 export const SPOTS = {
   establish: { label: 'From the hall, wide', subj: 'figure', az: 138, el: 9, dist: 700, fov: 24, size: 2, moves: ['dollyIn', 'zoomIn', 'orbit'] },
   audience: { label: 'From the audience', subj: 'head', az: 128, el: 4, dist: 420, fov: 20, size: 1, moves: ['zoomIn', 'dollyIn', 'orbit', 'dollyZoom', 'still'] },
   // flat: square on, so the shot itself doesn't turn (glides into it do).
   // Across the piano is low, under the lid over the strings; minDist keeps
   // its moves from carrying the camera in past the tail
-  tail: { label: 'Across the piano', subj: 'head', az: 180, el: 2, dist: 380, fov: 18, size: 1, flat: true, minDist: 320, moves: ['dollyIn', 'zoomIn', 'dollyZoom', 'zoomOut'] },
+  tail: { label: 'Across the piano', fav: 4.5, rest: 25, subj: 'head', az: 180, el: 2, dist: 380, fov: 18, size: 1, flat: true, minDist: 320, moves: ['dollyIn', 'zoomIn', 'dollyZoom', 'zoomOut'] },
+  // her face at medium size (head and shoulders to the waist), favoured over the close-ups
+  bust: { label: 'Her, from the piano', fav: 1.6, subj: 'head', az: 162, el: 8, dist: 190, fov: 34, size: 1, moves: ['dollyIn', 'zoomIn', 'orbit', 'zoomOut'] },
+  profileMed: { label: 'Profile, medium', fav: 1.6, subj: 'head', az: 100, el: 6, dist: 220, fov: 30, size: 1, moves: ['orbit', 'dollyIn', 'zoomOut', 'still'] },
   // face close-ups mostly zoom or pull out; an orbit or a still frame now and then
-  front: { label: 'Face, from the piano', subj: 'head', az: 161, el: 8, dist: 106, fov: 34, size: 0, moves: ['dollyOut', 'zoomOut', 'orbit', 'still'] },
-  face: { label: 'Face, close', subj: 'head', az: 198, el: -4, dist: 75, fov: 28, size: 0, moves: ['dollyOut', 'zoomOut', 'orbit', 'still'] },
-  profile: { label: 'Profile', subj: 'head', az: 105, el: 5, dist: 125, fov: 30, size: 0, moves: ['dollyOut', 'zoomOut', 'orbit', 'still'] },
-  headside: { label: 'Profile, close', subj: 'head', az: 96, el: 8, dist: 72, fov: 30, size: 0, moves: ['zoomOut', 'dollyOut', 'orbit'] },
-  shoulder: { label: 'Over the shoulder', subj: 'hands', az: -23, el: 37, dist: 160, fov: 40, size: 1, moves: ['dollyIn', 'orbit', 'crane', 'zoomIn'] },
+  front: { fav: 0.5, label: 'Face, from the piano', subj: 'head', az: 161, el: 8, dist: 106, fov: 34, size: 0, moves: ['dollyOut', 'zoomOut', 'orbit', 'still'] },
+  face: { fav: 0.5, label: 'Face, close', subj: 'head', az: 198, el: -4, dist: 75, fov: 28, size: 0, moves: ['dollyOut', 'zoomOut', 'orbit', 'still'] },
+  profile: { fav: 0.5, label: 'Profile', subj: 'head', az: 105, el: 5, dist: 125, fov: 30, size: 0, moves: ['dollyOut', 'zoomOut', 'orbit', 'still'] },
+  headside: { fav: 0.5, label: 'Profile, close', subj: 'head', az: 96, el: 8, dist: 72, fov: 30, size: 0, moves: ['zoomOut', 'dollyOut', 'orbit'] },
+  shoulder: { label: 'Over the shoulder', fav: 0.75, subj: 'hands', az: -23, el: 37, dist: 160, fov: 40, size: 1, moves: ['dollyIn', 'orbit', 'crane', 'zoomIn'] },
   hands: { label: 'Hands, bass side', subj: 'hands', az: -50, el: 34, dist: 90, fov: 40, size: 0, moves: ['orbit', 'dollyOut', 'still'] },
   treble: { label: 'Hands, treble side', subj: 'hands', az: 62, el: 30, dist: 100, fov: 38, size: 0, moves: ['orbit', 'dollyIn', 'still'] },
   bassKeys: { label: 'Along the keys, from the bass', subj: 'hands', az: -93, el: 9, dist: 125, fov: 30, size: 0, moves: ['zoomOut', 'still', 'dollyOut'], orbitMax: 6 },
@@ -297,7 +301,8 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
         // spread the work over every spot: one shown in the last ~60 s is
         // less likely, the more often the less likely
         const ago = t - (lastUsed[n] ?? -1e9)
-        if (ago < 60 / pace) x *= 0.3
+        if (ago < (s.rest ?? 60) / pace) x *= 0.3
+        x *= s.fav ?? 1   // a favourite spot
         x /= 1 + 0.08 * (uses[n] || 0)
         // after the opening: what the screen time is short of (fingers / her /
         // piano, behind / in front, close / medium / wide)
