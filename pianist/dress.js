@@ -204,8 +204,8 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
     rest[i] = ctr.x + Math.cos(a) * rad; rest[i + 1] = y; rest[i + 2] = ctr.z + Math.sin(a) * rad
   }
   // side slits: the tube is open between the columns at her left and right
-  // (x extremes: angle 0 and ±π) from slitRow down to the hem
-  const slitRow = slits ? Math.max(2, Math.round((hipY + TOP - (J['lowerleg01.L____head'].y - 3)) / seg)) : R
+  // (x extremes: angle 0 and ±π) from mid-calf (slitRow) down to the hem
+  const slitRow = slits ? Math.max(2, Math.round((hipY + TOP - (J['lowerleg01.L____head'].y - 14)) / seg)) : R
   const SEAMS = [C / 2, C]   // a seam b lies between columns b − 1 and b
   const cut = (r, c, k) => r >= slitRow && SEAMS.some(b => c < b && c + k >= b)
   // skin weights: the nearest leg / hip skin, and for the panel between the
@@ -326,6 +326,16 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
   const PULL = new Float32Array(R).map((_, r) => Math.max(0.35 * Math.max(0, 1 - r / (kneeRow + 5)) ** 1.5 + 0.004,
     0.85 * THREE.MathUtils.smoothstep(hipY + TOP - r * seg, hipY - 20, hipY - 10)))
   const PIN = 2
+  // per point: the back and sides of the tube (under and beside the thighs
+  // when seated) stay wrapped round the thighs down to the knee, so no skin
+  // shows between the bench and the knee; the front still drapes over the lap
+  const PULLV = new Float32Array(NPt)
+  for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) {
+    const a = (c + 0.5) / C * 2 * Math.PI - Math.PI, y = hipY + TOP - r * seg
+    const back = THREE.MathUtils.smoothstep(Math.sin(a), -0.35, 0.25)
+    const thigh = THREE.MathUtils.smoothstep(y, J['lowerleg01.L____head'].y - 1, J['lowerleg01.L____head'].y + 6)
+    PULLV[id(r, c)] = Math.max(PULL[r], 0.5 * back * thigh)
+  }
 
   // collision surface: the skin of the hips and legs, carried by bones
   const SURF = /^(root|pelvis|upperleg|lowerleg|spine0[345]|foot)/
@@ -398,7 +408,7 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
         const j = i * 3, x = X[j], y = X[j + 1], z = X[j + 2]
         X[j] += (x - Xp[j]) * 0.98; X[j + 1] += (y - Xp[j + 1]) * 0.98 + GRAV * h * h; X[j + 2] += (z - Xp[j + 2]) * 0.98
         Xp[j] = x; Xp[j + 1] = y; Xp[j + 2] = z
-        const k = PULL[(i / C) | 0]
+        const k = PULLV[i]
         X[j] += (target[j] - X[j]) * k; X[j + 1] += (target[j + 1] - X[j + 1]) * k; X[j + 2] += (target[j + 2] - X[j + 2]) * k
       }
       for (let it = 0; it < 6; it++) {
