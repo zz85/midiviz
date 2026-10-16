@@ -59,7 +59,7 @@ function norm(name) {
   return side + ':' + n.toLowerCase().replace(/[^a-z0-9]/g, '')
 }
 const NAME_RULES = {
-  hips: [/^:(hips?|pelvis|root)$/],
+  hips: [/^:hips?$/, /^:pelvis$/, /^:root$/],   // (a Root bone is usually the armature's, at the floor)
   spine: [/^:(spine|spine0?1|abdomen|waist|lowerback)$/],
   chest: [/^:(chest|spine0?2|torso)$/],
   upperChest: [/^:(upperchest|spine0?3|chest2)$/],
@@ -136,7 +136,13 @@ export async function loadAltCharacter(key, base = new URL('./assets/', import.m
     if (vrm.lookAt) vrm.lookAt.autoUpdate = false
     H = {}
     for (const name of Object.keys(vrm.humanoid.humanBones)) { const b = vrm.humanoid.getRawBoneNode(name); if (b) H[name] = b }
-  } else H = humanoidFromNames(model)
+  } else {
+    // the nodes may hold an animation pose (Quaternius' do): start from the
+    // bind pose the skins were made in
+    model.updateMatrixWorld(true)
+    model.traverse(o => { if (o.isSkinnedMesh) o.skeleton.pose() })
+    H = humanoidFromNames(model)
+  }
   for (const need of ['hips', 'head', 'leftUpperArm', 'leftLowerArm', 'leftHand', 'leftUpperLeg', 'leftLowerLeg', 'leftFoot', 'leftIndexProximal', 'leftMiddleProximal', 'leftLittleProximal', 'leftThumbProximal'])
     if (!H[need]) throw new Error(`${key}: no ${need} bone found`)
 
@@ -285,7 +291,13 @@ export async function loadAltCharacter(key, base = new URL('./assets/', import.m
     const pq = byName[a].getWorldQuaternion(new THREE.Quaternion())
     return { target, a: byName[a], b: byName[b], k, offset: pq.invert().multiply(tq), depth: depth(target) }
   }).sort((x, y) => x.depth - y.depth)
-  const hipsBone = H.hips, rootRest = byName.root.getWorldPosition(v3()), hipsRest = wp(hipsBone)
+  // bones whose model parent is not driven (the hips; feet that are IK
+  // controls parented to the root, as in Quaternius' rig; legs hung from a
+  // "Body" bone) are also placed: their head rides on the proxy bone
+  const drivenSet = new Set(drive.map(d => d.target))
+  for (const d of drive) if (!drivenSet.has(d.target.parent)) {
+    d.place = d.a.worldToLocal(wp(d.target))
+  }
   const _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion(), _qp = new THREE.Quaternion(), _p = v3()
 
   function sync() {
@@ -296,10 +308,7 @@ export async function loadAltCharacter(key, base = new URL('./assets/', import.m
       _qa.multiply(d.offset)
       d.target.parent.getWorldQuaternion(_qp)
       d.target.quaternion.copy(_qp.invert().multiply(_qa))
-      if (d.target === hipsBone) {
-        byName.root.getWorldPosition(_p).sub(rootRest).add(hipsRest)
-        d.target.position.copy(d.target.parent.worldToLocal(_p))
-      }
+      if (d.place) d.target.position.copy(d.target.parent.worldToLocal(d.a.localToWorld(_p.copy(d.place))))
       d.target.updateMatrixWorld(true)
     }
   }
