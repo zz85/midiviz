@@ -116,6 +116,7 @@
     <label class="chk"><input type="checkbox" id="shotLbl"> Show shot names</label>
   </div>
   <div id="visualsPop" class="pop ui">
+    <div class="item" id="resetAll" title="Every option back to its default (the song and its position are kept)">↺ Restore all defaults</div>
     <div class="sect">Pianist</div>
     <div class="field"><label>Model</label><select id="model"><option value="">MakeHuman (realistic, CC0)</option></select></div>
     <div class="field"><label>Look</label><select id="look"><option value="realistic">Realistic</option><option value="stylized">Stylized (animated feature)</option><option value="cel">Cel shaded (outlines)</option></select></div>
@@ -949,6 +950,14 @@
       const q = stateQuery(), url = location.pathname + (q ? '?' + q : '') + location.hash
       if (url !== location.pathname + location.search + location.hash) history.replaceState(null, '', url)
     }, 500)
+    // restore defaults: reload with no options (keeps ?q=low, the song and where it was)
+    $('resetAll').onclick = () => {
+      if (!confirm('Restore every option to its default?')) return
+      const q = new URLSearchParams()
+      if (params.get('q')) q.set('q', params.get('q'))
+      if (songFile) { q.set('song', songFile); const t = song ? songNow() : sharedSong?.[1] || 0; if (t > 0.5) q.set('at', t.toFixed(1)) }
+      location.href = location.pathname + (q.toString() ? '?' + q.toString().replace(/%2F/g, '/') : '')
+    }
     $('shareBtn').onclick = async () => {
       const q = stateQuery(true), url = location.origin + location.pathname + (q ? '?' + q : '')
       try { await navigator.clipboard.writeText(url); setStatus('Link copied' + (q.includes('at=') ? ' (with the song position)' : ''), false, 2500) }
