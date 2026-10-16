@@ -1,0 +1,753 @@
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>Experiment #033 - Violin & Viola Fingering</title>
+  <!--
+    Experiment #033 - automatic violin / viola (and cello) fingering, a
+    simulated left hand and bow.
+
+    strings/fingering.js   events → hand-frame states (string, frame base,
+                           finger per note; double stops on adjacent strings)
+                           → time-aware Viterbi; weights tuned on TNUA
+    strings/templates.js   scale-book patterns for long scale runs
+    strings/motion.js      fingering → left-hand shifts, finger stops, vibrato,
+                           bow strokes, string crossings
+    strings/violin3d.js    procedural violin / viola / cello and bow
+    strings/hand3d.js      left hand (coupled finger IK from #029), bow hand, arms
+    strings/board2d.js     scrolling string tablature + fingerboard map
+    strings/research/      what violinists do and what has been published
+    strings/test/          node --test strings/test/fingering.test.js
+  -->
+  <script type="importmap">
+    { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    } }
+  </script>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0b0c; font: 13px/1.35 "Helvetica Neue", Arial, sans-serif; color: #e8e2d6; }
+    canvas { display: block; touch-action: none; }
+    [hidden] { display: none !important; }
+    #gl { position: absolute; left: 0; top: 0; }
+    #board { position: absolute; left: 0; bottom: 0; width: 100%; cursor: pointer; }
+    #panel {
+      position: absolute; top: 12px; left: 12px; width: 300px; padding: 10px 12px; max-height: calc(100% - 44px); overflow: auto;
+      background: rgba(14, 13, 12, 0.8); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 10px;
+      backdrop-filter: blur(8px); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5); z-index: 2;
+    }
+    #panel h1 { margin: 0 0 2px; font: 300 17px/1.2 Georgia, serif; letter-spacing: 0.04em; color: #f3e6c4; }
+    #panel h1 a { color: inherit; text-decoration: none; }
+    #panel .sub { font-size: 11px; color: #9c958a; margin-bottom: 6px; }
+    #panel .sub a { color: #9c958a; }
+    #panel.collapsed .body { display: none; }
+    #toggle { float: right; background: none; border: 0; color: #d8b56a; font-size: 15px; cursor: pointer; }
+    hr { border: 0; border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 8px 0; }
+    .row { display: flex; align-items: center; gap: 6px; margin: 5px 0; }
+    .row > label:first-child { flex: 0 0 66px; color: #a9a196; }
+    select, input[type=range], input[type=text] { flex: 1; min-width: 0; }
+    select, input[type=text] { background: #1d1b19; color: #eee6d8; border: 1px solid #3d3933; border-radius: 4px; padding: 2px 4px; font: inherit; }
+    input[type=checkbox] { accent-color: #c9a24a; }
+    .chk { display: flex; align-items: center; gap: 3px; color: #cfc6b8; margin-right: 6px; white-space: nowrap; }
+    button.b { background: #26231f; color: #eee6d8; border: 1px solid #4a443b; border-radius: 4px; padding: 3px 8px; cursor: pointer; font: inherit; font-size: 12px; }
+    button.b:hover { background: #35302a; }
+    button.b.on { background: #c9a24a; color: #111; border-color: #c9a24a; }
+    #seek { flex: 1; }
+    #songTime { font: 11px monospace; color: #b9b0a2; min-width: 72px; text-align: right; }
+    #stats { font-size: 11.5px; color: #c9c0b2; }
+    #stats .k { color: #8f887d; }
+    #stats .fing { font: 11.5px/1.5 monospace; word-break: break-word; margin-top: 3px; }
+    #stats .fing b { color: #ff6b80; }
+    .hist { display: flex; gap: 3px; align-items: flex-end; height: 34px; margin: 4px 0 2px; }
+    .hist div { flex: 1; border-radius: 2px 2px 0 0; position: relative; min-height: 1px; }
+    .hist span { position: absolute; bottom: -14px; left: 0; right: 0; text-align: center; font-size: 10px; color: #9c958a; }
+    #legend { display: flex; gap: 8px; margin-top: 16px; font-size: 11px; color: #b9b0a2; flex-wrap: wrap; }
+    #legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 3px; vertical-align: -1px; }
+    #hint { color: #8f887d; font-size: 11px; margin-top: 6px; }
+    #status { position: absolute; top: 12px; right: 12px; padding: 6px 10px; border-radius: 6px; background: rgba(14, 13, 12, 0.8); border: 1px solid #3d3933; font-size: 12px; z-index: 3; }
+    #status.hidden { display: none; }
+    #status.error { border-color: #c44; color: #f99; }
+    #dropHint { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; font: 300 26px Georgia, serif; color: #f3e6c4; background: rgba(0, 0, 0, 0.55); pointer-events: none; z-index: 5; }
+    body.dragging #dropHint { display: flex; }
+  </style>
+</head>
+<body>
+  <canvas id="gl"></canvas>
+  <canvas id="board"></canvas>
+  <div id="panel">
+    <button id="toggle" title="Collapse">–</button>
+    <h1><a href="README.md" title="Back to experiments">#033 · Violin &amp; Viola Fingering</a></h1>
+    <div class="sub">automatic fingering · simulated left hand and bow · <a href="strings/research/01_violinist_rules.md">rules</a> · <a href="strings/research/02_algorithms.md">algorithms</a></div>
+    <div class="body">
+      <div class="row"><label>Exercise</label><select id="exercise"></select></div>
+      <div class="row"><label>Song</label><select id="song"></select>
+        <button class="b" id="open" title="Open a .mid file or a TNUA .csv (or drop one on the page)">Open…</button>
+        <input id="file" type="file" accept=".mid,.midi,audio/midi,.csv" hidden></div>
+      <div class="row" id="trackRow" hidden><label>Track</label><select id="track"></select></div>
+      <div class="row" id="vioRow" hidden><label>Violinist</label><select id="violinist"></select></div>
+      <div class="row"><label>Type</label><input id="typed" type="text" spellcheck="false" title="Notes: A4 B4 C#5 · double stops D4+B4 · length E5:2 · rest r · string lock E5/A (play E5 on the A string)"
+        value="G4 A4 B4 C5 D5:2 B4 G4:2 D4+B4:2"><button class="b" id="typedGo">Go</button></div>
+      <hr>
+      <div class="row"><label>Instrument</label><select id="instrument">
+        <option value="violin">Violin</option><option value="viola">Viola</option><option value="cello">Cello</option>
+      </select></div>
+      <div class="row"><label>Style</label><select id="mode">
+        <option value="standard">Standard (tuned on 10 violinists)</option>
+        <option value="beginner">Beginner (1st position, open strings)</option>
+        <option value="expressive">Expressive (stay on a string, no open strings on long notes)</option>
+        <option value="nearest">Fewest shifts</option>
+      </select></div>
+      <div class="row"><label>Hand size</label><select id="handSize">
+        <option value="0.88">Small</option><option value="1" selected>Medium</option><option value="1.12">Large</option>
+      </select></div>
+      <div class="row"><label>Voices</label><select id="voices">
+        <option value="2">Melody + double stops</option><option value="1">Top line only</option><option value="4">Chords (up to 4)</option>
+      </select></div>
+      <hr>
+      <div class="row"><label>View</label><select id="viewMode">
+        <option value="split">3D + 2D</option><option value="3d">3D</option><option value="2d">2D tab + fingerboard</option>
+      </select></div>
+      <div class="row"><label>Camera</label><select id="cam">
+        <option value="player">Player (down the strings)</option><option value="hand">Left hand</option><option value="front">Front</option>
+        <option value="bow">Bow</option><option value="above">From above</option><option value="free" hidden>Free</option>
+      </select></div>
+      <div class="row"><label></label>
+        <span class="chk"><input id="follow" type="checkbox" checked>Follow hand</span>
+        <span class="chk"><input id="labels" type="checkbox" checked>Numbers</span>
+        <span class="chk"><input id="ghost" type="checkbox">Ghost</span>
+      </div>
+      <hr>
+      <div class="row">
+        <button class="b" id="play" title="Play / pause (Space)">▶</button>
+        <button class="b" id="stop" title="Stop">■</button>
+        <input id="seek" type="range" min="0" max="1" step="0.0005" value="0">
+        <span id="songTime">0:00 / 0:00</span>
+      </div>
+      <div class="row"><label>Speed</label><select id="speed">
+        <option value="0.25">25%</option><option value="0.5">50%</option><option value="0.75">75%</option><option value="1" selected>100%</option><option value="1.25">125%</option>
+      </select>
+        <span class="chk"><input id="loop" type="checkbox" checked>Loop</span>
+        <span class="chk"><input id="sound" type="checkbox" checked>Sound</span></div>
+      <div class="row">
+        <button class="b" id="midiIn" title="Play from a MIDI keyboard: fingers are chosen as you play">MIDI in</button>
+        <button class="b" id="export" title="Download the fingering as CSV (TNUA columns)">Export CSV</button>
+      </div>
+      <hr>
+      <div id="stats"></div>
+      <div id="legend"><span><i style="background:#d8d2c4"></i>0 open</span><span><i style="background:#e2483d"></i>1</span><span><i style="background:#f0a030"></i>2</span><span><i style="background:#48b04c"></i>3</span><span><i style="background:#3f8fe0"></i>4</span></div>
+      <div id="hint">Click the fingerboard (2D) to play a note on that string. Tab: roman numerals = new position, dashed line = shift, dashed red = differs from the book / violinist. Space plays, Esc hides the panel.</div>
+    </div>
+  </div>
+  <div id="status" class="hidden"></div>
+  <div id="dropHint">Drop a MIDI file (or a TNUA .csv) to finger it</div>
+
+  <script src="tonejs-midi.js"></script>
+  <script type="module">
+    import * as THREE from 'three'
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+    import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
+    import { SoundFontEngine, MidiScheduler } from './soundfont-engine/src/index.js'
+    import { fingerLine, fingerTokens, lineStats, INSTRUMENTS, parseNote, noteName, positionName, positionRoman, stopMM } from './strings/fingering.js'
+    import { exercises, bestMatch } from './strings/exercises.js'
+    import { buildMotion } from './strings/motion.js'
+    import { buildViolin, buildBow } from './strings/violin3d.js'
+    import { buildLeftHand, buildBowHand } from './strings/hand3d.js'
+    import { createBoard } from './strings/board2d.js'
+    import { PIECES, TITLES, TEMPO, parseCSV, tnuaPosition } from './strings/tnua.js'
+
+    const $ = id => document.getElementById(id)
+    const params = new URLSearchParams(location.search)
+    function setStatus(msg, isError = false) {
+      const el = $('status')
+      el.textContent = msg || ''
+      el.classList.toggle('hidden', !msg)
+      el.classList.toggle('error', isError)
+    }
+    for (const id of ['instrument', 'mode', 'handSize', 'voices', 'viewMode', 'cam']) if (params.has(id)) $(id).value = params.get(id)
+
+    // ── 3D scene ───────────────────────────────────────────────────────────
+    const renderer = new THREE.WebGLRenderer({ canvas: $('gl'), antialias: true, powerPreference: 'high-performance' })
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+    renderer.toneMapping = THREE.AgXToneMapping
+    renderer.toneMappingExposure = 1.1
+    renderer.shadowMap.enabled = true
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    const scene = new THREE.Scene()
+    scene.background = new THREE.Color(0x0d0d0f)
+    const pmrem = new THREE.PMREMGenerator(renderer)
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
+    scene.environmentIntensity = 0.55
+    const camera = new THREE.PerspectiveCamera(32, 1, 1, 3000)
+    const controls = new OrbitControls(camera, $('gl'))
+    controls.enableDamping = true
+    controls.dampingFactor = 0.08
+    controls.minDistance = 6
+    controls.maxDistance = 600
+    const key = new THREE.DirectionalLight(0xfff0dc, 2.6)
+    key.position.set(40, 120, -60)
+    key.castShadow = true
+    key.shadow.mapSize.set(2048, 2048)
+    Object.assign(key.shadow.camera, { left: -60, right: 60, top: 60, bottom: -60, near: 20, far: 400 })
+    key.shadow.bias = -0.0004
+    key.shadow.normalBias = 0.03
+    key.shadow.radius = 3
+    const rim = new THREE.DirectionalLight(0xbcd0ff, 1.1)
+    rim.position.set(-80, 40, 90)
+    scene.add(key, key.target, rim, new THREE.HemisphereLight(0xdde4ff, 0x201810, 0.35))
+    const floor = new THREE.Mesh(new THREE.CircleGeometry(400, 64), new THREE.MeshStandardMaterial({ color: 0x141215, roughness: 0.95 }))
+    floor.rotation.x = -Math.PI / 2
+    floor.position.y = -62
+    floor.receiveShadow = true
+    scene.add(floor)
+
+    // the instrument (rebuilt when it changes), with the left hand, bow and bow hand inside its frame
+    let V = null, leftHand = null, bow = null, bowHand = null
+    function buildInstrument() {
+      if (V) scene.remove(V.group)
+      const inst = INSTRUMENTS[$('instrument').value]
+      V = buildViolin(inst)
+      scene.add(V.group)
+      key.target.position.set(V.L * 0.7, 0, 0)
+      leftHand = buildLeftHand(V, { scale: +$('handSize').value })
+      V.group.add(leftHand.group)
+      bow = buildBow({ scale: V.cello ? 1.1 : 1 })
+      V.group.add(bow.group)
+      bowHand = buildBowHand(bow, V.group)
+      bowHand.hand.scale.z = -1          // palm toward the player
+      leftHand.setLabels($('labels').checked)
+      if ($('ghost').checked) { leftHand.setStyle('ghost'); bowHand.setStyle('ghost') }
+    }
+    buildInstrument()
+
+    // ── 2D ────────────────────────────────────────────────────────────────
+    const board = createBoard($('board'))
+
+    // ── Layout ─────────────────────────────────────────────────────────────
+    function layout() {
+      const mode = $('viewMode').value
+      const W = innerWidth, H = innerHeight
+      const bH = mode === '2d' ? H : mode === 'split' ? Math.round(H * 0.4) : 0
+      const glH = H - bH
+      $('gl').style.display = glH ? '' : 'none'
+      $('board').style.display = bH ? '' : 'none'
+      $('board').style.height = bH + 'px'
+      if (glH) { renderer.setSize(W, glH); camera.aspect = W / glH; camera.updateProjectionMatrix() }
+    }
+    addEventListener('resize', layout)
+    $('viewMode').onchange = () => { layout(); saveUrl() }
+
+    // ── Cameras (in the instrument's frame) ────────────────────────────────
+    function viewDef(name) {
+      const L = V.L, x0 = V.x0, B = V.bodyLen, k = V.k
+      return {
+        player: { pos: [x0 + B + 16 * k, 26 * k, 9 * k], target: [x0 * 0.5, 4 * k, -1 * k], fov: 34 },
+        hand: { pos: [x0 * 0.45, 24 * k, -44 * k], target: [x0 * 0.45, 2 * k, 0], fov: 30, follow: true },
+        front: { pos: [L * 0.15, 40 * k, 66 * k], target: [L * 0.62, 2 * k, -4 * k], fov: 34 },
+        bow: { pos: [L + 32 * k, 26 * k, -30 * k], target: [L - 2 * k, 6 * k, 6 * k], fov: 36 },
+        above: { pos: [L * 0.7, 95 * k, -6 * k], target: [L * 0.7, 0, 0], fov: 34 },
+      }[name]
+    }
+    let tween = null, followU = 0
+    function setView(name, instant = false) {
+      const v = viewDef(name)
+      if (!v) return
+      const to = { pos: new THREE.Vector3(...v.pos), target: new THREE.Vector3(...v.target), fov: v.fov }
+      followU = 0
+      if (instant) { camera.position.copy(to.pos); controls.target.copy(to.target); camera.fov = to.fov; camera.updateProjectionMatrix(); return }
+      tween = { from: { pos: camera.position.clone(), target: controls.target.clone(), fov: camera.fov }, to, t: 0 }
+    }
+    $('cam').onchange = () => { setView($('cam').value); saveUrl() }
+    controls.addEventListener('start', () => { tween = null; $('cam').value = 'free' })
+
+    // ── Sound ──────────────────────────────────────────────────────────────
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+    const engine = new SoundFontEngine({ backend: 'oxisynth', vendorPath: new URL('./vendor', import.meta.url).href, audioContext: audioCtx })
+    let soundReady = false
+    const LIVE = 1
+    const setProgram = () => { if (soundReady) for (const ch of [0, LIVE]) engine.programChange(ch, INSTRUMENTS[$('instrument').value].program) }
+    ;(async () => {
+      try {
+        await engine.loadSoundFont('soundfonts/Creative(emu10k1)8MBGMSFX.sf2')
+        soundReady = true
+        setProgram()
+      } catch (e) { console.warn('soundfont', e); setStatus('Sound failed to load: ' + e.message, true); setTimeout(() => setStatus(''), 3000) }
+    })()
+    const unlockAudio = () => { if (audioCtx.state !== 'running') audioCtx.resume().then(() => engine.resume?.()).catch(() => {}) }
+
+    // ── Piece state ────────────────────────────────────────────────────────
+    const state = { raw: [], notes: [], motion: null, duration: 0, title: '', expect: null, source: null, result: null, tnua: null }
+    const clock = { playing: false, t: 0, wall: 0, speed: 1 }
+    const now = () => clock.playing ? Math.min(state.duration + 0.5, clock.t + (performance.now() - clock.wall) / 1000 * clock.speed) : clock.t
+    const inst = () => INSTRUMENTS[$('instrument').value]
+    const fingerOptions = () => ({ instrument: $('instrument').value, mode: $('mode').value, handSize: +$('handSize').value })
+
+    /** Fit to the instrument: transpose by octaves, then thin chords to the chosen number of voices. */
+    function prepare(raw, { fit = true } = {}) {
+      const I = inst()
+      const lo = I.open[0], hi = I.open[I.open.length - 1] + I.maxB[I.open.length - 1] + 5
+      let notes = raw.map(n => ({ ...n }))
+      let shift = 0
+      if (fit && notes.length) {
+        const inRange = s => notes.filter(n => n.pitch + s >= lo && n.pitch + s <= hi).length
+        let best = 0
+        for (const s of [0, 12, -12, 24, -24, 36]) if (inRange(s) > inRange(best) * 1.02 + 0.5) best = s
+        shift = best
+        if (shift) for (const n of notes) n.pitch += shift
+      }
+      const voices = +$('voices').value
+      // onset groups: keep the top `voices` notes; a note still sounding under a new onset is cut there
+      notes.sort((a, b) => a.on - b.on || b.pitch - a.pitch)
+      const out = []
+      let i = 0
+      while (i < notes.length) {
+        let j = i
+        while (j < notes.length && notes[j].on - notes[i].on < 0.03) j++
+        const grp = notes.slice(i, j).filter((n, k, arr) => arr.findIndex(m => m.pitch === n.pitch) === k).slice(0, voices)
+        for (const o of out) if (o.off > notes[i].on + 0.02 && o.on < notes[i].on) o.off = Math.max(o.on + 0.03, notes[i].on - 0.005)
+        out.push(...grp)
+        i = j
+      }
+      return { notes: out, shift }
+    }
+
+    function loadPiece(raw, { title = '', expect = null, source = null, fit = true, tnua = null } = {}) {
+      stopPlayback()
+      const { notes, shift } = prepare(raw, { fit })
+      setStatus(`Fingering ${notes.length} notes…`)
+      return new Promise(res => setTimeout(() => {
+        const r = fingerLine(notes, fingerOptions())
+        Object.assign(state, { raw, notes, title, expect, source, result: r, shift, tnua, motion: buildMotion(notes, { instrument: $('instrument').value }) })
+        state.duration = notes.reduce((m, n) => Math.max(m, n.off), 0)
+        // expectation per note: token like "A3"
+        let expectMap = null
+        if (expect) {
+          expectMap = new Map()
+          const fingered = notes.filter(n => n.string != null).sort((a, b) => a.on - b.on || a.pitch - b.pitch)
+          const want = expect[0]
+          fingered.forEach((n, i) => { if (want[i] && want[i] !== '*') expectMap.set(n, want[i].split('@')[0].split('|')[0]) })
+          if (tnua) { expectMap = new Map(); notes.forEach(n => { if (n.truth) expectMap.set(n, I_NAME(n.truth.string) + n.truth.finger) }) }
+        }
+        board.setNotes(notes, { instrument: inst(), expectMap })
+        clock.t = 0
+        showStats(r)
+        setStatus('')
+        showTime()
+        res()
+      }, 20))
+    }
+    const I_NAME = s => inst().strings[s]
+    function refinger() { if (state.raw.length) loadPiece(state.raw, { ...state, fit: state.source?.tnua ? false : true }) }
+    $('mode').onchange = () => { refinger(); saveUrl() }
+    $('voices').onchange = () => { refinger(); saveUrl() }
+    $('handSize').onchange = () => { leftHand.setScale(+$('handSize').value); refinger(); saveUrl() }
+    $('instrument').onchange = () => { buildInstrument(); setProgram(); setView($('cam').value === 'free' ? 'player' : $('cam').value, true); refinger(); saveUrl() }
+
+    function showStats(r) {
+      const n = state.notes.filter(x => x.string != null)
+      const st = lineStats(state.notes)
+      const I = inst()
+      const strs = I.strings.map((_, s) => n.filter(x => x.string === s).length)
+      const unpl = state.notes.filter(x => x.unplayable).length
+      const pos = Object.entries(st.positions).sort((a, b) => (a[0] === '½' ? 0.5 : +a[0]) - (b[0] === '½' ? 0.5 : +b[0]))
+      const maxF = Math.max(1, ...st.fingers)
+      let html = `<div><b>${escapeHtml(state.title)}</b>${state.shift ? ` <span class="k">(transposed ${state.shift > 0 ? '+' : ''}${state.shift / 12} oct)</span>` : ''}</div>
+        <div><span class="k">notes</span> ${n.length} <span class="k">· shifts</span> ${st.shifts} <span class="k">· crossings</span> ${st.crossings} <span class="k">· open</span> ${st.open}
+        <span class="k">· extensions</span> ${st.ext}</div>
+        <div><span class="k">solved in</span> ${r.ms.toFixed(0)} ms <span class="k">· cost / note</span> ${(r.cost / Math.max(1, n.length)).toFixed(2)}${unpl ? ` <span class="k">· not playable</span> ${unpl}` : ''}</div>
+        <div><span class="k">strings</span> ${I.strings.map((s, i) => `${s} ${strs[i]}`).join(' · ')}</div>
+        <div><span class="k">positions</span> ${pos.map(([p, c]) => `${p}: ${c}`).join(' · ')}</div>
+        <div class="hist">${[0, 1, 2, 3, 4].map(f => `<div style="height:${(100 * st.fingers[f] / maxF).toFixed(0)}%;background:${['#d8d2c4', '#e2483d', '#f0a030', '#48b04c', '#3f8fe0'][f]}"><span>${st.fingers[f]}</span></div>`).join('')}</div><div style="height:12px"></div>`
+      if (state.tnua) {
+        const t = n.filter(x => x.truth)
+        const ok = t.filter(x => x.truth.string === x.string && x.truth.finger === x.finger).length
+        const okS = t.filter(x => x.truth.string === x.string).length
+        html += `<div><span class="k">agrees with violinist ${state.tnua.violinist}:</span> string ${(100 * okS / t.length).toFixed(1)} % · string + finger ${(100 * ok / t.length).toFixed(1)} %</div>`
+      } else if (state.expect) {
+        const got = fingerTokens(state.notes, I, { positions: true })
+        const { exact, agree } = bestMatch(got, state.expect)
+        const want = state.expect[0]
+        const marked = got.map((g, i) => (want[i] && !want[i].split('|').some(w => w === '*' || (w.split('@')[0] === g.split('@')[0] && (!w.includes('@') || w.split('@')[1] === g.split('@')[1])))) ? `<b>${g}</b>` : g).join(' ')
+        html += `<div class="fing">${exact ? '✓' : '✗'} ${(100 * agree).toFixed(0)} % ${marked}${exact ? '' : `<br><span class="k">book</span> ${want.join(' ')}${state.expect.length > 1 ? ` <span class="k">(+${state.expect.length - 1} more accepted)</span>` : ''}`}</div>`
+      } else {
+        html += `<div class="fing">${fingerTokens(state.notes, I, { positions: true }).slice(0, 48).join(' ')}${n.length > 48 ? ' …' : ''}</div>`
+      }
+      $('stats').innerHTML = html
+    }
+    const escapeHtml = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+
+    // ── Sources ────────────────────────────────────────────────────────────
+    const EX = exercises()
+    $('exercise').add(new Option('— choose an exercise —', ''))
+    const groups = {}
+    for (const [k, l] of [['core', 'Patterns and double stops'], ['scales', 'Three-octave scales'], ['melodies', 'Melodies and studies']]) { groups[k] = document.createElement('optgroup'); groups[k].label = l }
+    for (const e of EX) groups[e.suite].appendChild(new Option(e.title, e.id))
+    $('exercise').append(...Object.values(groups))
+    function loadExercise(id) {
+      const e = EX.find(x => x.id === id)
+      if (!e) return Promise.resolve()
+      $('song').value = ''
+      $('vioRow').hidden = true; $('trackRow').hidden = true
+      if (e.instrument !== $('instrument').value) { $('instrument').value = e.instrument; buildInstrument(); setProgram(); setView($('cam').value === 'free' ? 'player' : $('cam').value, true) }
+      if (e.mode && e.mode !== $('mode').value) $('mode').value = e.mode
+      return loadPiece(e.notes, { title: e.title, expect: e.expect, source: { exercise: e.id }, fit: false })
+    }
+    $('exercise').onchange = () => loadExercise($('exercise').value).then(() => { saveUrl(); play() })
+
+    const SONGS = [
+      ['', '— choose a song —'],
+      ['midis/mozart_eine_kleine.mid', 'Mozart – Eine kleine Nachtmusik'],
+      ['midis/vivaldi_winter.mid', 'Vivaldi – Winter'],
+      ['midis/pachelbel_canon.mid', 'Pachelbel – Canon'],
+      ['midis/handel_hornpipe.mid', 'Handel – Hornpipe'],
+      ['midis/dvorak_newworld_2.mid', 'Dvořák – New World, Largo'],
+      ['midis/libertango.mid', 'Piazzolla – Libertango'],
+      ['midis/elise.mid', 'Beethoven – Für Elise (melody)'],
+      ['midis/zelda_gerudo_valley.mid', 'Zelda – Gerudo Valley'],
+      ['midis/fly_einaudi.mid', 'Einaudi – Fly'],
+    ]
+    for (const [v, l] of SONGS) $('song').add(new Option(l, v))
+    const tg = document.createElement('optgroup')
+    tg.label = 'TNUA dataset (if downloaded to strings/data/TNUA)'
+    for (const p of PIECES) tg.appendChild(new Option(TITLES[p], 'tnua:' + p))
+    $('song').appendChild(tg)
+    for (let v = 1; v <= 10; v++) $('violinist').add(new Option(`Violinist ${v}`, v))
+
+    let midiTracks = null
+    function midiTrackList(buffer) {
+      const midi = new Midi(buffer)
+      return midi.tracks.filter(t => t.notes.length && t.channel !== 9).map((t, i) => {
+        const notes = t.notes.map(n => ({ pitch: n.midi, on: n.time, off: n.time + Math.max(0.04, n.duration), velocity: n.velocity }))
+        const mean = notes.reduce((a, n) => a + n.pitch, 0) / notes.length
+        // a violin-ish track: a string GM program, a melody range, few chords
+        let poly = 0
+        for (let j = 1; j < notes.length; j++) if (notes[j].on - notes[j - 1].on < 0.03) poly++
+        const prog = t.instrument?.number ?? 0
+        const score = (prog >= 40 && prog <= 44 ? 40 : 0) + (prog >= 48 && prog <= 51 ? 10 : 0) - 30 * poly / notes.length + Math.min(20, notes.length / 20) - Math.abs(mean - 74) * 0.6
+        return { name: t.name || t.instrument?.name || `Track ${i + 1}`, notes, score, prog }
+      })
+    }
+    function chooseTrack() {
+      const t = midiTracks[+$('track').value]
+      if (!t) return Promise.resolve()
+      return loadPiece(t.notes, { title: `${state.songTitle} — ${t.name}`, source: state.source })
+    }
+    $('track').onchange = () => chooseTrack().then(() => { state.source.track = +$('track').value; saveUrl() })
+    async function loadMidiBuffer(buf, title, source, trackIndex = null) {
+      midiTracks = midiTrackList(buf)
+      if (!midiTracks.length) throw new Error('no notes')
+      $('track').innerHTML = ''
+      midiTracks.forEach((t, i) => $('track').add(new Option(`${t.name} (${t.notes.length})`, i)))
+      const best = trackIndex ?? midiTracks.reduce((b, t, i) => (t.score > midiTracks[b].score ? i : b), 0)
+      $('track').value = best
+      $('trackRow').hidden = midiTracks.length < 2
+      $('vioRow').hidden = true
+      state.songTitle = title
+      state.source = { ...source, track: best }
+      await chooseTrack()
+    }
+    async function loadTnua(piece, violinist = +$('violinist').value) {
+      const url = `strings/data/TNUA/TNUA_violin_fingering_dataset/vio${violinist}_${piece}.csv`
+      const r = await fetch(url)
+      if (!r.ok) throw new Error(`TNUA not found — clone github.com/Tsung-Ping/Violin-Fingering-Generation into strings/data/TNUA`)
+      await loadTnuaText(await r.text(), TITLES[piece], { tnua: piece }, piece, violinist)
+    }
+    async function loadTnuaText(text, title, source, piece = null, violinist = 1) {
+      const notes = parseCSV(text, { secPerBeat: 60 / (TEMPO[piece] || 100) })
+      if ($('instrument').value !== 'violin') { $('instrument').value = 'violin'; buildInstrument(); setProgram() }
+      $('trackRow').hidden = true
+      $('vioRow').hidden = !piece
+      $('violinist').value = violinist
+      await loadPiece(notes.map(n => ({ ...n, velocity: 0.75 })), { title: `${title}${piece ? ` (violinist ${violinist})` : ''}`, source, fit: false, tnua: { violinist }, expect: [[]] })
+    }
+    $('violinist').onchange = () => { const p = state.source?.tnua; if (p) loadTnua(p).then(saveUrl) }
+    async function loadSong(v, track = null) {
+      if (!v) return
+      setStatus('Loading…')
+      try {
+        $('exercise').value = ''
+        if (v.startsWith('tnua:')) await loadTnua(v.slice(5))
+        else await loadMidiBuffer(await (await fetch(encodeURI(v))).arrayBuffer(), SONGS.find(s => s[0] === v)?.[1] || v, { song: v }, track)
+        saveUrl()
+      } catch (e) { console.error(e); setStatus(e.message, true); setTimeout(() => setStatus(''), 5000) }
+    }
+    $('song').onchange = () => loadSong($('song').value).then(() => play())
+    async function loadFile(f) {
+      try {
+        if (/\.csv$/i.test(f.name)) await loadTnuaText(await f.text(), f.name, null)
+        else await loadMidiBuffer(await f.arrayBuffer(), f.name, null)
+        $('song').value = ''; $('exercise').value = ''
+        play()
+      } catch (e) { console.error(e); setStatus(`Could not read ${f.name}: ${e.message}`, true) }
+    }
+    $('open').onclick = () => $('file').click()
+    $('file').onchange = () => { const f = $('file').files[0]; if (f) loadFile(f); $('file').value = '' }
+    addEventListener('dragover', ev => { ev.preventDefault(); document.body.classList.add('dragging') })
+    addEventListener('dragleave', ev => { if (!ev.relatedTarget) document.body.classList.remove('dragging') })
+    addEventListener('drop', ev => { ev.preventDefault(); document.body.classList.remove('dragging'); const f = ev.dataTransfer.files[0]; if (f) loadFile(f) })
+
+    /** "A4 B4 C#5:2 D4+B4 r E5/A" → notes. One unit = 0.4 s; /X locks the string. */
+    function parseTyped(text) {
+      const notes = []
+      let t = 0
+      const U = 0.4
+      for (const tok of text.trim().split(/\s+/)) {
+        if (!tok) continue
+        const [body, lenS] = tok.split(':')
+        const len = (lenS ? +lenS : 1) * U
+        if (!/^r$/i.test(body)) for (const part of body.split('+')) {
+          const [p, str] = part.split('/')
+          const n = { pitch: parseNote(p), on: t, off: t + len * 0.95, velocity: 0.75 }
+          if (str) { const s = inst().strings.indexOf(str.toUpperCase()); if (s >= 0) n.lockString = s }
+          notes.push(n)
+        }
+        t += len
+      }
+      return notes
+    }
+    $('typedGo').onclick = () => {
+      try {
+        const notes = parseTyped($('typed').value)
+        if (!notes.length) throw new Error('no notes')
+        $('song').value = ''; $('exercise').value = ''; $('trackRow').hidden = true; $('vioRow').hidden = true
+        loadPiece(notes, { title: 'Typed notes', source: { typed: $('typed').value }, fit: false }).then(() => { saveUrl(); play() })
+      } catch (e) { setStatus(e.message, true); setTimeout(() => setStatus(''), 2500) }
+    }
+    $('typed').addEventListener('keydown', e => { if (e.key === 'Enter') $('typedGo').click() })
+
+    $('export').onclick = () => {
+      if (!state.notes.length) return
+      const rows = ['pitch,start,duration,string,position,finger']
+      for (const n of state.notes.filter(x => x.string != null).sort((a, b) => a.on - b.on || a.pitch - b.pitch)) {
+        rows.push([n.pitch, n.on.toFixed(4), (n.off - n.on).toFixed(4), n.string + 1, n.finger ? (inst() === INSTRUMENTS.violin ? tnuaPosition(n.string, n.base) : positionName(n.base)) : 0, n.finger].join(','))
+      }
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(new Blob([rows.join('\n') + '\n'], { type: 'text/csv' }))
+      a.download = (state.title || 'fingering').replace(/[^\w.-]+/g, '_') + '_fingering.csv'
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+    }
+
+    // ── Playback ───────────────────────────────────────────────────────────
+    let scheduler = null
+    const songTarget = {
+      audioContext: audioCtx,
+      resume: () => audioCtx.resume(),
+      noteOn(m, v, ch) { if (soundReady && $('sound').checked) engine.noteOn(m, v, ch) },
+      noteOff(m, ch) { engine.noteOff(m, ch) },
+      controlChange(ch, cc, v) { engine.controlChange(ch, cc, v) },
+      allSoundOff() { engine.allNotesOff?.() },
+    }
+    async function ensureScheduler() {
+      if (scheduler) return scheduler
+      scheduler = new MidiScheduler(songTarget)
+      await scheduler.init()
+      scheduler.on('time', t => { if (clock.playing && Math.abs(t - now()) > 0.08) { clock.t = t; clock.wall = performance.now() } })
+      return scheduler
+    }
+    async function play() {
+      if (!state.notes.length) return
+      unlockAudio()
+      if (now() >= state.duration) clock.t = 0
+      const sch = await ensureScheduler()
+      sch.load({ notes: state.notes.filter(n => !n.unplayable).map(n => ({ midi: n.pitch, time: n.on, duration: n.off - n.on, velocity: n.velocity ?? 0.75, channel: 0 })), controlChanges: [] })
+      sch.speed = clock.speed
+      sch.seek(clock.t)
+      sch.play()
+      clock.wall = performance.now(); clock.playing = true
+      $('play').textContent = '❚❚'; $('play').classList.add('on')
+    }
+    function pause() {
+      clock.t = now(); clock.playing = false
+      scheduler?.pause(); songTarget.allSoundOff()
+      $('play').textContent = '▶'; $('play').classList.remove('on')
+    }
+    function stopPlayback() { pause(); clock.t = 0; scheduler?.stop() }
+    $('play').onclick = () => clock.playing ? pause() : play()
+    $('stop').onclick = () => { stopPlayback(); showTime() }
+    $('speed').onchange = () => { clock.t = now(); clock.wall = performance.now(); clock.speed = +$('speed').value; if (scheduler) scheduler.speed = clock.speed }
+    let seeking = false
+    $('seek').addEventListener('input', () => { seeking = true; clock.t = +$('seek').value * state.duration; clock.wall = performance.now() })
+    $('seek').addEventListener('change', () => {
+      seeking = false
+      clock.t = +$('seek').value * state.duration; clock.wall = performance.now()
+      if (clock.playing && scheduler) { songTarget.allSoundOff(); scheduler.seek(clock.t) }
+    })
+    const fmt = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`
+    function showTime() {
+      const t = Math.min(now(), state.duration)
+      $('songTime').textContent = `${fmt(t)} / ${fmt(state.duration)}`
+      if (!seeking) $('seek').value = state.duration ? t / state.duration : 0
+    }
+    addEventListener('keydown', ev => {
+      if (ev.target.closest?.('input[type=text], select')) return
+      if (ev.code === 'Space') { ev.preventDefault(); $('play').click() }
+      if (ev.code === 'Escape') $('panel').style.display = $('panel').style.display === 'none' ? '' : 'none'
+    })
+    $('toggle').onclick = () => { const c = $('panel').classList.toggle('collapsed'); $('toggle').textContent = c ? '+' : '–' }
+
+    // ── Live playing (MIDI keyboard, or clicking the 2D fingerboard) ───────
+    // each new note is fingered with the last few seconds as context; earlier
+    // notes keep the string and finger they were shown with
+    const live = { notes: [], motion: null, active: false, last: 0 }
+    const liveNow = () => performance.now() / 1000
+    function liveOn(pitch, vel = 0.75, lockString = null) {
+      unlockAudio()
+      if (clock.playing) pause()
+      if (soundReady && $('sound').checked) engine.noteOn(pitch, vel, LIVE)
+      const t = liveNow()
+      for (const o of live.notes) if (o.off === Infinity) o.off = t
+      live.notes = live.notes.filter(n => n.off > t - 4).slice(-24)
+      const n = { pitch, on: t, off: Infinity, velocity: vel }
+      if (lockString != null) n.lockString = lockString
+      live.notes.push(n)
+      const win = live.notes.map((x, i) => ({ ...x, off: x.off === Infinity ? t + 0.5 : x.off, lockString: i < live.notes.length - 1 && x.string != null ? x.string : x.lockString }))
+      fingerLine(win, fingerOptions())
+      const mine = win[win.length - 1]
+      Object.assign(n, { string: mine.string, finger: mine.finger, base: mine.base, offset: mine.offset })
+      if (n.string == null) { live.notes.pop(); return }
+      live.active = true; live.last = t
+      live.motion = buildMotion(live.notes.map(x => ({ ...x, off: x.off === Infinity ? 1e9 : x.off })), { instrument: $('instrument').value })
+    }
+    function liveOff(pitch) {
+      engine.noteOff(pitch, LIVE)
+      const t = liveNow()
+      for (const n of live.notes) if (n.pitch === pitch && n.off === Infinity) n.off = t
+      live.motion = buildMotion(live.notes.map(x => ({ ...x, off: x.off === Infinity ? 1e9 : x.off })), { instrument: $('instrument').value })
+    }
+    let boardNote = null
+    $('board').addEventListener('pointerdown', ev => {
+      // the fingerboard map is the lower part of the 2D canvas (board2d.js layout)
+      const r = $('board').getBoundingClientRect()
+      const x = ev.clientX - r.left, y = ev.clientY - r.top
+      const H = r.height, W = r.width, tabH = Math.round(H * 0.56), boardY = tabH + 8
+      if (y < boardY) return
+      const I = inst(), S = I.open.length
+      const by0 = boardY + 6, by1 = H - 14
+      const s = Math.max(0, Math.min(S - 1, Math.round((by1 - y) / ((by1 - by0) / S) - 0.5)))
+      const span = I.L / 10 * 0.86
+      const u = (x - 40) / (W - 60) * span
+      let semis = 0, best = Infinity
+      for (let n = 0; n <= 30; n++) { const d = Math.abs(stopMM(n, I.L) / 10 - u + (n ? 0.4 : 0)); if (d < best) { best = d; semis = n } }
+      boardNote = I.open[s] + semis
+      liveOn(boardNote, 0.75, s)
+    })
+    addEventListener('pointerup', () => { if (boardNote != null) { liveOff(boardNote); boardNote = null } })
+    $('midiIn').onclick = async () => {
+      if (!navigator.requestMIDIAccess) return setStatus('Web MIDI is not available in this browser', true)
+      try {
+        const access = await navigator.requestMIDIAccess()
+        const hook = () => { for (const inp of access.inputs.values()) inp.onmidimessage = onMidi }
+        hook(); access.onstatechange = hook
+        $('midiIn').classList.add('on')
+        setStatus(access.inputs.size ? '' : 'No MIDI inputs found')
+        if (!access.inputs.size) setTimeout(() => setStatus(''), 2500)
+      } catch (e) { setStatus('MIDI access denied', true) }
+    }
+    function onMidi(e) {
+      const [st, d1, d2] = e.data, type = st & 0xf0
+      if (type === 0x90 && d2 > 0) liveOn(d1, d2 / 127)
+      else if (type === 0x80 || type === 0x90) liveOff(d1)
+    }
+
+    // ── URL state ──────────────────────────────────────────────────────────
+    function saveUrl() {
+      const q = new URLSearchParams()
+      const s = state.source || {}
+      if (s.exercise) q.set('ex', s.exercise)
+      if (s.song) { q.set('song', s.song); if (s.track != null) q.set('track', s.track) }
+      if (s.tnua) { q.set('tnua', s.tnua); q.set('violinist', $('violinist').value) }
+      if (s.typed) q.set('notes', s.typed)
+      for (const [id, def] of [['instrument', 'violin'], ['mode', 'standard'], ['handSize', '1'], ['voices', '2'], ['viewMode', 'split'], ['cam', 'player']]) if ($(id).value !== def && $(id).value !== 'free') q.set(id, $(id).value)
+      history.replaceState(null, '', q.toString() ? '?' + q : location.pathname)
+    }
+    $('labels').onchange = () => { board.opt.labels = $('labels').checked; leftHand.setLabels($('labels').checked) }
+    $('ghost').onchange = () => { const st = $('ghost').checked ? 'ghost' : 'skin'; leftHand.setStyle(st); bowHand.setStyle(st) }
+
+    // ── Per-frame pose → instrument, hands, bow ───────────────────────────
+    const _x = new THREE.Vector3(), _y = new THREE.Vector3(), _z = new THREE.Vector3(), _m = new THREE.Matrix4()
+    const shoulderR = new THREE.Vector3(), poleR = new THREE.Vector3()
+    function applyPose(pose, dt, time) {
+      if (!pose) return
+      // strings: the highest pressed finger on each string shortens it
+      const stops = new Array(V.S).fill(null), vib = new Array(V.S).fill(0)
+      for (const f of [1, 2, 3, 4]) {
+        const F = pose.fingers[f]
+        if (F.press > 0) { const s = Math.round(F.s); if (stops[s] == null || F.u > stops[s]) stops[s] = F.u }
+      }
+      const bw = pose.bow
+      for (const so of pose.sounding) vib[so.s] = bw.playing ? Math.min(1, 0.35 + Math.abs(bw.speed) / 80) : 0.25
+      V.layoutStrings(stops, vib, time)
+      leftHand.update(pose, dt)
+      // bow: hair touches the bowed string ~2.6 cm from the bridge, tilted to that string
+      const C = V.bowContact(bw.s, (2.6 + 0.6 * (1 - Math.min(1, Math.abs(bw.speed) / 60))) * V.k)
+      C.y += 0.12 * V.k + bw.lift * 1.6 * V.k
+      const th = V.bowTilt(bw.s)
+      _x.set(0, Math.sin(th), Math.cos(th))
+      _z.set(1, 0, 0)
+      _y.crossVectors(_z, _x)
+      _m.makeBasis(_x, _y, _z)
+      bow.group.quaternion.setFromRotationMatrix(_m)
+      bow.group.position.copy(C).addScaledVector(_x, -bw.pos * V.k * (V.cello ? 1.1 : 1))
+      shoulderR.set(V.x0 + V.bodyLen + 10, -24, -34)
+      poleR.set(V.x0 + V.bodyLen + 30, -70, -50)
+      bowHand.update(shoulderR, poleR)
+    }
+
+    // ── Loop ───────────────────────────────────────────────────────────────
+    const clk = new THREE.Clock()
+    let lastTime = 0
+    function animate() {
+      const dt = Math.min(0.05, clk.getDelta())
+      let t = now()
+      if (clock.playing && t >= state.duration + 0.4) {
+        if ($('loop').checked) { clock.t = 0; clock.wall = performance.now(); scheduler?.seek(0) }
+        else { pause(); clock.t = state.duration }
+        t = now()
+      }
+      let pose
+      if (live.active && !clock.playing && liveNow() - live.last < 6) pose = live.motion?.poseAt(liveNow())
+      else { live.active = false; pose = state.motion?.poseAt(t) }
+      if ($('gl').style.display !== 'none') {
+        applyPose(pose, dt, performance.now() / 1000)
+        if (tween) {
+          tween.t = Math.min(1, tween.t + dt / 1.1)
+          const e = tween.t < 0.5 ? 4 * tween.t ** 3 : 1 - (-2 * tween.t + 2) ** 3 / 2
+          camera.position.lerpVectors(tween.from.pos, tween.to.pos, e)
+          controls.target.lerpVectors(tween.from.target, tween.to.target, e)
+          camera.fov = THREE.MathUtils.lerp(tween.from.fov, tween.to.fov, e)
+          camera.updateProjectionMatrix()
+          if (tween.t >= 1) tween = null
+        } else if ($('follow').checked && pose && viewDef($('cam').value)?.follow) {
+          // slide along the neck with the hand
+          const goal = pose.anchorU - V.x0 * 0.4
+          const du = (goal - followU) * Math.min(1, dt * 2)
+          followU += du
+          camera.position.x += du; controls.target.x += du
+        }
+        controls.update(dt)
+        renderer.render(scene, camera)
+      }
+      if ($('board').style.display !== 'none') board.draw(live.active ? liveNow() : t, pose)
+      if (Math.abs(t - lastTime) > 0.1 || !clock.playing) { showTime(); lastTime = t }
+    }
+
+    layout()
+    setView(viewDef($('cam').value) ? $('cam').value : 'player', true)
+    renderer.setAnimationLoop(animate)
+    // initial piece: from the URL, else the 3-octave G major scale
+    try {
+      if (params.has('song')) { $('song').value = params.get('song'); await loadSong(params.get('song'), params.has('track') ? +params.get('track') : null) }
+      else if (params.has('tnua')) { $('song').value = 'tnua:' + params.get('tnua'); await loadTnua(params.get('tnua'), +(params.get('violinist') || 1)) }
+      else if (params.has('notes')) { $('typed').value = params.get('notes'); $('typedGo').click() }
+      else {
+        $('exercise').value = EX.some(e => e.id === params.get('ex')) ? params.get('ex') : 'g3-up'
+        await loadExercise($('exercise').value)
+      }
+    } catch (e) { console.error(e); setStatus(e.message, true) }
+    if (params.has('t')) clock.t = +params.get('t')
+    if (params.has('play')) play()
+    // test hook for headless checks
+    window.__strings = { state, clock, get V() { return V }, get leftHand() { return leftHand }, board, setView, play, pause, camera, controls, renderer, liveOn, liveOff, loadPiece, now }
+  </script>
+</body>
+</html>

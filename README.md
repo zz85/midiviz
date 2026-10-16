@@ -4,6 +4,17 @@ Midi Visualization Experiments
 
 [WebMscore](webmscore.html) - MuseScore reference renderer (libmscore via WebAssembly)
 
+16 Oct 2026
+
+[Experiment #033 - Violin & Viola Fingering](033_violin_fingering.html)
+- Automatic fingering for violin, viola and cello (string, position and finger for every note, double stops and chords on adjacent strings), from exercises, MIDI tracks, typed notes, TNUA files, a MIDI keyboard or clicks on the fingerboard
+- Research briefs: [what violinists do](strings/research/01_violinist_rules.md) (positions and finger patterns, shifting, string choice, open strings, Galamian / Flesch / Cooper scale fingerings, double stops, viola vs violin) and [published algorithms](strings/research/02_algorithms.md) (Sayegh, Maezawa, Nagata's HMM, the TNUA dataset and models, guitar tablature, bowing physics, violinist motion)
+- Engine [strings/fingering.js](strings/fingering.js): time-aware Viterbi over hand-frame states, with distances from the fret formula (so the viola's longer string makes stretches harder); scale-book templates for long runs; styles beginner / standard / expressive / fewest shifts; hand size; `/A` string locks
+- Tuned on the [TNUA dataset](https://github.com/Tsung-Ping/Violin-Fingering-Generation) (10 violinists): 64.5 % string + finger agreement (62.5 % held out, 57.1 % before tuning; violinists agree with each other 89.8 %); textbook exercises 19/23, three-octave scales 4/5 ([notes](strings/README.md))
+- 3D: procedural violin / viola / cello (arched plates, f-holes, scroll, bridge, strings that press to the fingerboard and blur while sounding) with the bow; left hand on the #029 finger IK with shifts, fingers kept down and vibrato; bow strokes, slurs, retakes and string crossings
+- 2D: scrolling string tablature (finger colours, position changes, shifts, red marks where the result differs from the book or the violinist) above a fingerboard map
+- Tests: `node --test strings/test/fingering.test.js` (15), `node strings/test/bench.js`, `node strings/test/tnua.js [--tune]`
+
 15 Oct 2026
 
 [Experiment #031 - RoboPianist vs #029](031_robopianist.html)
