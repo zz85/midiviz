@@ -726,6 +726,8 @@ function buildHand(side, mats) {
 }
 
 // ── Both hands, driven by a fingered song ──────────────────────────────────
+// fingering/motion.js: a press runs from 12 ms before to 18 ms after the note
+const PRESS_LEAD = 0.018
 export function buildAvatarHands() {
   const mats = makeMaterials()
   const group = new THREE.Group()
@@ -759,8 +761,12 @@ export function buildAvatarHands() {
     /** Shoulder and wrist joints, for the body to follow: { L: { S, W }, R: { S, W } }. */
     joints: { L: L.joints, R: R.joints },
     update(t, dt) {
-      const pose = motion.poseAt(t)
-      L.update(pose.L, dt, t); R.update(pose.R, dt, t)
+      // the motion model bottoms a press out PRESS_LEAD after the note's
+      // start; run it that much ahead so the fingertip lands on the sound
+      // (and on the key, which the stage drives down to bottom out on it)
+      const tm = t + PRESS_LEAD
+      const pose = motion.poseAt(tm)
+      L.update(pose.L, dt, tm); R.update(pose.R, dt, tm)
     },
     get sleeves() { return sleeves },
     hands: { L, R },

@@ -196,6 +196,7 @@
     <div class="sect">Sound</div>
     <div class="field"><select id="sf"></select></div>
     <div class="field"><label>Velocity (mouse / keys)</label><input id="velocity" type="range" min="0.1" max="1" step="0.01" value="0.75"></div>
+    <div class="field" title="Fine-tune when the hands and keys move against the sound, if your speakers or headphones report their delay wrongly (Bluetooth often does). Positive = the picture later."><label>Picture vs sound <span class="val" id="avsyncV"></span></label><input id="avsync" type="range" min="-200" max="200" step="5" value="0"></div>
     <div class="sect">Quality</div>
     <label class="chk"><input type="checkbox" id="dof" checked>Depth of field</label>
     <label class="chk" title="Keep the pianist's hands sharp; off focuses on the camera's aim point"><input type="checkbox" id="focusHands" checked>Focus on the hands</label>
@@ -1197,34 +1198,22 @@
     }
     $('songFilter').addEventListener('keydown', ev => { if (ev.key === 'Enter') { const first = [...$('songList').querySelectorAll('.item')].find(e => e.style.display !== 'none'); first?.click() } })
     const markSong = file => { for (const it of $('songList').querySelectorAll('.item')) it.classList.toggle('sel', it.dataset.file === file) }
-    // per-midi note lists so a scheduler note-on can be matched to its note (and hand)
-    let byMidi = new Map()
-    function findNote(midi, t) {
-      const list = byMidi.get(midi)
-      if (!list) return null
-      let lo = 0, hi = list.length - 1, best = null
-      while (lo <= hi) { const m = (lo + hi) >> 1; if (list[m].time <= t + 0.08) { best = list[m]; lo = m + 1 } else hi = m - 1 }
-      return best
-    }
     let seeking = false
     const songTarget = {
       audioContext: audioCtx,
       resume: () => audioCtx.resume(),
+      // sound only: the keys, pedals and hands follow the picture's clock
+      // (driveSong from animate), which runs as late as the sound is heard
       noteOn(m, v, ch) {
         if (ch === 9) return
         if (soundReady) engine.noteOn(m, v, ch)
-        const n = findNote(m, songNow())
-        keyDown(m, 'song' + ch, v, n?.hand)
-        if ($('tourSync').checked) music.energy += v * v * 0.16
       },
       noteOff(m, ch) {
         if (ch === 9) return
         engine.noteOff(m, ch)
-        keyUp(m, 'song' + ch)
       },
       controlChange(ch, cc, v) {
         engine.controlChange(ch, cc, v)
-        songCC(cc, v)
       },
       allSoundOff() {
         for (let ch = 0; ch < 16; ch++) if (ch !== LIVE) engine.controlChange(ch, 64, 0)
@@ -1240,6 +1229,7 @@
     function releaseSongKeys() {
       for (const [m, s] of holders) for (const src of [...s.keys()]) if (String(src).startsWith('song') || src === 'off') keyUp(m, src)
       songPedal = false; updatePedal(); piano.setPedal(0, false); piano.setPedal(1, false); pedalsDown[0] = pedalsDown[1] = false
+      offline.t = null; offline.active = []
     }
     async function ensureScheduler() {
       if (scheduler) return scheduler
@@ -1278,8 +1268,6 @@
         s.title = name
         quickHands(s.notes)
         hands.clear()
-        byMidi = new Map()
-        for (const n of s.notes) { if (!byMidi.has(n.midi)) byMidi.set(n.midi, []); byMidi.get(n.midi).push(n) }
         song = s
         fingerInWorker(s.notes)
         sch.load(s)
@@ -1479,15 +1467,69 @@
       composer.render()
       if (drift) camera.position.sub(_drift)
     }
+    // ── Picture / sound sync ───────────────────────────────────────────────
+    // The picture runs on the time of the note being HEARD. The scheduler's
+    // worklet posts each note-on POST_AHEAD ahead of its clock and the synth
+    // plays it on arrival; OxiSynth then renders it into the next buffer of
+    // its chain (scheduled ahead on its own AudioContext), and the speakers
+    // add their output latency. The chain's end is read off the buffers as
+    // OxiSynth schedules them and measured against the context's output
+    // timestamp, so the delay (wired, Bluetooth, a slow machine) is measured,
+    // not assumed. "Picture vs sound" fine-tunes it by hand.
+    const POST_AHEAD = 0.05    // soundfont-engine/src/scheduler-worklet.js
+    const KEY_LEAD = 0.03      // a key starts down this long before its note, to bottom out on it
+    const avs = { ctx: null, end: 0, lag: 0, measured: false, t: null }
+    function hookSynthOutput() {
+      const c = hall.ctx
+      if (!c || avs.ctx === c) return
+      avs.ctx = c
+      const make = c.createBufferSource.bind(c)
+      c.createBufferSource = () => {
+        const n = make(), start = n.start.bind(n)
+        n.start = (when = 0, ...rest) => {
+          // the synth's audio chunks (applause and room tone are seconds long)
+          const d = n.buffer?.duration || 0
+          if (d > 0 && d < 0.5) avs.end = Math.max(when, c.currentTime) + d
+          return start(when, ...rest)
+        }
+        return n
+      }
+    }
+    function heardNow(c) {   // the context time leaving the speakers now
+      const ts = c.getOutputTimestamp?.()
+      if (ts?.contextTime > 0 && ts.performanceTime > 0) return ts.contextTime + (performance.now() - ts.performanceTime) / 1000
+      return c.currentTime - (c.outputLatency || 0) - (c.baseLatency || 0)
+    }
+    function pictureTime(dt) {
+      if (offlineT != null) return offlineT
+      hookSynthOutput()
+      if (!scheduler?.playing) { avs.t = null; return songNow() }
+      // a note handed to the synth now is heard when its chain reaches the speakers
+      if (avs.ctx && avs.end) {
+        const lag = avs.end - heardNow(avs.ctx)
+        if (lag > -0.05 && lag < 1) {
+          avs.lag = avs.measured ? avs.lag + (lag - avs.lag) * Math.min(1, dt * 2) : lag
+          avs.measured = true
+        }
+      }
+      const sp = scheduler.speed || 1
+      const goal = songNow() + POST_AHEAD - (Math.max(0, avs.lag) + +$('avsync').value / 1000) * sp
+      // glide along with the song between the scheduler's clock ticks
+      if (avs.t == null || Math.abs(goal - avs.t) > 0.15) avs.t = goal
+      else { avs.t += dt * sp; avs.t += (goal - avs.t) * Math.min(1, dt * 3) }
+      return avs.t
+    }
+    $('avsync').oninput = () => { const v = +$('avsync').value; $('avsyncV').textContent = (v > 0 ? '+' : '') + v + ' ms' }
+    $('avsync').oninput()
+
     const clock = new THREE.Clock()
     let exporting = false
     function animate() {
       const dt = Math.min(clock.getDelta(), 0.1)
       if (exporting) return
-      // the scheduler's worklet posts each note 50 ms ahead of its own clock
-      // and the synth and the keys act on it as it arrives, so the hands and
-      // the falling notes run that far ahead too, or they trail the keys
-      frame(dt, songNow() + (scheduler?.playing ? 0.05 : 0))
+      const t = pictureTime(dt)
+      if (song && scheduler?.playing) driveSong(t + KEY_LEAD)
+      frame(dt, t)
     }
     function resize(w, h) {
       camera.aspect = w / h
@@ -1508,7 +1550,7 @@
     const offline = { idx: 0, cc: 0, active: [], t: null }
     function driveSong(t) {
       const notes = song.notes, ccs = song.controlChanges || []
-      if (offline.t == null || t < offline.t) {   // (re)start: press whatever is sounding at t
+      if (offline.t == null || t < offline.t || t > offline.t + 0.5) {   // (re)start: press whatever is sounding at t
         releaseSongKeys(); offline.active = []
         offline.idx = 0; offline.cc = 0
         while (offline.idx < notes.length && notes[offline.idx].time < t) {
@@ -1553,7 +1595,7 @@
       },
       update(t, dt) {
         offlineT = Math.max(0, t)
-        driveSong(offlineT)
+        driveSong(offlineT + KEY_LEAD)
         frame(dt, offlineT)
       },
     }
@@ -1624,7 +1666,7 @@
       ['rh', 'rhColor', 'color'], ['lh', 'lhColor', 'color'], ['glow', 'glowConcert', 'chk'], ['labels', 'labels', 'chk'],
       ['light', 'light', 'num'], ['ex', 'exposure', 'num'], ['sync', 'tourSync', 'chk'], ['glance', 'lookHands', 'chk'],
       ['ao', 'ao', 'chk', !LOWQ], ['dof', 'dof', 'chk', !LOWQ], ['focus', 'focusHands', 'chk'], ['bloom', 'bloom', 'chk'], ['grain', 'grain', 'chk'], ['drift', 'drift', 'chk'],
-      ['sf', 'sf', 'val', 'stack'], ['vel', 'velocity', 'num'],
+      ['sf', 'sf', 'val', 'stack'], ['vel', 'velocity', 'num'], ['avsync', 'avsync', 'num'],
       ['room', 'room', 'val', 'hall'], ['seat', 'seat', 'val', 'front'], ['rv', 'rvAmt', 'num'], ['decay', 'rvDecay', 'num'],
       ['tone', 'rvTone', 'num'], ['vol', 'vol', 'num'], ['boost', 'boost', 'num'], ['amb', 'amb', 'num'], ['clap', 'applause', 'chk'],
       ['res', 'exRes', 'val', '1920x1080'], ['fps', 'exFps', 'val', '60'], ['excam', 'exCam', 'val', 'tour'],
@@ -1727,7 +1769,7 @@
     }
     syncUrl()
     // test hook for headless checks
-    window.__stage = { get focusZ() { return focusZ }, get focusHand() { return focusHand }, hall, shareUrl, piano, hands, press, release, setView, setMode, setScene, scene, renderer, camera, controls, tour, music, frame, stageAdapter, driveSong, loadSongUrl, get song() { return song }, get scheduler() { return scheduler }, offlineSet(t) { offlineT = t } }
+    window.__stage = { avs, get focusZ() { return focusZ }, get focusHand() { return focusHand }, hall, shareUrl, piano, hands, press, release, setView, setMode, setScene, scene, renderer, camera, controls, tour, music, frame, stageAdapter, driveSong, loadSongUrl, get song() { return song }, get scheduler() { return scheduler }, offlineSet(t) { offlineT = t } }
   </script>
 </body>
 </html>
