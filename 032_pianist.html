@@ -116,7 +116,7 @@
     <div class="item" data-view="hands">Hands<span class="dot"></span></div>
     <div class="item" data-view="back">Behind<span class="dot"></span></div>
     <div class="item" data-view="orbit">Orbit<span class="dot"></span></div>
-    <div class="field"><label>Move (on a view)</label><select id="camMove"><option value="still">Still</option><option value="orbit">Slow orbit</option><option value="zoomIn">Zoom in</option><option value="zoomOut">Zoom out</option><option value="dollyIn">Push in</option><option value="dollyOut">Pull out</option><option value="crane">Crane</option></select></div>
+    <div class="field"><label>Move (on a view)</label><select id="camMove"><option value="still">Still</option><option value="orbit">Slow orbit</option><option value="zoomIn">Zoom in</option><option value="zoomOut">Zoom out</option><option value="dollyIn">Push in</option><option value="dollyOut">Pull out</option><option value="dollyZoom">Dolly zoom</option><option value="crane">Crane</option><option value="random">Random</option><option value="cut">Director's cut</option></select></div>
     <div class="sect">Director</div>
     <div class="field"><label>Pace</label><select id="dirPace"><option value="0.6">Long takes</option><option value="1" selected>Normal</option><option value="1.6">Lively</option></select></div>
     <div class="field"><label>Favour</label><select id="dirBias"><option value="-0.8">The hands</option><option value="0" selected>Balanced</option><option value="0.8">The pianist</option></select></div>
@@ -649,9 +649,9 @@
     // ── Cameras (framed after Concert Creator's shots) ───────────────────
     const VIEWS = {
       shoulder: { pos: [-42, 178, 104], target: [8, 82, -12], fov: 40 },
-      side: { pos: [420, 118, 70], target: [30, 98, 10], fov: 30 },
+      side: { pos: [420, 118, 10], target: [30, 98, 10], fov: 30 },   // square on to her right side
       profile: { pos: [120, 132, 2], target: [0, 120, 34], fov: 30 },
-      front: { pos: [-28, 112, -70], target: [0, 118, 32], fov: 34 },
+      front: { pos: [34, 133, -68], target: [0, 118, 32], fov: 34 },
       face: { pos: [-10, 118, -18], target: [0, 124, 24], fov: 26 },
       hands: { pos: [-55, 125, 42], target: [0, 76, -4], fov: 40 },
       back: { pos: [10, 160, 230], target: [0, 100, 0], fov: 38 },
@@ -660,9 +660,9 @@
       feet: { pos: [150, 35, 110], target: [0, 10, 15], fov: 30 },
       orbit: { pos: [260, 230, 260], target: [0, 90, 0], fov: 34 },
       // in front of the piano looking back at her: through the open lid from
-      // the hall, and over the spine side from beyond the tail
+      // the hall, and square on down the piano from beyond the tail
       audience: { pos: [331, 151, -226], target: [0, 122, 32], fov: 20 },
-      tail: { pos: [105, 170, -280], target: [0, 122, 32], fov: 20 },
+      tail: { pos: [0, 135, -348], target: [0, 122, 32], fov: 18, orbitMax: 7, minDist: 320 },
     }
     // the director: shots that move, cut or glide on the music (pianist/director.js)
     const director = createDirector({ pace: +(params.get('pace') ?? 1), bias: +(params.get('favour') ?? 0), trans: params.get('trans') || 'mix' })
@@ -670,8 +670,9 @@
     $('dirPace').onchange = () => director.set('pace', +$('dirPace').value)
     $('dirBias').onchange = () => director.set('bias', +$('dirBias').value)
     $('dirTrans').onchange = () => director.set('trans', $('dirTrans').value)
-    $('camMove').value = MOVES[params.get('move')] ? params.get('move') : 'still'
-    $('camMove').onchange = () => { moveT = 0; userCam = false }
+    const SEQ_MOVES = { random: 'Random', cut: "Director's cut" }
+    $('camMove').value = MOVES[params.get('move')] || SEQ_MOVES[params.get('move')] ? params.get('move') : 'still'
+    $('camMove').onchange = () => { moveT = 0; userCam = false; lastShot = null; $('shotName').textContent = '' }
     $('shotLbl').checked = params.has('shotnames')
     $('camFollow').checked = params.get('follow') === '1'
     director.set('follow', $('camFollow').checked)
@@ -1090,7 +1091,11 @@
         }
       } else if (!dirShot && view !== 'orbit' && $('camMove').value !== 'still' && !userCam) {
         moveT += dt
-        driven = director.fixed(VIEWS[view], $('camMove').value, moveT, camOut)
+        const mv = $('camMove').value
+        if (SEQ_MOVES[mv]) {
+          driven = director.sequence(VIEWS[view], mv, moveT, live, camOut)
+          if (driven.shot !== lastShot) { lastShot = driven.shot; $('shotName').textContent = `${SEQ_MOVES[mv]} · ${MOVES[driven.move].toLowerCase()}` }
+        } else driven = director.fixed(VIEWS[view], mv, moveT, camOut)
       }
       if (driven) {
         camera.position.copy(driven.pos); controls.target.copy(driven.target); camera.lookAt(driven.target)
@@ -1143,6 +1148,10 @@
           camera.position.copy(c.pos); controls.target.copy(c.target); camera.fov = c.fov; camera.updateProjectionMatrix(); camera.lookAt(c.target)
           focusOn = c.focus === 'hands' ? handsAt : rig.pos('head'); wide = c.wide
           window.__shotInfo = { ...c.shot, label: SPOTS[c.shot.name].label }
+        } else if (SEQ_MOVES[params.get('move')]) {
+          const c = director.sequence(VIEWS[view], params.get('move'), T, { head: rig.pos('head') }, camOut)
+          camera.position.copy(c.pos); controls.target.copy(c.target); camera.fov = c.fov; camera.updateProjectionMatrix(); camera.lookAt(c.target)
+          window.__shotInfo = { ...c.shot }
         } else if (MOVES[params.get('move')] && params.get('move') !== 'still') {
           const c = director.fixed(VIEWS[view], params.get('move'), 14, camOut)
           camera.position.copy(c.pos); controls.target.copy(c.target); camera.fov = c.fov; camera.updateProjectionMatrix(); camera.lookAt(c.target)
