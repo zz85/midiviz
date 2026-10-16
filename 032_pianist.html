@@ -58,7 +58,9 @@
     #songList .sect { position: sticky; top: 0; background: rgba(28, 28, 28, 0.97); z-index: 1; }
     #songList .item { white-space: normal; line-height: 1.25; }
     #songFilter { width: 100%; box-sizing: border-box; padding: 6px 9px; border-radius: 7px; border: 1px solid #444; background: #1c1c1c; color: #eee; font: inherit; }
-    #cameraPop { right: 190px; }
+    #cameraPop { right: 190px; width: 230px; }
+    #shotName { position: absolute; left: 26px; bottom: 92px; font: 600 11px/1 ui-monospace, Menlo, monospace; color: rgba(255, 255, 255, 0.7); letter-spacing: 0.04em; pointer-events: none; display: none; }
+    body.shotlbl #shotName { display: block; }
     #visualsPop { right: 12px; width: 250px; }
     #transport { position: absolute; left: 0; right: 0; bottom: 0; padding: 0 26px 14px; background: linear-gradient(transparent, rgba(0, 0, 0, 0.55)); }
     #times { display: flex; justify-content: space-between; font: 600 10.5px/1 ui-monospace, Menlo, monospace; color: #e6e6e6; margin-bottom: 7px; }
@@ -93,14 +95,23 @@
     <button class="pill" id="visualsBtn"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>Visuals</button>
   </div>
   <div id="cameraPop" class="pop ui">
+    <div class="item" data-view="auto">Director (auto)<span class="dot"></span></div>
+    <div class="sect">Views</div>
     <div class="item" data-view="shoulder">Over the shoulder<span class="dot"></span></div>
+    <div class="item" data-view="audience">From the audience<span class="dot"></span></div>
+    <div class="item" data-view="tail">Across the piano<span class="dot"></span></div>
     <div class="item" data-view="side">Side, wide<span class="dot"></span></div>
     <div class="item" data-view="profile">Profile<span class="dot"></span></div>
     <div class="item" data-view="front">Face, from the piano<span class="dot"></span></div>
     <div class="item" data-view="hands">Hands<span class="dot"></span></div>
     <div class="item" data-view="back">Behind<span class="dot"></span></div>
     <div class="item" data-view="orbit">Orbit<span class="dot"></span></div>
-    <div class="item" data-view="cycle">Cycle the views<span class="dot"></span></div>
+    <div class="field"><label>Move (on a view)</label><select id="camMove"><option value="still">Still</option><option value="orbit">Slow orbit</option><option value="zoomIn">Zoom in</option><option value="zoomOut">Zoom out</option><option value="dollyIn">Push in</option><option value="dollyOut">Pull out</option><option value="crane">Crane</option></select></div>
+    <div class="sect">Director</div>
+    <div class="field"><label>Pace</label><select id="dirPace"><option value="0.6">Long takes</option><option value="1" selected>Normal</option><option value="1.6">Lively</option></select></div>
+    <div class="field"><label>Favour</label><select id="dirBias"><option value="-0.8">The hands</option><option value="0" selected>Balanced</option><option value="0.8">The pianist</option></select></div>
+    <div class="field"><label>Transitions</label><select id="dirTrans"><option value="mix" selected>Cuts and glides</option><option value="cuts">Cuts only</option><option value="glides">Glides where possible</option></select></div>
+    <label class="chk"><input type="checkbox" id="shotLbl"> Show shot names</label>
   </div>
   <div id="visualsPop" class="pop ui">
     <div class="sect">Pianist</div>
@@ -169,6 +180,7 @@
     </div>
   </div>
   <div id="status" class="hidden"></div>
+  <div id="shotName"></div>
   <div id="caption">MEET YOUR NEW AI <b>PIANIST</b></div>
 
   <script src="tonejs-midi.js"></script>
@@ -194,6 +206,7 @@
     import { createLook } from './pianist/look.js'
     import { createCommunity, communityList } from './pianist/community.js'
     import { createSmoother } from './pianist/subdivide.js'
+    import { createDirector, SPOTS, MOVES } from './pianist/director.js'
 
     const $ = id => document.getElementById(id)
     const params = new URLSearchParams(location.search)
@@ -510,25 +523,44 @@
       lap: { pos: [-110, 95, 10], target: [0, 55, 40], fov: 38 },
       feet: { pos: [150, 35, 110], target: [0, 10, 15], fov: 30 },
       orbit: { pos: [260, 230, 260], target: [0, 90, 0], fov: 34 },
+      // in front of the piano looking back at her: through the open lid from
+      // the hall, and over the spine side from beyond the tail
+      audience: { pos: [331, 151, -226], target: [0, 122, 32], fov: 20 },
+      tail: { pos: [105, 170, -280], target: [0, 122, 32], fov: 20 },
     }
-    let view = VIEWS[params.get('view')] ? params.get('view') : 'shoulder'
+    // the director: shots that move, cut or glide on the music (pianist/director.js)
+    const director = createDirector({ pace: +(params.get('pace') ?? 1), bias: +(params.get('favour') ?? 0), trans: params.get('trans') || 'mix' })
+    $('dirPace').value = String(director.opts.pace); $('dirBias').value = String(director.opts.bias); $('dirTrans').value = director.opts.trans
+    $('dirPace').onchange = () => director.set('pace', +$('dirPace').value)
+    $('dirBias').onchange = () => director.set('bias', +$('dirBias').value)
+    $('dirTrans').onchange = () => director.set('trans', $('dirTrans').value)
+    $('camMove').value = MOVES[params.get('move')] ? params.get('move') : 'still'
+    $('camMove').onchange = () => { moveT = 0; userCam = false }
+    $('shotLbl').checked = params.has('shotnames')
+    const applyShotLbl = () => document.body.classList.toggle('shotlbl', $('shotLbl').checked)
+    $('shotLbl').onchange = applyShotLbl; applyShotLbl()
+    let moveT = 0, lastShot = null, camTouched = 0
+    window.__pianist.director = director
+    const camOut = { pos: new THREE.Vector3(), target: new THREE.Vector3(), fov: 34 }
+    // ?view=auto (the director; old ?view=cycle links too) or a fixed view
+    let view = params.get('view') === 'cycle' ? 'auto' : VIEWS[params.get('view')] || params.get('view') === 'auto' ? params.get('view') : 'shoulder'
     const camGoal = { pos: new THREE.Vector3(), target: new THREE.Vector3(), fov: 34 }
-    let cut = true, cycleT = 0, cycling = false
+    let cut = true
     function setView(v, instant = true) {
-      cycling = v === 'cycle'
-      if (cycling) { cycleT = 0; v = 'shoulder' }
       view = v
-      const d = VIEWS[v]
+      const d = VIEWS[v] || VIEWS.shoulder
       camGoal.pos.set(...d.pos); camGoal.target.set(...d.target); camGoal.fov = d.fov
       controls.autoRotate = v === 'orbit'
-      cut = instant
-      for (const it of document.querySelectorAll('#cameraPop .item')) it.classList.toggle('sel', it.dataset.view === (cycling ? 'cycle' : v))
+      cut = instant; moveT = 0; lastShot = null
+      for (const it of document.querySelectorAll('#cameraPop .item')) it.classList.toggle('sel', it.dataset.view === v)
+      if (v !== 'auto') $('shotName').textContent = ''
     }
     for (const it of document.querySelectorAll('#cameraPop .item')) it.onclick = () => { setView(it.dataset.view); closePops() }
-    setView(params.get('view') === 'cycle' ? 'cycle' : view)
-    const CYCLE = ['shoulder', 'profile', 'side', 'hands', 'front']
+    setView(view)
+    // dragging takes the camera; the director (or the move) takes it back after 8 s
     let userCam = false
-    controls.addEventListener('start', () => { userCam = true })
+    controls.addEventListener('start', () => { userCam = true; camTouched = performance.now() })
+    controls.addEventListener('end', () => { camTouched = performance.now() })
 
     // popups
     const pops = { songsBtn: 'songsPop', cameraBtn: 'cameraPop', visualsBtn: 'visualsPop' }
@@ -635,6 +667,7 @@
         const out = notes.map((n, i) => { const [h, f, rel] = e.data[i]; return { pitch: n.midi, on: n.time, off: n.time + n.duration, release: rel, hand: h, finger: f, velocity: n.velocity } })
         fingerWorker.terminate(); fingerWorker = null
         rig.setNotes(out)
+        director.setSong({ duration: out.reduce((m, n) => Math.max(m, n.off), 0), ...rig.form(), energyAt: rig.music.energyAt })
         fingered = true
       }
       fingerWorker.postMessage(notes.map(n => ({ pitch: n.midi, on: n.time, off: n.time + n.duration, velocity: n.velocity })))
@@ -709,24 +742,40 @@
       rig.update(t, dt)
       ch.group.updateMatrixWorld(true)
       wardrobeUpdate(dt)
-      // camera
-      if (cycling && !userCam) {
-        cycleT += dt
-        if (cycleT > 9) { cycleT = 0; const i = (CYCLE.indexOf(view) + 1) % CYCLE.length; const v = CYCLE[i]; view = v; const d = VIEWS[v]; camGoal.pos.set(...d.pos); camGoal.target.set(...d.target); camGoal.fov = d.fov; cut = true }
-        camGoal.pos.x += Math.sin(cycleT * 0.2) * 0.02
-      }
-      if (cut) { camera.position.copy(camGoal.pos); controls.target.copy(camGoal.target); camera.fov = camGoal.fov; camera.updateProjectionMatrix(); cut = false; userCam = false }
-      controls.update()
-      // focus: the face in close shots, the hands looking down at the keys
+      // the subjects: her head, the hands (where they rest when not playing)
       head.copy(rig.pos('head'))
       const hd = rig.hands
       handsC.set(0, 76, 0); let n = 0
       for (const d of [hd.L, hd.R]) if (d.visible) { if (!n) handsC.set(0, 0, 0); handsC.add(d.joints.W); n++ }
       if (n) handsC.multiplyScalar(1 / n)
-      const focusOn = view === 'shoulder' || view === 'hands' ? handsC : head
+      // camera
+      if (userCam && view !== 'orbit' && (view === 'auto' || $('camMove').value !== 'still') && performance.now() - camTouched > 8000) userCam = false
+      let focusOn = view === 'shoulder' || view === 'hands' ? handsC : head, wide = view === 'side', snapFocus = false
+      if (cut) { camera.position.copy(camGoal.pos); controls.target.copy(camGoal.target); camera.fov = camGoal.fov; camera.updateProjectionMatrix(); cut = false; userCam = false; snapFocus = true }
+      const live = { hands: handsC, head }
+      const dirShot = view === 'auto' ? director.update(song ? t : null, dt, live) : null   // runs even while dragged, so the subjects stay tracked
+      let driven = null
+      if (dirShot && !userCam) {
+        driven = dirShot
+        focusOn = dirShot.focus === 'hands' ? handsC : head; wide = dirShot.wide
+        if (dirShot.shot !== lastShot) {
+          if (!dirShot.shot.glide || !lastShot) snapFocus = true
+          lastShot = dirShot.shot
+          const sp = SPOTS[dirShot.shot.name]
+          $('shotName').textContent = `${sp.label} · ${MOVES[dirShot.shot.move].toLowerCase()}${dirShot.shot.glide ? ' (glide)' : ''}`
+        }
+      } else if (!dirShot && view !== 'orbit' && $('camMove').value !== 'still' && !userCam) {
+        moveT += dt
+        driven = director.fixed(VIEWS[view], $('camMove').value, moveT, camOut)
+      }
+      if (driven) {
+        camera.position.copy(driven.pos); controls.target.copy(driven.target); camera.lookAt(driven.target)
+        if (Math.abs(camera.fov - driven.fov) > 1e-3) { camera.fov = driven.fov; camera.updateProjectionMatrix() }
+      } else controls.update()
+      // focus: the face in close shots, the hands looking down at the keys
       const fd = camera.position.distanceTo(focusOn)
-      bokeh.uniforms.focus.value += (fd - bokeh.uniforms.focus.value) * 0.1
-      bokeh.uniforms.aperture.value = view === 'side' ? 0.00003 : 0.0001
+      bokeh.uniforms.focus.value += (fd - bokeh.uniforms.focus.value) * (snapFocus ? 1 : 0.1)
+      bokeh.uniforms.aperture.value = wide ? 0.00003 : 0.0001
       grain.uniforms.uTime.value = performance.now() / 1000
       if (scheduler?.playing && performance.now() - idleT > 2500) document.body.classList.add('idle')
       composer.render()
@@ -762,11 +811,23 @@
         // keys down where notes are held at T
         if (song) for (const n of song.notes) if (n.time <= T && n.time + n.duration > T) piano.noteOn(n.midi, 0.7)
         for (let i = 0; i < 30; i++) piano.update(1 / 60)
-        const d = VIEWS[view]
-        camera.position.set(...d.pos); controls.target.set(...d.target); camera.fov = d.fov; camera.updateProjectionMatrix(); controls.update()
-        const focusOn = view === 'shoulder' || view === 'hands' ? (() => { const c = new THREE.Vector3(); for (const h of [rig.hands.L, rig.hands.R]) c.add(h.joints.W); return c.multiplyScalar(0.5) })() : rig.pos('head')
+        const handsAt = (() => { const c = new THREE.Vector3(); for (const h of [rig.hands.L, rig.hands.R]) c.add(h.joints.W); return c.multiplyScalar(0.5) })()
+        let focusOn = view === 'shoulder' || view === 'hands' ? handsAt : rig.pos('head'), wide = view === 'side'
+        if (view === 'auto') {
+          // the director's frame at T (a ?move= on a fixed view is shown at its far end)
+          const c = director.update(T, 1 / 60, { hands: handsAt, head: rig.pos('head') })
+          camera.position.copy(c.pos); controls.target.copy(c.target); camera.fov = c.fov; camera.updateProjectionMatrix(); camera.lookAt(c.target)
+          focusOn = c.focus === 'hands' ? handsAt : rig.pos('head'); wide = c.wide
+          window.__shotInfo = { ...c.shot, label: SPOTS[c.shot.name].label }
+        } else if (MOVES[params.get('move')] && params.get('move') !== 'still') {
+          const c = director.fixed(VIEWS[view], params.get('move'), 14, camOut)
+          camera.position.copy(c.pos); controls.target.copy(c.target); camera.fov = c.fov; camera.updateProjectionMatrix(); camera.lookAt(c.target)
+        } else {
+          const d = VIEWS[view]
+          camera.position.set(...d.pos); controls.target.set(...d.target); camera.fov = d.fov; camera.updateProjectionMatrix(); controls.update()
+        }
         bokeh.uniforms.focus.value = camera.position.distanceTo(focusOn)
-        bokeh.uniforms.aperture.value = view === 'side' ? 0.00003 : 0.0001
+        bokeh.uniforms.aperture.value = wide ? 0.00003 : 0.0001
         bokeh.enabled = !params.has('nodof')
         composer.render()
         return true

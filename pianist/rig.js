@@ -705,6 +705,8 @@ export function createRig(ch, { seat = v3(0, 64, 42) } = {}) {
 
   return {
     hands, state, dims: handDims, form: () => ({ phrases, glances, hipMoves }),
+    /** the music as read from the notes (for the camera director) */
+    music: { energyAt: t => energyAt(t), accentAt: t => accentAt(t), glanceAt: t => glanceAt(t) },
     setNotes: notes => { hands.setNotes(notes); analyse(notes) },
     clear: () => hands.clear(),
     setPedals(una, sost, sus) { const k = 0.35; state.pedal[0] += ((una ? 1 : 0) - state.pedal[0]) * k; state.pedal[1] += ((sost ? 1 : 0) - state.pedal[1]) * k; state.pedal[2] += ((sus ? 1 : 0) - state.pedal[2]) * k },

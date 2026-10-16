@@ -39,3 +39,13 @@ node pianist/build/build-character.mjs
 `assets.json` is the MakeHuman community catalogue. Only CC0 and CC-BY assets are fetched, and credits are written to `assets/community/CREDITS.md`.
 
 Each asset gets its own `assets/community/<key>.bin` plus WebP / JPEG textures, fetched only when chosen. `character.bin` stays ~2 MB.
+
+## Camera and the director
+
+`director.js` frames shots on a live subject (hands, head, figure, piano, feet) in spherical coordinates and gives each one a slow move: orbit, zoom in/out, push in, pull out, crane, or a still frame with a handheld breath. Shots end in a cut or a glide into the next spot (glides only between spots on the same side and of similar size, so the camera never flies through the piano).
+
+- Camera → Director (auto), `?view=auto`: plans the whole song from the score (`rig.music`, `rig.form()`). Cuts land on phrase starts; takes are long in quiet passages and short in intense ones; it stays on the hands when they are busy and goes to her face when she looks up; opens on a wide shot from the hall and pulls out at the end. No repeated spot, no jump cuts (< 30° and no change of size), sizes alternate. Deterministic in song time; without a song it runs on its own clock. Dragging takes the camera; it comes back 8 s later.
+- Director options: Pace (`?pace=0.6|1|1.6`), Favour hands / pianist (`?favour=-0.8..0.8`), Transitions (`?trans=mix|cuts|glides`), Show shot names (`?shotnames`).
+- New views looking back at her from in front of the piano: From the audience (through the open lid, `?view=audience`) and Across the piano (over the plate from beyond the tail, `?view=tail`).
+- Move (on a view), `?move=orbit|zoomIn|zoomOut|dollyIn|dollyOut|crane`: any fixed view drifts there and back.
+- Headless: `?shot&view=auto&t=…` renders the director's frame at `t` (`window.__shotInfo` names the shot).
