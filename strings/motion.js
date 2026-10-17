@@ -10,7 +10,8 @@
 //             its stop from just before the onset to the end of the note;
 //             lower fingers stay down on the same string while the hand keeps
 //             its position (the "fingers down" habit); free fingers hover over
-//             their slots of the current frame. Long stopped notes get
+//             their slots of the current frame. A repeated note keeps its
+//             finger down (the bow re-articulates it). Long stopped notes get
 //             vibrato (≈5.5 Hz, starting a little after the onset).
 //  bow        one stroke per note, or one per slurred group (fast legato notes
 //             share a bow, up to 4); strokes alternate down / up, starting down
@@ -77,7 +78,22 @@ export function buildMotion(notes, { instrument = 'violin', lead = 0.04, vibrato
   // ── fingers: press intervals ──
   // per finger: [{ t0, t1, s, semis, note }] (semis above the open string)
   const press = [null, [], [], [], []]
-  for (const n of ns) if (n.finger) press[n.finger].push({ t0: n.on - lead, t1: n.off, s: n.string, semis: n.pitch - inst.open[n.string], base: n.base, note: n })
+  // A repeated note on the same finger needs no lift: the bow re-articulates
+  // it while the finger stays on the string (unlike a piano key). The finger
+  // only leaves the stop when the next note is a different note or an open
+  // string.
+  let prevEv = null
+  for (const e of events) {
+    for (const n of e.notes) {
+      if (!n.finger) continue
+      const semis = n.pitch - inst.open[n.string]
+      const last = press[n.finger][press[n.finger].length - 1]
+      const repeat = last && prevEv && prevEv.notes.includes(last.note) && last.s === n.string && last.semis === semis && n.on - last.t1 < 1.0
+      if (repeat) { last.t1 = n.off; last.note = n; continue }
+      press[n.finger].push({ t0: n.on - lead, t1: n.off, s: n.string, semis, base: n.base, note: n })
+    }
+    prevEv = e
+  }
   // fingers down: a lower finger that just played on this string in this position stays on its stop
   for (const n of ns) {
     if (!n.finger) continue

@@ -683,7 +683,10 @@
       C.y += 0.12 * V.k + bw.lift * 1.6 * V.k
       const th = V.bowTilt(bw.s)
       _x.set(0, Math.sin(th), Math.cos(th))
-      _z.set(1, 0, 0)
+      // bow frame: x along the hair, y from the hair up to the stick, z = x × y
+      // (toward the scroll); y must point away from the strings so the hair,
+      // not the stick, lies on them
+      _z.set(-1, 0, 0)
       _y.crossVectors(_z, _x)
       _m.makeBasis(_x, _y, _z)
       bow.group.quaternion.setFromRotationMatrix(_m)

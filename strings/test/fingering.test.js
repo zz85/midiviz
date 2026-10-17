@@ -123,6 +123,19 @@ test('motion: shifts land before the note, bow strokes alternate', () => {
   for (const st of m.strokes) { assert.ok(st.end >= 3 && st.end <= 62); assert.ok(st.start >= 3 && st.start <= 62) }
 })
 
+test('motion: a repeated note keeps the finger down, a different note or open string lifts it', () => {
+  // A3 A3 (D5, finger 3 twice) then A2: finger 3 stays down between the D5s
+  const notes = melody('D5 D5 C#5 A4 A4', 0.5).map(n => ({ ...n }))
+  fingerLine(notes, { mode: 'beginner' })
+  assert.deepEqual(fingerTokens(notes), ['A3', 'A3', 'A2', 'A0', 'A0'])
+  const m = buildMotion(notes)
+  const gap = (notes[0].off + notes[1].on) / 2
+  assert.ok(m.poseAt(gap).fingers[3].press > 0, 'finger 3 held between the repeated D5s')
+  // after the C♯ (finger 2) comes open A: finger 2 lifts in the gap
+  const gap2 = (notes[2].off + notes[3].on) / 2 + 0.02
+  assert.equal(m.poseAt(gap2).fingers[2].press, 0)
+})
+
 test('TNUA format: bars glued, alignment, scoring', () => {
   const csv = 'pitch,start,duration,beat_type,string,position,finger\n' +
     '62,-0.5,0.5,4,2,1,0\n64,0,1,4,2,1,1\n66,1,1,4,2,1,2\n67,0,2,3,2,1,3\n69,2,2,3,3,1,0\n'
