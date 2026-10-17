@@ -56,12 +56,12 @@ export const SPOTS = {
   side: { label: 'Side, wide', subj: 'figure', az: 90, el: 3, dist: 395, fov: 30, size: 2, flat: true, moves: ['dollyIn', 'zoomOut', 'dollyZoom', 'still'] },
   // the opening's far shots (after concert films): side-on from the hall, she
   // small in the light with the whole length of the piano; high from behind
-  // her left, the light on the floor around the piano
-  hallSide: { label: 'From the hall, side', fav: 0.3, subj: 'figure', az: 92, el: 4, dist: 950, fov: 16, size: 2, flat: true, moves: ['still', 'dollyIn', 'zoomIn'] },
+  // her, the light on the floor around the piano
+  hallSide: { label: 'From the hall, side', fav: 0.3, subj: 'figure', az: 92, el: 4, dist: 1300, fov: 24, size: 2, flat: true, moves: ['still', 'dollyIn', 'zoomIn'] },
   highBehind: { label: 'High, from behind', fav: 0.3, subj: 'figure', az: -38, el: 26, dist: 620, fov: 28, size: 2, moves: ['dollyIn', 'still', 'orbit'] },
-  // low behind her left shoulder at keyboard height, looking along the keys
-  // to the treble with the lid rising behind them
-  lowShoulder: { label: 'Low, behind her shoulder', fav: 1.2, subj: 'figure', az: -42, el: 3, dist: 150, fov: 36, size: 1, moves: ['dollyIn', 'orbit', 'still'], orbitMax: 10 },
+  // low behind her right shoulder at keyboard height, both hands on the keys
+  // past her arm, the lid rising behind them
+  lowShoulder: { label: 'Low, behind her shoulder', fav: 1.2, subj: 'figure', az: 48, el: -3, dist: 140, fov: 36, size: 1, moves: ['dollyIn', 'orbit', 'still'], orbitMax: 10 },
   back: { label: 'Behind', fav: 0.5, subj: 'figure', az: 3, el: 15, dist: 240, fov: 38, size: 1, moves: ['dollyIn', 'orbit', 'crane'] },
   // two favourites: low from her right looking up at her, and high over the
   // keyboard from in front looking down at her (the page's lowRight / overKeys)
