@@ -339,7 +339,7 @@ function makeMaterials() {
   m.raw = new THREE.MeshStandardMaterial({ map: raw, roughness: 0.85 })
   m.felt = new THREE.MeshPhysicalMaterial({ color: 0x6a0610, roughness: 1, sheen: 0.5, sheenRoughness: 0.6, sheenColor: new THREE.Color(0xa01c28) })
   m.damperFelt = new THREE.MeshPhysicalMaterial({ color: 0xe9e3d6, roughness: 1, sheen: 1, sheenRoughness: 0.7, sheenColor: 0xffffff })
-  m.hammerFelt = new THREE.MeshPhysicalMaterial({ color: 0xf1ede2, roughness: 1, sheen: 1, sheenRoughness: 0.6, sheenColor: 0xffffff })
+  m.hammerFelt = new THREE.MeshPhysicalMaterial({ color: 0xffffff, emissive: 0x5a5a56, roughness: 1, sheen: 1, sheenRoughness: 0.6, sheenColor: 0xffffff })
   const ivoryRough = noiseTexture(17, 70, 110); ivoryRough.repeat.set(1 / 3, 1 / 3)
   m.whiteKey = new THREE.MeshPhysicalMaterial({ color: 0xf3efe6, roughness: 0.85, roughnessMap: ivoryRough, clearcoat: 0.7, clearcoatRoughness: 0.08, sheen: 0.25, sheenColor: 0xfff8e8 })
   m.whiteKeySide = new THREE.MeshPhysicalMaterial({ color: 0xcfc8ba, roughness: 0.5, clearcoat: 0.4 })
@@ -736,7 +736,8 @@ export function buildGrandPiano({ bench = true, mirror = true } = {}) {
   }
 
   // Hammers (under the strings at the strike slot) and dampers (on top)
-  const hammerGeo = roundedBox(1, 2.4, 1.8, 0.4, 3)
+  const hammerGeo = roundedBox(1, 3.2, 2.3, 0.55, 3)   // the felt
+  const moldingGeo = roundedBox(1, 1.6, 2.6, 0.2, 2)  // its wooden core, under the felt
   const damperFeltGeo = new THREE.BoxGeometry(1, 0.9, 4.2)
   const damperHeadGeo = roundedBox(1, 2.2, 4.6, 0.25, 2)
   const action = []
@@ -748,11 +749,15 @@ export function buildGrandPiano({ bench = true, mirror = true } = {}) {
     const hammer = new THREE.Group()
     const head = new THREE.Mesh(hammerGeo, mat.hammerFelt)
     head.scale.x = w
-    const shank = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 7, 6), mat.wood)
-    shank.rotation.x = Math.PI / 2; shank.position.set(0, -1.6, 4)
-    hammer.add(head, shank)
+    const molding = new THREE.Mesh(moldingGeo, mat.wood)
+    molding.scale.x = w * 0.7; molding.position.y = -2.2
+    const shank = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 9, 6), mat.wood)
+    shank.rotation.x = Math.PI / 2; shank.position.set(0, -2.6, 5)
+    hammer.add(head, molding, shank)
     hammer.rotation.y = Math.atan2(n.dir[0], -n.dir[1]) * -1
-    const restY = n.y - n.r - 3.6, strikeY = n.y - n.r - 1.2
+    // rest ~3.4 cm under the string (a grand's blow distance is 4–5 cm; less, so the row shows through the strike slot); the felt's
+    // crown (1.6 above the group's origin) meets the string at strikeY
+    const restY = n.y - n.r - 1.6 - 3.4, strikeY = n.y - n.r - 1.6
     hammer.position.set(hx, restY, D.STRIKE_Z)
     hammer.traverse(o => { if (o.isMesh) o.castShadow = o.receiveShadow = true })
     root.add(hammer)
@@ -771,7 +776,7 @@ export function buildGrandPiano({ bench = true, mirror = true } = {}) {
       damper.traverse(o => { if (o.isMesh) o.castShadow = o.receiveShadow = true })
       root.add(damper)
     }
-    action.push({ hammer, restY, strikeY, damper, dRestY, hv: 0, hy: restY, dy: 0 })
+    action.push({ hammer, restY, strikeY, damper, dRestY, hv: 0, hy: restY, dy: 0, sost: false })
   }
 
   // ── Keys ───────────────────────────────────────────────────────────────
@@ -1003,7 +1008,7 @@ export function buildGrandPiano({ bench = true, mirror = true } = {}) {
       const k = keys.get(midi); if (!k) return
       k.held = true; k.vel = velocity
       const a = action[midi - LOW]
-      a.hv = 60 + 220 * velocity    // hammer flies up (cm/s) and rebounds off the string
+      a.hv = 90 + 260 * velocity    // hammer flies up (cm/s) and rebounds off the string
     },
     noteOff(midi) {
       const k = keys.get(midi); if (!k) return
@@ -1017,7 +1022,14 @@ export function buildGrandPiano({ bench = true, mirror = true } = {}) {
     keyboardOnly: false,  // lesson view: only the keyboard, cheeks and fallboard
     mirror: fallMirror,
     keyX: m => keys.get(m)?.x ?? 0,
-    setPedal(i, on) { pedals[i].target = on ? 1 : 0 },
+    setPedal(i, on) {
+      if (i === 2) return api.setSustain(on)
+      // sostenuto (middle): its rod catches the dampers raised by keys held
+      // at that moment (not by the right pedal) and keeps them up until released
+      if (i === 1 && on && !pedals[1].target) for (const [m, k] of keys) { const a = action[m - LOW]; a.sost = !!(k.held && a.damper) }
+      if (i === 1 && !on) for (const a of action) a.sost = false
+      pedals[i].target = on ? 1 : 0
+    },
     setLid(mode) {
       // 'full' | 'half' | 'closed'
       lidTarget = THREE.MathUtils.degToRad(mode === 'full' ? 32 : mode === 'half' ? 13 : 0)
@@ -1052,17 +1064,21 @@ export function buildGrandPiano({ bench = true, mirror = true } = {}) {
         }
         const a = action[m - LOW]
         // hammer: ballistic up, falls back; rests a little raised (checked) while held
-        const rest = k.held ? a.restY + 0.9 : a.restY
+        // while the key is held the backcheck catches it ~1.8 cm under the string
+        const rest = k.held ? a.strikeY - 1.8 : a.restY
         if (a.hv > 0) {
           a.hy += a.hv * dt
-          if (a.hy >= a.strikeY) { a.hy = a.strikeY; a.hv = -40 }
+          if (a.hy >= a.strikeY) { a.hy = a.strikeY; a.hv = -60 }
         } else {
           a.hv = 0
           a.hy += (rest - a.hy) * Math.min(1, dt * 14)
         }
         a.hammer.position.y = a.hy
         if (a.damper) {
-          const up = k.held || sustain ? 0.85 : 0
+          // its key lifts it (the key's back end through the damper lever),
+          // the right pedal lifts them all (the tray under every damper
+          // lever), the middle pedal holds those that were up when it went down
+          const up = k.held || sustain || a.sost ? 0.9 : 0
           a.dy += (up - a.dy) * Math.min(1, dt * (up ? 40 : 18))
           a.damper.position.y = a.dRestY + a.dy
         }
