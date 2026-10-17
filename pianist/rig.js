@@ -158,9 +158,9 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
   // each with its outward normal, carried by its bone; and each arm's
   // thickness, both measured from this character's mesh in the bind pose.
   // Each frame armPose swings the elbow round the shoulder–wrist line
-  // (the wrist and hand stay put) to the nearest angle where the upper arm
-  // and the top of the forearm clear the skin by CLEAR cm.
-  const CLEAR = 1
+  // (the wrist and hand stay put), keeping it low and letting the arm rest
+  // lightly against the body (steerElbow); only a real overlap lifts it.
+  const CLEAR = 0.3, CONTACT = 0.5
   const torso = (() => {
     const m = ch.meshes?.body, g = m?.geometry, si = g?.attributes.skinIndex, sw = g?.attributes.skinWeight
     if (!si || !sw || !ch.skeleton) return null
@@ -248,11 +248,20 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     _bn.crossVectors(n, pole0).normalize()
     const elbow = (phi, out) => out.copy(S).addScaledVector(n, U * cosA)
       .addScaledVector(pole0, U * sinA * Math.cos(phi)).addScaledVector(_bn, U * sinA * Math.sin(phi))
-    // the nearest clear angle (a slight preference for staying put)
+    // Elbows stay low (a pianist's upper arm hangs, "an egg under the
+    // arm"), the forearm passing under the bust. So the angle is chosen by
+    // cost: the arm resting against the body (up to CONTACT cm into the
+    // skin: soft tissue gives) is cheap, sinking deeper is dear, and every
+    // centimetre the elbow rises above where it would hang costs about as
+    // much as a centimetre of that light contact. Swinging out or back
+    // costs a little, and changing course a little more.
+    const y0 = elbow(0, _E).y
     let best = a.phi, bestCost = Infinity
     for (const phi of PHIS) {
-      const sink = armSink(a, S, elbow(phi, _E), W, nc)
-      const cost = 20 * Math.max(0, sink + CLEAR) + 0.6 * Math.abs(phi) + 0.3 * Math.abs(phi - a.phi)
+      elbow(phi, _E)
+      const sink = armSink(a, S, _E, W, nc)
+      const cost = 3 * Math.max(0, sink + CLEAR) + 40 * Math.max(0, sink - CONTACT)
+        + 2.5 * Math.max(0, _E.y - y0) + 0.3 * Math.abs(phi) + 0.5 * Math.abs(phi - a.phi)
       if (cost < bestCost) { bestCost = cost; best = phi }
     }
     a.phi += (best - a.phi) * (dt > 0 ? 1 - Math.exp(-dt / 0.06) : 1)
@@ -260,8 +269,8 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     // what the elbow cannot clear, the shoulder does: it rolls forward
     // (protraction, up to 7 cm), which also lets the elbow bend more. Fed
     // back into the next frame's clavicle (pose)
-    if (a.sink > -CLEAR) a.protract = Math.min(7, a.protract + dt * 25 * (a.sink + CLEAR))
-    else if (a.sink < -CLEAR - 0.5) a.protract = Math.max(0, a.protract - dt * 4)
+    if (a.sink > CONTACT) a.protract = Math.min(7, a.protract + dt * 25 * (a.sink - CONTACT))
+    else if (a.sink < 0) a.protract = Math.max(0, a.protract - dt * 4)
     return _p0.copy(pole0).multiplyScalar(Math.cos(a.phi)).addScaledVector(_bn, Math.sin(a.phi))
   }
 
