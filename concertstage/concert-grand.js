@@ -761,7 +761,9 @@ export function buildGrandPiano({ bench = true, mirror = true } = {}) {
       damper = new THREE.Group()
       const f = new THREE.Mesh(damperFeltGeo, mat.damperFelt); f.scale.x = w * 0.96; f.position.y = 0.45
       const h = new THREE.Mesh(damperHeadGeo, mat.bridge); h.scale.x = w * 0.96; h.position.y = 0.9 + 1.1
-      const wire = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 6, 6), mat.pins); wire.position.y = 5
+      // the wire runs DOWN between the strings to the damper lever in the
+      // action below (nothing sits above a grand's dampers but the lid)
+      const wire = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 6, 6), mat.pins); wire.position.y = -3
       damper.add(f, h, wire)
       damper.rotation.y = hammer.rotation.y
       dRestY = n.y + n.r
@@ -770,12 +772,6 @@ export function buildGrandPiano({ bench = true, mirror = true } = {}) {
       root.add(damper)
     }
     action.push({ hammer, restY, strikeY, damper, dRestY, hv: 0, hy: restY, dy: 0 })
-  }
-  // Damper rail and the guide rail above the dampers
-  {
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(105, 1.2, 1.2), mat.raw)
-    rail.position.set(-8, D.STRING_Y + 8.5, D.DAMPER_Z)
-    add(rail)
   }
 
   // ── Keys ───────────────────────────────────────────────────────────────
@@ -998,6 +994,7 @@ export function buildGrandPiano({ bench = true, mirror = true } = {}) {
   // ── State and animation ────────────────────────────────────────────────
   let lidAngle = 0, lidTarget = THREE.MathUtils.degToRad(32), flapAngle = Math.PI, sustain = false
   const PRESS_W = 0.95 / (0 - D.PIVOT_Z), PRESS_B = 0.95 / (0 - D.PIVOT_Z)   // ~0.95 cm key dip
+  const KEY_TRAVEL = 0.03   // s for a full key stroke (the pages start a key down this long before its note)
 
   const api = {
     root, keys, keyMeshes, materials: mat, bench: benchGroup, lid, get desk() { return deskRef },
@@ -1041,8 +1038,11 @@ export function buildGrandPiano({ bench = true, mirror = true } = {}) {
       // keys: fast down, spring back up
       for (const [m, k] of keys) {
         const target = k.held ? (k.black ? PRESS_B : PRESS_W) : 0
-        const rate = k.held ? 70 : 28
-        k.angle += (target - k.angle) * Math.min(1, dt * rate)
+        // down at a steady speed, a full stroke in KEY_TRAVEL (so a key that
+        // starts down that long before its note bottoms out on it, with the
+        // finger, at any frame rate); back up on a spring
+        if (k.held) k.angle = Math.min(target, k.angle + target * dt / KEY_TRAVEL)
+        else k.angle += (target - k.angle) * Math.min(1, dt * 28)
         k.pivot.rotation.x = k.angle
         const g = k.held && k.tint && api.keyGlow > 0 ? 1 : 0
         k.glow += (g - k.glow) * Math.min(1, dt * (g ? 40 : 6))
