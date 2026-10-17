@@ -821,7 +821,7 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
   }
   Object.assign(state, { songT: 0, playing: false, exLean: 0, exSide: 0, exTurn: 0, exNod: 0, exRoll: 0, exShrug: 0, breathAmp: 1, hipRoll: 0, hipShift: 1, posture: 0.5, reach: 1, rock: 1, sway: 1, nod: 1, glances: 1, gazeMode: 'music', blink: 0, lidDrop: 0 })
 
-  const LOOK = 0.4, _fw = v3(), _sd = v3()   // s ahead the body watches for keys out of reach
+  const LOOK = 0.4, _fw = v3(), _sd = v3(), TURN_R = 25   // s ahead the body watches for keys out of reach
   /** Posture from the hands: lean / turn toward them, further when out of reach. */
   function body(dt) {
     const L = arm.L.drv, R = arm.R.drv
@@ -838,9 +838,9 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     // cm of shoulder travel, settling with a centimetre to spare: first lean
     // in (1/40 rad per cm), then slide forward on the bench (up to 12 cm),
     // then lean further
-    let short = -Infinity
+    let short = -Infinity, shortA = null
     const sd = _sd.set(0, 0, -1)
-    for (const a of [arm.L, arm.R]) if (a.drv.visible && a.deficit != null && a.deficit > short) { short = a.deficit; sd.copy(a.deficitDir) }
+    for (const a of [arm.L, arm.R]) if (a.drv.visible && a.deficit != null && a.deficit > short) { short = a.deficit; sd.copy(a.deficitDir); shortA = a }
     // ...and ahead of a wide leap: how far short each arm would be over the
     // next LOOK seconds from where her shoulders are now, nearer moments
     // counting a little more, so she is already forward when it lands
@@ -851,27 +851,50 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
         const tau = LOOK * j / 12
         if (!a.drv.wristAt(state.songT + hands.lead + tau, _fw)) break
         const d = _fw.distanceTo(S), sh = d - maxL - 2 * tau / LOOK
-        if (sh > short) { short = sh; sd.subVectors(_fw, S).divideScalar(d) }
+        if (sh > short) { short = sh; sd.subVectors(_fw, S).divideScalar(d); shortA = a }
       }
     }
-    // Keys off to the side (the keyboard's ends, sd.x the sideways part of
-    // the shortfall) are reached by leaning that way (about 45 cm of spine
-    // above the seat: 1/45 rad per cm); the rest by leaning in, then sliding
-    // forward on the bench. Each settles with a centimetre to spare and eases
-    // back once the keys are in reach.
+    // Three ways to bring the short arm's shoulder toward its keys, each in
+    // cm of shoulder travel, and each grown by how much it helps (the
+    // shortfall direction sd projected on the way it moves the shoulder):
+    //  • lean in (then slide forward on the bench): toward the keys, -z;
+    //  • lean sideways (about 45 cm of spine above the seat): ±x;
+    //  • turn the torso about the spine (turn = cm / TURN_R rad): the
+    //    shoulder swings round the spine, so turning toward the keys at one
+    //    end brings the other shoulder forward, and a hand crossing over
+    //    gets its shoulder brought round.
+    // Each settles with a centimetre to spare. Once the keys are in reach
+    // they ease back slowly (a few cm/s, the slide slower still), so she
+    // stays forward through a passage instead of bobbing between its leaps.
     const err = short === -Infinity ? -2 : clamp(short + 1, -2, 15)
-    const relax = (x, r) => x - Math.sign(x) * Math.min(Math.abs(x), r)
-    const sideways = clamp((Math.abs(sd.x) - 0.45) / 0.3, 0, 1)
-    let rin = state.reachIn ?? 0, rs = state.reachSide ?? 0
-    if (err > 0) {
-      rin += dt * 10 * err
-      if (sideways > 0) rs += dt * 10 * err * sideways * Math.sign(sd.x)
-      else rs = relax(rs, dt * 10)
-    } else { rin = relax(rin, dt * 10 * -err); rs = relax(rs, dt * 10 * -err) }
+    let rin = state.reachIn ?? 0, rs = state.reachSide ?? 0, rt = state.reachTurn ?? 0
+    if (err > 0 && shortA) {
+      const S = pos(bones[shortA.ua1].name), c = pos('spine05')
+      // (leaning in also lowers the shoulders, so it helps keys below them
+      // even when they are not ahead: a close, high bench)
+      const hIn = clamp(-sd.z + 0.5 * Math.max(0, -sd.y), 0.3, 1)
+      let hSide = sd.x
+      let hTurn = ((S.z - c.z) * sd.x - (S.x - c.x) * sd.z) / TURN_R
+      // the sideways lean only for keys that are off to the side (for a
+      // shortfall straight down or back it wanders and sticks); the turn
+      // wherever it helps
+      const sw = clamp((Math.abs(sd.x) - 0.35) / 0.3, 0, 1)
+      hSide *= sw
+      const g = hIn * hIn + hSide * hSide + hTurn * hTurn || 1, k = dt * 10 * err / g
+      rin += k * hIn; rs += k * hSide; rt += k * hTurn
+    } else {
+      const r = dt * 2.5 * Math.min(2, -err)
+      for (const [x, set] of [[rin, v => rin = v], [rs, v => rs = v], [rt, v => rt = v]]) set(x - Math.sign(x) * Math.min(Math.abs(x), r))
+    }
     state.reachIn = rin = clamp(rin, 0, 34)
     state.reachSide = clamp(rs, -12, 12)
-    state.reachSlide = clamp(rin - 8, 0, 12)
-    state.reachLean = (Math.min(rin, 8) + Math.max(0, rin - 20)) / 40
+    state.reachTurn = clamp(rt, -8, 8)
+    // the bench slide is a slow move (a pianist does not scoot for each
+    // leap): it follows what the lean cannot cover in about a second and
+    // gives it back over several; the lean covers the difference meanwhile
+    const slideGoal = clamp(rin - 8, 0, 12), sl = state.reachSlide ?? 0
+    state.reachSlide = sl + (slideGoal - sl) * (1 - Math.exp(-dt / (slideGoal > sl ? 0.8 : 5)))
+    state.reachLean = (Math.min(rin, 8) + Math.max(0, rin - 8 - state.reachSlide)) / 40
     let lean = 0.02 + 0.28 * state.posture, side = 0, turn = 0
     if (n) {
       mx /= n
@@ -890,7 +913,7 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     express(dt)
     state.lean = Math.min(0.9, state.handLean + state.exLean + state.reachLean)
     state.side = clamp(state.handSide + state.exSide + state.reachSide / 45, -0.4, 0.4)
-    state.turn = state.handTurn + state.exTurn
+    state.turn = state.handTurn + state.exTurn + state.reachTurn / TURN_R
   }
 
   return {
