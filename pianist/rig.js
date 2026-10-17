@@ -70,7 +70,8 @@ export function measureHand(J, side) {
  * Build the rig for a loaded character (character.js).
  * opts: { seat: Vector3 (hip centre), lean }
  */
-export function createRig(ch, { seat = v3(0, 64, 42) } = {}) {
+export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
+  const seatP = v3()
   const { bones, restWorld, joints: J } = ch
   const N = bones.length
   const idx = Object.fromEntries(bones.map((b, i) => [b.name, i]))
@@ -201,6 +202,7 @@ export function createRig(ch, { seat = v3(0, 64, 42) } = {}) {
     // root: hips on the bench, a slight forward tilt of the pelvis
     const r = ROOT
     const pelvisTilt = 0.06 + state.lean * 0.25
+    const seat = seatP.copy(seat0); seat.z -= state.reachSlide || 0
     wQ[r].setFromEuler(new THREE.Euler(-pelvisTilt, state.turn * 0.25, 0, 'YXZ')).multiply(restQ[r])
     wP[r].copy(rootFromHip).applyQuaternion(_q.setFromEuler(new THREE.Euler(-pelvisTilt, 0, 0))).add(seat)
     // weight on one sit bone: the pelvis rolls about the loaded one (7 cm off
@@ -262,6 +264,7 @@ export function createRig(ch, { seat = v3(0, 64, 42) } = {}) {
     const v = _v.subVectors(tW, S)
     let L = v.length()
     const maxL = a.UPPER + a.FORE - 0.05
+    a.deficit = L - maxL   // > 0: the wrist is out of this arm's reach (body() leans in)
     if (L > maxL) { tW.copy(S).addScaledVector(v.normalize(), maxL); L = maxL }
     const n = dir.subVectors(tW, S).normalize()
     const cosA = clamp((a.UPPER ** 2 + L * L - a.FORE ** 2) / (2 * a.UPPER * L), -1, 1), sinA = Math.sqrt(1 - cosA * cosA)
@@ -711,6 +714,18 @@ export function createRig(ch, { seat = v3(0, 64, 42) } = {}) {
       dz += d.joints.S.z - d.shoulder.z; dx += d.joints.S.x - d.shoulder.x
     }
     const k = 1 - Math.exp(-dt * 3)
+    // out of reach (a far or high bench, a wide leap): come forward until the
+    // arms reach again, then ease back. Fed back from last frame's arms, in
+    // cm of shoulder travel, settling with a centimetre to spare: first lean
+    // in (1/40 rad per cm), then slide forward on the bench (up to 12 cm),
+    // then lean further
+    let short = -Infinity
+    for (const a of [arm.L, arm.R]) if (a.drv.visible && a.deficit != null) short = Math.max(short, a.deficit)
+    const err = short === -Infinity ? -2 : clamp(short + 1, -2, 15)
+    state.reachIn = clamp((state.reachIn ?? 0) + dt * 10 * err, 0, 34)
+    const rin = state.reachIn
+    state.reachSlide = clamp(rin - 8, 0, 12)
+    state.reachLean = (Math.min(rin, 8) + Math.max(0, rin - 20)) / 40
     let lean = 0.02 + 0.28 * state.posture, side = 0, turn = 0
     if (n) {
       mx /= n
@@ -727,7 +742,7 @@ export function createRig(ch, { seat = v3(0, 64, 42) } = {}) {
     state.handSide = (state.handSide ?? 0) + (side - (state.handSide ?? 0)) * k
     state.handTurn = (state.handTurn ?? 0) + (turn - (state.handTurn ?? 0)) * k
     express(dt)
-    state.lean = state.handLean + state.exLean
+    state.lean = Math.min(0.9, state.handLean + state.exLean + state.reachLean)
     state.side = state.handSide + state.exSide
     state.turn = state.handTurn + state.exTurn
   }
