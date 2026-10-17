@@ -309,12 +309,29 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     a.sink = armSink(a, S, elbow(a.phi, _E), W, nc)
     a.over = overlapUnder(a, S, _E, W)
     a.drv.lift = _E.y - y0   // how far the steering raised the elbow (cm)
+    // Proximal leads distal: before the hand rises for a stroke the elbow is
+    // already on its way up (swung up and out about the shoulder-wrist line,
+    // the hand staying where it is), and on the way down it drops first, the
+    // hand following. From the stroke the hand will make 80 ms from now.
+    let lead = 0
+    const st = a.drv.stroke
+    if (st && state.elbowLead > 0) {
+      const tm = state.songT + hands.lead, y1 = st.at(tm)[0], y2 = st.at(tm + 0.08)[0]
+      lead = clamp(0.045 * state.elbowLead * (y2 - y1), -0.12, 0.35)
+      if (lead) {
+        // which way round raises the elbow
+        const up = elbow(a.phi + 0.1, _E2).y > elbow(a.phi - 0.1, _E).y ? 1 : -1
+        lead *= up
+      }
+    }
+    a.elbowLead = lead
     // what the elbow cannot clear, the shoulder does: it rolls forward
     // (protraction, up to 7 cm), which also lets the elbow bend more. Fed
     // back into the next frame's clavicle (pose)
     if (a.sink > CONTACT) a.protract = Math.min(7, a.protract + dt * 25 * (a.sink - CONTACT))
     else if (a.sink < 0) a.protract = Math.max(0, a.protract - dt * 4)
-    return _p0.copy(pole0).multiplyScalar(Math.cos(a.phi)).addScaledVector(_bn, Math.sin(a.phi))
+    const ph = a.phi + lead
+    return _p0.copy(pole0).multiplyScalar(Math.cos(ph)).addScaledVector(_bn, Math.sin(ph))
   }
 
   // ── Legs ──
@@ -399,6 +416,13 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
       tmpQ.premultiply(_q.setFromAxisAngle(v3(0, 0, 1).applyQuaternion(wQ[SPINE[4]]), (sd === '.L' ? 1 : -1) * -(0.01 * (breath + 1) + state.exShrug)))
       // the shoulder rolled forward to keep the upper arm off the chest (steerElbow)
       const am = arm[sd[1]]
+      // proximal leads distal: the shoulder rises with the hand's stroke but
+      // a moment earlier (and comes down earlier), carrying the elbow, so the
+      // hand follows the arm (state.elbowLead)
+      const st = am.drv.visible && state.elbowLead > 0 ? am.drv.stroke : null
+      const up = st ? Math.min(2.5, 0.14 * state.elbowLead * st.at(state.songT + hands.lead + 0.1)[0]) : 0
+      am.shoulderUp = up
+      if (up) tmpQ.premultiply(_q.setFromAxisAngle(v3(0, 0, 1).applyQuaternion(wQ[SPINE[4]]), (sd === '.L' ? 1 : -1) * -up / am.clavLen))
       if (am.protract) tmpQ.premultiply(_q.setFromAxisAngle(Y, (sd === '.L' ? -1 : 1) * am.protract / am.clavLen))
       setQ(c, tmpQ)
     }
@@ -470,8 +494,10 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     // hand: map the rest hand frame onto the driver's (yaw only, plus a slight roll)
     const yaw = d.hand.yaw, c = Math.cos(yaw), sn = Math.sin(yaw)
     const e0 = v3(a.s * c, 0, a.s * sn), e1 = v3(0, 1, 0), e2 = v3(-sn, 0, c)
-    // pitch: the wrist raised about the knuckle line (driver's setPitch)
-    if (d.pitch) { const qp = _q.setFromAxisAngle(_v.set(c, 0, sn), -d.pitch); e1.applyQuaternion(qp); e2.applyQuaternion(qp) }
+    // pitch: the wrist raised about the knuckle line (the driver's setPitch
+    // for crossings plus the wrist stroke's tilt: both moved the joints)
+    const pitch = d.pitch + (d.strokeTilt || 0)
+    if (pitch) { const qp = _q.setFromAxisAngle(_v.set(c, 0, sn), -pitch); e1.applyQuaternion(qp); e2.applyQuaternion(qp) }
     // roll toward the side that presses (the driver's J.R carries it)
     const Rr = Jd.R.clone().multiplyScalar(a.s)   // toward the little finger
     const roll = Math.asin(clamp(-Rr.y, -0.3, 0.3))
@@ -893,7 +919,7 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     // breathing deepens with the phrase
     state.breathAmp = 1 + 1.2 * x * E
   }
-  Object.assign(state, { songT: 0, playing: false, exLean: 0, exSide: 0, exTurn: 0, exNod: 0, exRoll: 0, exShrug: 0, breathAmp: 1, hipRoll: 0, hipShift: 1, posture: 0.5, reach: 1, rock: 1, sway: 1, nod: 1, glances: 1, gazeMode: 'music', blink: 0, lidDrop: 0 })
+  Object.assign(state, { songT: 0, playing: false, exLean: 0, exSide: 0, exTurn: 0, exNod: 0, exRoll: 0, exShrug: 0, breathAmp: 1, hipRoll: 0, hipShift: 1, elbowLead: 1, posture: 0.5, reach: 1, rock: 1, sway: 1, nod: 1, glances: 1, gazeMode: 'music', blink: 0, lidDrop: 0 })
 
   const LOOK = 0.4, _fw = v3(), _sd = v3(), TURN_R = 25   // s ahead the body watches for keys out of reach
   /** Posture from the hands: lean / turn toward them, further when out of reach. */

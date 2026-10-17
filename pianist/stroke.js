@@ -31,7 +31,8 @@ export const STROKE = {
   LEAP: 0.12,       // arc height per cm the hand travels (cm), up to LEAP_MAX
   LEAP_MAX: 6,
   SHORT: 0.25,      // free time under this lifts less again (fast passages stay on the keys)
-  LEAD: 0.007,      // wrist tilt per cm/s of vertical hand speed (× wrist flexibility)
+  LEAD: 0.002,      // wrist tilt per cm/s of vertical hand speed (× wrist flexibility): small,
+                    // an expert's forearm and hand fall as one, the wrist fairly firm
   TILT: [-0.35, 0.6],
 }
 
@@ -170,7 +171,7 @@ export function planStrokes(notes, { armWeight = 1, flex = 1, liftOff = 1, heigh
     }
     // the wrist gives on impact: the hand stops, the wrist sinks a little more
     if (isFinite(L) && P > 0.5) {
-      const vc = 0.8 * P / fP, g = -flex * Math.min(0.22, 0.004 * vc)
+      const vc = 0.8 * P / fP, g = -flex * Math.min(0.1, 0.0015 * vc)
       const hold = next.end - nOn
       for (let i = idx(L); i <= Math.min(N - 1, idx(L + Math.min(0.3, hold))); i++) raw[i] += g * Math.sin(Math.PI * (t0 + i * h - L) / Math.min(0.3, hold))
     }

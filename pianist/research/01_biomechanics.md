@@ -155,6 +155,12 @@ The elbow and shoulder follow the raised wrist through the arm IK; the hand
 trailing on the way down comes from the tilt rule above. A shoulder lift
 before big strokes is a later step.
 
+Done (17 Oct): the shoulder rises with the hand's stroke 100 ms early and
+carries the elbow (Elbow lead slider); measured by cross-correlating elbow
+and wrist vertical velocity, the elbow now moves 80–110 ms ahead of the wrist
+(correlation 0.5–0.7, against 0.1–0.2 before). The speed-driven wrist tilt is
+about a third of the first version, since the forearm and hand fall as one.
+
 ### 3.4 Live keyboard
 
 No look-ahead, so no preparation lift; only lift-off and rebound after a note
