@@ -161,7 +161,7 @@ A curated collection of classical, modern, and video game piano pieces in MIDI f
 **Classical pieces:** [piano-midi.de](http://www.piano-midi.de) by Bernd Krueger  
 License: [CC BY-SA 3.0](http://creativecommons.org/licenses/by-sa/3.0/de/deed.en)
 
-**Bach: Goldberg Variations and the Well-Tempered Clavier (marked \*):** typeset by the [Mutopia Project](https://www.mutopiaproject.org) (Hajo Dezelski, Stelios Samelis, Davide Castellone, JD Erickson, Sven Reichard, Andrew Hawryluk and others), each piece CC BY-SA 3.0 / 4.0 or public domain. Joined here into one file per prelude and fugue (the Goldberg as the Aria, the 30 variations and the Aria again, 2.5 s apart). These are engraved scores, not performances: every note has the same loudness, so they sound and look more even than the piano-midi.de pieces.
+**Bach: Goldberg Variations and the Well-Tempered Clavier (marked \*):** typeset by the [Mutopia Project](https://www.mutopiaproject.org) (Hajo Dezelski, Stelios Samelis, Davide Castellone, JD Erickson, Sven Reichard, Andrew Hawryluk and others), each piece CC BY-SA 3.0 / 4.0 or public domain. Joined here into one file per prelude and fugue (the Goldberg as the Aria, the 30 variations and the Aria again, 2.5 s apart). These are engraved scores, not performances, so they were given dynamics by rule (not by a pianist): each phrase swells and relaxes and the last one tapers, the music gets louder where it climbs and thickens, the top line leads and inner voices recede, long notes carry a little more weight, plus a small seeded variation. Timing is untouched.
 
 **Symphonic works:** [mfiles.co.uk](https://www.mfiles.co.uk)  
 Classical MIDI files for educational use.
