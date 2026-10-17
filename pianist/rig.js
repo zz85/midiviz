@@ -703,6 +703,7 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
   }
   Object.assign(state, { songT: 0, playing: false, exLean: 0, exSide: 0, exTurn: 0, exNod: 0, exRoll: 0, exShrug: 0, breathAmp: 1, hipRoll: 0, hipShift: 1, posture: 0.5, reach: 1, rock: 1, sway: 1, nod: 1, glances: 1, gazeMode: 'music', blink: 0, lidDrop: 0 })
 
+  const LOOK = 0.4, _fw = v3()   // s ahead the body watches for keys out of reach
   /** Posture from the hands: lean / turn toward them, further when out of reach. */
   function body(dt) {
     const L = arm.L.drv, R = arm.R.drv
@@ -721,6 +722,18 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     // then lean further
     let short = -Infinity
     for (const a of [arm.L, arm.R]) if (a.drv.visible && a.deficit != null) short = Math.max(short, a.deficit)
+    // ...and ahead of a wide leap: how far short each arm would be over the
+    // next LOOK seconds from where her shoulders are now, nearer moments
+    // counting a little more, so she is already forward when it lands
+    if (state.playing) for (const a of [arm.L, arm.R]) {
+      if (!a.drv.visible) continue
+      const S = pos(bones[a.ua1].name), maxL = a.UPPER + a.FORE - 0.05
+      for (let j = 1; j <= 12; j++) {
+        const tau = LOOK * j / 12
+        if (!a.drv.wristAt(state.songT + hands.lead + tau, _fw)) break
+        short = Math.max(short, _fw.distanceTo(S) - maxL - 2 * tau / LOOK)
+      }
+    }
     const err = short === -Infinity ? -2 : clamp(short + 1, -2, 15)
     state.reachIn = clamp((state.reachIn ?? 0) + dt * 10 * err, 0, 34)
     const rin = state.reachIn

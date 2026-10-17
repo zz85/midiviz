@@ -210,6 +210,14 @@ export function createHandDriver(side, dims) {
     track = { t0, h, n, X }
   }
   function clearTrack() { track = null }
+  // where the wrist will be at song time t, from the baked placement (no
+  // finger IK: the middle knuckle at the hand's current height); null when
+  // nothing is baked there. Lets the body lean in before a leap arrives.
+  function wristAt(t, out) {
+    const tr = trackAt(t); if (!tr) return null
+    const d = FINGERS[3], [bx, bz] = rot(s * d.base[0], d.base[2], tr[2]), [wx, wz] = rot(s * WRIST[0], WRIST[2], tr[2])
+    return out.set(tr[0] + bx + tr[3] + wx, hand.y + d.base[1] + tr[4] + WRIST[1], tr[1] + bz + tr[5] + wz)
+  }
 
   function update(pose, dt, t) {
     if (!pose) { visible = false; return }
@@ -350,7 +358,7 @@ export function createHandDriver(side, dims) {
     J.R.normalize()
     armIK(J.W, J.E)
   }
-  return { update, bakeTrack, clearTrack, side, diag, hand, joints: J, shoulder: SHOULDER, get visible() { return visible } }
+  return { update, bakeTrack, clearTrack, wristAt, side, diag, hand, joints: J, shoulder: SHOULDER, get visible() { return visible } }
 }
 
 
@@ -378,6 +386,7 @@ export function createHandsDriver(dims) {
       R.bakeTrack(t => poses[Math.round((t - t0) / h)]?.R, t0, n, h)
     },
     clear() { motion = buildMotion([]); L.clearTrack(); R.clearTrack() },
+    lead: PRESS_LEAD,
     update(t, dt) { const tm = t + PRESS_LEAD, p = motion.poseAt(tm); L.update(p.L, dt, tm); R.update(p.R, dt, tm) },
   }
 }
