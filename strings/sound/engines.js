@@ -1,0 +1,420 @@
+// Experiment #034 sound engines behind one transport (browser only).
+//
+// Every engine plays the same performance (performance.js) into one graph:
+//
+//   engine ─→ bus ─→ hall reverb (concertstage/hall-worklet.js) ─→ master ─→ limiter ─→ out
+//                                                                    └→ analyser (spectrum view)
+//
+//   waveguide, source   ViolinSynth in an AudioWorklet (violin-worklet.js),
+//                       real time, also plays live notes
+//   ddsp                Magenta's DDSP violin on TensorFlow.js (WebGL),
+//                       rendered in 5 s windows ahead of the playhead
+//   vsco                VSCO 2 CE solo violin "Arco Vib" samples (CC0), p/f
+//                       layers, rendered offline with an OfflineAudioContext
+//   gm                  the General MIDI soundfont #033 uses (OxiSynth),
+//                       rendered offline through OxiSynthRaw
+//
+// Time: engines work in performance time. The page scales notes by 1/speed
+// before rendering, so speed never changes pitch.
+
+import { ddspVoices, DDSPEngine, DDSP_URL, DDSP_SR } from './ddsp.js'
+import { midiHz } from './bowed.js'
+
+export const ENGINES = {
+  waveguide: { label: 'Physical: bowed waveguide', short: 'Waveguide', live: true },
+  source: { label: 'Physical: Helmholtz source-filter', short: 'Source', live: true },
+  ddsp: { label: 'Neural: DDSP violin (Magenta)', short: 'DDSP', live: false },
+  vsco: { label: 'Samples: VSCO 2 CE violin (CC0)', short: 'Samples', live: true },
+  gm: { label: 'Baseline: GM soundfont (#033)', short: 'GM', live: false },
+}
+
+const VSCO_URL = 'https://cdn.jsdelivr.net/gh/sgossner/VSCO-2-CE@master/Strings/Solo%20Violin/Arco%20Vib/'
+const VSCO_NOTES = { G3: 55, A3: 57, C4: 60, E4: 64, G4: 67, A4: 69, C5: 72, E5: 76, G5: 79, A5: 81, C6: 84, E6: 88, G6: 91, A6: 93, C7: 96 }
+const VSCO_MISSING = new Set(['G6_f'])
+const GM_FONT = 'soundfonts/Creative(emu10k1)8MBGMSFX.sf2'
+const TFJS = 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/+esm'
+
+export class Lab {
+  constructor() {
+    const ctx = this.ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' })
+    this.bus = ctx.createGain()
+    this.master = ctx.createGain()
+    this.limiter = ctx.createDynamicsCompressor()
+    this.limiter.threshold.value = -3; this.limiter.knee.value = 4; this.limiter.ratio.value = 20
+    this.limiter.attack.value = 0.002; this.limiter.release.value = 0.15
+    this.analyser = ctx.createAnalyser(); this.analyser.fftSize = 4096; this.analyser.smoothingTimeConstant = 0.6
+    this.bus.connect(this.master)
+    this.master.connect(this.limiter).connect(ctx.destination)
+    this.master.connect(this.analyser)
+    this.engines = {}
+    this.perf = null
+    this.playing = false; this.t0 = 0; this.ctx0 = 0; this.pausedAt = 0
+    this.listeners = new Set()
+    this.ready = this.init()
+  }
+  async init() {
+    const w = this.ctx.audioWorklet
+    await Promise.all([
+      w.addModule(new URL('./violin-worklet.js', import.meta.url)),
+      w.addModule(new URL('../../concertstage/hall-worklet.js', import.meta.url)).then(() => {
+        this.hall = new AudioWorkletNode(this.ctx, 'hall-reverb', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2], channelCount: 2, channelCountMode: 'explicit' })
+        if (this.hallParams) this.hall.port.postMessage(this.hallParams)
+        this.bus.disconnect(); this.bus.connect(this.hall).connect(this.master)
+      }).catch(e => console.warn('hall reverb unavailable', e)),
+    ])
+  }
+  on(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn) }
+  emit(e) { for (const f of this.listeners) f(e) }
+  setHall(p) { this.hallParams = p; this.hall?.port.postMessage(p) }
+  setVolume(v) { this.master.gain.setTargetAtTime(v, this.ctx.currentTime, 0.03) }
+  resume() { return this.ctx.state === 'running' ? Promise.resolve() : this.ctx.resume() }
+
+  engine(name) {
+    if (!this.engines[name]) {
+      const E = { waveguide: PhysicalEngine, source: PhysicalEngine, ddsp: DDSPEngineUI, vsco: SampleEngine, gm: GMEngine }[name]
+      this.engines[name] = new E(this, name)
+    }
+    return this.engines[name]
+  }
+  /** Current performance time (s). */
+  time() { return this.playing ? this.t0 + (this.ctx.currentTime - this.ctx0) : this.pausedAt }
+
+  /** New performance (notes already scaled for speed). Every engine re-renders lazily. */
+  setPerformance(perf) {
+    this.perf = perf
+    for (const e of Object.values(this.engines)) e.invalidate()
+    this.current?.prepare(perf)
+  }
+  async use(name) {
+    const was = this.playing, t = this.time()
+    if (was) this.current?.stop()
+    await this.ready
+    this.current = this.engine(name)
+    if (this.perf) this.current.prepare(this.perf)
+    if (was) this.current.start(t, this.ctx.currentTime + 0.02)
+  }
+  async play(t = this.pausedAt) {
+    await this.resume(); await this.ready
+    if (!this.current || !this.perf) return
+    const when = this.ctx.currentTime + 0.05
+    this.t0 = t; this.ctx0 = when; this.playing = true
+    this.current.start(t, when)
+  }
+  pause() { if (!this.playing) return; this.pausedAt = this.time(); this.playing = false; this.current?.stop() }
+  seek(t) { const was = this.playing; if (was) this.pause(); this.pausedAt = t; if (was) this.play(t) }
+  noteOn(m) {
+    if (!this.current) return false                 // worklets still loading
+    const e = this.current
+    if (e.noteOn) return e.noteOn(m)
+    return this.engine('waveguide').noteOn(m)
+  }
+  noteOff(id) { for (const e of Object.values(this.engines)) e.noteOff?.(id) }
+  /** Offline render of the current engine for the whole piece → { chans: [L, R], sr }. */
+  async exportWav() { return this.current?.renderAll?.() }
+}
+
+// ── Physical models (real time) ────────────────────────────────────────────
+class PhysicalEngine {
+  constructor(lab, model) {
+    this.lab = lab; this.model = model
+    this.node = new AudioWorkletNode(lab.ctx, 'violin-synth', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] })
+    this.out = lab.ctx.createGain(); this.out.gain.value = model === 'source' ? 1.2 : 1
+    this.node.connect(this.out).connect(lab.bus)
+    this.sent = null; this.instrument = null
+  }
+  invalidate() { this.sent = null }
+  prepare(perf) {
+    if (this.instrument !== perf.instrument) { this.instrument = perf.instrument; this.node.port.postMessage({ type: 'instrument', instrument: perf.instrument, model: this.model }) }
+    if (this.sent === perf) return
+    this.sent = perf
+    this.node.port.postMessage({ type: 'curves', frameRate: perf.frameRate, frames: perf.frames, data: perf.data.slice() })
+    this.lab.emit({ type: 'ready', engine: this.model })
+  }
+  start(t, when) { this.prepare(this.lab.perf); this.node.port.postMessage({ type: 'play', t, speed: 1, at: when }) }
+  stop() { this.node.port.postMessage({ type: 'pause' }) }
+  noteOn(m) { if (this.lab.perf && this.instrument !== this.lab.perf.instrument) this.prepare(this.lab.perf); this.node.port.postMessage({ type: 'on', ...m }); return true }
+  noteOff(id) { this.node.port.postMessage({ type: 'off', id }) }
+  async renderAll() {
+    const { renderCurves } = await import('./bowed.js')
+    const sr = this.lab.ctx.sampleRate
+    return { chans: renderCurves(this.lab.perf, { sampleRate: sr, instrument: this.lab.perf.instrument, model: this.model }), sr }
+  }
+}
+
+// ── Pre-rendered engines: a piece buffer in 1 s blocks, played block by block ──
+class BufferEngine {
+  constructor(lab, name) {
+    this.lab = lab; this.name = name
+    this.out = lab.ctx.createGain(); this.out.connect(lab.bus)
+    this.blocks = []; this.sources = []; this.timer = null; this.job = 0
+  }
+  invalidate() { this.job++; this.blocks = []; this.rendered = null; this.preparing = null }
+  /** Subclasses fill this.blocks[k] = AudioBuffer (1 s each, any sample rate). */
+  prepare(perf) {
+    if (this.preparing && this.perfFor === perf) return this.preparing
+    this.perfFor = perf
+    const job = ++this.job
+    this.blocks = []
+    this.preparing = this.render(perf, job).catch(e => { console.error(e); this.lab.emit({ type: 'error', engine: this.name, message: e.message }) })
+    return this.preparing
+  }
+  setBlocks(L, R, sr, job, from = 0, to = Infinity) {
+    if (job !== this.job) return
+    const n = Math.ceil(L.length / sr)
+    for (let k = from; k < Math.min(n, to); k++) {
+      const a = k * sr, b = Math.min(L.length, a + sr)
+      const buf = this.lab.ctx.createBuffer(2, b - a, sr)
+      buf.copyToChannel(L.subarray(a, b), 0); buf.copyToChannel(R.subarray(a, b), 1)
+      this.blocks[k] = buf
+      // a block that became ready while it should already be sounding joins in
+      if (this.lab.playing && this.lab.current === this) this.schedule()
+    }
+  }
+  start(t, when) {
+    this.stop()
+    this.startT = t; this.startCtx = when; this.scheduled = new Set()
+    this.schedule()
+    this.timer = setInterval(() => this.schedule(), 100)
+  }
+  schedule() {
+    if (this.startCtx == null) return
+    const ctx = this.lab.ctx, now = ctx.currentTime
+    const tNow = this.startT + Math.max(0, now - this.startCtx)
+    for (let k = Math.floor(tNow); k < tNow + 1.5; k++) {
+      const buf = this.blocks[k]
+      if (!buf || this.scheduled.has(k)) continue
+      const when = this.startCtx + (k - this.startT)
+      const offset = Math.max(0, now + 0.01 - when, this.startT - k)
+      if (offset >= buf.duration) continue
+      const src = ctx.createBufferSource(); src.buffer = buf; src.connect(this.out)
+      src.start(Math.max(when + offset, now + 0.005), offset)
+      this.scheduled.add(k); this.sources.push(src)
+      src.onended = () => { const i = this.sources.indexOf(src); if (i >= 0) this.sources.splice(i, 1) }
+    }
+    const k = Math.floor(tNow)
+    if (this.lab.perf && k < this.lab.perf.frames / this.lab.perf.frameRate && !this.blocks[k]) this.lab.emit({ type: 'starved', engine: this.name, t: tNow })
+  }
+  stop() {
+    clearInterval(this.timer); this.timer = null; this.startCtx = null
+    const now = this.lab.ctx.currentTime
+    for (const s of this.sources) { try { s.stop(now + 0.01) } catch (e) { /* not started */ } }
+    this.sources = []
+  }
+  async renderAll() { await this.preparing; return this.rendered }
+}
+
+/** RMS over the sounding part, for loudness matching between engines. */
+function activeRms(L) {
+  let s = 0, n = 0
+  for (let i = 0; i < L.length; i += 4) { const v = L[i] * L[i]; if (v > 1e-7) { s += v; n++ } }
+  return Math.sqrt(s / Math.max(1, n))
+}
+const TARGET_RMS = 0.05
+
+// ── DDSP ─────────────────────────────────────────────────────────────────
+class DDSPEngineUI extends BufferEngine {
+  /** The model lives in a module worker; the main thread plans windows and mixes. */
+  async model() {
+    if (!this.loading) this.loading = new Promise((resolve, reject) => {
+      this.lab.emit({ type: 'progress', engine: 'ddsp', text: 'Loading TensorFlow.js and the DDSP violin (3.9 MB)…' })
+      const w = this.worker = new Worker(new URL('./ddsp-worker.js', import.meta.url), { type: 'module' })
+      this.pending = new Map(); this.nextId = 0
+      w.onmessage = e => {
+        const m = e.data
+        if (m.type === 'ready') { this.backend = m.backend; const eng = new DDSPEngine(null, null, m.settings); eng.window = (f0, ld) => this.call(f0, ld); resolve(eng) }
+        else if (m.type === 'audio') { this.pending.get(m.id)?.resolve(m); this.pending.delete(m.id) }
+        else if (m.type === 'error') { if (this.pending.has(m.id)) { this.pending.get(m.id).reject(new Error(m.message)); this.pending.delete(m.id) } else reject(new Error(m.message)) }
+      }
+      w.onerror = e => reject(new Error(e.message || 'DDSP worker failed'))
+      w.postMessage({ type: 'init', tfjs: TFJS, url: DDSP_URL })
+    })
+    return this.loading
+  }
+  call(f0, ld) {
+    const id = ++this.nextId
+    return new Promise((resolve, reject) => {
+      this.pending.set(id, { resolve: m => { this.lastMs = m.ms; resolve(m.y) }, reject })
+      this.worker.postMessage({ type: 'window', id, f0, ld })
+    })
+  }
+  async render(perf, job) {
+    const m = await this.model()
+    if (job !== this.job) return
+    const voices = ddspVoices(perf, { settings: m.settings })
+    const n = Math.ceil(perf.frames * 64)
+    const L = new Float32Array(n)
+    const wins = voices.flatMap((v, voice) => m.plan(v).map((w, i, all) => ({ w, voice, first: i === 0, last: i === all.length - 1, done: false })))
+    const span = j => [j.w.start * 64, (j.w.start + 1250) * 64]
+    const blocksDone = () => {
+      // a 1 s block is final once every window overlapping it is placed
+      const nb = Math.ceil(n / DDSP_SR), ready = []
+      for (let k = 0; k < nb; k++) {
+        const a = k * DDSP_SR, b = a + DDSP_SR
+        ready.push(wins.every(j => j.done || j.w.silent || span(j)[1] <= a || span(j)[0] >= b))
+      }
+      return ready
+    }
+    let done = 0
+    const t0 = performance.now()
+    while (true) {
+      if (job !== this.job) return
+      // next: the first undone window at or after the playhead, else the earliest
+      const tNow = this.lab.time() * perf.frameRate
+      const todo = wins.filter(j => !j.done && !j.w.silent)
+      if (!todo.length) break
+      const ahead = todo.filter(j => j.w.start + 1250 > tNow).sort((a, b) => a.w.start - b.w.start || a.voice - b.voice)
+      const j = ahead[0] || todo[0]
+      const y = await m.window(j.w.f0, j.w.ld)
+      if (job !== this.job) return
+      for (let i = 0; i < y.length; i++) y[i] *= 0.4
+      DDSPEngine.place(L, j.w.start, y, j.first, j.last)
+      j.done = true; done++
+      const ready = blocksDone()
+      for (let k = 0; k < ready.length; k++) if (ready[k] && !this.blocks[k]) this.setBlocks(L, L, DDSP_SR, job, k, k + 1)
+      const secs = (performance.now() - t0) / 1000
+      this.lab.emit({ type: 'progress', engine: 'ddsp', text: `DDSP (${this.backend}): ${done}/${wins.filter(x => !x.w.silent).length} windows, ${(this.lastMs / 1000).toFixed(1)} s per 5 s window`, done, total: wins.length })
+    }
+    this.setBlocks(L, L, DDSP_SR, job)
+    this.rendered = { chans: [L, L], sr: DDSP_SR }
+    this.lab.emit({ type: 'ready', engine: 'ddsp' })
+  }
+}
+
+// ── VSCO samples ─────────────────────────────────────────────────────────
+class SampleEngine extends BufferEngine {
+  constructor(lab, name) { super(lab, name); this.cache = new Map(); this.live = new Map() }
+  async sample(key) {
+    if (!this.cache.has(key)) this.cache.set(key, (async () => {
+      const r = await fetch(`${VSCO_URL}LLVln_ArcoVib_${key}.wav`)
+      if (!r.ok) throw new Error(`sample ${key}: ${r.status}`)
+      const buf = await this.lab.ctx.decodeAudioData(await r.arrayBuffer())
+      // onset: first sample above −40 dB of the peak
+      const x = buf.getChannelData(0)
+      let peak = 0; for (let i = 0; i < x.length; i++) peak = Math.max(peak, Math.abs(x[i]))
+      let on = 0; while (on < x.length && Math.abs(x[on]) < peak * 0.01) on++
+      return { buf, onset: Math.max(0, on / buf.sampleRate - 0.005) }
+    })())
+    return this.cache.get(key)
+  }
+  /** Sample roots around a pitch: nearest root (by semitones) with p/f layers. */
+  rootFor(pitch) {
+    let best = null
+    for (const [name, m] of Object.entries(VSCO_NOTES)) if (!best || Math.abs(m - pitch) < Math.abs(best[1] - pitch) || (Math.abs(m - pitch) === Math.abs(best[1] - pitch) && m < pitch)) best = [name, m]
+    return best
+  }
+  layers(name) { return ['p', 'f'].filter(d => !VSCO_MISSING.has(`${name}_${d}`)) }
+  async render(perf, job) {
+    const notes = perf.notes
+    const need = new Set()
+    for (const n of notes) { const [name] = this.rootFor(n.pitch); for (const d of this.layers(name)) need.add(`${name}_${d}`) }
+    let got = 0
+    this.lab.emit({ type: 'progress', engine: 'vsco', text: `Loading ${need.size} VSCO samples…` })
+    await Promise.all([...need].map(k => this.sample(k).then(() => this.lab.emit({ type: 'progress', engine: 'vsco', text: `Samples ${++got}/${need.size}` }))))
+    if (job !== this.job) return
+    const sr = this.lab.ctx.sampleRate, dur = perf.frames / perf.frameRate
+    const oc = new OfflineAudioContext(2, Math.ceil(dur * sr), sr)
+    const list = notes.slice().sort((a, b) => a.on - b.on)
+    for (let i = 0; i < list.length; i++) {
+      const n = list[i]
+      await this.voice(oc, oc.destination, n, n.on, n.off + this.legatoTail(list, i))
+    }
+    const out = await oc.startRendering()
+    if (job !== this.job) return
+    const L = out.getChannelData(0), R = out.getChannelData(1)
+    const g = TARGET_RMS / (activeRms(L) || 1)
+    for (let i = 0; i < L.length; i++) { L[i] *= g; R[i] *= g }
+    this.gain = g
+    this.rendered = { chans: [L, R], sr }
+    this.setBlocks(L, R, sr, job)
+    this.lab.emit({ type: 'ready', engine: 'vsco' })
+  }
+  legatoTail(list, i) {
+    const n = list[i], next = list.find((m, j) => j > i && m.string === n.string && m.on >= n.off - 0.01)
+    return next && next.on - n.off < 0.05 ? 0.06 : 0
+  }
+  /** Schedule one note (both layers, crossfaded by velocity) into ctx. */
+  async voice(ctx, dest, n, on, off, { live = false } = {}) {
+    const [name, root] = this.rootFor(n.pitch)
+    const layers = this.layers(name)
+    const v = n.velocity ?? 0.75
+    const x = layers.length > 1 ? Math.max(0, Math.min(1, (v - 0.35) / 0.55)) : 1
+    const nodes = []
+    for (const d of layers) {
+      const { buf, onset } = await this.sample(`${name}_${d}`)
+      const g = d === 'f' ? Math.sqrt(x) : Math.sqrt(1 - x)
+      if (g < 0.02) continue
+      const src = ctx.createBufferSource(); src.buffer = buf
+      src.playbackRate.value = Math.pow(2, (n.pitch - root) / 12)
+      const env = ctx.createGain()
+      const level = g * (0.35 + 0.65 * v) * (d === 'p' ? 2.2 : 1)
+      env.gain.setValueAtTime(0, on)
+      env.gain.linearRampToValueAtTime(level, on + 0.025)
+      if (off != null) {
+        env.gain.setValueAtTime(level, off)
+        env.gain.setTargetAtTime(0, off, 0.08)
+      }
+      src.connect(env).connect(dest)
+      src.start(on, onset)
+      if (off != null) src.stop(off + 0.6)
+      nodes.push({ src, env, level })
+    }
+    return nodes
+  }
+  async noteOn(m) {
+    const ctx = this.lab.ctx
+    const p = 69 + 12 * Math.log2(m.f0 / 440)
+    const nodes = await this.voice(ctx, this.out, { pitch: Math.round(p), velocity: m.dyn }, ctx.currentTime + 0.005, null, { live: true })
+    this.live.set(m.id, nodes)
+    return true
+  }
+  noteOff(id) {
+    const nodes = this.live.get(id); if (!nodes) return
+    this.live.delete(id)
+    const t = this.lab.ctx.currentTime
+    for (const { src, env } of nodes) { env.gain.cancelScheduledValues(t); env.gain.setValueAtTime(env.gain.value, t); env.gain.setTargetAtTime(0, t, 0.08); src.stop(t + 0.6) }
+  }
+}
+
+// ── GM soundfont (OxiSynth, offline) ─────────────────────────────────────
+class GMEngine extends BufferEngine {
+  async synth(sr) {
+    if (!this.loading) this.loading = (async () => {
+      this.lab.emit({ type: 'progress', engine: 'gm', text: 'Loading the GM soundfont…' })
+      const mod = await import(new URL('../../vendor/oxisynth/oxisynth.js', import.meta.url).href)
+      await mod.default()
+      const s = new mod.OxiSynthRaw(sr)
+      s.add_soundfont(new Uint8Array(await (await fetch(new URL('../../' + GM_FONT, import.meta.url))).arrayBuffer()))
+      return s
+    })()
+    return this.loading
+  }
+  async render(perf, job) {
+    const sr = this.lab.ctx.sampleRate
+    const s = await this.synth(sr)
+    if (job !== this.job) return
+    const program = { violin: 40, viola: 41, cello: 42 }[perf.instrument] ?? 40
+    for (let ch = 0; ch < 16; ch++) s.all_sound_off(ch)
+    s.program_change(0, program)
+    const ev = []
+    for (const n of perf.notes) { ev.push([n.on, 1, n]); ev.push([n.off, 0, n]) }
+    ev.sort((a, b) => a[0] - b[0] || a[1] - b[1])
+    const N = Math.ceil(perf.frames / perf.frameRate * sr)
+    const L = new Float32Array(N), R = new Float32Array(N)
+    let i = 0, e = 0
+    while (i < N) {
+      while (e < ev.length && ev[e][0] * sr <= i) {
+        const [, on, n] = ev[e++]
+        if (on) s.note_on(0, n.pitch, Math.max(1, Math.round((n.velocity ?? 0.75) * 127))); else s.note_off(0, n.pitch)
+      }
+      const until = Math.min(N, e < ev.length ? Math.max(i + 1, Math.ceil(ev[e][0] * sr)) : N, i + 4096)
+      const out = s.render(until - i)
+      for (let k = 0; k < until - i; k++) { L[i + k] = out[2 * k]; R[i + k] = out[2 * k + 1] }
+      i = until
+    }
+    const g = TARGET_RMS / (activeRms(L) || 1)
+    for (let k = 0; k < N; k++) { L[k] *= g; R[k] *= g }
+    this.rendered = { chans: [L, R], sr }
+    this.setBlocks(L, R, sr, job)
+    this.lab.emit({ type: 'ready', engine: 'gm' })
+  }
+}

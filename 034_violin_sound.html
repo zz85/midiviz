@@ -1,0 +1,565 @@
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>Experiment #034 - Violin Sound Lab</title>
+  <!--
+    Experiment #034 - realistic violin sound in the browser: one performance,
+    several synthesis engines, A/B by ear (strings/research/03_violin_sound.md).
+
+    strings/fingering.js         #033 fingering (string, finger, position)
+    strings/sound/performance.js fingering + bow strokes → per-string f0
+                                 (vibrato, portamento), bow velocity, force,
+                                 contact point, damping, finger taps, loudness
+    strings/sound/bowed.js       bowed waveguide string / Helmholtz source,
+                                 modal body, fitted tone EQ (tone.js)
+    strings/sound/violin-worklet.js  the physical models in an AudioWorklet
+    strings/sound/ddsp.js        Magenta DDSP violin (tfjs graph) in 5 s windows
+    strings/sound/engines.js     the five engines behind one transport and
+                                 the #030 hall reverb
+    node --test strings/test/sound.test.js
+  -->
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0b0c; font: 13px/1.35 "Helvetica Neue", Arial, sans-serif; color: #e8e2d6; }
+    canvas { display: block; }
+    [hidden] { display: none !important; }
+    #view { position: absolute; inset: 0; }
+    #panel {
+      position: absolute; top: 12px; left: 12px; width: 312px; padding: 10px 12px; max-height: calc(100% - 44px); overflow: auto;
+      background: rgba(14, 13, 12, 0.85); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 10px;
+      backdrop-filter: blur(8px); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5); z-index: 2;
+    }
+    #panel h1 { margin: 0 0 2px; font: 300 17px/1.2 Georgia, serif; letter-spacing: 0.04em; color: #f3e6c4; }
+    #panel h1 a { color: inherit; text-decoration: none; }
+    #panel .sub { font-size: 11px; color: #9c958a; margin-bottom: 6px; }
+    #panel .sub a { color: #9c958a; }
+    #panel.collapsed .body { display: none; }
+    #toggle { float: right; background: none; border: 0; color: #d8b56a; font-size: 15px; cursor: pointer; }
+    hr { border: 0; border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 8px 0; }
+    .row { display: flex; align-items: center; gap: 6px; margin: 5px 0; }
+    .row > label:first-child { flex: 0 0 70px; color: #a9a196; }
+    select, input[type=range], input[type=text] { flex: 1; min-width: 0; }
+    select, input[type=text] { background: #1d1b19; color: #eee6d8; border: 1px solid #3d3933; border-radius: 4px; padding: 2px 4px; font: inherit; }
+    input[type=range] { accent-color: #c9a24a; }
+    input[type=checkbox] { accent-color: #c9a24a; }
+    .chk { display: flex; align-items: center; gap: 3px; color: #cfc6b8; margin-right: 6px; white-space: nowrap; }
+    .val { font: 11px monospace; color: #b9b0a2; min-width: 34px; text-align: right; }
+    button.b { background: #26231f; color: #eee6d8; border: 1px solid #4a443b; border-radius: 4px; padding: 3px 8px; cursor: pointer; font: inherit; font-size: 12px; }
+    button.b:hover { background: #35302a; }
+    button.b.on { background: #c9a24a; color: #111; border-color: #c9a24a; }
+    #engines { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; }
+    #engines button { padding: 5px 2px; }
+    #engines button small { display: block; font-size: 9.5px; opacity: 0.7; }
+    #seek { flex: 1; }
+    #songTime { font: 11px monospace; color: #b9b0a2; min-width: 72px; text-align: right; }
+    #engineInfo { font-size: 11.5px; color: #c9c0b2; margin-top: 4px; min-height: 30px; }
+    #hint { color: #8f887d; font-size: 11px; margin-top: 6px; }
+    #status { position: absolute; top: 12px; right: 12px; padding: 6px 10px; border-radius: 6px; background: rgba(14, 13, 12, 0.85); border: 1px solid #3d3933; font-size: 12px; z-index: 3; max-width: 380px; }
+    #status.hidden { display: none; }
+    #status.error { border-color: #c44; color: #f99; }
+    #dropHint { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; font: 300 26px Georgia, serif; color: #f3e6c4; background: rgba(0, 0, 0, 0.55); pointer-events: none; z-index: 5; }
+    body.dragging #dropHint { display: flex; }
+    #start { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 6; background: rgba(0,0,0,0.55); cursor: pointer; font: 300 24px Georgia, serif; color: #f3e6c4; }
+  </style>
+</head>
+<body>
+  <canvas id="view"></canvas>
+  <div id="panel">
+    <button id="toggle" title="Collapse">–</button>
+    <h1><a href="README.md" title="Back to experiments">#034 · Violin Sound Lab</a></h1>
+    <div class="sub">one performance, five ways to make it sound · <a href="strings/research/03_violin_sound.md">research</a> · fingering from <a href="033_violin_fingering.html">#033</a></div>
+    <div class="body">
+      <div id="engines"></div>
+      <div id="engineInfo"></div>
+      <hr>
+      <div class="row"><label>Demo</label><select id="demo"></select></div>
+      <div class="row"><label>Song</label><select id="song"></select>
+        <button class="b" id="open" title="Open a .mid file (or drop one on the page)">Open…</button>
+        <input id="file" type="file" accept=".mid,.midi,audio/midi" hidden></div>
+      <div class="row" id="trackRow" hidden><label>Track</label><select id="track"></select></div>
+      <div class="row"><label>Type</label><input id="typed" type="text" spellcheck="false" title="Notes: A4 B4 C#5 · double stops D4+B4 · length E5:2 · rest r · string lock E5/A"
+        value="G4 A4 B4 C5 D5:2 B4 G4:2 D4+B4:2"><button class="b" id="typedGo">Go</button></div>
+      <div class="row"><label>Instrument</label><select id="instrument">
+        <option value="violin">Violin</option><option value="viola">Viola</option><option value="cello">Cello</option>
+      </select></div>
+      <div class="row"><label>Fingering</label><select id="mode">
+        <option value="standard">Standard</option><option value="expressive">Expressive (stay on a string)</option>
+        <option value="beginner">Beginner (1st position)</option><option value="nearest">Fewest shifts</option>
+      </select></div>
+      <hr>
+      <div class="row">
+        <button class="b" id="play" title="Play / pause (Space)">▶</button>
+        <button class="b" id="stop" title="Stop">■</button>
+        <input id="seek" type="range" min="0" max="1" step="0.0005" value="0">
+        <span id="songTime">0:00 / 0:00</span>
+      </div>
+      <div class="row"><label>Speed</label><select id="speed">
+        <option value="0.5">50%</option><option value="0.75">75%</option><option value="1" selected>100%</option><option value="1.25">125%</option>
+      </select>
+        <span class="chk"><input id="loop" type="checkbox" checked>Loop</span>
+        <button class="b" id="midiIn" title="Play from a MIDI keyboard (or the computer keyboard: A W S E D F T G Y H U J K)">MIDI in</button>
+        <button class="b" id="export" title="Download the current engine's render as WAV">WAV</button></div>
+      <hr>
+      <div id="sliders"></div>
+      <hr>
+      <div class="row"><label>Room</label><select id="room"></select></div>
+      <div class="row"><label>Seat</label><select id="seat"></select></div>
+      <div class="row"><label>Reverb</label><input id="amount" type="range" min="0" max="2" step="0.05" value="1"><span class="val" id="amountV"></span></div>
+      <div class="row"><label>Volume</label><input id="volume" type="range" min="0" max="2" step="0.05" value="1"><span class="val" id="volumeV"></span></div>
+      <div id="hint">1–5 switch engines while playing (same spot). Space plays, Esc hides the panel. Lines: pitch per string (vibrato, slides), bow speed (± = down / up) and force below.</div>
+    </div>
+  </div>
+  <div id="status" class="hidden"></div>
+  <div id="dropHint">Drop a MIDI file to play it</div>
+  <div id="start">Click to start the audio</div>
+
+  <script src="tonejs-midi.js"></script>
+  <script type="module">
+    import { fingerLine, INSTRUMENTS, parseNote, noteName } from './strings/fingering.js'
+    import { renderPerformance, scaleNotes, STYLE } from './strings/sound/performance.js'
+    import { NCH, midiHz } from './strings/sound/bowed.js'
+    import { Lab, ENGINES } from './strings/sound/engines.js'
+    import { ROOMS, SEATS, acousticParams } from './concertstage/acoustics.js'
+
+    const $ = id => document.getElementById(id)
+    let statusTimer = null
+    function setStatus(msg, isError = false, ms = 0) {
+      const s = $('status')
+      s.textContent = msg; s.classList.toggle('hidden', !msg); s.classList.toggle('error', isError)
+      clearTimeout(statusTimer); if (ms) statusTimer = setTimeout(() => setStatus(''), ms)
+    }
+    const qs = new URLSearchParams(location.search)
+
+    // ── Audio ──────────────────────────────────────────────────────────────
+    const lab = new Lab()
+    const engineState = {}
+    lab.on(e => {
+      if (e.type === 'progress') { engineState[e.engine] = e.text; if (e.engine === state.engine) showEngine() }
+      if (e.type === 'ready') { engineState[e.engine] = 'ready'; if (e.engine === state.engine) showEngine() }
+      if (e.type === 'error') { engineState[e.engine] = 'error: ' + e.message; showEngine(); setStatus(`${ENGINES[e.engine].short}: ${e.message}`, true, 5000) }
+      if (e.type === 'starved' && e.engine === state.engine) starved = performance.now()
+    })
+    let starved = 0
+    $('start').onclick = async () => { await lab.resume(); $('start').hidden = true }
+    if (lab.ctx.state === 'running') $('start').hidden = true
+
+    // engines
+    const INFO = {
+      waveguide: 'Four bowed digital-waveguide strings with stick-slip friction, coupled at the bridge, through a modal body. Real time, plays live notes.',
+      source: 'Ideal Helmholtz sawtooth with force-dependent corners, slip-gated bow noise, attack scratch, sympathetic strings, same body. Real time.',
+      ddsp: 'Magenta’s DDSP violin (3.9 MB tfjs model trained on real violin) driven by our pitch and loudness curves; renders ahead of the playhead (monophonic: two passes for double stops).',
+      vsco: 'Versilian VSCO 2 CE solo violin, sustained vibrato samples, piano / forte layers, pitched to each note (violin samples for viola and cello too).',
+      gm: 'The 8 MB General MIDI soundfont #033 plays today: one looped sample per note.',
+    }
+    const names = Object.keys(ENGINES)
+    names.forEach((n, i) => {
+      const b = document.createElement('button')
+      b.className = 'b'; b.dataset.engine = n
+      b.innerHTML = `${i + 1} · ${ENGINES[n].short}<small>${ENGINES[n].label.split(':')[0]}</small>`
+      b.title = ENGINES[n].label
+      b.onclick = () => useEngine(n)
+      $('engines').appendChild(b)
+    })
+    function showEngine() {
+      for (const b of $('engines').children) b.classList.toggle('on', b.dataset.engine === state.engine)
+      const st = engineState[state.engine]
+      $('engineInfo').innerHTML = `<b>${ENGINES[state.engine].label}</b><br>${INFO[state.engine]}${st && st !== 'ready' ? `<br><span style="color:#d8b56a">${st}</span>` : ''}`
+    }
+    async function useEngine(n) {
+      state.engine = n
+      showEngine()
+      await lab.use(n)
+      saveUrl()
+    }
+
+    // expression sliders
+    const SL = [
+      ['vibrato', 'Vibrato', 0, 2, 0.05], ['vibratoRate', 'Vib. rate', 4, 7.5, 0.1], ['portamento', 'Slides', 0, 2.5, 0.05],
+      ['dynamics', 'Dynamics', 0, 2, 0.05], ['phrasing', 'Phrasing', 0, 2, 0.05], ['bowSpeed', 'Bow speed', 0.5, 1.6, 0.05],
+      ['pressure', 'Pressure', 0.6, 1.8, 0.05], ['contact', 'Contact', 0.5, 1.8, 0.05],
+    ]
+    const style = { ...STYLE }
+    for (const [k, label, lo, hi, step] of SL) {
+      const r = document.createElement('div'); r.className = 'row'
+      r.innerHTML = `<label title="${k === 'contact' ? '< 1 nearer the bridge (brighter), > 1 toward the fingerboard' : ''}">${label}</label><input type="range" min="${lo}" max="${hi}" step="${step}" value="${style[k]}"><span class="val"></span>`
+      const inp = r.querySelector('input'), v = r.querySelector('.val')
+      const show = () => { v.textContent = (+inp.value).toFixed(k === 'vibratoRate' ? 1 : 2) }
+      if (qs.has(k)) inp.value = qs.get(k)
+      style[k] = +inp.value; show()
+      inp.oninput = show
+      inp.onchange = () => { style[k] = +inp.value; rebuild(); saveUrl() }
+      $('sliders').appendChild(r)
+    }
+
+    // hall
+    for (const [k, r] of Object.entries(ROOMS)) $('room').add(new Option(r.label, k))
+    for (const [k, s] of Object.entries(SEATS)) $('seat').add(new Option(s.label.replace('At the piano', 'Next to the player'), k))
+    $('room').value = qs.get('room') || 'recital'; $('seat').value = qs.get('seat') || 'front'
+    const hall = () => {
+      lab.setHall(acousticParams({ room: $('room').value, seat: $('seat').value, amount: +$('amount').value }))
+      $('amountV').textContent = (+$('amount').value).toFixed(2)
+    }
+    $('room').onchange = $('seat').onchange = () => { hall(); saveUrl() }
+    $('amount').oninput = hall
+    $('volume').oninput = () => { lab.setVolume(+$('volume').value); $('volumeV').textContent = Math.round($('volume').value * 100) + '%' }
+    hall(); $('volume').oninput()
+
+    // ── Pieces ─────────────────────────────────────────────────────────────
+    const DEMOS = [
+      ['lyrical', 'Lyrical line (shifts, vibrato, a double stop)', 'D5:2 F#5 A5 D6:3 C#6 B5:2 A5:2 F#5:1.5 G5:.5 A5:4 r:1 E5 D5 B4:2 A4:3 D4+B4:3', 0.45],
+      ['ode', 'Ode to Joy, legato', 'F#5 F#5 G5 A5 A5 G5 F#5 E5 D5 D5 E5 F#5 F#5:1.5 E5:.5 E5:2 F#5 F#5 G5 A5 A5 G5 F#5 E5 D5 D5 E5 F#5 E5:1.5 D5:.5 D5:2', 0.42],
+      ['strings', 'Long tones on each string', 'G3:4 D4:4 A4:4 E5:4 r:1 C4:4 G4:4 D5:4 B5:4', 0.5],
+      ['shifts', 'A-string scale (shifts and slides)', 'A4/A B4/A C#5/A D5/A E5/A F#5/A G#5/A A5:2/A G#5/A F#5/A E5/A D5/A C#5/A B5/A A4:2/A', 0.4],
+      ['detache', 'Détaché, then fast slurs', 'G4:.5 A4:.5 B4:.5 C5:.5 D5:.5 E5:.5 F#5:.5 G5:.5 G5:2 r:1 G4:.25 A4:.25 B4:.25 C5:.25 D5:.25 C5:.25 B4:.25 A4:.25 G4:2', 0.5],
+      ['double', 'Double stops', 'D4+B4:2 E4+C5:2 F#4+D5:2 G4+B4:4 r:1 A4+F#5:2 B4+G5:2 A4+A5:4', 0.5],
+      ['low', 'Low and dark (G string)', 'G3:2/G A3/G B3/G C4:2/G D4:2/G E4/G D4/G C4/G B3/G A3:4/G', 0.5],
+    ]
+    for (const [k, l] of [['', '— choose a demo —'], ...DEMOS]) $('demo').add(new Option(l, k))
+    const SONGS = [
+      ['', '— choose a song —'],
+      ['midis/mozart_eine_kleine.mid', 'Mozart – Eine kleine Nachtmusik'],
+      ['midis/vivaldi_winter.mid', 'Vivaldi – Winter'],
+      ['midis/pachelbel_canon.mid', 'Pachelbel – Canon'],
+      ['midis/handel_hornpipe.mid', 'Handel – Hornpipe'],
+      ['midis/dvorak_newworld_2.mid', 'Dvořák – New World, Largo'],
+      ['midis/libertango.mid', 'Piazzolla – Libertango'],
+      ['midis/elise.mid', 'Beethoven – Für Elise (melody)'],
+      ['midis/zelda_gerudo_valley.mid', 'Zelda – Gerudo Valley'],
+      ['midis/fly_einaudi.mid', 'Einaudi – Fly'],
+    ]
+    for (const [v, l] of SONGS) $('song').add(new Option(l, v))
+
+    const state = { engine: names.includes(qs.get('engine')) ? qs.get('engine') : 'waveguide', raw: [], notes: [], perf: null, duration: 0, speed: 1, title: '', source: null }
+    const inst = () => INSTRUMENTS[$('instrument').value]
+    if (qs.get('instrument')) $('instrument').value = qs.get('instrument')
+    if (qs.get('mode')) $('mode').value = qs.get('mode')
+
+    function parseTyped(text, U = 0.4) {
+      const notes = []
+      let t = 0
+      for (const tok of text.trim().split(/\s+/)) {
+        if (!tok) continue
+        const [body, lenS] = tok.split(':')
+        const [lenNum, lock] = (lenS || '1').split('/')
+        let [b, lock2] = body.split('/')
+        const len = (+lenNum || 1) * U
+        if (!/^r$/i.test(b)) for (const part of b.split('+')) {
+          const n = { pitch: parseNote(part), on: t, off: t + len * 0.97, velocity: 0.75 }
+          const L = lock || lock2
+          if (L) { const s = inst().strings.indexOf(L.toUpperCase()); if (s >= 0) n.lockString = s }
+          notes.push(n)
+        }
+        t += len
+      }
+      return notes
+    }
+
+    /** Fit to the instrument (octave transposition) and thin to two voices. */
+    function prepare(raw, fit) {
+      const I = inst()
+      const lo = I.open[0], hi = I.open[3] + I.maxB[3] + 5
+      let notes = raw.map(n => ({ ...n }))
+      if (fit && notes.length) {
+        const inRange = s => notes.filter(n => n.pitch + s >= lo && n.pitch + s <= hi).length
+        let best = 0
+        for (const s of [0, 12, -12, 24, -24, 36]) if (inRange(s) > inRange(best) * 1.02 + 0.5) best = s
+        if (best) for (const n of notes) n.pitch += best
+      }
+      notes.sort((a, b) => a.on - b.on || b.pitch - a.pitch)
+      const out = []
+      for (let i = 0; i < notes.length;) {
+        let j = i
+        while (j < notes.length && notes[j].on - notes[i].on < 0.03) j++
+        const grp = notes.slice(i, j).filter((n, k, arr) => arr.findIndex(m => m.pitch === n.pitch) === k).slice(0, 2)
+        for (const o of out) if (o.off > notes[i].on + 0.02 && o.on < notes[i].on) o.off = Math.max(o.on + 0.03, notes[i].on - 0.005)
+        out.push(...grp)
+        i = j
+      }
+      return out
+    }
+
+    function loadPiece(raw, { title = '', source = null, fit = true } = {}) {
+      lab.pause()
+      state.raw = raw; state.title = title; state.source = source; state.fit = fit
+      state.notes = prepare(raw, fit)
+      fingerLine(state.notes, { instrument: $('instrument').value, mode: $('mode').value })
+      state.duration = state.notes.reduce((m, n) => Math.max(m, n.off), 0)
+      lab.pausedAt = 0
+      rebuild()
+      showTime()
+    }
+    function rebuild() {
+      if (!state.notes.length) return
+      const t0 = performance.now()
+      const was = lab.playing, songT = songTime()
+      if (was) lab.pause()
+      state.speed = +$('speed').value
+      state.perf = renderPerformance(scaleNotes(state.notes, state.speed), { instrument: $('instrument').value, style })
+      lab.setPerformance(state.perf)
+      lab.pausedAt = songT / state.speed
+      if (was) lab.play(lab.pausedAt)
+      console.log(`performance: ${state.notes.length} notes, ${(performance.now() - t0).toFixed(0)} ms`)
+    }
+    const songTime = () => lab.time() * state.speed
+
+    function loadDemo(k) {
+      const d = DEMOS.find(x => x[0] === k); if (!d) return
+      $('song').value = ''; $('trackRow').hidden = true
+      loadPiece(parseTyped(d[2], d[3]), { title: d[1], source: { demo: k }, fit: false })
+    }
+    $('demo').onchange = () => { loadDemo($('demo').value); saveUrl(); play() }
+    $('typedGo').onclick = () => {
+      try {
+        const notes = parseTyped($('typed').value)
+        if (!notes.length) throw new Error('no notes')
+        $('demo').value = ''; $('song').value = ''; $('trackRow').hidden = true
+        loadPiece(notes, { title: 'Typed notes', source: { typed: $('typed').value }, fit: false }); saveUrl(); play()
+      } catch (e) { setStatus(e.message, true, 2500) }
+    }
+    $('typed').addEventListener('keydown', e => { if (e.key === 'Enter') $('typedGo').click() })
+
+    let midiTracks = null
+    function loadMidiBuffer(buf, title, source, trackIndex = null) {
+      const midi = new Midi(buf)
+      midiTracks = midi.tracks.filter(t => t.notes.length && t.channel !== 9).map((t, i) => {
+        const notes = t.notes.map(n => ({ pitch: n.midi, on: n.time, off: n.time + Math.max(0.04, n.duration), velocity: n.velocity }))
+        const mean = notes.reduce((a, n) => a + n.pitch, 0) / notes.length
+        let poly = 0
+        for (let j = 1; j < notes.length; j++) if (notes[j].on - notes[j - 1].on < 0.03) poly++
+        const prog = t.instrument?.number ?? 0
+        const score = (prog >= 40 && prog <= 44 ? 40 : 0) + (prog >= 48 && prog <= 51 ? 10 : 0) - 30 * poly / notes.length + Math.min(20, notes.length / 20) - Math.abs(mean - 74) * 0.6
+        return { name: t.name || t.instrument?.name || `Track ${i + 1}`, notes, score }
+      })
+      if (!midiTracks.length) throw new Error('no notes')
+      $('track').innerHTML = ''
+      midiTracks.forEach((t, i) => $('track').add(new Option(`${t.name} (${t.notes.length})`, i)))
+      const best = trackIndex ?? midiTracks.reduce((b, t, i) => (t.score > midiTracks[b].score ? i : b), 0)
+      $('track').value = best; $('trackRow').hidden = midiTracks.length < 2
+      state.songTitle = title
+      loadPiece(midiTracks[best].notes, { title: `${title} — ${midiTracks[best].name}`, source: { ...source, track: best } })
+    }
+    $('track').onchange = () => { const t = midiTracks[+$('track').value]; loadPiece(t.notes, { title: `${state.songTitle} — ${t.name}`, source: { ...state.source, track: +$('track').value } }); saveUrl() }
+    async function loadSong(v, track = null) {
+      if (!v) return
+      setStatus('Loading…')
+      try { loadMidiBuffer(await (await fetch(encodeURI(v))).arrayBuffer(), SONGS.find(s => s[0] === v)?.[1] || v, { song: v }, track); $('demo').value = ''; setStatus('') }
+      catch (e) { setStatus('Could not load: ' + e.message, true, 3000) }
+    }
+    $('song').onchange = () => loadSong($('song').value).then(() => { saveUrl(); play() })
+    $('open').onclick = () => $('file').click()
+    $('file').onchange = () => { const f = $('file').files[0]; if (f) f.arrayBuffer().then(b => { loadMidiBuffer(b, f.name, null); $('demo').value = ''; $('song').value = '' }).catch(e => setStatus(e.message, true, 3000)) }
+    addEventListener('dragover', e => { e.preventDefault(); document.body.classList.add('dragging') })
+    addEventListener('dragleave', e => { if (!e.relatedTarget) document.body.classList.remove('dragging') })
+    addEventListener('drop', e => { e.preventDefault(); document.body.classList.remove('dragging'); const f = e.dataTransfer.files[0]; if (f) f.arrayBuffer().then(b => loadMidiBuffer(b, f.name, null)) })
+    $('instrument').onchange = () => { if (state.raw.length) loadPiece(state.raw, { title: state.title, source: state.source, fit: state.fit }); saveUrl() }
+    $('mode').onchange = $('instrument').onchange
+
+    // ── Transport ──────────────────────────────────────────────────────────
+    async function play() {
+      if (!state.perf) return
+      $('start').hidden = true
+      if (songTime() >= state.duration) lab.pausedAt = 0
+      await lab.play()
+      $('play').textContent = '❚❚'; $('play').classList.add('on')
+    }
+    function pause() { lab.pause(); $('play').textContent = '▶'; $('play').classList.remove('on') }
+    $('play').onclick = () => lab.playing ? pause() : play()
+    $('stop').onclick = () => { pause(); lab.pausedAt = 0; showTime() }
+    $('speed').onchange = () => { rebuild(); saveUrl() }
+    let seeking = false
+    $('seek').oninput = () => { seeking = true; if (!lab.playing) lab.pausedAt = +$('seek').value * state.duration / state.speed }
+    $('seek').onchange = () => { seeking = false; lab.seek(+$('seek').value * state.duration / state.speed) }
+    const fmt = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`
+    function showTime() {
+      const t = Math.min(songTime(), state.duration)
+      $('songTime').textContent = `${fmt(t)} / ${fmt(state.duration)}`
+      if (!seeking) $('seek').value = state.duration ? t / state.duration : 0
+    }
+    $('export').onclick = async () => {
+      setStatus('Rendering WAV…')
+      const r = await lab.exportWav()
+      if (!r) { setStatus('Nothing rendered yet', true, 2500); return }
+      const { chans, sr } = r, n = chans[0].length
+      const buf = new DataView(new ArrayBuffer(44 + n * 4))
+      const w = (o, s) => [...s].forEach((c, i) => buf.setUint8(o + i, c.charCodeAt(0)))
+      w(0, 'RIFF'); buf.setUint32(4, 36 + n * 4, true); w(8, 'WAVEfmt '); buf.setUint32(16, 16, true); buf.setUint16(20, 1, true); buf.setUint16(22, 2, true)
+      buf.setUint32(24, sr, true); buf.setUint32(28, sr * 4, true); buf.setUint16(32, 4, true); buf.setUint16(34, 16, true); w(36, 'data'); buf.setUint32(40, n * 4, true)
+      let peak = 0; for (const c of chans) for (let i = 0; i < n; i++) peak = Math.max(peak, Math.abs(c[i]))
+      const g = peak > 0.98 ? 0.98 / peak : 1
+      for (let i = 0; i < n; i++) for (let c = 0; c < 2; c++) buf.setInt16(44 + i * 4 + c * 2, Math.round(Math.max(-1, Math.min(1, chans[c][i] * g)) * 32767), true)
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }))
+      a.download = `${(state.title || 'violin').replace(/[^\w.-]+/g, '_')}_${state.engine}.wav`
+      a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000)
+      setStatus('')
+    }
+
+    // ── Live input: MIDI keyboard and the computer keyboard ────────────────
+    let liveId = 0
+    const held = new Map()
+    function liveString(p) {
+      const I = inst()
+      // the highest string the note fits on in the lower positions
+      for (let s = 3; s >= 0; s--) if (p >= I.open[s] && p - I.open[s] <= 7) return s
+      for (let s = 3; s >= 0; s--) if (p >= I.open[s]) return s
+      return 0
+    }
+    function liveOn(p, vel = 0.75) {
+      lab.resume(); $('start').hidden = true
+      if (held.has(p)) liveOff(p)
+      if (!ENGINES[state.engine].live) setStatus(`${ENGINES[state.engine].short} cannot play live notes: using the waveguide`, false, 2500)
+      const id = ++liveId, s = liveString(p)
+      // one note per string: release whatever else is held on it
+      for (const [q, h] of held) if (h.s === s) liveOff(q)
+      held.set(p, { id, s, t: performance.now() })
+      lab.noteOn({ string: s, f0: midiHz(p), dyn: vel, id })
+      liveNotes.push({ pitch: p, s, on: performance.now() / 1000, off: Infinity })
+    }
+    function liveOff(p) {
+      const h = held.get(p); if (!h) return
+      held.delete(p); lab.noteOff(h.id)
+      for (const n of liveNotes) if (n.pitch === p && n.off === Infinity) n.off = performance.now() / 1000
+    }
+    const liveNotes = []
+    $('midiIn').onclick = async () => {
+      try {
+        const access = await navigator.requestMIDIAccess()
+        const hook = () => { for (const inp of access.inputs.values()) inp.onmidimessage = e => {
+          const [st, d1, d2] = e.data, c = st & 0xf0
+          if (c === 0x90 && d2 > 0) liveOn(d1, d2 / 127); else if (c === 0x80 || (c === 0x90 && d2 === 0)) liveOff(d1)
+        } }
+        hook(); access.onstatechange = hook
+        $('midiIn').classList.add('on'); setStatus(`MIDI: ${access.inputs.size} input(s)`, false, 2000)
+      } catch (e) { setStatus('Web MIDI unavailable: ' + e.message, true, 3000) }
+    }
+    const KEYS = 'awsedftgyhujkolp;'
+    addEventListener('keydown', ev => {
+      if (ev.target.closest?.('input[type=text], select')) return
+      if (ev.code === 'Space') { ev.preventDefault(); $('play').click(); return }
+      if (ev.code === 'Escape') { $('panel').style.display = $('panel').style.display === 'none' ? '' : 'none'; return }
+      if (/^Digit[1-5]$/.test(ev.code) && !ev.repeat) { useEngine(names[+ev.code.slice(5) - 1]); return }
+      const k = KEYS.indexOf(ev.key.toLowerCase())
+      if (k >= 0 && !ev.repeat && !ev.metaKey && !ev.ctrlKey) liveOn(inst().open[2] + 3 + k, 0.75)   // a = C5 on the violin (C4 viola… a fifth lower)
+    })
+    addEventListener('keyup', ev => { const k = KEYS.indexOf(ev.key.toLowerCase()); if (k >= 0) liveOff(inst().open[2] + 3 + k) })
+    $('toggle').onclick = () => { const c = $('panel').classList.toggle('collapsed'); $('toggle').textContent = c ? '+' : '–' }
+
+    // ── URL ────────────────────────────────────────────────────────────────
+    function saveUrl() {
+      const p = new URLSearchParams()
+      p.set('engine', state.engine)
+      if ($('instrument').value !== 'violin') p.set('instrument', $('instrument').value)
+      if ($('mode').value !== 'standard') p.set('mode', $('mode').value)
+      if (state.source?.demo) p.set('demo', state.source.demo)
+      if (state.source?.song) { p.set('song', state.source.song); if (state.source.track != null) p.set('track', state.source.track) }
+      if (state.source?.typed) p.set('typed', state.source.typed)
+      if ($('speed').value !== '1') p.set('speed', $('speed').value)
+      p.set('room', $('room').value); p.set('seat', $('seat').value)
+      for (const [k] of SL) if (style[k] !== STYLE[k]) p.set(k, style[k])
+      history.replaceState(null, '', '?' + p.toString())
+    }
+
+    // ── View ───────────────────────────────────────────────────────────────
+    const cv = $('view'), g = cv.getContext('2d')
+    let W = 0, H = 0, dpr = 1
+    function resize() { dpr = Math.min(2, devicePixelRatio || 1); W = innerWidth; H = innerHeight; cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px' }
+    addEventListener('resize', resize); resize()
+    const SCOL = ['#d9774f', '#d8b56a', '#7cc08e', '#6fa3e0']
+    const spec = new Float32Array(2048)
+    function draw() {
+      requestAnimationFrame(draw)
+      g.setTransform(dpr, 0, 0, dpr, 0, 0)
+      g.fillStyle = '#0b0b0c'; g.fillRect(0, 0, W, H)
+      const panelW = $('panel').style.display === 'none' ? 0 : 340
+      const x0 = panelW + 10, x1 = W - 20, Wv = x1 - x0
+      const perf = state.perf
+      const tP = lab.time()                       // performance time
+      if (lab.playing && tP * state.speed > state.duration + 1.2) {
+        if ($('loop').checked) lab.seek(0); else pause()
+      }
+      showTime()
+      const span = 8, tA = tP - span * 0.3, tB = tA + span
+      const X = t => x0 + (t - tA) / span * Wv
+      const top = 60, pitchH = (H - top) * 0.55, bowTop = top + pitchH + 18, bowH = (H - bowTop - 150) / 2
+      g.font = '11px Helvetica, Arial'; g.textBaseline = 'middle'
+      if (perf) {
+        const ps = perf.notes.map(n => n.pitch)
+        const pLo = Math.min(...ps) - 3, pHi = Math.max(...ps) + 3
+        const Y = p => top + pitchH - (p - pLo) / (pHi - pLo) * pitchH
+        // grid: octave and string lines
+        g.strokeStyle = 'rgba(255,255,255,0.06)'; g.fillStyle = '#6d675e'
+        for (let p = Math.ceil(pLo); p <= pHi; p++) if (p % 12 === 0 || inst().open.includes(p)) {
+          g.beginPath(); g.moveTo(x0, Y(p)); g.lineTo(x1, Y(p)); g.stroke(); g.fillText(noteName(p), x0 - 2 - 26, Y(p))
+        }
+        // notes
+        for (const n of perf.notes) {
+          if (n.off < tA || n.on > tB) continue
+          g.fillStyle = SCOL[n.string] + '30'; g.strokeStyle = SCOL[n.string] + '80'
+          const xa = X(n.on), xb = X(n.off), y = Y(n.pitch)
+          g.fillRect(xa, y - 5, xb - xa, 10); g.strokeRect(xa, y - 5, xb - xa, 10)
+          if (xb - xa > 26) { g.fillStyle = '#d8d2c4'; g.fillText(`${inst().strings[n.string]}${n.finger}`, xa + 3, y - 12) }
+        }
+        // per-string traces: f0 (pitch lane) and bow velocity / force
+        const Wd = 4 * NCH, fr = perf.frameRate
+        const i0 = Math.max(0, Math.floor(tA * fr)), i1 = Math.min(perf.frames - 1, Math.ceil(tB * fr))
+        for (let s = 0; s < 4; s++) {
+          const o = s * NCH
+          g.strokeStyle = SCOL[s]; g.lineWidth = 1.8
+          g.beginPath(); let on = false
+          for (let i = i0; i <= i1; i++) {
+            const F = perf.data[i * Wd + o + 2], f = perf.data[i * Wd + o]
+            const x = X(i / fr), y = Y(69 + 12 * Math.log2(f / 440))
+            if (F > 0.05 && perf.loudness[s][i] > -100) { if (!on) g.moveTo(x, y); else g.lineTo(x, y); on = true } else on = false
+          }
+          g.stroke()
+          // bow velocity (signed) and force lanes
+          const yv = bowTop + bowH / 2, yf = bowTop + bowH + 12 + bowH
+          g.lineWidth = 1.2
+          g.beginPath()
+          for (let i = i0; i <= i1; i++) { const v = perf.data[i * Wd + o + 1]; const x = X(i / fr), y = yv - v / 1.1 * bowH / 2; i === i0 ? g.moveTo(x, y) : g.lineTo(x, y) }
+          g.stroke()
+          g.globalAlpha = 0.8
+          g.beginPath()
+          for (let i = i0; i <= i1; i++) { const F = perf.data[i * Wd + o + 2]; const x = X(i / fr), y = yf - Math.min(1, F / 1.6) * bowH; i === i0 ? g.moveTo(x, y) : g.lineTo(x, y) }
+          g.stroke(); g.globalAlpha = 1
+        }
+        g.fillStyle = '#8f887d'
+        g.fillText('bow speed (down +, up −)', x0, bowTop - 6)
+        g.fillText('bow force', x0, bowTop + bowH + 6)
+        g.strokeStyle = 'rgba(255,255,255,0.08)'; g.beginPath(); g.moveTo(x0, bowTop + bowH / 2); g.lineTo(x1, bowTop + bowH / 2); g.stroke()
+        // playhead
+        g.strokeStyle = 'rgba(243,230,196,0.6)'; g.lineWidth = 1
+        g.beginPath(); g.moveTo(X(tP), top - 10); g.lineTo(X(tP), bowTop + 2 * bowH + 14); g.stroke()
+      } else {
+        g.fillStyle = '#6d675e'; g.font = '300 20px Georgia'; g.fillText('Choose a demo or a song', x0 + 40, H / 2)
+      }
+      // title
+      g.fillStyle = '#d8d2c4'; g.font = '300 16px Georgia, serif'; g.fillText(state.title || '', x0, 28)
+      g.font = '11px Helvetica'; g.fillStyle = '#9c958a'; g.fillText(`${ENGINES[state.engine].label}${performance.now() - starved < 500 ? '  ·  waiting for the render…' : ''}`, x0, 46)
+      // spectrum (log frequency)
+      lab.analyser.getFloatFrequencyData(spec)
+      const sx0 = x0, sx1 = x1, sy1 = H - 14, sh = 110, nyq = lab.ctx.sampleRate / 2
+      g.strokeStyle = 'rgba(255,255,255,0.08)'; g.strokeRect(sx0, sy1 - sh, sx1 - sx0, sh)
+      g.fillStyle = '#6d675e'
+      for (const f of [100, 300, 1000, 3000, 10000]) { const x = sx0 + Math.log(f / 50) / Math.log(16000 / 50) * (sx1 - sx0); g.fillText(f >= 1000 ? f / 1000 + 'k' : f, x + 2, sy1 - sh + 8) }
+      g.strokeStyle = '#c9a24a'; g.lineWidth = 1.2; g.beginPath()
+      for (let px = 0; px <= sx1 - sx0; px += 2) {
+        const f = 50 * Math.pow(16000 / 50, px / (sx1 - sx0)), k = Math.min(spec.length - 1, Math.round(f / nyq * spec.length))
+        const y = sy1 - Math.max(0, Math.min(1, (spec[k] + 110) / 90)) * sh
+        px ? g.lineTo(sx0 + px, y) : g.moveTo(sx0 + px, y)
+      }
+      g.stroke()
+    }
+    requestAnimationFrame(draw)
+
+    // ── Start ──────────────────────────────────────────────────────────────
+    showEngine()
+    lab.use(state.engine)
+    if (qs.get('speed')) $('speed').value = qs.get('speed')
+    if (qs.get('song')) { $('song').value = qs.get('song'); loadSong(qs.get('song'), qs.has('track') ? +qs.get('track') : null) }
+    else if (qs.get('typed')) { $('typed').value = qs.get('typed'); loadPiece(parseTyped(qs.get('typed')), { title: 'Typed notes', source: { typed: qs.get('typed') }, fit: false }) }
+    else { $('demo').value = qs.get('demo') || 'lyrical'; loadDemo($('demo').value) }
+    window.__lab = { lab, state }
+  </script>
+</body>
+</html>

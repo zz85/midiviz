@@ -6,6 +6,17 @@ Midi Visualization Experiments
 
 17 Oct 2026
 
+[Experiment #034 - Violin Sound Lab](034_violin_sound.html)
+- One performance, five engines to compare by ear (keys 1–5 switch while playing, same spot): bowed digital waveguide, Helmholtz source-filter, Magenta's DDSP violin, VSCO 2 CE samples (CC0), and the GM soundfont #033 uses ([research brief](strings/research/03_violin_sound.md))
+- Performance renderer [strings/sound/performance.js](strings/sound/performance.js): the #033 fingering and bow strokes become per-string curves at 250 Hz: pitch with late-starting vibrato (none on open strings) and slides on shifts, bow speed with attacks, bow changes and phrase arches, bow force kept inside Schelleng's playable window, contact point, finger lifts and taps, and loudness for DDSP
+- Physical models [strings/sound/bowed.js](strings/sound/bowed.js) in an AudioWorklet: four waveguide strings with stick-slip friction coupled at the bridge (sympathetic open strings), a modal violin / viola / cello body, a tone EQ fitted to the VSCO recordings (`node strings/test/fit_tone.js`); real time, plays MIDI keyboard and computer-keyboard notes
+- DDSP [strings/sound/ddsp.js](strings/sound/ddsp.js): the magenta.js violin checkpoint's decoder runs on TensorFlow.js in a worker, its harmonic + noise synthesizer is reimplemented in JS (same output, 9× faster on CPU); 5 s windows rendered ahead of the playhead, a second pass for double stops
+- Expression sliders (vibrato, slides, dynamics, phrasing, bow speed, pressure, contact), the #030 hall reverb, WAV export of each engine
+- Tests: `node --test strings/test/sound.test.js` (9: Helmholtz motion and intonation over the range, stability, vibrato, slides, bowing, DDSP synthesis, real-time speed)
+
+[Research - Violin sound in the browser](strings/research/03_violin_sound.md)
+- Samples, physical modelling (waveguide, SWAM), DDSP / MIDI-DDSP, RAVE / BRAVE, MIDI-to-audio diffusion (VIOLET, ViolinDiff), Suno-style and open text-to-music models (MusicGen, Stable Audio, ACE-Step, Magenta RealTime 2)
+
 [Research - Audio → MIDI / MusicXML](transcription/research/01_audio_to_midi.md)
 - Options for transcribing audio in the browser: Basic Pitch, MuScriptor, the MT3 family, piano models (Transkun, Kong, Aria-AMT), streaming / low-latency piano, monophonic pitch (SwiftF0, PESTO), source separation, performance MIDI → score, and the runtimes (onnxruntime-web, Transformers.js, tfjs, ggml)
 
