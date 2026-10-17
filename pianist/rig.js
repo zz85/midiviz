@@ -153,6 +153,118 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     }
   }
 
+  // ── Torso proxy: the elbows steer around the chest and ribs ──
+  // Points on the body skin over the ribs and breasts (one per 2.5 cm cell),
+  // each with its outward normal, carried by its bone; and each arm's
+  // thickness, both measured from this character's mesh in the bind pose.
+  // Each frame armPose swings the elbow round the shoulder–wrist line
+  // (the wrist and hand stay put) to the nearest angle where the upper arm
+  // and the top of the forearm clear the skin by CLEAR cm.
+  const CLEAR = 1
+  const torso = (() => {
+    const m = ch.meshes?.body, g = m?.geometry, si = g?.attributes.skinIndex, sw = g?.attributes.skinWeight
+    if (!si || !sw || !ch.skeleton) return null
+    const P = g.attributes.position, Nn = g.attributes.normal, sb = ch.skeleton.bones
+    const dom = i => { let b = 0, w = -1; for (let k = 0; k < 4; k++) { const x = sw.getComponent(i, k); if (x > w) { w = x; b = si.getComponent(i, k) } } return idx[sb[b].name] }
+    const TORSO = /^(breast\.[LR]|spine0[123])$/, cells = new Set(), bi = [], lp = [], ln = []
+    const rad = { L: [[], []], R: [[], []] }, p = v3(), nn = v3(), qi = new THREE.Quaternion()
+    for (let i = 0; i < P.count; i++) {
+      const b = dom(i), name = bones[b].name
+      p.fromBufferAttribute(P, i).applyMatrix4(m.bindMatrix)
+      const am = name.match(/^(upper|lower)arm0[12]\.([LR])$/)
+      if (am) { rad[am[2]][am[1] === 'upper' ? 0 : 1].push(p.clone()); continue }
+      if (!TORSO.test(name)) continue
+      const key = `${Math.floor(p.x / 2.5)},${Math.floor(p.y / 2.5)},${Math.floor(p.z / 2.5)}`
+      if (cells.has(key)) continue
+      cells.add(key)
+      qi.copy(restQ[b]).invert()
+      nn.fromBufferAttribute(Nn, i).normalize().applyQuaternion(qi)
+      p.sub(restHead[b]).applyQuaternion(qi)
+      bi.push(b); lp.push(p.x, p.y, p.z); ln.push(nn.x, nn.y, nn.z)
+    }
+    if (!bi.length) return null
+    // arm radius: median distance of its skin from the bone line (rest pose)
+    const radius = (pts, a0, a1) => {
+      const A = restHead[B(a0)], ax = restHead[B(a1)].clone().sub(A), len = ax.length(); ax.normalize()
+      const d = []
+      for (const q of pts) { const r = q.clone().sub(A), u = r.dot(ax); if (u > 0.25 * len && u < 0.85 * len) d.push(r.addScaledVector(ax, -u).length()) }
+      d.sort((x, y) => x - y); return d[d.length >> 1] || 4
+    }
+    for (const sd of ['L', 'R']) {
+      arm[sd].rU = radius(rad[sd][0], 'upperarm01.' + sd, 'lowerarm01.' + sd)
+      arm[sd].rF = radius(rad[sd][1], 'lowerarm01.' + sd, 'wrist.' + sd)
+      arm[sd].phi = 0; arm[sd].protract = 0
+      arm[sd].clavLen = Math.hypot(restHead[B('upperarm01.' + sd)].x - restHead[B('clavicle.' + sd)].x, restHead[B('upperarm01.' + sd)].z - restHead[B('clavicle.' + sd)].z) || 14
+    }
+    const n = bi.length
+    return { n, bi: Int16Array.from(bi), lp: Float32Array.from(lp), ln: Float32Array.from(ln), wp: new Float32Array(n * 3), wn: new Float32Array(n * 3), cand: new Int32Array(n) }
+  })()
+  const _tp = v3(), _tn = v3()
+  // the proxy in world space, after the spine is posed
+  function placeTorso() {
+    if (!torso) return
+    const { n, bi, lp, ln, wp, wn } = torso
+    let last = -1
+    for (let j = 0; j < n; j++) {
+      const b = bi[j]; if (b !== last) { solve(b); last = b }
+      _tp.set(lp[j * 3], lp[j * 3 + 1], lp[j * 3 + 2]).applyQuaternion(wQ[b]).add(wP[b])
+      _tn.set(ln[j * 3], ln[j * 3 + 1], ln[j * 3 + 2]).applyQuaternion(wQ[b])
+      wp[j * 3] = _tp.x; wp[j * 3 + 1] = _tp.y; wp[j * 3 + 2] = _tp.z
+      wn[j * 3] = _tn.x; wn[j * 3 + 1] = _tn.y; wn[j * 3 + 2] = _tn.z
+    }
+  }
+  // how far a ball of radius r at (x, y, z) sinks below the skin (cm, > 0 =
+  // inside), from the nearest proxy point and its normal; among cand[0..nc)
+  function sinkAt(x, y, z, r, nc) {
+    const { cand, wp, wn } = torso
+    let bd = Infinity, bj = -1
+    for (let k = 0; k < nc; k++) {
+      const j = cand[k] * 3, dx = x - wp[j], dy = y - wp[j + 1], dz = z - wp[j + 2], d = dx * dx + dy * dy + dz * dz
+      if (d < bd) { bd = d; bj = j }
+    }
+    if (bj < 0 || bd > (r + 6) ** 2) return -Infinity
+    return r - ((x - wp[bj]) * wn[bj] + (y - wp[bj + 1]) * wn[bj + 1] + (z - wp[bj + 2]) * wn[bj + 2])
+  }
+  // the deepest the arm sinks with its elbow at E: along the upper arm from
+  // 55% out (nearer the shoulder the arm rests against the side of the chest,
+  // as a real one does) and the
+  // first third of the forearm
+  const U_AT = [0.55, 0.7, 0.85, 1], F_AT = [0.15, 0.3]
+  function armSink(a, S, E, W, nc) {
+    let worst = -Infinity
+    for (const u of U_AT) worst = Math.max(worst, sinkAt(S.x + (E.x - S.x) * u, S.y + (E.y - S.y) * u, S.z + (E.z - S.z) * u, a.rU, nc))
+    for (const u of F_AT) worst = Math.max(worst, sinkAt(E.x + (W.x - E.x) * u, E.y + (W.y - E.y) * u, E.z + (W.z - E.z) * u, a.rF, nc))
+    return worst
+  }
+  const PHIS = Array.from({ length: 25 }, (_, i) => (i - 12) * 0.1)
+  const _bn = v3(), _p0 = v3(), _E = v3()
+  /** Swing the elbow (pole0 ⟂ n) round n until the arm clears the torso. */
+  function steerElbow(a, S, W, n, U, cosA, sinA, pole0, dt) {
+    if (!torso || sinA < 0.05) { a.phi = 0; a.sink = -Infinity; if (torso) a.protract = Math.max(0, a.protract - dt * 4); return pole0 }
+    // the proxy points this arm can touch
+    const { n: N, wp, cand } = torso, R2 = (U + 12) ** 2
+    let nc = 0
+    for (let j = 0; j < N; j++) { const dx = wp[j * 3] - S.x, dy = wp[j * 3 + 1] - S.y, dz = wp[j * 3 + 2] - S.z; if (dx * dx + dy * dy + dz * dz < R2) cand[nc++] = j }
+    _bn.crossVectors(n, pole0).normalize()
+    const elbow = (phi, out) => out.copy(S).addScaledVector(n, U * cosA)
+      .addScaledVector(pole0, U * sinA * Math.cos(phi)).addScaledVector(_bn, U * sinA * Math.sin(phi))
+    // the nearest clear angle (a slight preference for staying put)
+    let best = a.phi, bestCost = Infinity
+    for (const phi of PHIS) {
+      const sink = armSink(a, S, elbow(phi, _E), W, nc)
+      const cost = 20 * Math.max(0, sink + CLEAR) + 0.6 * Math.abs(phi) + 0.3 * Math.abs(phi - a.phi)
+      if (cost < bestCost) { bestCost = cost; best = phi }
+    }
+    a.phi += (best - a.phi) * (dt > 0 ? 1 - Math.exp(-dt / 0.06) : 1)
+    a.sink = armSink(a, S, elbow(a.phi, _E), W, nc)
+    // what the elbow cannot clear, the shoulder does: it rolls forward
+    // (protraction, up to 7 cm), which also lets the elbow bend more. Fed
+    // back into the next frame's clavicle (pose)
+    if (a.sink > -CLEAR) a.protract = Math.min(7, a.protract + dt * 25 * (a.sink + CLEAR))
+    else if (a.sink < -CLEAR - 0.5) a.protract = Math.max(0, a.protract - dt * 4)
+    return _p0.copy(pole0).multiplyScalar(Math.cos(a.phi)).addScaledVector(_bn, Math.sin(a.phi))
+  }
+
   // ── Legs ──
   const leg = {}
   for (const side of ['L', 'R']) {
@@ -233,11 +345,15 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
       const c = B('clavicle' + sd)
       base(c, tmpQ)
       tmpQ.premultiply(_q.setFromAxisAngle(v3(0, 0, 1).applyQuaternion(wQ[SPINE[4]]), (sd === '.L' ? 1 : -1) * -(0.01 * (breath + 1) + state.exShrug)))
+      // the shoulder rolled forward to keep the upper arm off the chest (steerElbow)
+      const am = arm[sd[1]]
+      if (am.protract) tmpQ.premultiply(_q.setFromAxisAngle(Y, (sd === '.L' ? -1 : 1) * am.protract / am.clavLen))
       setQ(c, tmpQ)
     }
 
     // arms and hands
-    for (const side of ['L', 'R']) armPose(arm[side])
+    placeTorso()
+    for (const side of ['L', 'R']) armPose(arm[side], dt)
     // head: look toward the hands, partly (the eyes take the rest)
     headPose(dt)
     // legs onto the pedals
@@ -253,7 +369,7 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
   }
 
   const tE = v3(), tW = v3(), dir = v3(), pole = v3(), hingeNow = v3()
-  function armPose(a) {
+  function armPose(a, dt) {
     const S = pos(bones[a.ua1].name)
     const d = a.drv
     d.shoulder.copy(S)
@@ -265,10 +381,12 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     let L = v.length()
     const maxL = a.UPPER + a.FORE - 0.05
     a.deficit = L - maxL   // > 0: the wrist is out of this arm's reach (body() leans in)
+    a.deficitDir = (a.deficitDir || v3()).copy(v).divideScalar(L || 1)   // ...and which way
     if (L > maxL) { tW.copy(S).addScaledVector(v.normalize(), maxL); L = maxL }
     const n = dir.subVectors(tW, S).normalize()
     const cosA = clamp((a.UPPER ** 2 + L * L - a.FORE ** 2) / (2 * a.UPPER * L), -1, 1), sinA = Math.sqrt(1 - cosA * cosA)
     pole.set(a.s * 0.6, -0.75, 0.3).addScaledVector(n, -pole.dot(n)).normalize()
+    pole.copy(steerElbow(a, S, tW, n, a.UPPER, cosA, sinA, pole, dt))
     tE.copy(S).addScaledVector(n, a.UPPER * cosA).addScaledVector(pole, a.UPPER * sinA)
     hingeNow.crossVectors(_v.subVectors(tE, S), _w.subVectors(tW, tE)).normalize()
     const up = tE.clone().sub(S)
@@ -703,7 +821,7 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
   }
   Object.assign(state, { songT: 0, playing: false, exLean: 0, exSide: 0, exTurn: 0, exNod: 0, exRoll: 0, exShrug: 0, breathAmp: 1, hipRoll: 0, hipShift: 1, posture: 0.5, reach: 1, rock: 1, sway: 1, nod: 1, glances: 1, gazeMode: 'music', blink: 0, lidDrop: 0 })
 
-  const LOOK = 0.4, _fw = v3()   // s ahead the body watches for keys out of reach
+  const LOOK = 0.4, _fw = v3(), _sd = v3()   // s ahead the body watches for keys out of reach
   /** Posture from the hands: lean / turn toward them, further when out of reach. */
   function body(dt) {
     const L = arm.L.drv, R = arm.R.drv
@@ -721,7 +839,8 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     // in (1/40 rad per cm), then slide forward on the bench (up to 12 cm),
     // then lean further
     let short = -Infinity
-    for (const a of [arm.L, arm.R]) if (a.drv.visible && a.deficit != null) short = Math.max(short, a.deficit)
+    const sd = _sd.set(0, 0, -1)
+    for (const a of [arm.L, arm.R]) if (a.drv.visible && a.deficit != null && a.deficit > short) { short = a.deficit; sd.copy(a.deficitDir) }
     // ...and ahead of a wide leap: how far short each arm would be over the
     // next LOOK seconds from where her shoulders are now, nearer moments
     // counting a little more, so she is already forward when it lands
@@ -731,12 +850,26 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
       for (let j = 1; j <= 12; j++) {
         const tau = LOOK * j / 12
         if (!a.drv.wristAt(state.songT + hands.lead + tau, _fw)) break
-        short = Math.max(short, _fw.distanceTo(S) - maxL - 2 * tau / LOOK)
+        const d = _fw.distanceTo(S), sh = d - maxL - 2 * tau / LOOK
+        if (sh > short) { short = sh; sd.subVectors(_fw, S).divideScalar(d) }
       }
     }
+    // Keys off to the side (the keyboard's ends, sd.x the sideways part of
+    // the shortfall) are reached by leaning that way (about 45 cm of spine
+    // above the seat: 1/45 rad per cm); the rest by leaning in, then sliding
+    // forward on the bench. Each settles with a centimetre to spare and eases
+    // back once the keys are in reach.
     const err = short === -Infinity ? -2 : clamp(short + 1, -2, 15)
-    state.reachIn = clamp((state.reachIn ?? 0) + dt * 10 * err, 0, 34)
-    const rin = state.reachIn
+    const relax = (x, r) => x - Math.sign(x) * Math.min(Math.abs(x), r)
+    const sideways = clamp((Math.abs(sd.x) - 0.45) / 0.3, 0, 1)
+    let rin = state.reachIn ?? 0, rs = state.reachSide ?? 0
+    if (err > 0) {
+      rin += dt * 10 * err
+      if (sideways > 0) rs += dt * 10 * err * sideways * Math.sign(sd.x)
+      else rs = relax(rs, dt * 10)
+    } else { rin = relax(rin, dt * 10 * -err); rs = relax(rs, dt * 10 * -err) }
+    state.reachIn = rin = clamp(rin, 0, 34)
+    state.reachSide = clamp(rs, -12, 12)
     state.reachSlide = clamp(rin - 8, 0, 12)
     state.reachLean = (Math.min(rin, 8) + Math.max(0, rin - 20)) / 40
     let lean = 0.02 + 0.28 * state.posture, side = 0, turn = 0
@@ -756,7 +889,7 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     state.handTurn = (state.handTurn ?? 0) + (turn - (state.handTurn ?? 0)) * k
     express(dt)
     state.lean = Math.min(0.9, state.handLean + state.exLean + state.reachLean)
-    state.side = state.handSide + state.exSide
+    state.side = clamp(state.handSide + state.exSide + state.reachSide / 45, -0.4, 0.4)
     state.turn = state.handTurn + state.exTurn
   }
 
