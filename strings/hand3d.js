@@ -13,6 +13,13 @@
 // 1–2, and parks at the neck heel in high positions. The forearm runs down to
 // an elbow under the instrument that swings toward the bass strings.
 //
+// Cello: the neck is upright and the hand is open rather than wrapped around
+// it. The knuckles sit out to the side of the fingerboard on the A-string
+// side, level with it, fingers spread one semitone apart and arched down onto
+// the strings; the thumb rests on the back of the neck, opposite the gap
+// between fingers 3 and 4; the elbow is raised out to the side so the
+// forearm, wrist and hand are roughly level.
+//
 // Right hand: a bow hold (thumb bent under the stick at the frog, fingers
 // draped over the stick, little finger curved on top) carried by the bow,
 // with a two-bone arm from a fixed shoulder.
@@ -146,10 +153,18 @@ export function buildLeftHand(violin, { scale = 1 } = {}) {
     const half = V.fbHalf(uA)
     const yFB = V.fbY(uA, 0)
     // knuckle line: beside the top-string edge, a little toward the nut from the stops
+    const cello = V.cello
+    const uMid = cello ? (V.uOfSemis(pose.base + 1.5) + (uA - V.uOfSemis(pose.base))) : uA
     for (const f of [1, 2, 3, 4]) {
       const F = fingers[f]
-      const spread = 1.85 * size * (1 - 0.25 * high)
-      F.base.set(uA - 0.8 * size + (f - 1) * spread, yFB - (1.9 - 0.8 * high) * size, -half - (2.3 + 0.4 * high) * size)
+      if (cello) {
+        // knuckles beside the board on the A side, level with it, centred on the frame
+        const spread = 2.15 * size
+        F.base.set(uMid + (f - 2.5) * spread, yFB + 1.2 * size, -half - 3.2 * size)
+      } else {
+        const spread = 1.85 * size * (1 - 0.25 * high)
+        F.base.set(uA - 0.8 * size + (f - 1) * spread, yFB - (1.9 - 0.8 * high) * size, -half - (2.3 + 0.4 * high) * size)
+      }
       const P = pose.fingers[f]
       const s = P.s
       const s0 = Math.max(0, Math.min(V.S - 1, Math.floor(s))), s1 = Math.min(V.S - 1, s0 + 1), t = s - s0
@@ -177,27 +192,46 @@ export function buildLeftHand(violin, { scale = 1 } = {}) {
     // palm: from the knuckles down to the wrist, under the neck
     const k1 = fingers[1].base, k4 = fingers[4].base
     knuckle.addVectors(k1, k4).multiplyScalar(0.5)
-    wrist.set(uA + (1.8 + 2.5 * high) * size, yFB - (7.4 - 1.2 * high) * size, -half - (0.9 + 1.6 * high) * size)
+    if (cello) wrist.set(uMid + 1.2 * size, yFB - 1.2 * size, -half - 7.6 * size)
+    else wrist.set(uA + (1.8 + 2.5 * high) * size, yFB - (7.4 - 1.2 * high) * size, -half - (0.9 + 1.6 * high) * size)
     _c.subVectors(knuckle, wrist)
-    palm.position.addVectors(knuckle, wrist).multiplyScalar(0.5).addScaledVector(_d.set(0, 0, -1), 0.6 * size)
+    palm.position.addVectors(knuckle, wrist).multiplyScalar(0.5).addScaledVector(_d.set(0, cello ? -1 : 0, -1).normalize(), 0.6 * size)
     palm.quaternion.setFromUnitVectors(Y, _c.clone().normalize())
     palm.scale.set(1.3 * size, _c.length() * 0.5 + 0.3 * size, k1.distanceTo(k4) * 0.5 + 0.7 * size)
     wristBall.position.copy(wrist)
     wristBall.scale.set(1.9 * size, 1.4 * size, 1.9 * size)
-    // thumb: under the neck on the bass side opposite finger 1–2, parked at the heel when high
-    const thumbU = Math.min(uA + 0.8 * size, V.x0 - 1.2 * k)
-    const tipT = new THREE.Vector3(thumbU, V.fbY(thumbU, 0) - (1.3 + 0.5 * high) * k, half * (0.75 - 0.6 * high) + 0.4)
-    const tB = wrist.clone().add(new THREE.Vector3(-0.6 * size, 1.4 * size, 1.4 * size))
-    twoBone(tB, tipT, 3.6 * size, 3.1 * size, new THREE.Vector3(tB.x - 6, tB.y, tB.z + 6), thumb.mid)
+    let tipT, tB, tL = [3.6 * size, 3.1 * size], pole
+    if (cello) {
+      // thumb on the back of the neck, between fingers 3 and 4 (closed frame: 2 and 3 semitones above finger 1)
+      const off = uA - V.uOfSemis(pose.base)
+      const thumbU = Math.min((V.uOfSemis(pose.base + 2) + V.uOfSemis(pose.base + 3)) / 2 + off, V.x0 - 1.5 * k)
+      tipT = new THREE.Vector3(thumbU, V.neckBackY(thumbU) - 0.7 * size, -0.4 * size)
+      tB = wrist.clone().add(new THREE.Vector3(-1.4 * size, -2.6 * size, 2.6 * size))
+      tL = [4.1 * size, 3.5 * size]
+      pole = new THREE.Vector3(tB.x - 6, tB.y - 6, tB.z)
+    } else {
+      // thumb: under the neck on the bass side opposite finger 1–2, parked at the heel when high
+      const thumbU = Math.min(uA + 0.8 * size, V.x0 - 1.2 * k)
+      tipT = new THREE.Vector3(thumbU, V.fbY(thumbU, 0) - (1.3 + 0.5 * high) * k, half * (0.75 - 0.6 * high) + 0.4)
+      tB = wrist.clone().add(new THREE.Vector3(-0.6 * size, 1.4 * size, 1.4 * size))
+      pole = new THREE.Vector3(tB.x - 6, tB.y, tB.z + 6)
+    }
+    twoBone(tB, tipT, tL[0], tL[1], pole, thumb.mid)
     place(thumb.segs[0], tB, thumb.mid); place(thumb.segs[1], thumb.mid, tipT)
     thumb.joints[0].position.copy(tB); thumb.joints[1].position.copy(thumb.mid); thumb.tip.position.copy(tipT)
     for (const m of [...thumb.segs]) { m.scale.x = m.scale.z = size }
     for (const m of [...thumb.joints, thumb.tip]) m.scale.setScalar(size)
-    // arm: the elbow under the instrument, swinging toward the bass strings
-    const sMean = pose.fingers.slice(1).reduce((a, F) => a + F.s, 0) / 4
-    const swing = 1 - sMean / Math.max(1, V.S - 1)
-    elbow.set(V.x0 + V.bodyLen * 0.25 - 4 * high, -24 * size, -9 - 6 * swing)
-    shoulder.set(V.x0 + V.bodyLen + 6, -26, 16)
+    if (cello) {
+      // elbow raised out to the A side; shoulder behind the upper bout
+      shoulder.set(V.x0 + 6, -14, -21)
+      twoBone(shoulder.clone(), wrist.clone(), 29, 27, new THREE.Vector3(wrist.x + 4, wrist.y - 6, wrist.z - 40), elbow)
+    } else {
+      // arm: the elbow under the instrument, swinging toward the bass strings
+      const sMean = pose.fingers.slice(1).reduce((a, F) => a + F.s, 0) / 4
+      const swing = 1 - sMean / Math.max(1, V.S - 1)
+      elbow.set(V.x0 + V.bodyLen * 0.25 - 4 * high, -24 * size, -9 - 6 * swing)
+      shoulder.set(V.x0 + V.bodyLen + 6, -26, 16)
+    }
     const fa = wrist.clone().addScaledVector(elbow.clone().sub(wrist).normalize(), 1.6 * size)
     place(forearm, fa, elbow)
     place(upper, elbow, shoulder)

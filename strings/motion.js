@@ -27,7 +27,9 @@
 import { stopMM, INSTRUMENTS } from './fingering.js'
 
 const smooth5 = x => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * x * (x * (6 * x - 15) + 10))
-const SLOT = [0, 0, 2, 4, 5]          // natural offset of each finger above finger 1 (semitones)
+// natural offset of each finger above finger 1 (semitones): violin / viola
+// span a fourth, the cello's closed hand a minor third (one finger per semitone)
+const SLOT = [0, 0, 2, 4, 5], SLOT_CELLO = [0, 0, 1, 2, 3]
 export const BOW_HAIR = 65            // usable hair length (cm)
 
 /**
@@ -37,6 +39,7 @@ export const BOW_HAIR = 65            // usable hair length (cm)
 export function buildMotion(notes, { instrument = 'violin', lead = 0.04, vibrato = true } = {}) {
   const inst = typeof instrument === 'object' ? instrument : INSTRUMENTS[instrument]
   const Lcm = inst.L / 10
+  const slot = inst.L > 500 ? SLOT_CELLO : SLOT
   const uOf = semis => stopMM(semis, inst.L) / 10
   const ns = notes.filter(n => n.string != null).sort((a, b) => a.on - b.on || a.pitch - b.pitch)
 
@@ -131,7 +134,7 @@ export function buildMotion(notes, { instrument = 'violin', lead = 0.04, vibrato
     // approach in the last 80 ms, release over 40 ms
     if (next && next.t0 - t < 0.08) lift = (next.t0 - t) / 0.08
     if (prev && t - prev.t1 < 0.04) lift = Math.min(lift, (t - prev.t1) / 0.04)
-    const target = next && next.t0 - t < 0.08 ? uOf(next.semis) : uOf(b + SLOT[f])
+    const target = next && next.t0 - t < 0.08 ? uOf(next.semis) : uOf(b + slot[f])
     return { s, u: target, press: 0, lift: Math.max(0, lift), held: false, note: null }
   }
 

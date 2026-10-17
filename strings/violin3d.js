@@ -13,7 +13,9 @@
 // the fingerboard; the vibrating part blurs while it sounds.
 //
 // Sizes follow the instrument: a viola is the violin scaled to its string
-// length (≈1.14×), a cello ≈2.1× with a deeper body and an end pin.
+// length (≈1.14×), a cello ≈2.1× with a deeper body and an end pin. The
+// caller places the frame in the world: a violin / viola lies roughly flat
+// (top up), a cello stands on its end pin with the back toward the player.
 
 import * as THREE from 'three'
 import { stopMM } from './fingering.js'
@@ -487,6 +489,10 @@ export function buildViolin(instrument, { finish = 'amber' } = {}) {
 
   return {
     group, L, S, k, x0, bodyLen, rib, cello,
+    // tip of the cello's end pin (on the floor), in the instrument frame
+    endPin: new THREE.Vector3(x0 + bodyLen + 44.5, rib / 2, 0),
+    // the back of the neck under the fingerboard centre line (where a thumb rests)
+    neckBackY: x => fbY(Math.max(0, x), 0) - 0.6 * k - (lerp(1.9, 2.5, clamp(x / x0, 0, 1)) * k * (cello ? 1.2 : 1)),
     stringY, stringZ, fbY, topY, fbHalf, fbEnd, yBridge, layoutStrings,
     uOfSemis: n => stopMM(n, instrument.L) / 10,
     bowContact(s, beta = 2.6 * k) {

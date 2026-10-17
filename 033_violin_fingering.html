@@ -207,15 +207,41 @@
       const inst = INSTRUMENTS[$('instrument').value]
       V = buildViolin(inst)
       scene.add(V.group)
-      key.target.position.set(V.L * 0.7, 0, 0)
+      placeInstrument()
       leftHand = buildLeftHand(V, { scale: +$('handSize').value })
       V.group.add(leftHand.group)
       bow = buildBow({ scale: V.cello ? 1.1 : 1 })
       V.group.add(bow.group)
       bowHand = buildBowHand(bow, V.group)
-      bowHand.hand.scale.z = -1          // palm toward the player
       leftHand.setLabels($('labels').checked)
       if ($('ghost').checked) { leftHand.setStyle('ghost'); bowHand.setStyle('ghost') }
+    }
+    // Violin and viola keep the identity frame: lying roughly flat, top up,
+    // the player beyond the tail (+x). The cello stands on its end pin: strings
+    // running down (instrument x → world −y), its top facing the audience
+    // (instrument y → world −z), the C string on the player's right (instrument
+    // z → world +x), the player at +z. It leans back against the player's
+    // chest and a little to the left, the neck beside the left shoulder.
+    const FLOOR_Y = -62
+    function placeInstrument() {
+      const g = V.group
+      g.position.set(0, 0, 0)
+      g.quaternion.identity()
+      floor.position.y = FLOOR_Y
+      if (V.cello) {
+        const basis = new THREE.Matrix4().makeBasis(new THREE.Vector3(0, -1, 0), new THREE.Vector3(0, 0, -1), new THREE.Vector3(1, 0, 0))
+        const q = new THREE.Quaternion().setFromRotationMatrix(basis)
+        const lean = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.5, 0, 0.18, 'ZXY'))
+        g.quaternion.copy(lean.multiply(q))
+        g.updateMatrixWorld(true)
+        const tip = V.endPin.clone().applyMatrix4(g.matrixWorld)
+        g.position.set(-tip.x, FLOOR_Y - tip.y, -tip.z)
+      }
+      g.updateMatrixWorld(true)
+      const r = V.cello ? 110 : 60
+      Object.assign(key.shadow.camera, { left: -r, right: r, top: r, bottom: -r, near: 10, far: 600 })
+      key.shadow.camera.updateProjectionMatrix()
+      key.target.position.set(V.L * 0.7, V.cello ? 10 : 0, 0).applyMatrix4(g.matrixWorld)
     }
     buildInstrument()
 
@@ -236,16 +262,27 @@
     addEventListener('resize', layout)
     $('viewMode').onchange = () => { layout(); saveUrl() }
 
-    // ── Cameras (in the instrument's frame) ────────────────────────────────
+    // ── Cameras (defined in the instrument's frame) ───────────────────────
     function viewDef(name) {
       const L = V.L, x0 = V.x0, B = V.bodyLen, k = V.k
-      return {
+      const views = V.cello ? {
+        // instrument frame: x down the strings, y toward the audience, z toward the player's right
+        player: { pos: [-42, -18, 34], target: [L * 0.6, 14, 0], fov: 40 },
+        hand: { pos: [x0 * 0.3, 30, -42], target: [x0 * 0.3, 14, 0], fov: 34, follow: true },
+        front: { pos: [L * 0.7, 210, -45], target: [L * 0.62, 10, 0], fov: 36 },
+        bow: { pos: [L + 10, 75, 55], target: [L - 4, 16, 0], fov: 36 },
+        above: { pos: [L * 0.65, 30, -190], target: [L * 0.65, 8, 0], fov: 36 },
+      } : {
         player: { pos: [x0 + B + 16 * k, 26 * k, 9 * k], target: [x0 * 0.5, 4 * k, -1 * k], fov: 34 },
         hand: { pos: [x0 * 0.45, 24 * k, -44 * k], target: [x0 * 0.45, 2 * k, 0], fov: 30, follow: true },
         front: { pos: [L * 0.15, 40 * k, 66 * k], target: [L * 0.62, 2 * k, -4 * k], fov: 34 },
         bow: { pos: [L + 32 * k, 26 * k, -30 * k], target: [L - 2 * k, 6 * k, 6 * k], fov: 36 },
         above: { pos: [L * 0.7, 95 * k, -6 * k], target: [L * 0.7, 0, 0], fov: 34 },
-      }[name]
+      }
+      const v = views[name]
+      if (!v) return null
+      const M = V.group.matrixWorld
+      return { ...v, pos: new THREE.Vector3(...v.pos).applyMatrix4(M).toArray(), target: new THREE.Vector3(...v.target).applyMatrix4(M).toArray() }
     }
     let tween = null, followU = 0
     function setView(name, instant = false) {
@@ -681,19 +718,50 @@
       // bow: hair touches the bowed string ~2.6 cm from the bridge, tilted to that string
       const C = V.bowContact(bw.s, (2.6 + 0.6 * (1 - Math.min(1, Math.abs(bw.speed) / 60))) * V.k)
       C.y += 0.12 * V.k + bw.lift * 1.6 * V.k
+      // bow frame: x along the hair from frog to tip, y from the hair up to the
+      // stick, z = x × y. y points away from the strings, so the hair (not the
+      // stick) lies on them. The violin's frog is on the top-string side (the
+      // player's right), the cello's on the C-string side (also the player's
+      // right), so the cello's bow runs the other way across the strings
       const th = V.bowTilt(bw.s)
-      _x.set(0, Math.sin(th), Math.cos(th))
-      // bow frame: x along the hair, y from the hair up to the stick, z = x × y
-      // (toward the scroll); y must point away from the strings so the hair,
-      // not the stick, lies on them
-      _z.set(-1, 0, 0)
+      if (V.cello) { _x.set(0, -Math.sin(th), -Math.cos(th)); _z.set(1, 0, 0) }
+      else { _x.set(0, Math.sin(th), Math.cos(th)); _z.set(-1, 0, 0) }
       _y.crossVectors(_z, _x)
       _m.makeBasis(_x, _y, _z)
       bow.group.quaternion.setFromRotationMatrix(_m)
-      bow.group.position.copy(C).addScaledVector(_x, -bw.pos * V.k * (V.cello ? 1.1 : 1))
-      shoulderR.set(V.x0 + V.bodyLen + 10, -24, -34)
-      poleR.set(V.x0 + V.bodyLen + 30, -70, -50)
+      bow.group.position.copy(C).addScaledVector(_x, -bw.pos * bow.hairLen / 65)
+      orientBowHand()
+      if (V.cello) {
+        // right shoulder behind the upper bout on the C side, the elbow out and down
+        shoulderR.set(V.x0 + 6, -14, 21)
+        poleR.set(V.L * 0.9, -40, 70)
+      } else {
+        shoulderR.set(V.x0 + V.bodyLen + 10, -24, -34)
+        poleR.set(V.x0 + V.bodyLen + 30, -70, -50)
+      }
       bowHand.update(shoulderR, poleR)
+    }
+
+    // The bow hand is modelled for a violin: its +y over the stick, +z toward
+    // the player. On the violin the bow's own y is already up, so the hand
+    // only mirrors to face the player. On the cello the bow's y points at the
+    // audience, so the hand turns about the stick until it hangs over the
+    // stick from above.
+    const _q = new THREE.Quaternion(), _up = new THREE.Vector3(), _pl = new THREE.Vector3(), _hx = new THREE.Vector3(1, 0, 0), _hy = new THREE.Vector3(), _hz = new THREE.Vector3(), _hm = new THREE.Matrix4(), _piv = new THREE.Vector3()
+    function orientBowHand() {
+      const h = bowHand.hand
+      _q.copy(V.group.quaternion).multiply(bow.group.quaternion).invert()
+      if (V.cello) { _up.set(0, 1, 0).applyQuaternion(_q); _pl.set(0, 0, 1).applyQuaternion(_q) }
+      else { _up.set(0, 1, 0); _pl.copy(_z.set(1, 0, 0).applyQuaternion(_q.copy(bow.group.quaternion).invert())) }
+      _hy.copy(_up).addScaledVector(_hx, -_up.x).normalize()
+      _hz.crossVectors(_hx, _hy)
+      const mirror = _hz.dot(_pl) < 0
+      _hm.makeBasis(_hx, _hy, _hz)
+      h.quaternion.setFromRotationMatrix(_hm)
+      h.scale.set(1, 1, mirror ? -1 : 1)
+      // turn about the stick (y = 1.7 in the bow frame), not about the hair
+      _piv.set(0, 1.7, 0)
+      h.position.copy(_piv).sub(_piv.clone().applyQuaternion(h.quaternion))
     }
 
     // ── Loop ───────────────────────────────────────────────────────────────
@@ -725,7 +793,8 @@
           const goal = pose.anchorU - V.x0 * 0.4
           const du = (goal - followU) * Math.min(1, dt * 2)
           followU += du
-          camera.position.x += du; controls.target.x += du
+          const along = _x.set(1, 0, 0).applyQuaternion(V.group.quaternion)
+          camera.position.addScaledVector(along, du); controls.target.addScaledVector(along, du)
         }
         controls.update(dt)
         renderer.render(scene, camera)
