@@ -364,6 +364,7 @@
     import { createCommunity, communityList } from './pianist/community.js'
     import { createSmoother } from './pianist/subdivide.js'
     import { createDirector, SPOTS, MOVES, FRAME_LABELS } from './pianist/director.js'
+    import { hideBody } from './pianist/shell.js'
 
     const $ = id => document.getElementById(id)
     const params = new URLSearchParams(location.search)
@@ -882,6 +883,24 @@
     // head's small moves read as a steady gaze
     const pvEye = new THREE.Vector3(), pvLook = new THREE.Vector3(), _pv = new THREE.Vector3()
     let pvPrimed = false
+    // Seen from inside her head: the head and face (body triangles above the
+    // middle of the neck), eyes, brows, lashes and hair are hidden, and the
+    // near plane pushed out a little so nothing of the collar or cheeks
+    // grazes the lens. A garment rebuilt meanwhile keeps its own hiding.
+    let povOn = false, povTris = null
+    function setPov(on) {
+      if (ALT || on === povOn) return
+      povOn = on
+      if (on && !povTris) {
+        const g = ch.parts.body.geometry, y = g.attributes.position.array, full = ch.parts.body.index0 || g.index.array
+        povTris = []
+        for (let t = 0; t < full.length; t += 3) if (y[full[t] * 3 + 1] > 145 && y[full[t + 1] * 3 + 1] > 145 && y[full[t + 2] * 3 + 1] > 145) povTris.push(t)
+      }
+      hideBody(ch, 'pov', on ? povTris : null)
+      for (const k of ['eyes', 'eyebrows', 'eyelashes']) ch.meshes[k].visible = !on
+      if (hair) hair.object.visible = !on && $('hairOn').checked
+      camera.near = on ? 6 : 2; camera.updateProjectionMatrix()
+    }
     function playerView(hands, dt) {
       _pv.copy(rig.pos('eye.L')).add(rig.pos('eye.R')).multiplyScalar(0.5)
       const k = pvPrimed ? 1 - Math.exp(-dt / 0.15) : 1, kl = pvPrimed ? 1 - Math.exp(-dt / 0.7) : 1
@@ -1438,6 +1457,8 @@
       if (cut) { camera.position.copy(camGoal.pos); controls.target.copy(camGoal.target); camera.fov = camGoal.fov; camera.updateProjectionMatrix(); cut = false; userCam = false; snapFocus = true }
       const live = { hands: handsC, head }
       if (view === 'player') playerView(handsC, dt)
+      setPov(view === 'player' && !userCam)
+      if (povOn && hair?.object.visible) hair.object.visible = false
       const dirShot = view === 'auto' ? director.update(song ? t : null, dt, live) : null   // runs even while dragged, so the subjects stay tracked
       let driven = null
       if (dirShot && !userCam) {
@@ -1604,6 +1625,7 @@
         const handsAt = (() => { const c = new THREE.Vector3(); for (const h of [rig.hands.L, rig.hands.R]) c.add(h.joints.W); return c.multiplyScalar(0.5) })()
         let focusOn = view === 'shoulder' || view === 'hands' ? handsAt : rig.pos('head'), wide = view === 'side'
         if (view === 'player') playerView(handsAt, 1 / 60)
+        setPov(view === 'player')
         if (view === 'auto') {
           // the director's frame at T (a ?move= on a fixed view is shown at its far end)
           const c = director.update(T, 1 / 60, { hands: handsAt, head: rig.pos('head') })
