@@ -14,6 +14,15 @@ Midi Visualization Experiments
 - Piano roll over the note / onset / contour activations, matched / missed / extra notes, pitch-bend lines; threshold sliders re-decode instantly; plays the audio and the transcription (soundfont) together; MIDI and 22 kHz WAV export
 - Tests: `node --test transcription/onnx/test/basic-pitch.test.js` (10; the 2 end-to-end tests need onnxruntime-web, see the file)
 
+[Experiment #035 - Basic Pitch Playground](035_basic_pitch.html)
+- Audio → MIDI with Spotify's Basic Pitch on TensorFlow.js: the 0.9 MB tfjs model from `@spotify/basic-pitch` 1.0.1 (Apache-2.0, vendored in [transcription/vendor/basic-pitch/](transcription/vendor/basic-pitch/)) in a module worker, WebGL / WebGPU / WASM / CPU backends
+- Sources: audio files (open or drop), microphone and another tab's audio live, and demo MIDIs rendered offline with the soundfont (as written or forced to one GM instrument) and scored against the MIDI
+- Live: complete 2 s windows are committed (~1 s behind) and a "peek" re-runs the unfinished window on what has arrived, so notes show ~0.2–0.5 s behind; stopping keeps the take for playback and export
+- Frame / onset / contour heatmap under the notes; threshold, min length, tolerance, range, infer-onsets and melodia sliders re-decode instantly; reference MIDI scoring (onset and onset+offset P / R / F1, ±50 ms) with an offset slider
+- [transcription/basic-pitch.js](transcription/basic-pitch.js): the library's windowing (identical rows, tested), a streaming transcriber, and a linear-time port of the library's note decoder (its melodia pass is quadratic, 40 s for 3 minutes of audio; output identical, tested)
+- Original and resynthesized notes play in sync (split L / R), echo notes while live; MIDI export (optionally one channel per note with pitch bends) and the 22.05 kHz WAV the model heard
+- Tests: `node --test transcription/test/basic-pitch.test.js` (9; the 2 model tests need `BP_TFJS`, see the file)
+
 [Experiment #034 - Violin Sound Lab](034_violin_sound.html)
 - One performance, five engines to compare by ear (keys 1–5 switch while playing, same spot): bowed digital waveguide, Helmholtz source-filter, Magenta's DDSP violin, VSCO 2 CE samples (CC0), and the GM soundfont #033 uses ([research brief](strings/research/03_violin_sound.md))
 - Performance renderer [strings/sound/performance.js](strings/sound/performance.js): the #033 fingering and bow strokes become per-string curves at 250 Hz: pitch with late-starting vibrato (none on open strings) and slides on shifts, bow speed with attacks, bow changes and phrase arches, bow force kept inside Schelleng's playable window, contact point, finger lifts and taps, and loudness for DDSP
