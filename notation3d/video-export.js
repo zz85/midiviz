@@ -145,10 +145,13 @@ class OfflineSynth {
  * Intro title card, drawn with Canvas2D over a dimmed still of the opening shot.
  * k = progress through the card (0..1); secs = card length.
  */
-export function drawTitleCard(g, w, h, k, secs, { title, subtitle, credit, style }) {
+// font / subFont: CSS font families for the title and the subtitle (the page
+// loads them first); fadeOut: seconds the card takes to fade off the scene
+export function drawTitleCard(g, w, h, k, secs, { title, subtitle, credit, style, font: titleFamily = "Georgia, 'Times New Roman', serif", titleWeight = 600, subFont = "Georgia, 'Times New Roman', serif", subStyle = 'italic', fadeOut: fadeSecs }) {
 	const t = k * secs
 	const fadeIn = clamp01((t - 0.15) / 0.8)                 // text in
-	const fadeOut = clamp01((secs - t) / 0.7)                // whole card out (scene revealed)
+	// whole card out (scene revealed): 0.7 s, or an eased fade of fadeSecs
+	const fadeOut = fadeSecs ? easeInOut(clamp01((secs - t) / fadeSecs)) : clamp01((secs - t) / 0.7)
 	const black = clamp01(1 - t / 0.45)                      // start from black
 	const a = Math.min(fadeIn, fadeOut)
 	if (style === '3d') return drawTitleOverlay3D(g, w, h, t, secs, { subtitle, credit, black })
@@ -170,7 +173,7 @@ export function drawTitleCard(g, w, h, k, secs, { title, subtitle, credit, style
 	g.textBaseline = 'alphabetic'
 	// title — shrink to fit 86% of the width
 	let fs = S * 0.105
-	const font = px => `600 ${px}px Georgia, 'Times New Roman', serif`
+	const font = px => `${titleWeight} ${px}px ${titleFamily}`
 	g.font = font(fs)
 	const maxW = w * 0.86
 	const tw = g.measureText(title).width
@@ -187,7 +190,7 @@ export function drawTitleCard(g, w, h, k, secs, { title, subtitle, credit, style
 	g.fillStyle = lg
 	g.fillRect(w / 2 - ruleW / 2, cy + fs * 0.32 + rise, ruleW, Math.max(1, S * 0.0025))
 	if (subtitle) {
-		g.font = `italic ${S * 0.042}px Georgia, 'Times New Roman', serif`
+		g.font = `${subStyle} ${S * 0.042}px ${subFont}`
 		g.fillStyle = 'rgba(235, 220, 195, 0.88)'
 		g.fillText(subtitle, w / 2, cy + fs * 0.32 + S * 0.075 + rise)
 	}
@@ -200,6 +203,7 @@ export function drawTitleCard(g, w, h, k, secs, { title, subtitle, credit, style
 }
 const clamp01 = x => Math.max(0, Math.min(1, x))
 const easeOut = x => 1 - (1 - x) * (1 - x)
+const easeInOut = x => x * x * (3 - 2 * x)
 
 /** 2D layer for the 3D-title intro: fade from black, letterbox vignette, subtitle in the lower third. */
 function drawTitleOverlay3D(g, w, h, t, secs, { subtitle, credit, black }) {
@@ -345,7 +349,8 @@ export async function exportVideo(o) {
 	const outroFade = o.outro?.music === 'fade'
 	const outroFrames = o.outro?.seconds > 0 ? Math.min(Math.round(o.outro.seconds * fps), outroFade ? musicFrames : Infinity) : 0
 	// music can start while the intro is still fading out (overlap)
-	const overlapFrames = introFrames && o.intro.overlap ? Math.round(Math.min(o.intro.seconds * 0.45, 2.5) * fps) : 0
+	// (overlap: true = up to 45 % of the card / 2.5 s; a number = that many seconds)
+	const overlapFrames = introFrames && o.intro.overlap ? Math.round((typeof o.intro.overlap === 'number' ? Math.min(o.intro.overlap, o.intro.seconds) : Math.min(o.intro.seconds * 0.45, 2.5)) * fps) : 0
 	const musicStart = introFrames - overlapFrames
 	const frames = musicStart + musicFrames + (outroFade ? 0 : outroFrames)
 	// 'fade': credits start outroFrames before the end and the music fades out under them

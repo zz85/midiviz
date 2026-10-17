@@ -95,7 +95,7 @@ Each asset gets its own `assets/community/<key>.bin` plus WebP / JPEG textures, 
 
 ## Render, hall and post-processing (from #030)
 
-- Render → MP4 export (720p–4K, 30/60 fps) through `notation3d/video-export.js`: offline, frame by frame, with the audio synthesised offline and run through the same hall. Camera: Director (auto) or as on screen; optional title card. The picture is a function of song time, so the film matches what plays live.
+- Render → MP4 export (240p / 480p previews, 720p–4K, 30/60 fps) through `notation3d/video-export.js`: offline, frame by frame, with the audio synthesised offline and run through the same hall. Camera: Director (auto) or as on screen. Title card (song title, subtitle "Midiviz Pianist", editable): it holds ~2 s, then fades over 3 s while the music and the scene start underneath; fonts Cormorant Garamond (default), Playfair Display, Cinzel, Great Vibes or Georgia (`fonts/`, OFL). The picture is a function of song time, so the film matches what plays live.
 - Hall (`concertstage/acoustics.js`): volume (to 200 %, limited), room (dry … cathedral), seat, reverb, decay, tone, room boost (±12 dB of reverb / ambience / applause against the piano), hall ambience, applause at the end of a song.
 - Visuals → Post-processing: depth of field and its blur, bloom and its strength, film grain and vignette, dust in the spotlight. All of these are in shared links.
 

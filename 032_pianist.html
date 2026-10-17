@@ -43,6 +43,14 @@
     #start .t { font: 500 15px/1.3 system-ui, sans-serif; color: rgba(255, 255, 255, 0.9); text-align: center; max-width: 80vw; }
     #start .s { font: 12px/1.3 system-ui, sans-serif; color: rgba(255, 255, 255, 0.55); }
     body.hideui #start { display: none; }
+    /* title-card fonts (fonts/, OFL): loaded when an export starts */
+    @font-face { font-family: 'Cormorant Garamond'; font-weight: 600; src: url(fonts/cormorant-garamond-latin-600-normal.woff2) format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Cormorant Garamond'; font-weight: 500; font-style: italic; src: url(fonts/cormorant-garamond-latin-500-italic.woff2) format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Playfair Display'; font-weight: 600; src: url(fonts/playfair-display-latin-600-normal.woff2) format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Playfair Display'; font-weight: 400; font-style: italic; src: url(fonts/playfair-display-latin-400-italic.woff2) format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Cinzel'; font-weight: 600; src: url(fonts/cinzel-latin-600-normal.woff2) format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Cinzel'; font-weight: 400; src: url(fonts/cinzel-latin-400-normal.woff2) format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Great Vibes'; font-weight: 400; src: url(fonts/great-vibes-latin-400-normal.woff2) format('woff2'); font-display: swap; }
     #topLeft, #topRight, #presets, .pop { z-index: 26; }   /* (above the start screen: pick a song first) */
     body.idle { cursor: none; }
     body.hideui .ui { display: none !important; }
@@ -330,11 +338,19 @@
   </div>
   <div id="renderPop" class="pop ui">
     <div class="sect">Export video (MP4)</div>
-    <div class="field"><label>Resolution</label><select id="exRes"><option value="1280x720">720p</option><option value="1920x1080" selected>1080p</option><option value="2560x1440">1440p</option><option value="3840x2160">4K</option></select></div>
+    <div class="field"><label>Resolution</label><select id="exRes"><option value="426x240">240p (preview)</option><option value="854x480">480p (preview)</option><option value="1280x720">720p</option><option value="1920x1080" selected>1080p</option><option value="2560x1440">1440p</option><option value="3840x2160">4K</option></select></div>
     <div class="field"><label>Frame rate</label><select id="exFps"><option>30</option><option selected>60</option></select></div>
     <div class="field"><label>Camera</label><select id="exCam"><option value="auto" selected>Director (auto)</option><option value="current">As on screen</option></select></div>
     <label class="chk"><input type="checkbox" id="exAudio" checked>Include audio (with the hall)</label>
-    <label class="chk"><input type="checkbox" id="exTitle" checked>Title card</label>
+    <label class="chk"><input type="checkbox" id="exTitle" checked>Title card (fades out as the music starts)</label>
+    <div class="field"><label>Title font</label><select id="exFont">
+      <option value="cormorant" selected>Cormorant Garamond</option>
+      <option value="playfair">Playfair Display</option>
+      <option value="cinzel">Cinzel (capitals)</option>
+      <option value="vibes">Great Vibes (script)</option>
+      <option value="georgia">Georgia (system)</option>
+    </select></div>
+    <div class="field"><label>Subtitle</label><input type="text" id="exSub" value="Midiviz Pianist" style="width:100%;box-sizing:border-box;background:#2b2b2b;color:#eee;border:1px solid #444;border-radius:6px;padding:4px 6px;font:inherit"></div>
     <div id="exBar"><div></div></div>
     <div id="exStatus">Choose a song first. Rendering is offline, so every frame is smooth however fast the GPU is.</div>
     <div class="btnrow"><button id="exStart">Export</button><button id="exCancel" class="sec">Cancel</button></div>
@@ -1426,7 +1442,7 @@
       ['sf', 'sf'], ['avsync', 'avsync'],
       ['dofamt', 'dofAmt'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
       ['vol', 'vol'], ['room', 'room'], ['seat', 'seat'], ['rv', 'rvAmt'], ['decay', 'rvDecay'], ['tone', 'rvTone'], ['boost', 'boost'], ['amb', 'amb'], ['applause', 'applause'],
-      ['excam', 'exCam'],
+      ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exsub', 'exSub'],
     ].filter(([, id]) => $(id))
     const OUTFIT_KEYS = { dress: 'dress', slit: 'slit', fabric: 'fabric', dcol: 'color', shoes: 'shoes', hair: 'hair', hcol: 'hairColor' }
     // (colours without their #, so links stay readable)
@@ -1506,7 +1522,7 @@
     const clock = new THREE.Clock()
     let fixedT = null   // ?t= for headless stills: song time to pose at
     const head = new THREE.Vector3(), handsC = new THREE.Vector3()
-    let fxT = 0, exporting = false
+    let fxT = 0, exporting = false, exTitleCard = false
     function frame() {
       const dt = Math.min(clock.getDelta(), 1 / 20)
       step(dt, fixedT ?? pictureTime(dt), false)
@@ -1573,7 +1589,7 @@
       bokeh.uniforms.aperture.value = wide ? 0.00003 : 0.0001
       bokeh.uniforms.aperture.value *= +$('dofAmt').value
       // (the director's fade-in only while the song runs: a loaded song paused at 0 isn't black)
-      renderer.toneMappingExposure = +$('exposure').value * (dirShot && !userCam && (offline || scheduler?.playing) ? dirShot.fade ?? 1 : 1)
+      renderer.toneMappingExposure = +$('exposure').value * (dirShot && !userCam && ((offline && !exTitleCard) || scheduler?.playing) ? dirShot.fade ?? 1 : 1)
       grain.uniforms.uTime.value = fxT
       if (!offline && scheduler?.playing && performance.now() - idleT > 2500) document.body.classList.add('idle')
       // nothing to post-process on the light path: draw straight to the screen
@@ -1602,6 +1618,7 @@
       renderer, opts: { transition: null, view: null }, tour: null,
       setTour() {}, setView() {},
       beginOffline(w, h) {
+        exTitleCard = $('exTitle').checked   // (the card reveals the scene: no fade from black too)
         prevPR = renderer.getPixelRatio(); prevView = view
         renderer.setAnimationLoop(null)
         renderer.setPixelRatio(1)
@@ -1619,6 +1636,18 @@
       },
       update(t, dt) { step(dt, Math.max(0, t), true) },
     }
+    // title-card fonts: [title family, weight, subtitle family, subtitle style]
+    const TITLE_FONTS = {
+      cormorant: { font: "'Cormorant Garamond', Georgia, serif", titleWeight: 600, subFont: "'Cormorant Garamond', Georgia, serif", subStyle: 'italic 500' },
+      playfair: { font: "'Playfair Display', Georgia, serif", titleWeight: 600, subFont: "'Playfair Display', Georgia, serif", subStyle: 'italic 400' },
+      cinzel: { font: "Cinzel, Georgia, serif", titleWeight: 600, subFont: "Cinzel, Georgia, serif", subStyle: 'normal 400' },
+      vibes: { font: "'Great Vibes', Georgia, cursive", titleWeight: 400, subFont: "'Cormorant Garamond', Georgia, serif", subStyle: 'italic 500' },
+      georgia: { font: "Georgia, 'Times New Roman', serif", titleWeight: 600, subFont: "Georgia, 'Times New Roman', serif", subStyle: 'italic' },
+    }
+    async function loadTitleFont(k) {
+      const f = TITLE_FONTS[k]
+      try { await Promise.all([document.fonts.load(`${f.titleWeight} 48px ${f.font}`), document.fonts.load(`${f.subStyle} 24px ${f.subFont}`)]) } catch { /* falls back to Georgia */ }
+    }
     let exAbort = null
     $('exStart').onclick = async () => {
       if (!song || !fingered) return void ($('exStatus').textContent = song ? 'Still working out the fingering, try again in a moment.' : 'Load a song first (Songs, top left).')
@@ -1633,6 +1662,7 @@
         } catch (e) { if (e.name === 'AbortError') return; console.warn(e) }
       }
       if (scheduler?.playing) { scheduler.pause(); songTarget.allSoundOff(); setPlaying(false) }
+      if ($('exTitle').checked) await loadTitleFont($('exFont').value)
       exAbort = new AbortController()
       exporting = true
       $('exStart').disabled = true
@@ -1647,7 +1677,9 @@
           audioOpts: { vendorPath, soundfonts: [$('sf').value], volume: 1, convertSF3: engine._backend?._convertSF3 ? d => engine._backend._convertSF3(d) : null },
           audioFx: offlineHall($('room').value === 'dry' ? null : acousticParams(hallSettings()), 48000, { volume: +$('vol').value }),
           tour: null,
-          intro: $('exTitle').checked ? { seconds: 3.5, title: song.title, subtitle: 'Pianist · MIDIVIZ', style: '2d', overlap: true } : null,
+          // the card holds ~2 s, then fades over 3 s while the music and the
+          // scene start underneath it
+          intro: $('exTitle').checked ? { seconds: 5, overlap: 3, fadeOut: 3, title: song.title, subtitle: $('exSub').value.trim(), style: '2d', ...TITLE_FONTS[$('exFont').value] } : null,
           outro: null,
           fileStream, signal: exAbort.signal,
           onProgress: p => {
@@ -1672,6 +1704,7 @@
     }
     $('exCancel').onclick = () => { if (exAbort) exAbort.abort(); else closePops() }
     window.__pianist.exportStage = stageAdapter
+    window.__pianist.titleFonts = { TITLE_FONTS, loadTitleFont }
 
     // ── Headless stills: ?shot&song=…&t=12&view=profile ─────────────────
     if (params.has('shot')) {
