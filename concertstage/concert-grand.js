@@ -738,8 +738,9 @@ export function buildGrandPiano({ bench = true, mirror = true } = {}) {
   // Hammers (under the strings at the strike slot) and dampers (on top)
   const hammerGeo = roundedBox(1, 3.2, 2.3, 0.55, 3)   // the felt
   const moldingGeo = roundedBox(1, 1.6, 2.6, 0.2, 2)  // its wooden core, under the felt
-  const damperFeltGeo = new THREE.BoxGeometry(1, 0.9, 4.2)
-  const damperHeadGeo = roundedBox(1, 2.2, 4.6, 0.25, 2)
+  // a grand's damper: a thin felt pad under a low wooden block (~1.8 cm in all)
+  const damperFeltGeo = new THREE.BoxGeometry(1, 0.6, 4.2)
+  const damperHeadGeo = roundedBox(1, 1.2, 4.6, 0.25, 2)
   const action = []
   for (const n of notes) {
     const midi = LOW + n.k
@@ -764,8 +765,8 @@ export function buildGrandPiano({ bench = true, mirror = true } = {}) {
     let damper = null, dRestY = 0
     if (midi <= 88) {
       damper = new THREE.Group()
-      const f = new THREE.Mesh(damperFeltGeo, mat.damperFelt); f.scale.x = w * 0.96; f.position.y = 0.45
-      const h = new THREE.Mesh(damperHeadGeo, mat.bridge); h.scale.x = w * 0.96; h.position.y = 0.9 + 1.1
+      const f = new THREE.Mesh(damperFeltGeo, mat.damperFelt); f.scale.x = w * 0.96; f.position.y = 0.3
+      const h = new THREE.Mesh(damperHeadGeo, mat.bridge); h.scale.x = w * 0.96; h.position.y = 0.6 + 0.6
       // the wire runs DOWN between the strings to the damper lever in the
       // action below (nothing sits above a grand's dampers but the lid)
       const wire = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 6, 6), mat.pins); wire.position.y = -3
