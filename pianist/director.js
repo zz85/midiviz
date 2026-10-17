@@ -55,6 +55,10 @@ export const SPOTS = {
   above: { label: 'From above', subj: 'hands', az: -8, el: 72, dist: 150, fov: 38, size: 1, moves: ['orbit', 'dollyIn', 'zoomOut'] },
   side: { label: 'Side, wide', subj: 'figure', az: 90, el: 3, dist: 395, fov: 30, size: 2, flat: true, moves: ['dollyIn', 'zoomOut', 'dollyZoom', 'still'] },
   back: { label: 'Behind', fav: 1.5, subj: 'figure', az: 3, el: 15, dist: 240, fov: 38, size: 1, moves: ['dollyIn', 'orbit', 'crane'] },
+  // two favourites: low from her right looking up at her, and high over the
+  // keyboard from in front looking down at her (the page's lowRight / overKeys)
+  lowRight: { label: 'Low, from her right', fav: 5, subj: 'head', az: 76, el: -9, dist: 245, fov: 38, size: 1, moves: ['orbit', 'dollyIn', 'zoomIn', 'still'], orbitMax: 14 },
+  overKeys: { label: 'High, over the keyboard', fav: 2.5, subj: 'head', az: 167, el: 68, dist: 382, fov: 38, size: 2, moves: ['orbit', 'crane', 'dollyOut', 'dollyIn'] },
   // straight down over the piano, turning slowly about the vertical
   top: { label: 'Top down', subj: 'piano', az: 0, el: 82, dist: 560, fov: 30, size: 2, moves: ['orbit'], orbitSpan: 40, orbitMax: 50 },
   high: { label: 'High, over the lid', subj: 'piano', az: 120, el: 38, dist: 520, fov: 30, size: 2, moves: ['orbit', 'dollyOut', 'dollyIn'] },
