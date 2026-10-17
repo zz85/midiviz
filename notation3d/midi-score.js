@@ -361,7 +361,7 @@ export function midiToSchedule(midi) {
 	midi.tracks.forEach((t, ti) => {
 		const ch = t.channel ?? ti
 		if (t.instrument && ch !== 9) programs.set(ch, t.instrument.number)
-		for (const n of t.notes) notes.push({ midi: n.midi, time: n.time, duration: n.duration, velocity: n.velocity, channel: ch })
+		for (const n of t.notes) notes.push({ midi: n.midi, time: n.time, duration: n.duration, velocity: n.velocity, channel: ch, track: ti })
 		for (const [num, list] of Object.entries(t.controlChanges || {})) {
 			const c = +num
 			if (![7, 10, 11, 64, 66, 67].includes(c)) continue
@@ -370,5 +370,5 @@ export function midiToSchedule(midi) {
 	})
 	notes.sort((a, b) => a.time - b.time)
 	controlChanges.sort((a, b) => a.time - b.time)
-	return { notes, controlChanges, programs }
+	return { notes, controlChanges, programs, trackNames: midi.tracks.map(t => t.name || '') }
 }

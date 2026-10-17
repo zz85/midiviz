@@ -57,7 +57,7 @@ export function createHandDriver(side, dims) {
   const J = makeJoints()
   const shoulder = v3(), tip = v3(), base = v3()
   const SHOULDER = new THREE.Vector3(s * 20, 107, 45)
-  let visible = false
+  let visible = false, pitch = 0, pitchGoal = 0
   const thumbCurl = { side: new THREE.Vector3(s, 0, 0), tilt: FINGERS[1].tilt }
   // Where each fingertip sits in a relaxed hand, relative to the middle
   // knuckle (x across, z forward is negative): the same rest places the
@@ -124,8 +124,11 @@ export function createHandDriver(side, dims) {
 
   function basePos(f, out) {
     const d = FINGERS[f]
-    const [bx, bz] = rot(s * d.base[0], d.base[2], hand.yaw)
-    return out.set(hand.x + bx, hand.y + d.base[1], hand.z + bz).add(slide)
+    // pitched about the knuckle line with the hand (setPitch)
+    const cp = Math.cos(pitch), sp = Math.sin(pitch)
+    const by = d.base[1] * cp + d.base[2] * sp, bzp = -d.base[1] * sp + d.base[2] * cp
+    const [bx, bz] = rot(s * d.base[0], bzp, hand.yaw)
+    return out.set(hand.x + bx, hand.y + by, hand.z + bz).add(slide)
   }
 
   // What the fit cannot cover, a slide does (and it relaxes back to zero):
@@ -220,7 +223,8 @@ export function createHandDriver(side, dims) {
   }
 
   function update(pose, dt, t) {
-    if (!pose) { visible = false; return }
+    if (!pose) { visible = false; pitch = 0; return }
+    pitch += (pitchGoal - pitch) * Math.min(1, dt / 0.12)
     visible = true
     const { anchor, fingers: tips } = pose
     const fit = fitHand(tips, anchor)
@@ -348,8 +352,13 @@ export function createHandDriver(side, dims) {
       }
     }
     const k3 = J.fingers[3][0]
-    const [wx, wz] = rot(s * WRIST[0], WRIST[2], hand.yaw)
-    J.W.set(k3.x + wx, k3.y + WRIST[1], k3.z + wz)
+    // the wrist, from the middle knuckle; raised by pitching the hand about
+    // its knuckles (a hand crossing over the other: the fingers drop onto
+    // the keys from a high wrist), set by the rig through setPitch
+    const cp = Math.cos(pitch), sp = Math.sin(pitch)
+    const wy = WRIST[1] * cp + WRIST[2] * sp, wzp = -WRIST[1] * sp + WRIST[2] * cp
+    const [wx, wz] = rot(s * WRIST[0], wzp, hand.yaw)
+    J.W.set(k3.x + wx, k3.y + wy, k3.z + wz)
     palmPoint(J, J.M)
     J.R.subVectors(J.fingers[5][0], J.fingers[2][0]).multiplyScalar(s).normalize()
     // a slight roll toward whichever side of the hand is pressing
@@ -358,7 +367,7 @@ export function createHandDriver(side, dims) {
     J.R.normalize()
     armIK(J.W, J.E)
   }
-  return { update, bakeTrack, clearTrack, wristAt, side, diag, hand, joints: J, shoulder: SHOULDER, get visible() { return visible } }
+  return { update, bakeTrack, clearTrack, wristAt, setPitch: p => { pitchGoal = p }, get pitch() { return pitch }, side, diag, hand, joints: J, shoulder: SHOULDER, get visible() { return visible } }
 }
 
 

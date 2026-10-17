@@ -236,6 +236,39 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     for (const u of F_AT) worst = Math.max(worst, sinkAt(E.x + (W.x - E.x) * u, E.y + (W.y - E.y) * u, E.z + (W.z - E.z) * u, a.rF, nc))
     return worst
   }
+  // ── Hand over hand: the crossing arm goes over the other ──
+  // When the hands cross (or come within a hand's width), the arm whose hand
+  // is further across the body goes over: the other is posed first, and its
+  // upper arm, forearm and hand become capsules the crossing arm steers its
+  // elbow to clear, from above (a point under the other arm counts as
+  // inside it).
+  const under = { on: false, seg: Array.from({ length: 4 }, () => v3()), r: [0, 0, 2.2] }
+  const _sa = v3(), _sb = v3(), _sc = v3()
+  // distance from point p to segment ab, and how far p is above its nearest point
+  function segDist(p, a, b) {
+    _sa.subVectors(b, a); const L2 = _sa.lengthSq()
+    const t = L2 > 1e-6 ? clamp(_sb.subVectors(p, a).dot(_sa) / L2, 0, 1) : 0
+    _sc.copy(a).addScaledVector(_sa, t)
+    return [p.distanceTo(_sc), p.y - _sc.y]
+  }
+  const O_U = [0.5, 0.75, 1], O_F = [0.2, 0.4, 0.6, 0.8]
+  function overlapUnder(a, S, E, W) {
+    if (!under.on || under.arm === a) return 0
+    const g = under.seg
+    let worst = -Infinity
+    const test = (p, r) => {
+      for (let k = 0; k < 3; k++) {
+        const [d, up] = segDist(p, g[k], g[k + 1]), need = r + under.r[k] + 0.5
+        // below the other arm: as if inside it, by how far it would have to rise
+        const pen = up >= 0 ? need - d : need + d * 0.5
+        if (pen > worst) worst = pen
+      }
+    }
+    for (const u of O_U) test(_E2.copy(S).lerp(E, u), a.rU)
+    for (const u of O_F) test(_E2.copy(E).lerp(W, u), a.rF)
+    return Math.max(0, worst)
+  }
+  const _E2 = v3()
   const PHIS = Array.from({ length: 25 }, (_, i) => (i - 12) * 0.1)
   const _bn = v3(), _p0 = v3(), _E = v3()
   /** Swing the elbow (pole0 ⟂ n) round n until the arm clears the torso. */
@@ -262,18 +295,19 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     // shoulder, since only then would the upper arm cross the chest.
     const c = pos('spine01'), half = Math.abs(S.x - c.x) || 14
     const across = clamp(-a.s * (W.x - c.x) / half, 0, 1)
-    const liftCost = 2.5 + 40 * (1 - across) ** 2
+    const liftCost = under.on && under.arm !== a ? 2.5 : 2.5 + 40 * (1 - across) ** 2
     const y0 = elbow(0, _E).y
     let best = a.phi, bestCost = Infinity
     for (const phi of PHIS) {
       elbow(phi, _E)
       const sink = armSink(a, S, _E, W, nc)
-      const cost = 3 * Math.max(0, sink + CLEAR) + 40 * Math.max(0, sink - CONTACT)
+      const cost = 3 * Math.max(0, sink + CLEAR) + 40 * Math.max(0, sink - CONTACT) + 30 * overlapUnder(a, S, _E, W)
         + liftCost * Math.max(0, _E.y - y0) + 0.3 * Math.abs(phi) + 0.5 * Math.abs(phi - a.phi)
       if (cost < bestCost) { bestCost = cost; best = phi }
     }
     a.phi += (best - a.phi) * (dt > 0 ? 1 - Math.exp(-dt / 0.06) : 1)
     a.sink = armSink(a, S, elbow(a.phi, _E), W, nc)
+    a.over = overlapUnder(a, S, _E, W)
     a.drv.lift = _E.y - y0   // how far the steering raised the elbow (cm)
     // what the elbow cannot clear, the shoulder does: it rolls forward
     // (protraction, up to 7 cm), which also lets the elbow bend more. Fed
@@ -371,7 +405,27 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
 
     // arms and hands
     placeTorso()
-    for (const side of ['L', 'R']) armPose(arm[side], dt)
+    // which arm goes over (see overlapUnder)
+    under.on = false
+    const dl = arm.L.drv, dr = arm.R.drv
+    let order = ['L', 'R']
+    if (dl.visible && dr.visible && dr.joints.W.x - dl.joints.W.x < 8) {
+      const c = pos('spine01').x
+      const acrossOf = a => -a.s * (a.drv.joints.W.x - c)
+      const over = acrossOf(arm.L) > acrossOf(arm.R) ? 'L' : 'R', below = over === 'L' ? 'R' : 'L'
+      order = [below, over]
+      armPose(arm[below], dt)
+      const b = arm[below], g = under.seg
+      g[0].copy(pos(bones[b.ua1].name)); g[1].copy(pos(bones[b.la1].name)); g[2].copy(b.drv.joints.W); g[3].copy(b.drv.joints.M)
+      under.r[0] = b.rU ?? 4; under.r[1] = b.rF ?? 2.7
+      under.arm = b; under.on = true
+      armPose(arm[over], dt)
+      // the crossing hand comes in from above: its wrist rises as the hands
+      // close in (up to ~50°) and the lower one flattens a little (~11°
+      // down), set for the drivers' next frame
+      const gap = dr.joints.W.x - dl.joints.W.x
+      arm[over].drv.setPitch(0.85 * clamp((8 - gap) / 10, 0, 1)); arm[below].drv.setPitch(-0.2 * clamp((8 - gap) / 10, 0, 1))
+    } else { for (const side of order) armPose(arm[side], dt); dl.setPitch(0); dr.setPitch(0) }
     // head: look toward the hands, partly (the eyes take the rest)
     headPose(dt)
     // legs onto the pedals
@@ -416,6 +470,8 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     // hand: map the rest hand frame onto the driver's (yaw only, plus a slight roll)
     const yaw = d.hand.yaw, c = Math.cos(yaw), sn = Math.sin(yaw)
     const e0 = v3(a.s * c, 0, a.s * sn), e1 = v3(0, 1, 0), e2 = v3(-sn, 0, c)
+    // pitch: the wrist raised about the knuckle line (driver's setPitch)
+    if (d.pitch) { const qp = _q.setFromAxisAngle(_v.set(c, 0, sn), -d.pitch); e1.applyQuaternion(qp); e2.applyQuaternion(qp) }
     // roll toward the side that presses (the driver's J.R carries it)
     const Rr = Jd.R.clone().multiplyScalar(a.s)   // toward the little finger
     const roll = Math.asin(clamp(-Rr.y, -0.3, 0.3))

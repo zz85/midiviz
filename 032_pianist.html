@@ -1238,8 +1238,18 @@
       // until the fingering arrives: split at middle C, fingers by position
       return notes.map(n => ({ pitch: n.midi, on: n.time, off: n.time + n.duration, hand: n.midi < 60 ? 'L' : 'R', finger: 0, velocity: n.velocity }))
     }
+    // Hands from the file when its tracks say which is which ("Piano right" /
+    // "Piano left", RH / LH, treble / bass): the score's own split, crossings
+    // included. Otherwise (or for other tracks) the fingering's split decides.
+    function handsFromTracks(s) {
+      const names = s.trackNames || [], hand = names.map(n => /\b(right|rh|r\.?h\.?|treble|upper)\b/i.test(n) ? 'R' : /\b(left|lh|l\.?h\.?|bass|lower)\b/i.test(n) ? 'L' : null)
+      const used = new Set(s.notes.map(n => n.track))
+      if (![...used].some(t => hand[t] === 'R') || ![...used].some(t => hand[t] === 'L')) return
+      for (const n of s.notes) if (hand[n.track]) n.hand = hand[n.track]
+    }
     function fingerInWorker(notes) {
       const job = ++fingerJob
+      handsFromTracks({ notes, trackNames: song?.trackNames })
       fingerWorker?.terminate()
       const url = new URL('./fingering/fingering.js', import.meta.url).href
       const src = `import { fingerPiece } from ${JSON.stringify(url)}
@@ -1253,7 +1263,7 @@
         director.setSong({ duration: out.reduce((m, n) => Math.max(m, n.off), 0), ...rig.form(), energyAt: rig.music.energyAt })
         fingered = true
       }
-      fingerWorker.postMessage(notes.map(n => ({ pitch: n.midi, on: n.time, off: n.time + n.duration, velocity: n.velocity })))
+      fingerWorker.postMessage(notes.map(n => ({ pitch: n.midi, on: n.time, off: n.time + n.duration, velocity: n.velocity, ...(n.hand ? { hand: n.hand } : {}) })))
     }
     let fingered = false
     async function loadSong(buffer, name, at = 0) {
