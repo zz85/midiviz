@@ -347,7 +347,7 @@
   <div id="renderPop" class="pop ui">
     <div class="sect">Export video (MP4)</div>
     <div class="field"><label>Resolution</label><select id="exRes"><option value="426x240">240p (preview)</option><option value="854x480">480p (preview)</option><option value="1280x720">720p</option><option value="1920x1080" selected>1080p</option><option value="2560x1440">1440p</option><option value="3840x2160">4K</option></select></div>
-    <div class="field"><label>Frame rate</label><select id="exFps"><option>30</option><option selected>60</option></select></div>
+    <div class="field"><label>Frame rate</label><select id="exFps"><option>5</option><option>15</option><option>25</option><option>30</option><option selected>60</option></select></div>
     <div class="field"><label>Camera</label><select id="exCam"><option value="auto" selected>Director (auto)</option><option value="current">As on screen</option></select></div>
     <label class="chk"><input type="checkbox" id="exAudio" checked>Include audio (with the hall)</label>
     <label class="chk"><input type="checkbox" id="exTitle" checked>Title card (fades out as the music starts)</label>
@@ -1036,22 +1036,31 @@
       if (v !== 'auto') $('shotName').textContent = ''
     }
     for (const it of document.querySelectorAll('#cameraPop .item')) it.onclick = () => { setView(it.dataset.view); closePops() }
-    // double-tap (or double-click) the picture: the next camera in the menu
+    // a tap or click on the picture (no drag): play / pause, as on YouTube;
+    // double-tap (or double-click): the next camera in the menu. The single tap
+    // waits out the double-tap window, and a tap that only closes a menu is not one
     {
       const cv = renderer.domElement, down = new Map()
-      let lastTap = 0, lastX = 0, lastY = 0
-      cv.addEventListener('pointerdown', ev => down.set(ev.pointerId, [ev.clientX, ev.clientY, performance.now()]))
+      let lastTap = 0, lastX = 0, lastY = 0, tapT = 0
+      cv.addEventListener('pointerdown', ev => {
+        const menu = Object.values(pops).some(p => $(p).classList.contains('open'))
+        down.set(ev.pointerId, [ev.clientX, ev.clientY, performance.now(), menu || down.size > 0])
+      })
       cv.addEventListener('pointerup', ev => {
         const d = down.get(ev.pointerId); down.delete(ev.pointerId)
         if (!d || down.size || Math.hypot(ev.clientX - d[0], ev.clientY - d[1]) > 12 || performance.now() - d[2] > 350) return   // (a drag, a hold or a pinch)
         const now = performance.now()
         if (now - lastTap < 350 && Math.hypot(ev.clientX - lastX, ev.clientY - lastY) < 40) {
-          lastTap = 0
+          lastTap = 0; clearTimeout(tapT)
           const items = [...document.querySelectorAll('#cameraPop .item[data-view]')], i = items.findIndex(it => it.dataset.view === view)
           const next = items[(i + 1) % items.length]
           camFree = false; setView(next.dataset.view)
           setStatus(next.firstChild.textContent.trim(), false, 1200)
-        } else { lastTap = now; lastX = ev.clientX; lastY = ev.clientY }
+        } else {
+          lastTap = now; lastX = ev.clientX; lastY = ev.clientY
+          clearTimeout(tapT)
+          if (!d[3] && !exporting) tapT = setTimeout(togglePlay, 300)
+        }
       })
       cv.addEventListener('dblclick', ev => ev.preventDefault())
     }
