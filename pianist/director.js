@@ -34,7 +34,7 @@ const wrap = a => ((a + 540) % 360) - 180
 // fav: a favourite (weight ×fav), rest: seconds before it's fresh again (60)
 export const SPOTS = {
   establish: { label: 'From the hall, wide', subj: 'figure', az: 138, el: 9, dist: 700, fov: 24, size: 2, moves: ['dollyIn', 'zoomIn', 'orbit'] },
-  audience: { label: 'From the audience', subj: 'head', az: 128, el: 4, dist: 420, fov: 20, size: 1, moves: ['zoomIn', 'dollyIn', 'orbit', 'dollyZoom', 'still'] },
+  audience: { label: 'From the audience', fav: 0.45, subj: 'head', az: 128, el: 4, dist: 420, fov: 20, size: 1, moves: ['zoomIn', 'dollyIn', 'orbit', 'dollyZoom', 'still'] },
   // flat: square on, so the shot itself doesn't turn (glides into it do).
   // Across the piano is low, under the lid over the strings; minDist keeps
   // its moves from carrying the camera in past the tail
@@ -54,7 +54,7 @@ export const SPOTS = {
   keys: { label: 'Along the keys', subj: 'hands', az: 93, el: 7, dist: 120, fov: 30, size: 0, moves: ['zoomIn', 'still', 'dollyOut', 'dollyZoom'], orbitMax: 6 },
   above: { label: 'From above', subj: 'hands', az: -8, el: 72, dist: 150, fov: 38, size: 1, moves: ['orbit', 'dollyIn', 'zoomOut'] },
   side: { label: 'Side, wide', subj: 'figure', az: 90, el: 3, dist: 395, fov: 30, size: 2, flat: true, moves: ['dollyIn', 'zoomOut', 'dollyZoom', 'still'] },
-  back: { label: 'Behind', subj: 'figure', az: 3, el: 15, dist: 240, fov: 38, size: 1, moves: ['dollyIn', 'orbit', 'crane'] },
+  back: { label: 'Behind', fav: 1.5, subj: 'figure', az: 3, el: 15, dist: 240, fov: 38, size: 1, moves: ['dollyIn', 'orbit', 'crane'] },
   // straight down over the piano, turning slowly about the vertical
   top: { label: 'Top down', subj: 'piano', az: 0, el: 82, dist: 560, fov: 30, size: 2, moves: ['orbit'], orbitSpan: 40, orbitMax: 50 },
   high: { label: 'High, over the lid', subj: 'piano', az: 120, el: 38, dist: 520, fov: 30, size: 2, moves: ['orbit', 'dollyOut', 'dollyIn'] },
@@ -289,7 +289,8 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
     if (last) end = duration + 6
     const prev = shots[i - 1], prev2 = shots[i - 2]
     let name, move
-    if (i === 0) { name = hs(7, 2) < 0.6 ? 'establish' : 'audience'; move = 'dollyIn' }
+    // open behind her, pushing in (the page fades it in from black)
+    if (i === 0) { name = 'back'; move = 'dollyIn' }
     else {
       // score every spot for this stretch of music
       const up = lookUp(t, end)
@@ -311,14 +312,14 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
         // she looks up from the keys: be on her face
         if (up) x *= s.subj === 'head' ? 2.5 : 0.3
         // the last shot pulls out wide
-        if (last) x = s.size === 2 || n === 'audience' || n === 'tail' ? 1 : 0
+        if (last) x = s.size === 2 || n === 'tail' ? 1 : 0
         if (prev) {
           const ps = SPOTS[prev.name]
           if (n === prev.name) return 0
           if (prev2 && n === prev2.name) x *= 0.3
           if (prev2 && SUBJ_KIND[ps.subj] === kind && SUBJ_KIND[SPOTS[prev2.name].subj] === kind) x *= 0.35
-          // after the opening (the hall, the audience): close, her fingers or her
-          // face, or over her shoulder onto the keys
+          // after the opening (behind her): close, her fingers or her face, or
+          // over her shoulder onto the keys
           if (i === 1) x *= s.size === 0 || n === 'shoulder' ? 4 : 0.25
           // after a close-up: a medium shot (back to the keys), not the hall
           else if (ps.size === 0) x *= s.size === 1 ? 2.5 : s.size === 2 ? 0.8 : 0.15
@@ -440,6 +441,7 @@ export function createDirector(opts = {}) {
       anchor.figure.lerpVectors(anchor.hands, anchor.head, 0.55).add(ta.set(0, -6, 4))
       anchor.piano.set(anchor.hands.x * 0.3, 90, -70)
       primed = true
+      const onSong = t != null
       if (t == null) { idleT += dt; t = idleT % shots[shots.length - 1].t1 }
       const idx = shotAt(t), sh = shots[idx]
       // a new shot locks onto where she is now (the shot gliding out keeps its own)
@@ -478,6 +480,8 @@ export function createDirector(opts = {}) {
       out.focus = subj === 'hands' || subj === 'feet' ? 'hands' : 'head'
       out.wide = SPOTS[cur.name].size === 2
       out.shot = cur
+      // the opening fades in from black over its first 2.5 s
+      out.fade = idx === 0 && onSong ? sstep(t, 0, 2.5) : 1
       return out
     },
     /** a fixed view with a looping move: pos/target arrays, move name, wall time */

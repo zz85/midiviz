@@ -46,6 +46,14 @@
     #presetPeek img { display: block; width: 132px; height: 184px; border-radius: 6px; }
     #presetPeek span { display: block; max-width: 132px; margin-top: 5px; color: #ddd; font: 11px/1.3 system-ui, sans-serif; }
     body.altmodel #presets { display: none; }
+    /* narrow screens (phones): icon-only pills, the presets on a row of their own */
+    @media (max-width: 760px) {
+      .pill { font-size: 0; gap: 0; padding: 0 10px; }
+      #title { display: none; }
+      #topRight { gap: 6px; }
+      #presets { top: 54px; max-width: calc(100vw - 24px); overflow-x: auto; }
+      .pop { max-width: calc(100vw - 24px); }
+    }
     #topRight { position: absolute; top: 12px; right: 12px; display: flex; gap: 8px; }
     #title { align-self: center; margin-left: 6px; font: 300 15px Georgia, serif; color: rgba(255, 255, 255, 0.55); letter-spacing: 0.04em; }
     #title a { color: inherit; text-decoration: none; }
@@ -146,7 +154,7 @@
     <div class="item" id="resetAll" title="Every option back to its default (the song and its position are kept)">↺ Restore all defaults</div>
     <div class="sect">Pianist</div>
     <div class="field"><label>Model</label><select id="model"><option value="">MakeHuman (realistic, CC0)</option></select></div>
-    <div class="field"><label>Look</label><select id="look"><option value="realistic">Realistic</option><option value="stylized">Stylized (animated feature)</option><option value="cel">Cel shaded (outlines)</option></select></div>
+    <div class="field"><label>Look</label><select id="look"><option value="realistic">Realistic</option><option value="stylized">Stylized (animated feature)</option><option value="cel" selected>Cel shaded (outlines)</option></select></div>
     <div class="field"><label>Smooth (subdivided)</label><select id="smooth"><option value="0">Off</option><option value="1">1× (4× the triangles)</option><option value="2">2× (16×)</option></select></div>
     <div class="field" title="Fold the body down to a low-poly cage first (pianist/simplify.js), then smooth that: the slider is how far (cm) the cage may stray from the modelled shape. It goes as low as it can within that; the face and hands are held 8× tighter. 0 = as modelled"><label>Low poly first <span id="simplifyV">off</span></label><input type="range" id="simplify" min="0" max="3" step="0.05" value="0"></div>
     <div class="field"><label>Outfit</label><select id="outfit">
@@ -160,7 +168,7 @@
       <option value="shift-long">Blush shift dress, long hair</option>
       <option value="bob-bodycon">Gold sequin bodycon, brunette bob</option>
       <option value="bob-cocktail">Black cocktail dress, auburn fifties updo</option>
-      <option value="bob-tee">White T-shirt and skirt, platinum bob</option>
+      <option value="bob-tee" selected>White T-shirt and skirt, platinum bob</option>
       <option value="bob-turtleneck">Black sleeveless turtleneck, ash-grey bob</option>
       </optgroup>
       <optgroup label="Evening gowns">
@@ -230,14 +238,14 @@
     <div class="field"><label>Main light</label><input type="range" id="light" min="0" max="2" step="0.01" value="1"></div>
     <div class="field"><label>Exposure</label><input type="range" id="exposure" min="0.3" max="2.5" step="0.01" value="1"></div>
     <div class="sect">Post-processing</div>
-    <label class="chk"><input type="checkbox" id="dof" checked>Depth of field</label>
+    <label class="chk"><input type="checkbox" id="dof">Depth of field</label>
     <div class="field" title="How soft the out-of-focus parts get"><label>Blur <span class="val" id="dofAmtV"></span></label><input type="range" id="dofAmt" min="0.2" max="4" step="0.05" value="1"></div>
-    <label class="chk"><input type="checkbox" id="bloom" checked>Bloom</label>
+    <label class="chk"><input type="checkbox" id="bloom">Bloom</label>
     <div class="field"><label>Bloom strength <span class="val" id="bloomAmtV"></span></label><input type="range" id="bloomAmt" min="0" max="1.2" step="0.01" value="0.12"></div>
-    <label class="chk"><input type="checkbox" id="filmGrain" checked>Film grain &amp; vignette</label>
-    <div class="field"><label>Grain <span class="val" id="grainAmtV"></span></label><input type="range" id="grainAmt" min="0" max="0.12" step="0.002" value="0.035"></div>
+    <label class="chk"><input type="checkbox" id="filmGrain">Film grain &amp; vignette</label>
+    <div class="field"><label>Grain <span class="val" id="grainAmtV"></span></label><input type="range" id="grainAmt" min="0" max="0.12" step="0.001" value="0.035"></div>
     <div class="field"><label>Vignette <span class="val" id="vigV"></span></label><input type="range" id="vig" min="0" max="1.2" step="0.01" value="0.55"></div>
-    <label class="chk" title="Dust motes drifting through the spotlight"><input type="checkbox" id="dust" checked>Dust in the light</label>
+    <label class="chk" title="Dust motes drifting through the spotlight"><input type="checkbox" id="dust">Dust in the light</label>
     <div class="field"><label>Dust <span class="val" id="dustAmtV"></span></label><input type="range" id="dustAmt" min="0" max="0.6" step="0.01" value="0.18"></div>
     <div class="field"><label>Sound</label><select id="sf"></select></div>
     <div class="field" title="Fine-tune when the hands and keys move against the sound, if your speakers or headphones report their delay wrongly (Bluetooth often does). Positive = the picture later."><label>Picture vs sound</label><input type="range" id="avsync" min="-200" max="200" step="5" value="0"><span id="avsyncV">0 ms</span></div>
@@ -253,7 +261,7 @@
     <div class="field" title="Raises the room (reverb, ambience, applause) relative to the piano"><label>Room boost <span class="val" id="boostV"></span></label><input type="range" id="boost" min="-12" max="12" step="0.5" value="0"></div>
     <div class="sect">Audience</div>
     <div class="field"><label>Hall ambience <span class="val" id="ambV"></span></label><input type="range" id="amb" min="0" max="1" step="0.01" value="0"></div>
-    <label class="chk"><input type="checkbox" id="applause" checked>Applause when a song ends</label>
+    <label class="chk"><input type="checkbox" id="applause">Applause when a song ends</label>
     <div class="btnrow"><button id="clapNow" class="sec">Applaud now</button></div>
   </div>
   <div id="renderPop" class="pop ui">
@@ -310,7 +318,8 @@
 
     const $ = id => document.getElementById(id)
     const params = new URLSearchParams(location.search)
-    const LOWQ = params.get('q') === 'low'
+    // phones and tablets (a coarse pointer) take the light path unless ?q=high
+    const LOWQ = params.get('q') === 'low' || (params.get('q') !== 'high' && matchMedia('(pointer: coarse)').matches)
     const vendorPath = new URL('./vendor', import.meta.url).href
     let statusTimer = 0
     function setStatus(msg, isError = false, ms = 0) {
@@ -480,12 +489,15 @@
     if (/^yuja-/.test(params.get('outfit'))) params.set('outfit', params.get('outfit').replace('yuja-', 'sequin-'))
     // (renamed: they have long hair now)
     { const RENAMED = { 'bob-gown': 'long-gown', 'bob-shift': 'shift-long' }; if (RENAMED[params.get('outfit')]) params.set('outfit', RENAMED[params.get('outfit')]) }
+    // no wardrobe in the link: preset 1 (the first featured outfit)
+    const DEFAULT_OUTFIT = 'bob-tee'
+    if (!['outfit', 'dress', 'hair', 'fabric', 'shoes', 'dcol', 'hcol'].some(k => params.has(k))) params.set('outfit', DEFAULT_OUTFIT)
     if (OUTFITS[params.get('outfit')]) {
       const o = OUTFITS[params.get('outfit')]; $('outfit').value = params.get('outfit')
       $('dressStyle').value = o.dress; $('fabric').value = o.fabric; $('dressColor').value = o.color
       $('shoeStyle').value = o.shoes; $('hairStyle').value = o.hair; $('hairColor').value = o.hairColor
       $('slit').value = o.slit || 'calf'; trimColor = o.trim || null
-    }
+    } else $('outfit').value = ''   // (a custom wardrobe from the link)
     // wardrobe: ?hair=…&dress=…&look=… (or the Visuals menu)
     for (const [k, id] of [['fabric', 'fabric'], ['hair', 'hairStyle'], ['dress', 'dressStyle'], ['shoes', 'shoeStyle'], ['look', 'look'], ['smooth', 'smooth'], ['simplify', 'simplify']]) if (params.get(k)) $(id).value = params.get(k).replace(/^midi-/, 'knee-')   // (old links: "midi" is now "knee")
     if (!$('dressStyle').value) $('dressStyle').value = 'knee-fitted'
@@ -831,7 +843,7 @@
     window.__pianist.director = director
     const camOut = { pos: new THREE.Vector3(), target: new THREE.Vector3(), fov: 34 }
     // ?view=auto (the director; old ?view=cycle links too) or a fixed view
-    let view = params.get('view') === 'cycle' ? 'auto' : VIEWS[params.get('view')] || params.get('view') === 'auto' ? params.get('view') : 'shoulder'
+    let view = params.get('view') === 'cycle' ? 'auto' : VIEWS[params.get('view')] || params.get('view') === 'auto' ? params.get('view') : 'back'
     const camGoal = { pos: new THREE.Vector3(), target: new THREE.Vector3(), fov: 34 }
     let cut = true
     function setView(v, instant = true) {
@@ -844,6 +856,25 @@
       if (v !== 'auto') $('shotName').textContent = ''
     }
     for (const it of document.querySelectorAll('#cameraPop .item')) it.onclick = () => { setView(it.dataset.view); closePops() }
+    // double-tap (or double-click) the picture: the next camera in the menu
+    {
+      const cv = renderer.domElement, down = new Map()
+      let lastTap = 0, lastX = 0, lastY = 0
+      cv.addEventListener('pointerdown', ev => down.set(ev.pointerId, [ev.clientX, ev.clientY, performance.now()]))
+      cv.addEventListener('pointerup', ev => {
+        const d = down.get(ev.pointerId); down.delete(ev.pointerId)
+        if (!d || down.size || Math.hypot(ev.clientX - d[0], ev.clientY - d[1]) > 12 || performance.now() - d[2] > 350) return   // (a drag, a hold or a pinch)
+        const now = performance.now()
+        if (now - lastTap < 350 && Math.hypot(ev.clientX - lastX, ev.clientY - lastY) < 40) {
+          lastTap = 0
+          const items = [...document.querySelectorAll('#cameraPop .item[data-view]')], i = items.findIndex(it => it.dataset.view === view)
+          const next = items[(i + 1) % items.length]
+          camFree = false; setView(next.dataset.view)
+          setStatus(next.firstChild.textContent.trim(), false, 1200)
+        } else { lastTap = now; lastX = ev.clientX; lastY = ev.clientY }
+      })
+      cv.addEventListener('dblclick', ev => ev.preventDefault())
+    }
     setView(view)
     // dragging takes the camera; the director (or the move) takes it back after 8 s
     let userCam = false, camFree = false   // camFree: a dragged camera on a fixed view (shared as ?cam=)
@@ -928,7 +959,7 @@
       }
     }
     const engine = new SoundFontEngine({ backend: 'oxisynth', vendorPath, audioContext: audioCtx })
-    const SOUNDFONTS = [['soundfonts/Motif_ES6_Concert_Piano.sf2', 'Motif ES6 Concert Piano'], ['soundfonts/Full Grand Piano.sf2', 'Full Grand Piano'], ['soundfonts/FluidR3.sf3', 'FluidR3 GM']]
+    const SOUNDFONTS = [['soundfonts/Full Grand Piano.sf2', 'Full Grand Piano'], ['soundfonts/Motif_ES6_Concert_Piano.sf2', 'Motif ES6 Concert Piano'], ['soundfonts/FluidR3.sf3', 'FluidR3 GM']]
     for (const [v, l] of SOUNDFONTS) $('sf').add(new Option(l, v))
     let soundReady = false, soundLoading = null
     async function loadSound(v) {
@@ -941,7 +972,7 @@
     const unlockAudio = () => { if (audioCtx.state !== 'running') audioCtx.resume().then(() => engine.resume?.()).catch(() => {}); if (hall.ctx && hall.ctx.state !== 'running') hall.ctx.resume().catch(() => {}) }
 
     // ── Hall acoustics (as #030) ─────────────────────────────────────────
-    for (const [k, r] of Object.entries(ROOMS)) $('room').add(new Option(r.label, k, k === 'hall', k === 'hall'))
+    for (const [k, r] of Object.entries(ROOMS)) $('room').add(new Option(r.label, k, k === 'dry', k === 'dry'))   // (no room by default: Hall → Room to add one)
     for (const [k, r] of Object.entries(SEATS)) $('seat').add(new Option(r.label, k, k === 'front', k === 'front'))
     const hallSettings = () => ({ room: $('room').value, seat: $('seat').value, amount: +$('rvAmt').value, decay: +$('rvDecay').value, tone: +$('rvTone').value, boost: +$('boost').value })
     function applyHall() {
@@ -1214,7 +1245,7 @@
         const base = o && o[OUTFIT_KEYS[k]] != null ? (el.type === 'color' ? hex(o[OUTFIT_KEYS[k]]) : o[OUTFIT_KEYS[k]]) : ctlDefault(el)
         if (same(v, base)) q.delete(k); else q.set(k, v)
       }
-      if (view === 'shoulder') q.delete('view'); else q.set('view', view)
+      if (view === 'back') q.delete('view'); else q.set('view', view)
       const r = x => Math.round(x * 10) / 10
       if (camFree && view !== 'auto') q.set('cam', [...camera.position.toArray(), ...controls.target.toArray()].map(r).join(',')); else q.delete('cam')
       if (speeds[speedI] === 1) q.delete('speed'); else q.set('speed', speeds[speedI])
@@ -1311,17 +1342,24 @@
       bokeh.uniforms.focus.value += (fd - bokeh.uniforms.focus.value) * (snapFocus ? 1 : 0.1)
       bokeh.uniforms.aperture.value = wide ? 0.00003 : 0.0001
       bokeh.uniforms.aperture.value *= +$('dofAmt').value
+      renderer.toneMappingExposure = +$('exposure').value * (dirShot && !userCam ? dirShot.fade ?? 1 : 1)
       grain.uniforms.uTime.value = fxT
       if (!offline && scheduler?.playing && performance.now() - idleT > 2500) document.body.classList.add('idle')
-      composer.render()
+      // nothing to post-process on the light path: draw straight to the screen
+      if (LOWQ && !bokeh.enabled && !bloom.enabled && !$('filmGrain').checked) renderer.render(scene, camera)
+      else composer.render()
     }
     renderer.setAnimationLoop(frame)
     function resize(w, h, style = true) {
+      // taller than 16:10 (a phone held upright): widen the lens so the shots
+      // keep about the same width of the scene
+      camera.zoom = Math.max(0.55, Math.min(1, (w / h) / 1.6))
       camera.aspect = w / h; camera.updateProjectionMatrix()
       renderer.setSize(w, h, style); composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(w, h)
       dust.material.uniforms.uScale.value = h * renderer.getPixelRatio()
     }
     addEventListener('resize', () => { if (!exporting) resize(innerWidth, innerHeight) })
+    resize(innerWidth, innerHeight)
 
     // ── Video export (as #030) ───────────────────────────────────────────
     // notation3d/video-export.js renders frame by frame at a fixed timestep
