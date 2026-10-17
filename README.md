@@ -6,6 +6,14 @@ Midi Visualization Experiments
 
 17 Oct 2026
 
+[Experiment #036 - Audio → MIDI on ONNX Runtime Web](036_onnx_transcription.html)
+- Spotify's Basic Pitch with no TensorFlow: the ICASSP 2022 model as ONNX ([transcription/onnx/basic-pitch-nmp.onnx](transcription/onnx/basic-pitch-nmp.onnx), 230 KB, Apache-2.0) on onnxruntime-web 1.30 (WASM, or WebGPU) in a module worker
+- [transcription/onnx/basic-pitch.js](transcription/onnx/basic-pitch.js): windowing, unwrapping, note creation (onsets, inferred onsets, melodia pass, frequency limits) and pitch bends on flat Float32Arrays, ported from the Python reference; activations match the tfjs package to 8e-5 and the notes are identical
+- About 80 ms per 2 s window on one WASM thread (≈20× real time); multithreading needs COOP/COEP headers
+- Sources: audio files, microphone recording, Live mode (streams the mic window by window, ≈1.7 s behind), and synthetic test audio rendered from the test phrase or a MIDI file, scored against the true notes (mir_eval-style F1, ±50 ms onsets, with and without offsets)
+- Piano roll over the note / onset / contour activations, matched / missed / extra notes, pitch-bend lines; threshold sliders re-decode instantly; plays the audio and the transcription (soundfont) together; MIDI and 22 kHz WAV export
+- Tests: `node --test transcription/onnx/test/basic-pitch.test.js` (10; the 2 end-to-end tests need onnxruntime-web, see the file)
+
 [Experiment #034 - Violin Sound Lab](034_violin_sound.html)
 - One performance, five engines to compare by ear (keys 1–5 switch while playing, same spot): bowed digital waveguide, Helmholtz source-filter, Magenta's DDSP violin, VSCO 2 CE samples (CC0), and the GM soundfont #033 uses ([research brief](strings/research/03_violin_sound.md))
 - Performance renderer [strings/sound/performance.js](strings/sound/performance.js): the #033 fingering and bow strokes become per-string curves at 250 Hz: pitch with late-starting vibrato (none on open strings) and slides on shifts, bow speed with attacks, bow changes and phrase arches, bow force kept inside Schelleng's playable window, contact point, finger lifts and taps, and loudness for DDSP
