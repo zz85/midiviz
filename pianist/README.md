@@ -103,6 +103,14 @@ Each asset gets its own `assets/community/<key>.bin` plus WebP / JPEG textures, 
 
 A plain link opens behind her (`?view=back`) in preset 1 with the cel-shaded look, the Full Grand Piano soundfont, no room reverb and no applause (Hall → Room), and no depth of field, bloom, grain or dust (Visuals → Post-processing). Phones and tablets (a coarse pointer) take the `?q=low` path unless `?q=high`: pixel ratio 1, smaller shadows, no MSAA or fallboard mirror, and with nothing to post-process the scene is drawn straight to the screen. On a screen taller than 16:10 the lens widens so the shots keep their width, and the pills go icon-only. Double-tap (or double-click) the picture for the next camera in the menu.
 
+## Phones and the app
+
+- Touch screens (`?touch=1` / `0` to force) get their own layout: Songs on the left; Camera, Outfit and More (Visuals, Hall, Render, Share) on the right; every menu opens as a bottom sheet, outfits as thumbnails. A tap brings the controls back while a song plays.
+- Songs: ⏮ ⏭ beside Play, or swipe left / right along the bottom bar (the song title), step through the current group of the list, wrapping round. Double-tap the picture still changes the camera.
+- Phones load `soundfonts/Full Grand Piano.sf3`, the same piano with Vorbis samples (3.1 MB instead of 17; quality 8, 30–37 dB SNR per sample), unpacked in the browser.
+- `sw.js` (scope: the midiviz folder) caches assets cache-first (soundfonts, models, textures, MIDI, WASM, three.js from the CDN; a cached file is re-checked by size once per worker lifetime) and code network-first, so a second visit downloads nothing and the page runs offline. `?sw=0` skips it; bump `ASSETS` in `sw.js` to drop the asset cache.
+- `032_pianist.webmanifest` and `pianist/icon-*.png`: Add to Home Screen opens it full screen with its own icon.
+
 ## Camera and the director
 
 `director.js` frames shots on a live subject (hands, head, figure, piano, feet) in spherical coordinates and gives each one a slow move: orbit, zoom in/out, push in, pull out, crane, or a still frame with a handheld breath. Shots end in a cut or a glide into the next spot (glides only between spots on the same side and of similar size, so the camera never flies through the piano).

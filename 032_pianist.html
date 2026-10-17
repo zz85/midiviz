@@ -2,7 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+  <link rel="manifest" href="032_pianist.webmanifest">
+  <meta name="theme-color" content="#000000">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Pianist">
+  <link rel="apple-touch-icon" href="pianist/icon-180.png">
   <title>Experiment #032 - Pianist</title>
   <!--
     Experiment #032 - Pianist. A Concert Creator-style performer at the #030
@@ -46,7 +53,9 @@
     #presetPeek img { display: block; width: 132px; height: 184px; border-radius: 6px; }
     #presetPeek span { display: block; max-width: 132px; margin-top: 5px; color: #ddd; font: 11px/1.3 system-ui, sans-serif; }
     body.altmodel #presets { display: none; }
-    /* narrow screens (phones): icon-only pills, the presets on a row of their own */
+    /* the top bar fills up below ~1500 px: the presets take a row of their own */
+    @media (max-width: 1500px) { #presets { top: 54px; } }
+    /* narrow desktop windows: icon-only pills, the presets on a row of their own */
     @media (max-width: 760px) {
       .pill { font-size: 0; gap: 0; padding: 0 10px; }
       #title { display: none; }
@@ -55,6 +64,29 @@
       .pop { max-width: calc(100vw - 24px); }
     }
     #topRight { position: absolute; top: 12px; right: 12px; display: flex; gap: 8px; }
+    #moreBtn, #outfitBtn { display: none; }
+    #songTitle { text-align: center; font: 500 12.5px/1.3 system-ui, sans-serif; color: rgba(255, 255, 255, 0.85); margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 16px; }
+    #outfitGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; padding: 8px 12px 12px; }
+    #outfitGrid button { border: 2px solid transparent; border-radius: 10px; background: #222; padding: 0; cursor: pointer; overflow: hidden; color: #ddd; font: 11px/1.25 system-ui, sans-serif; text-align: center; }
+    #outfitGrid button.on { border-color: #e8e2d6; }
+    #outfitGrid img { display: block; width: 100%; aspect-ratio: 132 / 184; object-fit: cover; background: #111; }
+    #outfitGrid span { display: block; padding: 4px 3px 6px; }
+    .navbtn svg { fill: #fff; }
+    /* touch screens (phones, tablets): a shorter top bar (songs · camera ·
+       outfits · more), the menus as bottom sheets, bigger targets */
+    body.touch #visualsBtn, body.touch #audioBtn, body.touch #renderBtn, body.touch #shareBtn, body.touch #presets, body.touch #title { display: none; }
+    body.touch #moreBtn, body.touch #outfitBtn { display: inline-flex; }
+    body.touch .pill { font-size: 0; gap: 0; padding: 0 12px; height: 40px; border-radius: 20px; }
+    body.touch .pill svg { width: 18px; height: 18px; }
+    body.touch #topLeft, body.touch #topRight { top: max(10px, env(safe-area-inset-top)); }
+    body.touch .pop { position: fixed; top: auto !important; bottom: 0; left: 0 !important; right: 0 !important; width: auto !important; min-width: 0; max-width: none;
+      max-height: 72vh; border-radius: 16px 16px 0 0; padding: 14px 0 max(10px, env(safe-area-inset-bottom)); z-index: 30; }
+    body.touch .pop::before { content: ''; position: absolute; top: 6px; left: 50%; width: 36px; height: 4px; margin-left: -18px; border-radius: 2px; background: #555; }
+    body.touch .item { padding: 13px 18px; }
+    body.touch #songList { max-height: none; }
+    body.touch #transport { padding: 0 18px max(12px, env(safe-area-inset-bottom)); }
+    body.touch #controls { gap: 26px; }
+    body.touch #shotName { bottom: 120px; }
     #title { align-self: center; margin-left: 6px; font: 300 15px Georgia, serif; color: rgba(255, 255, 255, 0.55); letter-spacing: 0.04em; }
     #title a { color: inherit; text-decoration: none; }
     .pop { position: absolute; top: 52px; min-width: 210px; max-height: calc(100vh - 150px); overflow: auto; display: none;
@@ -123,10 +155,19 @@
   <div id="presetPeek"><img alt=""><span></span></div>
   <div id="topRight" class="ui">
     <button class="pill" id="cameraBtn"><svg viewBox="0 0 24 24"><path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11z"/></svg>Camera</button>
+    <button class="pill" id="outfitBtn" title="Outfits"><svg viewBox="0 0 24 24"><path d="M9 3 4 6l2 4 2-1v12h8V9l2 1 2-4-5-3a3 3 0 0 1-6 0z"/></svg>Outfit</button>
+    <button class="pill" id="moreBtn" title="More: visuals, hall, render, share"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>More</button>
     <button class="pill" id="visualsBtn"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>Visuals</button>
     <button class="pill" id="audioBtn" title="Hall acoustics: room, seat, reverb, room boost, applause"><svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9zm13.5 3A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z"/></svg>Hall</button>
     <button class="pill" id="renderBtn" title="Export the song as an MP4 video"><svg viewBox="0 0 24 24"><circle cx="7" cy="12" r="4"/><circle cx="16" cy="12" r="4" opacity=".55"/></svg>Render</button>
     <button class="pill" id="shareBtn" title="Copy a link to this exact scene: wardrobe, look, camera, sound and the song at this moment"><svg viewBox="0 0 24 24"><path d="M18 16a3 3 0 0 0-2.4 1.2l-6.7-3.4a3 3 0 0 0 0-1.6l6.7-3.4A3 3 0 1 0 15 7c0 .3 0 .5.1.8L8.4 11.2a3 3 0 1 0 0 3.6l6.7 3.4A3 3 0 1 0 18 16z"/></svg>Share</button>
+  </div>
+  <div id="outfitPop" class="pop ui"><div class="sect">Outfits</div><div id="outfitGrid"></div></div>
+  <div id="morePop" class="pop ui">
+    <div class="item" data-open="visualsPop">Visuals: pianist, pose, stage, post-processing</div>
+    <div class="item" data-open="audioPop">Hall: room, reverb, applause</div>
+    <div class="item" data-open="renderPop">Render a video</div>
+    <div class="item" id="moreShare">Share a link to this scene</div>
   </div>
   <div id="cameraPop" class="pop ui">
     <div class="item" data-view="auto">Director (auto)<span class="dot"></span></div>
@@ -276,11 +317,14 @@
     <div class="btnrow"><button id="exStart">Export</button><button id="exCancel" class="sec">Cancel</button></div>
   </div>
   <div id="transport" class="ui">
+    <div id="songTitle" title="Swipe left / right for the next / previous song"></div>
     <div id="times"><span id="tNow">0:00.000</span><span id="tLeft">-0:00</span></div>
     <input id="seek" type="range" min="0" max="1" step="0.0005" value="0">
     <div id="controls">
       <button class="tbtn" id="speedBtn" title="Playback speed"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M12 4a10 10 0 0 0-8.7 15h17.4A10 10 0 0 0 12 4zm0 2a8 8 0 0 1 7.5 11h-15A8 8 0 0 1 12 6zm4.2 2.4-5 5.2a1.5 1.5 0 1 0 2.1 2.1z"/></svg><span id="speedLbl">1×</span></button>
+ <button class="tbtn navbtn" id="prevBtn" title="Previous song"><svg width="24" height="24" viewBox="0 0 24 24"><path d="M6 5h2v14H6zm3.5 7L18 18V6z"/></svg></button>
       <button class="tbtn" id="playBtn" title="Play / pause"><svg id="playIcon" width="30" height="30" viewBox="0 0 24 24"><path d="M7 4v16l13-8z"/></svg></button>
+      <button class="tbtn navbtn" id="nextBtn" title="Next song"><svg width="24" height="24" viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM6 6v12l8.5-6z"/></svg></button>
       <button class="tbtn off" id="loopBtn" title="Loop"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2z"/></svg></button>
     </div>
   </div>
@@ -319,6 +363,11 @@
     const $ = id => document.getElementById(id)
     const params = new URLSearchParams(location.search)
     // phones and tablets (a coarse pointer) take the light path unless ?q=high
+    // touch screens get the phone layout (?touch=1 / 0 to force it)
+    // offline cache and install (sw.js): assets once, code fresh (?sw=0 to skip)
+    if ('serviceWorker' in navigator && !params.has('shot') && params.get('sw') !== '0') navigator.serviceWorker.register('sw.js').catch(e => console.warn('service worker', e))
+    const TOUCH = params.has('touch') ? params.get('touch') !== '0' : matchMedia('(pointer: coarse)').matches
+    document.body.classList.toggle('touch', TOUCH)
     const LOWQ = params.get('q') === 'low' || (params.get('q') !== 'high' && matchMedia('(pointer: coarse)').matches)
     const vendorPath = new URL('./vendor', import.meta.url).href
     let statusTimer = 0
@@ -623,7 +672,7 @@
       $('outfit').value = k
       try { await setOutfit(k) } finally { presetBusy = false; for (const b of $('presets').children) b.disabled = false; markPreset() }
     }
-    function markPreset() { for (const b of $('presets').children) b.classList.toggle('on', b.dataset.k === $('outfit').value) }
+    let markPreset = function () { for (const b of $('presets').children) b.classList.toggle('on', b.dataset.k === $('outfit').value) }
     presetKeys.forEach((k, i) => {
       const b = document.createElement('button')
       b.textContent = i + 1; b.dataset.k = k
@@ -644,6 +693,18 @@
       $('presets').appendChild(b)
     })
     markPreset()
+    // the same outfits as a sheet of thumbnails (touch: Outfit in the top bar)
+    for (const k of presetKeys) {
+      const b = document.createElement('button'), name = [...$('outfit').options].find(o => o.value === k).textContent
+      b.dataset.k = k
+      b.innerHTML = `<img loading="lazy" alt="" src="pianist/assets/presets/${k}.webp"><span></span>`
+      b.querySelector('span').textContent = name
+      b.onclick = () => { closePops(); pickPreset(k) }
+      $('outfitGrid').appendChild(b)
+    }
+    const markGrid = () => { for (const b of $('outfitGrid').children) b.classList.toggle('on', b.dataset.k === $('outfit').value) }
+    { const mp = markPreset; markPreset = () => { mp(); markGrid() } }
+    markGrid()
     for (const id of ['dressStyle', 'fabric', 'shoeStyle', 'hairStyle', 'dressColor', 'hairColor', 'slit']) $(id).addEventListener('input', markPreset)
     addEventListener('keydown', ev => {
       if (ev.ctrlKey || ev.metaKey || ev.altKey || /INPUT|SELECT|TEXTAREA/.test(ev.target.tagName) || !/^[0-9]$/.test(ev.key)) return
@@ -883,7 +944,7 @@
     controls.addEventListener('end', () => { camTouched = performance.now() })
 
     // popups
-    const pops = { songsBtn: 'songsPop', cameraBtn: 'cameraPop', visualsBtn: 'visualsPop', audioBtn: 'audioPop', renderBtn: 'renderPop' }
+    const pops = { songsBtn: 'songsPop', cameraBtn: 'cameraPop', visualsBtn: 'visualsPop', audioBtn: 'audioPop', renderBtn: 'renderPop', outfitBtn: 'outfitPop', moreBtn: 'morePop' }
     // the right-hand menus open under their own pill
     for (const [b, p] of Object.entries(pops)) {
       if (b === 'songsBtn') continue
@@ -921,9 +982,13 @@
       }
     }
     addEventListener('pointerdown', closePops)
+    // the More menu (touch): each item opens its menu as a sheet
+    for (const it of document.querySelectorAll('#morePop [data-open]')) it.onclick = ev => { ev.stopPropagation(); closePops(); $(it.dataset.open).classList.add('open') }
+    $('moreShare').onclick = () => { closePops(); $('shareBtn').click() }
     let idleT = 0
     const poke = () => { idleT = performance.now(); document.body.classList.remove('idle') }
     addEventListener('pointermove', poke)
+    addEventListener('pointerdown', poke, true)   // (a tap brings the controls back on touch screens)
     addEventListener('keydown', ev => {
       if (ev.key === 'Escape') document.body.classList.toggle('hideui')
       if (ev.key === ' ' && ev.target === document.body) { ev.preventDefault(); togglePlay() }
@@ -959,8 +1024,10 @@
       }
     }
     const engine = new SoundFontEngine({ backend: 'oxisynth', vendorPath, audioContext: audioCtx })
-    const SOUNDFONTS = [['soundfonts/Full Grand Piano.sf2', 'Full Grand Piano'], ['soundfonts/Motif_ES6_Concert_Piano.sf2', 'Motif ES6 Concert Piano'], ['soundfonts/FluidR3.sf3', 'FluidR3 GM']]
+    // (phones get the same piano compressed: 3 MB instead of 17, unpacked in the browser)
+    const SOUNDFONTS = [['soundfonts/Full Grand Piano.sf2', 'Full Grand Piano'], ['soundfonts/Full Grand Piano.sf3', 'Full Grand Piano (compressed, 3 MB)'], ['soundfonts/Motif_ES6_Concert_Piano.sf2', 'Motif ES6 Concert Piano'], ['soundfonts/FluidR3.sf3', 'FluidR3 GM']]
     for (const [v, l] of SOUNDFONTS) $('sf').add(new Option(l, v))
+    if (LOWQ) { $('sf').options[1].defaultSelected = true; $('sf').value = SOUNDFONTS[1][0] }
     let soundReady = false, soundLoading = null
     async function loadSound(v) {
       soundReady = false
@@ -1150,14 +1217,16 @@
       } catch (e) { console.error(e); setStatus(`Could not play ${name}: ${e.message}`, true, 5000) }
     }
     let songFile = null   // the list song playing (for shared links)
+    const songLabel = file => SONGS.find(x => x[0] === file)?.[1] || String(file || '').split('/').pop().replace(/\.midi?$/i, '')
     async function loadSongUrl(url, label, at = 0) {
       markSong(url); songFile = url
+      $('songTitle').textContent = label || songLabel(url)
       setStatus('Loading song…')
       try { await loadSong(await (await fetch(encodeURI(url))).arrayBuffer(), label, at) }
       catch (e) { setStatus('Could not load song: ' + e.message, true, 5000) }
     }
     $('openFile').onclick = () => { closePops(); $('file').click() }
-    $('file').onchange = async () => { const f = $('file').files[0]; if (f) { markSong(null); songFile = null; loadSong(await f.arrayBuffer(), f.name) } $('file').value = '' }
+    $('file').onchange = async () => { const f = $('file').files[0]; if (f) { markSong(null); songFile = null; $('songTitle').textContent = f.name.replace(/\.midi?$/i, ''); loadSong(await f.arrayBuffer(), f.name) } $('file').value = '' }
     addEventListener('dragover', ev => ev.preventDefault())
     addEventListener('drop', async ev => { ev.preventDefault(); const f = ev.dataTransfer.files[0]; if (f) { markSong(null); songFile = null; loadSong(await f.arrayBuffer(), f.name) } })
     const fmt = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`
@@ -1179,6 +1248,28 @@
       else { music.wall = performance.now(); sch.play(); setPlaying(true) }
     }
     $('playBtn').onclick = togglePlay
+    // ⏮ ⏭ and a swipe along the bottom bar: the previous / next song in the
+    // current group of the list (wrapping round); with no song yet, the first
+    function stepSong(d) {
+      const g = GROUPS.find(g => g.songs.some(x => x[0] === songFile))
+      if (!g) { const [f, l] = SONGS[0]; return loadSongUrl(f, l) }
+      const i = g.songs.findIndex(x => x[0] === songFile), [f, l] = g.songs[(i + d + g.songs.length) % g.songs.length]
+      sharedSong = null
+      loadSongUrl(f, l)
+    }
+    $('prevBtn').onclick = () => stepSong(-1)
+    $('nextBtn').onclick = () => stepSong(1)
+    {
+      let sw = null
+      $('transport').addEventListener('pointerdown', ev => { if (!ev.target.closest('input, button')) sw = [ev.clientX, ev.clientY, performance.now()] })
+      $('transport').addEventListener('pointerup', ev => {
+        if (!sw) return
+        const dx = ev.clientX - sw[0], dy = ev.clientY - sw[1], ms = performance.now() - sw[2]; sw = null
+        if (Math.abs(dx) > 60 && Math.abs(dx) > 2 * Math.abs(dy) && ms < 800) { stepSong(dx < 0 ? 1 : -1); setStatus(dx < 0 ? 'Next song' : 'Previous song', false, 1000) }
+      })
+      $('transport').addEventListener('pointercancel', () => { sw = null })
+      $('transport').style.touchAction = 'pan-y'
+    }
     $('seek').addEventListener('input', () => { seeking = true })
     $('seek').addEventListener('change', () => {
       seeking = false
@@ -1236,7 +1327,7 @@
       if (c.length === 6 && c.every(Number.isFinite) && view !== 'auto') { camGoal.pos.set(c[0], c[1], c[2]); camGoal.target.set(c[3], c[4], c[5]); controls.autoRotate = false; camFree = true }
     }
     let sharedSong = !params.has('shot') && params.get('song') ? [params.get('song'), +(params.get('at') || 0)] : null
-    if (sharedSong) { markSong(sharedSong[0]); songFile = sharedSong[0] }
+    if (sharedSong) { markSong(sharedSong[0]); songFile = sharedSong[0]; $('songTitle').textContent = songLabel(sharedSong[0]) }
     function stateQuery(withTime = false) {
       const q = new URLSearchParams(location.search)
       const o = OUTFITS[$('outfit').value]
