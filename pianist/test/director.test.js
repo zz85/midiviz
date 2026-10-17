@@ -61,7 +61,7 @@ test('the camera stays outside the piano and holds still within a shot', () => {
     const t = i / 60
     live.head.set(8 * Math.sin(i / 50), 122, 32); live.hands.set(30 * Math.sin(i / 90), 76, 0)
     const o = d.update(t, 1 / 60, live), p = o.pos
-    expect(Math.abs(p.x) < 82 && p.y < 106 && p.z > -215 && p.z < 4).toBe(false)
+    expect(Math.abs(p.x) < 82 && p.y > 58 && p.y < 106 && p.z > -215 && p.z < 4).toBe(false)   // (the case: rim bottom to rim top; under the keybed is open)
     const sh = d.shots.find(s => s.t0 <= t && s.t1 > t)
     if (sh !== shot || t < sh.t0 + sh.glide + 0.05) { shot = sh; aim = o.target.clone() }
     else expect(o.target.distanceTo(aim)).toBeLessThan(2)   // (the handheld sway moves it a few mm)

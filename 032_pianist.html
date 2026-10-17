@@ -111,7 +111,12 @@
     #songList .sect { position: sticky; top: 0; background: rgba(28, 28, 28, 0.97); z-index: 1; }
     #songList .item { white-space: normal; line-height: 1.25; }
     #songFilter { width: 100%; box-sizing: border-box; padding: 6px 9px; border-radius: 7px; border: 1px solid #444; background: #1c1c1c; color: #eee; font: inherit; }
-    #cameraPop { right: 190px; width: 230px; }
+    #cameraPop { right: 190px; width: 250px; }
+    #viewList .sect small { text-transform: none; letter-spacing: 0; color: #6f6f6f; margin-left: 6px; }
+    .item .kind { margin-left: auto; padding-left: 8px; font-size: 10.5px; color: #8a8a8a; }
+    .item .kind + .dot { margin-left: 8px; }
+    .sizeChk { display: flex; gap: 12px; font-size: 12px; color: #ddd; }
+    .sizeChk input { accent-color: #2fae4a; vertical-align: -2px; }
     #shotName { position: absolute; left: 26px; bottom: 92px; font: 600 11px/1 ui-monospace, Menlo, monospace; color: rgba(255, 255, 255, 0.7); letter-spacing: 0.04em; pointer-events: none; display: none; }
     body.shotlbl #shotName { display: block; }
     #visualsPop { right: 12px; width: 250px; }
@@ -174,26 +179,15 @@
   </div>
   <div id="cameraPop" class="pop ui">
     <div class="item" data-view="auto">Director (auto)<span class="dot"></span></div>
-    <div class="sect">Views</div>
-    <div class="item" data-view="shoulder">Over the shoulder<span class="dot"></span></div>
-    <div class="item" data-view="audience">From the audience<span class="dot"></span></div>
-    <div class="item" data-view="tail">Across the piano<span class="dot"></span></div>
-    <div class="item" data-view="side">Side, wide<span class="dot"></span></div>
-    <div class="item" data-view="profile">Profile<span class="dot"></span></div>
-    <div class="item" data-view="front">Face, from the piano<span class="dot"></span></div>
-    <div class="item" data-view="hands">Hands<span class="dot"></span></div>
-    <div class="item" data-view="back">Behind<span class="dot"></span></div>
-    <div class="item" data-view="lowRight">Low, from her right<span class="dot"></span></div>
-    <div class="item" data-view="overKeys">High, over the keyboard<span class="dot"></span></div>
-    <div class="item" data-view="top">Top down<span class="dot"></span></div>
-    <div class="item" data-view="player">Player's view<span class="dot"></span></div>
     <div class="item" data-view="orbit">Orbit<span class="dot"></span></div>
+    <div id="viewList"></div>
     <div class="field"><label>Move (on a view)</label><select id="camMove"><option value="still">Still</option><option value="orbit">Slow orbit</option><option value="zoomIn">Zoom in</option><option value="zoomOut">Zoom out</option><option value="dollyIn">Push in</option><option value="dollyOut">Pull out</option><option value="dollyZoom">Dolly zoom</option><option value="crane">Crane</option><option value="random">Random</option><option value="cut" selected>Director's cut</option></select></div>
     <div class="sect">Director</div>
     <div class="field"><label>Pace</label><select id="dirPace"><option value="0.6">Long takes</option><option value="1" selected>Normal</option><option value="1.6">Lively</option></select></div>
     <div class="field"><label>Favour</label><select id="dirBias"><option value="-0.8">The hands</option><option value="0" selected>Balanced</option><option value="0.8">The pianist</option></select></div>
     <div class="field"><label>Transitions</label><select id="dirTrans"><option value="mix" selected>Cuts and glides</option><option value="cuts">Cuts only</option><option value="glides">Glides where possible</option></select></div>
     <label class="chk" title="Off: each shot frames her as it starts and holds still while she moves. On: the camera operator follows her head"><input type="checkbox" id="camFollow"> Follow her movement</label>
+    <div class="field" title="Which shot sizes the director may use"><label>Shots</label><div class="sizeChk"><label><input type="checkbox" id="dirFar" checked> Far</label><label><input type="checkbox" id="dirMed" checked> Medium</label><label><input type="checkbox" id="dirClose" checked> Close</label></div></div>
     <label class="chk"><input type="checkbox" id="shotLbl"> Show shot names</label>
   </div>
   <div id="visualsPop" class="pop ui">
@@ -363,7 +357,7 @@
     import { createLook } from './pianist/look.js'
     import { createCommunity, communityList } from './pianist/community.js'
     import { createSmoother } from './pianist/subdivide.js'
-    import { createDirector, SPOTS, MOVES, FRAME_LABELS } from './pianist/director.js'
+    import { createDirector, SPOTS, MOVES, FRAME_LABELS, SIZES, spotKind } from './pianist/director.js'
     import { hideBody } from './pianist/shell.js'
 
     const $ = id => document.getElementById(id)
@@ -878,6 +872,33 @@
       // through her eyes down to the keys: placed every frame (playerView)
       player: { pos: [0, 128, 24], target: [0, 73, -2], fov: 52, pov: true, orbitMax: 4 },
     }
+    // every director spot is a view too: the hand-placed ones above, the rest
+    // placed from the spot's angle around its subject where it rests
+    {
+      const REST = { hands: [0, 79, 10], head: [0, 124, 27], figure: [0, 101, 21], piano: [0, 90, -70], feet: [0, 12, 18], hammers: [0, 85, -36.5], pedals: [0, 7, -2] }
+      for (const [k, sp] of Object.entries(SPOTS)) {
+        if (VIEWS[k]) continue
+        const t = REST[sp.subj], az = sp.az * Math.PI / 180, el = sp.el * Math.PI / 180
+        VIEWS[k] = { pos: [t[0] + Math.sin(az) * Math.cos(el) * sp.dist, t[1] + Math.sin(el) * sp.dist, t[2] + Math.cos(az) * Math.cos(el) * sp.dist], target: [...t], fov: sp.fov, orbitMax: sp.orbitMax, minDist: sp.minDist }
+      }
+      // the Camera menu: Far, Medium, Close, each grouped by what's in the frame
+      const KIND_TAG = { hands: 'hands', pianist: 'her', piano: 'piano' }, list = $('viewList')
+      const entries = Object.keys(SPOTS).map(k => ({ k, label: SPOTS[k].label, size: SPOTS[k].size, kind: spotKind(k) }))
+      entries.push({ k: 'player', label: "Player's view", size: 0, kind: 'hands' })
+      const ORDER = ['piano', 'pianist', 'hands']
+      for (const size of [2, 1, 0]) {
+        list.insertAdjacentHTML('beforeend', `<div class="sect">${SIZES[size]}<small>${['the hands, the face, the mechanism', 'her and the keyboard', 'the stage and the piano'][size]}</small></div>`)
+        for (const e of entries.filter(e => e.size === size).sort((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind))) {
+          const it = document.createElement('div')
+          it.className = 'item'; it.dataset.view = e.k
+          it.append(e.label, Object.assign(document.createElement('span'), { className: 'kind', textContent: { feet: 'feet', pedals: 'feet', hammers: 'inside' }[SPOTS[e.k]?.subj] || KIND_TAG[e.kind] }), Object.assign(document.createElement('span'), { className: 'dot' }))
+          list.append(it)
+        }
+      }
+    }
+    // a fixed view's focus and depth of field: by its spot's subject and size
+    const viewFocusHands = v => v === 'player' || (SPOTS[v] && spotKind(v) === 'hands')
+    const viewWide = v => SPOTS[v]?.size === 2
     // the player's view: a little in front of her eyes (the eye bones sit on
     // the corneas), looking down at where the hands are, both smoothed so her
     // head's small moves read as a steady gaze
@@ -913,7 +934,13 @@
       VIEWS.player.target[0] = pvLook.x; VIEWS.player.target[1] = pvLook.y; VIEWS.player.target[2] = pvLook.z
     }
     // the director: shots that move, cut or glide on the music (pianist/director.js)
-    const director = createDirector({ pace: +(params.get('pace') ?? 1), bias: +(params.get('favour') ?? 0), trans: params.get('trans') || 'mix' })
+    const dirSizes = () => [['dirClose', 0], ['dirMed', 1], ['dirFar', 2]].filter(([id]) => $(id).checked).map(([, n]) => n)
+    for (const [id, k] of [['dirFar', 'dfar'], ['dirMed', 'dmed'], ['dirClose', 'dclose']]) if (params.get(k) === '0') $(id).checked = false
+    const director = createDirector({ pace: +(params.get('pace') ?? 1), bias: +(params.get('favour') ?? 0), trans: params.get('trans') || 'mix', sizes: dirSizes() })
+    for (const id of ['dirFar', 'dirMed', 'dirClose']) $(id).onchange = () => {
+      if (!dirSizes().length) $(id).checked = true   // (at least one)
+      director.set('sizes', dirSizes())
+    }
     $('dirPace').value = String(director.opts.pace); $('dirBias').value = String(director.opts.bias); $('dirTrans').value = director.opts.trans
     $('dirPace').onchange = () => director.set('pace', +$('dirPace').value)
     $('dirBias').onchange = () => director.set('bias', +$('dirBias').value)
@@ -1365,7 +1392,7 @@
       ['dresson', 'dressOn'], ['clothsim', 'clothSim'], ['look', 'look'], ['smooth', 'smooth'], ['simplify', 'simplify'],
       ['gaze', 'gaze'], ['expr', 'expr'], ['hips', 'hips'], ['posture', 'posture'], ['reach', 'reach'], ['rock', 'rock'], ['sway', 'sway'], ['nod', 'nod'], ['glances', 'glances'], ['bench', 'benchDist'], ['benchh', 'benchH'],
       ['light', 'light'], ['exposure', 'exposure'], ['dof', 'dof'],
-      ['move', 'camMove'], ['pace', 'dirPace'], ['favour', 'dirBias'], ['trans', 'dirTrans'], ['shotnames', 'shotLbl'], ['follow', 'camFollow'],
+      ['move', 'camMove'], ['pace', 'dirPace'], ['favour', 'dirBias'], ['trans', 'dirTrans'], ['shotnames', 'shotLbl'], ['follow', 'camFollow'], ['dfar', 'dirFar'], ['dmed', 'dirMed'], ['dclose', 'dirClose'],
       ['sf', 'sf'], ['avsync', 'avsync'],
       ['dofamt', 'dofAmt'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
       ['vol', 'vol'], ['room', 'room'], ['seat', 'seat'], ['rv', 'rvAmt'], ['decay', 'rvDecay'], ['tone', 'rvTone'], ['boost', 'boost'], ['amb', 'amb'], ['applause', 'applause'],
@@ -1463,7 +1490,7 @@
       if (n) handsC.multiplyScalar(1 / n)
       // camera
       if (userCam && view !== 'orbit' && (view === 'auto' || $('camMove').value !== 'still') && performance.now() - camTouched > 8000) userCam = false
-      let focusOn = view === 'shoulder' || view === 'hands' ? handsC : head, wide = view === 'side', snapFocus = false
+      let focusOn = viewFocusHands(view) ? handsC : head, wide = viewWide(view), snapFocus = false
       if (cut) { camera.position.copy(camGoal.pos); controls.target.copy(camGoal.target); camera.fov = camGoal.fov; camera.updateProjectionMatrix(); cut = false; userCam = false; snapFocus = true }
       const live = { hands: handsC, head }
       if (view === 'player') playerView(handsC, dt)
@@ -1473,7 +1500,7 @@
       let driven = null
       if (dirShot && !userCam) {
         driven = dirShot
-        focusOn = dirShot.focus === 'hands' ? handsC : head; wide = dirShot.wide
+        focusOn = dirShot.focus === 'hands' ? handsC : dirShot.focus === 'target' ? dirShot.target : head; wide = dirShot.wide
         if (dirShot.shot !== lastShot) {
           if (!dirShot.shot.glide || !lastShot) snapFocus = true
           lastShot = dirShot.shot
@@ -1633,14 +1660,14 @@
         if (song) for (const n of song.notes) if (n.time <= T && n.time + n.duration > T) piano.noteOn(n.midi, 0.7)
         for (let i = 0; i < 30; i++) piano.update(1 / 60)
         const handsAt = (() => { const c = new THREE.Vector3(); for (const h of [rig.hands.L, rig.hands.R]) c.add(h.joints.W); return c.multiplyScalar(0.5) })()
-        let focusOn = view === 'shoulder' || view === 'hands' ? handsAt : rig.pos('head'), wide = view === 'side'
+        let focusOn = viewFocusHands(view) ? handsAt : rig.pos('head'), wide = viewWide(view)
         if (view === 'player') playerView(handsAt, 1 / 60)
         setPov(view === 'player')
         if (view === 'auto') {
           // the director's frame at T (a ?move= on a fixed view is shown at its far end)
           const c = director.update(T, 1 / 60, { hands: handsAt, head: rig.pos('head') })
           camera.position.copy(c.pos); controls.target.copy(c.target); camera.fov = c.fov; camera.updateProjectionMatrix(); camera.lookAt(c.target)
-          focusOn = c.focus === 'hands' ? handsAt : rig.pos('head'); wide = c.wide
+          focusOn = c.focus === 'hands' ? handsAt : c.focus === 'target' ? c.target : rig.pos('head'); wide = c.wide
           window.__shotInfo = { ...c.shot, label: SPOTS[c.shot.name].label }
         } else if (SEQ_MOVES[params.get('move')]) {
           const c = director.sequence(VIEWS[view], params.get('move'), T, { head: rig.pos('head'), hands: handsAt }, camOut)

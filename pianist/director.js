@@ -62,9 +62,19 @@ export const SPOTS = {
   // straight down over the piano, turning slowly about the vertical
   top: { label: 'Top down', subj: 'piano', az: 0, el: 82, dist: 560, fov: 30, size: 2, moves: ['orbit'], orbitSpan: 40, orbitMax: 50 },
   high: { label: 'High, over the lid', subj: 'piano', az: 120, el: 38, dist: 520, fov: 30, size: 2, moves: ['orbit', 'dollyOut', 'dollyIn'] },
+  // close-ups of the mechanism and the details: the hammers striking the
+  // strings (inside the case, over the strike line, following the hands
+  // along the keyboard), the pedals being pressed, the keys from straight above
+  hammers: { label: 'The hammers', subj: 'hammers', az: 168, el: 42, dist: 52, fov: 34, size: 0, moves: ['orbit', 'still', 'dollyOut'], orbitMax: 12 },
+  pedalsClose: { label: 'Pedals, close', subj: 'pedals', az: 90, el: 8, dist: 60, fov: 32, size: 0, moves: ['still', 'dollyOut'] },
+  keysTop: { label: 'Keys, from above', subj: 'hands', az: 180, el: 80, dist: 78, fov: 36, size: 0, moves: ['orbit', 'still', 'dollyOut'], orbitMax: 20 },
   feet: { label: 'Pedals', subj: 'feet', az: 58, el: 8, dist: 180, fov: 30, size: 1, moves: ['still', 'dollyIn'] },
 }
-const SUBJ_KIND = { hands: 'hands', feet: 'hands', head: 'pianist', figure: 'pianist', piano: 'piano' }
+const SUBJ_KIND = { hands: 'hands', feet: 'hands', head: 'pianist', figure: 'pianist', piano: 'piano', hammers: 'piano', pedals: 'piano' }
+// the menu's categories: by shot size, then what is in the frame
+export const SIZES = ['Close', 'Medium', 'Far']
+export const KINDS = { hands: 'Hands & keys', pianist: 'The pianist', piano: 'The piano' }
+export const spotKind = name => SUBJ_KIND[SPOTS[name].subj]
 
 export const MOVES = {
   still: 'Still',
@@ -263,6 +273,8 @@ export function songSeed({ duration = 0, phrases = [] }) {
  */
 export function planShots({ duration, phrases = [], glances = [], energyAt = () => 0.3 }, opts = {}) {
   const pace = opts.pace ?? 1, bias = opts.bias ?? 0, trans = opts.trans ?? 'mix'
+  // sizes: the shot sizes allowed (0 close, 1 medium, 2 far), all by default
+  const sizes = Array.isArray(opts.sizes) && opts.sizes.length && opts.sizes.length < 3 ? opts.sizes : null, wideOk = !sizes || sizes.includes(2)
   // every choice is a hash of the shot number and the song, so a song always
   // gets the same film (seek, export) and different songs get different ones
   const seed = songSeed({ duration, phrases }), hs = (k, n) => hash(k + seed, n)
@@ -294,7 +306,8 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
     const prev = shots[i - 1], prev2 = shots[i - 2]
     let name, move
     // open behind her, pushing in (the page fades it in from black)
-    if (i === 0) { name = 'back'; move = 'dollyIn' }
+    if (i === 0 && (!sizes || sizes.includes(1))) { name = 'back'; move = 'dollyIn' }
+    else if (i === 0) { name = names.find(n => sizes.includes(SPOTS[n].size) && n !== 'establish'); move = SPOTS[name].moves[0] }
     else {
       // score every spot for this stretch of music
       const up = lookUp(t, end)
@@ -302,6 +315,8 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
         const s = SPOTS[n], kind = SUBJ_KIND[s.subj]
         let x = kind === 'hands' ? 0.35 + 0.7 * E - 0.3 * bias : kind === 'pianist' ? 0.5 - 0.25 * E + 0.3 * bias : 0.18
         if (n === 'feet') x *= 0.1
+        if (s.subj === 'hammers' || s.subj === 'pedals') x *= 1.6   // the mechanism: a detail now and then
+        if (sizes && !sizes.includes(s.size)) return 0   // (a category switched off)
         if (n === 'top') x = 0.1   // a treat, not a habit
         // spread the work over every spot: one shown in the last ~60 s is
         // less likely, the more often the less likely
@@ -334,8 +349,9 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
           const needFace = clamp((t - lastFace - 35 / pace) / (20 / pace), 0, 1)
           if (s.size === 2) x *= 1 + 8 * needWide
           if (faceSeen(s)) x *= 1 + 6 * needFace
-          // and past ~45 s it must: only those shots are left
-          if (needWide >= 1 && s.size !== 2) x *= 0.02
+          // and past ~45 s it must: only those shots are left (unless far
+          // shots are switched off)
+          if (wideOk && needWide >= 1 && s.size !== 2) x *= 0.02
           else if (needFace >= 1 && !faceSeen(s)) x *= 0.02
           // no jump cuts: too little change of angle and size
           const dAz = Math.abs(wrap(s.az - ps.az)), dSize = Math.abs(Math.log(s.dist / ps.dist))
@@ -343,6 +359,8 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
         }
         return Math.max(0, x)
       })
+      // nothing left (the closing rules on a narrowed set): any allowed spot
+      if (!w.some(x => x > 0)) names.forEach((n, j) => { w[j] = (!sizes || sizes.includes(SPOTS[n].size)) && n !== prev?.name ? 1 : 0 })
       let r = hs(i, 3) * w.reduce((a, b) => a + b, 0), k = 0
       while (k < w.length - 1 && (r -= w[k]) > 0) k++
       name = names[k]
@@ -392,7 +410,7 @@ export function createDirector(opts = {}) {
   // holds that framing (her rocking and sway move within a still frame)
   const o = { pace: 1, bias: 0, trans: 'mix', follow: false, ...opts }
   let shots = planShots({ duration: 600 }, o), source = null, idleT = 0
-  const anchor = { hands: new THREE.Vector3(0, 76, 0), head: new THREE.Vector3(0, 122, 32), figure: new THREE.Vector3(), piano: new THREE.Vector3(), feet: new THREE.Vector3(0, 12, 18) }
+  const anchor = { hands: new THREE.Vector3(0, 76, 0), head: new THREE.Vector3(0, 122, 32), figure: new THREE.Vector3(), piano: new THREE.Vector3(), feet: new THREE.Vector3(0, 12, 18), hammers: new THREE.Vector3(0, 85, -36.5), pedals: new THREE.Vector3(0, 7, -2) }
   let primed = false, swayT = 0
   const seqs = {}   // take lists for sequence(): random / the director's cut
   const A = {}, B = {}, out = { pos: new THREE.Vector3(), target: new THREE.Vector3(), fov: 34, focus: 'head', wide: false, shot: null }
@@ -415,6 +433,7 @@ export function createDirector(opts = {}) {
       if (s.subj === 'hands') return target.copy(H)
       if (s.subj === 'figure') return target.lerpVectors(H, sh.lock, 0.55).add(tb.set(0, -6, 4))
       if (s.subj === 'piano') return target.set(H.x * 0.3, 90, -70)
+      if (s.subj === 'hammers') return target.set(H.x, 85, -36.5)
     }
     return target.copy(a)
   }
@@ -444,6 +463,8 @@ export function createDirector(opts = {}) {
       anchor.head.lerp(live.head, primed ? 1 - Math.exp(-dt / 0.35) : 1)
       anchor.figure.lerpVectors(anchor.hands, anchor.head, 0.55).add(ta.set(0, -6, 4))
       anchor.piano.set(anchor.hands.x * 0.3, 90, -70)
+      // the strike line (concert-grand.js STRIKE_Z) under the hands; the pedals' middle
+      anchor.hammers.set(anchor.hands.x, 85, -36.5)
       primed = true
       const onSong = t != null
       if (t == null) { idleT += dt; t = idleT % shots[shots.length - 1].t1 }
@@ -481,7 +502,7 @@ export function createDirector(opts = {}) {
       out.fov = A.fov
       const cur = u < 0.5 && idx > 0 ? shots[idx - 1] : sh
       const subj = SPOTS[cur.name].subj
-      out.focus = subj === 'hands' || subj === 'feet' ? 'hands' : 'head'
+      out.focus = subj === 'hands' || subj === 'feet' ? 'hands' : subj === 'hammers' || subj === 'pedals' ? 'target' : 'head'
       out.wide = SPOTS[cur.name].size === 2
       out.shot = cur
       // the opening fades in from black over its first 2.5 s
