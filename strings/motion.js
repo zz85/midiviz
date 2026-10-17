@@ -29,7 +29,9 @@ import { stopMM, INSTRUMENTS } from './fingering.js'
 const smooth5 = x => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * x * (x * (6 * x - 15) + 10))
 // natural offset of each finger above finger 1 (semitones): violin / viola
 // span a fourth, the cello's closed hand a minor third (one finger per semitone)
-const SLOT = [0, 0, 2, 4, 5], SLOT_CELLO = [0, 0, 1, 2, 3]
+// (index 5 = the thumb); the bass's closed hand spans a whole tone with 3 next
+// to 4, and in thumb position the thumb lies on the string below finger 1
+const SLOT = [0, 0, 2, 4, 5, -2], SLOT_CELLO = [0, 0, 1, 2, 3, -2], SLOT_BASS = [0, 0, 1, 2, 2, -2], SLOT_THUMB = [0, 1, 3, 4, 6, 0]
 export const BOW_HAIR = 65            // usable hair length (cm)
 
 /**
@@ -39,7 +41,7 @@ export const BOW_HAIR = 65            // usable hair length (cm)
 export function buildMotion(notes, { instrument = 'violin', lead = 0.04, vibrato = true } = {}) {
   const inst = typeof instrument === 'object' ? instrument : INSTRUMENTS[instrument]
   const Lcm = inst.L / 10
-  const slot = inst.L > 500 ? SLOT_CELLO : SLOT
+  const slotOf = thumb => thumb ? SLOT_THUMB : inst.L > 900 ? SLOT_BASS : inst.L > 500 ? SLOT_CELLO : SLOT
   const uOf = semis => stopMM(semis, inst.L) / 10
   const ns = notes.filter(n => n.string != null).sort((a, b) => a.on - b.on || a.pitch - b.pitch)
 
@@ -55,19 +57,27 @@ export function buildMotion(notes, { instrument = 'violin', lead = 0.04, vibrato
   // ── hand anchor keyframes: [t, base] with shift windows ──
   const anchorKeys = []          // { t0, t1, from, to }
   let cur = events.length ? (events[0].notes.find(n => n.finger)?.base ?? 2) : 2
-  const startBase = cur
+  let curTh = events.length ? !!events[0].notes.find(n => n.finger)?.thumb : false
+  const startBase = cur, startTh = curTh
   for (let i = 0; i < events.length; i++) {
     const e = events[i]
     const stopped = e.notes.find(n => n.finger)
     const b = stopped ? stopped.base : null
-    if (b == null || b === cur) continue
+    const th = stopped ? !!stopped.thumb : curTh
+    if (b == null || (b === cur && th === curTh)) continue
     // shift: during an open string or rest it can start early; otherwise late
     const prev = events[i - 1]
     const avail = prev ? e.on - prev.on : 0.3
     const prevOpen = prev && prev.notes.every(n => !n.finger)
     const dur = Math.max(0.06, Math.min(0.32, (prevOpen ? 0.9 : 0.55) * avail))
-    anchorKeys.push({ t0: e.on - lead - dur, t1: e.on - lead * 0.5, from: cur, to: b })
-    cur = b
+    anchorKeys.push({ t0: e.on - lead - dur, t1: e.on - lead * 0.5, from: cur, to: b, th })
+    cur = b; curTh = th
+  }
+  // thumb position (bass, cello): switches halfway through the shift into it
+  const thumbAt = t => {
+    let th = startTh
+    for (const k of anchorKeys) { if (t < (k.t0 + k.t1) / 2) break; th = k.th }
+    return th
   }
   const baseAt = t => {
     let b = startBase
@@ -80,7 +90,7 @@ export function buildMotion(notes, { instrument = 'violin', lead = 0.04, vibrato
 
   // ── fingers: press intervals ──
   // per finger: [{ t0, t1, s, semis, note }] (semis above the open string)
-  const press = [null, [], [], [], []]
+  const press = [null, [], [], [], [], []]
   // A repeated note on the same finger needs no lift: the bow re-articulates
   // it while the finger stays on the string (unlike a piano key). The finger
   // only leaves the stop when the next note is a different note or an open
@@ -99,7 +109,7 @@ export function buildMotion(notes, { instrument = 'violin', lead = 0.04, vibrato
   }
   // fingers down: a lower finger that just played on this string in this position stays on its stop
   for (const n of ns) {
-    if (!n.finger) continue
+    if (!n.finger || n.finger === 5) continue
     for (let g = 1; g < n.finger; g++) {
       const list = press[g]
       let last = null
@@ -109,10 +119,10 @@ export function buildMotion(notes, { instrument = 'violin', lead = 0.04, vibrato
       }
     }
   }
-  for (const f of [1, 2, 3, 4]) press[f].sort((a, b) => a.t0 - b.t0)
+  for (const f of [1, 2, 3, 4, 5]) press[f].sort((a, b) => a.t0 - b.t0)
 
   // the string each finger hovers over: the string of its next note (or last)
-  const fingerAt = (f, t, b) => {
+  const fingerAt = (f, t, b, th) => {
     const list = press[f]
     let on = null, prev = null, next = null
     for (const p of list) {
@@ -134,7 +144,7 @@ export function buildMotion(notes, { instrument = 'violin', lead = 0.04, vibrato
     // approach in the last 80 ms, release over 40 ms
     if (next && next.t0 - t < 0.08) lift = (next.t0 - t) / 0.08
     if (prev && t - prev.t1 < 0.04) lift = Math.min(lift, (t - prev.t1) / 0.04)
-    const target = next && next.t0 - t < 0.08 ? uOf(next.semis) : uOf(b + slot[f])
+    const target = next && next.t0 - t < 0.08 ? uOf(next.semis) : uOf(b + slotOf(th)[f])
     return { s, u: target, press: 0, lift: Math.max(0, lift), held: false, note: null }
   }
 
@@ -248,9 +258,10 @@ export function buildMotion(notes, { instrument = 'violin', lead = 0.04, vibrato
   function poseAt(t) {
     const b = baseAt(t)
     const vib = vibAt(t)
+    const th = thumbAt(t)
     const fingers = [null]
-    for (const f of [1, 2, 3, 4]) {
-      const F = fingerAt(f, t, b)
+    for (const f of [1, 2, 3, 4, 5]) {
+      const F = fingerAt(f, t, b, th)
       if (F.press > 0) F.u += vib * (F.held ? 0.5 : 1)
       fingers.push(F)
     }
@@ -259,7 +270,7 @@ export function buildMotion(notes, { instrument = 'violin', lead = 0.04, vibrato
       if (n.on > t) break
       if (t < n.off) sounding.push({ s: n.string, u: n.finger ? uOf(n.pitch - inst.open[n.string]) + vib : 0, pitch: n.pitch, note: n })
     }
-    return { base: b, anchorU: uOf(b) + vib, vib, fingers, bow: bowAt(t), sounding, Lcm }
+    return { base: b, thumb: th, anchorU: uOf(b) + vib, vib, fingers, bow: bowAt(t), sounding, Lcm }
   }
 
   return { poseAt, strokes, instrument: inst, uOf, Lcm }

@@ -16,9 +16,12 @@
 // Cello: the neck is upright and the hand is open rather than wrapped around
 // it. The knuckles sit out to the side of the fingerboard on the A-string
 // side, level with it, fingers spread one semitone apart and arched down onto
-// the strings; the thumb rests on the back of the neck, opposite the gap
-// between fingers 3 and 4; the elbow is raised out to the side so the
-// forearm, wrist and hand are roughly level.
+// the strings; the thumb rests on the back of the neck, opposite finger 2;
+// the elbow is raised out to the side so the forearm, wrist and hand are
+// roughly level. The double bass uses the same posture with Simandl's
+// whole-tone frame (1-2-4); in thumb position (bass and, in principle,
+// cello) the hand comes over the fingerboard and the thumb lies across the
+// string as a fifth finger.
 //
 // Right hand: a bow hold (thumb bent under the stick at the frog, fingers
 // draped over the stick, little finger curved on top) carried by the bow,
@@ -27,7 +30,7 @@
 import * as THREE from 'three'
 import { solveFinger } from '../fingering/hands3d.js'
 
-export const FINGER_COLORS = ['#d8d2c4', '#e2483d', '#f0a030', '#48b04c', '#3f8fe0']
+export const FINGER_COLORS = ['#d8d2c4', '#e2483d', '#f0a030', '#48b04c', '#3f8fe0', '#b464e0']
 const Y = new THREE.Vector3(0, 1, 0)
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _d = new THREE.Vector3()
 
@@ -132,6 +135,11 @@ export function buildLeftHand(violin, { scale = 1 } = {}) {
     fingers[f] = { d, segs, joints, tip, dot, label, pts: [0, 1, 2, 3].map(() => new THREE.Vector3()), base: new THREE.Vector3(), target: new THREE.Vector3(), cur: new THREE.Vector3(), init: false }
   }
   const thumb = { segs: [cyl(1.15, 0.95), cyl(0.95, 0.85)], joints: [ball(1.15), ball(0.95)], tip: ball(0.82), mid: new THREE.Vector3() }
+  thumb.dot = new THREE.Mesh(new THREE.SphereGeometry(0.42, 10, 8), new THREE.MeshBasicMaterial({ color: FINGER_COLORS[5], transparent: true, opacity: 0, depthTest: false }))
+  thumb.dot.renderOrder = 5
+  thumb.label = makeLabel('T', FINGER_COLORS[5])
+  thumb.label.material.opacity = 0
+  group.add(thumb.dot, thumb.label)
   const palm = ball(1)
   const wristBall = ball(1)
   const forearm = cyl(3.2, 2.6, mats.sleeve)
@@ -153,11 +161,17 @@ export function buildLeftHand(violin, { scale = 1 } = {}) {
     const half = V.fbHalf(uA)
     const yFB = V.fbY(uA, 0)
     // knuckle line: beside the top-string edge, a little toward the nut from the stops
-    const cello = V.cello
-    const uMid = cello ? (V.uOfSemis(pose.base + 1.5) + (uA - V.uOfSemis(pose.base))) : uA
+    const cello = V.cello, thumbPos = cello && pose.thumb
+    // the middle of the hand frame: cello 1–4 span three semitones, the bass's 1-2-4 two;
+    // in thumb position the thumb is at the base and the fingers above it
+    const mid = thumbPos ? 3 : V.bass ? 1 : 1.5
+    const uMid = cello ? (V.uOfSemis(pose.base + mid) + (uA - V.uOfSemis(pose.base))) : uA
     for (const f of [1, 2, 3, 4]) {
       const F = fingers[f]
-      if (cello) {
+      if (thumbPos) {
+        // thumb position: the hand comes over the fingerboard, knuckles above the strings
+        F.base.set(uMid + (f - 2.5) * 1.9 * size, yFB + 6.2 * size, -half * 0.5 - 1.2 * size)
+      } else if (cello) {
         // knuckles beside the board on the A side, level with it, centred on the frame
         const spread = 2.15 * size
         F.base.set(uMid + (f - 2.5) * spread, yFB + 1.2 * size, -half - 3.2 * size)
@@ -192,7 +206,8 @@ export function buildLeftHand(violin, { scale = 1 } = {}) {
     // palm: from the knuckles down to the wrist, under the neck
     const k1 = fingers[1].base, k4 = fingers[4].base
     knuckle.addVectors(k1, k4).multiplyScalar(0.5)
-    if (cello) wrist.set(uMid + 1.2 * size, yFB - 1.2 * size, -half - 7.6 * size)
+    if (thumbPos) wrist.set(uMid + 1.5 * size, yFB + 5.2 * size, -half - 6.5 * size)
+    else if (cello) wrist.set(uMid + 1.2 * size, yFB - 1.2 * size, -half - 7.6 * size)
     else wrist.set(uA + (1.8 + 2.5 * high) * size, yFB - (7.4 - 1.2 * high) * size, -half - (0.9 + 1.6 * high) * size)
     _c.subVectors(knuckle, wrist)
     palm.position.addVectors(knuckle, wrist).multiplyScalar(0.5).addScaledVector(_d.set(0, cello ? -1 : 0, -1).normalize(), 0.6 * size)
@@ -201,10 +216,20 @@ export function buildLeftHand(violin, { scale = 1 } = {}) {
     wristBall.position.copy(wrist)
     wristBall.scale.set(1.9 * size, 1.4 * size, 1.9 * size)
     let tipT, tB, tL = [3.6 * size, 3.1 * size], pole
-    if (cello) {
-      // thumb on the back of the neck, between fingers 3 and 4 (closed frame: 2 and 3 semitones above finger 1)
+    if (thumbPos) {
+      // thumb position: the thumb lies across the string(s) at the base of the frame
+      const T = pose.fingers[5]
+      const s0 = Math.max(0, Math.min(V.S - 1, Math.round(T.s)))
+      const x = T.u
+      const zS = V.stringZ(s0, x)
+      tipT = new THREE.Vector3(x, (T.press > 0 ? V.fbY(x, zS) : V.stringY(s0, x) + 1.2 * size) + 0.7 * size, zS)
+      tB = wrist.clone().add(new THREE.Vector3(-2.0 * size, 0.6 * size, 3.2 * size))
+      tL = [4.6 * size, 3.6 * size]
+      pole = new THREE.Vector3(tB.x - 6, tB.y + 4, tB.z)
+    } else if (cello) {
+      // thumb on the back of the neck, opposite finger 2 (one semitone above finger 1)
       const off = uA - V.uOfSemis(pose.base)
-      const thumbU = Math.min((V.uOfSemis(pose.base + 2) + V.uOfSemis(pose.base + 3)) / 2 + off, V.x0 - 1.5 * k)
+      const thumbU = Math.min(V.uOfSemis(pose.base + 1) + off, V.x0 - 1.5 * k)
       tipT = new THREE.Vector3(thumbU, V.neckBackY(thumbU) - 0.7 * size, -0.4 * size)
       tB = wrist.clone().add(new THREE.Vector3(-1.4 * size, -2.6 * size, 2.6 * size))
       tL = [4.1 * size, 3.5 * size]
@@ -221,9 +246,15 @@ export function buildLeftHand(violin, { scale = 1 } = {}) {
     thumb.joints[0].position.copy(tB); thumb.joints[1].position.copy(thumb.mid); thumb.tip.position.copy(tipT)
     for (const m of [...thumb.segs]) { m.scale.x = m.scale.z = size }
     for (const m of [...thumb.joints, thumb.tip]) m.scale.setScalar(size)
+    const tPressed = thumbPos && pose.fingers[5].press > 0
+    thumb.dot.position.copy(tipT).y += 0.5 * size
+    thumb.dot.material.opacity = tPressed ? 1 : 0
+    thumb.label.position.copy(tipT).y += 2.2 * size
+    thumb.label.scale.setScalar(1.6 * size)
+    thumb.label.material.opacity = showLabels && tPressed ? 1 : 0
     if (cello) {
       // elbow raised out to the A side; shoulder behind the upper bout
-      shoulder.set(V.x0 + 6, -14, -21)
+      shoulder.set(V.x0 + (V.bass ? 14 : 6), -14, -21)
       twoBone(shoulder.clone(), wrist.clone(), 29, 27, new THREE.Vector3(wrist.x + 4, wrist.y - 6, wrist.z - 40), elbow)
     } else {
       // arm: the elbow under the instrument, swinging toward the bass strings

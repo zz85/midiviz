@@ -12,9 +12,9 @@
 // sounding strings vibrating, and the bow crossing the strings with its
 // direction.
 
-import { stopMM, positionRoman, noteName } from './fingering.js'
+import { stopMM, positionRoman, noteName, fingerLabel } from './fingering.js'
 
-export const FINGER_COLORS = ['#d8d2c4', '#e2483d', '#f0a030', '#48b04c', '#3f8fe0']
+export const FINGER_COLORS = ['#d8d2c4', '#e2483d', '#f0a030', '#48b04c', '#3f8fe0', '#b464e0']
 
 export function createBoard(canvas) {
   const g = canvas.getContext('2d')
@@ -66,7 +66,7 @@ export function createBoard(canvas) {
       }
       if (n.finger) p0 = n
     }
-    let lastBase = prev?.finger ? prev.base : null
+    let lastBase = prev?.finger ? prev.base * 2 + (prev.thumb ? 1 : 0) : null
     for (const n of visible) {
       const xa = Math.max(40, tx(n.on)), xb = tx(n.off)
       if (xb < 40) continue
@@ -78,7 +78,7 @@ export function createBoard(canvas) {
       g.fill()
       g.globalAlpha = 1
       const want = expect?.get(n)
-      if (want && want !== `${inst.strings[n.string]}${n.finger}`) {
+      if (want && want !== `${inst.strings[n.string]}${fingerLabel(n.finger)}`) {
         g.strokeStyle = '#ff4d6a'; g.setLineDash([3, 2]); g.lineWidth = 1.5
         roundRect(g, xa - 2, y - h / 2 - 2, Math.max(4, xb - xa) + 4, h + 4, 5); g.stroke(); g.setLineDash([])
         g.fillStyle = '#ff8095'; g.textAlign = 'left'; g.font = '10px Helvetica, Arial'
@@ -87,12 +87,13 @@ export function createBoard(canvas) {
       if (opt.labels) {
         g.fillStyle = n.finger === 0 ? '#222' : '#fff'
         g.font = 'bold 12px Helvetica, Arial'; g.textAlign = 'left'; g.textBaseline = 'middle'
-        g.fillText(n.finger === 0 ? '0' : String(n.finger), xa + 4, y + 0.5)
+        g.fillText(fingerLabel(n.finger), xa + 4, y + 0.5)
       }
-      if (n.finger && n.base !== lastBase) {
+      const hk = n.base * 2 + (n.thumb ? 1 : 0)
+      if (n.finger && hk !== lastBase) {
         g.fillStyle = '#f3e6c4'; g.font = '11px Georgia, serif'; g.textAlign = 'left'
-        g.fillText(positionRoman(n.base), xa, y - h / 2 - 7)
-        lastBase = n.base
+        g.fillText(positionRoman(n.base, inst, n.thumb), xa, y - h / 2 - 7)
+        lastBase = hk
       }
       if (n.unplayable) { g.strokeStyle = '#777'; g.strokeRect(xa, y - h / 2, xb - xa, h) }
     }
@@ -124,7 +125,7 @@ export function createBoard(canvas) {
       g.fillStyle = 'rgba(243,200,140,0.12)'; g.strokeStyle = 'rgba(243,200,140,0.4)'
       roundRect(g, X(u1) - 6, by0 - 3, X(u4) - X(u1) + 12, by1 - by0 + 6, 6); g.fill(); g.stroke()
       g.fillStyle = '#f3e6c4'; g.font = '11px Georgia, serif'; g.textAlign = 'left'
-      g.fillText(`${positionRoman(Math.round(pose.base))} position`, X(u1) - 4, boardY + 2)
+      g.fillText(pose.thumb ? 'thumb position' : `${positionRoman(Math.round(pose.base), inst)} position`, X(u1) - 4, boardY + 2)
     }
     // strings, vibrating where they sound
     const vib = pose ? pose.sounding : []
@@ -152,15 +153,16 @@ export function createBoard(canvas) {
     // nut
     g.fillStyle = '#e8e0d0'; g.fillRect(X(0) - 3, by0, 3, by1 - by0)
     // fingers
-    if (pose) for (const f of [1, 2, 3, 4]) {
+    if (pose) for (const f of [1, 2, 3, 4, 5]) {
       const F = pose.fingers[f]
+      if (f === 5 && !pose.thumb) continue
       const x = X(F.u), y = sy(F.s)
       g.globalAlpha = F.press > 0 ? (F.held ? 0.55 : 1) : 0.28
       g.fillStyle = FINGER_COLORS[f]
       g.beginPath(); g.arc(x, y, F.press > 0 ? 8 : 6, 0, Math.PI * 2); g.fill()
       if (F.press > 0) { g.strokeStyle = '#fff'; g.lineWidth = 1.5; g.stroke() }
       g.globalAlpha = 1
-      if (opt.labels && F.press > 0) { g.fillStyle = '#fff'; g.font = 'bold 10px Helvetica'; g.textAlign = 'center'; g.fillText(String(f), x, y + 0.5) }
+      if (opt.labels && F.press > 0) { g.fillStyle = '#fff'; g.font = 'bold 10px Helvetica'; g.textAlign = 'center'; g.fillText(fingerLabel(f), x, y + 0.5) }
     }
     // bow
     if (pose?.bow) {

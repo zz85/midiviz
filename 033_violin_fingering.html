@@ -89,7 +89,7 @@
         value="G4 A4 B4 C5 D5:2 B4 G4:2 D4+B4:2"><button class="b" id="typedGo">Go</button></div>
       <hr>
       <div class="row"><label>Instrument</label><select id="instrument">
-        <option value="violin">Violin</option><option value="viola">Viola</option><option value="cello">Cello</option>
+        <option value="violin">Violin</option><option value="viola">Viola</option><option value="cello">Cello</option><option value="bass">Double bass</option>
       </select></div>
       <div class="row"><label>Style</label><select id="mode">
         <option value="standard">Standard (tuned on 10 violinists)</option>
@@ -134,7 +134,7 @@
       </div>
       <hr>
       <div id="stats"></div>
-      <div id="legend"><span><i style="background:#d8d2c4"></i>0 open</span><span><i style="background:#e2483d"></i>1</span><span><i style="background:#f0a030"></i>2</span><span><i style="background:#48b04c"></i>3</span><span><i style="background:#3f8fe0"></i>4</span></div>
+      <div id="legend"><span><i style="background:#d8d2c4"></i>0 open</span><span><i style="background:#e2483d"></i>1</span><span><i style="background:#f0a030"></i>2</span><span><i style="background:#48b04c"></i>3</span><span><i style="background:#3f8fe0"></i>4</span><span><i style="background:#b464e0"></i>T thumb</span></div>
       <div id="hint">Click the fingerboard (2D) to play a note on that string. Tab: roman numerals = new position, dashed line = shift, dashed red = differs from the book / violinist. Space plays, Esc hides the panel.</div>
     </div>
   </div>
@@ -147,7 +147,7 @@
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
     import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
     import { SoundFontEngine, MidiScheduler } from './soundfont-engine/src/index.js'
-    import { fingerLine, fingerTokens, lineStats, INSTRUMENTS, parseNote, noteName, positionName, positionRoman, stopMM } from './strings/fingering.js'
+    import { fingerLine, fingerTokens, lineStats, INSTRUMENTS, parseNote, noteName, positionName, positionRoman, stopMM, fingerLabel } from './strings/fingering.js'
     import { exercises, bestMatch } from './strings/exercises.js'
     import { buildMotion } from './strings/motion.js'
     import { buildViolin, buildBow } from './strings/violin3d.js'
@@ -210,7 +210,7 @@
       placeInstrument()
       leftHand = buildLeftHand(V, { scale: +$('handSize').value })
       V.group.add(leftHand.group)
-      bow = buildBow({ scale: V.cello ? 1.1 : 1 })
+      bow = buildBow({ scale: V.bass ? 0.92 : V.cello ? 1.1 : 1 })
       V.group.add(bow.group)
       bowHand = buildBowHand(bow, V.group)
       leftHand.setLabels($('labels').checked)
@@ -265,13 +265,15 @@
     // ── Cameras (defined in the instrument's frame) ───────────────────────
     function viewDef(name) {
       const L = V.L, x0 = V.x0, B = V.bodyLen, k = V.k
+      const c = V.bass ? V.k / 2.1 : 1            // the cello views, scaled up for the bass
+      const C = a => a.map(v => v * c)
       const views = V.cello ? {
         // instrument frame: x down the strings, y toward the audience, z toward the player's right
-        player: { pos: [-42, -18, 34], target: [L * 0.6, 14, 0], fov: 40 },
-        hand: { pos: [x0 * 0.3, 30, -42], target: [x0 * 0.3, 14, 0], fov: 34, follow: true },
-        front: { pos: [L * 0.7, 210, -45], target: [L * 0.62, 10, 0], fov: 36 },
-        bow: { pos: [L + 10, 75, 55], target: [L - 4, 16, 0], fov: 36 },
-        above: { pos: [L * 0.65, 30, -190], target: [L * 0.65, 8, 0], fov: 36 },
+        player: { pos: C([-42, -18, 34]), target: C([L * 0.6, 14, 0]), fov: 40 },
+        hand: { pos: [x0 * 0.3, V.fbY(x0 * 0.3, 0) + 16 * c, -42 * c], target: [x0 * 0.3, V.fbY(x0 * 0.3, 0), 0], fov: 34, follow: true },
+        front: { pos: C([L * 0.7, 210, -45]), target: C([L * 0.62, 10, 0]), fov: 36 },
+        bow: { pos: C([L + 10, 75, 55]), target: C([L - 4, 16, 0]), fov: 36 },
+        above: { pos: C([L * 0.65, 30, -190]), target: C([L * 0.65, 8, 0]), fov: 36 },
       } : {
         player: { pos: [x0 + B + 16 * k, 26 * k, 9 * k], target: [x0 * 0.5, 4 * k, -1 * k], fov: 34 },
         hand: { pos: [x0 * 0.45, 24 * k, -44 * k], target: [x0 * 0.45, 2 * k, 0], fov: 30, follow: true },
@@ -282,7 +284,7 @@
       const v = views[name]
       if (!v) return null
       const M = V.group.matrixWorld
-      return { ...v, pos: new THREE.Vector3(...v.pos).applyMatrix4(M).toArray(), target: new THREE.Vector3(...v.target).applyMatrix4(M).toArray() }
+      return { ...v, baseU: v.target[0], pos: new THREE.Vector3(...v.pos).applyMatrix4(M).toArray(), target: new THREE.Vector3(...v.target).applyMatrix4(M).toArray() }
     }
     let tween = null, followU = 0
     function setView(name, instant = false) {
@@ -393,7 +395,7 @@
         <div><span class="k">solved in</span> ${r.ms.toFixed(0)} ms <span class="k">· cost / note</span> ${(r.cost / Math.max(1, n.length)).toFixed(2)}${unpl ? ` <span class="k">· not playable</span> ${unpl}` : ''}</div>
         <div><span class="k">strings</span> ${I.strings.map((s, i) => `${s} ${strs[i]}`).join(' · ')}</div>
         <div><span class="k">positions</span> ${pos.map(([p, c]) => `${p}: ${c}`).join(' · ')}</div>
-        <div class="hist">${[0, 1, 2, 3, 4].map(f => `<div style="height:${(100 * st.fingers[f] / maxF).toFixed(0)}%;background:${['#d8d2c4', '#e2483d', '#f0a030', '#48b04c', '#3f8fe0'][f]}"><span>${st.fingers[f]}</span></div>`).join('')}</div><div style="height:12px"></div>`
+        <div class="hist">${[0, 1, 2, 3, 4, ...(st.fingers[5] ? [5] : [])].map(f => `<div style="height:${(100 * st.fingers[f] / maxF).toFixed(0)}%;background:${['#d8d2c4', '#e2483d', '#f0a030', '#48b04c', '#3f8fe0', '#b464e0'][f]}"><span>${f === 5 ? 'T ' : ''}${st.fingers[f]}</span></div>`).join('')}</div><div style="height:12px"></div>`
       if (state.tnua) {
         const t = n.filter(x => x.truth)
         const ok = t.filter(x => x.truth.string === x.string && x.truth.finger === x.finger).length
@@ -416,7 +418,7 @@
     const EX = exercises()
     $('exercise').add(new Option('— choose an exercise —', ''))
     const groups = {}
-    for (const [k, l] of [['core', 'Patterns and double stops'], ['scales', 'Three-octave scales'], ['melodies', 'Melodies and studies']]) { groups[k] = document.createElement('optgroup'); groups[k].label = l }
+    for (const [k, l] of [['core', 'Patterns, double stops, viola, cello, bass'], ['scales', 'Three-octave scales'], ['melodies', 'Melodies and studies']]) { groups[k] = document.createElement('optgroup'); groups[k].label = l }
     for (const e of EX) groups[e.suite].appendChild(new Option(e.title, e.id))
     $('exercise').append(...Object.values(groups))
     function loadExercise(id) {
@@ -555,7 +557,7 @@
       if (!state.notes.length) return
       const rows = ['pitch,start,duration,string,position,finger']
       for (const n of state.notes.filter(x => x.string != null).sort((a, b) => a.on - b.on || a.pitch - b.pitch)) {
-        rows.push([n.pitch, n.on.toFixed(4), (n.off - n.on).toFixed(4), n.string + 1, n.finger ? (inst() === INSTRUMENTS.violin ? tnuaPosition(n.string, n.base) : positionName(n.base)) : 0, n.finger].join(','))
+        rows.push([n.pitch, n.on.toFixed(4), (n.off - n.on).toFixed(4), n.string + 1, n.finger ? (inst() === INSTRUMENTS.violin ? tnuaPosition(n.string, n.base) : positionName(n.base, inst(), n.thumb)) : 0, fingerLabel(n.finger)].join(','))
       }
       const a = document.createElement('a')
       a.href = URL.createObjectURL(new Blob([rows.join('\n') + '\n'], { type: 'text/csv' }))
@@ -733,7 +735,7 @@
       orientBowHand()
       if (V.cello) {
         // right shoulder behind the upper bout on the C side, the elbow out and down
-        shoulderR.set(V.x0 + 6, -14, 21)
+        shoulderR.set(V.x0 + (V.bass ? 14 : 6), -14, 21)
         poleR.set(V.L * 0.9, -40, 70)
       } else {
         shoulderR.set(V.x0 + V.bodyLen + 10, -24, -34)
@@ -790,7 +792,7 @@
           if (tween.t >= 1) tween = null
         } else if ($('follow').checked && pose && viewDef($('cam').value)?.follow) {
           // slide along the neck with the hand
-          const goal = pose.anchorU - V.x0 * 0.4
+          const goal = pose.anchorU - viewDef($('cam').value).baseU
           const du = (goal - followU) * Math.min(1, dt * 2)
           followU += du
           const along = _x.set(1, 0, 0).applyQuaternion(V.group.quaternion)

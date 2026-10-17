@@ -91,15 +91,21 @@ export function buildViolin(instrument, { finish = 'amber' } = {}) {
   const L = instrument.L / 10                 // vibrating length (cm)
   const S = instrument.open.length
   const k = L / 32.8                          // scale against a violin
-  const cello = instrument.L > 500
+  const cello = instrument.L > 500          // upright: cello and double bass
+  const bass = instrument.L > 900
   const group = new THREE.Group()
   group.name = 'violin'
 
   const bodyLen = 35.6 * k, neckLen = 13.0 * k * (cello ? 1.12 : 1)
   const x0 = neckLen                            // top of the body
-  const rib = (cello ? 12 : 3.1) * (cello ? k / 2.1 : k)
+  const rib = (cello ? 12 : 3.1) * (cello ? k / 2.1 : k) * (bass ? 1.05 : 1)
   const archTop = (cello ? 2.4 : 1.6) * k, archBack = (cello ? 2.2 : 1.5) * k
-  const hw = x => halfWidth((x - x0) / bodyLen) * k
+  const hw = x => {
+    const f = (x - x0) / bodyLen
+    // the bass's viol-like sloping shoulders: the upper bout narrows toward the neck
+    const slope = bass && f < 0.34 ? 0.5 + 0.5 * Math.sin(Math.PI / 2 * f / 0.34) : 1
+    return halfWidth(f) * k * slope
+  }
   const arch = (x, t) => {
     const f = (x - x0) / bodyLen
     const along = Math.sin(Math.PI * clamp(f, 0, 1)) ** 0.6
@@ -394,9 +400,10 @@ export function buildViolin(instrument, { finish = 'amber' } = {}) {
       shadowy(cr)
       group.add(cr)
     } else {
-      const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.25, 45, 10), steel)
+      const pinLen = bass ? 30 : 45
+      const pin = new THREE.Mesh(new THREE.CylinderGeometry(bass ? 0.6 : 0.4, bass ? 0.4 : 0.25, pinLen, 10), steel)
       pin.rotation.z = Math.PI / 2
-      pin.position.set(x0 + bodyLen + 22, rib / 2, 0)
+      pin.position.set(x0 + bodyLen + pinLen / 2 - 0.5, rib / 2, 0)
       group.add(pin)
     }
   }
@@ -490,7 +497,7 @@ export function buildViolin(instrument, { finish = 'amber' } = {}) {
   return {
     group, L, S, k, x0, bodyLen, rib, cello,
     // tip of the cello's end pin (on the floor), in the instrument frame
-    endPin: new THREE.Vector3(x0 + bodyLen + 44.5, rib / 2, 0),
+    endPin: new THREE.Vector3(x0 + bodyLen + (bass ? 29.5 : 44.5), rib / 2, 0), bass,
     // the back of the neck under the fingerboard centre line (where a thumb rests)
     neckBackY: x => fbY(Math.max(0, x), 0) - 0.6 * k - (lerp(1.9, 2.5, clamp(x / x0, 0, 1)) * k * (cello ? 1.2 : 1)),
     stringY, stringZ, fbY, topY, fbHalf, fbEnd, yBridge, layoutStrings,

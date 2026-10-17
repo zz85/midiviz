@@ -94,6 +94,19 @@ export function exercises() {
   add('viola-ds', 'Viola: octave A3+A4 (1–4)', line([[57, 69]], { dur: 1 }), ['G1 D4'], { instrument: 'viola' })
   add('cello-c1', 'Cello: C major, 1 octave (1-3-4 frame)', line([36, 38, 40, 41, 43, 45, 47, 48]), ['C0 C1 C3 C4 G0 G1 G3 G4'], { instrument: 'cello' })
 
+  // ── double bass (research 04 §4, §7.4: Silliman's chart, Essential Elements, Freides, Petracchi) ──
+  const bass = { instrument: 'bass' }
+  add('bass-1st', 'Bass: 1st position on G (Simandl 1-2-4)', line([45, 46, 47], { dur: 0.4 }), ['G1@I G2@I G4@I'], bass)
+  add('bass-half', 'Bass: half position on A (B♭ B C)', line([34, 35, 36], { dur: 0.4 }), ['A1@½ A2@½ A4@½'], bass)
+  add('bass-3rd', 'Bass: 3rd position on G (C C♯ D)', line([48, 49, 50], { dur: 0.4 }), ['G1@III G2@III G4@III'], bass)
+  add('bass-d', 'Bass: D major, 1 octave (shift to III)', line([38, 40, 42, 43, 45, 47, 49, 50], { dur: 0.4 }), ['D0 D1@I D4@I G0 G1@I G4@I G2@III G4@III'], bass)
+  add('bass-d-beg', 'Bass: D major in 1st position (beginner, crossing to A)', line([38, 40, 42, 33, 35, 37, 38], { dur: 0.4 }), ['D0 D1 D4 A0 A1 A4 D0'], { ...bass, mode: 'beginner' })
+  add('bass-g', 'Bass: G major, 1 octave from G1', line([31, 33, 35, 36, 38, 40, 42, 43], { dur: 0.4 }), ['E2 A0 A1 A2 D0 D1 D4 G0', 'E2 A0 A1 A2 D0 D1 D4 D4'], bass)
+  add('bass-4th', 'Bass: 4th position at the neck heel (E♭ E)', line([51, 52], { dur: 0.4 }), ['G2@IV G4@IV'], bass)
+  add('bass-crook', 'Bass: 1-2-3 at the crook of the neck (G A♭)', line([55, 56], { dur: 0.4 }), ['G2@VI½ G3@VI½', 'G1 G2', 'GT G1'], bass)
+  add('bass-thumb', 'Bass: thumb position (G A B C)', line([55, 57, 59, 60], { dur: 0.4 }), ['GT G1 G2 G3', 'GT GT G2 G3'], bass)
+  add('bass-thumb3', 'Bass: thumb position (G A B♭)', line([55, 57, 58], { dur: 0.4 }), ['GT G1 G2'], bass)
+
   // ── melodies (no fixed answer) ──
   const mel = { suite: 'melodies' }
   add('ode', 'Beethoven – Ode to Joy', melody('F#4 F#4 G4 A4 A4 G4 F#4 E4 D4 D4 E4 F#4 F#4:1.5 E4:.5 E4:2 F#4 F#4 G4 A4 A4 G4 F#4 E4 D4 D4 E4 F#4 E4:1.5 D4:.5 D4:2', 0.45), null, mel)
@@ -101,6 +114,8 @@ export function exercises() {
   add('lullaby', 'Brahms – Lullaby', melody('E5:.5 E5:.5 G5:2 E5:.5 E5:.5 G5:2 E5:.5 G5:.5 C6 B5:1.5 A5:.5 A5 G5 D5:.5 E5:.5 F5 D5 D5:.5 E5:.5 F5:2 D5:.5 F5:.5 B5:.5 A5:.5 G5 B5 C6:3', 0.5), null, mel)
   add('gsharp-etude', 'Étude: broken thirds across strings', line([55, 59, 57, 60, 59, 62, 60, 64, 62, 66, 64, 67, 66, 69, 67, 71, 69, 72, 71, 74, 72, 76, 74, 78, 76, 79], { dur: 0.16 }), null, mel)
   add('ds-scale', 'Double stops: thirds in G major', line([[59, 62], [60, 64], [62, 66], [64, 67], [66, 69], [67, 71], [69, 72], [71, 74], [72, 76], [74, 78]], { dur: 0.6 }), null, mel)
+  add('bass-walk', 'Bass: walking line (blues in F)', melody('F2 A2 C3 D3 Bb2 D3 F3 Ab2 F2 A2 C3 Eb3 D3 C3 Bb2 A2 Bb2 D3 F3 G3 Ab3 G3 F3 D3 C3 E3 G3 Bb3 A3 F3 C3 A2', 0.42), null, { ...mel, instrument: 'bass' })
+  add('bass-solo', 'Bass: up to thumb position on G', line([43, 45, 47, 48, 50, 52, 54, 55, 57, 59, 60, 62, 60, 59, 57, 55, 54, 52, 50, 48, 47, 45, 43], { dur: 0.32 }), null, { ...mel, instrument: 'bass' })
   add('bach-chords', 'Chords: G – C – D – G', line([[55, 62, 71, 79], [55, 64, 72, 79], [57, 66, 74, 78], [55, 62, 71, 79]], { dur: 1 }), null, mel)
   return ex
 }

@@ -61,6 +61,19 @@ test('viola and cello use their own strings and frames', () => {
   for (const id of ['viola-c1', 'viola-ds', 'cello-c1']) exact(id)
 })
 
+test('double bass: Simandl 1-2-4 low down, 1-2-3 at the crook, thumb position from the octave (research 04 §7.4)', () => {
+  for (const id of ['bass-1st', 'bass-half', 'bass-3rd', 'bass-d', 'bass-d-beg', 'bass-g', 'bass-4th', 'bass-crook', 'bass-thumb', 'bass-thumb3']) exact(id)
+  // finger 3 never plays alone in the lower positions (b ≤ 8), and the thumb only from the neck heel up
+  for (const id of ['bass-walk', 'bass-solo']) {
+    const { notes } = run(id)
+    for (const n of notes) {
+      if (n.finger === 3 && !n.thumb) assert.ok(n.base >= 9, `${id}: 3 at b${n.base}`)
+      if (n.thumb) assert.ok(n.base >= 7)
+      assert.equal(INSTRUMENTS.bass.open[n.string] + (n.finger ? n.base + n.offset : 0), n.pitch)
+    }
+  }
+})
+
 test('three-octave scales follow a scale-book pattern', () => {
   for (const id of ['g3-up', 'g3-down', 'c3-up', 'd3-up']) exact(id)
   // A major: close to the book, few shifts, the top in a high position on E

@@ -7,6 +7,7 @@
 | File | What it does |
 |---|---|
 | [research/01_violinist_rules.md](research/01_violinist_rules.md) | What violinists and violists do: geometry, positions and finger patterns, shifting, string choice, open strings, scale-book fingerings, double stops, hand size, violin vs viola vs cello, a weighted rule list and 32 test cases |
+| [research/04_double_bass.md](research/04_double_bass.md) | The double bass: tuning in fourths, Simandl's 1-2-4 and its position names, the 4→3 switch at the crook of the neck, thumb position (Petracchi), the Italian, French, open-hand and Rabbath systems, Morton's shifting rules, posture, and 24 test cases |
 | [research/02_algorithms.md](research/02_algorithms.md) | Published methods: Sayegh 1989, Maezawa 2012, Nagata 2014, the TNUA dataset and its BLSTM / VAE models, guitar tablature methods, bowing physics and violinist motion, and a recommended design |
 | [fingering.js](fingering.js) | The engine. Notes are grouped into events (single notes, double stops, chords). Each event's states are the hand's frame base plus a string and finger per note, with chord notes on adjacent strings. A time-aware Viterbi picks the path. Distances follow the fret formula, so stretches cost more on the longer viola string |
 | [templates.js](templates.js) | Scale-book patterns (Galamian, Cooper) for diatonic runs of 15 or more notes. Each run keeps the single pattern that is cheapest for it |
@@ -17,9 +18,24 @@
 
 ## Tests
 
-- `node --test strings/test/fingering.test.js` runs 15 tests: geometry, physical consistency, textbook patterns, double stops and chords, viola and cello, 3-octave scales, styles, string locks, motion and the TNUA format.
-- `node strings/test/bench.js` scores the textbook exercises. Core: 19/23 exact (94.5% of notes). Three-octave scales: 4/5 exact (96.4% of notes).
+- `node --test strings/test/fingering.test.js` runs 17 tests: geometry, physical consistency, textbook patterns, double stops and chords, viola, cello and double bass, 3-octave scales, styles, string locks, motion and the TNUA format.
+- `node strings/test/bench.js` scores the textbook exercises. Core: 29/33 exact (96.2% of notes), including all 10 double-bass cases. Three-octave scales: 4/5 exact (96.4% of notes).
   - The core misses are cases where the violinists in TNUA disagree with the beginner books. They take open D or open A going down where Schroeder writes 4, and they play D♯ on the G string in 2nd position.
+
+## Double bass
+
+The bass needs a frame that changes along the neck (research 04 §7.2), so its frame is a list of entries, each valid over a range of frame bases:
+
+- **Neck (b 1–8):** Simandl's 1-2-4 over a whole tone. Finger 3 moves with 4 and costs extra on its own.
+- **Crook (b 9–11):** 3 takes over from 4.
+- **Upper neck (b 12–13):** 1-2-3 without the thumb.
+- **Thumb position (from the octave):** the thumb is a fifth finger (`T`, finger 5) with Petracchi's frames. A dearer low thumb is allowed from the neck heel.
+
+Other differences from the violin family:
+
+- Shifts are cheap and are measured on a violin-sized string, otherwise every bass shift would cost 3.2 times as much. Position preference is almost flat, open strings are cheaper, and two open strings in a row cost a little (Morton).
+- Positions are named the Simandl way (½, I, II, II½, III … VII), with "thumb" above.
+- There is no fingering dataset for the bass, so its weights come from the textbook cases only.
 
 ## TNUA evaluation
 

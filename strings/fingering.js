@@ -58,10 +58,44 @@ const CELLO_FRAME = {
   3: { 2: [0, 0], 3: [0.5, 1] },
   4: { 3: [0, 0], 4: [0.5, 1] },
 }
+// Double bass (research 04 §2, §7.2): the frame depends on the position.
+// Entries: f finger (5 = thumb), o offset above finger 1 (or above the thumb
+// in thumb position), c cost (number or function of b), b range, th = thumb
+// position (b is then the thumb's place), ext = extension.
+const lerp = (a, b, t) => a + (b - a) * Math.max(0, Math.min(1, t))
+const BASS_THUMB = [[5, 0, 0], [1, 1, 0], [1, 2, 0], [2, 2, 0.3], [2, 3, 0], [2, 4, 0.4], [3, 3, 0.4], [3, 4, 0], [3, 5, 0.3], [4, 6, 3]]
+const BASS_FRAME = [
+  // the neck, Simandl 1-2-4: a whole tone under the hand, 3 and 4 move together
+  { f: 1, o: 0, c: 0, bMax: 13 }, { f: 1, o: -1, c: 0.8, ext: true, bMax: 8 },
+  { f: 2, o: 1, c: 0, bMax: 13 },
+  { f: 4, o: 2, c: 0, bMax: 8 }, { f: 4, o: 3, c: 1.2, ext: true, bMax: 8 },
+  { f: 3, o: 1, c: 2.5, bMax: 8 }, { f: 3, o: 2, c: 1.5, bMax: 8 },
+  // the crook of the neck (b 9–11): 3 takes over from 4; above it 1-2-3 without the thumb
+  { f: 3, o: 2, c: b => lerp(1, 0, (b - 9) / 2), bMin: 9, bMax: 13 },
+  { f: 4, o: 2, c: b => 0.3 + 0.85 * (b - 9), bMin: 9, bMax: 11 }, { f: 4, o: 3, c: 1.5, bMin: 9, bMax: 11 },
+  { f: 2, o: 2, c: 0.8, bMin: 12, bMax: 13 }, { f: 3, o: 3, c: 0.6, bMin: 12, bMax: 13 },
+  // thumb position from the octave (Petracchi's frames), and a dearer low thumb from the neck heel
+  ...BASS_THUMB.map(([f, o, c]) => ({ f, o, c, th: true, bMin: 12 })),
+  ...BASS_THUMB.map(([f, o, c]) => ({ f, o, c: c + 1, th: true, bMin: 7, bMax: 11 })),
+]
+const BASS_POS = ['', '½', 'I', 'II', 'II½', 'III', 'III½', 'IV', 'V', 'V½', 'VI', 'VI½', 'VII', 'VII½']
+
 export const INSTRUMENTS = {
   violin: { name: 'Violin', open: [55, 62, 69, 76], strings: ['G', 'D', 'A', 'E'], L: 328, maxB: [14, 15, 17, 21], frame: VIOLIN_FRAME, program: 40 },
   viola: { name: 'Viola', open: [48, 55, 62, 69], strings: ['C', 'G', 'D', 'A'], L: 375, maxB: [13, 14, 15, 19], frame: VIOLIN_FRAME, program: 41 },
   cello: { name: 'Cello', open: [36, 43, 50, 57], strings: ['C', 'G', 'D', 'A'], L: 690, maxB: [12, 12, 14, 19], frame: CELLO_FRAME, program: 42 },
+  // tuned in fourths, sounding an octave below the written part; weights from research 04 §7.3
+  bass: {
+    name: 'Double bass', open: [28, 33, 38, 43], strings: ['E', 'A', 'D', 'G'], L: 1050, maxB: [9, 12, 19, 26],
+    frameList: BASS_FRAME, posNames: BASS_POS, program: 43, shiftNorm: true, flatStretch: true,
+    weights: {
+      shift: 0.4, shiftSemitone: 0.5, shiftSlide: 0.1, open: -0.3, openAscend: 0.4, openLong: 1.0, openTwice: 0.5, openTop: 0, topString: 0, lowString: 0,
+      cross: [0, 0.25, 3, 6], fourth: 0, shape: 1, lowStringHigh: 0.2, posHigh: 0.3,
+      // positions are nearly free on the bass (it shifts all the time); a small slope keeps ties low
+      pos: [3, 0.04, 0, 0.06, 0.09, 0.12, 0.15, 0.18, 0.24, 0.28, 0.32, 0.36, 0.4],
+    },
+    modes: { beginner: { maxB: 5, weights: { open: -0.6, openLong: 0, openTwice: 0, openDescend: 0, openAscend: 0 } } },
+  },
 }
 export const REFERENCE_L = 328
 
@@ -71,9 +105,16 @@ export const stopMM = (n, L = REFERENCE_L) => L * (1 - 2 ** (-n / 12))
 // Position names from the frame base (research 01 §2.1). Diatonic names are
 // key-dependent; this is the usual reading of the semitone anchor.
 const POS = ['', '½', '1', '2', '2', '3', '3', '4', '5', '5', '6', '6', '7', '8', '8', '9', '9', '10', '10', '11', '12', '12', '13', '13']
-export const positionName = b => POS[b] ?? String(Math.round(b / 1.75))
+export const positionName = (b, inst = null, thumb = false) => {
+  if (inst?.posNames) return thumb ? 'T' : inst.posNames[b] ?? 'VII+'
+  return POS[b] ?? String(Math.round(b / 1.75))
+}
 const ROMAN = { '½': '½', 1: 'I', 2: 'II', 3: 'III', 4: 'IV', 5: 'V', 6: 'VI', 7: 'VII', 8: 'VIII', 9: 'IX', 10: 'X', 11: 'XI', 12: 'XII', 13: 'XIII' }
-export const positionRoman = b => ROMAN[positionName(b)] ?? positionName(b)
+export const positionRoman = (b, inst = null, thumb = false) => inst?.posNames ? (thumb ? 'thumb' : positionName(b, inst)) : ROMAN[positionName(b)] ?? positionName(b)
+/** Finger label: 0–4, T for the thumb. */
+export const fingerLabel = f => (f === 5 ? 'T' : String(f))
+// order of the fingers along the string: the thumb sits below finger 1
+const rank = f => (f === 5 ? 0 : f)
 
 // ── Weights ────────────────────────────────────────────────────────────────
 export const DEFAULTS = {
@@ -118,6 +159,9 @@ export const DEFAULTS = {
     openAscend: -0.2,  // ascending: the open string is the natural choice
     openTop: -0.19,  // + on the top string (bright open E)
     openChord: 0.6,  // bonus for an open string inside a double stop / chord
+    openTwice: 0,  // two open strings in a row (bass: Morton's rule 7)
+    thumbNote: 0.2,  // a note stopped by the thumb (bass / cello thumb position)
+    thumbChange: 0.6,  // + on a shift into or out of thumb position
     // diatonic fingers (estimateKeys): off by default — on TNUA they did not
     // help (S+F −0.4 / −0.8 points), see README
     letter: 0,  // per scale step the finger is away from its note letter (×(steps − ½))
@@ -140,20 +184,22 @@ const MODES = {
 }
 
 export function createModel(options = {}) {
-  const mode = MODES[options.mode || DEFAULTS.mode] || {}
   const inst = typeof options.instrument === 'object' ? options.instrument : INSTRUMENTS[options.instrument || DEFAULTS.instrument]
-  const W = { ...DEFAULTS.weights, ...(mode.weights || {}), ...(options.weights || {}) }
+  const modeName = options.mode || DEFAULTS.mode
+  const mode = inst.modes?.[modeName] || MODES[modeName] || {}
+  const W = { ...DEFAULTS.weights, ...(inst.weights || {}), ...(mode.weights || {}), ...(options.weights || {}) }
   const handSize = options.handSize ?? DEFAULTS.handSize
   const maxB = inst.maxB.map(m => Math.min(m, options.maxB ?? mode.maxB ?? 99))
   // a semitone at frame base b, relative to a semitone in violin 1st position
   const semi = b => inst.L * 2 ** (-b / 12) / (REFERENCE_L * 2 ** (-2 / 12))
   const stretchMul = new Float64Array(32)
-  for (let b = 0; b < 32; b++) stretchMul[b] = W.stretch * (0.4 + 0.6 * semi(b) ** 2) / handSize ** 2
+  for (let b = 0; b < 32; b++) stretchMul[b] = W.stretch * (inst.flatStretch ? 1 : 0.4 + 0.6 * semi(b) ** 2) / handSize ** 2
   const posCost = new Float64Array(32)
   for (let b = 0; b < 32; b++) posCost[b] = b < W.pos.length ? W.pos[b] : W.pos[W.pos.length - 1] + W.posHigh * (b - W.pos.length + 1)
   const frame = []
-  for (const f of [1, 2, 3, 4]) for (const [o, [c, ext]] of Object.entries(inst.frame[f])) frame.push({ f, o: +o, c, ext: !!ext })
-  return { inst, W, handSize, maxB, semi, stretchMul, posCost, frame, mode: options.mode || DEFAULTS.mode, chordTolerance: options.chordTolerance ?? DEFAULTS.chordTolerance }
+  if (inst.frameList) for (const e of inst.frameList) frame.push({ bMin: 1, bMax: 99, th: false, ext: false, ...e })
+  else for (const f of [1, 2, 3, 4]) for (const [o, [c, ext]] of Object.entries(inst.frame[f])) frame.push({ f, o: +o, c, ext: !!ext, bMin: 1, bMax: 99, th: false })
+  return { inst, W, handSize, maxB, semi, stretchMul, posCost, frame, mode: modeName, chordTolerance: options.chordTolerance ?? DEFAULTS.chordTolerance }
 }
 
 // ── Events ─────────────────────────────────────────────────────────────────
@@ -233,8 +279,9 @@ function noteOptions(M, p, s, lock) {
   if (d === 0) return [{ f: 0, o: 0, b: -1, c: 0, ext: false }]   // (a finger at the nut is the open string)
   for (const fr of M.frame) {
     const b = d - fr.o
-    if (b < 1 || b > M.maxB[s]) continue
-    out.push({ f: fr.f, o: fr.o, b, c: fr.c * (fr.ext ? M.stretchMul[b] : M.W.shape), ext: fr.ext })
+    if (b < 1 || b > M.maxB[s] || b < fr.bMin || b > fr.bMax) continue
+    const c = typeof fr.c === 'function' ? fr.c(b) : fr.c
+    out.push({ f: fr.f, o: fr.o, b, th: fr.th, c: c * (fr.ext ? M.stretchMul[b] : M.W.shape) + (fr.f === 5 ? M.W.thumbNote : 0), ext: fr.ext })
   }
   return out
 }
@@ -282,7 +329,10 @@ function stoppedUnary(M, b, s, f) {
   return c
 }
 
-/** Every state for one event. carryB: frame bases an all-open state may keep. */
+// a hand placement: frame base b, and whether it is a thumb position
+const hkey = (b, th) => 2 * b + (th ? 1 : 0)
+
+/** Every state for one event. carryB: hand placements (hkey) an all-open state may keep. */
 function eventStates(M, ev, prevTop, carryB) {
   const k = ev.notes.length
   const S = M.inst.open.length
@@ -292,14 +342,15 @@ function eventStates(M, ev, prevTop, carryB) {
     if (opts.some(o => !o.length)) continue
     // candidate bases: those of any stopped option
     const bases = new Set()
-    for (const o of opts) for (const x of o) if (x.f) bases.add(x.b)
+    for (const o of opts) for (const x of o) if (x.f) bases.add(hkey(x.b, x.th))
     const allOpenPossible = opts.every(o => o.some(x => x.f === 0))
     if (allOpenPossible) {
       const u = ev.notes.reduce((a, n, i) => a + openCost(M, ev, prevTop, s0 + i), 0) + (k === 1 ? colour(M, ev, s0) + tmplCost(M, ev, s0, 0) : 0)
-      for (const b of carryB) states.push({ b, n: ev.notes.map((_, i) => ({ s: s0 + i, f: 0, o: 0 })), open: true, u })
+      for (const key of carryB) states.push({ b: key >> 1, th: !!(key & 1), n: ev.notes.map((_, i) => ({ s: s0 + i, f: 0, o: 0 })), open: true, u })
     }
-    for (const b of bases) {
-      const per = opts.map(o => o.filter(x => x.f === 0 || x.b === b))
+    for (const key of bases) {
+      const b = key >> 1, th = !!(key & 1)
+      const per = opts.map(o => o.filter(x => x.f === 0 || (x.b === b && !!x.th === th)))
       if (per.some(o => !o.length)) continue
       // combinations (k ≤ 4, few options each)
       const pick = new Array(k)
@@ -318,7 +369,7 @@ function eventStates(M, ev, prevTop, carryB) {
               if (!Z.f) continue
               if (A.f === Z.f) { if (A.o !== Z.o) ok = false; else c += M.W.fifth; continue }
               // higher finger number must sit further up the string
-              if ((A.f - Z.f) * (A.o - Z.o) < 0) ok = false
+              if ((rank(A.f) - rank(Z.f)) * (A.o - Z.o) < 0) ok = false
               else if (A.o === Z.o) c += 1.5
             }
           }
@@ -332,7 +383,7 @@ function eventStates(M, ev, prevTop, carryB) {
             if (A.f) { u += first ? stoppedUnary(M, b, s0 + a, A.f) : (A.f === 4 ? M.W.fourth : 0); first = false }
             else u += openCost(M, ev, prevTop, s0 + a)
           }
-          states.push({ b, n: pick.map((x, a) => ({ s: s0 + a, f: x.f, o: x.o, ext: x.ext })), open: false, u })
+          states.push({ b, th, n: pick.map((x, a) => ({ s: s0 + a, f: x.f, o: x.o, ext: x.ext })), open: false, u })
           return
         }
         for (const x of per[i]) { pick[i] = x; rec(i + 1, cost + x.c) }
@@ -346,7 +397,10 @@ function eventStates(M, ev, prevTop, carryB) {
 // ── Transitions ────────────────────────────────────────────────────────────
 function shiftUnits(M, b1, b2) {
   // half semitones, half millimetres (in violin-1st-position semitones)
-  const mm = Math.abs(stopMM(b2, M.inst.L) - stopMM(b1, M.inst.L)) / (stopMM(3) - stopMM(2))
+  // the bass hand moves a whole arm's length more often: its distances are
+  // read on a violin-sized string (research 04 §7.3)
+  const L = M.inst.shiftNorm ? REFERENCE_L : M.inst.L
+  const mm = Math.abs(stopMM(b2, L) - stopMM(b1, L)) / (stopMM(3) - stopMM(2))
   return 0.5 * Math.abs(b2 - b1) + 0.5 * mm
 }
 
@@ -357,8 +411,8 @@ function transition(M, A, B, pa, pb, dt, gap) {
   let c = 0
   const fast = dt < 0.12
   // the hand
-  if (A.b !== B.b) {
-    let k = W.shift + W.shiftDist * shiftUnits(M, A.b, B.b)
+  if (A.b !== B.b || A.th !== B.th) {
+    let k = W.shift + W.shiftDist * shiftUnits(M, A.b, B.b) + (A.th !== B.th ? W.thumbChange : 0)
     let mul = 1 + (W.shiftFast - 1) * Math.max(0, Math.min(1, (0.3 - dt) / 0.2))
     if (dt > 0.45) mul *= W.shiftSlow
     if (A.open || B.open) { k = W.shift * W.shiftOpen + (k - W.shift) * W.shiftOpenDist; mul = 1 }
@@ -371,6 +425,7 @@ function transition(M, A, B, pa, pb, dt, gap) {
     }
     c += k * mul
   }
+  if (A.open && B.open && W.openTwice && pa[0] !== pb[0]) c += W.openTwice
   // strings
   const ds = Math.abs(center(A) - center(B))
   if (ds > 0) {
@@ -389,10 +444,10 @@ function transition(M, A, B, pa, pb, dt, gap) {
       const dp = pb[j] - pa[i]
       if (a.f === b.f) {
         if (dp === 0) { if (a.s !== b.s) c += W.repeatChange; continue }
-        if (A.b !== B.b) continue                              // a guided shift: priced above
+        if (A.b !== B.b || A.th !== B.th) continue             // a guided shift: priced above
         if (a.s !== b.s) c += a.o === b.o && Math.abs(a.s - b.s) === 1 ? W.fifth : W.oblique
         else c += Math.abs(dp) > 1 ? W.slide * 2 : W.slideSemi
-      } else if (A.b === B.b && (b.f - a.f) * (b.o - a.o) < 0 && Math.abs(b.f - a.f) === 1 && a.s === b.s) c += W.crossed
+      } else if (A.b === B.b && A.th === B.th && (rank(b.f) - rank(a.f)) * (b.o - a.o) < 0 && Math.abs(rank(b.f) - rank(a.f)) === 1 && a.s === b.s) c += W.crossed
       else if (dp === 0) c += W.repeatChange
     }
   }
@@ -405,12 +460,12 @@ function solve(M, evs, write) {
   // states; all-open events may keep any frame base their neighbours use
   const lists = []
   let prevTop = null
-  for (let i = 0; i < evs.length; i++) { lists.push(eventStates(M, evs[i], prevTop, [2])); prevTop = evs[i].top }
+  for (let i = 0; i < evs.length; i++) { lists.push(eventStates(M, evs[i], prevTop, [hkey(2, false)])); prevTop = evs[i].top }
   prevTop = null
   for (let i = 0; i < evs.length; i++) {
     if (lists[i].some(s => s.open)) {
-      const carry = new Set([2])
-      for (const j of [i - 1, i + 1, i - 2, i + 2]) for (const s of lists[j] || []) if (!s.open) carry.add(s.b)
+      const carry = new Set([hkey(2, false)])
+      for (const j of [i - 1, i + 1, i - 2, i + 2]) for (const s of lists[j] || []) if (!s.open) carry.add(hkey(s.b, s.th))
       lists[i] = eventStates(M, evs[i], prevTop, [...carry])
     }
     prevTop = evs[i].top
@@ -446,7 +501,8 @@ function solve(M, evs, write) {
     evs[i].notes.forEach((n, j) => {
       const x = st.n[j]
       n.string = x.s; n.finger = x.f; n.offset = x.o; n.base = st.b; n.ext = !!x.ext
-      n.position = positionName(st.b)
+      n.thumb = !!st.th
+      n.position = positionName(st.b, M.inst, st.th)
     })
     s = back[i][s]
   }
@@ -478,11 +534,11 @@ export function fingerLine(notes, options = {}) {
   const playable = []
   let prevTop = null
   for (const ev of events) {
-    let st = eventStates(M, ev, prevTop, [2])
+    let st = eventStates(M, ev, prevTop, [hkey(2, false)])
     while (!st.length && ev.notes.length > 1) {
       ev.notes.shift().unplayable = 'chord'
       ev.top = ev.notes[ev.notes.length - 1].pitch
-      st = eventStates(M, ev, prevTop, [2])
+      st = eventStates(M, ev, prevTop, [hkey(2, false)])
     }
     if (!st.length) { for (const n of ev.notes) n.unplayable = 'range'; continue }
     playable.push(ev)
@@ -517,7 +573,7 @@ export function fingerLine(notes, options = {}) {
 export function fingerTokens(notes, instrument = 'violin', { positions = false } = {}) {
   const inst = typeof instrument === 'object' ? instrument : INSTRUMENTS[instrument]
   return notes.filter(n => n.string != null).sort((a, b) => a.on - b.on || a.pitch - b.pitch)
-    .map(n => inst.strings[n.string] + n.finger + (positions && n.finger ? '@' + positionName(n.base) : ''))
+    .map(n => inst.strings[n.string] + fingerLabel(n.finger) + (positions && n.finger ? '@' + positionName(n.base, inst, n.thumb) : ''))
 }
 
 /** Does a fingering match an expectation token list ("A1@4" also checks the position)? */
@@ -537,14 +593,14 @@ export function matchTokens(got, want) {
 export function lineStats(notes) {
   const ns = notes.filter(n => n.string != null).sort((a, b) => a.on - b.on || a.pitch - b.pitch)
   let shifts = 0, crossings = 0, open = 0, ext = 0, prev = null
-  const fingers = [0, 0, 0, 0, 0], positions = {}
+  const fingers = [0, 0, 0, 0, 0, 0], positions = {}
   for (const n of ns) {
     fingers[n.finger]++
     if (!n.finger) open++
     if (n.ext) ext++
     if (n.finger) positions[n.position] = (positions[n.position] || 0) + 1
     if (prev && n.on - prev.on > 0.03) {
-      if (n.finger && prev.finger && n.base !== prev.base) shifts++
+      if (n.finger && prev.finger && (n.base !== prev.base || !!n.thumb !== !!prev.thumb)) shifts++
       if (n.string !== prev.string) crossings++
     }
     if (n.finger) prev = n; else if (prev) prev = { ...prev, string: n.string, on: n.on }
