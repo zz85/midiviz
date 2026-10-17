@@ -1,0 +1,1049 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Experiment #035 - Basic Pitch Playground</title>
+  <!--
+    Experiment #035 - audio → MIDI with Spotify's Basic Pitch, in the browser
+    (transcription/research/01_audio_to_midi.md).
+
+    transcription/basic-pitch.js         windowing, streaming, fast note decoding, scoring
+    transcription/basic-pitch-worker.js  the tfjs model in a module worker (webgl / webgpu / wasm / cpu)
+    transcription/synth-worker.js        OxiSynth offline: MIDI demos → audio, notes → resynth
+    transcription/vendor/basic-pitch/    model + post-processing from @spotify/basic-pitch 1.0.1 (Apache-2.0)
+    node --test transcription/test/basic-pitch.test.js
+  -->
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0b0c; font: 13px/1.35 "Helvetica Neue", Arial, sans-serif; color: #e8e2d6; }
+    canvas { display: block; }
+    [hidden] { display: none !important; }
+    #view { position: absolute; inset: 0; cursor: crosshair; }
+    #panel {
+      position: absolute; top: 12px; left: 12px; width: 318px; padding: 10px 12px; max-height: calc(100% - 44px); overflow: auto;
+      background: rgba(14, 13, 12, 0.88); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 10px;
+      backdrop-filter: blur(8px); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5); z-index: 2;
+    }
+    #panel h1 { margin: 0 0 2px; font: 300 17px/1.2 Georgia, serif; letter-spacing: 0.04em; color: #f3e6c4; }
+    #panel h1 a { color: inherit; text-decoration: none; }
+    #panel .sub { font-size: 11px; color: #9c958a; margin-bottom: 6px; }
+    #panel .sub a { color: #9c958a; }
+    #panel.collapsed .body { display: none; }
+    #toggle { float: right; background: none; border: 0; color: #d8b56a; font-size: 15px; cursor: pointer; }
+    hr { border: 0; border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 8px 0; }
+    h2 { font: 600 10.5px/1 "Helvetica Neue", Arial, sans-serif; letter-spacing: 0.12em; text-transform: uppercase; color: #8f887d; margin: 9px 0 4px; }
+    .row { display: flex; align-items: center; gap: 6px; margin: 5px 0; }
+    .row > label:first-child { flex: 0 0 74px; color: #a9a196; }
+    select, input[type=range], input[type=number] { flex: 1; min-width: 0; }
+    select, input[type=number] { background: #1d1b19; color: #eee6d8; border: 1px solid #3d3933; border-radius: 4px; padding: 2px 4px; font: inherit; }
+    input[type=number] { width: 52px; flex: 0 0 52px; }
+    input[type=range] { accent-color: #c9a24a; }
+    input[type=checkbox] { accent-color: #c9a24a; }
+    .chk { display: flex; align-items: center; gap: 3px; color: #cfc6b8; margin-right: 6px; white-space: nowrap; }
+    .val { font: 11px monospace; color: #b9b0a2; min-width: 38px; text-align: right; }
+    button.b { background: #26231f; color: #eee6d8; border: 1px solid #4a443b; border-radius: 4px; padding: 3px 8px; cursor: pointer; font: inherit; font-size: 12px; white-space: nowrap; }
+    button.b:hover { background: #35302a; }
+    button.b:disabled { opacity: 0.45; cursor: default; }
+    button.b.on { background: #c9a24a; color: #111; border-color: #c9a24a; }
+    button.b.rec.on { background: #c0392b; border-color: #c0392b; color: #fff; }
+    .grow { flex: 1; }
+    #stats, #score { font: 11px/1.45 monospace; color: #c9c0b2; white-space: pre-wrap; }
+    #score { color: #d9e8c8; }
+    #srcInfo { font-size: 11.5px; color: #c9c0b2; min-height: 16px; }
+    #hint { color: #8f887d; font-size: 11px; margin-top: 6px; }
+    #status { position: absolute; top: 12px; right: 12px; padding: 6px 10px; border-radius: 6px; background: rgba(14, 13, 12, 0.88); border: 1px solid #3d3933; font-size: 12px; z-index: 3; max-width: 420px; }
+    #status.hidden { display: none; }
+    #status.error { border-color: #c44; color: #f99; }
+    #progress { height: 3px; background: #c9a24a; width: 0; transition: width 0.15s; margin-top: 4px; }
+    #transport { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; gap: 8px; align-items: center; padding: 6px 12px;
+      background: rgba(14, 13, 12, 0.88); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 22px; z-index: 2; }
+    #transport button.b { border-radius: 14px; min-width: 34px; }
+    #clock { font: 12px monospace; color: #e3d8c3; min-width: 112px; text-align: center; }
+    #tip { position: absolute; pointer-events: none; z-index: 4; font: 11px/1.4 monospace; background: rgba(10,10,10,0.9); border: 1px solid #3d3933; border-radius: 4px; padding: 3px 6px; color: #e8e2d6; white-space: pre; }
+    #dropHint { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; font: 300 26px Georgia, serif; color: #f3e6c4; background: rgba(0, 0, 0, 0.55); pointer-events: none; z-index: 5; text-align: center; }
+    body.dragging #dropHint { display: flex; }
+  </style>
+</head>
+<body>
+  <canvas id="view"></canvas>
+  <div id="panel">
+    <button id="toggle" title="Collapse">–</button>
+    <h1><a href="README.md" title="Back to experiments">#035 · Basic Pitch Playground</a></h1>
+    <div class="sub">audio → MIDI in the browser with Spotify’s <a href="https://github.com/spotify/basic-pitch-ts">Basic Pitch</a> · <a href="transcription/research/01_audio_to_midi.md">research</a></div>
+    <div class="body">
+      <h2>Source</h2>
+      <div class="row">
+        <button class="b" id="open" title="Open an audio file (or drop one on the page)">Open audio…</button>
+        <button class="b rec" id="mic" title="Transcribe the microphone live (R)">● Mic</button>
+        <button class="b rec" id="tab" title="Transcribe another tab's audio live (choose a tab and tick “share audio”)">● Tab audio</button>
+        <input id="file" type="file" accept="audio/*,.mid,.midi" hidden>
+      </div>
+      <div class="row"><label>Demo MIDI</label><select id="demo"></select></div>
+      <div class="row"><label>Played as</label><select id="demoProg"></select>
+        <select id="demoClip" title="Length to render" style="flex:0 0 66px"><option value="15">15 s</option><option value="30" selected>30 s</option><option value="60">60 s</option><option value="0">full</option></select>
+        <button class="b" id="demoGo" title="Render the MIDI with the soundfont, transcribe it, and score against the MIDI">Render</button></div>
+      <div id="srcInfo"></div>
+      <div id="progress"></div>
+
+      <h2>Model</h2>
+      <div class="row"><label>Backend</label><select id="backend">
+        <option value="webgl">WebGL</option><option value="webgpu">WebGPU</option><option value="wasm">WASM</option><option value="cpu">CPU (plain JS)</option></select></div>
+      <div class="row"><label>Live peek</label><input type="range" id="peekMs" min="0" max="500" step="25" value="100"><span class="val" id="peekMsV"></span></div>
+      <div id="stats"></div>
+
+      <h2>Notes</h2>
+      <div class="row"><label>Onset</label><input type="range" id="onsetThresh" min="0.05" max="0.95" step="0.01"><span class="val" id="onsetThreshV"></span></div>
+      <div class="row"><label>Frame</label><input type="range" id="frameThresh" min="0.05" max="0.95" step="0.01"><span class="val" id="frameThreshV"></span></div>
+      <div class="row"><label>Min length</label><input type="range" id="minNoteMs" min="12" max="300" step="1"><span class="val" id="minNoteMsV"></span></div>
+      <div class="row"><label>Tolerance</label><input type="range" id="energyTolerance" min="1" max="40" step="1" title="Frames a note may dip below the frame threshold and continue"><span class="val" id="energyToleranceV"></span></div>
+      <div class="row"><label>Range</label><input type="number" id="minMidi" min="21" max="108" title="Lowest MIDI note kept"><span style="color:#8f887d">to</span><input type="number" id="maxMidi" min="21" max="108" title="Highest MIDI note kept"><span class="grow"></span></div>
+      <div class="row" style="flex-wrap:wrap">
+        <label class="chk" title="Add onsets where frame activations jump"><input type="checkbox" id="inferOnsets">infer onsets</label>
+        <label class="chk" title="Recover notes without an onset from leftover energy"><input type="checkbox" id="melodiaTrick">melodia trick</label>
+        <label class="chk"><input type="checkbox" id="pitchBends">pitch bends</label>
+      </div>
+      <div class="row"><button class="b" id="defaults">Library defaults</button><button class="b" id="bpio" title="basicpitch.io's sliders: note segmentation 0.5, model confidence 0.3, min note length 58 ms">basicpitch.io</button></div>
+
+      <h2>Reference</h2>
+      <div class="row"><button class="b" id="openRef" title="A MIDI file of what the audio really plays (drop a .mid with audio loaded)">Open MIDI…</button><button class="b" id="clearRef">Clear</button>
+        <input id="refFile" type="file" accept=".mid,.midi,audio/midi" hidden><span class="grow"></span></div>
+      <div class="row"><label>Offset</label><input type="range" id="refOffset" min="-500" max="500" step="5" value="0"><span class="val" id="refOffsetV"></span></div>
+      <div id="score"></div>
+
+      <h2>View</h2>
+      <div class="row"><label>Heatmap</label><select id="layer">
+        <option value="mix">frames + onsets</option><option value="frames">frames (note activity)</option><option value="onsets">onsets</option><option value="contours">contours (pitch, ⅓ semitone)</option><option value="off">off</option></select></div>
+      <div class="row"><label>Gain</label><input type="range" id="gain" min="0.5" max="6" step="0.1" value="1.6"><span class="val" id="gainV"></span></div>
+      <div class="row" style="flex-wrap:wrap">
+        <label class="chk"><input type="checkbox" id="showNotes" checked>notes</label>
+        <label class="chk"><input type="checkbox" id="showRef" checked>reference</label>
+        <label class="chk"><input type="checkbox" id="showBends" checked>bends</label>
+        <label class="chk"><input type="checkbox" id="follow" checked>follow</label>
+        <button class="b" id="fit" title="Fit time and pitch to the notes (F)">Fit</button>
+      </div>
+
+      <h2>Listen</h2>
+      <div class="row"><label>Original</label><input type="range" id="volSrc" min="0" max="1.5" step="0.01" value="1"><span class="val" id="volSrcV"></span></div>
+      <div class="row"><label>Notes</label><input type="range" id="volSyn" min="0" max="1.5" step="0.01" value="0.8"><span class="val" id="volSynV"></span></div>
+      <div class="row"><label>Sound</label><select id="synProg"></select></div>
+      <div class="row" style="flex-wrap:wrap">
+        <label class="chk" title="Original on the left, transcription on the right"><input type="checkbox" id="split">split L / R</label>
+        <label class="chk" title="Play notes as they are transcribed (live sources)"><input type="checkbox" id="echo">echo live notes</label>
+      </div>
+
+      <h2>Export</h2>
+      <div class="row"><button class="b" id="saveMidi">MIDI</button>
+        <label class="chk" title="One channel per sounding note so bends don't collide"><input type="checkbox" id="midiBends">with bends</label>
+        <button class="b" id="saveWav" title="The audio as the model heard it (22.05 kHz mono)">WAV</button></div>
+      <div id="hint">Drop audio files (mp3, wav, flac, ogg, m4a) or a .mid. Wheel pans, Ctrl/⌘ + wheel zooms, drag pans, click seeks, double-click fits. Space play, R mic, F fit.</div>
+    </div>
+  </div>
+  <div id="transport">
+    <button class="b" id="home" title="To start (Home)">|◀</button>
+    <button class="b" id="play" title="Play / pause (Space)">▶</button>
+    <span id="clock">0:00.0 / 0:00.0</span>
+  </div>
+  <div id="status" class="hidden"></div>
+  <div id="tip" hidden></div>
+  <div id="dropHint">Drop audio to transcribe<br><small style="font-size:15px">or a .mid as reference / demo</small></div>
+
+  <script src="tonejs-midi.js"></script>
+  <script type="module">
+    import * as BP from './transcription/basic-pitch.js'
+    import { SoundFontEngine } from './soundfont-engine/src/index.js'
+
+    const $ = id => document.getElementById(id)
+    let needsDraw = true
+    const dirty = () => { needsDraw = true }
+    const TFJS = 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/+esm'
+    const MODEL_URL = new URL('./transcription/vendor/basic-pitch/model.json', import.meta.url).href
+    const VENDOR = new URL('./soundfont-engine/vendor', import.meta.url).href
+    const FONTS = ['soundfonts/Creative(emu10k1)8MBGMSFX.sf2', 'soundfonts/Motif_ES6_Concert_Piano.sf2'].map(p => new URL(p, location.href).href)
+    const PLAY_SR = 44100
+
+    // ── Status ───────────────────────────────────────────────────────────
+    let statusTimer = 0
+    function setStatus(text, error = false, ms = 0) {
+      const el = $('status')
+      el.textContent = text; el.classList.toggle('hidden', !text); el.classList.toggle('error', error)
+      clearTimeout(statusTimer)
+      if (ms) statusTimer = setTimeout(() => el.classList.add('hidden'), ms)
+    }
+    const fmt = t => { t = Math.max(0, t); const m = Math.floor(t / 60); return `${m}:${(t - m * 60).toFixed(1).padStart(4, '0')}` }
+    const NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B']
+    const noteName = p => NAMES[p % 12] + (Math.floor(p / 12) - 1)
+    const isBlack = p => [1, 3, 6, 8, 10].includes(p % 12)
+
+    // ── Controls with persisted values ───────────────────────────────────
+    const OPT_KEYS = ['onsetThresh', 'frameThresh', 'minNoteMs', 'energyTolerance']
+    const saved = JSON.parse(localStorage.getItem('bp035') || '{}')
+    function applyOpts(o) {
+      for (const k of OPT_KEYS) $(k).value = o[k]
+      $('inferOnsets').checked = o.inferOnsets; $('melodiaTrick').checked = o.melodiaTrick; $('pitchBends').checked = o.pitchBends
+      $('minMidi').value = o.minMidi ?? 21; $('maxMidi').value = o.maxMidi ?? 108
+      showVals()
+    }
+    function readOpts() {
+      const lo = +$('minMidi').value || 21, hi = +$('maxMidi').value || 108
+      return {
+        onsetThresh: +$('onsetThresh').value, frameThresh: +$('frameThresh').value, minNoteMs: +$('minNoteMs').value,
+        energyTolerance: +$('energyTolerance').value, inferOnsets: $('inferOnsets').checked, melodiaTrick: $('melodiaTrick').checked,
+        pitchBends: $('pitchBends').checked, minMidi: lo > 21 ? lo : null, maxMidi: hi < 108 ? hi : null,
+      }
+    }
+    function showVals() {
+      $('onsetThreshV').textContent = (+$('onsetThresh').value).toFixed(2)
+      $('frameThreshV').textContent = (+$('frameThresh').value).toFixed(2)
+      $('minNoteMsV').textContent = `${$('minNoteMs').value} ms`
+      $('energyToleranceV').textContent = `${$('energyTolerance').value} fr`
+      $('gainV').textContent = (+$('gain').value).toFixed(1)
+      $('refOffsetV').textContent = `${$('refOffset').value} ms`
+      $('volSrcV').textContent = Math.round($('volSrc').value * 100) + '%'
+      $('volSynV').textContent = Math.round($('volSyn').value * 100) + '%'
+      $('peekMsV').textContent = +$('peekMs').value ? `${$('peekMs').value} ms` : 'off'
+    }
+    applyOpts({ ...BP.DEFAULTS, ...saved.opts })
+    if (saved.backend) $('backend').value = saved.backend
+    if (saved.layer) $('layer').value = saved.layer
+    const persist = () => localStorage.setItem('bp035', JSON.stringify({ opts: readOpts(), backend: $('backend').value, layer: $('layer').value }))
+    $('defaults').onclick = () => { applyOpts(BP.DEFAULTS); reextract(); persist() }
+    $('bpio').onclick = () => { applyOpts({ ...BP.DEFAULTS, onsetThresh: 0.5, frameThresh: 0.3, minNoteMs: 58 }); reextract(); persist() }
+    for (const k of [...OPT_KEYS, 'inferOnsets', 'melodiaTrick', 'pitchBends', 'minMidi', 'maxMidi']) $(k).addEventListener('input', () => { showVals(); reextract(); persist() })
+    for (const k of ['gain', 'refOffset', 'volSrc', 'volSyn', 'peekMs']) $(k).addEventListener('input', () => { showVals(); if (k === 'refOffset') rescore(); if (k.startsWith('vol')) applyGains(); dirty() })
+    for (const k of ['showNotes', 'showRef', 'showBends', 'follow']) $(k).onchange = dirty
+    $('layer').onchange = () => { persist(); dirty() }
+    $('toggle').onclick = () => { $('panel').classList.toggle('collapsed'); $('toggle').textContent = $('panel').classList.contains('collapsed') ? '+' : '–' }
+
+    const PROGRAMS = [[0, 'Acoustic piano'], [4, 'Electric piano'], [12, 'Marimba'], [19, 'Church organ'], [24, 'Nylon guitar'], [25, 'Steel guitar'], [33, 'Finger bass'],
+      [40, 'Violin'], [42, 'Cello'], [48, 'String ensemble'], [52, 'Choir aahs'], [56, 'Trumpet'], [65, 'Alto sax'], [71, 'Clarinet'], [73, 'Flute'], [80, 'Square lead']]
+    $('demoProg').innerHTML = '<option value="-1">as in the file</option>' + PROGRAMS.map(([p, n]) => `<option value="${p}">${n}</option>`).join('')
+    $('synProg').innerHTML = PROGRAMS.map(([p, n]) => `<option value="${p}">${n}</option>`).join('')
+    const DEMOS = [
+      ['midis/bach_846.mid', 'Bach – Prelude in C, BWV 846'], ['midis/elise.mid', 'Beethoven – Für Elise'], ['midis/chpn-p15.mid', 'Chopin – Raindrop Prelude'],
+      ['midis/deb_clai.mid', 'Debussy – Clair de lune'], ['midis/mz_545_1.mid', 'Mozart – K. 545, 1st mvt'], ['midis/scn15_7.mid', 'Schumann – Träumerei'],
+      ['midis/chpn_op66.mid', 'Chopin – Fantaisie-Impromptu (fast)'], ['midis/bach_toccata.mid', 'Bach – Toccata in D minor'], ['midis/pachelbel_canon.mid', 'Pachelbel – Canon'],
+      ['midis/river_flows_in_you.mid', 'Yiruma – River Flows in You'], ['midis/tetris.mid', 'Tetris'], ['midis/zelda_overworld.mid', 'Zelda – Overworld'],
+      ['minute_waltz.mid', 'Chopin – Minute Waltz'], ['entertainer.mid', 'Joplin – The Entertainer'],
+    ]
+    $('demo').innerHTML = DEMOS.map(([f, n]) => `<option value="${f}">${n}</option>`).join('') + '<option value="">Open a .mid…</option>'
+
+    // ── Model worker ─────────────────────────────────────────────────────
+    let worker = null, modelReady = null, modelInfo = null
+    const handlers = new Set()
+    function startWorker() {
+      worker?.terminate()
+      worker = new Worker(new URL('./transcription/basic-pitch-worker.js', import.meta.url), { type: 'module' })
+      worker.onmessage = e => { for (const h of [...handlers]) h(e.data) }
+      worker.onerror = e => setStatus('Model worker failed: ' + (e.message || 'see console'), true)
+      modelInfo = null
+      modelReady = new Promise((resolve, reject) => {
+        const h = m => {
+          if (m.type === 'warn') setStatus(m.message, true, 4000)
+          if (m.type === 'ready') { handlers.delete(h); modelInfo = m; resolve(m); showStats() }
+          if (m.type === 'error' && m.op === 'init') { handlers.delete(h); reject(new Error(m.message)) }
+        }
+        handlers.add(h)
+      })
+      setStatus('Loading TensorFlow.js and the Basic Pitch model (0.9 MB)…')
+      worker.postMessage({ type: 'init', tfjs: TFJS, backend: $('backend').value, modelUrl: MODEL_URL, batch: 4 })
+      modelReady.then(() => setStatus('')).catch(err => setStatus('Model failed to load: ' + err.message, true))
+      return modelReady
+    }
+    startWorker()
+    $('backend').onchange = async () => {
+      persist()
+      if (live) await stopLive()
+      await startWorker()
+      if (src?.audio22 && src.kind !== 'live') runFile(src.audio22)
+    }
+
+    // ── State ────────────────────────────────────────────────────────────
+    // src: { name, kind: 'file' | 'demo' | 'live', audio22: Float32Array, play: AudioBuffer, duration }
+    let src = null
+    let pg = new BP.Posteriorgram()
+    let tailN = 0                 // provisional rows written past pg.length (live peek)
+    let notes = [], refNotes = [], score = null, scoreOff = null
+    let run = { ms: 0, wall: 0, done: false, progress: 0 }
+    let live = null               // live capture state
+    const view = { t0: 0, pps: 120, lo: 21, hi: 108 }
+
+    function resetPG() { pg = new BP.Posteriorgram(); tailN = 0; tiles.clear(); notes = []; frozen = []; score = null; scoreOff = null; run = { ms: 0, wall: 0, done: false, progress: 0 } }
+
+    // ── Transcribing a buffer ────────────────────────────────────────────
+    let runId = 0
+    async function runFile(audio22) {
+      const id = ++runId
+      await modelReady
+      if (id !== runId) return
+      resetPG()
+      const t0 = performance.now()
+      setStatus('Transcribing…')
+      await new Promise((resolve, reject) => {
+        const h = m => {
+          if (id !== runId) { handlers.delete(h); resolve(); return }
+          if (m.job !== id && m.type !== 'error') return
+          if (m.type === 'rows') {
+            appendRows(m)
+            run.progress = m.progress; $('progress').style.width = (m.progress * 100).toFixed(1) + '%'
+            scheduleExtract(400)
+          } else if (m.type === 'done') {
+            handlers.delete(h)
+            pg.truncate(m.length); tiles.clear()
+            run = { ms: m.ms, wall: performance.now() - t0, done: true, progress: 1 }
+            resolve()
+          } else if (m.type === 'error') { handlers.delete(h); reject(new Error(m.message)) }
+        }
+        handlers.add(h)
+        worker.postMessage({ type: 'file', job: id, audio: audio22.slice() })
+      }).catch(err => setStatus('Transcription failed: ' + err.message, true))
+      if (id !== runId) return
+      setTimeout(() => { $('progress').style.width = '0' }, 400)
+      setStatus('')
+      reextract()
+    }
+
+    function appendRows(m) {
+      const n = m.frames.length / BP.NOTES
+      if (m.from !== pg.length) console.warn('row gap', m.from, pg.length)
+      pg.append(m.frames, m.onsets, m.contours)
+      invalidateTiles(m.from, m.from + n + tailN)
+      tailN = 0
+      dirty()
+    }
+
+    // ── Notes ────────────────────────────────────────────────────────────
+    let frozen = []               // live: notes that started before the extraction window
+    let extractTimer = 0, extractMs = 0
+    function scheduleExtract(ms = 0) {
+      if (extractTimer) return
+      extractTimer = setTimeout(() => { extractTimer = 0; doExtract() }, ms)
+    }
+    function reextract() {
+      clearTimeout(extractTimer); extractTimer = 0
+      if (live) {
+        // new settings during a live take: decode everything once, then carry on with the window
+        const end = pg.length + tailN, from = Math.max(0, end - LIVE_WINDOW)
+        notes = BP.extractNotes(pg, readOpts(), 0, end)
+        liveBoundary = from > 0 ? from + BP.FPS : 0
+        frozen = notes.filter(n => n.startFrame < liveBoundary)
+        rescore(); showStats(); dirty()
+        return
+      }
+      frozen = []; doExtract(); renderResynthSoon()
+    }
+    const LIVE_WINDOW = 30 * BP.FPS
+    let liveBoundary = 0
+    function doExtract() {
+      const t0 = performance.now()
+      const o = readOpts()
+      const end = pg.length + tailN
+      if (live) {
+        // re-decode only the last 30 s; notes starting before the window are kept as they were
+        const from = Math.max(0, end - LIVE_WINDOW)
+        const boundary = from > 0 ? from + BP.FPS : 0
+        if (boundary > liveBoundary) { frozen.push(...notes.filter(n => n.startFrame >= liveBoundary && n.startFrame < boundary)); liveBoundary = boundary }
+        const tail = BP.extractNotes(pg, o, from, end).filter(n => n.startFrame >= liveBoundary)
+        notes = frozen.concat(tail)
+      } else {
+        notes = BP.extractNotes(pg, o, 0, end)
+      }
+      extractMs = performance.now() - t0
+      rescore()
+      if (live && $('echo').checked) echoNotes(end)
+      showStats(); dirty()
+    }
+
+    function rescore() {
+      if (!refNotes.length) { score = scoreOff = null; $('score').textContent = ''; return }
+      const off = +$('refOffset').value / 1000
+      const ref = shiftedRef(off)
+      const end = BP.frameToTime(pg.length + tailN)
+      const est = notes, refIn = run.done || !src ? ref : ref.filter(r => r.on < end - 0.2)
+      score = BP.scoreNotes(est, refIn)
+      scoreOff = BP.scoreNotes(est, refIn, { offsets: true })
+      const pct = x => (100 * x).toFixed(1).padStart(5)
+      $('score').textContent =
+        `onset        P ${pct(score.precision)}  R ${pct(score.recall)}  F1 ${pct(score.f1)}\n` +
+        `onset+offset P ${pct(scoreOff.precision)}  R ${pct(scoreOff.recall)}  F1 ${pct(scoreOff.f1)}\n` +
+        `${score.tp} hit · ${score.fp} extra · ${score.fn} missed (±50 ms, mir_eval style)`
+      matchRef = refIn
+      dirty()
+    }
+    let matchRef = []
+    const shiftedRef = off => refNotes.map(r => ({ ...r, on: r.on + off, off: r.off + off }))
+
+    function showStats() {
+      const lines = []
+      if (modelInfo) lines.push(`backend ${modelInfo.backend} · load ${(modelInfo.loadMs / 1000).toFixed(1)} s · warm-up ${modelInfo.warmMs.toFixed(0)} ms`)
+      else lines.push('model loading…')
+      if (src) {
+        const dur = src.kind === 'live' ? (live ? live.samples / BP.SR : src.duration) : src.duration
+        if (run.ms) lines.push(`model ${(run.ms / 1000).toFixed(2)} s for ${dur.toFixed(1)} s audio (${(dur / (run.ms / 1000)).toFixed(1)}× real time)`)
+        if (live) {
+          const now = live.samples / BP.SR
+          const committed = BP.frameToTime(pg.length), prov = BP.frameToTime(pg.length + tailN)
+          lines.push(`behind live: committed ${(now - committed).toFixed(2)} s · peek ${tailN ? (now - prov).toFixed(2) + ' s' : '–'}`)
+          if (live.peekMs) lines.push(`peek inference ${live.peekMs.toFixed(0)} ms`)
+        }
+        lines.push(`${notes.length} notes · decode ${extractMs.toFixed(0)} ms · ${pg.length} frames`)
+      }
+      $('stats').textContent = lines.join('\n')
+    }
+
+    // ── Loading sources ──────────────────────────────────────────────────
+    const audioCtx = new AudioContext({ latencyHint: 'interactive' })
+    const unlock = () => { if (audioCtx.state !== 'running') audioCtx.resume().catch(() => {}) }
+
+    async function to22k(buffer) {
+      const n = Math.ceil(buffer.duration * BP.SR)
+      const oc = new OfflineAudioContext(1, n, BP.SR) // stereo sources are averaged on the way in
+      const s = oc.createBufferSource(); s.buffer = buffer; s.connect(oc.destination); s.start()
+      return (await oc.startRendering()).getChannelData(0)
+    }
+
+    async function loadAudioFile(file) {
+      stopPlayback()
+      if (live) await stopLive()
+      setStatus(`Decoding ${file.name}…`)
+      try {
+        const buffer = await audioCtx.decodeAudioData(await file.arrayBuffer())
+        const audio22 = await to22k(buffer)
+        setSource({ name: file.name, kind: 'file', audio22, play: buffer, duration: buffer.duration })
+        refNotes = []
+        runFile(audio22)
+      } catch (err) { setStatus(`Could not decode ${file.name}: ${err.message}`, true) }
+    }
+
+    function setSource(s) {
+      src = s
+      $('srcInfo').textContent = `${s.name} · ${fmt(s.duration)}` + (s.play ? ` · ${s.play.sampleRate / 1000} kHz` : '')
+      resynth = null
+      clock.t = 0; view.t0 = 0
+      if (s.duration) view.pps = Math.max(20, Math.min(400, (canvas.clientWidth - 360) / Math.min(s.duration, 30)))
+      dirty()
+    }
+
+    $('open').onclick = () => $('file').click()
+    $('file').onchange = () => { const f = $('file').files[0]; if (f) openAny(f); $('file').value = '' }
+    $('openRef').onclick = () => $('refFile').click()
+    $('refFile').onchange = async () => { const f = $('refFile').files[0]; if (f) setReference(await parseMidi(await f.arrayBuffer()), f.name); $('refFile').value = '' }
+    $('clearRef').onclick = () => { refNotes = []; rescore(); dirty() }
+
+    async function openAny(f) {
+      if (/\.midi?$/i.test(f.name)) {
+        const midi = await parseMidi(await f.arrayBuffer())
+        if (src && src.kind !== 'demo') setReference(midi, f.name)
+        else renderDemo(midi, f.name)
+      } else loadAudioFile(f)
+    }
+
+    // drag and drop
+    let dragDepth = 0
+    addEventListener('dragenter', e => { e.preventDefault(); dragDepth++; document.body.classList.add('dragging') })
+    addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; document.body.classList.remove('dragging') } })
+    addEventListener('dragover', e => e.preventDefault())
+    addEventListener('drop', e => { e.preventDefault(); dragDepth = 0; document.body.classList.remove('dragging'); const f = e.dataTransfer.files[0]; if (f) { unlock(); openAny(f) } })
+
+    // ── MIDI: reference and demos ────────────────────────────────────────
+    async function parseMidi(buf) {
+      const midi = new Midi(buf)
+      const out = { notes: [], cc: [], programs: [], duration: midi.duration }
+      midi.tracks.forEach(tr => {
+        const ch = tr.channel ?? 0
+        if (ch === 9 || tr.instrument?.percussion) return
+        out.programs.push([ch, tr.instrument?.number ?? 0])
+        for (const n of tr.notes) out.notes.push({ pitch: n.midi, on: n.time, off: n.time + n.duration, velocity: n.velocity, channel: ch })
+        for (const num of [7, 11, 64, 66, 67]) for (const c of tr.controlChanges?.[num] || []) out.cc.push({ time: c.time, channel: ch, controller: num, value: Math.round(c.value * 127) })
+      })
+      out.notes.sort((a, b) => a.on - b.on || a.pitch - b.pitch)
+      return out
+    }
+    function setReference(midi, name) {
+      refNotes = midi.notes.map(n => ({ pitch: n.pitch, on: n.on, off: n.off }))
+      $('srcInfo').textContent = (src ? `${src.name} · ${fmt(src.duration)} · ` : '') + `reference ${name} (${refNotes.length} notes)`
+      rescore(); dirty()
+    }
+
+    let synthWorker = null, synthReady = null, synthId = 0
+    function synth() {
+      if (synthReady) return synthReady
+      synthWorker = new Worker(new URL('./transcription/synth-worker.js', import.meta.url), { type: 'module' })
+      synthReady = new Promise((resolve, reject) => {
+        synthWorker.onmessage = e => { if (e.data.type === 'ready') resolve(); else if (e.data.type === 'error' && !e.data.id) reject(new Error(e.data.message)) }
+        synthWorker.postMessage({ type: 'init', vendor: VENDOR, fonts: FONTS })
+      })
+      return synthReady
+    }
+    async function renderNotes(opts) {
+      await synth()
+      const id = ++synthId
+      return new Promise((resolve, reject) => {
+        const prev = synthWorker.onmessage
+        synthWorker.onmessage = e => {
+          if (e.data.id !== id) return prev?.(e)
+          synthWorker.onmessage = prev
+          if (e.data.type === 'audio') resolve(e.data); else reject(new Error(e.data.message))
+        }
+        synthWorker.postMessage({ type: 'render', id, sr: PLAY_SR, ...opts })
+      })
+    }
+
+    $('demoGo').onclick = async () => {
+      unlock()
+      const file = $('demo').value
+      if (!file) { $('file').click(); return }
+      try {
+        setStatus('Loading MIDI…')
+        const res = await fetch(file)
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        renderDemo(await parseMidi(await res.arrayBuffer()), $('demo').selectedOptions[0].textContent)
+      } catch (err) { setStatus(`Could not load ${file}: ${err.message}`, true) }
+    }
+    $('demo').onchange = () => { if (!$('demo').value) $('file').click() }
+
+    async function renderDemo(midi, name) {
+      stopPlayback()
+      if (live) await stopLive()
+      const clip = +$('demoClip').value || Infinity
+      const prog = +$('demoProg').value
+      const nts = midi.notes.filter(n => n.on < clip).map(n => ({ ...n, off: Math.min(n.off, clip) }))
+      if (!nts.length) { setStatus('That MIDI has no notes (outside the drum channel)', true, 3000); return }
+      const end = Math.min(clip, Math.max(...nts.map(n => n.off)))
+      const programs = prog >= 0 ? midi.programs.map(([ch]) => [ch, prog]) : midi.programs
+      setStatus(`Rendering ${name} with the soundfont (${end.toFixed(0)} s)…`)
+      try {
+        const r = await renderNotes({ notes: nts, programs, cc: midi.cc.filter(c => c.time < clip), duration: end + 1.5 })
+        const buf = audioCtx.createBuffer(2, r.L.length, PLAY_SR)
+        buf.copyToChannel(r.L, 0); buf.copyToChannel(r.R, 1)
+        const audio22 = await to22k(buf)
+        const progName = prog >= 0 ? PROGRAMS.find(p => p[0] === prog)[1] : 'its own instruments'
+        setSource({ name: `${name} (${progName})`, kind: 'demo', audio22, play: buf, duration: buf.duration })
+        if (prog >= 0) $('synProg').value = prog
+        refNotes = nts.map(n => ({ pitch: n.pitch, on: n.on, off: n.off }))
+        runFile(audio22)
+      } catch (err) { setStatus('Render failed: ' + err.message, true) }
+    }
+
+    // ── Live capture (mic / tab) ─────────────────────────────────────────
+    const TAP = `class Tap extends AudioWorkletProcessor {
+      constructor() { super(); this.buf = new Float32Array(1024); this.n = 0 }
+      process(inputs) {
+        const ins = inputs[0]
+        if (ins && ins.length) {
+          const a = ins[0], k = ins.length
+          for (let i = 0; i < a.length; i++) {
+            let v = 0; for (let c = 0; c < k; c++) v += ins[c][i]
+            this.buf[this.n++] = v / k
+            if (this.n === this.buf.length) { this.port.postMessage(this.buf); this.buf = new Float32Array(1024); this.n = 0 }
+          }
+        }
+        return true
+      }
+    }
+    registerProcessor('bp-tap', Tap)`
+    const tapUrl = URL.createObjectURL(new Blob([TAP], { type: 'text/javascript' }))
+
+    async function startLive(kind) {
+      unlock()
+      stopPlayback()
+      if (live) { const was = live.kind; await stopLive(); if (was === kind) return }
+      let stream
+      try {
+        if (kind === 'mic') stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } })
+        else {
+          stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }, preferCurrentTab: false, selfBrowserSurface: 'exclude' })
+          stream.getVideoTracks().forEach(t => t.stop())
+          if (!stream.getAudioTracks().length) throw new Error('no audio track: tick “Share tab audio” in the picker')
+        }
+      } catch (err) { setStatus(`${kind === 'mic' ? 'Microphone' : 'Tab audio'}: ${err.message}`, true, 5000); return }
+      await modelReady
+      // capture straight at 22.05 kHz where the browser can resample the input; otherwise resample here
+      let ctx, node, resampler = null
+      try {
+        ctx = new AudioContext({ sampleRate: BP.SR })
+        node = ctx.createMediaStreamSource(stream)
+      } catch {
+        ctx?.close()
+        ctx = new AudioContext()
+        node = ctx.createMediaStreamSource(stream)
+        resampler = new BP.Resampler(ctx.sampleRate)
+      }
+      await ctx.audioWorklet.addModule(tapUrl)
+      const tap = new AudioWorkletNode(ctx, 'bp-tap')
+      const mute = ctx.createGain(); mute.gain.value = 0
+      node.connect(tap); tap.connect(mute); mute.connect(ctx.destination)
+
+      resetPG(); refNotes = []
+      liveBoundary = 0; frozen = []
+      live = { kind, stream, ctx, tap, chunks: [], samples: 0, peeking: false, peekMs: 0, lastPeek: 0, started: performance.now(), echoOn: new Map() }
+      setSource({ name: kind === 'mic' ? 'Microphone (live)' : 'Tab audio (live)', kind: 'live', duration: 0 })
+      view.pps = 120
+      $(kind).classList.add('on'); $(kind).textContent = '■ Stop'
+      handlers.add(liveHandler)
+      worker.postMessage({ type: 'start' })
+      tap.port.onmessage = e => {
+        if (!live) return
+        const x = resampler ? resampler.push(e.data) : e.data
+        if (!x.length) return
+        live.chunks.push(x); live.samples += x.length
+        worker.postMessage({ type: 'push', samples: x })
+        // a peek costs a full window of inference: never spend more than ~1/3 of the time on it
+        const every = +$('peekMs').value && Math.max(+$('peekMs').value, 2 * (live.peekMs || 0))
+        if (every && !live.peeking && performance.now() - live.lastPeek > every) { live.peeking = true; live.lastPeek = performance.now(); worker.postMessage({ type: 'peek' }) }
+        dirty()
+      }
+      stream.getAudioTracks()[0].onended = () => { if (live?.stream === stream) stopLive() }
+      if ($('echo').checked) ensureEcho()
+      setStatus(resampler ? `Live at ${ctx.sampleRate} Hz, resampled to 22.05 kHz` : '', false, 3000)
+    }
+
+    function liveHandler(m) {
+      if (!live) return
+      if (m.type === 'rows') { appendRows(m); run.ms = m.ms ?? run.ms; scheduleExtract(150) }
+      else if (m.type === 'peek') {
+        live.peeking = false
+        if (m.n && m.from === pg.length) {
+          // provisional rows go past the committed length; the next committed window overwrites them
+          pg.reserve(m.from + m.n)
+          pg.frames.set(m.frames, m.from * BP.NOTES); pg.onsets.set(m.onsets, m.from * BP.NOTES); pg.contours.set(m.contours, m.from * BP.BINS)
+          const prevTail = tailN
+          tailN = m.n
+          invalidateTiles(m.from, m.from + Math.max(prevTail, m.n))
+          live.peekMs = m.peekMs
+          scheduleExtract(0)
+        }
+      }
+    }
+
+    async function stopLive() {
+      if (!live) return
+      const L = live
+      L.tap.port.onmessage = null
+      L.stream.getTracks().forEach(t => t.stop())
+      L.ctx.close()
+      $(L.kind).classList.remove('on'); $(L.kind).textContent = L.kind === 'mic' ? '● Mic' : '● Tab audio'
+      echoAllOff()
+      handlers.delete(liveHandler)
+      setStatus('Finishing the last window…')
+      await new Promise(resolve => {
+        const h = m => {
+          if (m.type === 'rows') appendRows(m)
+          if (m.type === 'done') { handlers.delete(h); pg.truncate(m.length); tailN = 0; tiles.clear(); run.ms = m.ms; resolve() }
+        }
+        handlers.add(h)
+        worker.postMessage({ type: 'finish' })
+      })
+      const audio22 = new Float32Array(L.samples)
+      let o = 0; for (const c of L.chunks) { audio22.set(c, o); o += c.length }
+      const play = audioCtx.createBuffer(1, Math.max(1, audio22.length), BP.SR); play.copyToChannel(audio22, 0)
+      live = null
+      src = { ...src, name: src.name.replace(' (live)', ` (recorded ${new Date().toLocaleTimeString()})`), audio22, play, duration: audio22.length / BP.SR }
+      $('srcInfo').textContent = `${src.name} · ${fmt(src.duration)}`
+      run.done = true
+      setStatus('')
+      reextract()
+    }
+    $('mic').onclick = () => startLive('mic')
+    $('tab').onclick = () => startLive('tab')
+    if (!navigator.mediaDevices?.getDisplayMedia) $('tab').hidden = true
+
+    // echo: play transcribed notes as they appear
+    let echo = null, echoLoading = null
+    function ensureEcho() {
+      if (echoLoading) return echoLoading
+      echo = new SoundFontEngine({ backend: 'oxisynth', vendorPath: VENDOR, audioContext: audioCtx })
+      echoLoading = echo.loadSoundFontStack(FONTS).then(() => { for (let ch = 0; ch < 16; ch++) echo.programChange(ch, +$('synProg').value) }).catch(err => { setStatus('Echo synth: ' + err.message, true, 4000); echoLoading = null })
+      return echoLoading
+    }
+    $('echo').onchange = () => { if ($('echo').checked) { unlock(); ensureEcho() } else echoAllOff() }
+    function echoNotes(end) {
+      if (!echo || !echoLoading) return
+      const on = live.echoOn // pitch → startFrame of the sounding note
+      const recent = notes.filter(n => n.startFrame > end - 1.5 * BP.FPS)
+      const vol = +$('volSyn').value
+      for (const n of recent) {
+        const s = on.get(n.pitch)
+        if (s !== undefined && Math.abs(s - n.startFrame) <= 4) continue
+        if (s !== undefined) echo.noteOff(n.pitch, 0)
+        if (n.startFrame + n.durationFrames < end - 3) continue // already over by the time we saw it
+        echo.noteOn(n.pitch, Math.min(1, n.velocity * vol), 0); on.set(n.pitch, n.startFrame)
+      }
+      for (const [p, s] of on) {
+        const n = notes.find(x => x.pitch === p && Math.abs(x.startFrame - s) <= 4)
+        if (!n || n.startFrame + n.durationFrames < end - 3) { echo.noteOff(p, 0); on.delete(p) }
+      }
+    }
+    function echoAllOff() { if (live) for (const p of live.echoOn.keys()) echo?.noteOff(p, 0); live?.echoOn.clear(); echo?.allNotesOff?.() }
+
+    // ── Playback: original + resynth, sample-synchronous ─────────────────
+    let resynth = null, resynthKey = '', resynthTimer = 0, resynthJob = 0
+    const gSrc = audioCtx.createGain(), gSyn = audioCtx.createGain()
+    const panSrc = audioCtx.createStereoPanner(), panSyn = audioCtx.createStereoPanner()
+    gSrc.connect(panSrc).connect(audioCtx.destination); gSyn.connect(panSyn).connect(audioCtx.destination)
+    function applyGains() {
+      gSrc.gain.value = +$('volSrc').value; gSyn.gain.value = +$('volSyn').value
+      const s = $('split').checked; panSrc.pan.value = s ? -1 : 0; panSyn.pan.value = s ? 1 : 0
+    }
+    applyGains()
+    $('split').onchange = applyGains
+    $('synProg').onchange = () => { renderResynthSoon(0); if (echo) for (let ch = 0; ch < 16; ch++) echo.programChange(ch, +$('synProg').value) }
+
+    function renderResynthSoon(ms = 500) {
+      clearTimeout(resynthTimer)
+      if (live || !src) return
+      resynthTimer = setTimeout(renderResynth, ms)
+    }
+    async function renderResynth() {
+      if (!src || live) return null
+      const key = `${notes.length}:${notes[0]?.on}:${notes.at(-1)?.off}:${$('synProg').value}:${src.name}`
+      if (resynth && resynthKey === key) return resynth
+      const job = ++resynthJob
+      const prog = +$('synProg').value
+      const r = await renderNotes({ notes: notes.map(n => ({ pitch: n.pitch, on: n.on, off: n.off, velocity: n.velocity, channel: 0 })), programs: [[0, prog]], duration: Math.max(src.duration, notes.reduce((m, n) => Math.max(m, n.off), 0)) + 1 })
+      if (job !== resynthJob) return resynth
+      const buf = audioCtx.createBuffer(2, Math.max(1, r.L.length), PLAY_SR)
+      buf.copyToChannel(r.L, 0); buf.copyToChannel(r.R, 1)
+      resynth = buf; resynthKey = key
+      if (clock.playing) { const t = now(); stopSources(); startSources(t) } // swap in the new render
+      return buf
+    }
+
+    const clock = { playing: false, t: 0, ctx0: 0 }
+    const now = () => clock.playing ? clock.t + (audioCtx.currentTime - clock.ctx0) : clock.t
+    let sources = []
+    function startSources(t) {
+      const at = audioCtx.currentTime + 0.03
+      for (const [buf, g] of [[src?.play, gSrc], [resynth, gSyn]]) {
+        if (!buf || t >= buf.duration) continue
+        const s = audioCtx.createBufferSource(); s.buffer = buf; s.connect(g); s.start(at, t); sources.push(s)
+      }
+      clock.t = t; clock.ctx0 = at
+    }
+    function stopSources() { for (const s of sources) { try { s.stop() } catch { } } sources = [] }
+    async function play() {
+      if (!src?.play || live) return
+      unlock()
+      if (clock.t >= src.duration - 0.05) clock.t = 0
+      setStatus('Rendering the notes…')
+      try { await renderResynth() } catch (err) { setStatus('Resynth failed: ' + err.message, true, 4000) }
+      setStatus('')
+      startSources(clock.t); clock.playing = true
+      $('play').textContent = '❚❚'; $('play').classList.add('on')
+    }
+    function stopPlayback() {
+      if (clock.playing) clock.t = now()
+      clock.playing = false; stopSources()
+      $('play').textContent = '▶'; $('play').classList.remove('on')
+    }
+    function seek(t) {
+      const was = clock.playing
+      stopPlayback(); clock.t = Math.max(0, Math.min(src?.duration ?? 0, t))
+      if (was) { startSources(clock.t); clock.playing = true; $('play').textContent = '❚❚'; $('play').classList.add('on') }
+      dirty()
+    }
+    $('play').onclick = () => clock.playing ? stopPlayback() : play()
+    $('home').onclick = () => { seek(0); view.t0 = 0 }
+
+    // ── Export ───────────────────────────────────────────────────────────
+    function download(bytes, name, type) {
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(new Blob([bytes], { type }))
+      a.download = name; a.click()
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000)
+    }
+    const baseName = () => (src?.name || 'transcription').replace(/\.[a-z0-9]+$/i, '').replace(/[^\w.-]+/g, '_')
+    $('saveMidi').onclick = () => {
+      if (!notes.length) return
+      const midi = new Midi()
+      const prog = +$('synProg').value
+      if (!$('midiBends').checked || !$('pitchBends').checked) {
+        const tr = midi.addTrack(); tr.instrument.number = prog; tr.name = 'Basic Pitch'
+        for (const n of notes) tr.addNote({ midi: n.pitch, time: n.on, duration: n.off - n.on, velocity: n.velocity })
+      } else {
+        // a channel per sounding note (round robin, skipping drums) so each note bends on its own
+        const chans = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15]
+        const tracks = chans.map(ch => { const t = midi.addTrack(); t.channel = ch; t.instrument.number = prog; t.name = `Basic Pitch ch ${ch + 1}`; return t })
+        const busyUntil = new Array(chans.length).fill(-1)
+        let rr = 0
+        for (const n of notes) {
+          let k = -1
+          for (let j = 0; j < chans.length; j++) { const c = (rr + j) % chans.length; if (busyUntil[c] <= n.on) { k = c; break } }
+          if (k < 0) k = rr % chans.length
+          rr = k + 1; busyUntil[k] = n.off + 0.3
+          const tr = tracks[k]
+          tr.addPitchBend({ time: Math.max(0, n.on - 0.002), value: 0 })
+          let last = 0
+          ;(n.bends || []).forEach((b, i) => {
+            const v = Math.max(-1, Math.min(1, b / 3 / 2)) // 3 contour bins per semitone, ±2 semitone bend range
+            if (Math.abs(v - last) < 1 / 64) return
+            last = v
+            tr.addPitchBend({ time: BP.frameToTime(n.startFrame + i), value: v })
+          })
+          tr.addNote({ midi: n.pitch, time: n.on, duration: n.off - n.on, velocity: n.velocity })
+        }
+        midi.tracks = midi.tracks.filter(t => t.notes.length)
+      }
+      download(midi.toArray(), baseName() + '_basicpitch.mid', 'audio/midi')
+    }
+    $('saveWav').onclick = () => { if (src?.audio22) download(BP.encodeWav(src.audio22), baseName() + '_22k.wav', 'audio/wav') }
+
+    // ── Drawing ──────────────────────────────────────────────────────────
+    const canvas = $('view'), g = canvas.getContext('2d')
+    const KEYS_W = 36, TOP = 22, BOTTOM = 64
+    let W = 0, H = 0, DPR = 1
+    let panelRight = 0
+    const measurePanel = () => { const r = $('panel').getBoundingClientRect(); panelRight = $('panel').classList.contains('collapsed') || W < 700 ? 0 : r.right + 6 }
+    new ResizeObserver(() => { measurePanel(); dirty() }).observe($('panel'))
+    function resize() {
+      DPR = Math.min(2, devicePixelRatio || 1)
+      W = innerWidth; H = innerHeight
+      canvas.width = W * DPR; canvas.height = H * DPR; canvas.style.width = W + 'px'; canvas.style.height = H + 'px'
+      measurePanel(); dirty()
+    }
+    addEventListener('resize', resize); resize()
+    const left = () => panelRight + KEYS_W
+    const X = t => left() + (t - view.t0) * view.pps
+    const T = x => view.t0 + (x - left()) / view.pps
+    const rowH = () => (H - TOP - BOTTOM) / (view.hi - view.lo + 1)
+    const Y = p => TOP + (view.hi - p) * rowH()   // top of the row for MIDI pitch p
+
+    // heatmap tiles: 256 frames × (88 | 264) rows, rebuilt when their rows change
+    const TILE = 256
+    const tiles = new Map()
+    function invalidateTiles(from, to) {
+      for (let k = Math.floor(from / TILE); k <= Math.floor(Math.max(from, to - 1) / TILE); k++) for (const l of ['frames', 'onsets', 'contours', 'mix']) tiles.delete(`${l}:${k}`)
+    }
+    const LUT = (() => { // inferno-ish
+      const stops = [[0, 0, 0, 4], [0.15, 31, 12, 72], [0.35, 120, 28, 109], [0.55, 188, 55, 84], [0.75, 237, 105, 37], [0.9, 251, 180, 26], [1, 252, 255, 164]]
+      const lut = new Uint8ClampedArray(256 * 3)
+      for (let i = 0; i < 256; i++) {
+        const v = i / 255; let k = 0; while (stops[k + 1][0] < v) k++
+        const [a, b] = [stops[k], stops[k + 1]], f = (v - a[0]) / (b[0] - a[0])
+        for (let c = 0; c < 3; c++) lut[i * 3 + c] = a[c + 1] + (b[c + 1] - a[c + 1]) * f
+      }
+      return lut
+    })()
+    function tile(layer, k) {
+      const key = `${layer}:${k}`, gain = +$('gain').value
+      let c = tiles.get(key)
+      if (c && c.gain === gain) return c
+      const rows = pg.length + tailN, f0 = k * TILE, f1 = Math.min(rows, f0 + TILE)
+      if (f1 <= f0) return null
+      const h = layer === 'contours' ? BP.BINS : BP.NOTES, w = f1 - f0
+      c = c?.canvas?.width === w ? c : { canvas: new OffscreenCanvas(w, h) }
+      const img = new ImageData(w, h), d = img.data
+      for (let f = f0; f < f1; f++) {
+        const x = f - f0
+        for (let r = 0; r < h; r++) {
+          const o = ((h - 1 - r) * w + x) * 4
+          if (layer === 'mix') {
+            const a = Math.min(1, Math.max(0, pg.frames[f * h + r] - 0.04) * gain), b = Math.min(1, Math.max(0, pg.onsets[f * h + r] - 0.04) * gain)
+            d[o] = 255 * Math.min(1, a * 0.95 + b * 0.2); d[o + 1] = 255 * Math.min(1, a * 0.6 + b * 0.85); d[o + 2] = 255 * Math.min(1, a * 0.15 + b); d[o + 3] = 255
+          } else {
+            const v = Math.min(255, (pg[layer][f * h + r] * gain * 255) | 0)
+            d[o] = LUT[v * 3]; d[o + 1] = LUT[v * 3 + 1]; d[o + 2] = LUT[v * 3 + 2]; d[o + 3] = 255
+          }
+        }
+      }
+      c.canvas.getContext('2d').putImageData(img, 0, 0)
+      c.gain = gain; c.f0 = f0; c.f1 = f1
+      tiles.set(key, c)
+      return c
+    }
+
+    function draw() {
+      g.setTransform(DPR, 0, 0, DPR, 0, 0)
+      g.fillStyle = '#0b0b0c'; g.fillRect(0, 0, W, H)
+      const L0 = left(), rh = rowH()
+      const tMin = T(L0), tMax = T(W)
+      // row stripes for black keys
+      for (let p = view.lo; p <= view.hi; p++) if (isBlack(p)) { g.fillStyle = '#121214'; g.fillRect(L0, Y(p), W - L0, rh) }
+      // heatmap
+      const layer = $('layer').value
+      const rows = pg.length + tailN
+      if (layer !== 'off' && rows) {
+        g.imageSmoothingEnabled = view.pps < BP.FPS * 1.5
+        const fA = Math.max(0, Math.floor(tMin * BP.FPS) - 2), fB = Math.min(rows, Math.ceil(tMax * BP.FPS * 1.01) + 2)
+        for (let k = Math.floor(fA / TILE); k <= Math.floor(Math.max(fA, fB - 1) / TILE); k++) {
+          const tl = tile(layer, k); if (!tl) continue
+          const x0 = X(BP.frameToTime(tl.f0)), x1 = X(BP.frameToTime(tl.f1))
+          if (layer === 'contours') {
+            // bin b is centred on MIDI 21 + b / 3 and sits in image row 263 - b; the view's top edge is MIDI hi + 0.5
+            const sy0 = (BP.BINS - 1) + 0.5 - 3 * (view.hi + 0.5 - 21), sh = (view.hi - view.lo + 1) * 3
+            g.drawImage(tl.canvas, 0, sy0, tl.canvas.width, sh, x0, TOP, x1 - x0, sh / 3 * rh)
+          } else {
+            const sy = 108 - view.hi, sh = view.hi - view.lo + 1
+            g.drawImage(tl.canvas, 0, sy, tl.canvas.width, sh, x0, TOP, x1 - x0, sh * rh)
+          }
+        }
+      }
+      // provisional (live peek) region
+      if (tailN) {
+        const xa = X(BP.frameToTime(pg.length)), xb = X(BP.frameToTime(rows))
+        g.fillStyle = 'rgba(120,180,255,0.10)'; g.fillRect(xa, TOP, xb - xa, H - TOP - BOTTOM)
+        g.strokeStyle = 'rgba(120,180,255,0.6)'; g.setLineDash([4, 4]); g.beginPath(); g.moveTo(xa + 0.5, TOP); g.lineTo(xa + 0.5, H - BOTTOM); g.stroke(); g.setLineDash([])
+      }
+      // octave lines
+      g.strokeStyle = 'rgba(255,255,255,0.07)'; g.lineWidth = 1
+      for (let p = view.lo; p <= view.hi; p++) if (p % 12 === 0) { const y = Math.round(Y(p) + rh) + 0.5; g.beginPath(); g.moveTo(L0, y); g.lineTo(W, y); g.stroke() }
+      // time grid
+      const step = [0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60].find(s => s * view.pps >= 70) || 120
+      g.font = '10px monospace'; g.fillStyle = '#8f887d'; g.textBaseline = 'middle'
+      for (let t = Math.ceil(tMin / step) * step; t <= tMax; t += step) {
+        const x = Math.round(X(t)) + 0.5
+        g.strokeStyle = 'rgba(255,255,255,0.06)'; g.beginPath(); g.moveTo(x, TOP); g.lineTo(x, H - BOTTOM); g.stroke()
+        g.fillText(step < 1 ? t.toFixed(step < 0.5 ? 2 : 1) : fmt(t).replace(/\.0$/, ''), x + 3, TOP / 2)
+      }
+      // reference notes
+      const off = +$('refOffset').value / 1000
+      if ($('showRef').checked && refNotes.length) {
+        const matched = score && matchRef.length ? score.refMatch : null
+        for (let j = 0; j < (matched ? matchRef.length : refNotes.length); j++) {
+          const r = matched ? matchRef[j] : { ...refNotes[j], on: refNotes[j].on + off, off: refNotes[j].off + off }
+          if (r.off < tMin || r.on > tMax || r.pitch < view.lo || r.pitch > view.hi) continue
+          const miss = matched && matched[j] < 0
+          g.strokeStyle = miss ? 'rgba(255,150,60,0.95)' : 'rgba(120,220,255,0.75)'; g.lineWidth = miss ? 1.6 : 1
+          g.strokeRect(X(r.on) + 0.5, Y(r.pitch) + 0.5, Math.max(2, (r.off - r.on) * view.pps) - 1, Math.max(2, rh - 1))
+        }
+      }
+      // transcribed notes
+      if ($('showNotes').checked) {
+        const em = score?.estMatch
+        for (let i = 0; i < notes.length; i++) {
+          const n = notes[i]
+          if (n.off < tMin || n.on > tMax || n.pitch < view.lo || n.pitch > view.hi) continue
+          const x = X(n.on), w = Math.max(2, (n.off - n.on) * view.pps), y = Y(n.pitch)
+          const a = 0.35 + 0.6 * n.velocity
+          g.fillStyle = em ? (em[i] >= 0 ? `rgba(110,220,120,${a})` : `rgba(240,80,70,${a})`) : `rgba(255,214,120,${a})`
+          g.fillRect(x, y + rh * 0.12, w, Math.max(1.5, rh * 0.76))
+          if ($('showBends').checked && n.bends && $('pitchBends').checked && view.pps > 30) {
+            g.strokeStyle = 'rgba(255,255,255,0.75)'; g.lineWidth = 1; g.beginPath()
+            n.bends.forEach((b, k) => { const bx = X(BP.frameToTime(n.startFrame + k)), by = y + rh / 2 - (b / 3) * rh; k ? g.lineTo(bx, by) : g.moveTo(bx, by) })
+            g.stroke()
+          }
+        }
+      }
+      // playhead / live head
+      const head = live ? live.samples / BP.SR : now()
+      const hx = X(head)
+      if (hx >= L0 && hx <= W) { g.strokeStyle = live ? '#ff6b5b' : '#f3e6c4'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(hx, TOP); g.lineTo(hx, H - BOTTOM); g.stroke() }
+      // keyboard
+      g.fillStyle = '#0b0b0c'; g.fillRect(L0 - KEYS_W, 0, KEYS_W, H)
+      const sounding = new Set(notes.filter(n => n.on <= head && n.off > head).map(n => n.pitch))
+      for (let p = view.lo; p <= view.hi; p++) {
+        const y = Y(p), black = isBlack(p)
+        g.fillStyle = sounding.has(p) ? '#ffd678' : black ? '#26231f' : '#d9d2c4'
+        g.fillRect(L0 - KEYS_W + (black ? 12 : 0), y, KEYS_W - (black ? 12 : 1), Math.max(1, rh - (rh > 4 ? 1 : 0)))
+        if (p % 12 === 0 && rh >= 6) { g.fillStyle = '#5b544a'; g.font = `${Math.min(10, rh)}px sans-serif`; g.fillText('C' + (p / 12 - 1), L0 - KEYS_W + 2, y + rh / 2) }
+      }
+      // empty state
+      if (!src) {
+        g.fillStyle = '#8f887d'; g.font = '300 20px Georgia, serif'; g.textAlign = 'center'
+        g.fillText('Drop an audio file, press ● Mic, or render a demo MIDI', (L0 + W) / 2, H / 2)
+        g.textAlign = 'start'
+      }
+      // clock
+      const dur = live ? head : (src?.duration ?? 0)
+      $('clock').textContent = `${fmt(head)} / ${fmt(dur)}`
+    }
+
+    function frame() {
+      if (clock.playing) {
+        const t = now()
+        if (src && t >= src.duration) { stopPlayback(); clock.t = src.duration }
+        if ($('follow').checked) { const span = (W - left()) / view.pps; if (t > view.t0 + span * 0.85 || t < view.t0) view.t0 = Math.max(0, t - span * 0.15) }
+        needsDraw = true
+      }
+      if (live) {
+        if ($('follow').checked) { const span = (W - left()) / view.pps, t = live.samples / BP.SR; view.t0 = Math.max(0, t - span * 0.85) }
+        if (performance.now() - (live.lastStats || 0) > 250) { live.lastStats = performance.now(); showStats() }
+        needsDraw = true
+      }
+      if (needsDraw) { needsDraw = false; draw() }
+      requestAnimationFrame(frame)
+    }
+    requestAnimationFrame(frame)
+
+    function fit() {
+      const all = notes.length ? notes : refNotes
+      const dur = src?.duration || (all.length ? Math.max(...all.map(n => n.off)) : 30)
+      view.t0 = 0; view.pps = Math.max(5, (W - left() - 20) / Math.max(1, dur))
+      if (all.length) {
+        let lo = 108, hi = 21
+        for (const n of all) { lo = Math.min(lo, n.pitch); hi = Math.max(hi, n.pitch) }
+        view.lo = Math.max(21, lo - 3); view.hi = Math.min(108, hi + 3)
+        if (view.hi - view.lo < 24) { const m = (view.hi + view.lo) / 2; view.lo = Math.max(21, Math.round(m - 12)); view.hi = Math.min(108, view.lo + 24) }
+      } else { view.lo = 21; view.hi = 108 }
+      dirty()
+    }
+    $('fit').onclick = fit
+
+    // ── Mouse ────────────────────────────────────────────────────────────
+    canvas.addEventListener('wheel', e => {
+      e.preventDefault()
+      if (e.ctrlKey || e.metaKey) {
+        const t = T(e.offsetX), k = Math.exp(-e.deltaY * 0.0025)
+        view.pps = Math.max(2, Math.min(3000, view.pps * k)); view.t0 = Math.max(0, t - (e.offsetX - left()) / view.pps)
+      } else if (e.altKey) {
+        // pitch zoom around the cursor
+        const p = view.hi - (e.offsetY - TOP) / rowH(), span = view.hi - view.lo, ns = Math.max(12, Math.min(87, Math.round(span * Math.exp(e.deltaY * 0.003))))
+        const f = (p - view.lo) / span
+        view.lo = Math.max(21, Math.round(p - f * ns)); view.hi = Math.min(108, view.lo + ns); view.lo = Math.max(21, view.hi - ns)
+      } else {
+        const dx = Math.abs(e.deltaX) > Math.abs(e.deltaY) || e.shiftKey ? (e.deltaX || e.deltaY) : e.deltaY
+        view.t0 = Math.max(0, view.t0 + dx / view.pps)
+      }
+      $('follow').checked = $('follow').checked && !clock.playing && !live
+      dirty()
+    }, { passive: false })
+    let drag = null
+    canvas.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, t0: view.t0, lo: view.lo, moved: false }; canvas.setPointerCapture(e.pointerId) })
+    canvas.addEventListener('pointermove', e => {
+      if (drag) {
+        const dx = e.clientX - drag.x, dy = e.clientY - drag.y
+        if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true
+        if (drag.moved) {
+          view.t0 = Math.max(0, drag.t0 - dx / view.pps)
+          const span = view.hi - view.lo, lo = Math.max(21, Math.min(108 - span, Math.round(drag.lo + dy / rowH())))
+          view.lo = lo; view.hi = lo + span
+          $('follow').checked = false; dirty()
+        }
+      }
+      hover(e)
+    })
+    canvas.addEventListener('pointerup', e => {
+      if (drag && !drag.moved && e.offsetX > left() && src && !live) { seek(T(e.offsetX)); $('follow').checked = true }
+      drag = null
+    })
+    canvas.addEventListener('dblclick', fit)
+    canvas.addEventListener('pointerleave', () => { $('tip').hidden = true })
+
+    function hover(e) {
+      const tip = $('tip')
+      if (e.offsetX < left() || e.offsetY < TOP || e.offsetY > H - BOTTOM || !src) { tip.hidden = true; return }
+      const t = T(e.offsetX), p = Math.floor(view.hi - (e.offsetY - TOP) / rowH()) + 1
+      let f = Math.round(t * BP.SR / BP.HOP)
+      for (let d = -2; d <= 2; d++) if (Math.abs(BP.frameToTime(f + d) - t) < Math.abs(BP.frameToTime(f) - t)) f += d
+      const lines = [`${fmt(t)}  ${noteName(p)} (${p})`]
+      if (f >= 0 && f < pg.length + tailN && p >= 21 && p <= 108) {
+        const c = p - 21
+        lines.push(`frame ${f}  note ${pg.frames[f * 88 + c].toFixed(2)}  onset ${pg.onsets[f * 88 + c].toFixed(2)}${f >= pg.length ? '  (peek)' : ''}`)
+      }
+      const n = notes.find(n => n.pitch === p && n.on <= t && n.off >= t)
+      if (n) lines.push(`note ${noteName(n.pitch)} ${n.on.toFixed(3)}–${n.off.toFixed(3)} s  vel ${(n.velocity * 127) | 0}` + (score?.estMatch ? (score.estMatch[notes.indexOf(n)] >= 0 ? '  ✓ in reference' : '  ✗ not in reference') : ''))
+      tip.textContent = lines.join('\n'); tip.hidden = false
+      tip.style.left = Math.min(W - tip.offsetWidth - 8, e.clientX + 14) + 'px'; tip.style.top = Math.min(H - tip.offsetHeight - 8, e.clientY + 14) + 'px'
+    }
+
+    addEventListener('keydown', e => {
+      if (e.target.closest('input, select, textarea') && e.target.type !== 'range' && e.target.type !== 'checkbox') return
+      if (e.code === 'Space') { e.preventDefault(); clock.playing ? stopPlayback() : play() }
+      else if (e.code === 'Home') { seek(0); view.t0 = 0 }
+      else if (e.key === 'r' || e.key === 'R') startLive('mic')
+      else if (e.key === 'f' || e.key === 'F') fit()
+    })
+    addEventListener('pointerdown', unlock, { once: true })
+    showVals(); showStats()
+  </script>
+</body>
+</html>
