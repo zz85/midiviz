@@ -15,11 +15,23 @@ import * as THREE from 'three'
 import { solveFinger } from '../fingering/hands3d.js'
 import { buildMotion, KEY, restOffset } from '../fingering/motion.js'
 import { planStrokes, velocityRange } from './stroke.js'
+import { keyX, isBlack, LOW, HIGH } from '../fingering/keyboard.js'
 
 const KEY_TOP = 73
 const v3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z)
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t) }
 const lerp = (a, b, t) => a + (b - a) * t
+// The top of the keyboard under (x, z), above the white key tops: a black
+// key's top where one is (with a fingertip's width of margin), else 0.
+// Black keys run from the back to 5.5 cm behind the white key fronts.
+const BLACK_XS = []
+for (let m = LOW; m <= HIGH; m++) if (isBlack(m)) BLACK_XS.push(keyX(m))
+function keySurface(x, z) {
+  if (z > -5.1 || z < -16) return 0
+  let lo = 0, hi = BLACK_XS.length - 1
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (BLACK_XS[m] < x) lo = m; else hi = m }
+  return Math.min(Math.abs(x - BLACK_XS[lo]), Math.abs(x - BLACK_XS[hi])) < 0.65 + 0.45 ? KEY.BLACK_Y : 0
+}
 const _f = v3(), _s = v3(), _u = v3(), _m = new THREE.Matrix4(), _a = v3(), _b = v3(), _c = v3()
 
 function chainReach(L, k, p) {
@@ -289,7 +301,23 @@ export function createHandDriver(side, dims) {
     // when a held key is out of the hand's reach (a long note held while the
     // hand moves on) the limit wins and the finger falls short of the key
     // instead of pointing sideways along the keyboard
-    for (let i = 0; i < 5; i++) if (held[i]) turn(i, SPLAY.max[i + 1])
+    // It falls short sideways, at its key's own depth: swung about the
+    // knuckle it would also reach further in, under the black keys
+    const offKey = [false, false, false, false, false]
+    for (let i = 0; i < 5; i++) if (held[i]) {
+      const x0 = lx[i], z0 = lz[i]
+      turn(i, SPLAY.max[i + 1])
+      if (lx[i] === x0 && lz[i] === z0) continue
+      const d = FINGERS[i + 1], bx = d.base[0], bz = d.base[2], vx = lx[i] - bx, vz = lz[i] - bz, r = Math.hypot(vx, vz) || 1
+      const ux = vx / r, uz = vz / r, k = (z0 - bz) / uz
+      if (Math.abs(uz) > 0.3 && k > 0 && k < 1.6 * r) { lx[i] = bx + k * ux; lz[i] = z0 }
+      // off its own key now? then it rests on whatever is under it
+      const p = tips[i].pitch
+      if (p != null) {
+        const [wx, wz] = rot(s * lx[i], lz[i], hand.yaw)
+        offKey[i] = Math.abs(hand.x + slide.x + wx - keyX(p)) > (isBlack(p) ? 0.65 : 1.17)
+      }
+    }
     // a free finger beside a pressed one keeps clear of it: it is swung
     // about its knuckle until its middle and tip lie a finger's width to its
     // own side of the pressed finger's line (a pressed finger reaching
@@ -351,15 +379,33 @@ export function createHandDriver(side, dims) {
       const [wx2, wz2] = rot(s * lx[i], lz[i], hand.yaw)
       tip.set(hand.x + slide.x + wx2, ty[i], hand.z + slide.z + wz2)
       diag.press[i] = tips[i].press
+      // a free fingertip never sinks into the keys: it stays a little above
+      // the key top under it (a black key's where there is one), even when
+      // the hand is carried low (a held key out of reach slides it down)
+      const floor = () => KEY_TOP + keySurface(tip.x, tip.z) + d.rad[2] * 0.9 + 0.15
+      if (!held[i]) tip.y = Math.max(tip.y, floor())
+      else if (offKey[i]) tip.y = floor() - 0.15
       diag.err[i] = solveFinger(P[0].clone(), tip, d.len, d.k, P, f === 1 ? thumbCurl : null)
-      // knuckle limit: a finger may not bend back more than ~14° at the MCP;
-      // lower its target until it doesn't (pressed fingers already point down)
-      if (f > 1) for (let it = 0; it < 4; it++) {
+      // knuckle limit: a finger may not bend back more than ~14° at the MCP.
+      // A free finger's target is lowered until it doesn't, down to the keys;
+      // there it reaches forward instead. A pressed finger stays on its key.
+      if (f > 1 && !held[i]) for (let it = 0; it < 5; it++) {
         const ex = P[1].x - P[0].x, ey = P[1].y - P[0].y, ez = P[1].z - P[0].z
         const fwd = ex * Math.sin(hand.yaw) - ez * Math.cos(hand.yaw)
         if (Math.atan2(ey, fwd) <= 0.25) break
-        tip.y -= 0.8
+        if (tip.y - 0.8 >= floor()) tip.y -= 0.8
+        else { tip.x += 0.7 * Math.sin(hand.yaw); tip.z -= 0.7 * Math.cos(hand.yaw); tip.y = Math.max(tip.y, floor()) }
         diag.err[i] = solveFinger(P[0].clone(), tip, d.len, d.k, P, null)
+      }
+      // where the fingertip really ended up: a pressed finger that cannot
+      // reach its key (or a free one) never sinks into the key it lies over
+      for (let it = 0; it < 4; it++) {
+        const q = P[3], p = tips[i].pitch
+        if (held[i] && p != null && Math.abs(q.x - keyX(p)) < (isBlack(p) ? 0.75 : 1.2) && (isBlack(p) || keySurface(q.x, q.z) === 0)) break
+        const fl = KEY_TOP + keySurface(q.x, q.z) + d.rad[2] * 0.9
+        if (q.y >= fl - 0.05) break
+        tip.y += fl - q.y + 0.05
+        diag.err[i] = solveFinger(P[0].clone(), tip, d.len, d.k, P, f === 1 ? thumbCurl : null)
       }
     }
     const k3 = J.fingers[3][0]
@@ -390,12 +436,13 @@ const PRESS_LEAD = 0.018
 export function createHandsDriver(dims) {
   const L = createHandDriver('L', dims), R = createHandDriver('R', dims)
   let motion = buildMotion([]), own = []
-  // wrist strokes: { armWeight, flex, liftOff } (research/01_biomechanics.md §3.5)
-  const strokeOpts = { armWeight: 1, flex: 1, liftOff: 1 }
+  // wrist strokes: { armWeight, flex, liftOff, height } (research/01_biomechanics.md §3.5)
+  const strokeOpts = { armWeight: 1, flex: 1, liftOff: 1, height: 1 }
   const plan = () => { for (const d of [L, R]) d.setStroke(own.length ? planStrokes(own.filter(n => n.hand === d.side), { ...strokeOpts, velRange: velocityRange(own) }) : null) }
   return {
     L, R,
     strokeOpts,
+    get notes() { return own },
     /** Change the stroke settings (re-plans the strokes only, a few ms). */
     setStrokeOpts(o) { Object.assign(strokeOpts, o); plan() },
     setNotes(notes) {
@@ -406,7 +453,7 @@ export function createHandsDriver(dims) {
       if (!own.length) { L.clearTrack(); R.clearTrack(); return }
       const h = 1 / 60
       let t0 = Infinity, t1 = -Infinity
-      for (const m of own) { t0 = Math.min(t0, m.on - 2); t1 = Math.max(t1, m.off + 2) }
+      for (const m of own) { t0 = Math.min(t0, m.on - 2); t1 = Math.max(t1, m.off + 6) }   // (to the end of the final lift-off)
       const n = Math.ceil((t1 - t0) / h) + 1, poses = []
       for (let i = 0; i < n; i++) poses.push(motion.poseAt(t0 + i * h))
       L.bakeTrack(t => poses[Math.round((t - t0) / h)]?.L, t0, n, h)

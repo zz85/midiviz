@@ -73,3 +73,29 @@ test('the tilt stays in range and changes smoothly', () => {
     last = a
   }
 })
+
+test('the last note: a gentle float up, quick only after a loud short chord', () => {
+  const rise = notes => { const p = planStrokes(notes, { velRange: [0.4, 0.95] }), r = Math.max(...notes.map(n => n.off)), top = p.at(r + 4)[0]; let t = r; while (p.at(t)[0] < 0.8 * top) t += 0.01; return [t - r, top] }
+  const [soft, hs] = rise(legato(8, 0.4, 0.45).concat([{ on: 4.6, off: 7, velocity: 0.4 }]))
+  const [bang, hb] = rise(chords(3, 0.5, 0.6).concat([{ on: 2.6, off: 2.9, velocity: 1 }]))
+  expect(soft).toBeGreaterThan(1.2)
+  expect(bang).toBeLessThan(0.45)
+  expect(hb).toBeGreaterThan(hs)
+})
+
+test('lift height scales every lift', () => {
+  const notes = chords(30, 0.12, 1, 0.06).concat(legato(4, 0.3, 0.7, 6))
+  const a = planStrokes(notes), b = planStrokes(notes, { height: 2 })
+  for (const t of [2, 3.03, 4.5, 8, 9]) expect(b.at(t)[0]).toBeCloseTo(2 * a.at(t)[0], 4)
+  expect(maxIn(planStrokes(notes, { height: 0 }), 0, 12)).toBe(0)
+})
+
+test('the final lift-off reaches its height and holds after the song', () => {
+  for (const notes of [legato(8, 0.25, 0.7), chords(4, 0.5, 1, 0.1)]) {
+    const p = planStrokes(notes), r = Math.max(...notes.map(n => n.off))
+    const top = maxIn(p, r, r + 5.5)
+    expect(top).toBeGreaterThan(5)
+    expect(p.at(r + 5.5)[0]).toBeGreaterThan(0.95 * top)
+    expect(p.at(r + 60)[0]).toBeGreaterThan(0.95 * top)
+  }
+})

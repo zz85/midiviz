@@ -30,7 +30,9 @@ const fall = u => (u <= 0 ? 1 : u >= 1 ? 0 : 1 - (0.4 * u * u + 0.6 * smooth(u))
 
 /**
  * notes: one hand's [{ on, off, release?, velocity? (0..1) }].
- * opts: { armWeight = 1, flex = 1, liftOff = 1 } (0 turns each part off),
+ * opts: { armWeight = 1, flex = 1, liftOff = 1, height = 1 } (0 turns each
+ * part off; height scales every lift after the time limits, so it raises
+ * fast passages too),
  * velRange: [quiet, loud] velocities of the piece (default: from these notes).
  * MIDI files differ in how loud their velocities run, so a note's loudness is
  * judged half against the piece's own range and half absolutely.
@@ -41,7 +43,7 @@ export function velocityRange(notes) {
   return v.length ? [v[Math.floor(0.25 * (v.length - 1))], v[Math.floor(0.97 * (v.length - 1))]] : [0.4, 0.8]
 }
 
-export function planStrokes(notes, { armWeight = 1, flex = 1, liftOff = 1, velRange = null } = {}) {
+export function planStrokes(notes, { armWeight = 1, flex = 1, liftOff = 1, height = 1, velRange = null } = {}) {
   const up = n => n.release ?? n.off
   const own = notes.filter(n => up(n) > n.on).sort((a, b) => a.on - b.on)
   const empty = { at: () => [0, 0], t0: 0, h: 1 / STROKE.HZ, n: 0, lift: new Float32Array(0), tilt: new Float32Array(0), windows: [] }
@@ -72,7 +74,7 @@ export function planStrokes(notes, { armWeight = 1, flex = 1, liftOff = 1, velRa
     else spans.push([n.on, up(n)])
   }
 
-  const t0 = own[0].on - 2, t1 = spans[spans.length - 1][1] + 4, h = 1 / STROKE.HZ
+  const t0 = own[0].on - 2, t1 = spans[spans.length - 1][1] + 6, h = 1 / STROKE.HZ   // (6 s: room for the final lift-off, held after the end)
   const N = Math.ceil((t1 - t0) / h) + 1
   const lift = new Float32Array(N), raw = new Float32Array(N), tilt = new Float32Array(N)
   const idx = t => Math.round((t - t0) / h)
@@ -95,14 +97,22 @@ export function planStrokes(notes, { armWeight = 1, flex = 1, liftOff = 1, velRa
     P = Math.min(Math.max(P, stacc), STROKE.SPEED * w * Math.min(1, w / STROKE.SHORT))
     // lift-off: the last note before a rest, and the piece's last chord
     const rest = isFinite(r) && (!isFinite(nOn) || w >= Math.max(0.5, 2.5 * pulse))
-    const Hl = !rest ? 0 : !isFinite(nOn) ? liftOff * (8 + 6 * loudness(prev?.v ?? 0.7)) : liftOff * (2.5 + 4 * loudness(prev?.v ?? 0.7)) * clamp(w / 1.2, 0.4, 1)
+    // Usually the hands leave gently: the wrist rises first, the fingers peel
+    // off and the hand floats up over a second or two. Only a loud, short
+    // ending (a chord that ends with a bang) throws the hand up quickly.
+    const lv = loudness(prev?.v ?? 0.7)
+    const bang = prev ? clamp((lv - 0.5) / 0.3, 0, 1) * clamp((0.8 - prev.dur) / 0.5, 0, 1) : 0
+    const last = !isFinite(nOn)
+    const Hl = !rest ? 0 : last ? liftOff * (6 + 3 * lv + 5 * bang) : liftOff * (2.5 + 4 * lv) * clamp(w / 1.2, 0.4, 1)
+    const tl = last ? 2.4 + (0.45 - 2.4) * bang : Math.min(1 + (0.35 - 1) * bang, 0.6 * w)
+    const lead = 0.4 + (0.12 - 0.4) * bang
     windows.push({ r, L, w, prep: P, liftOff: Hl, v: next?.v ?? 0 })
     if (P < 0.05 && Hl < 0.05) continue
     const fP = Math.min(0.5 * w, clamp(0.06 + 0.012 * P, 0.06, 0.2))
     const fL = Math.min(0.5 * w, clamp(0.1 + 0.012 * Hl, 0.1, 0.3))
     const riseP = stacc > 0 ? Math.max(0.01, w - fP) : Math.min(0.25, w - fP)   // a rebound rises at once
-    const rsP = L - fP - riseP, tl = Math.min(0.6, 0.4 * w)
-    const a = Math.max(0, idx(isFinite(r) ? r : t0)), b = Math.min(N - 1, idx(isFinite(L) ? L : t1))
+    const rsP = L - fP - riseP
+    const a = Math.max(0, idx(isFinite(r) ? r : t0)), b = isFinite(L) ? Math.min(N - 1, idx(L)) : N - 1
     for (let i = a; i <= b; i++) {
       const t = t0 + i * h
       let y = 0
@@ -117,7 +127,15 @@ export function planStrokes(notes, { armWeight = 1, flex = 1, liftOff = 1, velRa
       for (let i = idx(L); i <= Math.min(N - 1, idx(L + Math.min(0.3, hold))); i++) raw[i] += g * Math.sin(Math.PI * (t0 + i * h - L) / Math.min(0.3, hold))
     }
     // lift-off: the wrist rises first, while the finger is still on the key
-    if (Hl > 0) for (let i = Math.max(0, idx(r - 0.18)); i <= Math.min(N - 1, idx(r)); i++) raw[i] += flex * 0.25 * Math.min(1, Hl / 6) * smooth((t0 + i * h - (r - 0.18)) / 0.18)
+    // (the wrist leads while the finger is still on the key, stays a little
+    // raised while the hand floats up, the fingers hanging, then relaxes)
+    if (Hl > 0) {
+      const A = flex * 0.25 * Math.min(1, Hl / 6), end = Math.min(r + 1.5 * tl, isFinite(L) ? L - fL : Infinity)
+      for (let i = Math.max(0, idx(r - lead)); i <= Math.min(N - 1, idx(end)); i++) {
+        const t = t0 + i * h
+        raw[i] += A * (t < r ? smooth((t - (r - lead)) / lead) : 1 - smooth((t - r - 0.4 * tl) / (1.1 * tl)))
+      }
+    }
   }
   // a long note: the wrist dips under it and rises before the release
   for (const g of groups) {
@@ -126,6 +144,7 @@ export function planStrokes(notes, { armWeight = 1, flex = 1, liftOff = 1, velRa
     const a = g.t + 0.1, b = g.end - 0.05, amp = -flex * 0.08 * Math.min(1, (d - 0.4) / 1)
     for (let i = idx(a); i <= Math.min(N - 1, idx(b)); i++) raw[i] += amp * Math.sin(Math.PI * (t0 + i * h - a) / (b - a))
   }
+  if (height !== 1) for (let i = 0; i < N; i++) lift[i] *= height
   // the wrist leads: the hand trails its vertical motion (tilt with speed),
   // then a short low-pass so impacts settle instead of snapping
   const k = 1 - Math.exp(-h / 0.06)
