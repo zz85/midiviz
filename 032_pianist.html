@@ -1278,8 +1278,19 @@
       if (ts?.contextTime > 0 && ts.performanceTime > 0) return ts.contextTime + (performance.now() - ts.performanceTime) / 1000
       return c.currentTime - (c.outputLatency || 0) - (c.baseLatency || 0)
     }
+    // after the song ends the picture runs on a few seconds (the hands lift
+    // off, she settles) while the sound and the song clock have stopped
+    const AFTER_END = 4
+    let endedAt = null
     function pictureTime(dt) {
-      if (!scheduler?.playing) { avs.t = null; return songNow() }
+      if (!scheduler?.playing) {
+        avs.t = null
+        const t = songNow()
+        if (endedAt && Math.abs(t - endedAt.t) < 0.05) return t + Math.min(AFTER_END, (performance.now() - endedAt.wall) / 1000 * (scheduler?.speed || 1))
+        endedAt = null
+        return t
+      }
+      endedAt = null
       if (avs.ctx && avs.end) {
         const lag = avs.end - heardNow(avs.ctx)
         if (lag > -0.05 && lag < 1) { avs.lag = avs.measured ? avs.lag + (lag - avs.lag) * Math.min(1, dt * 2) : lag; avs.measured = true }
@@ -1302,7 +1313,11 @@
       scheduler.on('end', () => {
         songTarget.allSoundOff()
         if (loop) { scheduler.seek(0); music.songT = 0; music.wall = performance.now(); scheduler.play(); return }
+        // (the worklet's clock runs on after the end unless it is paused: the
+        // picture used to run on with it, past the baked motion)
+        scheduler.pause()
         setPlaying(false)
+        endedAt = { t: scheduler.currentTime, wall: performance.now() }
         if ($('applause').checked && !exporting) hall.applause()
       })
       return scheduler
@@ -1391,7 +1406,11 @@
       }
       const sch = await ensureScheduler(); unlockAudio()
       if (sch.playing) { sch.pause(); songTarget.allSoundOff(); setPlaying(false) }
-      else { music.wall = performance.now(); sch.play(); setPlaying(true) }
+      else {
+        // at the end: from the top
+        if (sch.currentTime >= sch.duration - 0.05) { sch.seek(0); music.songT = 0 }
+        music.wall = performance.now(); sch.play(); setPlaying(true)
+      }
     }
     $('playBtn').onclick = togglePlay
     // ⏮ ⏭ and a swipe along the bottom bar: the previous / next song in the

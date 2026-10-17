@@ -19,6 +19,7 @@
 // z = 0, the pianist at +z, floor at y = 0).
 
 import * as THREE from 'three'
+import { keyX } from '../fingering/keyboard.js'
 import { createHandsDriver } from './hand-driver.js'
 
 const v3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z)
@@ -723,7 +724,7 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
   // louder than their surroundings, and chords). Both are functions of song
   // time, so seeking and the offline export reproduce the same motion.
   const ER_HZ = 20
-  let energy = new Float32Array(1), accents = []
+  let energy = new Float32Array(1), accents = [], emph = []
   function analyse(notes) {
     const end = notes.reduce((m, n) => Math.max(m, n.off ?? n.on), 0) + 2
     const N = Math.ceil(end * ER_HZ) + 1
@@ -749,6 +750,25 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
       i = j
     }
     analyseForm(on)
+    // Emphasis: loud chords pull the body toward their register (she leans
+    // and turns into them), from a moment before they sound until a little
+    // after; the piece's last chord most of all, held to the end.
+    // [onset, end, register x (cm), strength]
+    emph = []
+    const groups = []
+    for (let i = 0; i < on.length;) {
+      let j = i, v = 0, end = 0, sx = 0
+      while (j < on.length && on[j].on - on[i].on < 0.06) { v = Math.max(v, on[j].velocity ?? 0.7); end = Math.max(end, on[j].off ?? on[j].on + 0.3); sx += keyX(on[j].pitch); j++ }
+      groups.push({ t: on[i].on, end, v, x: sx / (j - i), c: j - i })
+      i = j
+    }
+    const vs = groups.map(g => g.v).sort((a, b) => a - b), vHi = vs[Math.floor(0.9 * (vs.length - 1))] || 0.8
+    for (const [k, g] of groups.entries()) {
+      const last = k === groups.length - 1
+      const a = clamp((g.v - (vHi - 0.15)) / 0.15, 0, 1) * clamp((g.c - 1) / 3, 0, 1) * clamp((g.end - g.t) / 0.4, 0.4, 1)
+      if (last) emph.push([g.t, Infinity, g.x, Math.max(0.6, a) * 1.6])
+      else if (a > 0.2) emph.push([g.t, g.end, g.x, a])
+    }
   }
 
   // ── Phrases, glances and weight moves, read from the score ──
@@ -872,6 +892,19 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     return null
   }
   const energyAt = t => { const x = t * ER_HZ, i = Math.floor(x); if (i < 0 || i >= energy.length - 1) return 0; return energy[i] + (energy[i + 1] - energy[i]) * (x - i) }
+  // the emphasis pull at t: { x, w } (register and weight 0..1.6)
+  const _em = { x: 0, w: 0 }
+  function emphAt(t) {
+    let w = 0, x = 0
+    for (const [a, b, ex, s] of emph) {
+      if (a - 0.25 > t) break
+      if (t > b + 1) continue
+      // the latest chord takes over from the one before as it arrives
+      const r = THREE.MathUtils.smoothstep(t, a - 0.25, a - 0.02), u = s * r * (1 - THREE.MathUtils.smoothstep(t, b, b + 1))
+      x = w > 0 ? x + (ex - x) * r : ex; w = w + (u - w) * r
+    }
+    _em.x = x; _em.w = w; return _em
+  }
   function accentAt(t) {
     // impulse response of a quick dip: rises in ~60 ms, decays over ~0.35 s
     let lo = 0, hi = accents.length
@@ -928,7 +961,15 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     let mx = 0, mz = 0, n = 0, dz = 0, dx = 0
     for (const d of [L, R]) {
       if (!d.visible) continue
-      mx += d.joints.W.x; mz += d.joints.W.z; n++
+      // where the hands are going: the register a moment ahead (from the
+      // baked placement), so she turns with the music rather than after it
+      let x = d.joints.W.x
+      if (state.playing) {
+        let sx = 0, sw = 0
+        for (const tau of [0.12, 0.22, 0.32]) if (d.wristAt(state.songT + hands.lead + tau, _fw)) { sx += _fw.x; sw++ }
+        if (sw) x = 0.35 * x + 0.65 * sx / sw
+      }
+      mx += x; mz += d.joints.W.z; n++
       // the driver moves its shoulder when a key is out of reach
       dz += d.joints.S.z - d.shoulder.z; dx += d.joints.S.x - d.shoulder.x
     }
@@ -1004,12 +1045,23 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
       lean = clamp(base + Math.max(0, -dz) * 0.02, base - 0.06, 0.65)
       // reach: how far she leans and turns toward the register being played
       // (0 = stays square to the keyboard, 2 = leans well into it)
-      side = clamp(mx * 0.004 + dx * 0.01, -0.16, 0.16) * state.reach
-      turn = clamp(mx * 0.004, -0.2, 0.2) * state.reach
+      side = clamp(mx * 0.004 + dx * 0.01, -0.16, 0.16)
+      turn = clamp(mx * 0.004, -0.2, 0.2)
+      // into a loud chord's register: she leans and turns into it
+      _em.w = 0
+      const em = state.playing || state.songT > 0 ? emphAt(state.songT + hands.lead) : null
+      if (em && em.w > 0) {
+        side = clamp(side + em.w * 0.0035 * em.x, -0.26, 0.26)
+        turn = clamp(turn + em.w * 0.003 * em.x, -0.3, 0.3)
+        lean += em.w * 0.04
+      }
+      side *= state.reach; turn *= state.reach
     }
-    state.handLean = (state.handLean ?? 0.2) + (lean - (state.handLean ?? 0.2)) * k
-    state.handSide = (state.handSide ?? 0) + (side - (state.handSide ?? 0)) * k
-    state.handTurn = (state.handTurn ?? 0) + (turn - (state.handTurn ?? 0)) * k
+    // (a move into a loud chord is quicker than the drift with the hands)
+    const kq = 1 - Math.exp(-dt * (3 + 5 * Math.min(1, _em.w)))
+    state.handLean = (state.handLean ?? 0.2) + (lean - (state.handLean ?? 0.2)) * kq
+    state.handSide = (state.handSide ?? 0) + (side - (state.handSide ?? 0)) * kq
+    state.handTurn = (state.handTurn ?? 0) + (turn - (state.handTurn ?? 0)) * kq
     express(dt)
     state.lean = Math.min(0.9, state.handLean + state.exLean + state.reachLean)
     state.side = clamp(state.handSide + state.exSide + state.reachSide / 45, -0.4, 0.4)
