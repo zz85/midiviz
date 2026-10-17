@@ -136,6 +136,7 @@ class PlaybackControls {
     { value: 'midis/rac_op33_5.mid', label: 'Rachmaninoff - Etude-Tableau Op.33 No.5' },
     { value: 'midis/rac_op33_6.mid', label: 'Rachmaninoff - Etude-Tableau Op.33 No.6' },
     { value: 'midis/rac_op33_8.mid', label: 'Rachmaninoff - Etude-Tableau Op.33 No.8' },
+    { value: 'midis/tchai_pletnev_nutcracker_andante.mid', label: 'Tchaikovsky / Pletnev - Andante maestoso (Nutcracker Concert Suite)' },
     { value: 'midis/grieg_halling.mid', label: 'Grieg - Halling' },
     { value: 'midis/pachelbel_canon.mid', label: 'Pachelbel - Canon in D' },
     { value: '', label: '=== Symphonic ===', disabled: true },

@@ -70,6 +70,7 @@ A curated collection of classical, modern, and video game piano pieces in MIDI f
 | `rac_op33_5.mid` | Rachmaninoff | Etude-Tableau Op.33 No.5 |
 | `rac_op33_6.mid` | Rachmaninoff | Etude-Tableau Op.33 No.6 |
 | `rac_op33_8.mid` | Rachmaninoff | Etude-Tableau Op.33 No.8 |
+| `tchai_pletnev_nutcracker_andante.mid` | Tchaikovsky / Pletnev | Andante maestoso (Pas de deux), Concert Suite from The Nutcracker † |
 | `liz_rhap02.mid` | Liszt | Hungarian Rhapsody No.2 (lassan and friska) |
 | `liz_et3.mid` | Liszt | La Campanella (Paganini Etude No.3) |
 | `liz_et6.mid` | Liszt | Paganini Etude No.6 (Theme and variations) |
@@ -162,6 +163,8 @@ A curated collection of classical, modern, and video game piano pieces in MIDI f
 License: [CC BY-SA 3.0](http://creativecommons.org/licenses/by-sa/3.0/de/deed.en)
 
 **Bach: Goldberg Variations and the Well-Tempered Clavier (marked \*):** typeset by the [Mutopia Project](https://www.mutopiaproject.org) (Hajo Dezelski, Stelios Samelis, Davide Castellone, JD Erickson, Sven Reichard, Andrew Hawryluk and others), each piece CC BY-SA 3.0 / 4.0 or public domain. Joined here into one file per prelude and fugue (the Goldberg as the Aria, the 30 variations and the Aria again, 2.5 s apart). These are engraved scores, not performances, so they were given dynamics by rule (not by a pianist): each phrase swells and relaxes and the last one tapers, the music gets louder where it climbs and thickens, the top line leads and inner voices recede, long notes carry a little more weight, plus a small seeded variation. Timing is untouched.
+
+**Tchaikovsky / Pletnev, Andante maestoso (marked †):** from the [MAESTRO dataset](https://magenta.tensorflow.org/datasets/maestro) v3.0.0 (Google Magenta), a performance recorded on a Yamaha Disklavier at the 2008 International Piano-e-Competition (`2008/MIDI-Unprocessed_02_R2_2008_01-05_ORIG_MID--AUDIO_02_R2_2008_wav--5.midi`, 4:33). License: [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/), non-commercial only, unlike the rest of the collection. Pletnev's arrangement (1978) is itself still under copyright.
 
 **Symphonic works:** [mfiles.co.uk](https://www.mfiles.co.uk)  
 Classical MIDI files for educational use.
