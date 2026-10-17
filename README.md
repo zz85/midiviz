@@ -4,6 +4,11 @@ Midi Visualization Experiments
 
 [WebMscore](webmscore.html) - MuseScore reference renderer (libmscore via WebAssembly)
 
+17 Oct 2026
+
+[Research - Audio → MIDI / MusicXML](transcription/research/01_audio_to_midi.md)
+- Options for transcribing audio in the browser: Basic Pitch, MuScriptor, the MT3 family, piano models (Transkun, Kong, Aria-AMT), streaming / low-latency piano, monophonic pitch (SwiftF0, PESTO), source separation, performance MIDI → score, and the runtimes (onnxruntime-web, Transformers.js, tfjs, ggml)
+
 16 Oct 2026
 
 [Experiment #033 - Violin & Viola Fingering](033_violin_fingering.html)
