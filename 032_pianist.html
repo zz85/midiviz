@@ -142,6 +142,7 @@
     #visualsPop { right: 12px; width: 250px; }
     #perfPop { width: 260px; }
     #audioPop, #renderPop { width: 260px; }
+    #exPreview { display: block; width: calc(100% - 32px); margin: 2px 16px 6px; aspect-ratio: 16 / 9; height: auto; border-radius: 6px; background: #000; }
     .field > label .val { float: right; color: #8f8f8f; font-variant-numeric: tabular-nums; }
     #exBar { height: 4px; margin: 4px 16px 6px; border-radius: 2px; background: #333; overflow: hidden; }
     #exBar div { height: 100%; width: 0; background: #2fae4a; }
@@ -350,6 +351,7 @@
       <option value="vibes">Great Vibes (script)</option>
       <option value="georgia">Georgia (system)</option>
     </select></div>
+    <canvas id="exPreview" width="456" height="256" title="The title card as it will look (the picture behind it is the current view)"></canvas>
     <div class="field"><label>Subtitle</label><input type="text" id="exSub" value="Midiviz Pianist" style="width:100%;box-sizing:border-box;background:#2b2b2b;color:#eee;border:1px solid #444;border-radius:6px;padding:4px 6px;font:inherit"></div>
     <div id="exBar"><div></div></div>
     <div id="exStatus">Choose a song first. Rendering is offline, so every frame is smooth however fast the GPU is.</div>
@@ -1648,6 +1650,28 @@
       const f = TITLE_FONTS[k]
       try { await Promise.all([document.fonts.load(`${f.titleWeight} 48px ${f.font}`), document.fonts.load(`${f.subStyle} 24px ${f.subFont}`)]) } catch { /* falls back to Georgia */ }
     }
+    // Title-card preview in the Render menu: the card drawn by the export's own
+    // drawTitleCard over a still of the current picture, at the moment it is
+    // fully in (redrawn when the font, subtitle or song changes)
+    let previewJob = 0
+    async function drawPreview() {
+      if (!$('renderPop').classList.contains('open')) return
+      const job = ++previewJob, cv = $('exPreview'), g = cv.getContext('2d'), w = cv.width, h = cv.height
+      const k = $('exFont').value
+      await loadTitleFont(k)
+      if (job !== previewJob) return
+      composer.render()   // (a fresh frame in the drawing buffer)
+      g.clearRect(0, 0, w, h)
+      const src = renderer.domElement, r = Math.max(w / src.width, h / src.height), sw = w / r, sh = h / r
+      g.drawImage(src, (src.width - sw) / 2, (src.height - sh) / 2, sw, sh, 0, 0, w, h)
+      cv.style.opacity = $('exTitle').checked ? 1 : 0.35
+      if (!$('exTitle').checked) return
+      const { drawTitleCard } = await import('./notation3d/video-export.js')
+      drawTitleCard(g, w, h, 0.32, 5, { title: song?.title || $('songTitle').textContent || 'Chopin - Raindrop Prelude', subtitle: $('exSub').value.trim(), style: '2d', fadeOut: 3, ...TITLE_FONTS[k] })
+    }
+    new MutationObserver(() => drawPreview()).observe($('renderPop'), { attributes: true, attributeFilter: ['class'] })
+    for (const id of ['exFont', 'exTitle']) $(id).addEventListener('change', drawPreview)
+    $('exSub').addEventListener('input', drawPreview)
     let exAbort = null
     $('exStart').onclick = async () => {
       if (!song || !fingered) return void ($('exStatus').textContent = song ? 'Still working out the fingering, try again in a moment.' : 'Load a song first (Songs, top left).')
