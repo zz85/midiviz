@@ -92,9 +92,24 @@ export const DEFAULTS = {
     // early (the pedal, or simply the release, covers it) rather than held at
     // an impossible stretch. null = never (Parncutt: keys are held to the end).
     release: 3,         // per key released early
+    // Chopin's preferences (0 here; see CHOPIN): the outer voice of a chord
+    // to the 5th finger (the RH soprano, the LH bass: LH notes are mirrored),
+    // a long singing note to the 3rd (the 2nd and 4th half as much)
+    outer5: 0,          // top note of a chord (RH space) not on finger 5
+    sing3: 0,           // long melody note (single, or a chord's top; SING s or more) not on finger 3
   },
 
 }
+
+/**
+ * Chopin's fingering (as taught by his pupils, Eigeldinger's "Chopin: pianist
+ * and teacher"): every finger has its own character and is used for it, not
+ * evened out. The 4th is not avoided (its tie to the 3rd is "a gift"), the
+ * 5th carries the outer voice, the 3rd sings the long notes. Use it as
+ * fingerPiece(notes, CHOPIN) (weights merge over the defaults).
+ */
+export const CHOPIN = { weights: { weak4: 0.5, outer5: 1.5, sing3: 2 } }
+const SING = 0.5   // s: a note this long sings
 
 /**
  * The published model, for comparison and for checking the rule code against
@@ -268,8 +283,10 @@ export function createModel(options = {}) {
   }
 
   /** Cost of finger f on note n alone, given whether its neighbours are white (rules 6, 10, 11). */
-  function noteCost(n, f, prevWhite, nextWhite) {
+  function noteCost(n, f, prevWhite, nextWhite, role = null) {
     let c = 0
+    if (role?.top && f !== 5) c += W.outer5
+    if (W.sing3 && f !== 3 && role?.melody && n.off - n.on >= SING) c += W.sing3 * (f === 2 || f === 4 ? 0.5 : 1)
     if (f === 4) c += W.weak4
     else if (f === 5) c += W.weak5
     if (isBlack(n.p)) {
@@ -393,9 +410,10 @@ export function fingerHand(notes, model, hand = 'R') {
     const k = fresh.length
     const minDur = Math.min(...fresh.map(n => n.off - n.on))
     const holdTol = Math.max(0.08, 0.5 * minDur)
-    const unary = fresh.map(n => {
+    const unary = fresh.map((n, i) => {
       const pw = nearestWhite(prevSl, n.p), nw = nearestWhite(nextSl, n.p)
-      return [0, 1, 2, 3, 4, 5].map(f => (f ? model.noteCost(n, f, pw, nw) : 0))
+      const role = { top: k > 1 && i === k - 1, melody: i === k - 1 }
+      return [0, 1, 2, 3, 4, 5].map(f => (f ? model.noteCost(n, f, pw, nw, role) : 0))
     })
     const next = new Map()
     const wx = p => keyX(p) / WHITE_W

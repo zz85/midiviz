@@ -281,8 +281,13 @@ export function createHandDriver(side, dims) {
       }
       // (a free finger rides up with the hand when the stroke lifts it)
       let y = KEY_TOP + t.y + d.rad[2] * 0.9 + (held[f - 1] ? 0 : lift)
+      // ...where the arm already carries the hand up for the note, the
+      // finger's own fall (fingering/motion.js touch 'fall') gives way to it
+      if (!held[f - 1] && t.lift && lift > 0) y -= t.lift * Math.min(1, lift / 3)
       // a lifted finger stays curled: its tip never rises to knuckle height
-      if (!held[f - 1]) y = Math.min(y, hand.y + slide.y + d.base[1] - (f === 1 ? 2.6 : 4.3))
+      // (one rising for its own note may lift higher, raised from the knuckle
+      // like a real finger: up to ~2 cm more)
+      if (!held[f - 1]) y = Math.min(y, hand.y + slide.y + d.base[1] - (f === 1 ? 2.6 : 4.3 - Math.min(2.1, t.lift || 0)))
       lx.push(x); lz.push(z); ty.push(y)
     }
     // a free finger's sideways turn from its neutral direction is limited
@@ -392,7 +397,8 @@ export function createHandDriver(side, dims) {
       if (f > 1 && !held[i]) for (let it = 0; it < 5; it++) {
         const ex = P[1].x - P[0].x, ey = P[1].y - P[0].y, ez = P[1].z - P[0].z
         const fwd = ex * Math.sin(hand.yaw) - ez * Math.cos(hand.yaw)
-        if (Math.atan2(ey, fwd) <= 0.25) break
+        // (a finger raised to fall onto its next key extends further, to ~35°)
+        if (Math.atan2(ey, fwd) <= 0.25 + 0.36 * Math.min(1, (tips[i].lift || 0) / 1.5)) break
         if (tip.y - 0.8 >= floor()) tip.y -= 0.8
         else { tip.x += 0.7 * Math.sin(hand.yaw); tip.z -= 0.7 * Math.cos(hand.yaw); tip.y = Math.max(tip.y, floor()) }
         diag.err[i] = solveFinger(P[0].clone(), tip, d.len, d.k, P, null)
@@ -442,12 +448,15 @@ export function createHandsDriver(dims) {
   return {
     L, R,
     strokeOpts,
+    /** 'fall' (fingers fall onto the keys, each its own way) or 'press' (as #029/#030); set before setNotes */
+    touch: 'fall',
     get notes() { return own },
     /** Change the stroke settings (re-plans the strokes only, a few ms). */
     setStrokeOpts(o) { Object.assign(strokeOpts, o); plan() },
     setNotes(notes) {
       own = notes.filter(n => n.finger >= 1)
-      motion = buildMotion(own)
+      // fingers fall onto the keys, each in its own way (motion.js TOUCH)
+      motion = buildMotion(own, { touch: this.touch })
       plan()
       // bake the hands' placement over the song (60 Hz, interpolated)
       if (!own.length) { L.clearTrack(); R.clearTrack(); return }

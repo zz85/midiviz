@@ -945,8 +945,17 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     // the reach (where the hands are) and the phrase's own weight move, which
     // may go toward the register or away from it
     const reach = Math.tanh(state.handSide / 0.04)
-    const move = playing ? hipMoveAt(t) : 0
-    state.hipRoll = spring('hip', x * state.hipShift * (0.045 * reach * Math.min(1.5, state.reach) + 0.05 * move + state.sway * (playing ? 0.02 + 0.02 * E : 0.01) * wander(t * 0.22, 15)), dt, 0.55, 0.7)
+    // (the last phrase's move holds after the song ends)
+    const move = playing || t > 0 ? hipMoveAt(t) : 0
+    // A bigger lean puts more weight on that side: past the register lean
+    // (which commits to a side early), the lean into a loud chord, the lean
+    // and the turn toward keys out of reach each load that sit bone in
+    // proportion (turning toward one end also brings the weight round)
+    const hs = state.handSide, extra = Math.sign(hs) * Math.max(0, Math.abs(hs) - 0.04)
+    const load = 0.45 * extra + 0.35 * (state.reachSide ?? 0) / 45 + 0.25 * (state.reachTurn ?? 0) / TURN_R
+    const roll = 0.045 * reach * Math.min(1.5, state.reach) + 0.05 * move + Math.min(1.5, state.reach) * load + state.sway * (playing ? 0.02 + 0.02 * E : 0.01) * wander(t * 0.22, 15)
+    // (× 1.6 from the first version: about 2–3 cm of hip lift on a strong lean, visible under a skirt)
+    state.hipRoll = spring('hip', x * state.hipShift * clamp(1.6 * roll, -0.24, 0.24), dt, 0.55, 0.7)
     // shoulders lift a little in loud passages, drop on the accent
     state.exShrug = spring('shrug', g * (0.02 * E - 0.025 * A), dt, 2.5, 0.6)
     // breathing deepens with the phrase
