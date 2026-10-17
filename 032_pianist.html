@@ -75,7 +75,7 @@
     .navbtn svg { fill: #fff; }
     /* touch screens (phones, tablets): a shorter top bar (songs · camera ·
        outfits · more), the menus as bottom sheets, bigger targets */
-    body.touch #visualsBtn, body.touch #audioBtn, body.touch #renderBtn, body.touch #shareBtn, body.touch #presets, body.touch #title { display: none; }
+    body.touch #perfBtn, body.touch #visualsBtn, body.touch #audioBtn, body.touch #renderBtn, body.touch #shareBtn, body.touch #presets, body.touch #title { display: none; }
     body.touch #moreBtn, body.touch #outfitBtn { display: inline-flex; }
     body.touch .pill { font-size: 0; gap: 0; padding: 0 12px; height: 40px; border-radius: 20px; }
     body.touch .pill svg { width: 18px; height: 18px; }
@@ -112,7 +112,7 @@
     #songList .item { white-space: normal; line-height: 1.25; }
     #songFilter { width: 100%; box-sizing: border-box; padding: 6px 9px; border-radius: 7px; border: 1px solid #444; background: #1c1c1c; color: #eee; font: inherit; }
     #cameraPop { right: 190px; width: 250px; }
-    #viewList .sect small { text-transform: none; letter-spacing: 0; color: #6f6f6f; margin-left: 6px; }
+    #viewList .sect small, #perfPop .sect small { text-transform: none; letter-spacing: 0; color: #6f6f6f; margin-left: 6px; }
     .item .kind { margin-left: auto; padding-left: 8px; font-size: 10.5px; color: #8a8a8a; }
     .item .kind + .dot { margin-left: 8px; }
     .sizeChk { display: flex; gap: 12px; font-size: 12px; color: #ddd; }
@@ -120,6 +120,7 @@
     #shotName { position: absolute; left: 26px; bottom: 92px; font: 600 11px/1 ui-monospace, Menlo, monospace; color: rgba(255, 255, 255, 0.7); letter-spacing: 0.04em; pointer-events: none; display: none; }
     body.shotlbl #shotName { display: block; }
     #visualsPop { right: 12px; width: 250px; }
+    #perfPop { width: 260px; }
     #audioPop, #renderPop { width: 260px; }
     .field > label .val { float: right; color: #8f8f8f; font-variant-numeric: tabular-nums; }
     #exBar { height: 4px; margin: 4px 16px 6px; border-radius: 2px; background: #333; overflow: hidden; }
@@ -164,6 +165,7 @@
     <button class="pill" id="cameraBtn"><svg viewBox="0 0 24 24"><path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11z"/></svg>Camera</button>
     <button class="pill" id="outfitBtn" title="Outfits"><svg viewBox="0 0 24 24"><path d="M9 3 4 6l2 4 2-1v12h8V9l2 1 2-4-5-3a3 3 0 0 1-6 0z"/></svg>Outfit</button>
     <button class="pill" id="moreBtn" title="More: visuals, hall, render, share"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>More</button>
+    <button class="pill" id="perfBtn" title="Performance: how she moves - body, head and eyes, hands and arms, bench"><svg viewBox="0 0 24 24"><circle cx="12" cy="4.5" r="2.5"/><path d="M6 21l2.5-9-3-2 1-2 4 2h3l4-2 1 2-3 2 2.5 9h-2.4l-2.1-7h-1l-2.1 7z"/></svg>Performance</button>
     <button class="pill" id="visualsBtn"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>Visuals</button>
     <button class="pill" id="audioBtn" title="Hall acoustics: room, seat, reverb, room boost, applause"><svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9zm13.5 3A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z"/></svg>Hall</button>
     <button class="pill" id="renderBtn" title="Export the song as an MP4 video"><svg viewBox="0 0 24 24"><circle cx="7" cy="12" r="4"/><circle cx="16" cy="12" r="4" opacity=".55"/></svg>Render</button>
@@ -171,7 +173,8 @@
   </div>
   <div id="outfitPop" class="pop ui"><div class="sect">Outfits</div><div id="outfitGrid"></div></div>
   <div id="morePop" class="pop ui">
-    <div class="item" data-open="visualsPop">Visuals: pianist, pose, stage, post-processing</div>
+    <div class="item" data-open="perfPop">Performance: body, head, hands, bench</div>
+    <div class="item" data-open="visualsPop">Visuals: pianist, stage, post-processing</div>
     <div class="item" data-open="audioPop">Hall: room, reverb, applause</div>
     <div class="item" data-open="renderPop">Render a video</div>
     <div class="item" id="moreShare">Share a link to this scene</div>
@@ -261,23 +264,6 @@
     <div class="field"><label>Strand density</label><select id="hairDensity"><option value="0.5">Light</option><option value="1" selected>Full</option><option value="1.6">Dense</option></select></div>
     <div class="field"><label>Hair colour</label><input type="color" id="hairColor" value="#5a3e2a"></div>
     <div class="field"><label>Dress colour</label><input type="color" id="dressColor" value="#8e1d1b"></div>
-    <div class="sect">Pose</div>
-    <div class="field"><label>Gaze</label><select id="gaze"><option value="hands">At the hands</option><option value="music" selected>With the music (hands + horizon)</option><option value="horizon">Mostly the horizon</option></select></div>
-    <div class="field"><label>Body expression</label><input type="range" id="expr" min="0" max="2" step="0.1" value="1"></div>
-    <div class="field"><label>Weight shift (one hip)</label><input type="range" id="hips" min="0" max="2" step="0.1" value="1"></div>
-    <div class="field"><label>Posture</label><input type="range" id="posture" min="-0.5" max="1.6" step="0.05" value="0.5"><span id="postureV">between</span></div>
-    <div class="sect">Playing style</div>
-    <div class="field" title="How far she leans and turns toward the register her hands are in (0 = stays square to the keys)"><label>Lean toward the hands</label><input type="range" id="reach" min="0" max="2" step="0.1" value="1"><span id="reachV">1×</span></div>
-    <div class="field" title="How much she rocks forward and back with the music around her posture"><label>Rocking (forward / back)</label><input type="range" id="rock" min="0" max="2.5" step="0.1" value="1"><span id="rockV">1×</span></div>
-    <div class="field" title="How much she sways side to side with the music"><label>Sway (side to side)</label><input type="range" id="sway" min="0" max="2.5" step="0.1" value="1"><span id="swayV">1×</span></div>
-    <div class="field" title="Nods into accents and small head movements"><label>Head movement</label><input type="range" id="nod" min="0" max="2.5" step="0.1" value="1"><span id="nodV">1×</span></div>
-    <div class="field" title="How much loudness comes from the arm: before a loud note the hand lifts in the time it has and falls into the key (0 = fingers only, the hand stays on the keys)"><label>Arm weight</label><input type="range" id="armw" min="0" max="2" step="0.1" value="1"><span id="armwV">1×</span></div>
-    <div class="field" title="How high the hands go above the keys: scales every lift (preparation, bounce and lift-off) after the time limits, so at 2× even fast passages come off the keys"><label>Lift height</label><input type="range" id="lifth" min="0" max="2.5" step="0.1" value="1"><span id="lifthV">1×</span></div>
-    <div class="field" title="How much the wrist leads the hand up and down, gives on impact and dips under long notes"><label>Wrist flexibility</label><input type="range" id="wflex" min="0" max="2" step="0.1" value="1"><span id="wflexV">1×</span></div>
-    <div class="field" title="How high the hands float up after the last note before a rest, and after the final chord"><label>Lift-off at phrase ends</label><input type="range" id="liftoff" min="0" max="2" step="0.1" value="1"><span id="liftoffV">1×</span></div>
-    <div class="field" title="How often she looks up from the keys (on top of the Gaze mode)"><label>Glances</label><input type="range" id="glances" min="0" max="2" step="0.1" value="1"><span id="glancesV">1×</span></div>
-    <div class="field"><label>Bench distance</label><input type="range" id="benchDist" min="-20" max="25" step="1" value="0"><span id="benchDistV">0 cm</span></div>
-    <div class="field"><label>Bench height</label><input type="range" id="benchH" min="-15" max="15" step="1" value="0"><span id="benchHV">0 cm</span></div>
     <div class="sect">Stage</div>
     <div class="field"><label>Main light</label><input type="range" id="light" min="0" max="2" step="0.01" value="1"></div>
     <div class="field"><label>Exposure</label><input type="range" id="exposure" min="0.3" max="2.5" step="0.01" value="1"></div>
@@ -293,6 +279,27 @@
     <div class="field"><label>Dust <span class="val" id="dustAmtV"></span></label><input type="range" id="dustAmt" min="0" max="0.6" step="0.01" value="0.18"></div>
     <div class="field"><label>Sound</label><select id="sf"></select></div>
     <div class="field" title="Fine-tune when the hands and keys move against the sound, if your speakers or headphones report their delay wrongly (Bluetooth often does). Positive = the picture later."><label>Picture vs sound</label><input type="range" id="avsync" min="-200" max="200" step="5" value="0"><span id="avsyncV">0 ms</span></div>
+  </div>
+  <div id="perfPop" class="pop ui">
+    <div class="sect">Body<small>how much she moves with the music</small></div>
+    <div class="field"><label>Body expression</label><input type="range" id="expr" min="0" max="2" step="0.1" value="1"></div>
+    <div class="field"><label>Posture</label><input type="range" id="posture" min="-0.5" max="1.6" step="0.05" value="0.5"><span id="postureV">between</span></div>
+    <div class="field"><label>Weight shift (one hip)</label><input type="range" id="hips" min="0" max="2" step="0.1" value="1"></div>
+    <div class="field" title="How far she leans and turns toward the register her hands are in (0 = stays square to the keys)"><label>Lean toward the hands</label><input type="range" id="reach" min="0" max="2" step="0.1" value="1"><span id="reachV">1×</span></div>
+    <div class="field" title="How much she rocks forward and back with the music around her posture"><label>Rocking (forward / back)</label><input type="range" id="rock" min="0" max="2.5" step="0.1" value="1"><span id="rockV">1×</span></div>
+    <div class="field" title="How much she sways side to side with the music"><label>Sway (side to side)</label><input type="range" id="sway" min="0" max="2.5" step="0.1" value="1"><span id="swayV">1×</span></div>
+    <div class="sect">Head and eyes</div>
+    <div class="field"><label>Gaze</label><select id="gaze"><option value="hands">At the hands</option><option value="music" selected>With the music (hands + horizon)</option><option value="horizon">Mostly the horizon</option></select></div>
+    <div class="field" title="Nods into accents and small head movements"><label>Head movement</label><input type="range" id="nod" min="0" max="2.5" step="0.1" value="1"><span id="nodV">1×</span></div>
+    <div class="field" title="How often she looks up from the keys (on top of the Gaze mode)"><label>Glances</label><input type="range" id="glances" min="0" max="2" step="0.1" value="1"><span id="glancesV">1×</span></div>
+    <div class="sect">Hands and arms<small>wrist strokes: lifts, drops, bounces</small></div>
+    <div class="field" title="How much loudness comes from the arm: before a loud note the hand lifts in the time it has and falls into the key (0 = fingers only, the hand stays on the keys)"><label>Arm weight</label><input type="range" id="armw" min="0" max="2" step="0.1" value="1"><span id="armwV">1×</span></div>
+    <div class="field" title="How high the hands go above the keys: scales every lift (preparation, bounce and lift-off) after the time limits, so at 2× even fast passages come off the keys"><label>Lift height</label><input type="range" id="lifth" min="0" max="2.5" step="0.1" value="1"><span id="lifthV">1×</span></div>
+    <div class="field" title="How much the wrist leads the hand up and down, gives on impact and dips under long notes"><label>Wrist flexibility</label><input type="range" id="wflex" min="0" max="2" step="0.1" value="1"><span id="wflexV">1×</span></div>
+    <div class="field" title="How high the hands float up after the last note before a rest, and after the final chord"><label>Lift-off at phrase ends</label><input type="range" id="liftoff" min="0" max="2" step="0.1" value="1"><span id="liftoffV">1×</span></div>
+    <div class="sect">Bench</div>
+    <div class="field"><label>Bench distance</label><input type="range" id="benchDist" min="-20" max="25" step="1" value="0"><span id="benchDistV">0 cm</span></div>
+    <div class="field"><label>Bench height</label><input type="range" id="benchH" min="-15" max="15" step="1" value="0"><span id="benchHV">0 cm</span></div>
   </div>
   <div id="audioPop" class="pop ui">
     <div class="sect">Hall acoustics</div>
@@ -1007,7 +1014,7 @@
     controls.addEventListener('end', () => { camTouched = performance.now() })
 
     // popups
-    const pops = { songsBtn: 'songsPop', cameraBtn: 'cameraPop', visualsBtn: 'visualsPop', audioBtn: 'audioPop', renderBtn: 'renderPop', outfitBtn: 'outfitPop', moreBtn: 'morePop' }
+    const pops = { songsBtn: 'songsPop', cameraBtn: 'cameraPop', perfBtn: 'perfPop', visualsBtn: 'visualsPop', audioBtn: 'audioPop', renderBtn: 'renderPop', outfitBtn: 'outfitPop', moreBtn: 'morePop' }
     // the right-hand menus open under their own pill
     for (const [b, p] of Object.entries(pops)) {
       if (b === 'songsBtn') continue

@@ -127,6 +127,19 @@ about the knuckle line (radians, positive = wrist up).
 - **Staccato rebound**: after a short note the hand bounces up a little,
   limited by the time to the next note.
 
+- **Passages played from the wrist.** Repeated notes (the same keys again
+  within 0.6 s) and octaves in a row bounce the hand about the wrist: the
+  knuckles rise up to 3 cm (quicker than the arm can, ~45 cm/s of free
+  time) while the wrist stays put. Loud ones add an arm lift on top.
+- **Leaps** (the hand moves more than 12 cm): the hand travels in an arc,
+  0.12 cm of height per cm travelled, up to 6 cm, in the time there is.
+- **Running notes** (single notes stepping by up to a third, < 0.2 s apart)
+  stay on the keys: fingering and forearm rotation do the work.
+
+Tuning after the first version (17 Oct): preparation heights and the arm's
+speed limit doubled (14 cm at full velocity, ~80 cm/s); lift-offs cut to about
+a third (final lift 2–5 cm, phrase ends 1–2 cm).
+
 ### 3.2 In the hand driver
 
 `hand-driver.js` adds the lift to the knuckle height and the tilt to the
