@@ -419,7 +419,8 @@
     // touch screens get the phone layout (?touch=1 / 0 to force it)
     // offline cache and install (sw.js): assets once, code fresh (?sw=0 to skip)
     if ('serviceWorker' in navigator && !params.has('shot') && params.get('sw') !== '0') navigator.serviceWorker.register('sw.js').catch(e => console.warn('service worker', e))
-    const TOUCH = params.has('touch') ? params.get('touch') !== '0' : matchMedia('(pointer: coarse)').matches
+    // (only 0 / 1: the finger-touch setting also lives in ?touch=fall|press)
+    const TOUCH = { 1: true, 0: false }[params.get('touch')] ?? matchMedia('(pointer: coarse)').matches
     document.body.classList.toggle('touch', TOUCH)
     const LOWQ = params.get('q') === 'low' || (params.get('q') !== 'high' && matchMedia('(pointer: coarse)').matches)
     const vendorPath = new URL('./vendor', import.meta.url).href
