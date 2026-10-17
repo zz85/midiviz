@@ -252,20 +252,29 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     // arm"), the forearm passing under the bust. So the angle is chosen by
     // cost: the arm resting against the body (up to CONTACT cm into the
     // skin: soft tissue gives) is cheap, sinking deeper is dear, and every
-    // centimetre the elbow rises above where it would hang costs about as
-    // much as a centimetre of that light contact. Swinging out or back
+    // centimetre the elbow rises above where it would hang costs (a lot,
+    // unless the hand is crossing the body: below). Swinging out or back
     // costs a little, and changing course a little more.
+    // Lifting is for hands that cross the body: while the wrist is on its
+    // own side, the elbow keeps to its hang (it may swing out or back); as
+    // the hand passes the middle toward the other shoulder (hand over hand,
+    // both hands close together) it may rise, freely once past that
+    // shoulder, since only then would the upper arm cross the chest.
+    const c = pos('spine01'), half = Math.abs(S.x - c.x) || 14
+    const across = clamp(-a.s * (W.x - c.x) / half, 0, 1)
+    const liftCost = 2.5 + 40 * (1 - across) ** 2
     const y0 = elbow(0, _E).y
     let best = a.phi, bestCost = Infinity
     for (const phi of PHIS) {
       elbow(phi, _E)
       const sink = armSink(a, S, _E, W, nc)
       const cost = 3 * Math.max(0, sink + CLEAR) + 40 * Math.max(0, sink - CONTACT)
-        + 2.5 * Math.max(0, _E.y - y0) + 0.3 * Math.abs(phi) + 0.5 * Math.abs(phi - a.phi)
+        + liftCost * Math.max(0, _E.y - y0) + 0.3 * Math.abs(phi) + 0.5 * Math.abs(phi - a.phi)
       if (cost < bestCost) { bestCost = cost; best = phi }
     }
     a.phi += (best - a.phi) * (dt > 0 ? 1 - Math.exp(-dt / 0.06) : 1)
     a.sink = armSink(a, S, elbow(a.phi, _E), W, nc)
+    a.drv.lift = _E.y - y0   // how far the steering raised the elbow (cm)
     // what the elbow cannot clear, the shoulder does: it rolls forward
     // (protraction, up to 7 cm), which also lets the elbow bend more. Fed
     // back into the next frame's clavicle (pose)
