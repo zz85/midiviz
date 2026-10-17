@@ -14,6 +14,7 @@
 import * as THREE from 'three'
 import { solveFinger } from '../fingering/hands3d.js'
 import { buildMotion, KEY, restOffset } from '../fingering/motion.js'
+import { planStrokes, velocityRange } from './stroke.js'
 
 const KEY_TOP = 73
 const v3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z)
@@ -58,6 +59,9 @@ export function createHandDriver(side, dims) {
   const shoulder = v3(), tip = v3(), base = v3()
   const SHOULDER = new THREE.Vector3(s * 20, 107, 45)
   let visible = false, pitch = 0, pitchGoal = 0
+  // the wrist stroke (pianist/stroke.js): knuckle lift and wrist tilt over
+  // the song; ptot = the crossing pitch plus the stroke's tilt
+  let stroke = null, lift = 0, ptot = 0
   const thumbCurl = { side: new THREE.Vector3(s, 0, 0), tilt: FINGERS[1].tilt }
   // Where each fingertip sits in a relaxed hand, relative to the middle
   // knuckle (x across, z forward is negative): the same rest places the
@@ -125,7 +129,7 @@ export function createHandDriver(side, dims) {
   function basePos(f, out) {
     const d = FINGERS[f]
     // pitched about the knuckle line with the hand (setPitch)
-    const cp = Math.cos(pitch), sp = Math.sin(pitch)
+    const cp = Math.cos(ptot), sp = Math.sin(ptot)
     const by = d.base[1] * cp + d.base[2] * sp, bzp = -d.base[1] * sp + d.base[2] * cp
     const [bx, bz] = rot(s * d.base[0], bzp, hand.yaw)
     return out.set(hand.x + bx, hand.y + by, hand.z + bz).add(slide)
@@ -219,21 +223,27 @@ export function createHandDriver(side, dims) {
   function wristAt(t, out) {
     const tr = trackAt(t); if (!tr) return null
     const d = FINGERS[3], [bx, bz] = rot(s * d.base[0], d.base[2], tr[2]), [wx, wz] = rot(s * WRIST[0], WRIST[2], tr[2])
-    return out.set(tr[0] + bx + tr[3] + wx, hand.y + d.base[1] + tr[4] + WRIST[1], tr[1] + bz + tr[5] + wz)
+    const up = stroke ? stroke.at(t)[0] : 0
+    return out.set(tr[0] + bx + tr[3] + wx, hand.y - lift + up + d.base[1] + tr[4] + WRIST[1], tr[1] + bz + tr[5] + wz)
   }
 
   function update(pose, dt, t) {
-    if (!pose) { visible = false; pitch = 0; return }
+    if (!pose) { visible = false; pitch = 0; lift = 0; ptot = 0; return }
     pitch += (pitchGoal - pitch) * Math.min(1, dt / 0.12)
     visible = true
     const { anchor, fingers: tips } = pose
     const fit = fitHand(tips, anchor)
     const tr = trackAt(t)
     if (tr) {
-      hand.x = tr[0]; hand.z = tr[1]; hand.yaw = tr[2]; hand.y = fit.y; hand.init = true
+      // the stroke: carried above the keys between notes, the wrist tilting
+      const st = stroke ? stroke.at(t) : null
+      lift = st ? st[0] : 0
+      ptot = THREE.MathUtils.clamp(pitch + (st ? st[1] : 0), -0.5, 1.1)
+      hand.x = tr[0]; hand.z = tr[1]; hand.yaw = tr[2]; hand.y = fit.y + lift; hand.init = true
       slide.set(tr[3], tr[4], tr[5])
     } else {
       // live (or outside the baked song): smooth as it plays
+      lift = 0; ptot = pitch
       if (!hand.init) { Object.assign(hand, fit, { init: true }) }
       const k = Math.min(1, dt * 14)
       hand.x += (fit.x - hand.x) * k; hand.z += (fit.z - hand.z) * k
@@ -257,7 +267,8 @@ export function createHandDriver(side, dims) {
         // a tip pulled in close under the knuckle makes it stand up hooked
         if (f > 1) z = Math.min(z, d.base[2] - REACH[f])
       }
-      let y = KEY_TOP + t.y + d.rad[2] * 0.9
+      // (a free finger rides up with the hand when the stroke lifts it)
+      let y = KEY_TOP + t.y + d.rad[2] * 0.9 + (held[f - 1] ? 0 : lift)
       // a lifted finger stays curled: its tip never rises to knuckle height
       if (!held[f - 1]) y = Math.min(y, hand.y + slide.y + d.base[1] - (f === 1 ? 2.6 : 4.3))
       lx.push(x); lz.push(z); ty.push(y)
@@ -355,7 +366,7 @@ export function createHandDriver(side, dims) {
     // the wrist, from the middle knuckle; raised by pitching the hand about
     // its knuckles (a hand crossing over the other: the fingers drop onto
     // the keys from a high wrist), set by the rig through setPitch
-    const cp = Math.cos(pitch), sp = Math.sin(pitch)
+    const cp = Math.cos(ptot), sp = Math.sin(ptot)
     const wy = WRIST[1] * cp + WRIST[2] * sp, wzp = -WRIST[1] * sp + WRIST[2] * cp
     const [wx, wz] = rot(s * WRIST[0], wzp, hand.yaw)
     J.W.set(k3.x + wx, k3.y + wy, k3.z + wz)
@@ -367,7 +378,7 @@ export function createHandDriver(side, dims) {
     J.R.normalize()
     armIK(J.W, J.E)
   }
-  return { update, bakeTrack, clearTrack, wristAt, setPitch: p => { pitchGoal = p }, get pitch() { return pitch }, side, diag, hand, joints: J, shoulder: SHOULDER, get visible() { return visible } }
+  return { update, bakeTrack, clearTrack, wristAt, setPitch: p => { pitchGoal = p }, get pitch() { return pitch }, setStroke: p => { stroke = p }, get stroke() { return stroke }, get strokeLift() { return lift }, get strokeTilt() { return ptot - pitch }, side, diag, hand, joints: J, shoulder: SHOULDER, get visible() { return visible } }
 }
 
 
@@ -378,12 +389,19 @@ const PRESS_LEAD = 0.018
 /** Both hands, driven by a fingered song. */
 export function createHandsDriver(dims) {
   const L = createHandDriver('L', dims), R = createHandDriver('R', dims)
-  let motion = buildMotion([])
+  let motion = buildMotion([]), own = []
+  // wrist strokes: { armWeight, flex, liftOff } (research/01_biomechanics.md §3.5)
+  const strokeOpts = { armWeight: 1, flex: 1, liftOff: 1 }
+  const plan = () => { for (const d of [L, R]) d.setStroke(own.length ? planStrokes(own.filter(n => n.hand === d.side), { ...strokeOpts, velRange: velocityRange(own) }) : null) }
   return {
     L, R,
+    strokeOpts,
+    /** Change the stroke settings (re-plans the strokes only, a few ms). */
+    setStrokeOpts(o) { Object.assign(strokeOpts, o); plan() },
     setNotes(notes) {
-      const own = notes.filter(n => n.finger >= 1)
+      own = notes.filter(n => n.finger >= 1)
       motion = buildMotion(own)
+      plan()
       // bake the hands' placement over the song (60 Hz, interpolated)
       if (!own.length) { L.clearTrack(); R.clearTrack(); return }
       const h = 1 / 60
@@ -394,7 +412,7 @@ export function createHandsDriver(dims) {
       L.bakeTrack(t => poses[Math.round((t - t0) / h)]?.L, t0, n, h)
       R.bakeTrack(t => poses[Math.round((t - t0) / h)]?.R, t0, n, h)
     },
-    clear() { motion = buildMotion([]); L.clearTrack(); R.clearTrack() },
+    clear() { motion = buildMotion([]); own = []; plan(); L.clearTrack(); R.clearTrack() },
     lead: PRESS_LEAD,
     update(t, dt) { const tm = t + PRESS_LEAD, p = motion.poseAt(tm); L.update(p.L, dt, tm); R.update(p.R, dt, tm) },
   }
