@@ -109,6 +109,7 @@ A plain link opens behind her (`?view=back`) in preset 1 with the cel-shaded loo
 - Songs: ⏮ ⏭ beside Play, or swipe left / right along the bottom bar (the song title), step through the current group of the list, wrapping round. Double-tap the picture still changes the camera.
 - Phones load `soundfonts/Full Grand Piano.sf3`, the same piano with Vorbis samples (3.1 MB instead of 17; quality 8, 30–37 dB SNR per sample), unpacked in the browser.
 - `sw.js` (scope: the midiviz folder) caches assets cache-first (soundfonts, models, textures, MIDI, WASM, three.js from the CDN; a cached file is re-checked by size once per worker lifetime) and code network-first, so a second visit downloads nothing and the page runs offline. `?sw=0` skips it; bump `ASSETS` in `sw.js` to drop the asset cache.
+- Save for offline (Songs menu, or ⋯ on phones): every list song, the preset thumbnails and the current sound go into the asset cache (outfits aren't fetched up front; the ones you've shown are cached as they load), and the browser is asked to keep the storage.
 - `032_pianist.webmanifest` and `pianist/icon-*.png`: Add to Home Screen opens it full screen with its own icon.
 
 ## Camera and the director

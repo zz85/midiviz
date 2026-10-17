@@ -12,7 +12,7 @@
 //   and fetched again if its size changed.
 // Range requests and non-GET requests go straight to the network.
 
-const ASSETS = 'midiviz-assets-v1'
+const ASSETS = 'midiviz-assets-v1'   // (the same name keeps what's cached; bump to drop it)
 const CODE = 'midiviz-code-v1'
 const ASSET_RE = /\.(sf2|sf3|mid|midi|bin|glb|gltf|vrm|png|jpe?g|webp|ktx2|wasm|hdr|exr|ogg|mp3|wav)$/i
 const CDN_RE = /^https:\/\/cdn\.jsdelivr\.net\/npm\/[^/]+@\d/   // versioned: immutable
@@ -62,8 +62,36 @@ async function networkFirst(req) {
     if (res.ok && res.type === 'basic') cache.put(req, res.clone()).catch(() => {})
     return res
   } catch (e) {
-    const hit = await cache.match(req, { ignoreSearch: true })
+    const hit = await cache.match(req, { ignoreSearch: true }) || await caches.match(req, { ignoreSearch: true })
     if (hit) return hit
     throw e
   }
 }
+
+// "Save for offline": the page posts { type: 'precache', urls } and gets
+// { type: 'precache', done, total, bytes, failed } back as files arrive
+self.addEventListener('message', ev => {
+  if (ev.data?.type !== 'precache') return
+  const urls = [...new Set(ev.data.urls)], port = ev.source
+  ev.waitUntil((async () => {
+    const cache = await caches.open(ASSETS)
+    let next = 0, done = 0, bytes = 0, failed = 0
+    const report = () => port?.postMessage({ type: 'precache', done, total: urls.length, bytes, failed })
+    const worker = async () => {
+      while (next < urls.length) {
+        const u = urls[next++]
+        try {
+          const hit = await cache.match(u)
+          if (hit) bytes += +(hit.headers.get('content-length') || 0)
+          else {
+            const r = await fetch(u)
+            if (r.ok) { bytes += +(r.headers.get('content-length') || 0); await cache.put(u, r) } else if (r.status !== 404) failed++   // (not every part has a texture)
+          }
+        } catch { failed++ }
+        done++; report()
+      }
+    }
+    await Promise.all([worker(), worker(), worker(), worker()])
+    report()
+  })())
+})
