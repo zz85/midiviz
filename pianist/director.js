@@ -52,6 +52,10 @@ export const SPOTS = {
   treble: { label: 'Hands, treble side', subj: 'hands', az: 62, el: 30, dist: 100, fov: 38, size: 0, moves: ['orbit', 'dollyIn', 'still'] },
   bassKeys: { label: 'Along the keys, from the bass', subj: 'hands', az: -93, el: 9, dist: 125, fov: 30, size: 0, moves: ['zoomOut', 'still', 'dollyOut'], orbitMax: 6 },
   keys: { label: 'Along the keys', subj: 'hands', az: 93, el: 7, dist: 120, fov: 30, size: 0, moves: ['zoomIn', 'still', 'dollyOut', 'dollyZoom'], orbitMax: 6 },
+  // medium on the hands from her right: the keyboard runs toward the camera
+  // and her body is beside the keys, not in front of them (unlike the shots
+  // from behind her)
+  handsRight: { label: 'Hands, from her right', fav: 1, subj: 'hands', az: 70, el: 20, dist: 215, fov: 34, size: 1, moves: ['orbit', 'dollyIn', 'zoomIn', 'still'], orbitMax: 12 },
   above: { label: 'From above', fav: 0.25, subj: 'hands', az: -8, el: 72, dist: 150, fov: 38, size: 1, moves: ['orbit', 'dollyIn', 'zoomOut'] },
   side: { label: 'Side, wide', subj: 'figure', az: 90, el: 3, dist: 395, fov: 30, size: 2, flat: true, moves: ['dollyIn', 'zoomOut', 'dollyZoom', 'still'] },
   // the opening's far shots (after concert films): side-on from the hall, she
@@ -594,7 +598,8 @@ export function createDirector(opts = {}) {
       }
       takeAt(s, tk, (w - tk.t0) / (tk.t1 - tk.t0), A)
       targetOf(tk, res.target)
-      const g = k > 0 && tk.blend ? sstep(w - tk.t0, 0, 3) : 1
+      // (Transitions: Cuts only cuts here too)
+      const g = k > 0 && tk.blend && o.trans !== 'cuts' ? sstep(w - tk.t0, 0, 3) : 1
       if (g < 1) {
         const pk = q.takes[k - 1]
         takeAt(s, pk, 1, B)
