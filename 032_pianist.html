@@ -50,6 +50,10 @@
     @font-face { font-family: 'Playfair Display'; font-weight: 400; font-style: italic; src: url(fonts/playfair-display-latin-400-italic.woff2) format('woff2'); font-display: swap; }
     @font-face { font-family: 'Cinzel'; font-weight: 600; src: url(fonts/cinzel-latin-600-normal.woff2) format('woff2'); font-display: swap; }
     @font-face { font-family: 'Cinzel'; font-weight: 400; src: url(fonts/cinzel-latin-400-normal.woff2) format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Inter'; font-weight: 600; src: url(fonts/inter-latin-600-normal.woff2) format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Inter'; font-weight: 400; src: url(fonts/inter-latin-400-normal.woff2) format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Poppins'; font-weight: 600; src: url(fonts/poppins-latin-600-normal.woff2) format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Poppins'; font-weight: 400; src: url(fonts/poppins-latin-400-normal.woff2) format('woff2'); font-display: swap; }
     @font-face { font-family: 'Great Vibes'; font-weight: 400; src: url(fonts/great-vibes-latin-400-normal.woff2) format('woff2'); font-display: swap; }
     #topLeft, #topRight, #presets, .pop { z-index: 26; }   /* (above the start screen: pick a song first) */
     body.idle { cursor: none; }
@@ -348,12 +352,15 @@
     <label class="chk"><input type="checkbox" id="exAudio" checked>Include audio (with the hall)</label>
     <label class="chk"><input type="checkbox" id="exTitle" checked>Title card (fades out as the music starts)</label>
     <div class="field"><label>Title font</label><select id="exFont">
-      <option value="cormorant" selected>Cormorant Garamond</option>
+      <option value="inter" selected>Inter (clean sans, like the page)</option>
+      <option value="poppins">Poppins (rounder sans)</option>
+      <option value="cormorant">Cormorant Garamond</option>
       <option value="playfair">Playfair Display</option>
       <option value="cinzel">Cinzel (capitals)</option>
       <option value="vibes">Great Vibes (script)</option>
       <option value="georgia">Georgia (system)</option>
     </select></div>
+    <div class="field"><label>Card</label><select id="exCard"><option value="glass" selected>White on frosted glass</option><option value="glow">Warm glow</option></select></div>
     <canvas id="exPreview" width="456" height="256" title="The title card as it will look (the picture behind it is the current view)"></canvas>
     <div class="field"><label>Subtitle</label><input type="text" id="exSub" value="Midiviz Pianist" style="width:100%;box-sizing:border-box;background:#2b2b2b;color:#eee;border:1px solid #444;border-radius:6px;padding:4px 6px;font:inherit"></div>
     <div id="exBar"><div></div></div>
@@ -1473,7 +1480,7 @@
       ['sf', 'sf'], ['avsync', 'avsync'],
       ['dofamt', 'dofAmt'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
       ['vol', 'vol'], ['room', 'room'], ['seat', 'seat'], ['rv', 'rvAmt'], ['decay', 'rvDecay'], ['tone', 'rvTone'], ['boost', 'boost'], ['amb', 'amb'], ['applause', 'applause'],
-      ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exsub', 'exSub'],
+      ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exsub', 'exSub'], ['excard', 'exCard'],
     ].filter(([, id]) => $(id))
     const OUTFIT_KEYS = { dress: 'dress', slit: 'slit', fabric: 'fabric', dcol: 'color', shoes: 'shoes', hair: 'hair', hcol: 'hairColor' }
     // (colours without their #, so links stay readable)
@@ -1669,12 +1676,20 @@
     }
     // title-card fonts: [title family, weight, subtitle family, subtitle style]
     const TITLE_FONTS = {
+      inter: { font: "Inter, -apple-system, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif", titleWeight: 600, subFont: "Inter, -apple-system, 'Segoe UI', Arial, sans-serif", subStyle: 'normal 400', subTracking: 0.03 },
+      poppins: { font: "Poppins, 'Helvetica Neue', Arial, sans-serif", titleWeight: 600, subFont: "Poppins, 'Helvetica Neue', Arial, sans-serif", subStyle: 'normal 400', subTracking: 0.03 },
       cormorant: { font: "'Cormorant Garamond', Georgia, serif", titleWeight: 600, subFont: "'Cormorant Garamond', Georgia, serif", subStyle: 'italic 500' },
       playfair: { font: "'Playfair Display', Georgia, serif", titleWeight: 600, subFont: "'Playfair Display', Georgia, serif", subStyle: 'italic 400' },
       cinzel: { font: "Cinzel, Georgia, serif", titleWeight: 600, subFont: "Cinzel, Georgia, serif", subStyle: 'normal 400' },
       vibes: { font: "'Great Vibes', Georgia, cursive", titleWeight: 400, subFont: "'Cormorant Garamond', Georgia, serif", subStyle: 'italic 500' },
       georgia: { font: "Georgia, 'Times New Roman', serif", titleWeight: 600, subFont: "Georgia, 'Times New Roman', serif", subStyle: 'italic' },
     }
+    // the card's look: white text on frosted glass, or the warm ivory glow
+    const CARD_STYLES = {
+      glass: { panel: 'glass', color: '#ffffff', subColor: 'rgba(255,255,255,0.85)', ruleColor: '255,255,255', glow: 0, dim: 0.32 },
+      glow: {},
+    }
+    const titleCardOpts = () => ({ ...TITLE_FONTS[$('exFont').value], ...CARD_STYLES[$('exCard').value] })
     async function loadTitleFont(k) {
       const f = TITLE_FONTS[k]
       try { await Promise.all([document.fonts.load(`${f.titleWeight} 48px ${f.font}`), document.fonts.load(`${f.subStyle} 24px ${f.subFont}`)]) } catch { /* falls back to Georgia */ }
@@ -1696,10 +1711,10 @@
       cv.style.opacity = $('exTitle').checked ? 1 : 0.35
       if (!$('exTitle').checked) return
       const { drawTitleCard } = await import('./notation3d/video-export.js')
-      drawTitleCard(g, w, h, 0.32, 5, { title: song?.title || $('songTitle').textContent || 'Chopin - Raindrop Prelude', subtitle: $('exSub').value.trim(), style: '2d', fadeOut: 3, ...TITLE_FONTS[k] })
+      drawTitleCard(g, w, h, 0.98 / 4.5, 4.5, { title: song?.title || $('songTitle').textContent || 'Chopin - Raindrop Prelude', subtitle: $('exSub').value.trim(), style: '2d', fadeOut: 3.5, ...titleCardOpts() })
     }
     new MutationObserver(() => drawPreview()).observe($('renderPop'), { attributes: true, attributeFilter: ['class'] })
-    for (const id of ['exFont', 'exTitle']) $(id).addEventListener('change', drawPreview)
+    for (const id of ['exFont', 'exTitle', 'exCard']) $(id).addEventListener('change', drawPreview)
     $('exSub').addEventListener('input', drawPreview)
     let exAbort = null
     $('exStart').onclick = async () => {
@@ -1730,9 +1745,9 @@
           audioOpts: { vendorPath, soundfonts: [$('sf').value], volume: 1, convertSF3: engine._backend?._convertSF3 ? d => engine._backend._convertSF3(d) : null },
           audioFx: offlineHall($('room').value === 'dry' ? null : acousticParams(hallSettings()), 48000, { volume: +$('vol').value }),
           tour: null,
-          // the card holds ~2 s, then fades over 3 s while the music and the
-          // scene start underneath it
-          intro: $('exTitle').checked ? { seconds: 5, overlap: 3, fadeOut: 3, title: song.title, subtitle: $('exSub').value.trim(), style: '2d', ...TITLE_FONTS[$('exFont').value] } : null,
+          // the card holds ~1 s, then the music starts and the card fades over
+          // 3.5 s while the scene focuses in underneath it
+          intro: $('exTitle').checked ? { seconds: 4.5, overlap: 3.5, fadeOut: 3.5, title: song.title, subtitle: $('exSub').value.trim(), style: '2d', ...titleCardOpts() } : null,
           outro: null,
           fileStream, signal: exAbort.signal,
           onProgress: p => {

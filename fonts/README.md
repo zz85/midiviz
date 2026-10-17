@@ -8,5 +8,7 @@ Title-card fonts for the video export (#032), from [Fontsource](https://fontsour
 | `playfair-display-*.woff2` | Playfair Display | Claus Eggers Sørensen |
 | `cinzel-*.woff2` | Cinzel | Natanael Gama |
 | `great-vibes-*.woff2` | Great Vibes | Rob Leuschke (TypeSETit) |
+| `inter-*.woff2` | Inter | Rasmus Andersson |
+| `poppins-*.woff2` | Poppins | Indian Type Foundry |
 
 Latin subset only.

@@ -146,8 +146,11 @@ class OfflineSynth {
  * k = progress through the card (0..1); secs = card length.
  */
 // font / subFont: CSS font families for the title and the subtitle (the page
-// loads them first); fadeOut: seconds the card takes to fade off the scene
-export function drawTitleCard(g, w, h, k, secs, { title, subtitle, credit, style, font: titleFamily = "Georgia, 'Times New Roman', serif", titleWeight = 600, subFont = "Georgia, 'Times New Roman', serif", subStyle = 'italic', fadeOut: fadeSecs }) {
+// loads them first); subUpper / subTracking: a capitals subtitle, letter-spaced
+// (em); glow: the title's halo (1 = full, 0 = a soft shadow); color / subColor /
+// ruleColor ('r,g,b'); panel: 'glass' for frosted glass over the whole frame (it clears as the card fades); dim:
+// how dark the scene goes behind the card; fadeOut: seconds the card takes to fade off the scene
+export function drawTitleCard(g, w, h, k, secs, { title, subtitle, credit, style, font: titleFamily = "Georgia, 'Times New Roman', serif", titleWeight = 600, subFont = "Georgia, 'Times New Roman', serif", subStyle = 'italic', subUpper = false, subTracking = 0, glow = 1, color = '#ffe9c9', subColor = 'rgba(235, 220, 195, 0.88)', ruleColor = '255,200,130', panel = null, dim = 0.62, fadeOut: fadeSecs }) {
 	const t = k * secs
 	const fadeIn = clamp01((t - 0.15) / 0.8)                 // text in
 	// whole card out (scene revealed): 0.7 s, or an eased fade of fadeSecs
@@ -156,13 +159,16 @@ export function drawTitleCard(g, w, h, k, secs, { title, subtitle, credit, style
 	const a = Math.min(fadeIn, fadeOut)
 	if (style === '3d') return drawTitleOverlay3D(g, w, h, t, secs, { subtitle, credit, black })
 	// dim + vignette the scene behind the card
-	g.fillStyle = `rgba(0,0,0,${Math.max(black, 0.62 * fadeOut)})`
+	g.fillStyle = `rgba(0,0,0,${Math.max(black, dim * fadeOut)})`
 	g.fillRect(0, 0, w, h)
 	const vg = g.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.25, w / 2, h / 2, Math.max(w, h) * 0.75)
 	vg.addColorStop(0, 'rgba(0,0,0,0)')
 	vg.addColorStop(1, `rgba(0,0,0,${0.55 * fadeOut})`)
 	g.fillStyle = vg
 	g.fillRect(0, 0, w, h)
+	// frosted glass over the whole frame: the scene blurred, washed and grained;
+	// as the card fades the blur shrinks, so the picture comes into focus
+	if (panel === 'glass') glassScreen(g, w, h, Math.min(w, h), fadeOut)
 	if (a <= 0) return
 	const S = Math.min(w, h)
 	const cy = h * 0.47
@@ -178,21 +184,24 @@ export function drawTitleCard(g, w, h, k, secs, { title, subtitle, credit, style
 	const maxW = w * 0.86
 	const tw = g.measureText(title).width
 	if (tw > maxW) { fs *= maxW / tw; g.font = font(fs) }
-	g.shadowColor = 'rgba(255, 190, 110, 0.85)'
-	g.shadowBlur = S * 0.035
-	g.fillStyle = '#ffe9c9'
+	const subY = cy + fs * 0.32 + S * 0.075
+	g.shadowColor = glow ? 'rgba(255, 190, 110, 0.85)' : 'rgba(0, 0, 0, 0.35)'
+	g.shadowBlur = glow ? S * 0.035 * glow : S * 0.012
+	g.fillStyle = color
 	g.fillText(title, w / 2, cy + rise)
 	g.shadowBlur = 0
 	// rule
 	const ruleW = Math.min(maxW, Math.max(g.measureText(title).width * 0.6, S * 0.25)) * easeOut(fadeIn)
 	const lg = g.createLinearGradient(w / 2 - ruleW / 2, 0, w / 2 + ruleW / 2, 0)
-	lg.addColorStop(0, 'rgba(255,200,130,0)'); lg.addColorStop(0.5, 'rgba(255,200,130,0.9)'); lg.addColorStop(1, 'rgba(255,200,130,0)')
+	lg.addColorStop(0, `rgba(${ruleColor},0)`); lg.addColorStop(0.5, `rgba(${ruleColor},0.9)`); lg.addColorStop(1, `rgba(${ruleColor},0)`)
 	g.fillStyle = lg
 	g.fillRect(w / 2 - ruleW / 2, cy + fs * 0.32 + rise, ruleW, Math.max(1, S * 0.0025))
 	if (subtitle) {
-		g.font = `${subStyle} ${S * 0.042}px ${subFont}`
-		g.fillStyle = 'rgba(235, 220, 195, 0.88)'
-		g.fillText(subtitle, w / 2, cy + fs * 0.32 + S * 0.075 + rise)
+		g.font = `${subStyle} ${S * (subUpper ? 0.032 : 0.042)}px ${subFont}`
+		if (subTracking && 'letterSpacing' in g) g.letterSpacing = `${(S * 0.032 * subTracking).toFixed(2)}px`
+		g.fillStyle = subColor
+		g.fillText(subUpper ? subtitle.toUpperCase() : subtitle, w / 2, subY + rise)
+		if ('letterSpacing' in g) g.letterSpacing = '0px'
 	}
 	if (credit) {
 		g.font = `${S * 0.022}px system-ui, sans-serif`
@@ -241,6 +250,54 @@ function drawTitleOverlay3D(g, w, h, t, secs, { subtitle, credit, black }) {
  * credit lines stagger in, then everything fades to black.
  * credits: [{role, name}] — role may be '' for a plain line.
  */
+// Frosted glass over the whole canvas: blur what is already drawn (a canvas
+// blur filter, or scaling it down and back up where there is none), then a soft white
+// wash and a fine grain. k (1 → 0) sets the blur's size: it shrinks as the
+// card goes, and only the last part of it fades, so the scene focuses in.
+let grainTile = null, blurA = null, blurB = null
+function glassScreen(g, w, h, S, k) {
+	if (k <= 0.002) return
+	const alpha = Math.min(1, k * 4)
+	const mk = (c, cw, ch) => { c ||= document.createElement('canvas'); if (c.width !== cw || c.height !== ch) { c.width = cw; c.height = ch } return c }
+	// a real gaussian where the canvas has filters (smooth at every size), at
+	// half resolution; otherwise scale down and back up twice
+	const cw = Math.max(4, Math.round(w / 2)), ch = Math.max(4, Math.round(h / 2))
+	blurA = mk(blurA, cw, ch)
+	const ga = blurA.getContext('2d')
+	ga.imageSmoothingQuality = 'high'
+	if ('filter' in ga) {
+		ga.clearRect(0, 0, cw, ch)
+		ga.filter = `blur(${(S * 0.045 * k * cw / w).toFixed(2)}px)`
+		ga.drawImage(g.canvas, 0, 0, cw, ch)
+		ga.filter = 'none'
+	} else {
+		const div = 1.5 + 16.5 * k
+		const bw = Math.max(4, Math.round(w / div)), bh = Math.max(4, Math.round(h / div))
+		blurB = mk(blurB, bw, bh)
+		const gb = blurB.getContext('2d'); gb.imageSmoothingQuality = 'high'
+		ga.drawImage(g.canvas, 0, 0, cw, ch)
+		gb.drawImage(blurA, 0, 0, bw, bh)
+		ga.clearRect(0, 0, cw, ch); ga.drawImage(blurB, 0, 0, cw, ch)
+	}
+	g.save()
+	g.globalAlpha = alpha
+	g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high'
+	g.drawImage(blurA, 0, 0, w, h)
+	g.globalAlpha = k   // (the wash and the grain go with the card)
+	// a frosted wash, a touch lighter through the middle
+	const wash = g.createRadialGradient(w / 2, h * 0.47, S * 0.1, w / 2, h * 0.47, Math.max(w, h) * 0.7)
+	wash.addColorStop(0, 'rgba(255,255,255,0.10)'); wash.addColorStop(1, 'rgba(255,255,255,0.03)')
+	g.fillStyle = wash; g.fillRect(0, 0, w, h)
+	if (!grainTile) {
+		grainTile = document.createElement('canvas'); grainTile.width = grainTile.height = 128
+		const gg = grainTile.getContext('2d'), id = gg.createImageData(128, 128)
+		for (let i = 0; i < id.data.length; i += 4) { const v = Math.random() * 255; id.data[i] = id.data[i + 1] = id.data[i + 2] = v; id.data[i + 3] = 16 }
+		gg.putImageData(id, 0, 0)
+	}
+	g.fillStyle = g.createPattern(grainTile, 'repeat'); g.fillRect(0, 0, w, h)
+	g.restore()
+}
+
 export function drawOutroCard(g, w, h, k, secs, { title, subtitle, credits = [] }) {
 	const t = k * secs
 	const dim = clamp01(t / 1.2)                              // scene dims in
