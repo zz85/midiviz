@@ -47,14 +47,22 @@ export const SPOTS = {
   face: { fav: 0.5, label: 'Face, close', subj: 'head', az: 198, el: -4, dist: 75, fov: 28, size: 0, moves: ['dollyOut', 'zoomOut', 'orbit', 'still'] },
   profile: { fav: 0.5, label: 'Profile', subj: 'head', az: 105, el: 5, dist: 125, fov: 30, size: 0, moves: ['dollyOut', 'zoomOut', 'orbit', 'still'] },
   headside: { fav: 0.5, label: 'Profile, close', subj: 'head', az: 96, el: 8, dist: 72, fov: 30, size: 0, moves: ['zoomOut', 'dollyOut', 'orbit'] },
-  shoulder: { label: 'Over the shoulder', fav: 0.75, subj: 'hands', az: -23, el: 37, dist: 160, fov: 40, size: 1, moves: ['dollyIn', 'orbit', 'crane', 'zoomIn'] },
+  shoulder: { label: 'Over the shoulder', fav: 0.3, subj: 'hands', az: -23, el: 37, dist: 160, fov: 40, size: 1, moves: ['dollyIn', 'orbit', 'crane', 'zoomIn'] },
   hands: { label: 'Hands, bass side', subj: 'hands', az: -50, el: 34, dist: 90, fov: 40, size: 0, moves: ['orbit', 'dollyOut', 'still'] },
   treble: { label: 'Hands, treble side', subj: 'hands', az: 62, el: 30, dist: 100, fov: 38, size: 0, moves: ['orbit', 'dollyIn', 'still'] },
   bassKeys: { label: 'Along the keys, from the bass', subj: 'hands', az: -93, el: 9, dist: 125, fov: 30, size: 0, moves: ['zoomOut', 'still', 'dollyOut'], orbitMax: 6 },
   keys: { label: 'Along the keys', subj: 'hands', az: 93, el: 7, dist: 120, fov: 30, size: 0, moves: ['zoomIn', 'still', 'dollyOut', 'dollyZoom'], orbitMax: 6 },
-  above: { label: 'From above', subj: 'hands', az: -8, el: 72, dist: 150, fov: 38, size: 1, moves: ['orbit', 'dollyIn', 'zoomOut'] },
+  above: { label: 'From above', fav: 0.25, subj: 'hands', az: -8, el: 72, dist: 150, fov: 38, size: 1, moves: ['orbit', 'dollyIn', 'zoomOut'] },
   side: { label: 'Side, wide', subj: 'figure', az: 90, el: 3, dist: 395, fov: 30, size: 2, flat: true, moves: ['dollyIn', 'zoomOut', 'dollyZoom', 'still'] },
-  back: { label: 'Behind', fav: 1.5, subj: 'figure', az: 3, el: 15, dist: 240, fov: 38, size: 1, moves: ['dollyIn', 'orbit', 'crane'] },
+  // the opening's far shots (after concert films): side-on from the hall, she
+  // small in the light with the whole length of the piano; high from behind
+  // her left, the light on the floor around the piano
+  hallSide: { label: 'From the hall, side', fav: 0.3, subj: 'figure', az: 92, el: 4, dist: 950, fov: 16, size: 2, flat: true, moves: ['still', 'dollyIn', 'zoomIn'] },
+  highBehind: { label: 'High, from behind', fav: 0.3, subj: 'figure', az: -38, el: 26, dist: 620, fov: 28, size: 2, moves: ['dollyIn', 'still', 'orbit'] },
+  // low behind her left shoulder at keyboard height, looking along the keys
+  // to the treble with the lid rising behind them
+  lowShoulder: { label: 'Low, behind her shoulder', fav: 1.2, subj: 'figure', az: -42, el: 3, dist: 150, fov: 36, size: 1, moves: ['dollyIn', 'orbit', 'still'], orbitMax: 10 },
+  back: { label: 'Behind', fav: 0.5, subj: 'figure', az: 3, el: 15, dist: 240, fov: 38, size: 1, moves: ['dollyIn', 'orbit', 'crane'] },
   // two favourites: low from her right looking up at her, and high over the
   // keyboard from in front looking down at her (the page's lowRight / overKeys)
   lowRight: { label: 'Low, from her right', fav: 5, subj: 'head', az: 76, el: -9, dist: 245, fov: 38, size: 1, moves: ['orbit', 'dollyIn', 'zoomIn', 'still'], orbitMax: 14 },
@@ -234,7 +242,7 @@ const AXES = {
   where: s => { if (s.el > 65) return { back: 0.5, front: 0.5 }; const a = Math.abs(wrap(s.az)); return a < 70 ? 'back' : a > 110 ? 'front' : { back: 0.5, front: 0.5 } },
   size: s => ['close', 'medium', 'wide'][s.size],
 }
-const TARGETS = { what: { keys: 0.5, her: 0.38, piano: 0.12 }, where: { back: 0.5, front: 0.5 }, size: { close: 0.4, medium: 0.35, wide: 0.25 } }
+const TARGETS = { what: { keys: 0.5, her: 0.38, piano: 0.12 }, where: { back: 0.42, front: 0.58 }, size: { close: 0.26, medium: 0.49, wide: 0.25 } }
 const TALLY_TAU = 120
 export const screenAxes = s => Object.fromEntries(Object.entries(AXES).map(([k, f]) => [k, f(s)]))
 function tallyAdd(tally, s, d) {
@@ -301,12 +309,27 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
     const cand = starts.filter(s => s > t + 0.6 * L && s < t + 1.6 * L)
     if (cand.length) end = cand.reduce((b, s) => Math.abs(s - t - L) < Math.abs(b - t - L) ? s : b)
     end = Math.min(end, t + 16 / pace)
+    // the opening: three quick takes, far → medium → close, whatever the pace
+    // (about 7, 5 and 4.5 s, on a phrase start when one is near)
+    const opening = !sizes && duration > 45 && i < 3
+    if (opening) {
+      const want = t + [6.5, 4.5, 4][i] + 1.2 * h
+      const near = starts.filter(s => s > want - 1.5 && s < want + 1.5)
+      end = near.length ? near.reduce((b, s) => Math.abs(s - want) < Math.abs(b - want) ? s : b) : want
+    }
     const last = duration - end < Math.max(4, 0.5 * L)
     if (last) end = duration + 6
     const prev = shots[i - 1], prev2 = shots[i - 2]
     let name, move
-    // open behind her, pushing in (the page fades it in from black)
-    if (i === 0 && (!sizes || sizes.includes(1))) { name = 'back'; move = 'dollyIn' }
+    // open far (the page fades it in from black): side-on from the hall,
+    // across the hall, or high from behind her; then medium, then close
+    if (opening && i < 2) {
+      const pick = (opts, r) => { const tot = opts.reduce((a, o) => a + o[1], 0); let q = r * tot; return opts.find(o => (q -= o[1]) <= 0)?.[0] ?? opts[0][0] }
+      name = i === 0 ? pick([['hallSide', 1.2], ['establish', 1], ['highBehind', 0.8]], hs(i, 3))
+        : pick([['lowShoulder', 1.5], ['lowRight', 1], ['bust', 0.6]], hs(i, 3))
+      move = i === 0 ? (name === 'hallSide' && hs(i, 4) < 0.4 ? 'still' : 'dollyIn') : name === 'lowRight' ? 'orbit' : 'dollyIn'
+    }
+    else if (i === 0 && (!sizes || sizes.includes(1))) { name = 'back'; move = 'dollyIn' }
     else if (i === 0) { name = names.find(n => sizes.includes(SPOTS[n].size) && n !== 'establish'); move = SPOTS[name].moves[0] }
     else {
       // score every spot for this stretch of music
@@ -323,6 +346,7 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
         const ago = t - (lastUsed[n] ?? -1e9)
         if (ago < (s.rest ?? 60) / pace) x *= 0.3
         x *= s.fav ?? 1   // a favourite spot
+        if (s.size === 0) x *= 0.6   // (close-ups: about 30 % of the film)
         x /= 1 + 0.08 * (uses[n] || 0)
         // after the opening: what the screen time is short of (fingers / her /
         // piano, behind / in front, close / medium / wide)
@@ -339,7 +363,8 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
           if (prev2 && SUBJ_KIND[ps.subj] === kind && SUBJ_KIND[SPOTS[prev2.name].subj] === kind) x *= 0.35
           // after the opening (behind her): close, her fingers or her face, or
           // over her shoulder onto the keys
-          if (i === 1) x *= s.size === 0 || n === 'shoulder' ? 4 : 0.25
+          if (opening) x *= s.size === 0 && SUBJ_KIND[s.subj] !== 'piano' ? (s.subj === 'head' ? 0.5 : 6) : 0
+          else if (i === 1) x *= s.size === 0 || n === 'shoulder' ? 4 : 0.25
           // after a close-up: a medium shot (back to the keys), not the hall
           else if (ps.size === 0) x *= s.size === 1 ? 2.5 : s.size === 2 ? 0.8 : 0.15
           else if (s.size !== ps.size) x *= 1.4
