@@ -240,6 +240,7 @@
       ['head', 'Left hand', 'After SWAM’s Left Hand page'],
       ['harmonics', 'Harmonics', [['0', 'Off'], ['auto', 'Auto (very high notes)'], ['2', '2 (octave)'], ['3', '3 (12th)'], ['4', '4 (two octaves)']], '0', 'Every note as a harmonic: a finger stops the string and another touches it lightly at 1/n of its length, so it sounds the n-th partial (2: an octave above the stop, 3: a twelfth, 4: two octaves). Natural harmonics on an open string when the note allows. Auto: only the notes above the comfortable range of the top string. The waveguide models the touch; the other engines play the sounding pitch with the upper partials taken away'],
       ['head', 'Timbre'],
+      ['body', 'Body', [['iowa', 'Measured (Iowa)'], ['modal', 'Modal (synthetic)']], 'iowa', 'Physical models: the violin / viola / cello body estimated from the University of Iowa recordings (strings/test/fit_body.js: each recorded harmonic against the same harmonic of our string, pooled over every note, string and dynamic; a minimum-phase FIR), or the earlier synthetic body of 10 signature and 42 random modes with a fitted EQ. On held-out notes the measured body is 1.5–2 dB closer to the recordings per harmonic (median) and 5 dB closer at the 90th percentile'],
       ['sordino', 'Sordino', [['0', 'Off'], ['1', 'On (mute)']], '0', 'A mute on the bridge: the bridge hill and everything above ~2 kHz drop about 12 dB (all engines)'],
       ['rosin', 'Rosin', 0, 2, 0.05, 1, 'Physical models: grain of the rosin (stick-slip jitter, bow noise)'],
       ['resonance', 'Resonance', 0, 3, 0.05, 1, 'Physical models: how much the other strings ring in sympathy through the bridge'],
@@ -270,7 +271,7 @@
         tremolo: opt.tremolo, tremoloMode: opt.tremoloMode, tremoloMin: +opt.tremoloMin, harmonics: opt.harmonics === 'auto' ? 'auto' : +opt.harmonics }
       const changed = Object.keys(st).some(k => style[k] !== st[k]) || state.useExpr !== (opt.expr === 'auto')
       Object.assign(style, st); state.useExpr = opt.expr === 'auto'
-      lab.setParams({ bowPress: opt.bowPress === 'on', rosin: +opt.rosin, resonance: +opt.resonance })
+      lab.setParams({ bowPress: opt.bowPress === 'on', rosin: +opt.rosin, resonance: +opt.resonance, body: opt.body })
       lab.setSordino(opt.sordino === '1')
       if (re && changed) rebuild()
     }

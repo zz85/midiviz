@@ -58,7 +58,7 @@ export class Lab {
     this.setSordino(false)
     this.pre = ctx.createGain()
     this.pre.connect(this.mute[0]).connect(this.mute[1]).connect(this.bus)
-    this.params = { bowPress: true, rosin: 1, resonance: 1 }
+    this.params = { bowPress: true, rosin: 1, resonance: 1, body: 'iowa' }
     this.liveCtl = { expr: null, vib: null, bend: 0 }
     this.bus.connect(this.master)
     this.master.connect(this.limiter).connect(ctx.destination)
@@ -90,7 +90,7 @@ export class Lab {
     this.mute[0].gain.setTargetAtTime(on ? -12 : 0, t, 0.02)
     this.mute[1].gain.setTargetAtTime(on ? 2.5 : 0, t, 0.02)
   }
-  /** Physical-model parameters: { bowPress, rosin, resonance } (bowed.js ViolinSynth.setParams). */
+  /** Physical-model parameters: { bowPress, rosin, resonance, body: 'iowa' | 'modal' } (bowed.js ViolinSynth.setParams). */
   setParams(p) { Object.assign(this.params, p); for (const e of Object.values(this.engines)) e.setParams?.(this.params) }
   /** Live controllers: expr (CC11 / CC2, 0…1), vib (CC1 vibrato depth, 0…1), bend (cents). */
   setLive(c) { Object.assign(this.liveCtl, c); for (const e of Object.values(this.engines)) e.liveControl?.(this.liveCtl) }

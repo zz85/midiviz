@@ -6,6 +6,7 @@ import { line, melody } from '../exercises.js'
 import { renderPerformance, channel } from '../sound/performance.js'
 import { ViolinSynth, CurveSource, Body, renderCurves, midiHz, NCH, CH, FRAME_RATE } from '../sound/bowed.js'
 import { pitch, cents, spectrumDb, rms, fft } from './audio-util.js'
+import { ConvBody } from '../sound/body.js'
 
 const SR = 48000
 const finger = (notes, instrument = 'violin') => { const n = notes.map(x => ({ ...x })); fingerLine(n, { instrument }); return n }
@@ -13,8 +14,9 @@ const finger = (notes, instrument = 'violin') => { const n = notes.map(x => ({ .
 /** Render with a tap on the bridge force before the body (to judge the string itself). */
 function renderRaw(perf, { instrument = 'violin', model = 'waveguide', secs } = {}) {
   const cap = []
-  const orig = Body.prototype.process
+  const orig = Body.prototype.process, origC = ConvBody.prototype.process
   Body.prototype.process = function (x, L, R, n) { cap.push(Float32Array.from(x.subarray(0, n))); return orig.call(this, x, L, R, n) }
+  ConvBody.prototype.process = function (x, L, R, n) { cap.push(Float32Array.from(x.subarray(0, n))); return origC.call(this, x, L, R, n) }
   try {
     const syn = new ViolinSynth(SR, { instrument, model }), src = new CurveSource(perf)
     const N = Math.round((secs ?? perf.frames / perf.frameRate) * SR), L = new Float32Array(N), R = new Float32Array(N)
@@ -23,7 +25,7 @@ function renderRaw(perf, { instrument = 'violin', model = 'waveguide', secs } = 
     const raw = new Float32Array(cap.length * 128)
     cap.forEach((b, i) => raw.set(b, i * 128))
     return { L, R, raw }
-  } finally { Body.prototype.process = orig }
+  } finally { Body.prototype.process = orig; ConvBody.prototype.process = origC }
 }
 
 test('waveguide: sustained notes sound at pitch in Helmholtz motion over the range (p, mf, f)', () => {
@@ -323,24 +325,26 @@ test('waveguide oversampling: the stick-slip partials above Nyquist no longer fo
 })
 
 test('interactive bow pressure: kicks double slipping back to Helmholtz motion (more notes in Helmholtz than fixed force)', () => {
-  // the notes that fall into double slipping at fixed force on the sweep
-  const cases = [['violin', 60, 0.75], ['violin', 66, 0.75], ['viola', 53, 0.75], ['viola', 59, 0.75], ['viola', 60, 0.75], ['cello', 48, 0.75], ['cello', 62, 0.3], ['cello', 69, 0.3]]
+  // a sweep: every second semitone over 40, three dynamics, three instruments
+  const cases = []
+  for (const [instrument, lo] of [['violin', 55], ['viola', 48], ['cello', 36]]) for (const vel of [0.3, 0.75, 1]) for (let m = lo; m <= lo + 40; m += 2) cases.push([instrument, m, vel])
   const helm = (instrument, m, vel, bowPress) => {
     const notes = finger([{ pitch: m, on: 0.1, off: 1.0, velocity: vel }], instrument)
     const perf = renderPerformance(notes, { instrument, style: { vibrato: 0, timing: 0, intonation: 0, variance: 0 } })
-    const cap = [], orig = Body.prototype.process
+    const cap = [], orig = Body.prototype.process, origC = ConvBody.prototype.process
     Body.prototype.process = function (x, L, R, n) { cap.push(Float32Array.from(x.subarray(0, n))); return orig.call(this, x, L, R, n) }
+    ConvBody.prototype.process = function (x, L, R, n) { cap.push(Float32Array.from(x.subarray(0, n))); return origC.call(this, x, L, R, n) }
     try {
       // at 1× (no oversampling), where these notes were found; oversampled they mostly stay in Helmholtz motion anyway
       const syn = new ViolinSynth(SR, { instrument, bowPress, oversample: 1 }), src = new CurveSource(perf), L = new Float32Array(128), R = new Float32Array(128)
       let t = 0; for (let i = 0; i < 0.8 * SR; i += 128) t = syn.process(src, t, 1 / SR, L, R, 128)
-    } finally { Body.prototype.process = orig }
+    } finally { Body.prototype.process = orig; ConvBody.prototype.process = origC }
     const raw = new Float32Array(cap.length * 128); cap.forEach((b, i) => raw.set(b, i * 128))
     const f = midiHz(m), h = spectrumDb(raw.subarray(0.5 * SR, 0.5 * SR + 8192), SR, [f / 2, f, 2 * f, 3 * f])
     return h[1] - Math.max(h[2], h[3]) >= 1 && h[0] < h[1] - 15
   }
   const fixed = cases.filter(c => helm(...c, false)).length, inter = cases.filter(c => helm(...c, true)).length
-  assert.ok(inter >= fixed + 4, `Helmholtz on ${inter}/${cases.length} with the feedback, ${fixed}/${cases.length} without`)
+  assert.ok(inter >= fixed + 6 && inter >= 0.95 * cases.length, `Helmholtz on ${inter}/${cases.length} with the feedback, ${fixed}/${cases.length} without`)
 })
 
 test('expression lane: CC7 hairpins move bow speed and force together; flat velocities take their dynamic from it', async () => {
@@ -418,9 +422,39 @@ test('tremolo (SWAM slow / fast / sync): the bow turns at the rate, pitch holds,
     const H = 96, env = []; for (let i = 0.8 * SR; i < 1.8 * SR - H; i += H) env.push(rms(L.subarray(i, i + H)))
     const m = env.reduce((a, b) => a + b, 0) / env.length, N = 512, re = new Float64Array(N), im = new Float64Array(N)
     env.forEach((x, i) => { if (i < N) re[i] = x - m }); fft(re, im)
-    let bk = 1, bv = 0; for (let k = 2; k < N / 2; k++) { const a = Math.hypot(re[k], im[k]); if (a > bv) { bv = a; bk = k } }
-    assert.ok(Math.abs(bk * 500 / N - r) < 1.2, `${tremolo}: the loudness pulses at ${(bk * 500 / N).toFixed(1)} Hz`)
-    const p = pitch(L.subarray(1.2 * SR, 1.25 * SR), SR, { fmin: 400, fmax: 480 })
-    assert.ok(Math.abs(cents(p.f0, 440)) < 10, `${tremolo}: pitch ${cents(p.f0, 440).toFixed(1)} cents`)
+    // a line at the tremolo rate, well above the envelope's other fluctuations
+    const mag = []; for (let k = 2; k < N / 2; k++) mag.push(Math.hypot(re[k], im[k]))
+    const near = Math.max(...mag.filter((_, j) => Math.abs((j + 2) * 500 / N - r) < 1.5))
+    const med = [...mag].sort((a, b) => a - b)[mag.length >> 1]
+    assert.ok(near > 8 * med, `${tremolo}: the loudness pulses at ${r} Hz (${(near / med).toFixed(1)}× the median envelope line)`)
+    // the string's pitch, in the bridge force (after the body, the 410 Hz resonance rings at every
+    // bow turn and pulls a short-window pitch estimate flat): mean over 50 ms windows
+    const { raw } = renderRaw(perf, { secs: 2 })
+    const cs = []; for (let t0 = 0.8; t0 < 1.8; t0 += 0.05) cs.push(cents(pitch(raw.subarray(t0 * SR, (t0 + 0.05) * SR), SR, { fmin: 400, fmax: 480 }).f0, 440))
+    const at = cs.reduce((a, b) => a + b, 0) / cs.length
+    assert.ok(Math.abs(at) < 10, `${tremolo}: pitch ${at.toFixed(1)} cents`)
   }
+})
+
+test('measured body (Iowa): beats the modal body on held-out notes, and the FIR has the fitted response', async () => {
+  const { BODY_IOWA } = await import('../sound/body-iowa.js')
+  const { curveDb } = await import('../sound/body.js')
+  const { fft } = await import('./audio-util.js')
+  for (const inst of ['violin', 'viola', 'cello']) for (const model of ['waveguide', 'source']) {
+    const st = BODY_IOWA[inst][model].stats
+    assert.ok(st.heldOutMad < st.modalMad - 1 && st.heldOutP90 < st.modalP90 - 3, `${inst} ${model}: held-out ${st.heldOutMad} / ${st.heldOutP90} dB vs modal ${st.modalMad} / ${st.modalP90}`)
+  }
+  // white noise through the convolver: its spectrum follows the curve within 1.5 dB (1/3-octave bands, 300 Hz – 8 kHz)
+  const spec = BODY_IOWA.violin.waveguide, cb = new ConvBody(SR, spec), N = 1 << 17
+  const x = new Float32Array(N); let a = 12345; for (let i = 0; i < N; i++) { a = (a * 1103515245 + 12345) >>> 0; x[i] = a / 2 ** 32 - 0.5 }
+  const L = new Float32Array(N), R = new Float32Array(N); for (let i = 0; i < N; i += 128) cb.process(x.subarray(i, i + 128), L.subarray(i, i + 128), R.subarray(i, i + 128), 128)
+  const re = Float64Array.from(L), im = new Float64Array(N); fft(re, im)
+  const xr = Float64Array.from(x), xi = new Float64Array(N); fft(xr, xi)
+  let worst = 0
+  for (let f = 300; f < 8000; f *= 2 ** (1 / 3)) {
+    let py = 0, px = 0, want = 0, n = 0
+    for (let k = Math.round(f / 2 ** (1 / 6) * N / SR); k < Math.round(f * 2 ** (1 / 6) * N / SR); k++) { py += re[k] ** 2 + im[k] ** 2; px += xr[k] ** 2 + xi[k] ** 2; want += 10 ** ((curveDb(spec, spec.dB[0], k * SR / N) + spec.gainDb) / 10); n++ }
+    worst = Math.max(worst, Math.abs(10 * Math.log10(py / px) - 10 * Math.log10(want / n)))
+  }
+  assert.ok(worst < 1.5, `FIR vs curve: worst third-octave ${worst.toFixed(2)} dB`)
 })

@@ -38,6 +38,8 @@
 // left-hand finger impact (0…1, a one-frame impulse).
 
 import { TONE, LEVEL } from './tone.js'
+import { ConvBody } from './body.js'
+import { BODY_IOWA } from './body-iowa.js'
 
 export const FRAME_RATE = 250
 export const CH = { f0: 0, vel: 1, force: 2, beta: 3, damp: 4, tap: 5, harm: 6 }
@@ -448,9 +450,9 @@ export class Body {
  * at(t, out) → fills out[string * NCH + channel] for time t (s).
  */
 export class ViolinSynth {
-  constructor(sr, { instrument = 'violin', model = 'waveguide', tone = null, bowPress = true, rosin = 1, resonance = 1, oversample = 3 } = {}) {
+  constructor(sr, { instrument = 'violin', model = 'waveguide', tone = null, bowPress = true, rosin = 1, resonance = 1, body = 'iowa', oversample = 3 } = {}) {
     this.sr = sr
-    this.opts = { bowPress, rosin, resonance }
+    this.opts = { bowPress, rosin, resonance, body }
     this.oversample = oversample
     this.toneBands = tone
     this.block = 16                       // control interpolation step (samples)
@@ -475,10 +477,7 @@ export class ViolinSynth {
     // sympathetic open strings for the source model
     this.symp = model === 'source' ? I.open.map((open, s) => new WaveguideString(this.sr, { open, Z: I.Z[s], t60: I.t60[s] * 1.3 })) : null
     if (this.symp) for (const st of this.symp) st.setup(st.openHz, 0.1, 0)
-    this.body = new Body(this.sr, I.body, instrument.length * 31 + 7)
-    this.eq = new EQ(this.sr, this.toneBands ?? TONE[instrument]?.[model] ?? TONE.violin[model] ?? [])
-    // voicing: per-pitch gain that evens out the body's peaks and dips (tone.js)
-    this.voicing = this.toneBands ? null : LEVEL[instrument]?.[model] ?? null
+    this.makeBody()
     this.sgain = new Float32Array(4).fill(1)
     // output scale per model (so engines A/B at similar loudness)
     this.scale = model === 'source' ? 1.35 : 0.16
@@ -487,8 +486,32 @@ export class ViolinSynth {
   }
   /** bowPress (interactive bow pressure, waveguide), rosin (× grain / bow noise), resonance (× sympathetic coupling). */
   setParams(p) {
+    const was = this.opts.body
     Object.assign(this.opts, p)
     for (const st of this.strings) { st.bowPress = !!this.opts.bowPress; st.rosin = this.opts.rosin }
+    if (this.body && p.body != null && p.body !== was) this.makeBody()
+  }
+  /**
+   * body: 'iowa' — the response estimated from the Iowa recordings (body.js,
+   * body-iowa.js; it replaces the modal body, the tone EQ and the voicing,
+   * since the fit covers all three); 'modal' — 10 signature + 42 random modes,
+   * the fitted EQ and voicing (tone.js); or a spec object (fit_body.js).
+   */
+  makeBody() {
+    const { instrument, model } = this, I = this.spec, b = this.opts.body
+    const spec = typeof b === 'object' && b ? b : b === 'iowa' ? BODY_IOWA[instrument]?.[model] : null
+    this.bodyKind = spec ? 'iowa' : 'modal'
+    if (spec) {
+      this.body = new ConvBody(this.sr, spec)
+      this.eq = new EQ(this.sr, [])
+      this.voicing = null
+    } else {
+      this.body = new Body(this.sr, I.body, instrument.length * 31 + 7)
+      this.eq = new EQ(this.sr, this.toneBands ?? TONE[instrument]?.[model] ?? TONE.violin[model] ?? [])
+      // voicing: per-pitch gain that evens out the body's peaks and dips (tone.js)
+      this.voicing = this.toneBands ? null : LEVEL[instrument]?.[model] ?? null
+    }
+    this.sgain?.fill(1)
   }
   reset() { for (const s of this.strings) s.reset(); if (this.symp) for (const s of this.symp) s.reset(); this.body.reset(); this.eq.reset() }
 

@@ -98,3 +98,31 @@ SWAM's player only gives notes, velocity and one continuous Expression; the plug
 | Live: CC11, CC1, pitch bend | MIDI in: CC11 / CC2 drive the bow's dynamic (velocity then only shapes the attack), CC1 sets the vibrato depth, pitch bend ±2 semitones |
 
 Not taken over: SWAM's Gesture Mode "Bowing" (bow direction from a controller), the manual tremolo / bow-change keyswitches, alternate fingering (the #033 fingering styles cover it), and the measured body, which [research/05](research/05_commercial_violins.md) ranks first.
+
+## Measured body (from the Iowa recordings)
+
+The physical models used a synthetic body: 10 signature modes plus 42 random ones, then a 13-band EQ fitted to VSCO. [Research 05](research/05_commercial_violins.md) ranks a measured body as the largest gap. `node strings/test/fit_body.js` (6 minutes, needs ffmpeg and the Iowa banks) now estimates one per instrument and model:
+
+- Our string plays every Iowa note on the same string at the same dynamic. Each recorded harmonic is compared with the same harmonic of our bridge force (before any body), which gives `r(n, k) = g(n) + s(dyn)·log2 k + B(k·f0)`. That is a per-note level, a brightness difference per dynamic layer (mean zero), and the body response B.
+- Chromatic notes on four strings place harmonics everywhere from the lowest open string up to 12 kHz: 4,500–7,200 harmonics per instrument. B comes from a robust kernel regression on a 1/48-octave grid (σ = 1/40 octave). Harmonics in a bow-position notch or below the noise are dropped, as are notes our string does not play in Helmholtz motion.
+- Because the fit is against our own string, B covers what the modal body, the EQ and the voicing did together. With the measured body those three are off.
+- The violin curve shows the expected landmarks without being told: the A0 air mode at 281 Hz, peaks at 410 and 547 Hz (CBR / B1+), and a bridge hill at 2.1 kHz.
+- 2-fold cross-validation (fit on even semitones, test on odd ones, and back). The figures are the per-harmonic residual after a per-note level, median / 90th percentile, in dB:
+
+| | measured | modal body + EQ |
+|---|---|---|
+| violin waveguide | 3.5 / 9.5 | 5.5 / 14.9 |
+| violin source | 3.1 / 8.1 | 4.4 / 12.2 |
+| viola waveguide | 3.5 / 9.6 | 5.1 / 14.2 |
+| viola source | 2.7 / 7.0 | 4.1 / 11.7 |
+| cello waveguide | 3.3 / 9.6 | 5.4 / 16.7 |
+| cello source | 2.4 / 6.4 | 4.5 / 13.4 |
+
+  What remains is mostly the difference between his bowing and our string's source spectrum, which no body can fix.
+- [sound/body.js](sound/body.js) turns the curve (`body-iowa.js`, 2 × 529 values per instrument and model) into a 4,096-tap minimum-phase FIR (cepstral method). It applies the FIR by uniformly partitioned FFT convolution (128-sample blocks, 2.7 ms latency), about the cost of the modal body, and real time in the worklet. The second ear gets ±1.5 dB of smooth seeded ripple above 800 Hz for stereo width.
+- Default on. **Body: Modal** in the Timbre panel brings the old body back. The waveguide was fitted 3× oversampled (the default).
+
+Limits:
+- One direction: the centre microphone at 5 feet in an anechoic room. There is no directivity and no player movement yet.
+- Below the lowest note (196 Hz on the violin) the curve is extrapolated, so the violin's own low air resonance is not measured.
+- It is the body of the Iowa instruments: a 1998 Tambovsky violin, and for the viola and cello whichever instruments those sessions used.
