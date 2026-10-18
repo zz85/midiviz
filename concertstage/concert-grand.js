@@ -741,6 +741,13 @@ export function buildGrandPiano({ bench = true, mirror = true } = {}) {
   // a grand's damper: a thin felt pad under a low wooden block (~1.8 cm in all)
   const damperFeltGeo = new THREE.BoxGeometry(1, 0.6, 4.2)
   const damperHeadGeo = roundedBox(1, 1.2, 4.6, 0.25, 2)
+  // a felt wedge (unit triangle, point down, along the string): the bass and
+  // the wound tenor dampers press wedges down between the strings, so each
+  // string sits in a V of felt; the plain treble strings get a flat pad
+  const damperWedgeGeo = (() => {
+    const sh = new THREE.Shape([new THREE.Vector2(-0.5, 0), new THREE.Vector2(0.5, 0), new THREE.Vector2(0, -1)])
+    const g = new THREE.ExtrudeGeometry(sh, { depth: 1, bevelEnabled: false }); g.translate(0, 0, -0.5); return g
+  })()
   const action = []
   for (const n of notes) {
     const midi = LOW + n.k
@@ -771,6 +778,18 @@ export function buildGrandPiano({ bench = true, mirror = true } = {}) {
       // action below (nothing sits above a grand's dampers but the lid)
       const wire = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 6, 6), mat.pins); wire.position.y = -3
       damper.add(f, h, wire)
+      if (n.wound) {
+        // wedges in the gaps between the unison's strings and on its outer
+        // sides, reaching down to about the strings' middle
+        const step = n.count > 1 ? Math.min(0.42, n.spacing / (n.count + 0.6)) : 2 * (n.r + 0.14)
+        const xs = []
+        for (let i = 0; i <= n.count; i++) xs.push((i - n.count / 2) * step)
+        for (const x of n.count > 1 ? xs : [-step / 2, step / 2]) {
+          const wdg = new THREE.Mesh(damperWedgeGeo, mat.damperFelt)
+          wdg.scale.set(step * 0.95, n.r * 1.15, 4.2); wdg.position.x = x
+          damper.add(wdg)
+        }
+      }
       damper.rotation.y = hammer.rotation.y
       dRestY = n.y + n.r
       damper.position.set(dx, dRestY, D.DAMPER_Z)
