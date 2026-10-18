@@ -124,7 +124,7 @@ export class DDSPEngine {
  * Loudness is mapped onto the checkpoint's range; f0 holds through silences.
  */
 export function ddspVoices(perf, { settings = { averageMaxLoudness: -48.6, meanLoudness: -68.5 }, gainDb = 0 } = {}) {
-  const { frames, data, loudness } = perf, W = 24
+  const { frames, data, loudness } = perf, K = data.length / frames / 4, W = 4 * K
   const v1 = { f0: new Float32Array(frames), ld: new Float32Array(frames).fill(-120) }
   const v2 = { f0: new Float32Array(frames), ld: new Float32Array(frames).fill(-120) }
   let has2 = false, last1 = 0, last2 = 0, s1 = -1
@@ -136,12 +136,12 @@ export function ddspVoices(perf, { settings = { averageMaxLoudness: -48.6, meanL
     // keep the same string on voice 1 while it is close to the loudest (no flapping)
     let a = order[0]
     if (s1 >= 0 && order.includes(s1) && loudness[s1][i] > loudness[a][i] - 6) a = s1
-    if (a != null) { s1 = a; last1 = data[i * W + a * 6]; v1.ld[i] = map(loudness[a][i]) }
-    v1.f0[i] = last1 || data[i * W + 2 * 6]
+    if (a != null) { s1 = a; last1 = data[i * W + a * K]; v1.ld[i] = map(loudness[a][i]) }
+    v1.f0[i] = last1 || data[i * W + 2 * K]
     // a second voice only for a string the bow is actually on (a double stop), not one ringing on
-    const bowed = s => data[i * W + s * 6 + 2] > 0.05 && Math.abs(data[i * W + s * 6 + 1]) > 0.02
+    const bowed = s => data[i * W + s * K + 2] > 0.05 && Math.abs(data[i * W + s * K + 1]) > 0.02
     const b = order.find(s => s !== a && bowed(s) && bowed(a) && loudness[s][i] > loudness[a][i] - 18)
-    if (b != null) { has2 = true; last2 = data[i * W + b * 6]; v2.ld[i] = map(loudness[b][i]) }
+    if (b != null) { has2 = true; last2 = data[i * W + b * K]; v2.ld[i] = map(loudness[b][i]) }
     v2.f0[i] = last2 || v1.f0[i]
   }
   return has2 ? [v1, v2] : [v1]

@@ -49,7 +49,70 @@ export const STYLE = {
   keepBow: false,    // keep alternating across rests (no retake to bowStart)
   bowLift: 'off',    // 'off': the bow leaves the string after a phrase (it rings); 'on': it stays and stops it
   crossMute: 2,      // slurred string crossing: stop the old string's ring when the interval is ≤ this many semitones (0 = never, Infinity = always)
+  // SWAM's Left Hand / Right Hand modes
+  harmonics: 0,      // 0 off; 2 / 3 / 4: every note a harmonic touching at 1/n of the string (sounding an octave, a 12th, two octaves above the stop); 'auto': only notes above the fingerboard's comfortable range
+  tremolo: 'off',    // 'off' | 'slow' | 'fast': bowed tremolo on every note long enough for it
+  tremoloMode: 'hz', // 'hz': fixed rate; 'sync': 16ths (slow) / 32nds (fast) of `tempo`; 'acc': sync, accelerating into it
+  tremoloMin: 8,     // strokes per second at least (sync modes double the rate until it is reached)
+  tempo: null,       // bpm, for the sync modes
 }
+
+/** Semitones from the stopped note up to the sounding harmonic n (touch at 1/n of the string). */
+export const HARMONIC_UP = { 2: 12, 3: 19, 4: 24 }
+
+/**
+ * Turn notes into harmonics (SWAM Harmonics 2 / 3 / 4): the written note is the
+ * sounding pitch, the finger stops HARMONIC_UP[n] lower and another touches the
+ * string at 1/n. A natural harmonic (the stop is the open string) is preferred,
+ * then the note's own string, then the highest string the stop fits on within
+ * an octave. Notes too low for it stay ordinary. Mutates and returns notes.
+ */
+export function planHarmonics(notes, open, mode) {
+  if (!mode || mode === 'off' || mode === '0') return notes
+  for (const n of notes) {
+    let ks
+    if (mode === 'auto') {
+      // only above the comfortable range of the top string, and long enough to speak
+      if (n.pitch <= open[3] + 19 || n.off - n.on < 0.25) continue
+      ks = [4, 3, 2]
+    } else ks = [+mode]
+    let best = null
+    for (const k of ks) {
+      const stop = n.pitch - HARMONIC_UP[k]
+      const fits = [0, 1, 2, 3].filter(s => stop >= open[s] && stop - open[s] <= 12)
+      if (!fits.length) continue
+      const s = fits.find(s => stop === open[s]) ?? (fits.includes(n.string) ? n.string : fits[fits.length - 1])
+      const c = { k, stop, s, natural: stop === open[s] }
+      if (!best || (c.natural && !best.natural)) best = c
+      if (best.natural) break
+    }
+    if (!best) continue
+    n.harm = best.k; n.stop = best.stop; n.string = best.s
+    n.finger = best.natural ? 0 : 1; n.base = Math.max(1, best.stop - open[best.s])
+    if (best.natural) { delete n.attackCents; delete n.attackSettle }
+  }
+  return notes
+}
+
+/** Tremolo rate (strokes / s) for the style, or 0. */
+export function tremoloRate(S) {
+  if (!S.tremolo || S.tremolo === 'off') return 0
+  const fast = S.tremolo === 'fast'
+  if (S.tremoloMode !== 'hz' && S.tempo > 0) {
+    let r = S.tempo / 60 * (fast ? 8 : 4)
+    while (r < (S.tremoloMin || 0)) r *= 2
+    while (r > 24) r /= 2
+    return r
+  }
+  return Math.max(fast ? 15 : 9, S.tremoloMode === 'hz' ? 0 : S.tremoloMin || 0)
+}
+/** Tremolo stroke phase (in strokes) τ s into a note; 'acc' starts at 55 % of the rate and reaches it in 0.35 s. */
+const tremPhase = (tau, r, acc) => {
+  if (!acc) return r * tau
+  const A = 0.35
+  return tau < A ? r * (0.55 * tau + 0.45 * tau * tau / (2 * A)) : r * (0.55 * A + 0.45 * A / 2 + (tau - A))
+}
+const TQ = Math.tanh(2.2)
 
 /**
  * Expression lane from MIDI controllers (SWAM's Expression, the player's one
@@ -71,6 +134,7 @@ const ccDyn = v => clamp(1 + 40 * Math.log10(Math.max(0.05, v)) / 19, 0.08, 1)
 
 // minimum bow force F_min ≈ FMIN·(Z/0.3)^ZEXP·v/β² (fitted on the waveguide)
 const FMIN = 0.02, ZEXP = 1.5
+const HARM_F = 0.6   // harmonics are bowed lighter (the touch takes energy; at full force they crack)
 const smooth5 = x => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * x * (x * (6 * x - 15) + 10))
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x))
 
@@ -86,7 +150,7 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
   const inst = INSTRUMENTS[instrument] || INSTRUMENTS.violin
   const R = rng(seed)
   const playable = notesIn.filter(n => n.string != null && !n.unplayable)
-  const notes = humanize(playable, S, seed + 101)
+  const notes = planHarmonics(humanize(playable, S, seed + 101), inst.open, S.harmonics)
   const motion = buildMotion(notes, { instrument, bowStart: S.bowStart < 0 ? -1 : 1, keepBow: !!S.keepBow })
   const strokes = motion.strokes
   const duration = notes.reduce((m, n) => Math.max(m, n.off), 0)
@@ -174,8 +238,13 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
   const force = [0, 1, 2, 3].map(() => new Float32Array(frames))
   const beta = [0, 1, 2, 3].map(() => new Float32Array(frames).fill(0.11 * S.contact))
   const amp = [0, 1, 2, 3].map(() => new Float32Array(frames))
+  const tremR = tremoloRate(S), tremAcc = S.tremoloMode === 'acc'
+  const trm = [0, 1, 2, 3].map(() => new Float32Array(frames).fill(1))
   for (const st of strokes) {
     const D = Math.max(0.04, st.t1 - st.t0)
+    // tremolo: notes long enough for two strokes at least
+    st.trem = tremR && D >= 2 / tremR ? tremR : 0
+    if (st.trem) for (const e of st.events) for (const n of e.notes) n.trem = { t0: st.t0, r: tremR, acc: tremAcc }
     const atk = st.short ? clamp(0.3 * D, 0.012, 0.03) : clamp(0.2 * D, 0.025, 0.07)
     const rel = st.short ? clamp(0.35 * D, 0.015, 0.05) : clamp(0.12 * D, 0.025, 0.06)
     const next = strokes[strokes.indexOf(st) + 1]
@@ -193,7 +262,7 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
         const dyn0 = clamp(dynN + ex0, 0.08, 1)
         const pg = phraseGain.get(n) ?? 1
         const nd = n.off - n.on
-        const semis = n.pitch - inst.open[s]
+        const semis = (n.harm ? n.stop : n.pitch) - inst.open[s]
         const b0 = (0.125 - 0.06 * dyn0) * S.contact * Math.pow(2, semis / 24)
         // a slow bow moves toward the bridge to hold the level (Helmholtz amplitude ∝ v/β)
         const bet0 = clamp(b0 * clamp(Math.pow(st.V / 0.35, 0.7), 0.4, 1.3) * (1 + (R() - 0.5) * 0.1), 0.03, 0.24)
@@ -223,13 +292,22 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
           if (xIn && t < a) w = smooth5((t - (a - xIn)) / xIn)
           if (xOut && t > b - xOut) w = Math.min(w, smooth5((b + xOut - t) / (2 * xOut)))
           if (t < a - xIn) w = 0
-          const v = st.dir * vmag
+          let v = st.dir * vmag
+          // tremolo: the bow turns every 1/r s (rounded square wave); the force
+          // follows the stroke's speed, not the turns, so each change bites
+          let vF = Math.abs(v)
+          if (st.trem && t >= st.t0 && t <= st.t1) {
+            const q = Math.tanh(2.2 * Math.sin(Math.PI * tremPhase(t - st.t0, st.trem, tremAcc))) / TQ
+            v *= 1.15 * q
+            trm[s][i] = Math.min(trm[s][i], 0.4 + 0.6 * Math.abs(q))
+          }
           // Schelleng: F ∝ v/β (geometric middle of the window), a bite on détaché attacks
           const bite = st.short ? 1.5 : 1.2
-          const Fk = (0.55 + 0.9 * dyn) * S.pressure * (1 + 0.05 * (n.bowVar ?? 0)) * Zs[s] * Math.sqrt(0.1 / bet) * (1 + (bite - 1) * Math.exp(-Math.max(0, t - st.t0) / 0.035))
-          let F = Math.max(Math.abs(v), 0.04 + 0.06 * dyn) * Fk
+          // harmonics are bowed lighter (HARM_F, measured on the waveguide); tremolo a little lighter
+          const Fk = (0.55 + 0.9 * dyn) * S.pressure * (n.harm ? HARM_F : 1) * (st.trem ? 0.85 : 1) * (1 + 0.05 * (n.bowVar ?? 0)) * Zs[s] * Math.sqrt(0.1 / bet) * (1 + (bite - 1) * Math.exp(-Math.max(0, t - st.t0) / 0.035))
+          let F = Math.max(vF, 0.04 + 0.06 * dyn) * Fk
           // stay above Schelleng's minimum (F_min ∝ Z² v / β², measured on the waveguide)
-          F = Math.max(F, FMIN * S.pressure * Math.pow(Zr[s], ZEXP) * Math.abs(v) / (bet * bet))
+          F = Math.max(F, FMIN * S.pressure * (n.harm ? HARM_F : 1) * Math.pow(Zr[s], ZEXP) * vF / (bet * bet))
           // between strokes the bow rests on the string (light force); in long rests it lifts
           if (t > st.t1) F = lifts ? 0.25 * smooth5(1 - (t - st.t1) / 0.05) : 0.12
           if (w <= 0) continue
@@ -246,6 +324,7 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
   const tap = [0, 1, 2, 3].map(() => new Float32Array(frames))
   const logf = [0, 1, 2, 3].map(s => new Float32Array(frames).fill(Math.log2(open[s])))
   const vibCents = [0, 1, 2, 3].map(() => new Float32Array(frames))
+  const harmC = [0, 1, 2, 3].map(() => new Float32Array(frames))
   for (let s = 0; s < 4; s++) {
     const list = byString[s]
     // unique onsets (a double stop never puts two notes on one string)
@@ -273,6 +352,7 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
         const x = (t - g0) / Math.max(1e-3, g1 - g0)
         const err = ac ? ac * (1 - smooth5((t - g1) / ast)) : 0
         logf[s][i] = fromLog + (target + err - fromLog) * smooth5(x)
+        harmC[s][i] = n.harm || 0
       }
       // the finger lifts after a stopped note with no follower: damp, then back to open
       if (n.finger && holdEnd === n.off + 0.12) {
@@ -292,7 +372,7 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
       if (n.finger && dur >= 0.22 && S.vibrato > 0) {
         const dyn = clamp(dynOf(n) + (hasE ? E[Math.min(frames - 1, Math.round(fr(n.on)))] : 0), 0.08, 1)
         const rate = S.vibratoRate * (1 + (R() - 0.5) * 0.08) + (dyn - 0.5) * 0.5
-        const depth = S.vibrato * (13 + 19 * dyn) * (dur > 1 ? 1.15 : 1) * (dur < 0.4 ? 0.7 : 1)
+        const depth = S.vibrato * (13 + 19 * dyn) * (n.harm ? 0.6 : 1) * (dur > 1 ? 1.15 : 1) * (dur < 0.4 ? 0.7 : 1)
         const delay = clamp(0.08 + 0.12 * Math.min(1, dur / 1.2), 0.06, 0.22)
         const ph0 = R() * 2 * Math.PI
         const end = Math.min(n.off, next && next.on - n.off < 0.2 ? next.on - 0.03 : n.off + 0.08)
@@ -345,7 +425,7 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
     for (let s = 0; s < 4; s++) {
       const q = o + s * NCH
       data[q] = f0[s][i]; data[q + 1] = vel[s][i]; data[q + 2] = force[s][i]
-      data[q + 3] = beta[s][i]; data[q + 4] = damp[s][i]; data[q + 5] = tap[s][i]
+      data[q + 3] = beta[s][i]; data[q + 4] = damp[s][i]; data[q + 5] = tap[s][i]; data[q + 6] = harmC[s][i]
     }
   }
 
@@ -358,12 +438,13 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
       const target = amp[s][i]
       const dk = 1 - 0.8 * damp[s][i]
       a = target >= a * ring * dk ? a + (target - a) * 0.6 : a * ring * dk * (force[s][i] > 0.05 && vel[s][i] === 0 ? 0.8 : 1)
-      L[i] = a > 1e-6 ? clamp(-60 + 20 * Math.log10(a), -120, -40) : -120
+      const at = a * trm[s][i]
+      L[i] = at > 1e-6 ? clamp(-60 + 20 * Math.log10(at), -120, -40) : -120
     }
     return L
   })
 
-  return { frameRate, frames, duration, data, loudness, strokes, notes, instrument, expression: hasE ? E : null, modes: { bowLift: S.bowLift } }
+  return { frameRate, frames, duration, data, loudness, strokes, notes, instrument, expression: hasE ? E : null, modes: { bowLift: S.bowLift, tremolo: tremR } }
 }
 
 /** Read one string's channel back as an array (tests, plots). */

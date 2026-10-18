@@ -40,8 +40,8 @@
 import { TONE, LEVEL } from './tone.js'
 
 export const FRAME_RATE = 250
-export const CH = { f0: 0, vel: 1, force: 2, beta: 3, damp: 4, tap: 5 }
-export const NCH = 6
+export const CH = { f0: 0, vel: 1, force: 2, beta: 3, damp: 4, tap: 5, harm: 6 }
+export const NCH = 7
 
 // Instruments: open strings (MIDI), string wave impedance Z (kg/s, from
 // tension and linear density: G gut/synthetic … E steel), ring time of the
@@ -142,6 +142,7 @@ const MU_S = 1.2, MU_D = 0.3, V0 = 0.3
 // interactive bow pressure: a kick of ±14 dB of force, decaying in 25 ms; tuned on
 // the Helmholtz sweep (/strings/README.md: 343 → 359 of 369 notes at the default pressure)
 const KF_MAX = Math.log(5)
+const TOUCH = 1.2                // harmonics: the touching finger's resistance relative to the string (2Z)
 const KICKS = 12                 // at most this many kicks per stroke
 const KICK_AFTER = 0.1, KICK_COOL = 0.12, SPP_A = 0.2   // s of bowing before the first kick, s between kicks, EMA of slips/period
 
@@ -155,6 +156,13 @@ export class WaveguideString {
     const maxN = sr / (this.openHz * 0.7) + 8
     this.bridge = new Delay(maxN)
     this.nut = new Delay(maxN)
+    // harmonics: the nut side split at a lightly touching finger (a lumped
+    // damper, after SWAM's Harmonics 2 / 3 / 4). tA: bow → touch, tC: touch →
+    // bow, tB: touch → finger or nut → touch. Modes with a node at the touch
+    // pass it untouched; the others lose energy there on every pass, so the
+    // string sounds its n-th partial
+    this.tA = new Delay(maxN); this.tB = new Delay(maxN); this.tC = new Delay(maxN)
+    this.harm = 0
     this.lpB = 0; this.lpN = 0
     this.slipping = false
     this.seed = (open * 7919) >>> 0
@@ -172,13 +180,21 @@ export class WaveguideString {
     this.kF = 0; this.slips = 0; this.acc = 0; this.spp = 1; this.bowAge = 0; this.cool = 0; this.kick = 1; this.kicks = 0; this.stick = 0
     this.rosin = 1         // × rosin grain (μs jitter)
   }
-  reset() { this.bridge.clear(); this.nut.clear(); this.lpB = this.lpN = 0; this.slipping = false; this.out = 0; this.kF = 0; this.spp = 1; this.bowAge = 0 }
+  reset() { this.bridge.clear(); this.nut.clear(); this.tA.clear(); this.tB.clear(); this.tC.clear(); this.harm = 0; this.lpB = this.lpN = 0; this.slipping = false; this.out = 0; this.kF = 0; this.spp = 1; this.bowAge = 0 }
   noise() { let s = this.seed; s ^= s << 13; s ^= s >>> 17; s ^= s << 5; this.seed = s >>> 0; return (this.seed / 4294967296) * 2 - 1 }
 
   /** Per control step: geometry and losses for the next samples. */
-  setup(f0, beta, damp) {
+  setup(f0, beta, damp, harm = 0) {
     const sr = this.sr
-    f0 = Math.max(this.openHz * 0.98, Math.min(f0 || this.openHz, sr / 12))
+    // harmonics: f0 is the sounding pitch; the string itself is stopped n times lower
+    const n = harm >= 1.5 ? Math.round(harm) : 0
+    const fs0 = n ? (f0 || this.openHz) / n : f0
+    if (n !== this.harm) {
+      // the waves move to the other path (or start fresh in it)
+      if (n) { this.tA.clear(); this.tB.clear(); this.tC.clear() } else this.nut.clear()
+      this.harm = n; this.lpN = 0
+    }
+    f0 = Math.max(this.openHz * 0.98, Math.min(fs0 || this.openHz, sr / 12))
     const N = sr / f0, w = 2 * Math.PI * f0 / sr
     const stopped = f0 > this.openHz * 1.01
     // bridge low-pass: duller for low strings, brighter up the string
@@ -194,6 +210,16 @@ export class WaveguideString {
     this.Lb = Lb
     this.Ln = Math.max(2.2, N - Lb - filt)
     this.N = N
+    if (n) {
+      // the touch is 1/n of the string from the finger: that segment's round
+      // trip is one period of the sounding pitch (filter delay included there)
+      const ws = w * n, Ps = N / n
+      this.LB = Math.max(2.2, Ps - onePoleDelay(aN, ws))
+      this.d1 = Math.max(2.2, (N - Lb - onePoleDelay(aB, ws) - Ps) / 2)
+      const r = TOUCH                      // touch resistance / (2Z)
+      this.rho = -r / (1 + r); this.tau = 1 / (1 + r)
+      this.N = Ps                          // slips are counted per sounding period
+    }
     this.kDecay = Math.exp(-1 / (0.025 * sr))
   }
 
@@ -203,9 +229,20 @@ export class WaveguideString {
     const xb = this.bridge.read(this.Lb)
     this.lpB = (1 - this.aB) * xb + this.aB * this.lpB
     const vBr = -this.gB * this.lpB + this.couple
-    const xn = this.nut.read(this.Ln)
-    this.lpN = (1 - this.aN) * xn + this.aN * this.lpN
-    const vNut = -this.gN * this.lpN
+    let vNut
+    if (this.harm) {
+      const a = this.tA.read(this.d1)
+      const xn = this.tB.read(this.LB)
+      this.lpN = (1 - this.aN) * xn + this.aN * this.lpN
+      const b = -this.gN * this.lpN
+      vNut = this.tC.read(this.d1)
+      this.tB.write(this.tau * a + this.rho * b)
+      this.tC.write(this.tau * b + this.rho * a)
+    } else {
+      const xn = this.nut.read(this.Ln)
+      this.lpN = (1 - this.aN) * xn + this.aN * this.lpN
+      vNut = -this.gN * this.lpN
+    }
     this.out = xb
 
     const vh = vBr + vNut
@@ -255,7 +292,7 @@ export class WaveguideString {
       }
     }
     if (tap) dv += tap
-    this.nut.write(vBr + dv)
+    if (this.harm) this.tA.write(vBr + dv); else this.nut.write(vBr + dv)
     this.bridge.write(vNut + dv)
     return xb
   }
@@ -274,7 +311,8 @@ export class SourceString {
   }
   reset() { this.env = this.atk = this.lp1 = this.lp2 = this.nz1 = this.nz2 = 0; this.out = 0 }
   noise() { let s = this.seed; s ^= s << 13; s ^= s >>> 17; s ^= s << 5; this.seed = s >>> 0; return (this.seed / 4294967296) * 2 - 1 }
-  setup(f0, beta, damp) {
+  setup(f0, beta, damp, harm = 0) {
+    this.harm = harm >= 1.5 ? Math.round(harm) : 0
     this.f0 = Math.max(20, f0 || this.openHz)
     const stopped = this.f0 > this.openHz * 1.01
     const t60 = Math.exp(Math.log(this.t60 * (stopped ? 0.6 : 1)) * (1 - damp) + Math.log(0.12) * damp)
@@ -302,7 +340,8 @@ export class SourceString {
     let saw = 2 * this.ph - 1, t = this.ph
     if (t < dt) { t /= dt; saw -= t + t - t * t - 1 } else if (t > 1 - dt) { t = (t - 1) / dt; saw -= t * t + t + t + 1 }
     // corner rounding: two one-pole low-passes, cutoff up with force and down with beta
-    const fc = Math.min(sr * 0.45, f * (4 + 26 * fr) * (0.1 / Math.max(0.05, this.beta)) ** 0.5 + 800 * fr)
+    // harmonics: the touch takes most of the upper partials away (a flute-like tone)
+    const fc = Math.min(sr * 0.45, (f * (4 + 26 * fr) * (0.1 / Math.max(0.05, this.beta)) ** 0.5 + 800 * fr) * (this.harm ? 0.3 : 1))
     const a = Math.exp(-2 * Math.PI * fc / sr)
     this.lp1 = (1 - a) * saw + a * this.lp1
     this.lp2 = (1 - a) * this.lp1 + a * this.lp2
@@ -312,7 +351,7 @@ export class SourceString {
     this.nz2 += (this.nz1 - this.nz2) * 0.05
     const hp = this.nz1 - this.nz2
     const gate = this.ph < this.beta * 1.4 ? 1 : 0.25
-    const nAmp = av * this.rosin * (0.05 + 0.6 * this.atk + 0.15 * Math.max(0, 0.4 - fr)) * gate
+    const nAmp = av * this.rosin * (this.harm ? 0.6 : 1) * (0.05 + 0.6 * this.atk + 0.15 * Math.max(0, 0.4 - fr)) * gate
     const y = this.env * (this.lp2 * 0.065) + nAmp * hp * 0.5 + (tap ? tap * 0.3 * n : 0)
     this.out = y
     return y
@@ -433,7 +472,7 @@ export class ViolinSynth {
         const o = s * NCH
         // geometry from the average over the step (pitch glides stay smooth at 3 kHz)
         const f = 0.5 * (cur[o] + nxt[o])
-        strs[s].setup(f, 0.5 * (cur[o + 3] + nxt[o + 3]), 0.5 * (cur[o + 4] + nxt[o + 4]))
+        strs[s].setup(f, 0.5 * (cur[o + 3] + nxt[o + 3]), 0.5 * (cur[o + 4] + nxt[o + 4]), nxt[o + 6])
         const V = this.voicing
         if (V) {
           const p = Math.max(0, Math.min(V.dB.length - 1.001, 69 + 12 * Math.log2(f / 440) - V.from)), j = p | 0
@@ -483,6 +522,8 @@ export class CurveSource {
     const p = Math.max(0, Math.min(c.frames - 1.001, t * c.frameRate)), i = p | 0, f = p - i
     const d = c.data, W = 4 * NCH, a = i * W, b = a + W
     for (let j = 0; j < W; j++) out[j] = d[a + j] + (d[b + j] - d[a + j]) * f
+    // the harmonic number steps, it is not interpolated
+    for (let s = 0; s < 4; s++) out[s * NCH + 6] = d[(f < 0.5 ? a : b) + s * NCH + 6]
     // taps fire once, when their frame is reached
     for (let s = 0; s < 4; s++) out[s * NCH + 5] = 0
     if (i !== this.lastTapFrame) {

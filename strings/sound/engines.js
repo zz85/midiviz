@@ -409,7 +409,18 @@ class SampleEngine extends BufferEngine {
         env.gain.setValueAtTime(level, off)
         env.gain.setTargetAtTime(0, off, 0.08)
       }
-      src.connect(env).connect(dest)
+      // bowed tremolo (performance.js): a dip at every bow turn; harmonics: the
+      // touch takes the upper partials away (no recorded harmonics in VSCO)
+      let head = src
+      if (n.harm) { const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = Math.min(16000, 440 * Math.pow(2, (n.pitch - 69) / 12) * 2.5); lp.Q.value = 0.5; src.connect(lp); head = lp }
+      if (n.trem && off != null) {
+        const tg = ctx.createGain(), dur = off - on, N = Math.max(2, Math.ceil(dur * 200))
+        const curve = new Float32Array(N)
+        for (let k = 0; k < N; k++) { const q = Math.sin(Math.PI * n.trem.r * (on + k * dur / (N - 1) - n.trem.t0)); curve[k] = 0.35 + 0.65 * Math.abs(Math.tanh(2.2 * q) / Math.tanh(2.2)) }
+        tg.gain.setValueCurveAtTime(curve, on, dur)
+        head.connect(tg); head = tg
+      }
+      head.connect(env).connect(dest)
       src.start(on, onset + [0, 0.006, 0.003][(n.rr ?? 0) % 3])
       if (off != null) src.stop(off + 0.6)
       nodes.push({ src, env, level, live })

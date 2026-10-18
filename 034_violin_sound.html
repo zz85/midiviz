@@ -234,6 +234,11 @@
       ['keepBow', 'After rests', [['0', 'Retake'], ['1', 'Keep alternating']], '0', 'Retake: a new phrase after a rest starts on the starting bow again. Keep alternating: SWAM’s Keep Bow Direction'],
       ['bowLift', 'Bow lift', [['off', 'Off string (rings)'], ['on', 'On string (stops)']], 'off', 'At the end of a phrase the bow leaves the string and lets it ring, or stays on it and stops it'],
       ['crossMute', 'Crossings', [['0', 'Rings'], ['1', 'Mute ≤ 1 semitone'], ['2', 'Mute ≤ 2 semitones'], ['99', 'Mute always']], '2', 'SWAM’s Mono CrossString Muting: in a slur that crosses to another string by a small interval, the old string stops so the two notes do not ring together'],
+      ['tremolo', 'Tremolo', [['off', 'Off'], ['slow', 'Slow'], ['fast', 'Fast']], 'off', 'SWAM’s Tremolo: every note long enough is bowed with fast short strokes (each turn bites); short notes stay ordinary'],
+      ['tremoloMode', 'Trem. mode', [['hz', 'Free (9 / 15 Hz)'], ['sync', 'Sync (16ths / 32nds)'], ['acc', 'Sync, accelerating']], 'hz', 'Free: a fixed rate. Sync: 16ths (slow) or 32nds (fast) of the piece’s tempo, doubled until at least the minimum. Accelerating: starts at about half speed and reaches it in 0.35 s'],
+      ['tremoloMin', 'Trem. min', 4, 16, 1, 8, 'Sync modes: strokes per second at least'],
+      ['head', 'Left hand', 'After SWAM’s Left Hand page'],
+      ['harmonics', 'Harmonics', [['0', 'Off'], ['auto', 'Auto (very high notes)'], ['2', '2 (octave)'], ['3', '3 (12th)'], ['4', '4 (two octaves)']], '0', 'Every note as a harmonic: a finger stops the string and another touches it lightly at 1/n of its length, so it sounds the n-th partial (2: an octave above the stop, 3: a twelfth, 4: two octaves). Natural harmonics on an open string when the note allows. Auto: only the notes above the comfortable range of the top string. The waveguide models the touch; the other engines play the sounding pitch with the upper partials taken away'],
       ['head', 'Timbre'],
       ['sordino', 'Sordino', [['0', 'Off'], ['1', 'On (mute)']], '0', 'A mute on the bridge: the bridge hill and everything above ~2 kHz drop about 12 dB (all engines)'],
       ['rosin', 'Rosin', 0, 2, 0.05, 1, 'Physical models: grain of the rosin (stick-slip jitter, bow noise)'],
@@ -256,12 +261,13 @@
         inp.value = qs.get(k) ?? def; opt[k] = inp.value; OPTDEF[k] = String(def)
         const show = () => { v.textContent = (+inp.value).toFixed(2) }; show()
         inp.oninput = () => { show(); opt[k] = inp.value; applyOpts(false) }
-        inp.onchange = () => saveUrl()
+        inp.onchange = () => { if (k === 'tremoloMin') applyOpts(true); saveUrl() }
       }
       $('sliders').appendChild(r)
     }
     function applyOpts(re) {
-      const st = { bowStart: +opt.bowStart, keepBow: opt.keepBow === '1', bowLift: opt.bowLift, crossMute: +opt.crossMute }
+      const st = { bowStart: +opt.bowStart, keepBow: opt.keepBow === '1', bowLift: opt.bowLift, crossMute: +opt.crossMute,
+        tremolo: opt.tremolo, tremoloMode: opt.tremoloMode, tremoloMin: +opt.tremoloMin, harmonics: opt.harmonics === 'auto' ? 'auto' : +opt.harmonics }
       const changed = Object.keys(st).some(k => style[k] !== st[k]) || state.useExpr !== (opt.expr === 'auto')
       Object.assign(style, st); state.useExpr = opt.expr === 'auto'
       lab.setParams({ bowPress: opt.bowPress === 'on', rosin: +opt.rosin, resonance: +opt.resonance })
@@ -374,6 +380,7 @@
       if (was) lab.pause()
       state.speed = +$('speed').value
       const ex = state.useExpr ? state.expr : null
+      style.tempo = (state.tempo || 100) * state.speed
       state.perf = renderPerformance(scaleNotes(state.notes, state.speed), { instrument: $('instrument').value, style, seed: 7 + 1000 * (take - 1), expression: scaleExpression(ex, state.speed) })
       $('exprV').textContent = state.expr ? `CC${state.expr.cc}` : 'none in file'
       $('exprV').title = state.expr ? `${state.expr.points.length} controller events in this track` : 'This piece has no moving CC11 / CC7 / CC2: the dynamics come from the note velocities'
@@ -387,12 +394,13 @@
     function loadDemo(k) {
       const d = DEMOS.find(x => x[0] === k); if (!d) return
       $('song').value = ''; $('trackRow').hidden = true
+      state.tempo = 60 / d[3]
       loadPiece(parseTyped(d[2], d[3]), { title: d[1], source: { demo: k }, fit: false })
     }
     $('demo').onchange = () => { loadDemo($('demo').value); saveUrl(); play() }
     $('typedGo').onclick = () => {
       try {
-        const notes = parseTyped($('typed').value)
+        const notes = parseTyped($('typed').value); state.tempo = 150
         if (!notes.length) throw new Error('no notes')
         $('demo').value = ''; $('song').value = ''; $('trackRow').hidden = true
         loadPiece(notes, { title: 'Typed notes', source: { typed: $('typed').value }, fit: false }); saveUrl(); play()
@@ -403,6 +411,7 @@
     let midiTracks = null
     function loadMidiBuffer(buf, title, source, trackIndex = null) {
       const midi = new Midi(buf)
+      state.tempo = midi.header.tempos?.[0]?.bpm || 100
       midiTracks = midi.tracks.filter(t => t.notes.length && t.channel !== 9).map((t, i) => {
         const notes = t.notes.map(n => ({ pitch: n.midi, on: n.time, off: n.time + Math.max(0.04, n.duration), velocity: n.velocity }))
         const mean = notes.reduce((a, n) => a + n.pitch, 0) / notes.length
@@ -648,7 +657,7 @@
     lab.use(state.engine)
     if (qs.get('speed')) $('speed').value = qs.get('speed')
     if (qs.get('song')) { $('song').value = qs.get('song'); loadSong(qs.get('song'), qs.has('track') ? +qs.get('track') : null) }
-    else if (qs.get('typed')) { $('typed').value = qs.get('typed'); loadPiece(parseTyped(qs.get('typed')), { title: 'Typed notes', source: { typed: qs.get('typed') }, fit: false }) }
+    else if (qs.get('typed')) { $('typed').value = qs.get('typed'); state.tempo = 150; loadPiece(parseTyped(qs.get('typed')), { title: 'Typed notes', source: { typed: qs.get('typed') }, fit: false }) }
     else { $('demo').value = qs.get('demo') || 'lyrical'; loadDemo($('demo').value) }
     window.__lab = { lab, state }
   </script>

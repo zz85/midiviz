@@ -282,7 +282,11 @@ export function hybridRenderer(perf, bank, { sampleRate = 48000, tail = 1.2, see
     for (let i = a0; i < Math.min(Nv, a1); i++) pm += lay[i]
     pm /= Math.max(1, Math.min(Nv, a1) - a0)
     const lo = clamp(Math.floor(pm), 0, bank.layers - 2), hi = lo + 1
-    const A = bank.pick(s, n.pitch, lo, n.rr), B = bank.pick(s, n.pitch, hi, n.rr)
+    // harmonics: there are no recorded ones; play the sounding pitch from the
+    // highest string that has it, with the upper partials taken away (below)
+    let ps = s
+    if (n.harm) for (let k = 3; k >= 0; k--) { const pk = bank.m.packs[`${k}_${bank.m.dynamics[lo]}`]; if (pk && pk.notes.some(x => Math.abs(x.midi - n.pitch) <= 1)) { ps = k; break } }
+    const A = bank.pick(ps, n.pitch, lo, n.rr), B = bank.pick(ps, n.pitch, hi, n.rr)
     if (!A && !B) return
     // where to start reading
     const startPos = src => {
@@ -336,6 +340,12 @@ export function hybridRenderer(perf, bank, { sampleRate = 48000, tail = 1.2, see
     const nIn = Math.round(xfIn * sr), nOut = Math.round(fadeOut * sr), iEnd = Math.round((tEnd - tStart) * sr)
     const pan = PAN[s], gl = Math.cos((pan + 1) * Math.PI / 4) * Math.SQRT2, gr = Math.sin((pan + 1) * Math.PI / 4) * Math.SQRT2
     const out = new Float32Array(Nv)
+    // harmonics: a gentle two-pole low-pass at 2.5× the pitch (the flute-like tone)
+    if (n.harm) {
+      const a = Math.exp(-2 * Math.PI * Math.min(0.45 * sr, 2.5 * nominal) / sr)
+      let y1 = 0, y2 = 0
+      for (let i = 0; i < y.length; i++) { y1 = (1 - a) * y[i] + a * y1; y2 = (1 - a) * y1 + a * y2; y[i] = y2 * 1.6 }
+    }
     for (let i = 0; i < Nv; i++) {
       let e = lev[i]
       if (nIn) e *= Math.sin(clamp(i / nIn, 0, 1) * Math.PI / 2)

@@ -346,3 +346,53 @@ test('play modes: up-bow start, bow left on the string stops the ring, slurred c
     assert.ok(d > 0.5 && d0 < 0.1, `old string damped ${d.toFixed(2)} (without muting ${d0.toFixed(2)})`)
   }
 })
+
+test('harmonics (SWAM Harmonics 2 / 3 / 4): the waveguide touched at 1/n sounds the n-th partial; natural ones on open strings', async () => {
+  const { planHarmonics } = await import('../sound/performance.js')
+  // A5 as harmonic 2 is the natural octave of the open A string; F6 as 3 stops A#4
+  const plan = planHarmonics(finger([{ pitch: 81, on: 0, off: 1 }, { pitch: 89, on: 1, off: 2 }, { pitch: 60, on: 2, off: 3 }]), [55, 62, 69, 76], 2)
+  assert.deepEqual([plan[0].harm, plan[0].string, plan[0].finger], [2, 2, 0], 'A5: natural harmonic on the A string')
+  assert.equal(plan[2].harm, undefined, 'C4 is too low for a harmonic')
+  for (const k of [2, 3, 4]) {
+    let ok = 0, n = 0, ctl = 0
+    for (const m of [80, 86, 92, 98]) {
+      const notes = finger([{ pitch: m, on: 0.1, off: 1.2, velocity: 0.75 }])
+      const perf = renderPerformance(notes, { style: { ...flat, harmonics: k } })
+      assert.equal(perf.notes[0].harm, k)
+      const f = midiHz(m), stop = f / k
+      for (const touch of [true, false]) {
+        const p2 = touch ? perf : { ...perf, data: perf.data.map((v, i) => (i % NCH === CH.harm ? 0 : v)) }
+        // without the touch the same curves would sound the stopped note's pitch... so stop the string there
+        if (!touch) for (let i = 0; i < p2.data.length; i += NCH) if (perf.data[i + CH.harm]) p2.data[i] = perf.data[i] / k
+        const [L] = renderCurves(p2, { sampleRate: SR })
+        const seg = L.subarray(0.6 * SR, 0.6 * SR + 8192), h = spectrumDb(seg, SR, [stop, f])
+        if (touch) { n++; if (h[1] > h[0] + 6) ok++ } else if (h[0] > h[1] - 6) ctl++
+      }
+    }
+    assert.equal(ok, n, `harmonic ${k}: the n-th partial leads on ${ok}/${n}`)
+    assert.ok(ctl >= 3, `harmonic ${k}: the same string without the touch sounds its fundamental (${ctl}/4)`)
+  }
+})
+
+test('tremolo (SWAM slow / fast / sync): the bow turns at the rate, pitch holds, short notes are left alone', async () => {
+  const { fft } = await import('./audio-util.js')
+  const { tremoloRate } = await import('../sound/performance.js')
+  assert.equal(tremoloRate({ tremolo: 'slow', tremoloMode: 'sync', tempo: 100, tremoloMin: 8 }), 100 / 60 * 8, '16ths at 100 bpm are 6.7/s, doubled to the minimum')
+  for (const tremolo of ['slow', 'fast']) {
+    const notes = finger([{ pitch: 69, on: 0.1, off: 2.1, velocity: 0.75 }, { pitch: 71, on: 2.1, off: 2.15, velocity: 0.75 }])
+    const perf = renderPerformance(notes, { style: { ...flat, tremolo } })
+    const r = tremoloRate({ tremolo, tremoloMode: 'hz' })
+    const v = channel(perf, perf.notes[0].string, CH.vel)
+    let turns = 0; for (let i = Math.round(0.6 * 250); i < Math.round(1.6 * 250); i++) if (Math.sign(v[i]) !== Math.sign(v[i - 1]) && v[i] !== 0) turns++
+    assert.ok(Math.abs(turns - r) <= 1.5, `${tremolo}: ${turns} bow turns in 1 s, rate ${r}`)
+    assert.equal(perf.notes[1].trem, undefined, 'a 50 ms note gets no tremolo')
+    const [L] = renderCurves(perf, { sampleRate: SR })
+    const H = 96, env = []; for (let i = 0.8 * SR; i < 1.8 * SR - H; i += H) env.push(rms(L.subarray(i, i + H)))
+    const m = env.reduce((a, b) => a + b, 0) / env.length, N = 512, re = new Float64Array(N), im = new Float64Array(N)
+    env.forEach((x, i) => { if (i < N) re[i] = x - m }); fft(re, im)
+    let bk = 1, bv = 0; for (let k = 2; k < N / 2; k++) { const a = Math.hypot(re[k], im[k]); if (a > bv) { bv = a; bk = k } }
+    assert.ok(Math.abs(bk * 500 / N - r) < 1.2, `${tremolo}: the loudness pulses at ${(bk * 500 / N).toFixed(1)} Hz`)
+    const p = pitch(L.subarray(1.2 * SR, 1.25 * SR), SR, { fmin: 400, fmax: 480 })
+    assert.ok(Math.abs(cents(p.f0, 440)) < 10, `${tremolo}: pitch ${cents(p.f0, 440).toFixed(1)} cents`)
+  }
+})
