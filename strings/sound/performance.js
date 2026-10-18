@@ -44,7 +44,30 @@ export const STYLE = {
   pressure: 1,       // × bow force
   contact: 1,        // × distance from the bridge
   ...HUMANIZE,       // timing, intonation, variance (humanize.js)
+  // play modes, after SWAM's Right Hand / Polyphony pages
+  bowStart: 1,       // first stroke: 1 down-bow, -1 up-bow
+  keepBow: false,    // keep alternating across rests (no retake to bowStart)
+  bowLift: 'off',    // 'off': the bow leaves the string after a phrase (it rings); 'on': it stays and stops it
+  crossMute: 2,      // slurred string crossing: stop the old string's ring when the interval is ≤ this many semitones (0 = never, Infinity = always)
 }
+
+/**
+ * Expression lane from MIDI controllers (SWAM's Expression, the player's one
+ * continuous dynamic): CC11 when it moves, else CC7 (MuseScore and LilyPond
+ * write dynamics and hairpins there), else CC2 (breath). `ccs` is a map
+ * number → [{ time, value 0…1 }] (Tone.js Midi `track.controlChanges`).
+ * Returns { cc, points: [[t, v]] } or null when no controller moves.
+ */
+export function expressionFromCC(ccs) {
+  for (const cc of [11, 7, 2]) {
+    const list = (ccs?.[cc] || []).slice().sort((a, b) => a.time - b.time)
+    if (new Set(list.map(e => Math.round(e.value * 127))).size >= 2) return { cc, points: list.map(e => [e.time, e.value]) }
+  }
+  return null
+}
+
+/** The GM volume curve (40·log10 v dB) as a dynamic (≈19 dB per unit, see dynOf), 0.08…1. */
+const ccDyn = v => clamp(1 + 40 * Math.log10(Math.max(0.05, v)) / 19, 0.08, 1)
 
 // minimum bow force F_min ≈ FMIN·(Z/0.3)^ZEXP·v/β² (fitted on the waveguide)
 const FMIN = 0.02, ZEXP = 1.5
@@ -58,13 +81,13 @@ const rng = rngH
  * Returns { frameRate, frames, duration, data (Float32Array frames·4·NCH),
  *           loudness: [Float32Array × 4], strokes, notes }.
  */
-export function renderPerformance(notesIn, { instrument = 'violin', style = {}, frameRate = FRAME_RATE, seed = 7, tail = 2 } = {}) {
+export function renderPerformance(notesIn, { instrument = 'violin', style = {}, frameRate = FRAME_RATE, seed = 7, tail = 2, expression = null } = {}) {
   const S = { ...STYLE, ...style }
   const inst = INSTRUMENTS[instrument] || INSTRUMENTS.violin
   const R = rng(seed)
   const playable = notesIn.filter(n => n.string != null && !n.unplayable)
   const notes = humanize(playable, S, seed + 101)
-  const motion = buildMotion(notes, { instrument })
+  const motion = buildMotion(notes, { instrument, bowStart: S.bowStart < 0 ? -1 : 1, keepBow: !!S.keepBow })
   const strokes = motion.strokes
   const duration = notes.reduce((m, n) => Math.max(m, n.off), 0)
   const frames = Math.max(2, Math.ceil((duration + tail) * frameRate) + 1)
@@ -106,7 +129,31 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
     flush(notes.length)
   }
 
+  // expression lane (expressionFromCC, times in performance time): a dynamic
+  // offset per frame. When every note has the same velocity (files that write
+  // dynamics only as CC7) the lane is the dynamic; otherwise it moves the
+  // velocity's dynamic by its deviation from its own median
+  const vels = playable.map(n => n.velocity ?? 0.75)
+  const flatVel = vels.length > 0 && Math.max(...vels) - Math.min(...vels) < 0.03
+  const E = new Float32Array(frames)
+  let hasE = false
+  if (expression?.points?.length) {
+    const P = expression.points
+    const dA = P.map(([, v]) => ccDyn(v))
+    const ref = flatVel ? 0.55 : [...dA].sort((a, b) => a - b)[dA.length >> 1]
+    let j = 0
+    for (let i = 0; i < frames; i++) {
+      const t = T(i)
+      while (j + 1 < P.length && P[j + 1][0] <= t) j++
+      // controllers step; smooth the step over ~60 ms as a player would
+      const target = t < P[0][0] ? (flatVel ? dA[0] : ref) : dA[j]
+      const prev = i ? E[i - 1] : target - ref
+      E[i] = prev + (S.dynamics * (target - ref) - prev) * (1 - Math.exp(-1 / (0.06 * frameRate)))
+    }
+    hasE = true
+  }
   const dynOf = n => {
+    if (hasE && flatVel) return 0.55
     const v = n.velocity ?? 0.75
     return clamp(0.55 + (v - 0.7) * 1.2 * S.dynamics, 0.08, 1)
   }
@@ -132,24 +179,29 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
     const atk = st.short ? clamp(0.3 * D, 0.012, 0.03) : clamp(0.2 * D, 0.025, 0.07)
     const rel = st.short ? clamp(0.35 * D, 0.015, 0.05) : clamp(0.12 * D, 0.025, 0.06)
     const next = strokes[strokes.indexOf(st) + 1]
-    const lifts = !next || next.t0 - st.t1 > 0.35
+    const rest = !next || next.t0 - st.t1 > 0.35
+    // bow lift 'off string': the bow leaves after a phrase and the string rings;
+    // 'on string': it stays on the string (light, still) and stops it
+    const onString = S.bowLift === 'on'
+    const lifts = rest && !onString
     for (let k = 0; k < st.events.length; k++) {
       const e = st.events[k], ne = st.events[k + 1]
       const a = e.on, b = ne ? ne.on : st.t1
       for (const n of e.notes) {
         const s = n.string
-        const dyn = dynOf(n)
+        const dynN = dynOf(n), ex0 = hasE ? E[Math.min(frames - 1, Math.round(fr(n.on)))] : 0
+        const dyn0 = clamp(dynN + ex0, 0.08, 1)
         const pg = phraseGain.get(n) ?? 1
         const nd = n.off - n.on
         const semis = n.pitch - inst.open[s]
-        const b0 = (0.125 - 0.06 * dyn) * S.contact * Math.pow(2, semis / 24)
+        const b0 = (0.125 - 0.06 * dyn0) * S.contact * Math.pow(2, semis / 24)
         // a slow bow moves toward the bridge to hold the level (Helmholtz amplitude ∝ v/β)
-        const bet = clamp(b0 * clamp(Math.pow(st.V / 0.35, 0.7), 0.4, 1.3) * (1 + (R() - 0.5) * 0.1), 0.03, 0.24)
+        const bet0 = clamp(b0 * clamp(Math.pow(st.V / 0.35, 0.7), 0.4, 1.3) * (1 + (R() - 0.5) * 0.1), 0.03, 0.24)
         // across a crossing inside a slur the force hands over within ~12 ms
         const xIn = k > 0 && st.events[k - 1].notes.every(m => m.string !== s) ? 0.012 : 0
         const xOut = ne && ne.notes.every(m => m.string !== s) ? 0.012 : 0
         const i0 = Math.max(0, Math.floor(fr(a - xIn - 0.004)))
-        const i1 = Math.min(frames - 1, Math.ceil(fr(b + (ne ? xOut : (lifts ? 0.05 : 0.02)))))
+        const i1 = Math.min(frames - 1, Math.ceil(fr(b + (ne ? xOut : (lifts ? 0.05 : rest ? 0.3 : 0.02)))))
         for (let i = i0; i <= i1; i++) {
           const t = T(i)
           // stroke envelope: attack at the stroke's start, release into its end (bow change or lift)
@@ -160,6 +212,11 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
           // messa di voce on long notes, phrase arch
           let sw = 1
           if (nd > 0.7) { const x = clamp((t - n.on) / nd, 0, 1); sw = 1 + S.phrasing * 0.16 * (Math.sin(Math.PI * Math.pow(x, 0.8)) - 0.35) }
+          // the expression lane moves the bow with the dynamic: faster, heavier and
+          // nearer the bridge when louder (SWAM: "the speed of the bow in relation to the pressure")
+          const ex = hasE ? E[i] : 0
+          const dyn = hasE ? clamp(dynN + ex, 0.08, 1) : dyn0
+          const bet = hasE ? clamp(bet0 * (1 - 0.35 * (ex - ex0)), 0.03, 0.24) : bet0
           const vmag = st.V * (0.5 + 0.7 * dyn) * pg * sw * env
           // handover across strings inside a slur
           let w = 1
@@ -233,7 +290,7 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
       // vibrato: stopped notes long enough to feel it
       const dur = n.off - n.on
       if (n.finger && dur >= 0.22 && S.vibrato > 0) {
-        const dyn = dynOf(n)
+        const dyn = clamp(dynOf(n) + (hasE ? E[Math.min(frames - 1, Math.round(fr(n.on)))] : 0), 0.08, 1)
         const rate = S.vibratoRate * (1 + (R() - 0.5) * 0.08) + (dyn - 0.5) * 0.5
         const depth = S.vibrato * (13 + 19 * dyn) * (dur > 1 ? 1.15 : 1) * (dur < 0.4 ? 0.7 : 1)
         const delay = clamp(0.08 + 0.12 * Math.min(1, dur / 1.2), 0.06, 0.22)
@@ -256,6 +313,30 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
       d += dv; d *= 0.995
       f0[s][i] = Math.pow(2, logf[s][i] + (vibCents[s][i] + clamp(d, -2.5, 2.5)) / 1200)
     }
+  }
+
+  // ── mono string crossing (SWAM "Mono CrossString Muting"): inside a slur,
+  // a crossing to another string by a small interval stops the old string, so
+  // the two notes do not ring together ──
+  if (S.crossMute > 0) {
+    for (const st of strokes) for (let k = 1; k < st.events.length; k++) {
+      const e = st.events[k], pe = st.events[k - 1]
+      for (const o of pe.notes) {
+        if (e.notes.some(m => m.string === o.string)) continue
+        if (!e.notes.some(m => Math.abs(m.pitch - o.pitch) <= S.crossMute)) continue
+        const s = o.string, nx = byString[s].find(m => m.on > o.on + 0.01)
+        const end = nx ? nx.on - 0.03 : e.on + 0.4
+        for (let i = Math.max(0, Math.floor(fr(e.on + 0.01))); i < Math.min(frames, Math.ceil(fr(end))); i++) {
+          damp[s][i] = Math.max(damp[s][i], 0.9 * smooth5((T(i) - e.on - 0.01) / 0.03))
+        }
+      }
+    }
+  }
+
+  // engines that read note velocities (samples, GM) hear the expression lane too
+  if (hasE) for (const n of notes) {
+    const d = clamp(dynOf(n) + E[Math.min(frames - 1, Math.round(fr(n.on)))], 0.08, 1)
+    n.velocity = clamp(0.7 + (d - 0.55) / 1.2, 0.05, 1)
   }
 
   // ── pack ──
@@ -282,7 +363,7 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
     return L
   })
 
-  return { frameRate, frames, duration, data, loudness, strokes, notes, instrument }
+  return { frameRate, frames, duration, data, loudness, strokes, notes, instrument, expression: hasE ? E : null, modes: { bowLift: S.bowLift } }
 }
 
 /** Read one string's channel back as an array (tests, plots). */
@@ -294,3 +375,5 @@ export function channel(perf, s, ch) {
 
 /** Time-scale a note list (playback speed): notes at 1/speed. */
 export const scaleNotes = (notes, speed) => speed === 1 ? notes : notes.map(n => ({ ...n, on: n.on / speed, off: n.off / speed }))
+/** Time-scale an expression lane (expressionFromCC) the same way. */
+export const scaleExpression = (ex, speed) => !ex || speed === 1 ? ex : { ...ex, points: ex.points.map(([t, v]) => [t / speed, v]) }

@@ -38,7 +38,7 @@ export const BOW_HAIR = 65            // usable hair length (cm)
  * notes: fingered notes ({ pitch, on, off, string, finger, base, offset }).
  * Returns { poseAt(t), strokes, instrument }.
  */
-export function buildMotion(notes, { instrument = 'violin', lead = 0.04, vibrato = true } = {}) {
+export function buildMotion(notes, { instrument = 'violin', lead = 0.04, vibrato = true, bowStart = 1, keepBow = false } = {}) {
   const inst = typeof instrument === 'object' ? instrument : INSTRUMENTS[instrument]
   const Lcm = inst.L / 10
   const slotOf = thumb => thumb ? SLOT_THUMB : inst.L > 900 ? SLOT_BASS : inst.L > 500 ? SLOT_CELLO : SLOT
@@ -164,7 +164,8 @@ export function buildMotion(notes, { instrument = 'violin', lead = 0.04, vibrato
 
   // ── bow strokes ──
   const strokes = []
-  let dir = 1, pos = 8, lastOff = -Infinity
+  // bowStart: the first stroke (1 down, -1 up); keepBow: no retake to a down-bow after rests
+  let dir = bowStart, pos = 8, lastOff = -Infinity
   for (let i = 0; i < events.length; i++) {
     const e = events[i]
     // slur: fast notes that join the previous one, up to 4 per bow, single notes only
@@ -176,7 +177,7 @@ export function buildMotion(notes, { instrument = 'violin', lead = 0.04, vibrato
       prevStroke.events.push(e)
       prevStroke.t1 = e.off
     } else {
-      if (prevStroke && e.on - lastOff > 0.6) dir = 1                    // retake: new phrase on a down-bow
+      if (prevStroke && e.on - lastOff > 0.6 && !keepBow) dir = bowStart  // retake: new phrase on the starting bow
       else if (prevStroke) dir = -prevStroke.dir
       strokes.push({ dir, t0: e.on, t1: e.off, events: [e] })
     }

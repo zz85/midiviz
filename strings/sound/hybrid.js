@@ -255,7 +255,9 @@ export function hybridRenderer(perf, bank, { sampleRate = 48000, tail = 1.2, see
     // same string stops the ring (the cut is the last 10 ms before it)
     else { tEnd = n.off; useTail = true; fadeOut = 0 }
     const tStart = n.on - xfIn / 2
-    const RXT = useTail ? (next ? clamp(next.on - n.off, 0.02, 0.75) : 0.75) : fadeOut
+    // bow lift 'on string' (performance modes): the bow stays and stops the ring
+    const onString = perf.modes?.bowLift === 'on'
+    const RXT = useTail ? (next ? clamp(next.on - n.off, 0.02, onString ? 0.15 : 0.75) : onString ? 0.15 : 0.75) : fadeOut
     const i0 = Math.max(0, Math.round(tStart * sr)), i1 = Math.min(N, Math.round((tEnd + RXT) * sr))
     if (i1 <= i0 + 8) return
     const Nv = i1 - i0
@@ -340,6 +342,7 @@ export function hybridRenderer(perf, bank, { sampleRate = 48000, tail = 1.2, see
       else e *= smooth(i / 48)                                     // click guard
       if (!useTail && i > iEnd) e *= nOut ? Math.cos(clamp((i - iEnd) / nOut, 0, 1) * Math.PI / 2) : 0
       if (useTail && i > Nv - 480) e *= Math.max(0, Nv - i) / 480
+      if (useTail && onString && rel >= 0 && i > rel) e *= Math.exp(-(i - rel) / (0.035 * sr))
       const v = e * (y[i + P + dV] ?? 0)
       out[i] = v
       L[i0 + i] += gl * v; R[i0 + i] += gr * v

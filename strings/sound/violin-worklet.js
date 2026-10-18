@@ -7,12 +7,16 @@
 //   { type: 'play', t, speed } | { type: 'pause' } | { type: 'seek', t } | { type: 'speed', speed }
 //   { type: 'on', string, f0, dyn, id } | { type: 'off', id } | { type: 'bend', id, f0 }
 //   { type: 'level', value }
+//   { type: 'params', bowPress, rosin, resonance }      (ViolinSynth.setParams)
+//   { type: 'live', expr, vib, bend }                   live controllers: expression
+//        0…1 or null (CC11 / CC2: the bow's dynamic; velocity then only shapes
+//        the attack), vibrato depth 0…1 or null (CC1; null = automatic), bend cents
 // Port messages out: { type: 'time', t } every ~40 ms while playing.
 import { ViolinSynth, CurveSource, NCH, midiHz, INSTRUMENTS } from './bowed.js'
 
 /** Live control: one bowed note per string, alternating bows, delayed vibrato. */
 class LiveSource {
-  constructor(instrument) { this.setInstrument(instrument); this.notes = new Map(); this.dir = 1 }
+  constructor(instrument) { this.setInstrument(instrument); this.notes = new Map(); this.dir = 1; this.ctl = { expr: null, vib: null, bend: 0 }; this.ex = null }
   setInstrument(instrument) { this.open = (INSTRUMENTS[instrument] || INSTRUMENTS.violin).open.map(midiHz); this.state = this.open.map(f => ({ f0: f, target: f, v: 0, F: 0, beta: 0.1, damp: 0, tap: 0, on: null })) }
   on(m, now) {
     const st = this.state[m.string]
@@ -28,20 +32,28 @@ class LiveSource {
     for (let s = 0; s < 4; s++) {
       const st = this.state[s], o = s * NCH
       let v = 0, F = 0, vib = 0
+      // expression controller, smoothed (~15 ms at the control rate)
+      if (this.ctl.expr != null) this.ex = this.ex == null ? this.ctl.expr : this.ex + (this.ctl.expr - this.ex) * 0.02
       if (st.on) {
-        const age = t - st.on.t0, d = st.on.dyn
+        const age = t - st.on.t0
+        // with an expression controller the dynamic follows it; the velocity adds a bite to the attack
+        const d = this.ex != null ? Math.max(0.05, Math.min(1, this.ex)) * (age < 0.08 ? 0.85 + 0.3 * st.on.dyn : 1) : st.on.dyn
         const atk = Math.min(1, age / 0.05), V = (0.18 + 0.35 * d)
         if (st.on.off) { st.rel = (st.rel ?? 1) * 0.9; if (st.rel < 0.01) { st.on = null; st.rel = 1; st.damp = st.f0 > this.open[s] * 1.01 ? 0.8 : 0 } }
         const rel = st.on ? (st.rel ?? 1) : 0
         v = (st.on?.dir ?? 1) * V * atk * rel
         st.beta = 0.13 - 0.06 * d
         F = Math.max(Math.abs(v) * (0.6 + 0.9 * d) * Math.sqrt(0.1 / st.beta), 0.02 * Math.abs(v) / (st.beta * st.beta) * 1.1)
-        if (age > 0.35 && st.target > this.open[s] * 1.01) vib = Math.min(1, (age - 0.35) / 0.4) * (14 + 16 * d) * Math.sin(2 * Math.PI * 5.8 * (age - 0.35))
+        // vibrato: CC1 sets the depth directly (0…1 → 0…40 cents); otherwise a delayed automatic one
+        if (st.target > this.open[s] * 1.01) {
+          if (this.ctl.vib != null) { st.vph = (st.vph ?? 0) + 2 * Math.PI * (5.2 + 1.2 * this.ctl.vib) / 3000; vib = 40 * this.ctl.vib * Math.sin(st.vph) }
+          else if (age > 0.35) vib = Math.min(1, (age - 0.35) / 0.4) * (14 + 16 * d) * Math.sin(2 * Math.PI * 5.8 * (age - 0.35))
+        }
       } else { st.damp *= 0.995 }
       if (!st.on) st.rel = 1
       // fingers move fast; a slide only when the target jumps far
       st.f0 += (st.target - st.f0) * 0.35
-      out[o] = st.f0 * Math.pow(2, vib / 1200); out[o + 1] = v; out[o + 2] = F; out[o + 3] = st.beta
+      out[o] = st.f0 * Math.pow(2, (vib + (st.on ? this.ctl.bend : 0)) / 1200); out[o + 1] = v; out[o + 2] = F; out[o + 3] = st.beta
       out[o + 4] = st.on ? 0 : st.damp; out[o + 5] = st.tap; st.tap = 0
       if (!st.on && st.f0 !== this.open[s] && st.damp < 0.05) st.target = this.open[s]
     }
@@ -86,6 +98,8 @@ class ViolinProcessor extends AudioWorkletProcessor {
       case 'off': this.live.off(m.id); break
       case 'bend': this.live.bend(m.id, m.f0); break
       case 'level': this.syn.level = m.value; break
+      case 'params': this.syn.setParams(m); break
+      case 'live': Object.assign(this.live.ctl, m); if (m.expr == null) this.live.ex = null; break
       case 'reset': this.syn.reset(); break
     }
   }

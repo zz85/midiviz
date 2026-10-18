@@ -49,6 +49,17 @@ export class Lab {
     this.limiter.threshold.value = -3; this.limiter.knee.value = 4; this.limiter.ratio.value = 20
     this.limiter.attack.value = 0.002; this.limiter.release.value = 0.15
     this.analyser = ctx.createAnalyser(); this.analyser.fftSize = 4096; this.analyser.smoothingTimeConstant = 0.6
+    // sordino (mute): a clip on the bridge adds mass, so the bridge hill and
+    // everything above it drop (about −12 dB above 2 kHz) and the low mids
+    // stand out a little; a filter pair the whole bus goes through
+    this.mute = [ctx.createBiquadFilter(), ctx.createBiquadFilter()]
+    this.mute[0].type = 'highshelf'; this.mute[0].frequency.value = 1500
+    this.mute[1].type = 'peaking'; this.mute[1].frequency.value = 520; this.mute[1].Q.value = 0.9
+    this.setSordino(false)
+    this.pre = ctx.createGain()
+    this.pre.connect(this.mute[0]).connect(this.mute[1]).connect(this.bus)
+    this.params = { bowPress: true, rosin: 1, resonance: 1 }
+    this.liveCtl = { expr: null, vib: null, bend: 0 }
     this.bus.connect(this.master)
     this.master.connect(this.limiter).connect(ctx.destination)
     this.master.connect(this.analyser)
@@ -73,6 +84,16 @@ export class Lab {
   emit(e) { for (const f of this.listeners) f(e) }
   setHall(p) { this.hallParams = p; this.hall?.port.postMessage(p) }
   setVolume(v) { this.master.gain.setTargetAtTime(v, this.ctx.currentTime, 0.03) }
+  setSordino(on) {
+    this.sordino = on
+    const t = this.ctx.currentTime
+    this.mute[0].gain.setTargetAtTime(on ? -12 : 0, t, 0.02)
+    this.mute[1].gain.setTargetAtTime(on ? 2.5 : 0, t, 0.02)
+  }
+  /** Physical-model parameters: { bowPress, rosin, resonance } (bowed.js ViolinSynth.setParams). */
+  setParams(p) { Object.assign(this.params, p); for (const e of Object.values(this.engines)) e.setParams?.(this.params) }
+  /** Live controllers: expr (CC11 / CC2, 0…1), vib (CC1 vibrato depth, 0…1), bend (cents). */
+  setLive(c) { Object.assign(this.liveCtl, c); for (const e of Object.values(this.engines)) e.liveControl?.(this.liveCtl) }
   resume() { return this.ctx.state === 'running' ? Promise.resolve() : this.ctx.resume() }
 
   engine(name) {
@@ -119,13 +140,17 @@ export class Lab {
   async exportWav() { return this.current?.renderAll?.() }
 }
 
+/** Expression controller → gain for sample voices (the GM volume curve, 0 dB at 100). */
+const liveExprGain = e => Math.pow(Math.max(0.02, e) / 0.787, 2)
+
 // ── Physical models (real time) ────────────────────────────────────────────
 class PhysicalEngine {
   constructor(lab, model) {
     this.lab = lab; this.model = model
     this.node = new AudioWorkletNode(lab.ctx, 'violin-synth', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] })
     this.out = lab.ctx.createGain(); this.out.gain.value = model === 'source' ? 1.2 : 1
-    this.node.connect(this.out).connect(lab.bus)
+    this.node.connect(this.out).connect(lab.pre)
+    this.setParams(lab.params); this.liveControl(lab.liveCtl)
     this.sent = null; this.instrument = null
   }
   invalidate() { this.sent = null }
@@ -147,10 +172,12 @@ class PhysicalEngine {
     return true
   }
   noteOff(id) { this.node.port.postMessage({ type: 'off', id }) }
+  setParams(p) { this.node.port.postMessage({ type: 'params', ...p }) }
+  liveControl(c) { this.node.port.postMessage({ type: 'live', ...c }) }
   async renderAll() {
     const { renderCurves } = await import('./bowed.js')
     const sr = this.lab.ctx.sampleRate
-    return { chans: renderCurves(this.lab.perf, { sampleRate: sr, instrument: this.lab.perf.instrument, model: this.model }), sr }
+    return { chans: renderCurves(this.lab.perf, { sampleRate: sr, instrument: this.lab.perf.instrument, model: this.model, params: this.lab.params }), sr }
   }
 }
 
@@ -158,7 +185,7 @@ class PhysicalEngine {
 class BufferEngine {
   constructor(lab, name) {
     this.lab = lab; this.name = name
-    this.out = lab.ctx.createGain(); this.out.connect(lab.bus)
+    this.out = lab.ctx.createGain(); this.out.connect(lab.pre)
     this.blocks = []; this.sources = []; this.timer = null; this.job = 0
   }
   invalidate() { this.job++; this.blocks = []; this.rendered = null; this.preparing = null }
@@ -385,7 +412,7 @@ class SampleEngine extends BufferEngine {
       src.connect(env).connect(dest)
       src.start(on, onset + [0, 0.006, 0.003][(n.rr ?? 0) % 3])
       if (off != null) src.stop(off + 0.6)
-      nodes.push({ src, env, level })
+      nodes.push({ src, env, level, live })
     }
     return nodes
   }
@@ -394,7 +421,16 @@ class SampleEngine extends BufferEngine {
     const p = 69 + 12 * Math.log2(m.f0 / 440)
     const nodes = await this.voice(ctx, this.out, { pitch: Math.round(p), velocity: m.dyn, attackCents: m.attackCents, attackSettle: m.attackSettle }, ctx.currentTime + 0.005, null, { live: true })
     this.live.set(m.id, nodes)
+    this.liveControl(this.lab.liveCtl)
     return true
+  }
+  // live controllers: expression scales the level (velocity stays the attack), pitch bend detunes
+  liveControl(c) {
+    const t = this.lab.ctx.currentTime
+    for (const nodes of this.live.values()) for (const v of nodes) {
+      if (c.expr != null) v.env.gain.setTargetAtTime(v.level * liveExprGain(c.expr), t, 0.02)
+      v.src.detune.setTargetAtTime(c.bend || 0, t, 0.01)
+    }
   }
   noteOff(id) {
     const nodes = this.live.get(id); if (!nodes) return
@@ -561,8 +597,16 @@ class HybridEngine extends BufferEngine {
     env.gain.setValueAtTime(level, now)
     src.connect(env).connect(this.out)
     src.start(now, sec(meta.onset))
-    this.live.set(m.id, { src, env })
+    this.live.set(m.id, { src, env, level })
+    this.liveControl(this.lab.liveCtl)
     return true
+  }
+  liveControl(c) {
+    const t = this.lab.ctx.currentTime
+    for (const v of this.live.values()) {
+      if (c.expr != null) v.env.gain.setTargetAtTime(v.level * liveExprGain(c.expr), t, 0.02)
+      v.src.detune.setTargetAtTime(c.bend || 0, t, 0.01)
+    }
   }
   noteOff(id) {
     const v = this.live.get(id)

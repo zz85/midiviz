@@ -139,6 +139,12 @@ const onePoleDelay = (a, w) => Math.atan2(a * Math.sin(w), 1 - a * Math.cos(w)) 
 // (tuned with strings/test/bowed.test.js: Helmholtz motion over the range at p…f)
 const MU_S = 1.2, MU_D = 0.3, V0 = 0.3
 
+// interactive bow pressure: a kick of ±14 dB of force, decaying in 25 ms; tuned on
+// the Helmholtz sweep (/strings/README.md: 343 → 359 of 369 notes at the default pressure)
+const KF_MAX = Math.log(5)
+const KICKS = 12                 // at most this many kicks per stroke
+const KICK_AFTER = 0.1, KICK_COOL = 0.12, SPP_A = 0.2   // s of bowing before the first kick, s between kicks, EMA of slips/period
+
 /** One waveguide string with a bow and a finger. */
 export class WaveguideString {
   constructor(sr, { open = 55, Z = 0.3, t60 = 2.5 } = {}) {
@@ -154,8 +160,19 @@ export class WaveguideString {
     this.seed = (open * 7919) >>> 0
     this.out = 0           // wave arriving at the bridge (∝ bridge force)
     this.couple = 0        // bridge coupling input (set by the bank)
+    // interactive bow pressure (after SWAM's "Interactive BowPress"): count slips
+    // per period. Helmholtz motion slips once; two or more is double / multiple
+    // slipping, none is a stuck (creaking) bow. These regimes are hysteretic: at
+    // the same force the string can settle into either one depending on the
+    // attack, and neither more nor less steady force reliably gets it out (see
+    // strings/README.md). What does is a short force excursion, as a player
+    // "leans in" for a moment: kF is a log-force pulse that decays in ~25 ms,
+    // alternating up and down if one kick is not enough, with a cool-down
+    this.bowPress = false
+    this.kF = 0; this.slips = 0; this.acc = 0; this.spp = 1; this.bowAge = 0; this.cool = 0; this.kick = 1; this.kicks = 0; this.stick = 0
+    this.rosin = 1         // × rosin grain (μs jitter)
   }
-  reset() { this.bridge.clear(); this.nut.clear(); this.lpB = this.lpN = 0; this.slipping = false; this.out = 0 }
+  reset() { this.bridge.clear(); this.nut.clear(); this.lpB = this.lpN = 0; this.slipping = false; this.out = 0; this.kF = 0; this.spp = 1; this.bowAge = 0 }
   noise() { let s = this.seed; s ^= s << 13; s ^= s >>> 17; s ^= s << 5; this.seed = s >>> 0; return (this.seed / 4294967296) * 2 - 1 }
 
   /** Per control step: geometry and losses for the next samples. */
@@ -176,6 +193,8 @@ export class WaveguideString {
     const Lb = Math.max(2.2, Math.min(0.45, Math.max(0.02, beta)) * N)
     this.Lb = Lb
     this.Ln = Math.max(2.2, N - Lb - filt)
+    this.N = N
+    this.kDecay = Math.exp(-1 / (0.025 * sr))
   }
 
   /** One sample. vb: bow velocity (m/s), F: bow force (N), tap: finger impulse. */
@@ -191,10 +210,18 @@ export class WaveguideString {
 
     const vh = vBr + vNut
     let dv = 0
+    const was = this.slipping
+    if (this.bowPress) {
+      if (F > 1e-3 && Math.abs(vb) > 0.01) this.bowAge++
+      else { this.bowAge = 0; this.kicks = 0 }
+      this.kF *= this.kDecay
+      if (this.cool > 0) this.cool--
+      F *= Math.exp(this.kF)
+    }
     if (F > 1e-4) {
       // friction junction (velocity jump dv added to both outgoing waves)
       const c = F / (2 * this.Z)
-      const mus = MU_S * (1 + 0.015 * this.noise())   // rosin grain
+      const mus = MU_S * (1 + 0.015 * this.rosin * this.noise())   // rosin grain
       const u = vb - vh
       const au = Math.abs(u)
       if (!this.slipping && au <= c * mus) dv = u                  // stick
@@ -206,6 +233,27 @@ export class WaveguideString {
         else { dv = u - Math.sign(u) * D; this.slipping = true }
       }
     } else this.slipping = true
+    if (this.bowPress) {
+      // a slip counts when the stick before it lasted ≥ 0.3 period (micro-slips
+      // inside one slip phase do not: measured on the sweep, this separates
+      // Helmholtz motion from double slipping on 338 of 343 good notes)
+      if (!this.slipping) this.stick++
+      else if (!was) { if (this.stick > 0.3 * this.N) this.slips++; this.stick = 0 }
+      if (++this.acc >= this.N) {
+        this.acc -= this.N
+        this.spp = (1 - SPP_A) * this.spp + SPP_A * this.slips
+        this.slips = 0
+        // past the attack (pre-Helmholtz slipping is normal there): kick
+        if (this.bowAge > KICK_AFTER * this.sr && this.cool <= 0 && (this.spp > 1.3 || this.spp < 0.7) && this.kicks < KICKS) {
+          // up first, then alternate (starting by direction measured worse on the sweep)
+          if (this.kicks === 0) this.kick = 1
+          this.kF = this.kick * KF_MAX
+          this.kick = -this.kick; this.kicks++
+          this.cool = Math.round(KICK_COOL * this.sr)
+          this.spp = 1
+        }
+      }
+    }
     if (tap) dv += tap
     this.nut.write(vBr + dv)
     this.bridge.write(vNut + dv)
@@ -221,6 +269,7 @@ export class SourceString {
     this.lp1 = 0; this.lp2 = 0; this.nz1 = 0; this.nz2 = 0
     this.seed = (open * 104729) >>> 0
     this.jit = 0
+    this.rosin = 1        // × bow noise
     this.out = 0
   }
   reset() { this.env = this.atk = this.lp1 = this.lp2 = this.nz1 = this.nz2 = 0; this.out = 0 }
@@ -263,7 +312,7 @@ export class SourceString {
     this.nz2 += (this.nz1 - this.nz2) * 0.05
     const hp = this.nz1 - this.nz2
     const gate = this.ph < this.beta * 1.4 ? 1 : 0.25
-    const nAmp = av * (0.05 + 0.6 * this.atk + 0.15 * Math.max(0, 0.4 - fr)) * gate
+    const nAmp = av * this.rosin * (0.05 + 0.6 * this.atk + 0.15 * Math.max(0, 0.4 - fr)) * gate
     const y = this.env * (this.lp2 * 0.065) + nAmp * hp * 0.5 + (tap ? tap * 0.3 * n : 0)
     this.out = y
     return y
@@ -331,8 +380,9 @@ export class Body {
  * at(t, out) → fills out[string * NCH + channel] for time t (s).
  */
 export class ViolinSynth {
-  constructor(sr, { instrument = 'violin', model = 'waveguide', tone = null } = {}) {
+  constructor(sr, { instrument = 'violin', model = 'waveguide', tone = null, bowPress = true, rosin = 1, resonance = 1 } = {}) {
     this.sr = sr
+    this.opts = { bowPress, rosin, resonance }
     this.toneBands = tone
     this.block = 16                       // control interpolation step (samples)
     this.cur = new Float32Array(4 * NCH)
@@ -346,6 +396,7 @@ export class ViolinSynth {
     this.instrument = instrument; this.model = model; this.spec = I
     const S = model === 'source' ? SourceString : WaveguideString
     this.strings = I.open.map((open, s) => new S(this.sr, { open, Z: I.Z[s], t60: I.t60[s] }))
+    this.setParams(this.opts)
     // sympathetic open strings for the source model
     this.symp = model === 'source' ? I.open.map((open, s) => new WaveguideString(this.sr, { open, Z: I.Z[s], t60: I.t60[s] * 1.3 })) : null
     if (this.symp) for (const st of this.symp) st.setup(st.openHz, 0.1, 0)
@@ -358,6 +409,11 @@ export class ViolinSynth {
     this.scale = model === 'source' ? 1.35 : 0.16
     this.cur.fill(0); this.nxt.fill(0)
     for (let s = 0; s < 4; s++) { this.cur[s * NCH] = this.nxt[s * NCH] = midiHz(I.open[s]); this.cur[s * NCH + 3] = this.nxt[s * NCH + 3] = 0.1 }
+  }
+  /** bowPress (interactive bow pressure, waveguide), rosin (× grain / bow noise), resonance (× sympathetic coupling). */
+  setParams(p) {
+    Object.assign(this.opts, p)
+    for (const st of this.strings) { st.bowPress = !!this.opts.bowPress; st.rosin = this.opts.rosin }
   }
   reset() { for (const s of this.strings) s.reset(); if (this.symp) for (const s of this.symp) s.reset(); this.body.reset(); this.eq.reset() }
 
@@ -399,11 +455,12 @@ export class ViolinSynth {
         }
         if (this.model === 'waveguide') {
           // bridge coupling: every string feels the others' bridge force a little
-          for (let s = 0; s < 4; s++) strs[s].couple = 0.0025 * (sum / this.spec.Z[s] - strs[s].out * sg[s])
+          const kc = 0.0025 * this.opts.resonance
+          for (let s = 0; s < 4; s++) strs[s].couple = kc * (sum / this.spec.Z[s] - strs[s].out * sg[s])
         } else if (this.symp) {
           let sy = 0
           for (let s = 0; s < 4; s++) { const st = this.symp[s]; st.couple = 0.004 * sum; sy += st.tick(0, 0, 0) }
-          sum += sy * 0.35
+          sum += sy * 0.35 * this.opts.resonance
         }
         br[i0 + i] = sum * this.scale
       }
@@ -438,8 +495,8 @@ export class CurveSource {
 }
 
 /** Render curves offline (Node tests, export). Returns [L, R]. */
-export function renderCurves(curves, { sampleRate = 48000, instrument = 'violin', model = 'waveguide', tail = 1.5, tone = null } = {}) {
-  const syn = new ViolinSynth(sampleRate, { instrument, model, tone })
+export function renderCurves(curves, { sampleRate = 48000, instrument = 'violin', model = 'waveguide', tail = 1.5, tone = null, params = {} } = {}) {
+  const syn = new ViolinSynth(sampleRate, { instrument, model, tone, ...params })
   const src = new CurveSource(curves)
   const N = Math.ceil((curves.frames / curves.frameRate + tail) * sampleRate)
   const L = new Float32Array(N), R = new Float32Array(N)

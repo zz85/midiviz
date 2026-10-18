@@ -78,3 +78,21 @@ Measured (Node, 48 kHz): sustained notes are in Helmholtz motion in ≥ 85 % of 
 Hybrid sampler, measured (Node, `strings/test/sound.test.js`): pitch within 6 cents of the curve on every string and dynamic of violin, viola and cello without vibrato, and the output's vibrato depth within 30 % of the curve's; a 7 s note (longer than any recording) stays within 6 dB and has no clicks; forte is more than 6 dB louder and 15 % brighter (spectral centroid) than piano; slurred joins dip less than 6 dB; the level predicted from the loudness curves is within 2.5 dB of the render. In headless Chromium, Bach's Adagio BWV 1001 (88 s, 471 notes) renders in 1.4 s and the Presto (806 notes) in 6.2 s, and playback starts with the first rendered second.
 
 Limits: the Iowa recordings are one player, one take per note, and an anechoic room (the #030 hall adds the room). Transitions are synthesized from single notes; recorded note-to-note legato, as in the Bell library, would need interval recordings that no free set has. Some notes in the Iowa scales are up to a semitone off their file names; the engine reads each recording's measured pitch, so this costs at most a semitone of transposition. The viola's D string has no mezzo-forte file above B4, so those notes use the nearest layer. Older Safari versions cannot decode Ogg Opus.
+
+## Automatic bowing (after SWAM Violin 3)
+
+SWAM's player only gives notes, velocity and one continuous Expression; the plug-in plays the bow. The Bowing panel in #034 does the same:
+
+| SWAM control | #034 |
+|---|---|
+| Expression (CC11) | `expressionFromCC` in performance.js reads the track's CC11, else CC7 (MuseScore and LilyPond write dynamics and hairpins there), else CC2, through the GM volume curve. The lane moves the bow's dynamic per frame, so speed, force and contact move together (louder: faster, heavier, nearer the bridge). When all velocities are equal (Mozart K379, the Kreutzer: velocity 127 everywhere, dynamics in CC7) the lane is the dynamic. Sample engines get it as note velocities |
+| Interactive BowPress | `WaveguideString` counts slips per period (a slip counts only after a stick of 0.3 period, which separates Helmholtz motion from double slipping on 338 of 343 good notes). Double slipping and a stuck bow are hysteretic: at the same force the string can settle into either, and the fixed-force scan showed neither more nor less force reliably helps. A short excursion does: a ±14 dB force kick decaying in 25 ms, alternating, at most 12 per stroke. Helmholtz sweep (369 pitch × dynamic notes): 343 → 359 at the default pressure, 312 → 346 at pressure 0.6, 312 → 329 at 1.8 |
+| Bow pressure / bow position knobs | The Pressure and Contact sliders scale the automatic values |
+| Bow Start, Keep Bow Direction | `bowStart`, `keepBow` (motion.js options, defaults unchanged for #033 / #037) |
+| Bow Lift: Off String / On String | `bowLift`: the bow leaves and the string rings, or it stays (light force, still) and stops it; the hybrid sampler cuts the recorded ring to ~35 ms |
+| Mono CrossString Muting (1 sem / 2 sem / All) | `crossMute`: in a slur, a crossing by ≤ n semitones damps the old string |
+| Sordino | A high shelf (−12 dB above 1.5 kHz) and a small low-mid peak on the bus, all engines |
+| Rosin, String Resonance | Stick-slip grain and bow noise; bridge coupling of the other strings (physical models) |
+| Live: CC11, CC1, pitch bend | MIDI in: CC11 / CC2 drive the bow's dynamic (velocity then only shapes the attack), CC1 sets the vibrato depth, pitch bend ±2 semitones |
+
+Not taken over: SWAM's Gesture Mode "Bowing" (bow direction from a controller), harmonics, tremolo, alternate fingering (the #033 fingering styles cover it), and the measured body, which [research/05](research/05_commercial_violins.md) ranks first.

@@ -293,3 +293,56 @@ test('hybrid: slurs join without a dip, a note after a rest attacks from silence
   const err = 20 * Math.log10(Math.sqrt(s / n) / H.predictedRms(big))
   assert.ok(Math.abs(err) < 2.5, `predicted level off by ${err.toFixed(1)} dB`)
 })
+
+// ── automatic bowing (after SWAM) ──
+test('interactive bow pressure: kicks double slipping back to Helmholtz motion (more notes in Helmholtz than fixed force)', () => {
+  // the notes that fall into double slipping at fixed force on the sweep
+  const cases = [['violin', 60, 0.75], ['violin', 66, 0.75], ['viola', 53, 0.75], ['viola', 59, 0.75], ['viola', 60, 0.75], ['cello', 48, 0.75], ['cello', 62, 0.3], ['cello', 69, 0.3]]
+  const helm = (instrument, m, vel, bowPress) => {
+    const notes = finger([{ pitch: m, on: 0.1, off: 1.0, velocity: vel }], instrument)
+    const perf = renderPerformance(notes, { instrument, style: { vibrato: 0, timing: 0, intonation: 0, variance: 0 } })
+    const cap = [], orig = Body.prototype.process
+    Body.prototype.process = function (x, L, R, n) { cap.push(Float32Array.from(x.subarray(0, n))); return orig.call(this, x, L, R, n) }
+    try {
+      const syn = new ViolinSynth(SR, { instrument, bowPress }), src = new CurveSource(perf), L = new Float32Array(128), R = new Float32Array(128)
+      let t = 0; for (let i = 0; i < 0.8 * SR; i += 128) t = syn.process(src, t, 1 / SR, L, R, 128)
+    } finally { Body.prototype.process = orig }
+    const raw = new Float32Array(cap.length * 128); cap.forEach((b, i) => raw.set(b, i * 128))
+    const f = midiHz(m), h = spectrumDb(raw.subarray(0.5 * SR, 0.5 * SR + 8192), SR, [f / 2, f, 2 * f, 3 * f])
+    return h[1] - Math.max(h[2], h[3]) >= 1 && h[0] < h[1] - 15
+  }
+  const fixed = cases.filter(c => helm(...c, false)).length, inter = cases.filter(c => helm(...c, true)).length
+  assert.ok(inter >= fixed + 4, `Helmholtz on ${inter}/${cases.length} with the feedback, ${fixed}/${cases.length} without`)
+})
+
+test('expression lane: CC7 hairpins move bow speed and force together; flat velocities take their dynamic from it', async () => {
+  const { expressionFromCC } = await import('../sound/performance.js')
+  const ex = expressionFromCC({ 7: [{ time: 0, value: 0.6 }, { time: 2, value: 0.3 }], 11: [{ time: 0, value: 1 }] })
+  assert.equal(ex.cc, 7, 'CC11 does not move: CC7 is used')
+  const notes = finger([{ pitch: 74, on: 0.1, off: 3.9, velocity: 1 }])
+  const perf = renderPerformance(notes, { style: { vibrato: 0, timing: 0, variance: 0, intonation: 0 }, expression: ex })
+  const s = notes[0].string, v = channel(perf, s, CH.vel), F = channel(perf, s, CH.force), b = channel(perf, s, CH.beta)
+  const at = (x, t) => Math.abs(x[Math.round(t * perf.frameRate)])
+  assert.ok(at(v, 3) < 0.75 * at(v, 1.5) && at(F, 3) < 0.75 * at(F, 1.5), `quieter after the hairpin: v ${at(v, 1.5).toFixed(3)} → ${at(v, 3).toFixed(3)}, F ${at(F, 1.5).toFixed(3)} → ${at(F, 3).toFixed(3)}`)
+  assert.ok(b[Math.round(3 * perf.frameRate)] > b[Math.round(1.5 * perf.frameRate)], 'and further from the bridge')
+  assert.ok(perf.notes[0].velocity < 0.8, `the sample engines get the lane's dynamic (${perf.notes[0].velocity.toFixed(2)})`)
+})
+
+test('play modes: up-bow start, bow left on the string stops the ring, slurred crossings mute the old string', () => {
+  const flatS = { vibrato: 0, timing: 0, variance: 0, intonation: 0 }
+  const one = finger([{ pitch: 69, on: 0.1, off: 0.8, velocity: 0.7 }])
+  const sign = st => Math.sign(channel(renderPerformance(one, { style: { ...flatS, ...st } }), one[0].string, CH.vel)[Math.round(0.4 * 250)])
+  assert.equal(sign({}), 1, 'down-bow by default'); assert.equal(sign({ bowStart: -1 }), -1, 'up-bow start')
+  // bow lift: a rest after the note; 'on' keeps a light force on the string after the stroke
+  const forceAfter = mode => channel(renderPerformance(one, { style: { ...flatS, bowLift: mode } }), one[0].string, CH.force)[Math.round(1.0 * 250)]
+  assert.ok(forceAfter('off') === 0 && forceAfter('on') > 0.05, `off ${forceAfter('off')}, on ${forceAfter('on').toFixed(2)}`)
+  // a fast slurred crossing A string → E string by a semitone (G#5 on A, A5 on E would be 1 semitone)
+  const slur = finger([{ pitch: 81, on: 0.1, off: 0.25, velocity: 0.7 }, { pitch: 83, on: 0.25, off: 0.4, velocity: 0.7 }, { pitch: 84, on: 0.4, off: 0.55, velocity: 0.7 }, { pitch: 86, on: 0.55, off: 1.2, velocity: 0.7 }])
+  slur[0].string = 2; slur[0].finger = 0; slur[1].string = 3; slur[1].finger = 1
+  const perf = renderPerformance(slur, { style: { ...flatS, crossMute: 2 } })
+  const perf0 = renderPerformance(slur, { style: { ...flatS, crossMute: 0 } })
+  if (perf.strokes[0].events.length > 1) {
+    const d = channel(perf, 2, CH.damp)[Math.round(0.33 * 250)], d0 = channel(perf0, 2, CH.damp)[Math.round(0.33 * 250)]
+    assert.ok(d > 0.5 && d0 < 0.1, `old string damped ${d.toFixed(2)} (without muting ${d0.toFixed(2)})`)
+  }
+})

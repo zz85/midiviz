@@ -119,7 +119,7 @@
   <script src="tonejs-midi.js"></script>
   <script type="module">
     import { fingerLine, INSTRUMENTS, parseNote, noteName } from './strings/fingering.js'
-    import { renderPerformance, scaleNotes, STYLE } from './strings/sound/performance.js'
+    import { renderPerformance, scaleNotes, scaleExpression, expressionFromCC, STYLE } from './strings/sound/performance.js'
     import { attackError } from './strings/sound/humanize.js'
     import { NCH, midiHz } from './strings/sound/bowed.js'
     import { Lab, ENGINES } from './strings/sound/engines.js'
@@ -186,12 +186,15 @@
       ['timing', 'Timing', 0, 3, 0.05], ['intonation', 'Intonation', 0, 3, 0.05], ['variance', 'Variance', 0, 3, 0.05],
     ]
     const TIPS = {
-      contact: '< 1 nearer the bridge (brighter), > 1 toward the fingerboard',
+      bowSpeed: 'Scales the automatic bow speed (set per stroke from its length and dynamic)',
+      pressure: 'Scales the automatic bow pressure (kept inside the playable window for each speed and contact point; Interactive bow pressure corrects it while it sounds)',
+      contact: 'Scales the automatic contact point: < 1 nearer the bridge (brighter), > 1 toward the fingerboard',
       timing: 'Humanize: onsets move a few ms (1 ≈ 6 ms), less in fast runs; chords stay together, legato stays legato',
       intonation: 'Humanize: a stopped note lands slightly off pitch and settles in 40–120 ms (1 ≈ 4–12 cents, more after shifts). Also for live notes',
       variance: 'Humanize: per-note variance in dynamics, bow speed and bow pressure; repeated notes alternate samples (round-robin)',
     }
     const style = { ...STYLE }
+    const OPTDEF = {}
     for (const [k, label, lo, hi, step] of SL) {
       if (k === 'timing') {
         const h = document.createElement('div'); h.className = 'head'
@@ -218,6 +221,52 @@
       const show = () => { $('takeV').textContent = '#' + take }
       $('take').onclick = () => { take++; show(); rebuild(); saveUrl() }
       show()
+    }
+
+    // automatic bowing and play modes, after SWAM (strings/research/05_commercial_violins.md):
+    // the player gives notes and one dynamic; bow speed, pressure and contact
+    // follow from it, and the bow pressure corrects itself while it sounds
+    const OPTS = [
+      ['head', 'Bowing (automatic)', 'The bow is played for you, as in SWAM: speed, pressure and contact point come from each note’s dynamic, its length and the stroke; the Bow speed / Pressure / Contact sliders above only scale those automatic values'],
+      ['expr', 'Expression', [['auto', 'From the MIDI file'], ['off', 'Note velocities only']], 'auto', 'SWAM’s Expression: one continuous dynamic that moves bow speed, pressure and contact together (louder: faster, heavier, nearer the bridge). Read from the track’s CC11, else CC7 (MuseScore / LilyPond hairpins), else CC2. Live: CC11 or CC2 on your MIDI keyboard, CC1 sets the vibrato depth, pitch bend ±2 semitones'],
+      ['bowPress', 'Bow press', [['on', 'Interactive'], ['off', 'Fixed']], 'on', 'After SWAM’s Interactive BowPress (waveguide engine): the string counts its slips per period; when it falls into double slipping or a stuck bow it leans in for 25 ms to get back to Helmholtz motion. Helmholtz on 359 of 369 test notes instead of 343'],
+      ['bowStart', 'Bow start', [['1', 'Down-bow'], ['-1', 'Up-bow']], '1', 'The first stroke, and the stroke after each retake'],
+      ['keepBow', 'After rests', [['0', 'Retake'], ['1', 'Keep alternating']], '0', 'Retake: a new phrase after a rest starts on the starting bow again. Keep alternating: SWAM’s Keep Bow Direction'],
+      ['bowLift', 'Bow lift', [['off', 'Off string (rings)'], ['on', 'On string (stops)']], 'off', 'At the end of a phrase the bow leaves the string and lets it ring, or stays on it and stops it'],
+      ['crossMute', 'Crossings', [['0', 'Rings'], ['1', 'Mute ≤ 1 semitone'], ['2', 'Mute ≤ 2 semitones'], ['99', 'Mute always']], '2', 'SWAM’s Mono CrossString Muting: in a slur that crosses to another string by a small interval, the old string stops so the two notes do not ring together'],
+      ['head', 'Timbre'],
+      ['sordino', 'Sordino', [['0', 'Off'], ['1', 'On (mute)']], '0', 'A mute on the bridge: the bridge hill and everything above ~2 kHz drop about 12 dB (all engines)'],
+      ['rosin', 'Rosin', 0, 2, 0.05, 1, 'Physical models: grain of the rosin (stick-slip jitter, bow noise)'],
+      ['resonance', 'Resonance', 0, 3, 0.05, 1, 'Physical models: how much the other strings ring in sympathy through the bridge'],
+    ]
+    const opt = {}
+    for (const o of OPTS) {
+      if (o[0] === 'head') { const h = document.createElement('div'); h.className = 'head'; h.textContent = o[1]; if (o[2]) h.title = o[2]; $('sliders').appendChild(h); continue }
+      const [k, label] = o, r = document.createElement('div'); r.className = 'row'
+      if (Array.isArray(o[2])) {
+        const [, , choices, def, tip] = o
+        r.innerHTML = `<label title="${tip}">${label}</label><select>${choices.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>${k === 'expr' ? '<span class="val" id="exprV"></span>' : ''}`
+        const sel = r.querySelector('select'); sel.value = qs.get(k) ?? def; opt[k] = sel.value
+        sel.onchange = () => { opt[k] = sel.value; applyOpts(true); saveUrl() }
+        OPTDEF[k] = def
+      } else {
+        const [, , lo, hi, step, def, tip] = o
+        r.innerHTML = `<label title="${tip}">${label}</label><input type="range" min="${lo}" max="${hi}" step="${step}"><span class="val"></span>`
+        const inp = r.querySelector('input'), v = r.querySelector('.val')
+        inp.value = qs.get(k) ?? def; opt[k] = inp.value; OPTDEF[k] = String(def)
+        const show = () => { v.textContent = (+inp.value).toFixed(2) }; show()
+        inp.oninput = () => { show(); opt[k] = inp.value; applyOpts(false) }
+        inp.onchange = () => saveUrl()
+      }
+      $('sliders').appendChild(r)
+    }
+    function applyOpts(re) {
+      const st = { bowStart: +opt.bowStart, keepBow: opt.keepBow === '1', bowLift: opt.bowLift, crossMute: +opt.crossMute }
+      const changed = Object.keys(st).some(k => style[k] !== st[k]) || state.useExpr !== (opt.expr === 'auto')
+      Object.assign(style, st); state.useExpr = opt.expr === 'auto'
+      lab.setParams({ bowPress: opt.bowPress === 'on', rosin: +opt.rosin, resonance: +opt.resonance })
+      lab.setSordino(opt.sordino === '1')
+      if (re && changed) rebuild()
     }
 
     // hall
@@ -308,9 +357,9 @@
       return out
     }
 
-    function loadPiece(raw, { title = '', source = null, fit = true } = {}) {
+    function loadPiece(raw, { title = '', source = null, fit = true, expr = null } = {}) {
       lab.pause()
-      state.raw = raw; state.title = title; state.source = source; state.fit = fit
+      state.raw = raw; state.title = title; state.source = source; state.fit = fit; state.expr = expr
       state.notes = prepare(raw, fit)
       fingerLine(state.notes, { instrument: $('instrument').value, mode: $('mode').value })
       state.duration = state.notes.reduce((m, n) => Math.max(m, n.off), 0)
@@ -324,7 +373,10 @@
       const was = lab.playing, songT = songTime()
       if (was) lab.pause()
       state.speed = +$('speed').value
-      state.perf = renderPerformance(scaleNotes(state.notes, state.speed), { instrument: $('instrument').value, style, seed: 7 + 1000 * (take - 1) })
+      const ex = state.useExpr ? state.expr : null
+      state.perf = renderPerformance(scaleNotes(state.notes, state.speed), { instrument: $('instrument').value, style, seed: 7 + 1000 * (take - 1), expression: scaleExpression(ex, state.speed) })
+      $('exprV').textContent = state.expr ? `CC${state.expr.cc}` : 'none in file'
+      $('exprV').title = state.expr ? `${state.expr.points.length} controller events in this track` : 'This piece has no moving CC11 / CC7 / CC2: the dynamics come from the note velocities'
       lab.setPerformance(state.perf)
       lab.pausedAt = songT / state.speed
       if (was) lab.play(lab.pausedAt)
@@ -358,7 +410,7 @@
         for (let j = 1; j < notes.length; j++) if (notes[j].on - notes[j - 1].on < 0.03) poly++
         const prog = t.instrument?.number ?? 0
         const score = (prog >= 40 && prog <= 44 ? 40 : 0) + (prog >= 48 && prog <= 51 ? 10 : 0) - 30 * poly / notes.length + Math.min(20, notes.length / 20) - Math.abs(mean - 74) * 0.6
-        return { name: t.name || t.instrument?.name || `Track ${i + 1}`, notes, score }
+        return { name: t.name || t.instrument?.name || `Track ${i + 1}`, notes, score, expr: expressionFromCC(t.controlChanges) }
       })
       if (!midiTracks.length) throw new Error('no notes')
       $('track').innerHTML = ''
@@ -366,9 +418,9 @@
       const best = trackIndex ?? midiTracks.reduce((b, t, i) => (t.score > midiTracks[b].score ? i : b), 0)
       $('track').value = best; $('trackRow').hidden = midiTracks.length < 2
       state.songTitle = title
-      loadPiece(midiTracks[best].notes, { title: `${title} — ${midiTracks[best].name}`, source: { ...source, track: best } })
+      loadPiece(midiTracks[best].notes, { title: `${title} — ${midiTracks[best].name}`, source: { ...source, track: best }, expr: midiTracks[best].expr })
     }
-    $('track').onchange = () => { const t = midiTracks[+$('track').value]; loadPiece(t.notes, { title: `${state.songTitle} — ${t.name}`, source: { ...state.source, track: +$('track').value } }); saveUrl() }
+    $('track').onchange = () => { const t = midiTracks[+$('track').value]; loadPiece(t.notes, { title: `${state.songTitle} — ${t.name}`, source: { ...state.source, track: +$('track').value }, expr: t.expr }); saveUrl() }
     async function loadSong(v, track = null) {
       if (!v) return
       setStatus('Loading…')
@@ -381,7 +433,7 @@
     addEventListener('dragover', e => { e.preventDefault(); document.body.classList.add('dragging') })
     addEventListener('dragleave', e => { if (!e.relatedTarget) document.body.classList.remove('dragging') })
     addEventListener('drop', e => { e.preventDefault(); document.body.classList.remove('dragging'); const f = e.dataTransfer.files[0]; if (f) f.arrayBuffer().then(b => loadMidiBuffer(b, f.name, null)) })
-    $('instrument').onchange = () => { if (state.raw.length) loadPiece(state.raw, { title: state.title, source: state.source, fit: state.fit }); saveUrl() }
+    $('instrument').onchange = () => { if (state.raw.length) loadPiece(state.raw, { title: state.title, source: state.source, fit: state.fit, expr: state.expr }); saveUrl() }
     $('mode').onchange = $('instrument').onchange
 
     // ── Transport ──────────────────────────────────────────────────────────
@@ -459,6 +511,10 @@
         const hook = () => { for (const inp of access.inputs.values()) inp.onmidimessage = e => {
           const [st, d1, d2] = e.data, c = st & 0xf0
           if (c === 0x90 && d2 > 0) liveOn(d1, d2 / 127); else if (c === 0x80 || (c === 0x90 && d2 === 0)) liveOff(d1)
+          // controllers, as SWAM reads them: CC11 / CC2 expression, CC1 vibrato depth, pitch bend ±2 semitones
+          else if (c === 0xb0 && (d1 === 11 || d1 === 2)) lab.setLive({ expr: d2 / 127 })
+          else if (c === 0xb0 && d1 === 1) lab.setLive({ vib: d2 / 127 })
+          else if (c === 0xe0) lab.setLive({ bend: ((d2 << 7 | d1) - 8192) / 8192 * 200 })
         } }
         hook(); access.onstatechange = hook
         $('midiIn').classList.add('on'); setStatus(`MIDI: ${access.inputs.size} input(s)`, false, 2000)
@@ -489,6 +545,7 @@
       p.set('room', $('room').value); p.set('seat', $('seat').value)
       for (const [k] of SL) if (style[k] !== STYLE[k]) p.set(k, style[k])
       if (take !== 1) p.set('take', take)
+      for (const [k, v] of Object.entries(opt)) if (String(v) !== OPTDEF[k]) p.set(k, v)
       history.replaceState(null, '', '?' + p.toString())
     }
 
@@ -587,6 +644,7 @@
 
     // ── Start ──────────────────────────────────────────────────────────────
     showEngine()
+    applyOpts(false)
     lab.use(state.engine)
     if (qs.get('speed')) $('speed').value = qs.get('speed')
     if (qs.get('song')) { $('song').value = qs.get('song'); loadSong(qs.get('song'), qs.has('track') ? +qs.get('track') : null) }
