@@ -35,6 +35,7 @@
     #panel h1 a { color: inherit; text-decoration: none; }
     #panel .sub { font-size: 11px; color: #9c958a; margin-bottom: 6px; }
     #panel .sub a { color: #9c958a; }
+    #panel .head { font-size: 11px; font-weight: bold; letter-spacing: 0.06em; text-transform: uppercase; color: #c9b48a; margin: 10px 0 2px; }
     #panel.collapsed .body { display: none; }
     #toggle { float: right; background: none; border: 0; color: #d8b56a; font-size: 15px; cursor: pointer; }
     hr { border: 0; border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 8px 0; }
@@ -69,7 +70,7 @@
   <div id="panel">
     <button id="toggle" title="Collapse">–</button>
     <h1><a href="README.md" title="Back to experiments">#034 · Violin Sound Lab</a></h1>
-    <div class="sub">one performance, five ways to make it sound · <a href="strings/research/03_violin_sound.md">research</a> · fingering from <a href="033_violin_fingering.html">#033</a></div>
+    <div class="sub">one performance, six ways to make it sound · <a href="strings/research/03_violin_sound.md">research</a> · fingering from <a href="033_violin_fingering.html">#033</a></div>
     <div class="body">
       <div id="engines"></div>
       <div id="engineInfo"></div>
@@ -192,6 +193,11 @@
     }
     const style = { ...STYLE }
     for (const [k, label, lo, hi, step] of SL) {
+      if (k === 'timing') {
+        const h = document.createElement('div'); h.className = 'head'
+        h.textContent = 'Humanize'; h.title = 'After Embertone’s “Intuition”: small, seeded imperfections every engine plays (strings/sound/humanize.js)'
+        $('sliders').appendChild(h)
+      }
       const r = document.createElement('div'); r.className = 'row'
       r.innerHTML = `<label title="${TIPS[k] || ''}">${label}</label><input type="range" min="${lo}" max="${hi}" step="${step}" value="${style[k]}"><span class="val"></span>`
       const inp = r.querySelector('input'), v = r.querySelector('.val')
@@ -240,6 +246,7 @@
     for (const [k, l] of [['', '— choose a demo —'], ...DEMOS]) $('demo').add(new Option(l, k))
     const SONGS = [
       ['', '— choose a song —'],
+      ['violinist/midis/bach_1001_1_adagio.mid', 'Bach – Adagio BWV 1001'],
       ['midis/mozart_eine_kleine.mid', 'Mozart – Eine kleine Nachtmusik'],
       ['midis/vivaldi_winter.mid', 'Vivaldi – Winter'],
       ['midis/pachelbel_canon.mid', 'Pachelbel – Canon'],
