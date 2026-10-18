@@ -934,6 +934,8 @@
       // favourites: low from her right looking up, high over the keyboard looking down
       lowRight: { pos: [235, 84.3, 91.7], target: [0.7, 113.6, 24.6], fov: 38 },
       overKeys: { pos: [32.3, 475.6, -108.6], target: [0.7, 113.6, 24.6], fov: 38 },
+      lowLeft: { pos: [-140.1, 102, 123.5], target: [-0.7, 86, -45], fov: 38 },
+      lowRightBack: { pos: [140.1, 102, 123.5], target: [0.7, 86, -45], fov: 38 },
       // through her eyes down to the keys: placed every frame (playerView)
       player: { pos: [0, 128, 24], target: [0, 73, -2], fov: 52, pov: true, orbitMax: 4 },
     }
@@ -1069,7 +1071,12 @@
     let userCam = false, camFree = false   // camFree: a dragged camera on a fixed view (shared as ?cam=)
     controls.addEventListener('start', () => { userCam = true; camFree = view !== 'auto'; camTouched = performance.now() })
     for (const it of document.querySelectorAll('#cameraPop .item')) it.addEventListener('click', () => { camFree = false })
-    controls.addEventListener('end', () => { camTouched = performance.now() })
+    // the dragged camera as the address bar shows it: taken once the drag has
+    // settled, not every frame (the view's glance and wander keep it moving)
+    let camSnap = '', camSnapT = 0
+    const r1 = x => Math.round(x * 10) / 10
+    const snapCam = () => { camSnap = [...camera.position.toArray(), ...controls.target.toArray()].map(r1).join(',') }
+    controls.addEventListener('end', () => { camTouched = performance.now(); clearTimeout(camSnapT); camSnapT = setTimeout(snapCam, 800) })
 
     // popups
     const pops = { songsBtn: 'songsPop', cameraBtn: 'cameraPop', perfBtn: 'perfPop', visualsBtn: 'visualsPop', audioBtn: 'audioPop', renderBtn: 'renderPop', outfitBtn: 'outfitPop', moreBtn: 'morePop' }
@@ -1516,7 +1523,7 @@
     if (params.get('loop') === '1') { loop = true; $('loopBtn').classList.remove('off') }
     {
       const c = (params.get('cam') || '').split(',').map(Number)
-      if (c.length === 6 && c.every(Number.isFinite) && view !== 'auto') { camGoal.pos.set(c[0], c[1], c[2]); camGoal.target.set(c[3], c[4], c[5]); controls.autoRotate = false; camFree = true }
+      if (c.length === 6 && c.every(Number.isFinite) && view !== 'auto') { camSnap = c.join(','); camGoal.pos.set(c[0], c[1], c[2]); camGoal.target.set(c[3], c[4], c[5]); controls.autoRotate = false; camFree = true }
     }
     let sharedSong = !params.has('shot') && params.get('song') ? [params.get('song'), +(params.get('at') || 0)] : null
     if (sharedSong) { markSong(sharedSong[0]); songFile = sharedSong[0]; $('songTitle').textContent = songLabel(sharedSong[0]) }
@@ -1538,8 +1545,8 @@
         if (same(v, base)) q.delete(k); else q.set(k, v)
       }
       if (view === 'back') q.delete('view'); else q.set('view', view)
-      const r = x => Math.round(x * 10) / 10
-      if (camFree && view !== 'auto') q.set('cam', [...camera.position.toArray(), ...controls.target.toArray()].map(r).join(',')); else q.delete('cam')
+      if (camFree && view !== 'auto' && withTime) snapCam()   // (Share: exactly what is on screen)
+      if (camFree && view !== 'auto' && camSnap) q.set('cam', camSnap); else q.delete('cam')
       if (speeds[speedI] === 1) q.delete('speed'); else q.set('speed', speeds[speedI])
       if (loop) q.set('loop', '1'); else q.delete('loop')
       if (songFile) q.set('song', songFile); else q.delete('song')
@@ -1547,8 +1554,11 @@
       if ((withTime || sharedSong) && songFile && t > 0.5) q.set('at', t.toFixed(1)); else q.delete('at')   // (a shared position stays until it plays)
       return q.toString().replace(/%2F/g, '/').replace(/%2C/g, ',')
     }
-    // keep the address bar current (cheap: a string build twice a second)
+    // keep the address bar current (cheap: a string build twice a second), but
+    // not while a song plays: rewriting it under the user breaks typing or
+    // copying in it. It catches up on pause (Share always has the latest)
     if (!params.has('shot')) setInterval(() => {
+      if (scheduler?.playing) return
       const q = stateQuery(), url = location.pathname + (q ? '?' + q : '') + location.hash
       if (url !== location.pathname + location.search + location.hash) history.replaceState(null, '', url)
     }, 500)
@@ -1831,6 +1841,7 @@
         } else {
           const d = VIEWS[view]
           camera.position.set(...d.pos); controls.target.set(...d.target); camera.fov = d.fov; camera.updateProjectionMatrix(); controls.update()
+          if (camFree) { camera.position.copy(camGoal.pos); controls.target.copy(camGoal.target); controls.update() }   // (?cam=)
         }
         bokeh.uniforms.focus.value = camera.position.distanceTo(focusOn)
         bokeh.uniforms.aperture.value = wide ? 0.00003 : 0.0001

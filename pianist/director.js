@@ -32,6 +32,8 @@ const wrap = a => ((a + 540) % 360) - 180
 
 // size: 0 = close, 1 = medium, 2 = wide. moves: what suits the spot.
 // fav: a favourite (weight ×fav), rest: seconds before it's fresh again (60)
+// beside: from behind, but the hands show past her (counts half behind)
+// aim: [x, y, z] cm added to the subject point, to frame it off centre
 export const SPOTS = {
   establish: { label: 'From the hall, wide', subj: 'figure', az: 138, el: 9, dist: 700, fov: 24, size: 2, moves: ['dollyIn', 'zoomIn', 'orbit'] },
   audience: { label: 'From the audience', fav: 0.45, subj: 'head', az: 128, el: 4, dist: 420, fov: 20, size: 1, moves: ['zoomIn', 'dollyIn', 'orbit', 'dollyZoom', 'still'] },
@@ -66,6 +68,13 @@ export const SPOTS = {
   // low behind her right shoulder at keyboard height, both hands on the keys
   // past her arm, the lid rising behind them
   lowShoulder: { label: 'Low, behind her shoulder', fav: 1.2, subj: 'figure', az: 48, el: -3, dist: 140, fov: 36, size: 1, moves: ['dollyIn', 'orbit', 'still'], orbitMax: 10 },
+  // low behind her left at chest height, aimed past her at the keyboard: she
+  // on the right, both hands on the keys (and in the fallboard), the lid
+  // rising over them (the user's ?cam=-140.1,102,123.5,-0.7,86,-45)
+  lowLeft: { label: 'Low, from her left', fav: 6, rest: 30, beside: true, subj: 'figure', aim: [-0.7, -15, -66], az: -39.6, el: 4.2, dist: 219, fov: 38, size: 1, moves: ['orbit', 'dollyIn', 'zoomIn', 'still'], orbitMax: 12 },
+  // its mirror from behind her right: she on the left, the keys running off
+  // to the right under the open lid
+  lowRightBack: { label: 'Low, from her right, behind', fav: 2.5, beside: true, subj: 'figure', aim: [0.7, -15, -66], az: 39.6, el: 4.2, dist: 219, fov: 38, size: 1, moves: ['orbit', 'dollyIn', 'zoomIn', 'still'], orbitMax: 12 },
   back: { label: 'Behind', fav: 0.5, subj: 'figure', az: 3, el: 15, dist: 240, fov: 38, size: 1, moves: ['dollyIn', 'orbit', 'crane'] },
   // two favourites: low from her right looking up at her, and high over the
   // keyboard from in front looking down at her (the page's lowRight / overKeys)
@@ -238,12 +247,13 @@ function takeAt(s, tk, u, out) {
 // weighing most) on three axes and favours whatever is behind its share:
 //   what:  the fingers and keys / her (face, figure) / the piano
 //   where: from behind her / from in front of her (the side and straight
-//          down count half to each)
+//          down count half to each, and so do spots marked `beside`: from
+//          behind, but her hands are in view past her)
 //   size:  close / medium / wide
 // Favour (hands / pianist) moves the "what" targets.
 const AXES = {
   what: s => SUBJ_KIND[s.subj] === 'hands' ? 'keys' : SUBJ_KIND[s.subj] === 'pianist' ? 'her' : 'piano',
-  where: s => { if (s.el > 65) return { back: 0.5, front: 0.5 }; const a = Math.abs(wrap(s.az)); return a < 70 ? 'back' : a > 110 ? 'front' : { back: 0.5, front: 0.5 } },
+  where: s => { if (s.el > 65 || s.beside) return { back: 0.5, front: 0.5 }; const a = Math.abs(wrap(s.az)); return a < 70 ? 'back' : a > 110 ? 'front' : { back: 0.5, front: 0.5 } },
   size: s => ['close', 'medium', 'wide'][s.size],
 }
 const TARGETS = { what: { keys: 0.5, her: 0.38, piano: 0.12 }, where: { back: 0.42, front: 0.58 }, size: { close: 0.26, medium: 0.49, wide: 0.25 } }
@@ -454,6 +464,11 @@ export function createDirector(opts = {}) {
     return lo
   }
   function subjectPoint(s, target, sh) {
+    subjectAt(s, target, sh)
+    if (s.aim) target.x += s.aim[0], target.y += s.aim[1], target.z += s.aim[2]
+    return target
+  }
+  function subjectAt(s, target, sh) {
     const a = anchor[s.subj]
     // not following: every subject is where it was when the shot began
     if (!o.follow && sh?.lock) {

@@ -134,7 +134,7 @@ A plain link opens on a dimmed start screen with one Play button (and the song i
 
 ## Sharing a scene
 
-Every option is in the address bar as a short query key, written only when it differs from the default (or from the chosen outfit), so reloading or copying the address brings the same scene back. **Share** copies the link with the song position (`&at=`); a shared song starts there on the first click (browsers need a click before sound).
+Every option is in the address bar as a short query key, written only when it differs from the default (or from the chosen outfit), so reloading or copying the address brings the same scene back. The address is not rewritten while a song plays (it would get in the way of typing or copying in the address bar); it catches up on pause, and a dragged camera is written once the drag settles. **Share** copies the link with the song position (`&at=`); a shared song starts there on the first click (browsers need a click before sound).
 
 | Key | Control | Key | Control |
 |---|---|---|---|
