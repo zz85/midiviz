@@ -226,7 +226,6 @@ export function hybridRenderer(perf, bank, { sampleRate = 48000, tail = 1.2, see
   // what ended last before each onset (any string), for "connected" notes
   const offs = notes.map(n => n.off).sort((a, b) => a - b)
   const connected = n => { for (const o of offs) if (o > n.on - 0.035 && o <= n.on + 0.02) return true; return false }
-  const startsNear = (t, dt) => notes.some(m => m.on >= t - 0.005 && m.on < t + dt)
 
   // the previous voice's buffer per string (for phase-aligned legato)
   const lastVoice = [null, null, null, null]
@@ -251,10 +250,12 @@ export function hybridRenderer(perf, bank, { sampleRate = 48000, tail = 1.2, see
       if (nextSlur) { const xn = clamp(0.3 * Math.min(dur, next.off - next.on), 0.018, 0.06); tEnd = next.on - xn / 2; fadeOut = xn }
       else { tEnd = next.on; fadeOut = 0.035 }                       // bow change: under the new attack
     } else if (slurOn) { tEnd = n.off; fadeOut = 0.02 }               // the slur crosses to another string
-    else if (!startsNear(n.off, 0.15)) { tEnd = n.off; useTail = true; fadeOut = 0 }
-    else { tEnd = n.off + 0.01; fadeOut = 0.06 }
+    // the bow leaves: the recorded release and ring, also through short rests (a real
+    // string keeps ringing; a fade to digital silence is audible). A later note on the
+    // same string stops the ring (the cut is the last 10 ms before it)
+    else { tEnd = n.off; useTail = true; fadeOut = 0 }
     const tStart = n.on - xfIn / 2
-    const RXT = useTail ? 0.75 : fadeOut
+    const RXT = useTail ? (next ? clamp(next.on - n.off, 0.02, 0.75) : 0.75) : fadeOut
     const i0 = Math.max(0, Math.round(tStart * sr)), i1 = Math.min(N, Math.round((tEnd + RXT) * sr))
     if (i1 <= i0 + 8) return
     const Nv = i1 - i0
@@ -338,7 +339,7 @@ export function hybridRenderer(perf, bank, { sampleRate = 48000, tail = 1.2, see
       if (nIn) e *= Math.sin(clamp(i / nIn, 0, 1) * Math.PI / 2)
       else e *= smooth(i / 48)                                     // click guard
       if (!useTail && i > iEnd) e *= nOut ? Math.cos(clamp((i - iEnd) / nOut, 0, 1) * Math.PI / 2) : 0
-      if (useTail && i > Nv - 480) e *= (Nv - i) / 480
+      if (useTail && i > Nv - 480) e *= Math.max(0, Nv - i) / 480
       const v = e * (y[i + P + dV] ?? 0)
       out[i] = v
       L[i0 + i] += gl * v; R[i0 + i] += gr * v
