@@ -10,7 +10,9 @@ All are engraved from scores, so they play in strict time. Many Bach files have 
 
 ## The character
 
-`assets/models/`: three VRoid Project sample males (CC0, see `assets/models/CREDITS.md`), loaded with `@pixiv/three-vrm`. They share one skeleton, so the Outfit menu binds Base_Male's shirt, vest, tie, trousers and shoes onto any of them; "Concert black" turns the navy vest charcoal.
+`assets/models/`: three VRoid Project sample males (CC0, see `assets/models/CREDITS.md`), loaded with `@pixiv/three-vrm`. They share one skeleton, so the Outfit menu binds Base_Male's shirt, vest, tie, trousers and shoes onto any of them (`?outfit=`):
+- `concert` (default): a black suit jacket over a grey waistcoat; `tails`: a tailcoat (front cut at the waist, two split tails to the knee) over a white waistcoat; `vest`: shirt, charcoal vest and tie; `school`: the samples' navy vest; `own`: the model's own clothes.
+- The jacket and tailcoat (`jacket.js`) are cut from the character's own body skin (torso and arm triangles, sleeves to the wrist, a V opening with satin lapels), pushed out along the normals far enough to clear the shirt and vest beneath, and skinned with the body's weights, so they follow the rig exactly. The shirt and vest under them are trimmed to what still shows (collar and V; for the tailcoat the waistcoat below the cut).
 The look (`stage.js`): MToon pushed to two tones with a warm rim, the violin and bow in toon materials with a constant-pixel ink outline, one warm spotlight, a cool back light, a dark hall.
 
 ## The rig (`rig.js`)
@@ -23,11 +25,16 @@ Drives the VRM's normalised humanoid bones every frame from the #033 models (`st
 - bow placed as in #033 (contact near the bridge, tilted to the string); the right hand takes a Franco-Belgian hold (`grip()` in rig.js: palm down over the stick, index, middle and ring draped over the far side, little finger curved on top, thumb bent under the stick at the frog; pronating toward the tip), the arm is two-bone IK with the elbow higher on the lower strings, the clavicle comes forward when the tip is out of reach;
 - eyes follow the left hand and the contact point.
 
+## Collision sweep
+
+`node violinist/test/collisions.mjs [song.mid[@model.vrm][@outfit]] …` plays pieces headless (every 0.25 s, up to 240 s each) and checks the bow against the head and torso, the right forearm against the torso, the right elbow against the body's midline, the left elbow against the violin's back and both arms against the violin body, with the sleeve thickness added; exits 1 on a failure. It needs the parent folder served (`BASE`, default `http://127.0.0.1:8000/midiviz/`), playwright-core (`PLAYWRIGHT`) and a Chromium (`CHROME`). Current closest gaps on the four default runs: bow–head 8 cm, bow–torso 12.6, forearm–torso 3.2, elbow–midline 15, left elbow–violin 4.0.
+
 ## Research
 
 - `research/01_violinist_biomechanics.md`: stance, sway, violin hold angles, left and right arm mechanics, bow angles per string, motion-capture datasets (MOSA, SPD, SyncViolinist…), a rig recipe.
 - `research/02_character_look.md`: Nodame Cantabile's concert look in three.js terms, model options (VRoid vs MakeHuman male with exact targets, community suits and hair), the recommendation.
+- `research/03_pianist_pair.md`: a pianist who matches the violinist: the VRoid sample women (all eight checked, three CC0 candidates plus AvatarSample_A with previews in `assets/models/candidates/`; the VRMs there are git-ignored), the MakeHuman alternative, and Nodame / Chiaki fan models (none usable in the repo).
 
 ## Not done yet
 
-No jacket or tailcoat (short shirt sleeves); no spring-bone tuning; the forearm twist isn't split; bow-arm and left-elbow collision checks from the research §6 aren't in; the director is a simple phrase-aware cutter. Headless check: `?shot&view=front&t=6`.
+No spring-bone tuning; the forearm twist isn't split; the jacket has no buttons or pockets and the tailcoat's tails don't swing; the director is a simple phrase-aware cutter. Headless check: `?shot&view=front&t=6`.

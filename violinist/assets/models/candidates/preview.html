@@ -1,0 +1,40 @@
+<!doctype html>
+<!-- Temporary preview page for candidate VRMs (research 03). ?vrm=<url>&view=front|face|back -->
+<html><head><meta charset="utf-8"><style>html,body{margin:0;background:#b8b8bc;overflow:hidden}</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/","@pixiv/three-vrm":"https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.5.5/lib/three-vrm.module.min.js"}}</script>
+</head><body><script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
+const q = new URLSearchParams(location.search);
+const view = q.get('view') || 'front';
+const W = innerWidth, H = innerHeight;
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setSize(W, H); renderer.setPixelRatio(1);
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0xb8b8bc);
+const key = new THREE.DirectionalLight(0xffffff, 2.2); key.position.set(0.6, 1.5, 2); scene.add(key);
+scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+const loader = new GLTFLoader(); loader.register(p => new VRMLoaderPlugin(p));
+const gltf = await loader.loadAsync(q.get('vrm'));
+const vrm = gltf.userData.vrm;
+VRMUtils.rotateVRM0(vrm);
+// relax the T-pose arms a little so the outfit reads
+const h = vrm.humanoid;
+const rot = (b, z) => { const n = h.getNormalizedBoneNode(b); if (n) n.rotation.z = z; };
+rot('leftUpperArm', 1.15); rot('rightUpperArm', -1.15);
+vrm.update(0);
+scene.add(vrm.scene);
+vrm.scene.updateMatrixWorld(true);
+const box = new THREE.Box3().setFromObject(vrm.scene);
+const head = new THREE.Vector3(); h.getRawBoneNode('head').getWorldPosition(head);
+const cam = new THREE.PerspectiveCamera(view === 'face' ? 20 : 26, W / H, 0.01, 50);
+const size = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
+const back = view === 'back' ? -1 : 1;
+if (view === 'face') { const t = head.clone().add(new THREE.Vector3(0, 0.08, 0)); cam.position.set(t.x, t.y + 0.01, t.z + 1.15); cam.lookAt(t); }
+else { const d = size.y / 2 / Math.tan(THREE.MathUtils.degToRad(13)) * 1.08; cam.position.set(c.x, c.y, c.z + back * d); cam.lookAt(c); }
+for (let i = 0; i < 3; i++) { vrm.update(1 / 60); }
+renderer.render(scene, cam);
+window.__info = { title: vrm.meta?.title ?? vrm.meta?.name, metaVersion: vrm.meta?.metaVersion, height: +size.y.toFixed(3), headY: +head.y.toFixed(3) };
+window.__done = true;
+</script></body></html>
