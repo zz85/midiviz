@@ -13,12 +13,17 @@
 //                       layers, rendered offline with an OfflineAudioContext
 //   gm                  the General MIDI soundfont #033 uses (OxiSynth),
 //                       rendered offline through OxiSynthRaw
+//   hybrid              University of Iowa non-vibrato samples recorded string
+//                       by string, read along our pitch and loudness curves
+//                       (hybrid.js), rendered progressively a few notes at a
+//                       time; live notes play the samples with their loops
 //
 // Time: engines work in performance time. The page scales notes by 1/speed
 // before rendering, so speed never changes pitch.
 
 import { ddspVoices, DDSPEngine, DDSP_URL, DDSP_SR } from './ddsp.js'
 import { midiHz } from './bowed.js'
+import { SampleBank, hybridRenderer, predictedRms, HYBRID_URL } from './hybrid.js'
 
 export const ENGINES = {
   waveguide: { label: 'Physical: bowed waveguide', short: 'Waveguide', live: true },
@@ -26,6 +31,7 @@ export const ENGINES = {
   ddsp: { label: 'Neural: DDSP violin (Magenta)', short: 'DDSP', live: false },
   vsco: { label: 'Samples: VSCO 2 CE violin (CC0)', short: 'Samples', live: true },
   gm: { label: 'Baseline: GM soundfont (#033)', short: 'GM', live: false },
+  hybrid: { label: 'Hybrid: Iowa samples + our performance', short: 'Hybrid', live: true },
 }
 
 const VSCO_URL = 'https://cdn.jsdelivr.net/gh/sgossner/VSCO-2-CE@master/Strings/Solo%20Violin/Arco%20Vib/'
@@ -71,7 +77,7 @@ export class Lab {
 
   engine(name) {
     if (!this.engines[name]) {
-      const E = { waveguide: PhysicalEngine, source: PhysicalEngine, ddsp: DDSPEngineUI, vsco: SampleEngine, gm: GMEngine }[name]
+      const E = { waveguide: PhysicalEngine, source: PhysicalEngine, ddsp: DDSPEngineUI, vsco: SampleEngine, gm: GMEngine, hybrid: HybridEngine }[name]
       this.engines[name] = new E(this, name)
     }
     return this.engines[name]
@@ -458,5 +464,111 @@ class GMEngine extends BufferEngine {
     this.rendered = { chans: [L, R], sr }
     this.setBlocks(L, R, sr, job)
     this.lab.emit({ type: 'ready', engine: 'gm' })
+  }
+}
+
+// ── Hybrid sampler (hybrid.js) ───────────────────────────────────────────
+// Output level: the renderer normalises every recording to its sustain RMS and
+// scales by the loudness curve (≈ 1 at mezzo-forte). A render is levelled to
+// the other engines from the loudness curves before it starts (predictedRms,
+// within ±1.5 dB of the measured level), so blocks can play as they finish.
+const HYBRID_GAIN = 0.05
+class HybridEngine extends BufferEngine {
+  constructor(lab, name) { super(lab, name); this.banks = new Map(); this.live = new Map(); this.offBeforeOn = new Set() }
+  /** Manifest and decoded packs for an instrument (packs load on demand). */
+  async bank(instrument, keys) {
+    if (!this.banks.has(instrument)) this.banks.set(instrument, (async () => {
+      const r = await fetch(`${HYBRID_URL}${instrument}/manifest.json`)
+      if (!r.ok) throw new Error(`no ${instrument} samples (${r.status}): run node strings/test/build_iowa.js --instrument=${instrument}`)
+      return { m: await r.json(), pcm: {}, loading: {} }
+    })())
+    const b = await this.banks.get(instrument)
+    const need = keys.filter(k => b.m.packs[k] && !b.pcm[k])
+    let got = 0
+    if (need.length) this.lab.emit({ type: 'progress', engine: 'hybrid', text: `Loading ${need.length} sample packs (${instrument})…` })
+    await Promise.all(need.map(k => {
+      if (!b.loading[k]) b.loading[k] = (async () => {
+        const r = await fetch(`${HYBRID_URL}${instrument}/${b.m.packs[k].file}`)
+        if (!r.ok) throw new Error(`sample pack ${k}: ${r.status}`)
+        // decode at the bank's rate so the manifest's sample positions hold
+        const oc = new OfflineAudioContext(1, 1, b.m.sampleRate)
+        const buf = await oc.decodeAudioData(await r.arrayBuffer())
+        b.pcm[k] = buf.getChannelData(0)
+        this.lab.emit({ type: 'progress', engine: 'hybrid', text: `Sample packs ${++got}/${need.length}` })
+      })()
+      return b.loading[k]
+    }))
+    return new SampleBank(b.m, b.pcm)
+  }
+  async render(perf, job) {
+    const inst = perf.instrument || 'violin'
+    const head = await this.bank(inst, [])
+    const bank = await this.bank(inst, SampleBank.packsFor(head.m, perf))
+    if (job !== this.job) return
+    const sr = this.lab.ctx.sampleRate
+    const r = hybridRenderer(perf, bank, { sampleRate: sr })
+    let published = 0
+    const g = TARGET_RMS / Math.max(0.05, predictedRms(perf))
+    const publish = through => {
+      const upto = Math.min(Math.ceil(r.L.length / sr), Math.floor(through))
+      if (upto <= published) return
+      for (let i = published * sr; i < Math.min(r.L.length, upto * sr); i++) { r.L[i] *= g; r.R[i] *= g }
+      this.setBlocks(r.L, r.R, sr, job, published, upto)
+      published = upto
+    }
+    const t0 = performance.now()
+    while (true) {
+      const st = r.step(25)
+      if (job !== this.job) return
+      publish(st.done ? Infinity : st.through)
+      this.lab.emit({ type: 'progress', engine: 'hybrid', text: `Hybrid: ${st.count}/${r.total} notes (${((performance.now() - t0) / 1000).toFixed(1)} s)` })
+      if (st.done) break
+      await new Promise(res => setTimeout(res, 0))
+    }
+    this.rendered = { chans: [r.L, r.R], sr }
+    this.lab.emit({ type: 'ready', engine: 'hybrid' })
+  }
+  // live: the recording on that string, looped, pitched to the note
+  async noteOn(m) {
+    const ctx = this.lab.ctx
+    const inst = this.lab.perf?.instrument || 'violin'
+    const p = 69 + 12 * Math.log2(m.f0 / 440)
+    const l = m.dyn < 0.45 ? 0 : m.dyn < 0.8 ? 1 : 2
+    const head = await this.bank(inst, [])
+    const dyn = head.m.dynamics[l]
+    const bank = await this.bank(inst, [`${m.string}_${dyn}`])
+    const pick = bank.pick(m.string, Math.round(p), l)
+    if (!pick) return false
+    // released while the samples were loading
+    if (this.offBeforeOn.delete(m.id)) return true
+    const { meta } = pick
+    if (!this.liveBufs) this.liveBufs = new Map()
+    const bk = inst + pick.key
+    if (!this.liveBufs.has(bk)) {
+      const b = ctx.createBuffer(1, pick.pcm.length, bank.sr); b.copyToChannel(pick.pcm, 0); this.liveBufs.set(bk, b)
+    }
+    const src = ctx.createBufferSource(); src.buffer = this.liveBufs.get(bk)
+    const sec = x => (meta.offset + x) / bank.sr
+    const lp = meta.loop || [meta.attackEnd, meta.headEnd - 480]
+    src.loop = true; src.loopStart = sec(lp[0]); src.loopEnd = sec(lp[1])
+    const rate = m.f0 / meta.f0, now = ctx.currentTime + 0.005
+    if (m.attackCents) {
+      src.playbackRate.setValueAtTime(rate * Math.pow(2, m.attackCents / 1200), now)
+      src.playbackRate.setTargetAtTime(rate, now + 0.01, Math.max(0.005, (m.attackSettle ?? 0.06) / 3))
+    } else src.playbackRate.value = rate
+    const env = ctx.createGain()
+    const level = HYBRID_GAIN * (0.5 + 0.7 * m.dyn) / Math.max(1e-4, meta.rms)
+    env.gain.setValueAtTime(level, now)
+    src.connect(env).connect(this.out)
+    src.start(now, sec(meta.onset))
+    this.live.set(m.id, { src, env })
+    return true
+  }
+  noteOff(id) {
+    const v = this.live.get(id)
+    if (!v) { if (this.lab.current === this) this.offBeforeOn.add(id); return }
+    this.live.delete(id)
+    const t = this.lab.ctx.currentTime
+    v.env.gain.cancelScheduledValues(t); v.env.gain.setValueAtTime(v.env.gain.value, t); v.env.gain.setTargetAtTime(0, t, 0.06); v.src.stop(t + 0.5)
   }
 }

@@ -204,3 +204,92 @@ test('humanize: the attack error reaches f0 and settles', () => {
   assert.ok(Math.sign(at(i0)) === Math.sign(n.attackCents) && Math.abs(at(i0)) > 0.5 * Math.abs(n.attackCents), `lands off pitch (${at(i0).toFixed(1)} of ${n.attackCents.toFixed(1)} cents)`)
   assert.ok(Math.abs(at(i1)) < 3, `settles (${at(i1).toFixed(1)} cents)`)
 })
+
+// ── hybrid sampler (engine 6): needs the Iowa bank (strings/sound/samples/iowa) and ffmpeg to decode it ──
+const hybrid = async () => {
+  const hb = await import('./hybrid-bank.js')
+  return hb.hasFfmpeg() && hb.hasBank('violin') ? { ...hb, ...(await import('../sound/hybrid.js')) } : null
+}
+const flat = { vibrato: 0, intonation: 0, timing: 0, variance: 0 }
+
+test('hybrid: the recordings follow the f0 curve on every string, p to f (≤ 6 cents without vibrato); vibrato comes from the curve', async t => {
+  const H = await hybrid(); if (!H) return t.skip('no Iowa bank or no ffmpeg')
+  for (const instrument of ['violin', 'viola', 'cello']) {
+    if (!H.hasBank(instrument)) continue
+    const bank = H.loadBankNode(instrument), lo = { violin: 55, viola: 48, cello: 36 }[instrument]
+    let worst = 0, n = 0
+    for (const vel of [0.3, 0.75, 1]) for (let m = lo; m <= lo + 38; m += 3) {
+      const notes = finger([{ pitch: m, on: 0.1, off: 1.2, velocity: vel }], instrument)
+      const [L] = H.renderHybrid(renderPerformance(notes, { instrument, style: flat }), bank, { sampleRate: SR })
+      const f = midiHz(m), p = pitch(L.subarray(0.5 * SR, 0.9 * SR), SR, { fmin: f * 0.89, fmax: f * 1.12 })
+      if (p.clarity > 0.9) { worst = Math.max(worst, Math.abs(cents(p.f0, f))); n++ }
+    }
+    assert.ok(n >= 30 && worst <= 6, `${instrument}: worst ${worst.toFixed(1)} cents over ${n} notes`)
+  }
+  // vibrato: the output's pitch swings like the curve's
+  const bank = H.loadBankNode('violin')
+  const notes = finger([{ pitch: 76, on: 0.1, off: 2.6, velocity: 0.75 }])
+  const perf = renderPerformance(notes, { style: { ...flat, vibrato: 1 } })
+  const [L] = H.renderHybrid(perf, bank, { sampleRate: SR })
+  const f0 = channel(perf, notes[0].string, CH.f0)
+  const outC = [], curC = []
+  for (let t0 = 1.0; t0 < 2.3; t0 += 0.02) {
+    const p = pitch(L.subarray(Math.round(t0 * SR), Math.round((t0 + 0.03) * SR)), SR, { fmin: 600, fmax: 740 })
+    outC.push(cents(p.f0, midiHz(76))); curC.push(cents(f0[Math.round((t0 + 0.015) * perf.frameRate)], midiHz(76)))
+  }
+  const sd = a => { const m = a.reduce((x, y) => x + y, 0) / a.length; return Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / a.length) }
+  assert.ok(sd(curC) > 8 && Math.abs(sd(outC) - sd(curC)) < 0.3 * sd(curC), `vibrato: output ±${sd(outC).toFixed(1)} cents, curve ±${sd(curC).toFixed(1)}`)
+})
+
+test('hybrid: a note longer than its recording sustains (loop, no clicks); louder bowing is louder and brighter', async t => {
+  const H = await hybrid(); if (!H) return t.skip('no Iowa bank or no ffmpeg')
+  const { centroid } = await import('./audio-util.js')
+  const bank = H.loadBankNode('violin')
+  const res = []
+  for (const vel of [0.3, 1]) {
+    const notes = finger([{ pitch: 76, on: 0.1, off: 7.1, velocity: vel }])
+    const [L] = H.renderHybrid(renderPerformance(notes, { style: { ...flat, vibrato: 1 } }), bank, { sampleRate: SR })
+    const w = []; for (let t0 = 0.5; t0 < 6.5; t0 += 0.5) w.push(20 * Math.log10(rms(L.subarray(t0 * SR, (t0 + 0.5) * SR))))
+    assert.ok(Math.max(...w) - Math.min(...w) < 6, `steady over 6 s: ${w.map(x => x.toFixed(1)).join(' ')} dB`)
+    // clicks: no 5 ms frame with far more second-difference energy than usual
+    const d2 = []
+    for (let i = 0.3 * SR; i < 7 * SR; i += 240) { let e = 0; for (let j = i; j < i + 240; j++) e += (L[j] - 2 * L[j - 1] + L[j - 2]) ** 2; d2.push(e) }
+    const med = [...d2].sort((a, b) => a - b)[d2.length >> 1]
+    assert.ok(Math.max(...d2) / med < 12, `click ratio ${(Math.max(...d2) / med).toFixed(1)}`)
+    res.push({ db: w.reduce((a, b) => a + b, 0) / w.length, c: centroid(L.subarray(SR, 3 * SR), SR) })
+  }
+  assert.ok(res[1].db - res[0].db > 6, `f is ${(res[1].db - res[0].db).toFixed(1)} dB louder than p`)
+  assert.ok(res[1].c > res[0].c * 1.15, `brighter: centroid ${res[0].c.toFixed(0)} → ${res[1].c.toFixed(0)} Hz`)
+})
+
+test('hybrid: slurs join without a dip, a note after a rest attacks from silence; fast enough to render ahead; level predicted', async t => {
+  const H = await hybrid(); if (!H) return t.skip('no Iowa bank or no ffmpeg')
+  const bank = H.loadBankNode('violin')
+  const notes = finger(melody('A4:0.3 B4:0.3 C#5:0.3 D5:0.3 r:1 E5:2', 0.5))
+  const perf = renderPerformance(notes, { style: flat })
+  assert.equal(perf.strokes[0].events.length, 4, 'the four fast notes share a bow')
+  const [L] = H.renderHybrid(perf, bank, { sampleRate: SR })
+  const db = (a, b) => 20 * Math.log10(rms(L.subarray(Math.round(a * SR), Math.round(b * SR))) + 1e-9)
+  const ons = perf.notes.map(n => n.on)
+  for (const k of [1, 2, 3]) {
+    const at = db(ons[k] - 0.01, ons[k] + 0.01), around = (db(ons[k] - 0.08, ons[k] - 0.04) + db(ons[k] + 0.04, ons[k] + 0.08)) / 2
+    assert.ok(at > around - 6, `slur ${k}: ${at.toFixed(1)} dB at the join vs ${around.toFixed(1)} around`)
+  }
+  // after the rest: the previous note's recorded ring has died away (20 dB) and the new one attacks
+  const before = db(ons[4] - 0.1, ons[4] - 0.02), after = db(ons[4] + 0.2, ons[4] + 0.4)
+  assert.ok(before < after - 20, `the ring before the detached note: ${before.toFixed(1)} dB vs ${after.toFixed(1)} dB`)
+  // speed and level on a minute of music
+  const many = []; let t0 = 0
+  for (let r = 0; r < 8; r++) {
+    for (let k = 0; k < 24; k++) { many.push({ pitch: 55 + [0, 2, 4, 5, 7, 9, 11, 12][k % 8] + 12 * Math.floor(k / 8), on: t0, off: t0 + 0.14, velocity: 0.7 }); t0 += 0.15 }
+    many.push({ pitch: 74, on: t0, off: t0 + 2, velocity: 0.5 + 0.06 * r }); t0 += 2.2
+  }
+  const big = renderPerformance(finger(many), {})
+  const c0 = Date.now()
+  const [B] = H.renderHybrid(big, bank, { sampleRate: SR })
+  const x = t0 / ((Date.now() - c0) / 1000)
+  assert.ok(x > 15, `${x.toFixed(0)}× real time`)
+  let s = 0, n = 0; for (let i = 0; i < B.length; i += 4) { const v = B[i] * B[i]; if (v > 4e-5) { s += v; n++ } }
+  const err = 20 * Math.log10(Math.sqrt(s / n) / H.predictedRms(big))
+  assert.ok(Math.abs(err) < 2.5, `predicted level off by ${err.toFixed(1)} dB`)
+})

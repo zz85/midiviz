@@ -15,7 +15,9 @@
                                  modal body, fitted tone EQ (tone.js)
     strings/sound/violin-worklet.js  the physical models in an AudioWorklet
     strings/sound/ddsp.js        Magenta DDSP violin (tfjs graph) in 5 s windows
-    strings/sound/engines.js     the five engines behind one transport and
+    strings/sound/hybrid.js      hybrid sampler: Iowa per-string samples read
+                                 along the performance curves (true legato)
+    strings/sound/engines.js     the six engines behind one transport and
                                  the #030 hall reverb
     node --test strings/test/sound.test.js
   -->
@@ -106,7 +108,7 @@
       <div class="row"><label>Seat</label><select id="seat"></select></div>
       <div class="row"><label>Reverb</label><input id="amount" type="range" min="0" max="2" step="0.05" value="1"><span class="val" id="amountV"></span></div>
       <div class="row"><label>Volume</label><input id="volume" type="range" min="0" max="2" step="0.05" value="1"><span class="val" id="volumeV"></span></div>
-      <div id="hint">1–5 switch engines while playing (same spot). Space plays, Esc hides the panel. Lines: pitch per string (vibrato, slides), bow speed (± = down / up) and force below.</div>
+      <div id="hint">1–6 switch engines while playing (same spot). Space plays, Esc hides the panel. Lines: pitch per string (vibrato, slides), bow speed (± = down / up) and force below.</div>
     </div>
   </div>
   <div id="status" class="hidden"></div>
@@ -151,6 +153,7 @@
       ddsp: 'Magenta’s DDSP violin (3.9 MB tfjs model trained on real violin) driven by our pitch and loudness curves; renders ahead of the playhead (monophonic: two passes for double stops).',
       vsco: 'Versilian VSCO 2 CE solo violin, sustained vibrato samples, piano / forte layers, pitched to each note (violin samples for viola and cello too).',
       gm: 'The 8 MB General MIDI soundfont #033 plays today: one looped sample per note.',
+      hybrid: 'University of Iowa samples recorded without vibrato on each string (pp / mf / ff, the string #033 chose), read along our pitch curve (vibrato, slides, attack error) and loudness curve (layers crossfaded in phase); slurs glide the old sample into the new one with no new attack; the recorded release when the bow leaves. 8–12 MB of Opus per instrument, loaded per string.',
     }
     const names = Object.keys(ENGINES)
     names.forEach((n, i) => {
@@ -459,7 +462,7 @@
       if (ev.target.closest?.('input[type=text], select')) return
       if (ev.code === 'Space') { ev.preventDefault(); $('play').click(); return }
       if (ev.code === 'Escape') { $('panel').style.display = $('panel').style.display === 'none' ? '' : 'none'; return }
-      if (/^Digit[1-5]$/.test(ev.code) && !ev.repeat) { useEngine(names[+ev.code.slice(5) - 1]); return }
+      if (/^Digit[1-6]$/.test(ev.code) && !ev.repeat) { useEngine(names[+ev.code.slice(5) - 1]); return }
       const k = KEYS.indexOf(ev.key.toLowerCase())
       if (k >= 0 && !ev.repeat && !ev.metaKey && !ev.ctrlKey) liveOn(inst().open[2] + 3 + k, 0.75)   // a = C5 on the violin (C4 viola… a fifth lower)
     })
