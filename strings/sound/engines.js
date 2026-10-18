@@ -132,7 +132,14 @@ class PhysicalEngine {
   }
   start(t, when) { this.prepare(this.lab.perf); this.node.port.postMessage({ type: 'play', t, speed: 1, at: when }) }
   stop() { this.node.port.postMessage({ type: 'pause' }) }
-  noteOn(m) { if (this.lab.perf && this.instrument !== this.lab.perf.instrument) this.prepare(this.lab.perf); this.node.port.postMessage({ type: 'on', ...m }); return true }
+  noteOn(m) {
+    if (this.lab.perf && this.instrument !== this.lab.perf.instrument) this.prepare(this.lab.perf)
+    // attack error (humanize.js): land off pitch, then bend to the note once it has settled
+    const f0 = m.attackCents ? m.f0 * Math.pow(2, m.attackCents / 1200) : m.f0
+    this.node.port.postMessage({ type: 'on', ...m, f0 })
+    if (m.attackCents) setTimeout(() => this.node.port.postMessage({ type: 'bend', id: m.id, f0: m.f0 }), 1000 * m.attackSettle * 0.5)
+    return true
+  }
   noteOff(id) { this.node.port.postMessage({ type: 'off', id }) }
   async renderAll() {
     const { renderCurves } = await import('./bowed.js')
@@ -302,11 +309,22 @@ class SampleEngine extends BufferEngine {
     for (const [name, m] of Object.entries(VSCO_NOTES)) if (!best || Math.abs(m - pitch) < Math.abs(best[1] - pitch) || (Math.abs(m - pitch) === Math.abs(best[1] - pitch) && m < pitch)) best = [name, m]
     return best
   }
+  /**
+   * Round-robin: VSCO has one take per note, so a repeated pitch alternates
+   * between its nearest root and the next nearest within 3 semitones
+   * (transposed), and enters each take a few ms later or earlier.
+   */
+  rootRR(pitch, rr = 0) {
+    const near = Object.entries(VSCO_NOTES).filter(([, m]) => Math.abs(m - pitch) <= 3)
+      .sort((a, b) => Math.abs(a[1] - pitch) - Math.abs(b[1] - pitch) || a[1] - b[1])
+    if (near.length < 2) return this.rootFor(pitch)
+    return rr % 2 ? near[1] : near[0]
+  }
   layers(name) { return ['p', 'f'].filter(d => !VSCO_MISSING.has(`${name}_${d}`)) }
   async render(perf, job) {
     const notes = perf.notes
     const need = new Set()
-    for (const n of notes) { const [name] = this.rootFor(n.pitch); for (const d of this.layers(name)) need.add(`${name}_${d}`) }
+    for (const n of notes) { const [name] = this.rootRR(n.pitch, n.rr); for (const d of this.layers(name)) need.add(`${name}_${d}`) }
     let got = 0
     this.lab.emit({ type: 'progress', engine: 'vsco', text: `Loading ${need.size} VSCO samples…` })
     await Promise.all([...need].map(k => this.sample(k).then(() => this.lab.emit({ type: 'progress', engine: 'vsco', text: `Samples ${++got}/${need.size}` }))))
@@ -334,7 +352,7 @@ class SampleEngine extends BufferEngine {
   }
   /** Schedule one note (both layers, crossfaded by velocity) into ctx. */
   async voice(ctx, dest, n, on, off, { live = false } = {}) {
-    const [name, root] = this.rootFor(n.pitch)
+    const [name, root] = live ? this.rootFor(n.pitch) : this.rootRR(n.pitch, n.rr)
     const layers = this.layers(name)
     const v = n.velocity ?? 0.75
     const x = layers.length > 1 ? Math.max(0, Math.min(1, (v - 0.35) / 0.55)) : 1
@@ -344,7 +362,12 @@ class SampleEngine extends BufferEngine {
       const g = d === 'f' ? Math.sqrt(x) : Math.sqrt(1 - x)
       if (g < 0.02) continue
       const src = ctx.createBufferSource(); src.buffer = buf
-      src.playbackRate.value = Math.pow(2, (n.pitch - root) / 12)
+      const rate = Math.pow(2, (n.pitch - root) / 12)
+      // the finger lands off pitch and settles (humanize.js)
+      if (n.attackCents) {
+        src.playbackRate.setValueAtTime(rate * Math.pow(2, n.attackCents / 1200), on)
+        src.playbackRate.setTargetAtTime(rate, on + 0.01, Math.max(0.005, (n.attackSettle ?? 0.06) / 3))
+      } else src.playbackRate.value = rate
       const env = ctx.createGain()
       const level = g * (0.35 + 0.65 * v) * (d === 'p' ? 2.2 : 1)
       env.gain.setValueAtTime(0, on)
@@ -354,7 +377,7 @@ class SampleEngine extends BufferEngine {
         env.gain.setTargetAtTime(0, off, 0.08)
       }
       src.connect(env).connect(dest)
-      src.start(on, onset)
+      src.start(on, onset + [0, 0.006, 0.003][(n.rr ?? 0) % 3])
       if (off != null) src.stop(off + 0.6)
       nodes.push({ src, env, level })
     }
@@ -363,7 +386,7 @@ class SampleEngine extends BufferEngine {
   async noteOn(m) {
     const ctx = this.lab.ctx
     const p = 69 + 12 * Math.log2(m.f0 / 440)
-    const nodes = await this.voice(ctx, this.out, { pitch: Math.round(p), velocity: m.dyn }, ctx.currentTime + 0.005, null, { live: true })
+    const nodes = await this.voice(ctx, this.out, { pitch: Math.round(p), velocity: m.dyn, attackCents: m.attackCents, attackSettle: m.attackSettle }, ctx.currentTime + 0.005, null, { live: true })
     this.live.set(m.id, nodes)
     return true
   }
@@ -393,18 +416,37 @@ class GMEngine extends BufferEngine {
     const s = await this.synth(sr)
     if (job !== this.job) return
     const program = { violin: 40, viola: 41, cello: 42 }[perf.instrument] ?? 40
-    for (let ch = 0; ch < 16; ch++) s.all_sound_off(ch)
-    s.program_change(0, program)
+    // each note on its own channel (rotating, drums skipped) so its tuning can
+    // carry the attack error (humanize.js) without detuning its neighbours.
+    // OxiSynthRaw has no pitch bend; RPN 1 (channel fine tuning, ±100 cents)
+    // retunes sounding voices too.
+    const CHS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15]
+    const tune = (ch, v) => { s.control_change(ch, 101, 0); s.control_change(ch, 100, 1); s.control_change(ch, 6, v >> 7); s.control_change(ch, 38, v & 127) }
+    for (let ch = 0; ch < 16; ch++) { s.all_sound_off(ch); tune(ch, 8192) }
+    for (const ch of CHS) s.program_change(ch, program)
+    const bend = c => Math.max(0, Math.min(16383, Math.round(8192 + c / 100 * 8192)))
     const ev = []
-    for (const n of perf.notes) { ev.push([n.on, 1, n]); ev.push([n.off, 0, n]) }
-    ev.sort((a, b) => a[0] - b[0] || a[1] - b[1])
+    perf.notes.forEach((n, k) => {
+      n.gmCh = CHS[k % CHS.length]
+      ev.push([n.on, 2, n, bend(n.attackCents ?? 0)])
+      ev.push([n.on, 1, n])
+      if (n.attackCents) {
+        const ts = Math.max(0.01, n.attackSettle ?? 0.06)
+        for (let t = 0.01; t <= 1.6 * ts; t += 0.008) ev.push([n.on + t, 2, n, bend(n.attackCents * Math.exp(-3 * t / ts))])
+        ev.push([n.on + 1.6 * ts + 0.008, 2, n, 8192])
+      }
+      ev.push([n.off, 0, n])
+    })
+    ev.sort((a, b) => a[0] - b[0] || (b[1] === 2) - (a[1] === 2) || a[1] - b[1])
     const N = Math.ceil(perf.frames / perf.frameRate * sr)
     const L = new Float32Array(N), R = new Float32Array(N)
     let i = 0, e = 0
     while (i < N) {
       while (e < ev.length && ev[e][0] * sr <= i) {
-        const [, on, n] = ev[e++]
-        if (on) s.note_on(0, n.pitch, Math.max(1, Math.round((n.velocity ?? 0.75) * 127))); else s.note_off(0, n.pitch)
+        const [, kind, n, val] = ev[e++]
+        if (kind === 2) tune(n.gmCh, val)
+        else if (kind === 1) s.note_on(n.gmCh, n.pitch, Math.max(1, Math.round((n.velocity ?? 0.75) * 127)))
+        else s.note_off(n.gmCh, n.pitch)
       }
       const until = Math.min(N, e < ev.length ? Math.max(i + 1, Math.ceil(ev[e][0] * sr)) : N, i + 4096)
       const out = s.render(until - i)

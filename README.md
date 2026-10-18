@@ -38,7 +38,8 @@ Midi Visualization Experiments
 - Physical models [strings/sound/bowed.js](strings/sound/bowed.js) in an AudioWorklet: four waveguide strings with stick-slip friction coupled at the bridge (sympathetic open strings), a modal violin / viola / cello body, a tone EQ fitted to the VSCO recordings (`node strings/test/fit_tone.js`); real time, plays MIDI keyboard and computer-keyboard notes
 - DDSP [strings/sound/ddsp.js](strings/sound/ddsp.js): the magenta.js violin checkpoint's decoder runs on TensorFlow.js in a worker, its harmonic + noise synthesizer is reimplemented in JS (same output, 9× faster on CPU); 5 s windows rendered ahead of the playhead, a second pass for double stops
 - Expression sliders (vibrato, slides, dynamics, phrasing, bow speed, pressure, contact), the #030 hall reverb, WAV export of each engine
-- Tests: `node --test strings/test/sound.test.js` (9: Helmholtz motion and intonation over the range, stability, vibrato, slides, bowing, DDSP synthesis, real-time speed)
+- Humanization for all five engines after Embertone's "Intuition" ([strings/sound/humanize.js](strings/sound/humanize.js)): a few ms of timing, per-note dynamics and bow variance, stopped notes landing a few cents off and settling (live notes too), round-robin samples; Timing / Intonation / Variance sliders and New take
+- Tests: `node --test strings/test/sound.test.js` (11: Helmholtz motion and intonation over the range, stability, vibrato, slides, bowing, DDSP synthesis, real-time speed, humanization)
 
 [Research - Violin sound in the browser](strings/research/03_violin_sound.md)
 - Samples, physical modelling (waveguide, SWAM), DDSP / MIDI-DDSP, RAVE / BRAVE, MIDI-to-audio diffusion (VIOLET, ViolinDiff), Suno-style and open text-to-music models (MusicGen, Stable Audio, ACE-Step, Magenta RealTime 2)

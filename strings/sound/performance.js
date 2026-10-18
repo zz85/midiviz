@@ -24,11 +24,15 @@
 //   tap    the left-hand finger landing on the string
 //
 // Also a loudness curve per string (dB, DDSP's scale) for the neural engine.
+// Notes are humanized first (humanize.js: timing, velocity, attack pitch, bow
+// variance); the returned `notes` are the humanized ones, so the note-based
+// engines (samples, GM) play the same performance.
 // Pure functions of the note list: seek and speed are free.
 
 import { FRAME_RATE, NCH, midiHz, INSTRUMENTS as SYNTH } from './bowed.js'
 import { buildMotion } from '../motion.js'
 import { INSTRUMENTS } from '../fingering.js'
+import { humanize, HUMANIZE, rng as rngH } from './humanize.js'
 
 export const STYLE = {
   vibrato: 1,        // × depth
@@ -39,6 +43,7 @@ export const STYLE = {
   bowSpeed: 1,       // × bow speed
   pressure: 1,       // × bow force
   contact: 1,        // × distance from the bridge
+  ...HUMANIZE,       // timing, intonation, variance (humanize.js)
 }
 
 // minimum bow force F_min ≈ FMIN·(Z/0.3)^ZEXP·v/β² (fitted on the waveguide)
@@ -46,16 +51,7 @@ const FMIN = 0.02, ZEXP = 1.5
 const smooth5 = x => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * x * (x * (6 * x - 15) + 10))
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x))
 
-function rng(seed) {
-  let a = seed >>> 0
-  return () => {
-    a = (a + 0x6D2B79F5) >>> 0
-    let t = a
-    t = Math.imul(t ^ (t >>> 15), t | 1)
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
+const rng = rngH
 
 /**
  * notes: fingered notes { pitch, on, off, velocity?, string, finger, base }.
@@ -66,7 +62,8 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
   const S = { ...STYLE, ...style }
   const inst = INSTRUMENTS[instrument] || INSTRUMENTS.violin
   const R = rng(seed)
-  const notes = notesIn.filter(n => n.string != null && !n.unplayable).sort((a, b) => a.on - b.on || a.pitch - b.pitch)
+  const playable = notesIn.filter(n => n.string != null && !n.unplayable)
+  const notes = humanize(playable, S, seed + 101)
   const motion = buildMotion(notes, { instrument })
   const strokes = motion.strokes
   const duration = notes.reduce((m, n) => Math.max(m, n.off), 0)
@@ -117,8 +114,8 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
   // ── bow: velocity magnitude per stroke ──
   for (const st of strokes) {
     const D = Math.max(0.04, st.t1 - st.t0)
-    st.V = clamp(Math.abs(st.end - st.start) / 100 / D, 0.05, 1.1) * S.bowSpeed
     const n0 = st.events[0].notes[0]
+    st.V = clamp(Math.abs(st.end - st.start) / 100 / D, 0.05, 1.1) * S.bowSpeed * (1 + 0.06 * (n0.bowVar ?? 0))
     st.dyn = dynOf(n0)
     st.short = D < 0.18 && st.events.length === 1
   }
@@ -172,7 +169,7 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
           const v = st.dir * vmag
           // Schelleng: F ∝ v/β (geometric middle of the window), a bite on détaché attacks
           const bite = st.short ? 1.5 : 1.2
-          const Fk = (0.55 + 0.9 * dyn) * S.pressure * Zs[s] * Math.sqrt(0.1 / bet) * (1 + (bite - 1) * Math.exp(-Math.max(0, t - st.t0) / 0.035))
+          const Fk = (0.55 + 0.9 * dyn) * S.pressure * (1 + 0.05 * (n.bowVar ?? 0)) * Zs[s] * Math.sqrt(0.1 / bet) * (1 + (bite - 1) * Math.exp(-Math.max(0, t - st.t0) / 0.035))
           let F = Math.max(Math.abs(v), 0.04 + 0.06 * dyn) * Fk
           // stay above Schelleng's minimum (F_min ∝ Z² v / β², measured on the waveguide)
           F = Math.max(F, FMIN * S.pressure * Math.pow(Zr[s], ZEXP) * Math.abs(v) / (bet * bet))
@@ -212,10 +209,13 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
       }
       if (!n.finger) { g0 = n.on - 0.004; g1 = n.on + 0.002 }
       const i0 = Math.max(0, Math.floor(fr(g0))), i1 = Math.min(frames - 1, Math.ceil(fr(holdEnd)))
+      // the finger lands a little off pitch and settles (humanize.js)
+      const ac = (n.attackCents ?? 0) / 1200, ast = Math.max(0.01, n.attackSettle ?? 0.05)
       for (let i = i0; i <= i1; i++) {
         const t = T(i)
         const x = (t - g0) / Math.max(1e-3, g1 - g0)
-        logf[s][i] = fromLog + (target - fromLog) * smooth5(x)
+        const err = ac ? ac * (1 - smooth5((t - g1) / ast)) : 0
+        logf[s][i] = fromLog + (target + err - fromLog) * smooth5(x)
       }
       // the finger lifts after a stopped note with no follower: damp, then back to open
       if (n.finger && holdEnd === n.off + 0.12) {

@@ -38,7 +38,10 @@ test('waveguide: sustained notes sound at pitch in Helmholtz motion over the ran
       const h = spectrumDb(seg, SR, [f / 2, f, 2 * f, 3 * f])
       tot++
       if (h[1] - Math.max(h[2], h[3]) >= 1 && h[0] < h[1] - 15) ok++
-      const p = pitch(L.subarray(Math.round(0.45 * SR), Math.round(0.75 * SR)), SR, { fmin: f * 0.8, fmax: f * 1.25 })
+      // search ±2 semitones: wider, the detector can lock between the note and a
+      // sympathetically ringing open string (cello D3 with A3 ringing reads 168 Hz
+      // although the spectrum peaks at 147, 196 and 220 Hz)
+      const p = pitch(L.subarray(Math.round(0.45 * SR), Math.round(0.75 * SR)), SR, { fmin: f * 0.89, fmax: f * 1.12 })
       if (p.clarity > 0.9) worst = Math.max(worst, Math.abs(cents(p.f0, f)))
     }
     assert.ok(ok / tot >= 0.85, `${instrument}: Helmholtz in ${ok}/${tot}`)
@@ -158,4 +161,46 @@ test('DDSP synthesis in JS: one harmonic at f0 is a sine at f0; harmonics above 
   const f1 = new Float32Array(1250).fill(3000), h1 = new Float32Array(1250 * 60).fill(0.1)
   const y1 = synthesize(f1, h1, noise)
   assert.ok(rms(y1) < 0.1 * Math.sqrt(2 / 2) + 0.01, `rms ${rms(y1)}`)
+})
+
+test('humanize: small, seeded, keeps order, chords and legato; attack errors only where a finger lands', async () => {
+  const { humanize } = await import('../sound/humanize.js')
+  const notes = finger(melody('A4 A4 E5 E5 F#5 F#5 E5:2 D5 D5 C#5 C#5 B4 B4 A4:2 G4 B4 D5 G5', 0.25).map((n, i) => i >= 14 ? { ...n, off: n.off + 0.25 } : n))
+  // a double stop and a slurred pair
+  const a = humanize(notes, {}, 3), b = humanize(notes, {}, 3), c = humanize(notes, {}, 4)
+  assert.deepEqual(a, b, 'same seed, same result')
+  assert.notDeepEqual(a, c, 'another seed, another take')
+  const src = notes.slice().sort((x, y) => x.on - y.on || x.pitch - y.pitch)
+  let maxDt = 0
+  for (let i = 0; i < a.length; i++) {
+    maxDt = Math.max(maxDt, Math.abs(a[i].on - src[i].on))
+    if (i) assert.ok(a[i].on >= a[i - 1].on, 'order kept')
+    assert.ok(a[i].off > a[i].on)
+    // legato: an end that met the next onset still meets it
+    const nx = src.findIndex(m => Math.abs(m.on - src[i].off) < 0.001)
+    if (nx >= 0) assert.ok(Math.abs(a[i].off - a[nx].on) < 1e-9, 'legato kept')
+    if (!src[i].finger) assert.equal(a[i].attackCents, undefined, 'open strings land in tune')
+    else if (a[i].attackCents != null) assert.ok(Math.abs(a[i].attackCents) <= 3 * 12 * 1.6 && a[i].attackSettle > 0.02 && a[i].attackSettle < 0.2)
+  }
+  assert.ok(maxDt > 0.001 && maxDt < 0.02, `onsets move a few ms (max ${(maxDt * 1000).toFixed(1)} ms)`)
+  // chords move together
+  const chord = humanize(finger([{ pitch: 62, on: 0.5, off: 1.5 }, { pitch: 69, on: 0.5, off: 1.5 }]), { timing: 3 }, 9)
+  assert.equal(chord[0].on, chord[1].on)
+  // off = MIDI-exact
+  const z = humanize(notes, { timing: 0, intonation: 0, variance: 0 }, 3)
+  z.forEach((n, i) => { assert.equal(n.on, src[i].on); assert.equal(n.velocity ?? 0.75, src[i].velocity ?? 0.75); assert.equal(n.attackCents, undefined) })
+  // round-robin counts repeats of a pitch
+  const rr = humanize(finger([0, 1, 2].map(k => ({ pitch: 69, on: k * 0.4, off: k * 0.4 + 0.3 }))), {}, 1).map(n => n.rr)
+  assert.deepEqual(rr, [0, 1, 2])
+})
+
+test('humanize: the attack error reaches f0 and settles', () => {
+  const notes = finger([{ pitch: 64, on: 0.2, off: 1.2, velocity: 0.75 }])   // stopped on the D string
+  const perf = renderPerformance(notes, { style: { vibrato: 0, intonation: 2 } })
+  const n = perf.notes[0]
+  assert.ok(n.finger && n.attackCents, 'a stopped note gets an attack error')
+  const f = channel(perf, n.string, CH.f0), at = i => cents(f[i], midiHz(64))
+  const i0 = Math.round((n.on + 0.004) * perf.frameRate), i1 = Math.round((n.on + 2 * n.attackSettle + 0.05) * perf.frameRate)
+  assert.ok(Math.sign(at(i0)) === Math.sign(n.attackCents) && Math.abs(at(i0)) > 0.5 * Math.abs(n.attackCents), `lands off pitch (${at(i0).toFixed(1)} of ${n.attackCents.toFixed(1)} cents)`)
+  assert.ok(Math.abs(at(i1)) < 3, `settles (${at(i1).toFixed(1)} cents)`)
 })

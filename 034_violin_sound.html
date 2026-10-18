@@ -117,6 +117,7 @@
   <script type="module">
     import { fingerLine, INSTRUMENTS, parseNote, noteName } from './strings/fingering.js'
     import { renderPerformance, scaleNotes, STYLE } from './strings/sound/performance.js'
+    import { attackError } from './strings/sound/humanize.js'
     import { NCH, midiHz } from './strings/sound/bowed.js'
     import { Lab, ENGINES } from './strings/sound/engines.js'
     import { ROOMS, SEATS, acousticParams } from './concertstage/acoustics.js'
@@ -177,11 +178,19 @@
       ['vibrato', 'Vibrato', 0, 2, 0.05], ['vibratoRate', 'Vib. rate', 4, 7.5, 0.1], ['portamento', 'Slides', 0, 2.5, 0.05],
       ['dynamics', 'Dynamics', 0, 2, 0.05], ['phrasing', 'Phrasing', 0, 2, 0.05], ['bowSpeed', 'Bow speed', 0.5, 1.6, 0.05],
       ['pressure', 'Pressure', 0.6, 1.8, 0.05], ['contact', 'Contact', 0.5, 1.8, 0.05],
+      // humanize (strings/sound/humanize.js)
+      ['timing', 'Timing', 0, 3, 0.05], ['intonation', 'Intonation', 0, 3, 0.05], ['variance', 'Variance', 0, 3, 0.05],
     ]
+    const TIPS = {
+      contact: '< 1 nearer the bridge (brighter), > 1 toward the fingerboard',
+      timing: 'Humanize: onsets move a few ms (1 ≈ 6 ms), less in fast runs; chords stay together, legato stays legato',
+      intonation: 'Humanize: a stopped note lands slightly off pitch and settles in 40–120 ms (1 ≈ 4–12 cents, more after shifts). Also for live notes',
+      variance: 'Humanize: per-note variance in dynamics, bow speed and bow pressure; repeated notes alternate samples (round-robin)',
+    }
     const style = { ...STYLE }
     for (const [k, label, lo, hi, step] of SL) {
       const r = document.createElement('div'); r.className = 'row'
-      r.innerHTML = `<label title="${k === 'contact' ? '< 1 nearer the bridge (brighter), > 1 toward the fingerboard' : ''}">${label}</label><input type="range" min="${lo}" max="${hi}" step="${step}" value="${style[k]}"><span class="val"></span>`
+      r.innerHTML = `<label title="${TIPS[k] || ''}">${label}</label><input type="range" min="${lo}" max="${hi}" step="${step}" value="${style[k]}"><span class="val"></span>`
       const inp = r.querySelector('input'), v = r.querySelector('.val')
       const show = () => { v.textContent = (+inp.value).toFixed(k === 'vibratoRate' ? 1 : 2) }
       if (qs.has(k)) inp.value = qs.get(k)
@@ -189,6 +198,17 @@
       inp.oninput = show
       inp.onchange = () => { style[k] = +inp.value; rebuild(); saveUrl() }
       $('sliders').appendChild(r)
+    }
+    // another take: the same settings with new random choices
+    let take = 1
+    {
+      const r = document.createElement('div'); r.className = 'row'
+      r.innerHTML = `<label title="Humanize with new random choices (timing, intonation, variance, vibrato phase)">Take</label><button id="take">New take</button><span class="val" id="takeV"></span>`
+      $('sliders').appendChild(r)
+      take = +(qs.get('take') || 1)
+      const show = () => { $('takeV').textContent = '#' + take }
+      $('take').onclick = () => { take++; show(); rebuild(); saveUrl() }
+      show()
     }
 
     // hall
@@ -294,7 +314,7 @@
       const was = lab.playing, songT = songTime()
       if (was) lab.pause()
       state.speed = +$('speed').value
-      state.perf = renderPerformance(scaleNotes(state.notes, state.speed), { instrument: $('instrument').value, style })
+      state.perf = renderPerformance(scaleNotes(state.notes, state.speed), { instrument: $('instrument').value, style, seed: 7 + 1000 * (take - 1) })
       lab.setPerformance(state.perf)
       lab.pausedAt = songT / state.speed
       if (was) lab.play(lab.pausedAt)
@@ -412,7 +432,9 @@
       // one note per string: release whatever else is held on it
       for (const [q, h] of held) if (h.s === s) liveOff(q)
       held.set(p, { id, s, t: performance.now() })
-      lab.noteOn({ string: s, f0: midiHz(p), dyn: vel, id })
+      // humanize: a stopped note's finger lands a little off pitch and settles
+      const atk = p > inst().open[s] ? attackError(Math.random, { amount: style.intonation }) : { cents: 0, settle: 0 }
+      lab.noteOn({ string: s, f0: midiHz(p), dyn: vel, id, attackCents: atk.cents, attackSettle: atk.settle })
       liveNotes.push({ pitch: p, s, on: performance.now() / 1000, off: Infinity })
     }
     function liveOff(p) {
@@ -456,6 +478,7 @@
       if ($('speed').value !== '1') p.set('speed', $('speed').value)
       p.set('room', $('room').value); p.set('seat', $('seat').value)
       for (const [k] of SL) if (style[k] !== STYLE[k]) p.set(k, style[k])
+      if (take !== 1) p.set('take', take)
       history.replaceState(null, '', '?' + p.toString())
     }
 
