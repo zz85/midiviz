@@ -143,6 +143,12 @@
     .sizeChk input { accent-color: #2fae4a; vertical-align: -2px; }
     #shotName { position: absolute; left: 26px; bottom: 92px; font: 600 11px/1 ui-monospace, Menlo, monospace; color: rgba(255, 255, 255, 0.7); letter-spacing: 0.04em; pointer-events: none; display: none; }
     body.shotlbl #shotName { display: block; }
+    /* a tap on the picture or the space bar: the new state flashes in the middle, as on YouTube */
+    #tapFx { position: absolute; left: 50%; top: 50%; width: 76px; height: 76px; margin: -38px 0 0 -38px; border-radius: 50%; background: rgba(0, 0, 0, 0.5);
+      display: flex; align-items: center; justify-content: center; pointer-events: none; opacity: 0; z-index: 25; }
+    #tapFx svg { width: 40px; height: 40px; fill: #fff; }
+    #tapFx.go { animation: tapFx 0.6s ease-out; }
+    @keyframes tapFx { 0% { opacity: 0.95; transform: scale(0.8); } 30% { opacity: 0.95; transform: scale(1); } 100% { opacity: 0; transform: scale(1.35); } }
     #visualsPop { right: 12px; width: 250px; }
     #perfPop { width: 260px; }
     #audioPop, #renderPop { width: 260px; }
@@ -383,6 +389,7 @@
   <div id="start" class="ui-start"><button aria-label="Play"><svg viewBox="0 0 24 24"><path d="M7 4v16l13-8z"/></svg></button><div class="t"></div><div class="s">Tap to play · or pick a song from Songs</div></div>
   <div id="status" class="hidden"></div>
   <div id="shotName"></div>
+  <div id="tapFx"><svg viewBox="0 0 24 24"><path d="M7 4v16l13-8z"/></svg></div>
   <div id="caption">MEET YOUR NEW AI <b>PIANIST</b></div>
 
   <script src="tonejs-midi.js"></script>
@@ -1054,11 +1061,36 @@
     // a tap or click on the picture (no drag): play / pause, as on YouTube;
     // double-tap (or double-click): the next camera in the menu. The single tap
     // waits out the double-tap window, and a tap that only closes a menu is not one
+    let tapPlay = togglePlay   // play / pause with the feedback icon (set below)
     {
       const cv = renderer.domElement, down = new Map()
       let lastTap = 0, lastX = 0, lastY = 0, tapT = 0
+      // not a tap on the picture: one while a menu is open (it closes the
+      // menu), within a second of a menu closing (hover menus close by
+      // themselves) or of using one, or while a control from a menu still has the focus
+      // (the tap just lets go of it)
+      let menuClosedAt = 0
+      const anyPop = () => Object.values(pops).some(p => $(p).classList.contains('open'))
+      let popWasOpen = false
+      setTimeout(() => {   // (the menus are set up further down)
+        new MutationObserver(() => { const o = anyPop(); if (popWasOpen && !o) menuClosedAt = performance.now(); popWasOpen = o })
+          .observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'] })
+        // (and of using a control in one: a dropdown's list can lie over the picture)
+        for (const p of Object.values(pops)) for (const e of ['change', 'input', 'click']) $(p).addEventListener(e, () => { menuClosedAt = performance.now() })
+      })
+      const menuBusy = () => {
+        const a = document.activeElement
+        if (a && a !== document.body && a.closest?.('.pop')) { a.blur(); return true }
+        return anyPop() || performance.now() - menuClosedAt < 1000
+      }
+      tapPlay = async () => {
+        await togglePlay()
+        const fx = $('tapFx')
+        fx.querySelector('path').setAttribute('d', scheduler?.playing ? 'M7 4v16l13-8z' : 'M6 4h4v16H6zm8 0h4v16h-4z')
+        fx.classList.remove('go'); void fx.offsetWidth; fx.classList.add('go')
+      }
       cv.addEventListener('pointerdown', ev => {
-        const menu = Object.values(pops).some(p => $(p).classList.contains('open'))
+        const menu = menuBusy()
         down.set(ev.pointerId, [ev.clientX, ev.clientY, performance.now(), menu || down.size > 0])
       })
       cv.addEventListener('pointerup', ev => {
@@ -1074,7 +1106,7 @@
         } else {
           lastTap = now; lastX = ev.clientX; lastY = ev.clientY
           clearTimeout(tapT)
-          if (!d[3] && !exporting) tapT = setTimeout(togglePlay, 300)
+          if (!d[3] && !exporting) tapT = setTimeout(() => { if (!anyPop()) tapPlay() }, 300)
         }
       })
       cv.addEventListener('dblclick', ev => ev.preventDefault())
@@ -1173,7 +1205,7 @@
     addEventListener('pointerdown', poke, true)   // (a tap brings the controls back on touch screens)
     addEventListener('keydown', ev => {
       if (ev.key === 'Escape') document.body.classList.toggle('hideui')
-      if (ev.key === ' ' && ev.target === document.body) { ev.preventDefault(); togglePlay() }
+      if (ev.key === ' ' && ev.target === document.body) { ev.preventDefault(); tapPlay() }
     })
 
     // ── Sound ────────────────────────────────────────────────────────────
