@@ -15,7 +15,7 @@ import * as THREE from 'three'
 import { solveFinger } from '../fingering/hands3d.js'
 import { buildMotion, KEY, restOffset } from '../fingering/motion.js'
 import { planStrokes, velocityRange } from './stroke.js'
-import { keyX, isBlack, LOW, HIGH } from '../fingering/keyboard.js'
+import { keyX, isBlack, LOW, HIGH, WHITE_W } from '../fingering/keyboard.js'
 
 const KEY_TOP = 73
 const v3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z)
@@ -32,10 +32,47 @@ function keySurface(x, z) {
   while (hi - lo > 1) { const m = (lo + hi) >> 1; if (BLACK_XS[m] < x) lo = m; else hi = m }
   return Math.min(Math.abs(x - BLACK_XS[lo]), Math.abs(x - BLACK_XS[hi])) < 0.65 + 0.45 ? KEY.BLACK_Y : 0
 }
+// where on white key p's narrow part, between the black keys beside it, a
+// fingertip can rest clear of them (keySurface's margin): x if it already
+// is, else the middle of that part
+function narrowX(p, x) {
+  let lo = keyX(p) - WHITE_W / 2 + 0.2, hi = keyX(p) + WHITE_W / 2 - 0.2
+  if (isBlack(p - 1)) lo = Math.max(lo, keyX(p - 1) + 1.15)
+  if (isBlack(p + 1)) hi = Math.min(hi, keyX(p + 1) - 1.15)
+  return lo <= x && x <= hi ? x : (lo + hi) / 2
+}
 const _f = v3(), _s = v3(), _u = v3(), _m = new THREE.Matrix4(), _a = v3(), _b = v3(), _c = v3()
 
 function chainReach(L, k, p) {
   return Math.hypot(L[0] + L[1] * Math.cos(p) + L[2] * Math.cos((1 + k) * p), L[1] * Math.sin(p) + L[2] * Math.sin((1 + k) * p))
+}
+
+/**
+ * Where this hand's fingertips land on a white key (cm into the key, z < 0),
+ * from its own measurements: each finger, gently curved (chainReach at
+ * 0.5 rad a joint), reaching down from the knuckle line to the key top, lands
+ * this far forward of it; the whole set is placed so the thumb plays just
+ * inside the key's front edge (THUMB_Z). KEY.WHITE_Z's depths are for the
+ * #029 / #030 hand: on a smaller one they put the thumb's key out of its
+ * reach, and the slide that rescued it carried the whole hand forward, so
+ * the index (and middle) finger pressing a key just under its knuckle hooked.
+ * Returns { whiteZ: [, z1..z5], deepZ, knuckleZ } (knuckleZ: the middle knuckle's
+ * place at rest, in front of the key fronts when > 0).
+ */
+const THUMB_Z = -0.8
+export function handDepths(dims) {
+  const { FINGERS, KNUCKLE_Y } = dims
+  const nat = [0]
+  for (const f of [1, 2, 3, 4, 5]) {
+    const d = FINGERS[f], dy = KNUCKLE_Y + d.base[1] - d.rad[2] * 0.9, r = chainReach(d.len, d.k, 0.5)
+    nat.push(d.base[2] - Math.sqrt(Math.max(0, r * r - dy * dy)))
+  }
+  // (no deeper than the black keys start, -5.1 less a fingertip: a finger
+  // on a white key there would land on the black key beside it)
+  const whiteZ = nat.map((z, f) => (f ? Math.min(-0.6, Math.max(-4.6, THUMB_Z + z - nat[1])) : 0))
+  // ...except on a key clear of the black keys (D, G, A: deepZ)
+  const deepZ = nat.map((z, f) => (f ? Math.min(-0.6, Math.max(-9, THUMB_Z + z - nat[1])) : 0))
+  return { whiteZ, deepZ, knuckleZ: THUMB_Z - nat[1] }
 }
 
 /** Orthonormal frame: forward f, up as close to hint as possible, side = f × up. */
@@ -65,7 +102,9 @@ function palmPoint(J, out) {
  * little finger, up, toward the wrist), dir[3], k, tilt? }.
  */
 export function createHandDriver(side, dims) {
-  const { FINGERS, KNUCKLE_Y, KNUCKLE_Z, WRIST, UPPER, FORE, REACH } = dims
+  const { FINGERS, KNUCKLE_Y, WRIST, UPPER, FORE, REACH } = dims
+  // this hand's own strike depths and knuckle line (handDepths)
+  const { whiteZ: WHITE_Z, knuckleZ: KNUCKLE_Z } = handDepths(dims)
   const s = side === 'R' ? 1 : -1
   const J = makeJoints()
   const shoulder = v3(), tip = v3(), base = v3()
@@ -78,7 +117,7 @@ export function createHandDriver(side, dims) {
   // Where each fingertip sits in a relaxed hand, relative to the middle
   // knuckle (x across, z forward is negative): the same rest places the
   // motion model uses, so a hand with nothing to do fits itself exactly.
-  const REST = [1, 2, 3, 4, 5].map(f => [restOffset(side, f), KEY.WHITE_Z[f] - KNUCKLE_Z])
+  const REST = [1, 2, 3, 4, 5].map(f => [restOffset(side, f), WHITE_Z[f] - KNUCKLE_Z])
   // Sideways limits (radians) around each finger's neutral direction: tight
   // for a finger that is not playing, looser while it holds a key; the thumb
   // swings much further (it passes under the hand).
@@ -135,7 +174,7 @@ export function createHandDriver(side, dims) {
     const armYaw = Math.atan2(qx - SHOULDER.x, -(qz - SHOULDER.z))
     yaw = THREE.MathUtils.clamp(0.75 * yaw + 0.3 * armYaw, -0.4, 0.4)
     const [rx, rz] = rot(px, pz, yaw)
-    return { x: qx - rx, z: THREE.MathUtils.clamp(qz - rz, -3.5, 7), yaw, y: KEY_TOP + KNUCKLE_Y + 1.2 * anchor.idle }
+    return { x: qx - rx, z: THREE.MathUtils.clamp(qz - rz, KNUCKLE_Z - 6.5, KNUCKLE_Z + 4), yaw, y: KEY_TOP + KNUCKLE_Y + 1.2 * anchor.idle }
   }
 
   function basePos(f, out) {
@@ -155,11 +194,16 @@ export function createHandDriver(side, dims) {
     const saved = slide.clone(); slide.set(0, 0, 0)
     for (const f of [1, 2, 3, 4, 5]) {
       const d = FINGERS[f], t = tips[f - 1]
-      if (!(t.press > 0.2 || t.y < 0.6)) continue
+      // (a free finger only when it is about to land: one resting near the
+      // keys, as the 'fall' touch holds them, is not reaching for anything)
+      if (!(t.press > 0.2 || (t.y < 0.6 && (t.rest ?? 0) < 0.3))) continue
       basePos(f, base)
       tip.set(t.x, KEY_TOP + t.y + d.rad[2] * 0.9, t.z)
       _a.subVectors(tip, base)
-      const e = _a.length() - chainReach(d.len, d.k, 0.5)
+      // (out of reach = beyond a nearly straight finger, 0.3 rad a joint: the
+      // hand is placed for the gently curved one, 0.5, so the fit's own
+      // compromises do not count)
+      const e = _a.length() - chainReach(d.len, d.k, 0.3)
       if (e > worst) { worst = e; slideGoal.copy(_a).setLength(e) }
       const [nx, nz] = rot(NEUTRAL[f - 1][0], NEUTRAL[f - 1][1], hand.yaw)
       const ang = Math.atan2(nx * _a.z - nz * _a.x, nx * _a.x + nz * _a.z), over = Math.abs(ang) - SPLAY.held[f]
@@ -265,8 +309,20 @@ export function createHandDriver(side, dims) {
     // fingertip targets in the hand frame (lx toward the little finger = s·x)
     const lx = [], lz = [], held = [], ty = []
     for (const f of [1, 2, 3, 4, 5]) {
-      const d = FINGERS[f], t = tips[f - 1]
-      const [ax, az] = rot(t.x - hand.x - slide.x, t.z - hand.z - slide.z, -hand.yaw)
+      const d = FINGERS[f]
+      let t = tips[f - 1]
+      let [ax, az] = rot(t.x - hand.x - slide.x, t.z - hand.z - slide.z, -hand.yaw)
+      // A finger pressing a key that lies too close under its knuckle (the
+      // hand brought well in for a thumb on a black key, say) strikes it
+      // further in instead of hooking back under itself: up to its natural
+      // reach. A white key, between the black keys if it must (then on its
+      // narrow part, clear of them); a black key, along its length.
+      if (f > 1 && t.press > 0.2 && t.pitch != null && az > REST[f - 1][1] + 1.2) {
+        const black = isBlack(t.pitch)
+        const z = Math.max(black ? -12.5 : -11, t.z - (az - REST[f - 1][1] - 1.2) / Math.max(0.6, Math.cos(hand.yaw)))
+        t = { ...t, z, x: !black && z < -4.6 ? narrowX(t.pitch, t.x) : t.x }
+        ;[ax, az] = rot(t.x - hand.x - slide.x, t.z - hand.z - slide.z, -hand.yaw)
+      }
       let x = s * ax, z = az
       held.push(t.press > 0.2)
       if (!held[f - 1]) {
@@ -456,7 +512,7 @@ export function createHandsDriver(dims) {
     setNotes(notes) {
       own = notes.filter(n => n.finger >= 1)
       // fingers fall onto the keys, each in its own way (motion.js TOUCH)
-      motion = buildMotion(own, { touch: this.touch })
+      motion = buildMotion(own, { touch: this.touch, ...handDepths(dims) })
       plan()
       // bake the hands' placement over the song (60 Hz, interpolated)
       if (!own.length) { L.clearTrack(); R.clearTrack(); return }

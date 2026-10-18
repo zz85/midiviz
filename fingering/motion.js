@@ -36,6 +36,9 @@ export const restOffset = (hand, f) => (hand === 'L' ? -1 : 1) * (f - 3) * SPACI
 const up = n => n.release ?? n.off
 
 const smooth = u => (u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u))
+// a white key whose middle is clear of the black keys beside it (D, G, A): a
+// finger may strike it further in, between the black keys
+const clearOfBlack = p => [p - 1, p + 1].every(q => !isBlack(q) || Math.abs(keyX(q) - keyX(p)) > 1.15)
 
 // ── Touch: 'fall' (Chopin's: let the finger fall onto the key) ────────────
 // With touch 'fall' a finger is not pushed to the key: it rises in the free
@@ -64,9 +67,12 @@ export const TOUCH = {
 /**
  * Build the motion model for a fingered piece.
  * notes: [{ pitch, on, off, hand: 'L'|'R', finger: 1..5 }]
+ * whiteZ[f]: how far into a white key finger f strikes (default KEY.WHITE_Z,
+ * sized for the #029 / #030 hand; a smaller hand passes its own); deepZ[f]:
+ * the same on a white key it can reach between the black keys (D, G, A)
  * Returns { poseAt(t) → { L, R } , hands }.
  */
-export function buildMotion(notes, { approach = 0.09, release = 0.03, travel = 0.004, glide = false, touch = 'press' } = {}) {
+export function buildMotion(notes, { approach = 0.09, release = 0.03, travel = 0.004, glide = false, touch = 'press', whiteZ = KEY.WHITE_Z, deepZ = null } = {}) {
   const hands = {}
   const fall = touch === 'fall'
   // loudness relative to the piece (MIDI files run their velocities at
@@ -133,14 +139,14 @@ export function buildMotion(notes, { approach = 0.09, release = 0.03, travel = 0
   function fingerAt(h, f, t, anchor) {
     const list = h.fingers[f - 1]
     const restX = anchor.x + restOffset(h.hand, f)
-    const restZ = KEY.WHITE_Z[f] - 2.5 * anchor.black
+    const restZ = whiteZ[f] - 2.5 * anchor.black
     const rest = { x: restX, y: (fall ? TOUCH.HOVER : KEY.HOVER) + 1.5 * anchor.idle, z: restZ + 2 * anchor.idle }
     const i = lastBefore(list, t, 'on')
     const cur = i >= 0 ? list[i] : null
     const next = list[i + 1] || null
     const target = n => {
       const black = isBlack(n.pitch)
-      return { x: keyX(n.pitch), y: black ? KEY.BLACK_Y : 0, z: black ? KEY.BLACK_Z + (f === 1 || f === 5 ? 1.2 : 0) : KEY.WHITE_Z[f], black }
+      return { x: keyX(n.pitch), y: black ? KEY.BLACK_Y : 0, z: black ? KEY.BLACK_Z + (f === 1 || f === 5 ? 1.2 : 0) : deepZ && clearOfBlack(n.pitch) ? deepZ[f] : whiteZ[f], black }
     }
     // pressing (or holding) its current key
     if (cur && t < up(cur)) {
