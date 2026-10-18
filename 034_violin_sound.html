@@ -197,6 +197,26 @@
     }
     const style = { ...STYLE }
     const OPTDEF = {}
+    const sliderEl = {}
+    // presets: a starting point for the expression, humanize and bowing settings
+    // (any change afterwards shows "Custom"); keys not listed keep their defaults
+    const PRESETS = {
+      clean: { label: 'Clean', tip: 'A tidy studio reference: no humanization, light vibrato and slides, gentle phrasing',
+        style: { vibrato: 0.8, portamento: 0.5, dynamics: 0.8, phrasing: 0.6, timing: 0, intonation: 0, variance: 0 }, mode: 'standard' },
+      expressive: { label: 'Expressive', tip: 'A soloist: wider, warmer vibrato, more slides and dynamics, phrases shaped more; stays on one string for colour',
+        style: { vibrato: 1.3, vibratoRate: 6, portamento: 1.5, dynamics: 1.4, phrasing: 1.5, timing: 1, intonation: 1, variance: 1.2 }, mode: 'expressive' },
+      student: { label: 'Student', tip: 'An intermediate student: 1st position, slow narrow vibrato, flat dynamics, notes landing off pitch, uneven timing and bow, a heavier bow nearer the fingerboard',
+        style: { vibrato: 0.4, vibratoRate: 4.8, portamento: 0.4, dynamics: 0.6, phrasing: 0.4, pressure: 1.2, contact: 1.25, timing: 2.2, intonation: 2.5, variance: 2 },
+        opt: { rosin: '1.4' }, mode: 'beginner' },
+      baroque: { label: 'Baroque', tip: 'Historically informed style: vibrato only as a light ornament, almost no slides, notes swelling and fading (messa di voce) with phrases shaped by the bow, a lighter, faster bow away from the bridge, lower positions; the bow leaves the string between phrases',
+        style: { vibrato: 0.15, vibratoRate: 5.2, portamento: 0.15, dynamics: 0.9, phrasing: 1.6, bowSpeed: 1.15, pressure: 0.8, contact: 1.2 },
+        opt: { bowLift: 'off', keepBow: '0' }, mode: 'nearest' },
+    }
+    {
+      const r = document.createElement('div'); r.className = 'row'
+      r.innerHTML = `<label title="A starting point for the sliders below; change anything afterwards">Preset</label><select id="preset"><option value="default" title="The tuned defaults">Default</option><option value="" disabled>Custom</option>${Object.entries(PRESETS).map(([k, p]) => `<option value="${k}" title="${p.tip}">${p.label}</option>`).join('')}</select><button class="b" id="reset" title="Every expression, humanize, bowing, timbre and hall setting back to its default (keeps the piece, engine, instrument and speed)">Reset</button>`
+      $('sliders').appendChild(r)
+    }
     for (const [k, label, lo, hi, step] of SL) {
       if (k === 'timing') {
         const h = document.createElement('div'); h.className = 'head'
@@ -209,6 +229,7 @@
       const show = () => { v.textContent = (+inp.value).toFixed(k === 'vibratoRate' ? 1 : 2) }
       if (qs.has(k)) inp.value = qs.get(k)
       style[k] = +inp.value; show()
+      sliderEl[k] = { inp, show }
       inp.oninput = show
       inp.onchange = () => { style[k] = +inp.value; rebuild(); saveUrl() }
       $('sliders').appendChild(r)
@@ -217,7 +238,7 @@
     let take = 1
     {
       const r = document.createElement('div'); r.className = 'row'
-      r.innerHTML = `<label title="Humanize with new random choices (timing, intonation, variance, vibrato phase)">Take</label><button id="take">New take</button><span class="val" id="takeV"></span>`
+      r.innerHTML = `<label title="Humanize with new random choices (timing, intonation, variance, vibrato phase)">Take</label><button class="b" id="take">New take</button><span class="val" id="takeV"></span>`
       $('sliders').appendChild(r)
       take = +(qs.get('take') || 1)
       const show = () => { $('takeV').textContent = '#' + take }
@@ -261,7 +282,7 @@
         const [, , lo, hi, step, def, tip] = o
         r.innerHTML = `<label title="${tip}">${label}</label><input type="range" min="${lo}" max="${hi}" step="${step}"><span class="val"></span>`
         const inp = r.querySelector('input'), v = r.querySelector('.val')
-        inp.value = qs.get(k) ?? def; opt[k] = inp.value; OPTDEF[k] = String(def)
+        inp.value = qs.get(k) ?? def; opt[k] = inp.value; OPTDEF[k] = String(def); optEl[k] = inp
         const show = () => { v.textContent = (+inp.value).toFixed(2) }; show()
         inp.oninput = () => { show(); opt[k] = inp.value; applyOpts(false) }
         inp.onchange = () => { if (k === 'tremoloMin') applyOpts(true); saveUrl() }
@@ -276,6 +297,38 @@
       lab.setParams({ bowPress: opt.bowPress === 'on', rosin: +opt.rosin, resonance: +opt.resonance, body: opt.body })
       lab.setSordino(opt.sordino === '1')
       if (re && changed) rebuild()
+    }
+
+    // ── Presets and reset ──
+    // the values a preset (or the defaults, with no preset) gives each control
+    function presetValues(key) {
+      const P = PRESETS[key] || {}
+      const st = {}; for (const [k] of SL) st[k] = P.style?.[k] ?? STYLE[k]
+      const op = {}; for (const k of Object.keys(OPTDEF)) op[k] = P.opt?.[k] ?? OPTDEF[k]
+      return { st, op, mode: P.mode ?? 'standard' }
+    }
+    function setControls({ st, op, mode }, { hall: resetHall = false } = {}) {
+      for (const [k, v] of Object.entries(st)) { style[k] = v; sliderEl[k].inp.value = v; sliderEl[k].show() }
+      for (const [k, v] of Object.entries(op)) { opt[k] = v; optEl[k].value = v; optEl[k].dispatchEvent(new Event('input')) }
+      demoOpts = null
+      take = 1; $('takeV').textContent = '#1'
+      if (resetHall) { $('room').value = 'recital'; $('seat').value = 'front'; $('amount').value = 1; hall() }
+      applyOpts(false)
+      // the fingering style changes the notes themselves (loadPiece rebuilds)
+      if ($('mode').value !== mode) { $('mode').value = mode; if (state.raw.length) loadPiece(state.raw, { title: state.title, source: state.source, fit: state.fit, expr: state.expr }) }
+      else rebuild()
+      saveUrl()
+    }
+    $('preset').onchange = () => { if ($('preset').value) setControls(presetValues($('preset').value)) }
+    PRESETS.default = {}
+    $('reset').onclick = () => setControls(presetValues(''), { hall: true })
+    // show which preset the current settings match ("Custom" if none)
+    function showPreset() {
+      const same = key => {
+        const v = presetValues(key)
+        return SL.every(([k]) => style[k] === v.st[k]) && Object.keys(OPTDEF).every(k => String(opt[k]) === String(v.op[k])) && $('mode').value === v.mode
+      }
+      $('preset').value = Object.keys(PRESETS).find(same) || ''
     }
 
     // hall
@@ -571,6 +624,7 @@
       if (take !== 1) p.set('take', take)
       for (const [k, v] of Object.entries(opt)) if (String(v) !== OPTDEF[k]) p.set(k, v)
       history.replaceState(null, '', '?' + p.toString())
+      showPreset()
     }
 
     // ── View ───────────────────────────────────────────────────────────────
@@ -674,6 +728,7 @@
     if (qs.get('song')) { $('song').value = qs.get('song'); loadSong(qs.get('song'), qs.has('track') ? +qs.get('track') : null) }
     else if (qs.get('typed')) { $('typed').value = qs.get('typed'); state.tempo = 150; loadPiece(parseTyped(qs.get('typed')), { title: 'Typed notes', source: { typed: qs.get('typed') }, fit: false }) }
     else { $('demo').value = qs.get('demo') || 'lyrical'; loadDemo($('demo').value) }
+    showPreset()
     window.__lab = { lab, state }
   </script>
 </body>
