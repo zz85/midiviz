@@ -194,12 +194,17 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     for (const sd of ['L', 'R']) {
       arm[sd].rU = radius(rad[sd][0], 'upperarm01.' + sd, 'lowerarm01.' + sd)
       arm[sd].rF = radius(rad[sd][1], 'lowerarm01.' + sd, 'wrist.' + sd)
-      arm[sd].phi = 0; arm[sd].protract = 0
-      arm[sd].clavLen = Math.hypot(restHead[B('upperarm01.' + sd)].x - restHead[B('clavicle.' + sd)].x, restHead[B('upperarm01.' + sd)].z - restHead[B('clavicle.' + sd)].z) || 14
     }
     const n = bi.length
     return { n, bi: Int16Array.from(bi), lp: Float32Array.from(lp), ln: Float32Array.from(ln), wp: new Float32Array(n * 3), wn: new Float32Array(n * 3), cand: new Int32Array(n) }
   })()
+  // shoulder state, also without a body mesh to measure (VRM / glTF models
+  // have none: torso is null there). clavLen divides the shrug and the
+  // protraction, so it must exist for every model
+  for (const sd of ['L', 'R']) {
+    arm[sd].phi = 0; arm[sd].protract = 0
+    arm[sd].clavLen = Math.hypot(restHead[B('upperarm01.' + sd)].x - restHead[B('clavicle.' + sd)].x, restHead[B('upperarm01.' + sd)].z - restHead[B('clavicle.' + sd)].z) || 14
+  }
   const _tp = v3(), _tn = v3()
   // the proxy in world space, after the spine is posed
   function placeTorso() {

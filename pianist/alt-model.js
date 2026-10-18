@@ -36,6 +36,13 @@ export const MODELS = {
     label: 'VRM · pixiv sample (VRM PL 1.0)', url: 'models/vrm1-constraint-twist-sample.vrm', kind: 'vrm',
     credit: 'VRM1_Constraint_Twist_Sample, © pixiv Inc., VRM Public License 1.0',
   },
+  vroida: {
+    label: 'VRoid · AvatarSample_A (pixiv)', url: 'models/vroid-avatarsample-a.vrm', kind: 'vrm',
+    // her MToon is authored darker than pixiv's twist sample (skin shade = lit
+    // colour, soft 0.05 toony), so she takes less of the stage dimming
+    gain: 0.6,
+    credit: 'VRoid AvatarSample_A, © pixiv Inc. (VRoid Project); free to use, alter and redistribute under pixiv\'s AvatarSample terms',
+  },
 }
 
 // MakeHuman reference proportions (the build's 165 cm woman), for the scale
@@ -184,8 +191,8 @@ export async function loadAltCharacter(key, base = new URL('./assets/', import.m
       if (!o.isMesh) return
       for (const mt of [].concat(o.material)) {
         if (!mt.isMToonMaterial) continue
-        mt.color?.multiplyScalar(MTOON_GAIN)
-        mt.shadeColorFactor?.multiplyScalar(MTOON_GAIN)
+        mt.color?.multiplyScalar(spec.gain ?? MTOON_GAIN)
+        mt.shadeColorFactor?.multiplyScalar(spec.gain ?? MTOON_GAIN)
       }
     })
   }
