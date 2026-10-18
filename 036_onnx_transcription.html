@@ -3,17 +3,22 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Experiment #036 - Audio → MIDI on ONNX Runtime Web</title>
+  <title>Experiment #036 - Transcription models on ONNX Runtime Web</title>
   <!--
-    Experiment #036 - Spotify's Basic Pitch run as ONNX on onnxruntime-web
-    (WASM, or WebGPU), no TensorFlow (transcription/research/01_audio_to_midi.md).
+    Experiment #036 - a playground for audio → MIDI models exported to ONNX and
+    run with onnxruntime-web (WASM or WebGPU) in a module worker, no TensorFlow
+    (transcription/research/01_audio_to_midi.md).
 
-    transcription/onnx/basic-pitch-nmp.onnx  the ICASSP 2022 model (230 KB, Apache-2.0)
-    transcription/onnx/basic-pitch.js        windowing, unwrapping, note creation, pitch bends
-    transcription/onnx/ort-worker.js         the onnxruntime-web session in a module worker
-    transcription/onnx/test-signal.js        synthetic audio with known notes (ground truth)
-    transcription/onnx/score.js              mir_eval-style note F1
-    node --test transcription/onnx/test/basic-pitch.test.js
+    Models
+      Basic Pitch (Spotify, ICASSP 2022)  transcription/onnx/basic-pitch-nmp.onnx + basic-pitch.js
+      Transkun v2 (Yan & Duan, 2024)      transcription/onnx/transkun-{core,attr}.onnx + transkun.js
+                                          (exported by transcription/onnx/tools/export_transkun.py)
+    transcription/onnx/ort-worker.js      onnxruntime-web sessions, one model per worker
+    transcription/synth-worker.js         OxiSynth offline render of test MIDIs (from #035)
+    transcription/onnx/test-signal.js     simple synthetic timbres with known notes
+    transcription/onnx/score.js           mir_eval-style note F1
+    coi-sw.js                             COOP / COEP for this page, so WASM can use threads
+    node --test transcription/onnx/test/basic-pitch.test.js transcription/onnx/test/transkun.test.js
   -->
   <style>
     html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0b0c; font: 13px/1.35 "Helvetica Neue", Arial, sans-serif; color: #e8e2d6; }
@@ -28,33 +33,42 @@
     #panel h1 { margin: 0 0 2px; font: 300 17px/1.2 Georgia, serif; letter-spacing: 0.04em; color: #f3e6c4; }
     #panel h1 a { color: inherit; text-decoration: none; }
     #panel .sub { font-size: 11px; color: #9c958a; margin-bottom: 6px; }
-    #panel .sub a { color: #9c958a; }
+    #panel a { color: #b9ad98; }
     #panel.collapsed .body { display: none; }
     #toggle { float: right; background: none; border: 0; color: #d8b56a; font-size: 15px; cursor: pointer; }
     h2 { font: 600 10.5px/1 "Helvetica Neue", Arial, sans-serif; letter-spacing: 0.12em; text-transform: uppercase; color: #b9a57a; margin: 10px 0 4px; }
-    hr { border: 0; border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 8px 0; }
     .row { display: flex; align-items: center; gap: 6px; margin: 5px 0; flex-wrap: wrap; }
     .row > label:first-child { flex: 0 0 74px; color: #a9a196; }
-    select, input[type=range], input[type=number] { flex: 1; min-width: 0; }
+    select, input[type=range] { flex: 1; min-width: 0; }
     select, input[type=number] { background: #1d1b19; color: #eee6d8; border: 1px solid #3d3933; border-radius: 4px; padding: 2px 4px; font: inherit; }
-    input[type=number] { flex: 0 0 64px; }
+    input[type=number] { width: 48px; }
     input[type=range], input[type=checkbox] { accent-color: #c9a24a; }
     .chk { display: flex; align-items: center; gap: 3px; color: #cfc6b8; margin-right: 6px; white-space: nowrap; }
     .val { font: 11px monospace; color: #b9b0a2; min-width: 40px; text-align: right; }
     button.b { background: #26231f; color: #eee6d8; border: 1px solid #4a443b; border-radius: 4px; padding: 3px 8px; cursor: pointer; font: inherit; font-size: 12px; }
     button.b:hover { background: #35302a; }
-    button.b.on { background: #c9a24a; color: #111; border-color: #c9a24a; }
     button.b.rec { background: #8a2b22; border-color: #c44; }
     button.b:disabled { opacity: 0.45; cursor: default; }
+    #models { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+    #models button { text-align: left; padding: 5px 7px; line-height: 1.25; }
+    #models button small { display: block; font-size: 10px; opacity: 0.7; }
+    #models button.on { background: #c9a24a; color: #111; border-color: #c9a24a; }
+    #modelInfo { font-size: 11.5px; color: #c9c0b2; margin: 5px 0 2px; }
+    table.cmp { width: 100%; border-collapse: collapse; font: 11px monospace; color: #c9c0b2; margin-top: 4px; }
+    table.cmp th { font-weight: normal; color: #8f887d; text-align: right; padding: 1px 3px; }
+    table.cmp td { text-align: right; padding: 1px 3px; }
+    table.cmp th:first-child, table.cmp td:first-child { text-align: left; }
+    table.cmp tr.on td { color: #f3e6c4; }
+    table.cmp tr[data-m] { cursor: pointer; }
     #seek { flex: 1; }
     #clock { font: 11px monospace; color: #b9b0a2; min-width: 82px; text-align: right; }
     .stats { font: 11px/1.45 monospace; color: #c9c0b2; white-space: pre-wrap; background: rgba(0,0,0,0.25); border-radius: 4px; padding: 5px 6px; }
     .stats b { color: #f3e6c4; font-weight: normal; }
     #hint { color: #8f887d; font-size: 11px; margin-top: 6px; }
-    #status { position: absolute; top: 12px; right: 12px; padding: 6px 10px; border-radius: 6px; background: rgba(14, 13, 12, 0.88); border: 1px solid #3d3933; font-size: 12px; z-index: 3; max-width: 420px; }
+    #status { position: absolute; top: 12px; right: 12px; padding: 6px 10px; border-radius: 6px; background: rgba(14, 13, 12, 0.88); border: 1px solid #3d3933; font-size: 12px; z-index: 3; max-width: 440px; }
     #status.hidden { display: none; }
     #status.error { border-color: #c44; color: #f99; }
-    #legend { position: absolute; right: 12px; bottom: 12px; font-size: 11px; color: #a9a196; background: rgba(14,13,12,0.8); border: 1px solid #3d3933; border-radius: 6px; padding: 5px 8px; z-index: 2; }
+    #legend { position: absolute; right: 12px; bottom: 56px; font-size: 11px; color: #a9a196; background: rgba(14,13,12,0.8); border: 1px solid #3d3933; border-radius: 6px; padding: 5px 8px; z-index: 2; }
     #legend i { display: inline-block; width: 18px; height: 8px; margin: 0 4px 0 8px; vertical-align: middle; border-radius: 2px; }
     #dropHint { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; font: 300 26px Georgia, serif; color: #f3e6c4; background: rgba(0, 0, 0, 0.55); pointer-events: none; z-index: 5; }
   </style>
@@ -63,9 +77,14 @@
   <canvas id="view"></canvas>
   <div id="panel">
     <button id="toggle" title="Collapse">–</button>
-    <h1><a href="README.md">#036 Audio → MIDI · ONNX</a></h1>
-    <div class="sub">Spotify's <a href="https://github.com/spotify/basic-pitch">Basic Pitch</a> on <a href="https://onnxruntime.ai/docs/tutorials/web/">onnxruntime-web</a>, no TensorFlow · <a href="transcription/research/01_audio_to_midi.md">research</a></div>
+    <h1><a href="README.md">#036 Transcription · ONNX</a></h1>
+    <div class="sub">Audio → MIDI models on <a href="https://onnxruntime.ai/docs/tutorials/web/">onnxruntime-web</a>, no TensorFlow · <a href="transcription/research/01_audio_to_midi.md">research</a></div>
     <div class="body">
+      <h2>Model</h2>
+      <div id="models"></div>
+      <div id="modelInfo"></div>
+      <table class="cmp" id="cmp" hidden></table>
+
       <h2>Source</h2>
       <div class="row">
         <button class="b" id="open">Open audio / MIDI…</button>
@@ -74,20 +93,24 @@
       </div>
       <div class="row"><label>Test</label>
         <select id="test">
-          <option value="">— synthetic audio with known notes —</option>
+          <option value="">— render a MIDI, transcribe, score —</option>
           <option value="phrase">Test phrase (melody, chords, run)</option>
           <option value="minute_waltz.mid">Chopin – Minute Waltz</option>
           <option value="midis/bach_846.mid">Bach – Prelude in C (WTC I)</option>
           <option value="entertainer.mid">Joplin – The Entertainer</option>
           <option value="midis/chpn-p4.mid">Chopin – Prelude Op. 28 No. 4</option>
           <option value="midis/bach_wtc1_03.mid">Bach – WTC I No. 3</option>
+          <option value="liz_liebestraum.mid">Liszt – Liebestraum No. 3</option>
         </select>
       </div>
-      <div class="row"><label>Synth</label>
-        <select id="timbre"><option value="piano">struck (piano-like)</option><option value="organ">sustained (organ-like)</option><option value="sine">sine</option></select>
+      <div class="row"><label>Rendered as</label>
+        <select id="timbre">
+          <option value="sf">soundfont piano (Motif ES6)</option>
+          <option value="piano">simple struck tone</option><option value="organ">simple sustained tone</option><option value="sine">sine</option>
+        </select>
         <span class="chk" title="Render at most this many seconds of a MIDI file">≤ <input type="number" id="maxSec" value="45" min="5" max="600" step="5"> s</span>
       </div>
-      <input type="file" id="file" accept="audio/*,.mid,.midi,video/*" hidden>
+      <div class="stats" id="srcInfo">—</div>
 
       <h2>Runtime</h2>
       <div class="row"><label>Backend</label>
@@ -99,21 +122,32 @@
       </div>
       <div class="stats" id="rt">—</div>
 
-      <h2>Notes</h2>
-      <div class="row"><label>Onset</label><input type="range" id="onsetT" min="0.05" max="0.95" step="0.01" value="0.5"><span class="val" id="onsetTv"></span></div>
-      <div class="row"><label>Frame</label><input type="range" id="frameT" min="0.05" max="0.9" step="0.01" value="0.3"><span class="val" id="frameTv"></span></div>
-      <div class="row"><label>Min length</label><input type="range" id="minMs" min="11" max="500" step="1" value="127.7"><span class="val" id="minMsv"></span></div>
-      <div class="row"><label>Range</label>
-        <select id="range">
-          <option value="">full (A0–C8)</option><option value="piano">piano 27–4200 Hz</option>
-          <option value="voice">voice 80–1100 Hz</option><option value="violin">violin 190–3500 Hz</option>
-          <option value="bass">bass 30–400 Hz</option>
-        </select>
+      <div id="bpOpts">
+        <h2>Basic Pitch notes</h2>
+        <div class="row"><label>Onset</label><input type="range" id="onsetT" min="0.05" max="0.95" step="0.01" value="0.5"><span class="val" id="onsetTv"></span></div>
+        <div class="row"><label>Frame</label><input type="range" id="frameT" min="0.05" max="0.9" step="0.01" value="0.3"><span class="val" id="frameTv"></span></div>
+        <div class="row"><label>Min length</label><input type="range" id="minMs" min="11" max="500" step="1" value="127.7"><span class="val" id="minMsv"></span></div>
+        <div class="row"><label>Range</label>
+          <select id="range">
+            <option value="">full (A0–C8)</option><option value="piano">piano 27–4200 Hz</option>
+            <option value="voice">voice 80–1100 Hz</option><option value="violin">violin 190–3500 Hz</option>
+            <option value="bass">bass 30–400 Hz</option>
+          </select>
+        </div>
+        <div class="row">
+          <span class="chk" title="Add onsets where the note activation jumps"><input type="checkbox" id="infer" checked>infer onsets</span>
+          <span class="chk" title="Second pass that grows notes from leftover energy without an onset"><input type="checkbox" id="melodia" checked>melodia trick</span>
+          <span class="chk"><input type="checkbox" id="bends" checked>pitch bends</span>
+        </div>
       </div>
-      <div class="row">
-        <span class="chk" title="Add onsets where the note activation jumps"><input type="checkbox" id="infer" checked>infer onsets</span>
-        <span class="chk" title="Second pass that grows notes from leftover energy without an onset"><input type="checkbox" id="melodia" checked>melodia trick</span>
-        <span class="chk"><input type="checkbox" id="bends" checked>pitch bends</span>
+      <div id="tkOpts" hidden>
+        <h2>Transkun</h2>
+        <div class="row"><label>Segment</label>
+          <select id="seg" title="Each segment is scored as a whole (T × T intervals per key); segments overlap by half">
+            <option value="16">16 s, hop 8 s (as trained)</option>
+            <option value="8">8 s, hop 4 s (¼ the memory)</option>
+          </select>
+        </div>
       </div>
       <div class="stats" id="nt">—</div>
 
@@ -130,10 +164,10 @@
       </div>
       <div class="row">
         <button class="b" id="exportMid" disabled>Export MIDI</button>
-        <button class="b" id="exportWav" disabled title="The 22 050 Hz mono audio the model saw">Export WAV</button>
+        <button class="b" id="exportWav" disabled title="The mono audio the current model saw, at its sample rate">Export WAV</button>
         <button class="b" id="fit" title="Fit the whole piece (F)">Fit</button>
       </div>
-      <div id="hint">Drop an audio or MIDI file anywhere. Wheel zooms time, shift+wheel scrolls, drag pans, click seeks, Space plays.</div>
+      <div id="hint">Drop an audio or MIDI file anywhere (MIDI is rendered, then transcribed and scored). Wheel zooms time, ctrl+wheel pitch, shift+wheel scrolls, drag pans, click seeks, Space plays, 1 / 2 switch models.</div>
     </div>
   </div>
   <div id="legend"></div>
@@ -142,17 +176,45 @@
 
   <script src="tonejs-midi.js"></script>
   <script type="module">
-    import { Transcriber, notesFromOutput, frameTime, windowCount, resample, SAMPLE_RATE, KEEP, N_NOTES, N_CONTOUR, FPS, HOP, WINDOW, hzToMidi } from './transcription/onnx/basic-pitch.js'
-    import { renderNotes, testPhrase } from './transcription/onnx/test-signal.js'
-    import { scoreNotes } from './transcription/onnx/score.js'
-    import { SoundFontEngine, MidiScheduler } from './soundfont-engine/src/index.js'
+    const params = new URLSearchParams(location.search)
+
+    // ── Cross-origin isolation (threads) via coi-sw.js, scoped to this page ──
+    if (!self.crossOriginIsolated && 'serviceWorker' in navigator && isSecureContext && params.get('coi') !== '0') {
+      try {
+        await navigator.serviceWorker.register('coi-sw.js', { scope: location.pathname })
+        await navigator.serviceWorker.ready
+        if (!sessionStorage.getItem('coi-reloaded')) { sessionStorage.setItem('coi-reloaded', '1'); location.reload(); await new Promise(() => {}) }
+      } catch (e) { console.warn('coi service worker', e) }
+    }
+    if (self.crossOriginIsolated) sessionStorage.removeItem('coi-reloaded')
+
+    const BP = await import('./transcription/onnx/basic-pitch.js')
+    const { renderNotes: renderSimple, testPhrase } = await import('./transcription/onnx/test-signal.js')
+    const { scoreNotes } = await import('./transcription/onnx/score.js')
+    const { SoundFontEngine, MidiScheduler } = await import('./soundfont-engine/src/index.js')
 
     const ORT_VERSION = '1.30.0'
     const ORT_CDN = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`
-    const MODEL_URL = new URL('./transcription/onnx/basic-pitch-nmp.onnx', import.meta.url).href
+    const MODEL_BASE = new URL('./transcription/onnx/', import.meta.url).href
+    const VENDOR = new URL('./soundfont-engine/vendor', import.meta.url).href
+    const FONTS = ['soundfonts/Motif_ES6_Concert_Piano.sf2'].map(p => new URL(p, location.href).href)
+    const RENDER_SR = 44100
     const RANGES = { piano: [27, 4200], voice: [80, 1100], violin: [190, 3500], bass: [30, 400] }
+
+    const MODELS = {
+      'basic-pitch': {
+        name: 'Basic Pitch', by: 'Spotify, ICASSP 2022', sr: 22050, size: '230 KB', key: '1',
+        info: 'Any instrument, polyphonic, with pitch bends. Note, onset and contour activations are decoded on the page, so the thresholds below act instantly. 2 s windows: works live. <a href="https://github.com/spotify/basic-pitch">Apache-2.0</a>.',
+        live: true, heat: true,
+      },
+      transkun: {
+        name: 'Transkun v2', by: 'Yan & Duan, ISMIR 2024', sr: 44100, size: '55 MB', key: '2',
+        info: 'Solo piano: notes with velocity, plus sustain and soft pedal. A transformer scores every possible note interval, a semi-CRF picks them (decoded in JS). 16 s segments, so recordings only. <a href="https://github.com/Yujia-Yan/Transkun">MIT</a>.',
+        live: false, heat: false,
+      },
+    }
     const $ = id => document.getElementById(id)
-    const params = new URLSearchParams(location.search)
+    let current = MODELS[params.get('model')] ? params.get('model') : 'basic-pitch'
 
     // ── Status ─────────────────────────────────────────────────────────────
     let statusTimer
@@ -164,80 +226,111 @@
     const fmt = t => { t = Math.max(0, t); return `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}` }
 
     // ── State ──────────────────────────────────────────────────────────────
-    const S = {
-      name: '', audio22: null,          // Float32Array at 22 050 Hz (what the model sees)
-      playBuf: null,                    // AudioBuffer for playback (original rate when decoded from a file)
-      duration: 0, ref: null,           // ground-truth notes when known
-      tr: new Transcriber(), out: null, notes: [], score: null,
-      inferMs: 0, windows: 0, live: false,
-    }
+    // src: the loaded source (AudioBuffer for playback, mono copies per model rate, ground truth when known)
+    // res[model]: that model's result on src ({ notes, pedals, out?, ms, units, unitLabel, score, partial })
+    const S = { src: null, res: {}, live: false, gen: 0 }
+    const R = () => S.res[current]
 
-    // ── Runtime (worker) ───────────────────────────────────────────────────
+    // ── Runtime: one worker per model ──────────────────────────────────────
     const coi = self.crossOriginIsolated, cores = navigator.hardwareConcurrency || 4
-    for (const n of [...new Set([1, 2, 4, Math.min(8, cores), cores])].filter(n => n <= cores)) {
-      const o = document.createElement('option'); o.value = n; o.textContent = n === 1 ? '1' : `${n}${coi ? '' : ' (needs COOP/COEP)'}`
+    for (const n of [...new Set([1, 2, 4, Math.min(8, cores), Math.min(16, cores)])].filter(n => n <= cores)) {
+      const o = document.createElement('option'); o.value = n; o.textContent = n === 1 ? '1' : `${n}${coi ? '' : ' (needs isolation)'}`
       o.disabled = n > 1 && !coi; $('threads').append(o)
     }
-    $('threads').value = coi ? String(Math.min(4, cores)) : '1'
+    $('threads').value = coi ? String(Math.min(8, cores)) : '1'
     if (params.get('ep')) $('ep').value = params.get('ep')
     if (!navigator.gpu) $('ep').querySelector('[value=webgpu]').textContent = 'WebGPU (not available)'
 
-    let worker = null, rt = null, nextId = 1, pending = new Map(), queue = Promise.resolve()
-    function startWorker() {
-      worker?.terminate(); pending.forEach(p => p.reject(new Error('restarted'))); pending.clear()
-      rt = null; renderRt('loading…')
-      const ep = $('ep').value, threads = +$('threads').value
-      const w = new Worker(new URL('./transcription/onnx/ort-worker.js', import.meta.url), { type: 'module' })
-      worker = w
-      const ready = new Promise((resolve, reject) => {
-        w.onmessage = ({ data: m }) => {
-          if (m.type === 'ready') { rt = m; renderRt(); resolve() }
-          else if (m.type === 'progress') pending.get(m.id)?.progress?.(m)
-          else if (m.type === 'result') { pending.get(m.id)?.resolve(m); pending.delete(m.id) }
+    const workers = {}
+    function runtimeKey() { return `${$('ep').value}/${$('threads').value}/${$('simd').checked}` }
+    function worker(model = current) {
+      const key = runtimeKey()
+      let w = workers[model]
+      if (w && w.key === key) return w
+      w?.worker.terminate(); w?.pending.forEach(p => p.reject(new Error('runtime changed')))
+      w = workers[model] = { key, worker: new Worker(new URL('./transcription/onnx/ort-worker.js', import.meta.url), { type: 'module' }), pending: new Map(), info: null, queue: Promise.resolve() }
+      if (model === current) renderRt(`loading ${MODELS[model].name} (${MODELS[model].size})…`)
+      w.ready = new Promise((resolve, reject) => {
+        w.worker.onmessage = ({ data: m }) => {
+          const p = m.id && w.pending.get(m.id)
+          if (m.type === 'ready') { w.info = m; if (model === current) renderRt(); resolve() }
+          else if (m.type === 'progress') p?.progress?.(m)
+          else if (m.type === 'result') { p?.resolve(m); w.pending.delete(m.id) }
           else if (m.type === 'error') {
-            if (m.id && pending.has(m.id)) { pending.get(m.id).reject(new Error(m.message)); pending.delete(m.id) }
-            else { renderRt('failed: ' + m.message); reject(new Error(m.message)) }
+            if (p) { p.reject(new Error(m.message)); w.pending.delete(m.id) }
+            else { if (model === current) renderRt('failed: ' + m.message); reject(new Error(m.message)) }
           }
         }
-        w.onerror = e => { renderRt('worker error: ' + (e.message || e)); reject(e) }
+        w.worker.onerror = e => { renderRt('worker error: ' + (e.message || e)); reject(e) }
       })
-      const bundle = ep === 'webgpu' ? 'ort.webgpu.min.mjs' : 'ort.wasm.min.mjs'
-      w.postMessage({ type: 'init', ort: ORT_CDN + bundle, wasmPaths: ORT_CDN, model: MODEL_URL, ep, threads, simd: $('simd').checked })
-      return (S.ready = ready)
+      w.ready.catch(() => {})
+      const bundle = $('ep').value === 'webgpu' ? 'ort.webgpu.min.mjs' : 'ort.wasm.min.mjs'
+      w.worker.postMessage({ type: 'init', model, ort: ORT_CDN + bundle, wasmPaths: ORT_CDN, base: MODEL_BASE, ep: $('ep').value, threads: +$('threads').value, simd: $('simd').checked })
+      return w
     }
-    function run(windows, count, onProgress) {
-      return (queue = queue.then(async () => {
-        await S.ready
+    let nextId = 1
+    function call(model, msg, transfer, onProgress) {
+      const w = worker(model)
+      return (w.queue = w.queue.catch(() => {}).then(async () => {
+        await w.ready
         const id = nextId++
         return new Promise((resolve, reject) => {
-          pending.set(id, { resolve, reject, progress: onProgress })
-          worker.postMessage({ type: 'run', id, windows, count }, [windows.buffer])
+          w.pending.set(id, { resolve, reject, progress: onProgress })
+          w.worker.postMessage({ ...msg, id }, transfer)
         })
       }))
     }
     function renderRt(msg) {
-      const el = $('rt')
-      if (msg) { el.textContent = `onnxruntime-web ${ORT_VERSION} · ${$('ep').value}\n${msg}`; return }
-      const perWin = S.windows ? S.inferMs / S.windows : 0
-      const rtf = perWin ? (HOP / SAMPLE_RATE) / (perWin / 1000) : 0
-      el.innerHTML = `onnxruntime-web <b>${rt.version || ORT_VERSION}</b> · <b>${rt.ep}</b> · threads <b>${rt.threads}</b>` +
-        `\nmodel load <b>${rt.loadMs.toFixed(0)} ms</b> · warm-up <b>${rt.warmMs.toFixed(0)} ms</b>` +
-        (rt.crossOriginIsolated ? '' : '\nnot cross-origin isolated: 1 thread') +
-        (S.windows ? `\nlast run <b>${S.windows}</b> windows in <b>${S.inferMs.toFixed(0)} ms</b>\n<b>${perWin.toFixed(1)} ms</b>/window (2 s) · <b>${rtf.toFixed(1)}×</b> real time` : '')
+      const el = $('rt'), w = workers[current], info = w?.info
+      if (msg || !info) { el.textContent = `onnxruntime-web ${ORT_VERSION} · ${$('ep').value}\n${msg || '—'}`; return }
+      const r = R(), dur = S.src?.duration || 0
+      let s = `onnxruntime-web <b>${info.version || ORT_VERSION}</b> · <b>${info.ep}</b> · threads <b>${info.threads}</b>` +
+        `\nload <b>${(info.loadMs / 1000).toFixed(2)} s</b> · warm-up <b>${info.warmMs.toFixed(0)} ms</b>` +
+        (info.crossOriginIsolated ? ' · isolated' : '\nnot cross-origin isolated: 1 thread')
+      if (r?.ms && !r.partial) {
+        s += `\nlast run <b>${(r.ms / 1000).toFixed(2)} s</b> for <b>${fmt(dur)}</b> (${r.units} ${r.unitLabel}) · <b>${(dur / (r.ms / 1000)).toFixed(1)}×</b> real time`
+        if (r.timing) s += `\n${Object.entries(r.timing).map(([k, v]) => `${k} ${(v / 1000).toFixed(2)} s`).join(' · ')}`
+      }
+      el.innerHTML = s
     }
-    for (const id of ['ep', 'threads', 'simd']) $(id).onchange = async () => { await startWorker().catch(() => {}); if (S.audio22 && !S.live) transcribe() }
+    for (const id of ['ep', 'threads', 'simd']) $(id).onchange = () => { S.res = {}; worker(); if (S.src && !S.live) transcribe() }
+
+    // ── Models UI ──────────────────────────────────────────────────────────
+    for (const [id, m] of Object.entries(MODELS)) {
+      const b = document.createElement('button'); b.className = 'b'; b.dataset.m = id
+      b.innerHTML = `${m.name}<small>${m.by} · ${m.size}</small>`
+      b.onclick = () => selectModel(id)
+      $('models').append(b)
+    }
+    function selectModel(id) {
+      if (S.live && id !== current) return setStatus('Stop live mode first', true, 2500)
+      current = id
+      for (const b of $('models').children) b.classList.toggle('on', b.dataset.m === id)
+      const m = MODELS[id]
+      $('modelInfo').innerHTML = m.info
+      $('bpOpts').hidden = id !== 'basic-pitch'; $('tkOpts').hidden = id !== 'transkun'
+      $('layer').disabled = !m.heat; $('live').disabled = !m.live
+      $('live').title = m.live ? 'Stream the microphone through the model window by window' : `${m.name} works on 16 s segments: record instead`
+      const u = new URL(location.href); u.searchParams.set('model', id); history.replaceState(null, '', u)
+      heat = null
+      worker()
+      renderRt(); renderNotesInfo(); renderCompare(); reloadScheduler()
+      if (S.src && !S.res[id] && !S.live && !mic) transcribe()
+    }
 
     // ── Audio in ───────────────────────────────────────────────────────────
     const ctx = new (window.AudioContext || window.webkitAudioContext)()
     const unlock = () => { if (ctx.state !== 'running') ctx.resume().catch(() => {}) }
     addEventListener('pointerdown', unlock); addEventListener('keydown', unlock)
 
-    async function to22k(buf) {
-      // the browser's own resampler (band-limited) via an offline mono render
-      const n = Math.ceil(buf.duration * SAMPLE_RATE)
-      const off = new OfflineAudioContext(1, n, SAMPLE_RATE)
-      const src = off.createBufferSource(); src.buffer = buf; src.connect(off.destination); src.start()
-      return (await off.startRendering()).getChannelData(0)
+    // mono copy of the source at a model's rate (the browser's band-limited resampler)
+    async function audioAt(sr) {
+      const src = S.src
+      if (src.mono[sr]) return src.mono[sr]
+      const buf = src.buf, n = Math.ceil(buf.duration * sr)
+      const off = new OfflineAudioContext(1, n, sr)
+      const s = off.createBufferSource(); s.buffer = buf; s.connect(off.destination); s.start()
+      return (src.mono[sr] = (await off.startRendering()).getChannelData(0))
     }
 
     async function loadFile(file) {
@@ -245,77 +338,216 @@
       const ab = await file.arrayBuffer()
       if (/\.midi?$/i.test(file.name)) return loadMidi(ab, file.name)
       setStatus(`Decoding ${file.name}…`)
-      try {
-        const buf = await ctx.decodeAudioData(ab)
-        setSource(file.name, await to22k(buf), buf, null)
-        await transcribe()
-      } catch (e) { setStatus(`Could not decode ${file.name}: ${e.message}`, true) }
+      try { setSource(file.name, await ctx.decodeAudioData(ab), null); await transcribe() }
+      catch (e) { setStatus(`Could not decode ${file.name}: ${e.message}`, true) }
     }
 
-    function midiNotes(ab, maxSec) {
-      const midi = new Midi(ab), notes = []
+    function parseMidi(ab, maxSec) {
+      const midi = new Midi(ab), notes = [], cc = [], programs = []
       for (const tr of midi.tracks) {
-        if (tr.channel === 9 || tr.instrument?.percussion) continue
+        const ch = tr.channel ?? 0
+        if (ch === 9 || tr.instrument?.percussion) continue
+        programs.push([ch, tr.instrument?.number ?? 0])
         for (const n of tr.notes) if (n.time < maxSec && n.midi >= 21 && n.midi <= 108)
-          notes.push({ pitch: n.midi, start: n.time, end: Math.min(n.time + Math.max(0.05, n.duration), maxSec + 1), velocity: n.velocity })
+          notes.push({ pitch: n.midi, start: n.time, end: Math.min(n.time + Math.max(0.05, n.duration), maxSec + 1), velocity: n.velocity, channel: ch })
+        for (const num of [64, 67]) for (const c of tr.controlChanges?.[num] || []) if (c.time < maxSec + 1) cc.push({ time: c.time, channel: ch, controller: num, value: Math.round(c.value * 127) })
       }
-      return notes.sort((a, b) => a.start - b.start || a.pitch - b.pitch)
+      notes.sort((a, b) => a.start - b.start || a.pitch - b.pitch); cc.sort((a, b) => a.time - b.time)
+      return { notes, cc, programs }
+    }
+    // CC 64 / 67 → pedal intervals (pitch -64 / -67, as Transkun reports them)
+    function pedalIntervals(cc, end) {
+      const out = []
+      for (const num of [64, 67]) {
+        let on = null
+        for (const c of cc.filter(c => c.controller === num)) {
+          if (c.value >= 64 && on == null) on = c.time
+          else if (c.value < 64 && on != null) { out.push({ pitch: -num, start: on, end: c.time }); on = null }
+        }
+        if (on != null) out.push({ pitch: -num, start: on, end })
+      }
+      return out
     }
 
     async function loadMidi(ab, name) {
-      const ref = midiNotes(ab, +$('maxSec').value)
-      if (!ref.length) return setStatus('No notes in ' + name, true, 3000)
-      synthesize(ref, name)
+      const midi = parseMidi(ab, +$('maxSec').value)
+      if (!midi.notes.length) return setStatus('No notes in ' + name, true, 3000)
+      return synthesize(midi, name)
+    }
+
+    // ── Rendering test audio ───────────────────────────────────────────────
+    let synthWorker = null, synthReady = null, synthId = 0
+    function synth() {
+      if (synthReady) return synthReady
+      synthWorker = new Worker(new URL('./transcription/synth-worker.js', import.meta.url), { type: 'module' })
+      synthReady = new Promise((resolve, reject) => {
+        synthWorker.onmessage = e => { if (e.data.type === 'ready') resolve(); else if (e.data.type === 'error' && !e.data.id) reject(new Error(e.data.message)) }
+        synthWorker.postMessage({ type: 'init', vendor: VENDOR, fonts: FONTS })
+      })
+      return synthReady
+    }
+    async function renderSoundfont(midi, duration) {
+      await synth()
+      const id = ++synthId
+      return new Promise((resolve, reject) => {
+        synthWorker.onmessage = e => { if (e.data.id !== id) return; if (e.data.type === 'audio') resolve(e.data); else reject(new Error(e.data.message)) }
+        synthWorker.postMessage({
+          type: 'render', id, sr: RENDER_SR, duration,
+          notes: midi.notes.map(n => ({ pitch: n.pitch, on: n.start, off: n.end, velocity: n.velocity, channel: n.channel ?? 0 })),
+          programs: midi.programs.map(([ch]) => [ch, 0]), cc: midi.cc,
+        })
+      })
     }
 
     let lastTest = null
-    async function synthesize(ref, name) {
-      lastTest = { ref, name }
-      setStatus(`Synthesizing ${ref.length} notes…`)
+    async function synthesize(midi, name) {
+      lastTest = { midi, name }
+      const timbre = $('timbre').value, gen = ++S.gen
+      setStatus(`Rendering ${midi.notes.length} notes (${$('timbre').selectedOptions[0].textContent})…`)
       await new Promise(r => setTimeout(r, 20))
-      const a = renderNotes(ref, { timbre: $('timbre').value })
-      setSource(`${name} (${$('timbre').value} synth)`, a, null, ref)
+      const end = midi.notes.reduce((m, n) => Math.max(m, n.end), 0)
+      const duration = end + 1.2
+      let buf
+      try {
+        if (timbre === 'sf') {
+          const { L, R: Rc } = await renderSoundfont(midi, duration)
+          buf = ctx.createBuffer(2, L.length, RENDER_SR); buf.copyToChannel(L, 0); buf.copyToChannel(Rc, 1)
+        } else {
+          const a = renderSimple(midi.notes, { sr: RENDER_SR, timbre })
+          buf = ctx.createBuffer(1, a.length, RENDER_SR); buf.copyToChannel(a, 0)
+        }
+      } catch (e) { return setStatus('Render failed: ' + e.message, true) }
+      if (gen !== S.gen) return
+      // the simple timbres ignore the pedal, so only the soundfont render has pedalled truth
+      setSource(`${name} (${timbre === 'sf' ? 'soundfont' : timbre})`, buf, { notes: midi.notes, pedals: timbre === 'sf' ? pedalIntervals(midi.cc, end) : [] })
       await transcribe()
     }
 
     $('test').onchange = async () => {
       const v = $('test').value; if (!v) return
       stopAll()
-      if (v === 'phrase') return synthesize(testPhrase(), 'Test phrase')
+      if (v === 'phrase') return synthesize({ notes: testPhrase(), cc: [], programs: [[0, 0]] }, 'Test phrase')
       setStatus('Loading ' + v + '…')
       try { await loadMidi(await (await fetch(v)).arrayBuffer(), $('test').selectedOptions[0].textContent) }
       catch (e) { setStatus('Could not load ' + v + ': ' + e.message, true) }
     }
-    $('timbre').onchange = () => { if (lastTest && S.ref === lastTest.ref) { stopAll(); synthesize(lastTest.ref, lastTest.name) } }
+    $('timbre').onchange = () => { if (lastTest && S.src?.ref) { stopAll(); synthesize(lastTest.midi, lastTest.name) } }
 
-    function setSource(name, audio22, playBuf, ref) {
-      S.name = name; S.audio22 = audio22; S.ref = ref
-      S.playBuf = playBuf || bufferFrom(audio22)
-      S.duration = audio22.length / SAMPLE_RATE
-      S.tr.reset(); S.out = null; S.notes = []; S.score = null; heat = null
+    function setSource(name, buf, ref) {
+      S.src = { name, buf, ref, duration: buf.duration, mono: {} }
+      S.res = {}; heat = null
       playhead = 0; fitView()
       $('play').disabled = false; $('exportWav').disabled = false
-      lastTest = ref ? lastTest : null
+      if (!ref) lastTest = null
+      $('srcInfo').innerHTML = `<b>${name}</b>\n${fmt(buf.duration)} · ${buf.numberOfChannels === 2 ? 'stereo' : 'mono'} · ${buf.sampleRate} Hz` +
+        (ref ? `\ntruth: ${ref.notes.length} notes${ref.pedals.length ? `, ${ref.pedals.length} pedal presses` : ''}` : '')
+      renderNotesInfo(); renderCompare()
     }
-    const bufferFrom = a => { const b = ctx.createBuffer(1, Math.max(1, a.length), SAMPLE_RATE); b.copyToChannel(a, 0); return b }
+    const bufferFrom = (a, sr) => { const b = ctx.createBuffer(1, Math.max(1, a.length), sr); b.copyToChannel(a, 0); return b }
 
-    async function transcribe() {
-      const a = S.audio22; if (!a) return
-      const tr = S.tr; tr.reset(); tr.push(a)
-      const { windows, count } = tr.take(true)
-      setStatus(`Transcribing ${S.name}: 0 / ${count} windows`)
+    // ── Transcription ──────────────────────────────────────────────────────
+    async function transcribe(model = current) {
+      const src = S.src; if (!src) return
+      const m = MODELS[model]
       try {
-        const r = await run(windows, count, m => setStatus(`Transcribing ${S.name}: ${m.done} / ${m.count} windows`))
-        if (S.audio22 !== a) return
-        tr.append(r.note, r.onset, r.contour, r.count)
-        S.inferMs = r.ms; S.windows = r.count; renderRt()
-        S.out = tr.output(); heat = null
-        updateNotes()
-        setStatus(`${S.name}: ${S.notes.length} notes from ${fmt(S.duration)} of audio in ${(r.ms / 1000).toFixed(2)} s`, false, 4000)
-      } catch (e) { setStatus('Inference failed: ' + e.message, true) }
+        const audio = await audioAt(m.sr)
+        if (model === 'basic-pitch') {
+          const tr = new BP.Transcriber(); tr.push(audio)
+          const { windows, count } = tr.take(true)
+          setStatus(`${m.name}: ${src.name}, 0 / ${count} windows`)
+          const r = await call(model, { type: 'run', windows, count }, [windows.buffer], p => setStatus(`${m.name}: ${src.name}, ${p.done} / ${p.count} windows`))
+          if (S.src !== src) return
+          tr.append(r.note, r.onset, r.contour, r.count)
+          S.res[model] = { out: tr.output(), ms: r.ms, units: r.count, unitLabel: '2 s windows' }
+          decodeBP(model)
+        } else {
+          const segSec = +$('seg').value, copy = Float32Array.from(audio)
+          S.res[model] = { notes: [], pedals: [], partial: true, done: 0, segSec }
+          setStatus(`${m.name}: ${src.name}, starting…`)
+          const t0 = performance.now()
+          const r = await call(model, { type: 'transkun', audio: copy, segSec, stepSec: segSec / 2 }, [copy.buffer], p => {
+            if (S.src !== src) return
+            Object.assign(S.res[model], { notes: p.notes, pedals: p.pedals, done: p.done, count: p.count })
+            setStatus(`${m.name}: ${src.name}, segment ${p.done} / ${p.count} · ${((performance.now() - t0) / 1000).toFixed(1)} s`)
+            rescore(model)
+          })
+          if (S.src !== src) return
+          S.res[model] = { notes: r.notes, pedals: r.pedals, ms: r.ms, units: r.segments, unitLabel: `${segSec} s segments`, timing: r.timing }
+          rescore(model)
+        }
+        const r = S.res[model]
+        setStatus(`${m.name}: ${r.notes.length} notes${r.pedals?.length ? ` + ${r.pedals.length} pedal` : ''} from ${fmt(src.duration)} in ${(r.ms / 1000).toFixed(2)} s`, false, 5000)
+        if (model === current) renderRt()
+      } catch (e) { if (S.src === src) setStatus(`${m.name} failed: ${e.message}`, true); delete S.res[model]; renderCompare() }
     }
+    $('seg').onchange = () => { delete S.res.transkun; if (S.src && current === 'transkun') transcribe() }
 
-    // ── Microphone: record, or stream live ─────────────────────────────────
+    const bpOpts = () => {
+      const r = RANGES[$('range').value]
+      return {
+        onsetThreshold: +$('onsetT').value, frameThreshold: +$('frameT').value, minNoteMs: +$('minMs').value,
+        minFreq: r ? r[0] : null, maxFreq: r ? r[1] : null,
+        inferOnsets: $('infer').checked, melodia: $('melodia').checked, pitchBends: $('bends').checked,
+      }
+    }
+    function decodeBP(model = 'basic-pitch') {
+      const r = S.res[model]; if (!r?.out) return
+      const t = performance.now()
+      r.notes = BP.notesFromOutput(r.out, bpOpts()); r.pedals = []
+      r.decodeMs = performance.now() - t
+      rescore(model)
+    }
+    function rescore(model) {
+      const r = S.res[model], ref = S.src?.ref
+      if (r) r.score = ref ? { on: scoreNotes(ref.notes, r.notes), off: scoreNotes(ref.notes, r.notes, { offsets: true }) } : null
+      if (model === current) { renderNotesInfo(); reloadScheduler() }
+      renderCompare()
+    }
+    function renderNotesInfo() {
+      const r = R(), el = $('nt')
+      if (!r) { el.textContent = '—'; $('exportMid').disabled = true; return }
+      let s = `<b>${r.notes.length}</b> notes · polyphony ≤ <b>${maxPolyphony(r.notes)}</b>`
+      if (r.decodeMs != null) s += ` · decode <b>${r.decodeMs.toFixed(0)} ms</b>`
+      if (r.pedals?.length) s += `\n<b>${r.pedals.filter(p => p.pitch === -64).length}</b> sustain, <b>${r.pedals.filter(p => p.pitch === -67).length}</b> soft pedal`
+      if (r.notes.length) { const v = r.notes.map(n => n.velocity); s += `\nvelocity ${Math.min(...v)}–${Math.max(...v)}` }
+      if (r.score) {
+        const { on, off } = r.score
+        s += `\nvs ${S.src.ref.notes.length} true notes (onset ±50 ms)\nF1 <b>${(on.f1 * 100).toFixed(1)}</b> · P ${(on.precision * 100).toFixed(1)} · R ${(on.recall * 100).toFixed(1)} · ` +
+          `±${(on.meanOnsetError * 1000).toFixed(0)} ms\nwith offsets F1 <b>${(off.f1 * 100).toFixed(1)}</b>`
+        if (r.partial) s += ' (so far)'
+      }
+      if (S.live && mic?.lastLatency != null) s += `\nlive: window ${(BP.HOP / BP.SAMPLE_RATE).toFixed(2)} s + model ${mic.lastLatency.toFixed(0)} ms`
+      el.innerHTML = s
+      $('exportMid').disabled = !r.notes.length
+    }
+    function renderCompare() {
+      const rows = Object.entries(MODELS).filter(([id]) => S.res[id])
+      const t = $('cmp'); t.hidden = !rows.length || !S.src
+      if (t.hidden) return
+      const dur = S.src.duration, ref = S.src.ref
+      t.innerHTML = `<tr><th>model</th><th>notes</th>${ref ? '<th>F1</th><th>+off</th>' : ''}<th>time</th><th>×RT</th></tr>` +
+        rows.map(([id, m]) => {
+          const r = S.res[id], pct = x => (x * 100).toFixed(1)
+          return `<tr data-m="${id}" class="${id === current ? 'on' : ''}"><td>${m.name}</td><td>${r.notes.length}</td>` +
+            (ref ? `<td>${r.score ? pct(r.score.on.f1) : '–'}</td><td>${r.score ? pct(r.score.off.f1) : '–'}</td>` : '') +
+            (r.partial ? `<td colspan="2">${r.done || 0} / ${r.count || '?'}</td>` : `<td>${(r.ms / 1000).toFixed(1)} s</td><td>${(dur / (r.ms / 1000)).toFixed(1)}</td>`) + '</tr>'
+        }).join('')
+      for (const tr of t.querySelectorAll('tr[data-m]')) tr.onclick = () => selectModel(tr.dataset.m)
+    }
+    function maxPolyphony(notes) {
+      const ev = []; for (const n of notes) ev.push([n.start, 1], [n.end, -1])
+      ev.sort((a, b) => a[0] - b[0] || a[1] - b[1]); let c = 0, m = 0
+      for (const e of ev) { c += e[1]; if (c > m) m = c }
+      return m
+    }
+    const sliders = [['onsetT', v => (+v).toFixed(2)], ['frameT', v => (+v).toFixed(2)], ['minMs', v => `${(+v).toFixed(0)} ms`], ['volA', v => `${Math.round(v * 100)}%`], ['volM', v => `${Math.round(v * 100)}%`]]
+    for (const [id, f] of sliders) { const show = () => ($(id + 'v').textContent = f($(id).value)); show(); $(id).addEventListener('input', show) }
+    let decodeQueued = false
+    for (const id of ['onsetT', 'frameT', 'minMs']) $(id).addEventListener('input', () => { if (!decodeQueued) { decodeQueued = true; requestAnimationFrame(() => { decodeQueued = false; decodeBP() }) } })
+    for (const id of ['range', 'infer', 'melodia', 'bends']) $(id).onchange = () => decodeBP()
+    $('layer').onchange = () => { heat = null }
+
+    // ── Microphone: record, or stream live (Basic Pitch) ───────────────────
     let mic = null
     const WORKLET = `registerProcessor('tap', class extends AudioWorkletProcessor {
       process(inputs) { const c = inputs[0][0]; if (c) this.port.postMessage(c.slice(0)); return true } })`
@@ -326,23 +558,28 @@
         const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } })
         await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], { type: 'text/javascript' }))).catch(() => {})
         const src = ctx.createMediaStreamSource(stream)
-        // anti-alias before the 22 050 Hz decimation in JS
-        const lp1 = new BiquadFilterNode(ctx, { type: 'lowpass', frequency: 10000, Q: 0.54 })
-        const lp2 = new BiquadFilterNode(ctx, { type: 'lowpass', frequency: 10000, Q: 1.31 })
         const tap = new AudioWorkletNode(ctx, 'tap')
-        src.connect(lp1).connect(lp2).connect(tap)
-        mic = { stream, tap, live, chunks: [], len: 0, rs: { pos: 0, prev: 0 }, t0: performance.now(), busy: false, lastRun: 0 }
-        setSource(live ? 'Live microphone' : 'Microphone', new Float32Array(0), null, null)
+        src.connect(tap)
+        // live: anti-aliased stream decimated to 22 050 Hz for Basic Pitch
+        let lp = null
+        if (live) {
+          const lp1 = new BiquadFilterNode(ctx, { type: 'lowpass', frequency: 10000, Q: 0.54 })
+          const lp2 = new BiquadFilterNode(ctx, { type: 'lowpass', frequency: 10000, Q: 1.31 })
+          lp = new AudioWorkletNode(ctx, 'tap'); src.connect(lp1).connect(lp2).connect(lp)
+        }
+        const m = mic = { stream, src, tap, lp, live, raw: [], len: 0, rs: { pos: 0, prev: 0 }, busy: false, tr: live ? new BP.Transcriber() : null }
+        setSource(live ? 'Live microphone' : 'Microphone', ctx.createBuffer(1, 1, ctx.sampleRate), null)
         S.live = live
-        tap.port.onmessage = ({ data }) => onMic(data)
+        if (live) S.res['basic-pitch'] = { out: null, notes: [], pedals: [], partial: true }
+        tap.port.onmessage = ({ data }) => { if (mic !== m) return; m.raw.push(data); m.len += data.length; S.src.duration = m.len / ctx.sampleRate }
+        if (lp) lp.port.onmessage = ({ data }) => { if (mic !== m) return; m.tr.push(resampleStream(data, m.rs)); pumpLive() }
         $(live ? 'live' : 'rec').classList.add('rec')
         $(live ? 'live' : 'rec').textContent = live ? '■ Stop live' : '■ Stop'
-        setStatus(live ? 'Live: notes appear about 2 s behind you' : 'Recording… press Stop to transcribe')
+        setStatus(live ? 'Live: notes appear about 2 s behind you' : `Recording… press Stop to transcribe with ${MODELS[current].name}`)
       } catch (e) { setStatus('Microphone: ' + e.message, true); mic = null }
     }
     function resampleStream(x, rs) {
-      // streaming linear decimation (after the low-pass above)
-      const r = ctx.sampleRate / SAMPLE_RATE, out = []
+      const r = ctx.sampleRate / BP.SAMPLE_RATE, out = []
       let p = rs.pos
       while (p < x.length) {
         const j = Math.floor(p), u = p - j
@@ -353,98 +590,48 @@
       rs.pos = p - x.length; rs.prev = x[x.length - 1]
       return Float32Array.from(out)
     }
-    function onMic(chunk) {
-      if (!mic) return
-      const y = resampleStream(chunk, mic.rs)
-      mic.chunks.push(y); mic.len += y.length
-      S.duration = mic.len / SAMPLE_RATE
-      if (mic.live) {
-        S.tr.push(y)
-        pumpLive()
-      }
-    }
     async function pumpLive() {
-      if (mic.busy) return
-      const { windows, count } = S.tr.take(false)
+      const m = mic
+      if (!m || m.busy) return
+      const { windows, count } = m.tr.take(false)
       if (!count) return
-      mic.busy = true
+      m.busy = true
       const t = performance.now()
       try {
-        const r = await run(windows, count)
-        S.tr.append(r.note, r.onset, r.contour, r.count)
-        S.inferMs = r.ms; S.windows = r.count; renderRt()
-        S.out = S.tr.output(); heat = null
-        updateNotes()
-        mic.lastLatency = performance.now() - t
+        const r = await call('basic-pitch', { type: 'run', windows, count }, [windows.buffer])
+        if (mic !== m) return
+        m.tr.append(r.note, r.onset, r.contour, r.count)
+        Object.assign(S.res['basic-pitch'], { out: m.tr.output(), ms: r.ms, units: r.count, unitLabel: 'windows' })
+        heat = null
+        decodeBP()
+        m.lastLatency = performance.now() - t
       } catch (e) { setStatus('Inference failed: ' + e.message, true) }
-      mic.busy = false
-      if (mic) pumpLive()
-    }
-    function joinMic(m) {
-      const a = new Float32Array(m.len); let p = 0
-      for (const c of m.chunks) { a.set(c, p); p += c.length }
-      return a
+      m.busy = false
+      pumpLive()
     }
     async function stopMic() {
       if (!mic) return
       const m = mic; mic = null
-      m.stream.getTracks().forEach(t => t.stop()); m.tap.disconnect(); m.tap.port.onmessage = null
-      for (const id of ['rec', 'live']) { $(id).classList.remove('rec') }
+      m.stream.getTracks().forEach(t => t.stop()); m.src.disconnect()
+      for (const n of [m.tap, m.lp]) if (n) { n.port.onmessage = null; n.disconnect() }
+      for (const id of ['rec', 'live']) $(id).classList.remove('rec')
       $('rec').textContent = '● Record'; $('live').textContent = 'Live'
-      const a = joinMic(m)
       S.live = false
-      if (a.length < SAMPLE_RATE * 0.3) return setStatus('Recording too short', true, 2500)
-      setSource(m.live ? 'Live microphone take' : 'Microphone take', a, null, null)
-      await transcribe()          // the full take, with the reference's end padding
+      const a = new Float32Array(m.len); let p = 0
+      for (const c of m.raw) { a.set(c, p); p += c.length }
+      if (a.length < ctx.sampleRate * 0.3) return setStatus('Recording too short', true, 2500)
+      setSource(m.live ? 'Live microphone take' : 'Microphone take', bufferFrom(a, ctx.sampleRate), null)
+      await transcribe()   // the whole take, with the end padding
     }
     $('rec').onclick = () => mic ? stopMic() : startMic(false)
     $('live').onclick = () => mic ? stopMic() : startMic(true)
 
-    // ── Notes ──────────────────────────────────────────────────────────────
-    const opts = () => {
-      const r = RANGES[$('range').value]
-      return {
-        onsetThreshold: +$('onsetT').value, frameThreshold: +$('frameT').value, minNoteMs: +$('minMs').value,
-        minFreq: r ? r[0] : null, maxFreq: r ? r[1] : null,
-        inferOnsets: $('infer').checked, melodia: $('melodia').checked, pitchBends: $('bends').checked,
-      }
-    }
-    function updateNotes() {
-      if (!S.out) return
-      const t = performance.now()
-      S.notes = notesFromOutput(S.out, opts())
-      const ms = performance.now() - t
-      S.score = S.ref ? { on: scoreNotes(S.ref, S.notes), off: scoreNotes(S.ref, S.notes, { offsets: true }) } : null
-      const poly = maxPolyphony(S.notes)
-      let s = `<b>${S.notes.length}</b> notes · polyphony ≤ <b>${poly}</b> · decode <b>${ms.toFixed(0)} ms</b>`
-      if (S.score) {
-        const { on, off } = S.score
-        s += `\nvs ${S.ref.length} true notes (onset ±50 ms)\nF1 <b>${(on.f1 * 100).toFixed(1)}</b> · P ${(on.precision * 100).toFixed(1)} · R ${(on.recall * 100).toFixed(1)} · ` +
-          `±${(on.meanOnsetError * 1000).toFixed(0)} ms\nwith offsets F1 <b>${(off.f1 * 100).toFixed(1)}</b>`
-      }
-      if (S.live && mic?.lastLatency != null) s += `\nlive: window ${(HOP / SAMPLE_RATE).toFixed(2)} s + model ${mic.lastLatency.toFixed(0)} ms`
-      $('nt').innerHTML = s
-      $('exportMid').disabled = !S.notes.length
-      if (playing) loadScheduler(true)
-    }
-    function maxPolyphony(notes) {
-      const ev = []; for (const n of notes) ev.push([n.start, 1], [n.end, -1])
-      ev.sort((a, b) => a[0] - b[0] || a[1] - b[1]); let c = 0, m = 0
-      for (const e of ev) { c += e[1]; if (c > m) m = c }
-      return m
-    }
-    const sliders = [['onsetT', v => (+v).toFixed(2)], ['frameT', v => (+v).toFixed(2)], ['minMs', v => `${(+v).toFixed(0)} ms`], ['volA', v => `${Math.round(v * 100)}%`], ['volM', v => `${Math.round(v * 100)}%`]]
-    for (const [id, f] of sliders) { const show = () => ($(id + 'v').textContent = f($(id).value)); show(); $(id).addEventListener('input', show) }
-    for (const id of ['onsetT', 'frameT', 'minMs']) $(id).addEventListener('input', () => requestAnimationFrame(updateNotes))
-    for (const id of ['range', 'infer', 'melodia', 'bends']) $(id).onchange = updateNotes
-    $('layer').onchange = () => { heat = null }
-
     // ── Playback: the audio and the transcription, side by side ────────────
     const gainA = new GainNode(ctx, { gain: +$('volA').value }); gainA.connect(ctx.destination)
-    const engine = new SoundFontEngine({ backend: 'oxisynth', vendorPath: new URL('./soundfont-engine/vendor', import.meta.url).href, audioContext: ctx })
+    const engine = new SoundFontEngine({ backend: 'oxisynth', vendorPath: VENDOR, audioContext: ctx })
     let soundReady = false, scheduler = null
     ;(async () => {
-      try { await engine.loadSoundFont('soundfonts/Motif_ES6_Concert_Piano.sf2'); for (let c = 0; c < 16; c++) engine.programChange(c, 0); soundReady = true; applyVol() }
+      try { await engine.loadSoundFont(FONTS[0]); for (let c = 0; c < 16; c++) engine.programChange(c, 0); soundReady = true; applyVol() }
       catch (e) { console.warn('soundfont', e) }
     })()
     // MIDI level through CC 7 (channel volume) so it changes while playing
@@ -452,87 +639,100 @@
     $('volA').addEventListener('input', applyVol); $('volM').addEventListener('input', applyVol)
 
     let playing = false, src = null, playStartCtx = 0, playStartPos = 0, playhead = 0
-    async function loadScheduler(resync) {
-      if (!soundReady) return
+    function pedalCC(pedals) {
+      const cc = []
+      for (const p of pedals || []) { cc.push({ time: p.start, channel: 0, controller: -p.pitch, value: 127 }, { time: p.end, channel: 0, controller: -p.pitch, value: 0 }) }
+      return cc.sort((a, b) => a.time - b.time)
+    }
+    async function loadScheduler() {
+      if (!soundReady) return false
       if (!scheduler) { scheduler = new MidiScheduler(engine); await scheduler.init() }
       scheduler.stop(); engine.allSoundOff?.()
-      scheduler.load({ notes: S.notes.map(n => ({ midi: n.pitch, time: n.start, duration: n.end - n.start, velocity: n.velocity / 127, channel: 0 })), controlChanges: [] })
-      if (resync && playing) { scheduler.seek(position()); scheduler.play() }
+      for (const c of [64, 67]) engine.controlChange(0, c, 0)
+      const r = R()
+      scheduler.load({ notes: (r?.notes || []).map(n => ({ midi: n.pitch, time: n.start, duration: n.end - n.start, velocity: n.velocity / 127, channel: 0 })), controlChanges: pedalCC(r?.pedals) })
+      return true
+    }
+    let reloadQueued = false
+    function reloadScheduler() {
+      if (!playing || reloadQueued) return
+      reloadQueued = true
+      setTimeout(async () => { reloadQueued = false; if (playing && await loadScheduler()) { scheduler.seek(position()); scheduler.play() } }, 120)
     }
     const position = () => playing ? playStartPos + (ctx.currentTime - playStartCtx) : playhead
     async function play(at = playhead) {
-      if (!S.playBuf) return
+      if (!S.src || S.live || mic) return
       await ctx.resume(); stopPlayback()
-      at = Math.max(0, Math.min(at, S.duration - 0.05))
-      src = ctx.createBufferSource(); src.buffer = S.playBuf; src.connect(gainA)
+      at = Math.max(0, Math.min(at, S.src.duration - 0.05))
+      src = ctx.createBufferSource(); src.buffer = S.src.buf; src.connect(gainA)
       playStartCtx = ctx.currentTime + 0.05; playStartPos = at
       src.start(playStartCtx, at)
-      src.onended = () => { if (src && position() >= S.duration - 0.1) { stopPlayback(); playhead = 0 } }
       playing = true; $('play').textContent = '❚❚ Pause'
-      if (S.notes.length && soundReady) { await loadScheduler(false); scheduler.seek(at); scheduler.play() }
+      if (await loadScheduler()) { scheduler.seek(at); scheduler.play() }
     }
     function stopPlayback() {
-      if (src) { try { src.onended = null; src.stop() } catch {} src = null }
+      if (src) { try { src.stop() } catch {} src = null }
       if (playing) playhead = position()
       playing = false; $('play').textContent = '▶ Play'
       scheduler?.pause(); engine.allSoundOff?.()
     }
     function stopAll() { stopPlayback(); if (mic) stopMic() }
     $('play').onclick = () => playing ? stopPlayback() : play()
-    $('seek').addEventListener('input', () => { const t = +$('seek').value * S.duration; if (playing) play(t); else playhead = t; follow(t) })
+    $('seek').addEventListener('input', () => { const t = +$('seek').value * (S.src?.duration || 0); if (playing) play(t); else playhead = t; follow(t) })
 
     // ── Export ─────────────────────────────────────────────────────────────
     function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000) }
-    const base = () => (S.name || 'transcription').replace(/\.[^.]+$/, '').replace(/[^\w\- ]+/g, '').trim() || 'transcription'
+    const base = () => (S.src?.name || 'transcription').replace(/\.[^.]+$/, '').replace(/[^\w\- ]+/g, '').trim() || 'transcription'
     $('exportMid').onclick = () => {
-      const midi = new Midi(); midi.header.setTempo(120)
-      const tr = midi.addTrack(); tr.name = 'Basic Pitch (ONNX)'
-      for (const n of S.notes) tr.addNote({ midi: n.pitch, time: n.start, duration: n.end - n.start, velocity: n.velocity / 127 })
-      download(new Blob([midi.toArray()], { type: 'audio/midi' }), base() + '.basicpitch.mid')
+      const r = R(), midi = new Midi(); midi.header.setTempo(120)
+      const tr = midi.addTrack(); tr.name = `${MODELS[current].name} (ONNX)`
+      for (const n of r.notes) tr.addNote({ midi: n.pitch, time: n.start, duration: n.end - n.start, velocity: n.velocity / 127 })
+      for (const c of pedalCC(r.pedals)) tr.addCC({ number: c.controller, time: c.time, value: c.value / 127 })
+      download(new Blob([midi.toArray()], { type: 'audio/midi' }), `${base()}.${current}.mid`)
     }
-    $('exportWav').onclick = () => {
-      const a = S.audio22, b = new DataView(new ArrayBuffer(44 + a.length * 2))
+    $('exportWav').onclick = async () => {
+      const sr = MODELS[current].sr, a = await audioAt(sr), b = new DataView(new ArrayBuffer(44 + a.length * 2))
       const w = (o, s) => [...s].forEach((c, i) => b.setUint8(o + i, c.charCodeAt(0)))
       w(0, 'RIFF'); b.setUint32(4, 36 + a.length * 2, true); w(8, 'WAVEfmt '); b.setUint32(16, 16, true); b.setUint16(20, 1, true); b.setUint16(22, 1, true)
-      b.setUint32(24, SAMPLE_RATE, true); b.setUint32(28, SAMPLE_RATE * 2, true); b.setUint16(32, 2, true); b.setUint16(34, 16, true); w(36, 'data'); b.setUint32(40, a.length * 2, true)
+      b.setUint32(24, sr, true); b.setUint32(28, sr * 2, true); b.setUint16(32, 2, true); b.setUint16(34, 16, true); w(36, 'data'); b.setUint32(40, a.length * 2, true)
       for (let i = 0; i < a.length; i++) b.setInt16(44 + i * 2, Math.max(-1, Math.min(1, a[i])) * 32767, true)
-      download(new Blob([b], { type: 'audio/wav' }), base() + '.22k.wav')
+      download(new Blob([b], { type: 'audio/wav' }), `${base()}.${sr}.wav`)
     }
 
-    // ── View: piano roll over the model's activations ──────────────────────
+    // ── View: piano roll (over Basic Pitch's activations), pedal lane ──────
     const cv = $('view'), g = cv.getContext('2d')
     let W = 0, H = 0, dpr = 1
-    const view = { t0: 0, pps: 120, lo: 21, hi: 108 }   // seconds at left edge, pixels per second, pitch range
-    const KEYS = 34, AXIS = 22
+    const view = { t0: 0, pps: 120, lo: 21, hi: 108 }
+    const KEYS = 34, AXIS = 22, PEDAL = 26
     function resize() { dpr = devicePixelRatio || 1; W = innerWidth; H = innerHeight; cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px' }
     addEventListener('resize', resize); resize()
     const left = () => ($('panel').classList.contains('collapsed') ? 0 : 342) + KEYS
     const tx = t => left() + (t - view.t0) * view.pps
-    const rowH = () => (H - AXIS) / (view.hi - view.lo + 1)
+    const rollH = () => H - AXIS - PEDAL
+    const rowH = () => rollH() / (view.hi - view.lo + 1)
     const py = p => (view.hi - p) * rowH()
     function fitView() {
-      const notes = S.ref || [], lo = Math.min(...notes.map(n => n.pitch), 60), hi = Math.max(...notes.map(n => n.pitch), 72)
-      view.lo = notes.length ? Math.max(21, lo - 4) : 21; view.hi = notes.length ? Math.min(108, hi + 4) : 108
-      const span = Math.max(4, S.duration || 10)
-      view.pps = Math.max(8, (W - left() - 20) / span); view.t0 = 0
+      const notes = S.src?.ref?.notes || R()?.notes || []
+      if (notes.length) {
+        view.lo = Math.max(21, Math.min(...notes.map(n => n.pitch)) - 4); view.hi = Math.min(108, Math.max(...notes.map(n => n.pitch)) + 4)
+      } else { view.lo = 21; view.hi = 108 }
+      view.pps = Math.max(8, (W - left() - 20) / Math.max(4, S.src?.duration || 10)); view.t0 = 0
     }
     function follow(t) { const vis = (W - left()) / view.pps; if (t < view.t0 || t > view.t0 + vis * 0.85) view.t0 = Math.max(0, t - vis * 0.15) }
-    $('fit').onclick = () => { fitView(); if (S.notes.length) { view.lo = Math.max(21, Math.min(...S.notes.map(n => n.pitch)) - 3); view.hi = Math.min(108, Math.max(...S.notes.map(n => n.pitch)) + 3) } }
+    $('fit').onclick = fitView
 
-    // heatmap: one canvas per layer, frames x bins, drawn window by window at their true times
+    const CHUNK = BP.KEEP * 100      // frames per heatmap canvas (canvases cap out near 32k px)
     let heat = null
-    const CHUNK = KEEP * 100      // frames per heatmap canvas (canvases cap out near 32k px)
     function buildHeat() {
-      const out = S.out, layer = $('layer').value
+      const out = S.res['basic-pitch']?.out, layer = $('layer').value
       if (!out || layer === 'none') return null
-      const bins = layer === 'contour' ? N_CONTOUR : N_NOTES, data = out[layer], T = out.frames, parts = []
+      const bins = layer === 'contour' ? BP.N_CONTOUR : BP.N_NOTES, data = out[layer], T = out.frames, parts = []
       for (let a = 0; a < T; a += CHUNK) {
         const n = Math.min(CHUNK, T - a)
         const c = document.createElement('canvas'); c.width = n; c.height = bins
         const x = c.getContext('2d'), img = x.createImageData(n, bins)
         for (let t = 0; t < n; t++) for (let b = 0; b < bins; b++) {
           const v = Math.min(1, data[(a + t) * bins + b] * 1.15), o = ((bins - 1 - b) * n + t) * 4
-          // ink: dark → amber → cream
           img.data[o] = 255 * Math.min(1, v * 1.6); img.data[o + 1] = 200 * v * v + 40 * v; img.data[o + 2] = 120 * v * v * v
           img.data[o + 3] = 255 * Math.min(1, v * 1.4)
         }
@@ -544,72 +744,85 @@
     const NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B']
 
     function draw() {
-      const pos = position()
-      if (playing) { follow(pos); if (pos >= S.duration) stopPlayback() }
-      if (mic?.live) follow(S.duration)
-      $('seek').value = S.duration ? (playing ? pos : playhead) / S.duration : 0
-      $('clock').textContent = `${fmt(playing ? pos : playhead)} / ${fmt(S.duration)}`
+      const dur = S.src?.duration || 0, pos = position()
+      if (playing) { follow(pos); if (pos >= dur) { stopPlayback(); playhead = 0 } }
+      if (mic) follow(dur)
+      $('seek').value = dur ? (playing ? pos : playhead) / dur : 0
+      $('clock').textContent = `${fmt(playing ? pos : playhead)} / ${fmt(dur)}`
 
       g.setTransform(dpr, 0, 0, dpr, 0, 0)
       g.fillStyle = '#0b0b0c'; g.fillRect(0, 0, W, H)
-      const L = left(), rh = rowH()
-      // lanes
+      const L = left(), rh = rowH(), RH = rollH(), r = R()
       for (let p = view.lo; p <= view.hi; p++) {
         g.fillStyle = black(p) ? '#101012' : '#141416'; g.fillRect(L, py(p), W - L, rh)
         if (p % 12 === 0) { g.fillStyle = '#26231f'; g.fillRect(L, py(p) + rh - 1, W - L, 1) }
       }
-      // heatmap
-      if (S.out && $('layer').value !== 'none') {
-        if (!heat || heat.layer !== $('layer').value || heat.T !== S.out.frames) heat = buildHeat()
+      // Basic Pitch activations
+      const bpOut = S.res['basic-pitch']?.out
+      if (current === 'basic-pitch' && bpOut && $('layer').value !== 'none') {
+        if (!heat || heat.layer !== $('layer').value || heat.T !== bpOut.frames) heat = buildHeat()
         if (heat) {
-          g.imageSmoothingEnabled = view.pps * (1 / FPS) < 3
-          const per = heat.bins / N_NOTES   // contour: 3 bins per semitone, centred on the semitone
+          g.imageSmoothingEnabled = view.pps / BP.FPS < 3
+          const per = heat.bins / BP.N_NOTES
           const b0 = (view.lo - 21) * per - (per - 1) / 2, b1 = (view.hi - 21 + 1) * per - (per - 1) / 2
-          const sy = heat.bins - b1, sh = b1 - b0
           g.globalAlpha = 0.85
-          for (let f0 = 0; f0 < heat.T; f0 += KEEP) {
-            const n = Math.min(KEEP, heat.T - f0), xa = tx(frameTime(f0)), xb = tx(frameTime(f0 + n - 1) + 1 / FPS)
+          for (let f0 = 0; f0 < heat.T; f0 += BP.KEEP) {
+            const n = Math.min(BP.KEEP, heat.T - f0), xa = tx(BP.frameTime(f0)), xb = tx(BP.frameTime(f0 + n - 1) + 1 / BP.FPS)
             if (xb < L || xa > W) continue
-            g.drawImage(heat.parts[Math.floor(f0 / CHUNK)], f0 % CHUNK, sy, n, sh, xa, 0, xb - xa, H - AXIS)
+            g.drawImage(heat.parts[Math.floor(f0 / CHUNK)], f0 % CHUNK, heat.bins - b1, n, b1 - b0, xa, 0, xb - xa, RH)
           }
           g.globalAlpha = 1
         }
       }
-      // reference notes (outlines: green matched, red missed)
-      if (S.ref) {
-        const m = S.score?.on.matchedRef
+      // true notes: outlines, green found, red missed
+      const ref = S.src?.ref
+      if (ref) {
+        const m = r?.score?.on.matchedRef
         g.lineWidth = 1.5
-        S.ref.forEach((n, i) => {
+        ref.notes.forEach((n, i) => {
           const xa = tx(n.start), xb = tx(n.end); if (xb < L || xa > W || n.pitch < view.lo || n.pitch > view.hi) return
           g.strokeStyle = !m ? '#8c8' : m[i] ? 'rgba(120,220,140,0.9)' : 'rgba(255,90,80,0.95)'
           g.strokeRect(xa, py(n.pitch) + 0.5, Math.max(2, xb - xa), Math.max(2, rh - 1))
         })
       }
-      // detected notes
-      const me = S.score?.on.matchedEst
-      S.notes.forEach((n, i) => {
+      // detected notes, brighter with velocity; blue = no true note there
+      const me = r?.score?.on.matchedEst
+      ;(r?.notes || []).forEach((n, i) => {
         const xa = tx(n.start), xb = tx(n.end); if (xb < L || xa > W || n.pitch < view.lo || n.pitch > view.hi) return
         const y = py(n.pitch), v = n.velocity / 127
-        g.fillStyle = me && !me[i] ? `rgba(110,160,255,${0.45 + 0.4 * v})` : `rgba(240,${170 + 60 * v | 0},${90 + 60 * v | 0},${0.55 + 0.45 * v})`
+        g.fillStyle = me && !me[i] ? `rgba(110,160,255,${0.45 + 0.4 * v})` : `rgba(240,${170 + 60 * v | 0},${90 + 60 * v | 0},${0.4 + 0.6 * v})`
         g.fillRect(xa, y + rh * 0.18, Math.max(2, xb - xa), Math.max(1.5, rh * 0.64))
         if (n.bends && rh > 5 && $('bends').checked) {
-          // the contour bends (1/3 semitone units) as a thin line through the note
           g.strokeStyle = 'rgba(20,16,10,0.8)'; g.lineWidth = 1; g.beginPath()
           for (let k = 0; k < n.bends.length; k++) {
-            const x = tx(frameTime(n.startFrame + k)), yy = y + rh / 2 - (n.bends[k] / 3) * rh
+            const x = tx(BP.frameTime(n.startFrame + k)), yy = y + rh / 2 - (n.bends[k] / 3) * rh
             k ? g.lineTo(x, yy) : g.moveTo(x, yy)
           }
           g.stroke()
         }
       })
-      // live: the part of the audio not yet seen by the model
-      if (mic?.live && S.out) {
-        const done = S.out.frames ? frameTime(S.out.frames) : 0
-        g.fillStyle = 'rgba(201,162,74,0.10)'; g.fillRect(tx(done), 0, Math.max(0, tx(S.duration) - tx(done)), H - AXIS)
-        g.fillStyle = '#c9a24a'; g.fillRect(tx(S.duration) - 1, 0, 2, H - AXIS)
+      // what the model has not reached yet (live, or Transkun segment by segment)
+      let done = null
+      if (mic?.live && bpOut) done = bpOut.frames ? BP.frameTime(bpOut.frames) : 0
+      else if (r?.partial && current === 'transkun') done = Math.max(0, (r.done || 0) * r.segSec / 2 - r.segSec / 2)
+      if (done != null && dur > done) {
+        g.fillStyle = 'rgba(201,162,74,0.08)'; g.fillRect(Math.max(L, tx(done)), 0, W, RH)
+        g.fillStyle = '#c9a24a'; g.fillRect(tx(done) - 1, 0, 2, RH)
       }
+      // pedal lane: sustain (tall) and soft (short), true pedal as outlines
+      const PY = RH + 3
+      g.fillStyle = '#0e0d0c'; g.fillRect(L, RH, W - L, PEDAL)
+      g.fillStyle = '#5a534a'; g.font = '9px sans-serif'; g.textBaseline = 'middle'; g.fillText('pedal', L - KEYS + 2, RH + PEDAL / 2)
+      const lane = (p, fill) => {
+        const y = p.pitch === -64 ? PY : PY + 13, h = p.pitch === -64 ? 11 : 6
+        const xa = tx(p.start), xb = tx(p.end); if (xb < L || xa > W) return
+        if (fill) { g.fillStyle = p.pitch === -64 ? 'rgba(201,162,74,0.75)' : 'rgba(150,140,220,0.75)'; g.fillRect(xa, y, Math.max(2, xb - xa), h) }
+        else { g.strokeStyle = 'rgba(120,220,140,0.9)'; g.lineWidth = 1; g.strokeRect(xa + 0.5, y + 0.5, Math.max(2, xb - xa), h) }
+      }
+      for (const p of r?.pedals || []) lane(p, true)
+      for (const p of ref?.pedals || []) lane(p, false)
       // keyboard
-      g.fillStyle = '#0b0b0c'; g.fillRect(L - KEYS, 0, KEYS, H)
+      g.fillStyle = '#0b0b0c'; g.fillRect(L - KEYS, 0, KEYS, RH)
       for (let p = view.lo; p <= view.hi; p++) {
         g.fillStyle = black(p) ? '#2a2724' : '#d9d2c4'; g.fillRect(L - KEYS, py(p) + 0.5, black(p) ? KEYS * 0.62 : KEYS - 2, Math.max(1, rh - 1))
         if (p % 12 === 0 && rh > 6) { g.fillStyle = '#5a534a'; g.font = `${Math.min(10, rh)}px sans-serif`; g.textBaseline = 'middle'; g.fillText('C' + (p / 12 - 1), L - 20, py(p) + rh / 2) }
@@ -618,22 +831,19 @@
       g.fillStyle = '#0e0d0c'; g.fillRect(L, H - AXIS, W - L, AXIS)
       const step = [0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60].find(s => s * view.pps > 70) || 120
       g.fillStyle = '#7d766b'; g.font = '10px monospace'; g.textBaseline = 'middle'
-      for (let t = Math.ceil(view.t0 / step) * step; tx(t) < W; t += step) {
-        g.fillRect(tx(t), H - AXIS, 1, 5); g.fillText(step < 1 ? t.toFixed(2) : fmt(t), tx(t) + 3, H - AXIS / 2 + 2)
-      }
-      // window boundaries (each 2 s model window keeps 142 frames)
-      if (S.out && view.pps > 40) {
-        g.fillStyle = 'rgba(201,162,74,0.35)'
-        for (let w = 1; w * KEEP < S.out.frames; w++) g.fillRect(tx(frameTime(w * KEEP)), H - AXIS, 1, AXIS)
-      }
+      for (let t = Math.ceil(view.t0 / step) * step; tx(t) < W; t += step) { g.fillRect(tx(t), H - AXIS, 1, 5); g.fillText(step < 1 ? t.toFixed(2) : fmt(t), tx(t) + 3, H - AXIS / 2 + 2) }
+      // model chunk boundaries: Basic Pitch windows, Transkun segment hops
+      g.fillStyle = 'rgba(201,162,74,0.35)'
+      if (current === 'basic-pitch' && bpOut && view.pps > 40) for (let w = 1; w * BP.KEEP < bpOut.frames; w++) g.fillRect(tx(BP.frameTime(w * BP.KEEP)), H - AXIS, 1, AXIS)
+      if (current === 'transkun' && r) { const h = (r.segSec || +$('seg').value) / 2; for (let t = h; t < dur; t += h) g.fillRect(tx(t), H - AXIS, 1, AXIS) }
       // playhead
       const ph = tx(playing ? pos : playhead)
       if (ph >= L) { g.fillStyle = '#f3e6c4'; g.fillRect(ph - 0.5, 0, 1.5, H - AXIS) }
       // hover
-      if (hover && hover.x > L) {
+      if (hover && hover.x > L && hover.y < RH) {
         const p = Math.round(view.hi - hover.y / rh - 0.5), t = view.t0 + (hover.x - L) / view.pps
         if (p >= view.lo && p <= view.hi) {
-          const n = S.notes.find(n => n.pitch === p && t >= n.start && t <= n.end)
+          const n = (r?.notes || []).find(n => n.pitch === p && t >= n.start && t <= n.end)
           const label = `${NAMES[p % 12]}${Math.floor(p / 12) - 1} (${p}) · ${t.toFixed(2)} s` + (n ? ` · note ${n.start.toFixed(2)}–${n.end.toFixed(2)} vel ${n.velocity}` : '')
           g.font = '11px sans-serif'; const w = g.measureText(label).width + 10
           const bx = Math.min(hover.x + 12, W - w - 4), by = Math.max(4, hover.y - 24)
@@ -643,9 +853,9 @@
       requestAnimationFrame(draw)
     }
 
-    // legend
     $('legend').innerHTML = '<i style="background:rgb(240,215,135)"></i>detected<i style="background:rgba(110,160,255,0.8)"></i>extra' +
-      '<i style="border:1.5px solid rgb(120,220,140)"></i>true, found<i style="border:1.5px solid rgb(255,90,80)"></i>true, missed'
+      '<i style="border:1.5px solid rgb(120,220,140)"></i>true, found<i style="border:1.5px solid rgb(255,90,80)"></i>true, missed' +
+      '<i style="background:rgba(201,162,74,0.75)"></i>sustain'
 
     // ── Interaction ────────────────────────────────────────────────────────
     let hover = null, drag = null
@@ -656,8 +866,8 @@
     cv.addEventListener('pointerleave', () => { hover = null })
     cv.addEventListener('pointerdown', e => { drag = { x: e.clientX, t0: view.t0, moved: false }; cv.setPointerCapture(e.pointerId) })
     cv.addEventListener('pointerup', e => {
-      if (drag && !drag.moved && e.clientX > left()) {
-        const t = Math.max(0, Math.min(S.duration, view.t0 + (e.clientX - left()) / view.pps))
+      if (drag && !drag.moved && e.clientX > left() && S.src) {
+        const t = Math.max(0, Math.min(S.src.duration, view.t0 + (e.clientX - left()) / view.pps))
         if (playing) play(t); else playhead = t
       }
       drag = null
@@ -665,7 +875,7 @@
     cv.addEventListener('wheel', e => {
       e.preventDefault()
       if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) { view.t0 = Math.max(0, view.t0 + (e.deltaX || e.deltaY) / view.pps); return }
-      if (e.ctrlKey || e.altKey) {   // pitch zoom
+      if (e.ctrlKey || e.altKey) {
         const span = view.hi - view.lo, c = (view.hi + view.lo) / 2, ns = Math.max(12, Math.min(87, span * Math.exp(e.deltaY * 0.002)))
         view.lo = Math.max(21, Math.round(c - ns / 2)); view.hi = Math.min(108, Math.round(c + ns / 2)); return
       }
@@ -676,19 +886,23 @@
     addEventListener('keydown', e => {
       if (e.target.tagName === 'INPUT' && e.target.type === 'number') return
       if (e.code === 'Space') { e.preventDefault(); playing ? stopPlayback() : play() }
-      else if (e.key === 'f' || e.key === 'F') $('fit').click()
+      else if (e.key === 'f' || e.key === 'F') fitView()
+      else { const m = Object.entries(MODELS).find(([, m]) => m.key === e.key); if (m) selectModel(m[0]) }
     })
     $('toggle').onclick = () => { const c = $('panel').classList.toggle('collapsed'); $('toggle').textContent = c ? '+' : '–' }
     $('open').onclick = () => $('file').click()
-    $('file').onchange = () => { const f = $('file').files[0]; if (f) loadFile(f); $('file').value = '' }
+    const file = Object.assign(document.createElement('input'), { type: 'file', accept: 'audio/*,video/*,.mid,.midi', hidden: true, id: 'file' })
+    document.body.append(file)
+    file.onchange = () => { const f = file.files[0]; if (f) loadFile(f); file.value = '' }
     addEventListener('dragover', e => { e.preventDefault(); $('dropHint').style.display = 'flex' })
     addEventListener('dragleave', e => { if (!e.relatedTarget) $('dropHint').style.display = 'none' })
     addEventListener('drop', e => { e.preventDefault(); $('dropHint').style.display = 'none'; const f = e.dataTransfer.files[0]; if (f) loadFile(f) })
 
     // ── Start ──────────────────────────────────────────────────────────────
-    startWorker().catch(e => setStatus('Could not start onnxruntime-web: ' + e.message, true))
+    selectModel(current)
     requestAnimationFrame(draw)
     const start = params.get('test') ?? 'phrase'
+    if (params.get('timbre')) $('timbre').value = params.get('timbre')
     if (start) { $('test').value = start; $('test').onchange() }
   </script>
 </body>

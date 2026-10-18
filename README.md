@@ -6,13 +6,14 @@ Midi Visualization Experiments
 
 17 Oct 2026
 
-[Experiment #036 - Audio → MIDI on ONNX Runtime Web](036_onnx_transcription.html)
-- Spotify's Basic Pitch with no TensorFlow: the ICASSP 2022 model as ONNX ([transcription/onnx/basic-pitch-nmp.onnx](transcription/onnx/basic-pitch-nmp.onnx), 230 KB, Apache-2.0) on onnxruntime-web 1.30 (WASM, or WebGPU) in a module worker
-- [transcription/onnx/basic-pitch.js](transcription/onnx/basic-pitch.js): windowing, unwrapping, note creation (onsets, inferred onsets, melodia pass, frequency limits) and pitch bends on flat Float32Arrays, ported from the Python reference; activations match the tfjs package to 8e-5 and the notes are identical
-- About 80 ms per 2 s window on one WASM thread (≈20× real time); multithreading needs COOP/COEP headers
-- Sources: audio files, microphone recording, Live mode (streams the mic window by window, ≈1.7 s behind), and synthetic test audio rendered from the test phrase or a MIDI file, scored against the true notes (mir_eval-style F1, ±50 ms onsets, with and without offsets)
-- Piano roll over the note / onset / contour activations, matched / missed / extra notes, pitch-bend lines; threshold sliders re-decode instantly; plays the audio and the transcription (soundfont) together; MIDI and 22 kHz WAV export
-- Tests: `node --test transcription/onnx/test/basic-pitch.test.js` (10; the 2 end-to-end tests need onnxruntime-web, see the file)
+[Experiment #036 - Transcription models on ONNX Runtime Web](036_onnx_transcription.html)
+- A playground for audio → MIDI models exported to ONNX and run with onnxruntime-web 1.30 (WASM or WebGPU) in a module worker, no TensorFlow; switch models (keys 1 / 2) on the same source and compare them in a table (notes, onset F1, onset+offset F1, time, × real time)
+- Basic Pitch (Spotify, ICASSP 2022, 230 KB, Apache-2.0): [transcription/onnx/basic-pitch.js](transcription/onnx/basic-pitch.js) ports the windowing, note creation and pitch bends (activations match the tfjs package to 8e-5, identical notes); threshold sliders re-decode instantly; Live mode streams the mic (≈1.7 s behind)
+- Transkun v2 (Yan & Duan, ISMIR 2024, MIT): piano notes with velocity plus sustain and soft pedal. The network is exported by [transcription/onnx/tools/export_transkun.py](transcription/onnx/tools/export_transkun.py) as two graphs (55 MB: interval scores + velocity / onset / offset head); [transcription/onnx/transkun.js](transcription/onnx/transkun.js) does the rest in JS: the 6-window FFT / mel front end, the semi-CRF Viterbi, and the 16 s segment stitching. Same notes as the Python package (61/61 within 5 ms, velocity ±1)
+- Chopin's Minute Waltz (45 s, soundfont render): Transkun F1 98.7 (with offsets 67.8) vs Basic Pitch 78.5 (17.1); Transkun runs at 1.9× real time on 8 WASM threads, Basic Pitch at ≈100×
+- [coi-sw.js](coi-sw.js): a service worker scoped to this page adds COOP / COEP, so WASM gets threads on GitHub Pages and `serve.sh` (`?coi=0` turns it off)
+- Sources: audio files, microphone recording, Live (Basic Pitch), and test MIDIs rendered with the soundfont (OxiSynth, pedal included) or simple synthetic tones, scored against the true notes (mir_eval-style, ±50 ms onsets); piano roll over Basic Pitch's activations, pedal lane, plays the audio and the transcription (with pedal) together; MIDI (with CC 64 / 67) and WAV export
+- Tests: `node --test transcription/onnx/test/*.test.js` (15; the 3 end-to-end tests need onnxruntime-web, see the files)
 
 [Experiment #035 - Basic Pitch Playground](035_basic_pitch.html)
 - Audio → MIDI with Spotify's Basic Pitch on TensorFlow.js: the 0.9 MB tfjs model from `@spotify/basic-pitch` 1.0.1 (Apache-2.0, vendored in [transcription/vendor/basic-pitch/](transcription/vendor/basic-pitch/)) in a module worker, WebGL / WebGPU / WASM / CPU backends
