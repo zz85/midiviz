@@ -41,8 +41,69 @@ export const MODELS = {
     // her MToon is authored darker than pixiv's twist sample (skin shade = lit
     // colour, soft 0.05 toony), so she takes less of the stage dimming
     gain: 0.6,
+    // a concert dress in place of her cardigan and shorts (?vdress=, see DRESS_COLORS)
+    dress: { url: 'models/vroid-a-dress', hide: /Tops|Bottoms/ },
+    drape: { material: /VRoidDress/, under: /./, push: true },
     credit: 'VRoid AvatarSample_A, © pixiv Inc. (VRoid Project); free to use, alter and redistribute under pixiv\'s AvatarSample terms',
   },
+}
+
+// ?vdress= colours for a model's concert dress (the dress texture is white,
+// shaded in blue-grey, so a colour tints it); 'off' keeps the model's own clothes
+export const DRESS_COLORS = { wine: 0x8a1c2c, black: 0x2a2a30, navy: 0x1f2c5c, emerald: 0x15563f, rose: 0xd88a9a, white: 0xffffff }
+export const DRESS_DEFAULT = 'wine'
+
+/**
+ * A dress built by pianist/build/build-vroid-dress.mjs (geometry in the
+ * model's bind space, weights by bone name), skinned to the model's own
+ * skeleton, with MToon materials cloned from the model's top and tinted.
+ */
+async function addDress(model, spec, base, colorKey) {
+  const D = await (await fetch(base + spec.url + '.json')).json()
+  const tex = await new THREE.TextureLoader().loadAsync(base + spec.url + '.webp')
+  tex.colorSpace = THREE.SRGBColorSpace; tex.flipY = false
+  let body = null, top = null
+  const hidden = []
+  model.traverse(o => {
+    if (!o.isSkinnedMesh) return
+    const name = [].concat(o.material)[0].name
+    if (/Body_00_SKIN/.test(name) && !body) body = o
+    if (spec.hide.test(name)) { if (/Tops/.test(name) && !top) top = o; hidden.push(o) }
+  })
+  if (!body || !top) throw new Error('dress: no body or top mesh')
+  const inv = new Map(body.skeleton.bones.map((b, i) => [b.name, body.skeleton.boneInverses[i]]))
+  const byName = new Map(); model.traverse(o => { if (o.isBone) byName.set(o.name, o) })
+  const bones = D.bones.map(n => byName.get(n))
+  if (bones.some(b => !b)) throw new Error('dress: missing bones ' + D.bones.filter(n => !byName.get(n)))
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.Float32BufferAttribute(D.position, 3))
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(D.normal, 3))
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(D.uv, 2))
+  g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(D.skinIndex, 4))
+  g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(D.skinWeight, 4))
+  g.setIndex(D.index)
+  const color = new THREE.Color(DRESS_COLORS[colorKey] ?? DRESS_COLORS[DRESS_DEFAULT])
+  const mats = [].concat(top.material).map((m, i) => {
+    const c = m.clone()
+    c.name = 'VRoidDress' + (i ? ' (Outline)' : '')
+    if (c.map !== undefined) c.map = tex
+    if (c.shadeMultiplyTexture !== undefined) c.shadeMultiplyTexture = tex
+    if (c.normalMap) c.normalMap = null
+    // the texture is near white: the lit colour as chosen, the shade deeper
+    // (a white dress keeps the texture's own blue-grey folds)
+    c.color?.copy(color).multiplyScalar(0.85)
+    c.shadeColorFactor?.copy(color).multiplyScalar(0.5)
+    if ('shadingToonyFactor' in c && D.mtoon.shadingToony != null) { c.shadingToonyFactor = D.mtoon.shadingToony; c.shadingShiftFactor = D.mtoon.shadingShift }
+    c.needsUpdate = true
+    return c
+  })
+  for (let i = 0; i < mats.length; i++) g.addGroup(0, D.index.length, i)
+  const mesh = new THREE.SkinnedMesh(g, mats.length > 1 ? mats : mats[0])
+  mesh.name = 'concert-dress'
+  mesh.bind(new THREE.Skeleton(bones, D.bones.map(n => inv.get(n) || new THREE.Matrix4())), body.bindMatrix)
+  body.parent.add(mesh)
+  for (const o of hidden) o.visible = false
+  return mesh
 }
 
 // MakeHuman reference proportions (the build's 165 cm woman), for the scale
@@ -146,6 +207,10 @@ export async function loadAltCharacter(key, base = new URL('./assets/', import.m
     // we pose the raw bones ourselves; no copying from the normalised rig
     vrm.humanoid.autoUpdateHumanBones = false
     if (vrm.lookAt) vrm.lookAt.autoUpdate = false
+    if (spec.dress) {
+      const q = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('vdress') : null
+      if (q !== 'off') await addDress(gltf.scene, spec.dress, base, q).catch(e => console.warn('dress:', e.message))
+    }
     H = {}
     for (const name of Object.keys(vrm.humanoid.humanBones)) { const b = vrm.humanoid.getRawBoneNode(name); if (b) H[name] = b }
   } else {
@@ -434,7 +499,7 @@ function drapeSkirt(model, H, spec) {
   model.traverse(o => {
     if (!o.isSkinnedMesh) return
     let under = false; for (let p = o; p; p = p.parent) if (spec.under.test(p.name)) under = true
-    if (!under) return
+    if (!under || !o.visible) return
     const name = [].concat(o.material)[0].name
     if (spec.material.test(name)) skirts.push(o); else skins.push(o)
   })
@@ -474,8 +539,10 @@ function drapeSkirt(model, H, spec) {
         const a = axis(T, p), len = a.r.length() || 1e-6
         // on top (r up) fully, the sides partly, underneath not at all
         const f = THREE.MathUtils.smoothstep(a.r.y / len, -0.45, 0.35)
-        const cap = Math.min(len, T.radius * 1.12 + 0.6)
-        goal.add(a.c.addScaledVector(a.r, THREE.MathUtils.lerp(len, cap, f) / len).multiplyScalar(w[i] / tw))
+        let cap = Math.min(len, T.radius * 1.12 + 0.6)
+        // a refitted dress can sit inside the seated thigh: push it out too
+        if (spec.push) cap = Math.max(cap, T.radius * 1.1 + 0.5)
+        goal.add(a.c.addScaledVector(a.r, THREE.MathUtils.lerp(len, cap, spec.push ? Math.max(f, 0.6) : f) / len).multiplyScalar(w[i] / tw))
       })
       p.lerp(goal, Math.min(1, tw))
       // back into the bind pose

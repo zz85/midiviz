@@ -1,0 +1,137 @@
+<!doctype html>
+<html><body>
+<!--
+  Builds pianist/assets/models/vroid-a-dress.json: VRoid HairSample_Female's
+  white dress (CC0), refitted onto AvatarSample_A. Run by
+  pianist/build/build-vroid-dress.mjs in headless Chromium; see there.
+
+  ?donor=<url of the dress VRM>&target=<url of the VRM to dress>
+
+  1. Body correspondence: every VRoid sample shares one body mesh topology
+     (2,418 vertices, the same UV layout), so each donor body vertex is matched
+     to the target's by its UV (and side).
+  2. Fit: each dress vertex moves by the inverse-distance blend of the
+     displacement (target − donor) of its 8 nearest donor body vertices, so it
+     keeps its offset from the skin on the target's proportions.
+  3. Weights: bones the target has are kept; a sleeve bone it lacks goes to
+     its nearest ancestor the target has. The skirt bones (J_Sec_*Skirt*) are
+     replaced by the hips and both thighs: the thighs take more of a vertex
+     the lower and further forward it is, split left / right across the
+     middle, so seated the skirt comes forward over the lap (alt-model.js
+     drapes it there on the first frame).
+-->
+<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/", "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.5.5/lib/three-vrm.module.min.js" } }</script>
+<script type="module">
+import * as THREE from 'three'
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { VRMLoaderPlugin } from '@pixiv/three-vrm'
+const Q = new URLSearchParams(location.search)
+const loader = new GLTFLoader(); loader.register(p => new VRMLoaderPlugin(p))
+const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t) }
+
+function parts(gltf) {
+  const r = { bones: new Map() }
+  gltf.scene.traverse(o => {
+    if (o.isBone) r.bones.set(o.name, o)
+    if (!o.isSkinnedMesh) return
+    const name = [].concat(o.material)[0].name
+    const geo = o.geometry, ix = geo.index.array, g0 = geo.groups[0] || { start: 0, count: ix.length }
+    const tris = Array.from(ix.slice(g0.start, g0.start + g0.count))
+    const used = [...new Set(tris)]
+    if (/Body_00_SKIN/.test(name) && !r.body) r.body = { mesh: o, geo, used }
+    if (/Tops/.test(name) && !r.tops) r.tops = { mesh: o, geo, used, tris, material: [].concat(o.material)[0] }
+  })
+  gltf.scene.updateMatrixWorld(true)
+  return r
+}
+const D = parts(await loader.loadAsync(Q.get('donor')))
+const T = parts(await loader.loadAsync(Q.get('target')))
+const log = []
+
+// 1. body correspondence by UV
+const key = (g, i) => `${Math.round(g.attributes.uv.getX(i) * 8192)},${Math.round(g.attributes.uv.getY(i) * 8192)},${Math.sign(g.attributes.position.getX(i))}`
+const tByKey = new Map()
+for (const i of T.body.used) tByKey.set(key(T.body.geo, i), i)
+const pairs = []   // [donor body vertex, displacement]
+const P = g => i => new THREE.Vector3().fromBufferAttribute(g.attributes.position, i)
+const dPos = P(D.body.geo), tPos = P(T.body.geo), cPos = P(D.tops.geo)
+for (const i of D.body.used) {
+  const j = tByKey.get(key(D.body.geo, i))
+  if (j == null) continue
+  pairs.push({ p: dPos(i), d: tPos(j).sub(dPos(i)) })
+}
+log.push(`body pairs ${pairs.length} / ${D.body.used.length}`)
+
+// 2. fit and 3. weights
+const dBones = D.tops.mesh.skeleton.bones
+const tNames = new Set(T.body.mesh.skeleton.bones.map(b => b.name))
+const SKIRT = /Skirt/
+const ancestorIn = b => { for (let p = b; p; p = p.parent) if (p.isBone && tNames.has(p.name)) return p.name; return 'J_Bip_C_Hips' }
+const hipsY = T.bones.get('J_Bip_C_Hips').getWorldPosition(new THREE.Vector3()).y
+const kneeY = T.bones.get('J_Bip_L_LowerLeg').getWorldPosition(new THREE.Vector3()).y
+const leftX = Math.sign(T.bones.get('J_Bip_L_UpperLeg').getWorldPosition(new THREE.Vector3()).x)
+// which way the model faces (the toes are in front of the ankles)
+const fwdZ = Math.sign(T.bones.get('J_Bip_L_ToeBase').getWorldPosition(new THREE.Vector3()).z - T.bones.get('J_Bip_L_Foot').getWorldPosition(new THREE.Vector3()).z)
+const remap = new Map(), out = { pos: [], nor: [], uv: [], si: [], sw: [], names: [] }
+const bi = name => { if (!remap.has(name)) { remap.set(name, out.names.length); out.names.push(name) } return remap.get(name) }
+const G = D.tops.geo, SI = G.attributes.skinIndex, SW = G.attributes.skinWeight, N = G.attributes.normal, UV = G.attributes.uv
+const idx = new Map()
+let skirtV = 0
+for (const v of D.tops.used) {
+  idx.set(v, idx.size)
+  const p = cPos(v)
+  // 8 nearest body vertices
+  const near = pairs.map(q => [q.p.distanceToSquared(p), q]).sort((a, b) => a[0] - b[0]).slice(0, 8)
+  let ws = 0; const d = new THREE.Vector3()
+  for (const [d2, q] of near) { const w = 1 / (Math.sqrt(d2) + 0.005); ws += w; d.addScaledVector(q.d, w) }
+  const fp = p.clone().addScaledVector(d, 1 / ws)
+  out.pos.push(fp.x, fp.y, fp.z)
+  out.nor.push(N.getX(v), N.getY(v), N.getZ(v))
+  out.uv.push(UV.getX(v), UV.getY(v))
+  // weights
+  const acc = new Map()
+  let skirtW = 0
+  for (let k = 0; k < 4; k++) {
+    const w = SW.getComponent(v, k); if (!w) continue
+    const b = dBones[SI.getComponent(v, k)]
+    if (SKIRT.test(b.name)) { skirtW += w; continue }
+    const n = tNames.has(b.name) ? b.name : ancestorIn(b)
+    acc.set(n, (acc.get(n) || 0) + w)
+  }
+  if (fp.y < hipsY + 0.02) {
+    // the skirt below the hips: weighted by where it hangs, not by the cloth
+    // bones (the vertex's other weights are hips weights there too)
+    skirtV++
+    acc.clear()
+    const down = smooth(hipsY + 0.02, hipsY - 0.6 * (hipsY - kneeY), fp.y)
+    const front = smooth(-0.7, 0.6, fwdZ * N.getZ(v))
+    const t = down * (0.1 + 0.9 * front)
+    const l = smooth(-0.045, 0.045, leftX * fp.x)
+    acc.set('J_Bip_C_Hips', 1 - t)
+    acc.set('J_Bip_L_UpperLeg', t * l)
+    acc.set('J_Bip_R_UpperLeg', t * (1 - l))
+  } else if (skirtW) acc.set('J_Bip_C_Hips', (acc.get('J_Bip_C_Hips') || 0) + skirtW)
+  const top = [...acc].sort((a, b) => b[1] - a[1]).slice(0, 4)
+  const s = top.reduce((a, x) => a + x[1], 0) || 1
+  for (let k = 0; k < 4; k++) { out.si.push(top[k] ? bi(top[k][0]) : 0); out.sw.push(top[k] ? +(top[k][1] / s).toFixed(4) : 0) }
+}
+const index = D.tops.tris.map(v => idx.get(v))
+log.push(`dress vertices ${idx.size}, triangles ${index.length / 3}, skirt vertices ${skirtV}, bones ${out.names.length}`)
+// the texture, as PNG (re-encoded to WebP by the runner)
+const img = D.tops.material.map.image, c = document.createElement('canvas')
+c.width = img.width; c.height = img.height; c.getContext('2d').drawImage(img, 0, 0)
+const m = D.tops.material
+window.__info = {
+  log,
+  dress: {
+    source: 'VRoid Project HairSample_Female (CC0), refitted to AvatarSample_A by pianist/build/vroid-dress.html',
+    bones: out.names,
+    position: out.pos.map(x => +x.toFixed(5)), normal: out.nor.map(x => +x.toFixed(4)), uv: out.uv.map(x => +x.toFixed(5)),
+    skinIndex: out.si, skinWeight: out.sw, index,
+    mtoon: { shadingToony: m.shadingToonyFactor, shadingShift: m.shadingShiftFactor, outlineWidth: m.outlineWidthFactor },
+  },
+  texture: c.toDataURL('image/png'),
+}
+window.__done = true
+</script>
+</body></html>
