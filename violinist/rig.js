@@ -18,7 +18,7 @@
 //    fingertip target with the character's own segment lengths;
 //  • the bow: placed as in #033 from motion.js (contact point near the bridge,
 //    tilted to the bowed string, bow position along the hair); the right hand
-//    takes the #033 bow-hand grip (thumb under the stick, fingers draped over
+//    takes a Franco-Belgian hold (grip(): palm over the stick, fingers draped over
 //    it), the arm is two-bone IK with the elbow in the bow plane, the
 //    clavicle comes forward when the tip is out of reach.
 //
@@ -65,7 +65,7 @@ export const HOLD = {
  * vrm: a loaded VRM (three-vrm), already in the scene, scaled to cm.
  * V: buildViolin(), bow: buildBow() (its group a child of V.group),
  * leftHand: buildLeftHand(V) (hidden; used for its solution),
- * bowHand: buildBowHand(bow, V.group) (hidden; used for its grip points).
+ * bowHand: buildBowHand(bow, V.group) (hidden; no longer used: the grip is grip() below).
  */
 export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
   const H = name => vrm.humanoid.getNormalizedBoneNode(name)
@@ -259,17 +259,18 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
     }
     // ── right arm and the bow hand ──
     {
-      const m = M.R, P = bowHand.points
+      const m = M.R
       bow.group.updateMatrixWorld(true)
-      // the grip is modelled with +z toward the player: mirror it if the bow's z points away
+      const mat = bow.group.matrixWorld
+      // which side of the stick the player is on (bow frame z)
       const bz = v3(0, 0, 1).applyQuaternion(wq(bow.group))
-      const toBody = wp(chestBone).sub(wp(bow.group))
-      const mat = new THREE.Matrix4().copy(bow.group.matrixWorld).multiply(new THREE.Matrix4().makeScale(1, 1, bz.dot(toBody) < 0 ? -1 : 1))
-      const k1 = toWorld(P.fingers[0][0], mat), k4 = toWorld(P.fingers[3][0], mat)
-      const knuckle = k1.clone().add(k4).multiplyScalar(0.5)
-      const wrist0 = toWorld(P.wrist, mat)
-      const side = k1.clone().sub(k4)
-      const R = rotFor(m.hand, knuckle.clone().sub(wrist0), side, new THREE.Quaternion())
+      const n = bz.dot(wp(chestBone).sub(wp(bow.group))) < 0 ? -1 : 1
+      const tip = clamp((bw.pos ?? 30) / 65, 0, 1)
+      const G = grip(n, tip, handScale)
+      const P = p => v3(p[0], p[1], p[2] * n).applyMatrix4(mat)
+      const D = d => v3(d[0], d[1], d[2] * n).transformDirection(mat)
+      const knuckle = P(G.knuckle), side = D(G.side)
+      const R = rotFor(m.hand, D(G.fwd), side, new THREE.Quaternion())
       const W = knuckle.clone().sub(m.knuckleOff.clone().applyQuaternion(R))
       // out of reach (toward the tip): bring the clavicle forward and in
       let S = wp(m.upper)
@@ -280,10 +281,9 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
       S = wp(m.upper)
       const sb = bw.s ?? 1.5
       const level = 1 - sb / Math.max(1, V.S - 1)                // 1 = G string: elbow high
-      const tip = clamp((bw.pos ?? 30) / 65, 0, 1)
       const pole = S.clone().add(v3(-30, -34 + 22 * level + 12 * tip, -12))
       arm(m, S, W, pole, R, side)
-      gripTo(m, mat, P)
+      gripTo(m, mat, G, n)
     }
     legs()
 
@@ -334,21 +334,41 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
     orient(T.bones[1], mid.clone().sub(wp(T.bones[1])), back)
     orient(T.bones[2], tip.clone().sub(mid), back)
   }
-  /** Right fingers onto the #033 bow grip. */
-  function gripTo(m, mat, P) {
+  /**
+   * A Franco-Belgian bow hold in the bow frame (x along the stick toward the
+   * tip, y from the hair up past the stick at y = 1.7, z toward the player
+   * when n = 1): the hand over the stick, palm down onto it, knuckles on the
+   * player's side; index, middle and ring fingers draped over to the far side
+   * (the index in front of the frog, the middle opposite the thumb, the ring
+   * over the frog), the little finger curved on top of the stick, the thumb
+   * bent under the stick against the frog. Toward the tip the hand pronates
+   * (the index sinks into the stick) and flattens.
+   */
+  function grip(n, tip, s) {
+    return {
+      knuckle: [0.3, 1.7 + 3.4 * s, 2.0 * s],
+      side: [1, -(0.12 + 0.3 * tip), 0.08],
+      fwd: [0.12, -(0.42 - 0.25 * tip), -0.9],
+      tips: [[3.3, 1.05, -0.95], [0.7, 0.95, -0.8], [-1.1, 1.05, -0.75], [-2.7, 2.35, 0.05]],
+      thumb: [0.35, 1.15, 0.6], thumbPole: [1.8, 2.4, 3.0],
+    }
+  }
+  /** Right fingers onto the bow grip. */
+  function gripTo(m, mat, G, n) {
     toLocalM.copy(mat).invert()
+    const L = p => v3(p[0], p[1], p[2] * n)
     const handR = wq(m.hand).multiply(_q.copy(rest.get(m.hand).q).invert())
     const side = m.side.clone().applyQuaternion(handR)
     for (let i = 0; i < 4; i++) {
       const F = m.fingers[i]
       const base = wp(F.bones[0]).applyMatrix4(toLocalM)
-      solveFinger(base, P.fingers[i][3], F.len, 0.8, F.pts, null)
+      solveFinger(base, L(G.tips[i]), F.len, i === 3 ? 0.5 : 0.8, F.pts, null)
       chain(F.bones, F.pts.map(p => p.clone().applyMatrix4(mat)), side)
     }
     const T = m.thumb
     setWorldQ(T.bones[0], _qq.copy(handR).multiply(rest.get(T.bones[0]).q))
     const J1 = wp(T.bones[1])
-    const tip = toWorld(P.thumb[3], mat), pole = toWorld(P.thumb[1], mat)
+    const tip = L(G.thumb).applyMatrix4(mat), pole = L(G.thumbPole).applyMatrix4(mat)
     const mid = twoBone(J1.clone(), tip.clone(), T.len[0], T.len[1], pole, v3())
     const back = Y.clone().applyQuaternion(handR)
     orient(T.bones[1], mid.clone().sub(J1), back)

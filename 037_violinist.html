@@ -442,6 +442,7 @@
       controls.update()
       renderer.render(scene, camera)
       window.__info = { t, height: rig.height, handScale: rig.handScale }
+      window.__dbg = { THREE, camera, controls, renderer, scene, rig, V, bow, vrm, leftHand, bowHand, frame }
       window.__done = true
     } else {
       const clk = new THREE.Clock()

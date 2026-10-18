@@ -20,7 +20,7 @@ Drives the VRM's normalised humanoid bones every frame from the #033 models (`st
 - spine lean and breath, a turn that follows the bow; the scroll lifts on the breath before a phrase;
 - violin on the chest frame: 40° left of facing, scroll up 4°, rolled 30° (E side down), defaults from Margulies 2023 (`research/01_violinist_biomechanics.md` §2); head turned 26°, tilted 14° onto the chin rest;
 - left hand: #033's hand model is solved in the violin frame; the character's hand goes on its knuckle line, the arm is two-bone IK with the elbow under the violin (toward the G string, further in high positions), each finger is solved to #033's fingertip targets with the character's own finger lengths, and the thumb sits under the neck;
-- bow placed as in #033 (contact near the bridge, tilted to the string); the right hand takes the #033 grip, the arm is two-bone IK with the elbow higher on the lower strings, the clavicle comes forward when the tip is out of reach;
+- bow placed as in #033 (contact near the bridge, tilted to the string); the right hand takes a Franco-Belgian hold (`grip()` in rig.js: palm down over the stick, index, middle and ring draped over the far side, little finger curved on top, thumb bent under the stick at the frog; pronating toward the tip), the arm is two-bone IK with the elbow higher on the lower strings, the clavicle comes forward when the tip is out of reach;
 - eyes follow the left hand and the contact point.
 
 ## Research
