@@ -242,8 +242,8 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
   const trm = [0, 1, 2, 3].map(() => new Float32Array(frames).fill(1))
   for (const st of strokes) {
     const D = Math.max(0.04, st.t1 - st.t0)
-    // tremolo: notes long enough for two strokes at least
-    st.trem = tremR && D >= 2 / tremR ? tremR : 0
+    // tremolo: separately bowed notes long enough for two strokes at least
+    st.trem = tremR && D >= 2 / tremR && st.events.length === 1 ? tremR : 0   // not inside slurs
     if (st.trem) for (const e of st.events) for (const n of e.notes) n.trem = { t0: st.t0, r: tremR, acc: tremAcc }
     const atk = st.short ? clamp(0.3 * D, 0.012, 0.03) : clamp(0.2 * D, 0.025, 0.07)
     const rel = st.short ? clamp(0.35 * D, 0.015, 0.05) : clamp(0.12 * D, 0.025, 0.06)

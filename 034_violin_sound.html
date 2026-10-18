@@ -245,14 +245,14 @@
       ['rosin', 'Rosin', 0, 2, 0.05, 1, 'Physical models: grain of the rosin (stick-slip jitter, bow noise)'],
       ['resonance', 'Resonance', 0, 3, 0.05, 1, 'Physical models: how much the other strings ring in sympathy through the bridge'],
     ]
-    const opt = {}
+    const opt = {}, optEl = {}
     for (const o of OPTS) {
       if (o[0] === 'head') { const h = document.createElement('div'); h.className = 'head'; h.textContent = o[1]; if (o[2]) h.title = o[2]; $('sliders').appendChild(h); continue }
       const [k, label] = o, r = document.createElement('div'); r.className = 'row'
       if (Array.isArray(o[2])) {
         const [, , choices, def, tip] = o
         r.innerHTML = `<label title="${tip}">${label}</label><select>${choices.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>${k === 'expr' ? '<span class="val" id="exprV"></span>' : ''}`
-        const sel = r.querySelector('select'); sel.value = qs.get(k) ?? def; opt[k] = sel.value
+        const sel = r.querySelector('select'); sel.value = qs.get(k) ?? def; opt[k] = sel.value; optEl[k] = sel
         sel.onchange = () => { opt[k] = sel.value; applyOpts(true); saveUrl() }
         OPTDEF[k] = def
       } else {
@@ -298,6 +298,8 @@
       ['detache', 'Détaché, then fast slurs', 'G4:.5 A4:.5 B4:.5 C5:.5 D5:.5 E5:.5 F#5:.5 G5:.5 G5:2 r:1 G4:.25 A4:.25 B4:.25 C5:.25 D5:.25 C5:.25 B4:.25 A4:.25 G4:2', 0.5],
       ['double', 'Double stops', 'D4+B4:2 E4+C5:2 F#4+D5:2 G4+B4:4 r:1 A4+F#5:2 B4+G5:2 A4+A5:4', 0.5],
       ['low', 'Low and dark (G string)', 'G3:2/G A3/G B3/G C4:2/G D4:2/G E4/G D4/G C4/G B3/G A3:4/G', 0.5],
+      // a 5th entry sets Bowing options while the demo is loaded (put back when you leave it)
+      ['tremolo', 'Tremolo (long notes tremolo, fast runs slurred)', 'E5:4 F5:4 E5:2 D5:2 C5:4 r:1 A4:.25 B4:.25 C5:.25 D5:.25 E5:.25 F5:.25 G#5:.25 A5:.25 G#5:.25 F5:.25 E5:.25 D5:.25 C5:.25 B4:.25 C5:.25 D5:.25 E5:4 A4+E5:4', 0.5, { tremolo: 'fast', tremoloMode: 'hz' }],
     ]
     for (const [k, l] of [['', '— choose a demo —'], ...DEMOS]) $('demo').add(new Option(l, k))
     const SONGS = [
@@ -392,9 +394,18 @@
     }
     const songTime = () => lab.time() * state.speed
 
+    // options a demo set: put back to their defaults when another piece is loaded
+    let demoOpts = null
+    function demoOptions(set) {
+      if (demoOpts) for (const [k, v] of Object.entries(demoOpts)) if (opt[k] === v) { opt[k] = OPTDEF[k]; optEl[k].value = OPTDEF[k] }
+      demoOpts = set || null
+      if (set) for (const [k, v] of Object.entries(set)) { opt[k] = v; optEl[k].value = v }
+      applyOpts(false)
+    }
     function loadDemo(k) {
       const d = DEMOS.find(x => x[0] === k); if (!d) return
       $('song').value = ''; $('trackRow').hidden = true
+      demoOptions(d[4])
       state.tempo = 60 / d[3]
       loadPiece(parseTyped(d[2], d[3]), { title: d[1], source: { demo: k }, fit: false })
     }
@@ -437,7 +448,7 @@
       try { loadMidiBuffer(await (await fetch(encodeURI(v))).arrayBuffer(), SONGS.find(s => s[0] === v)?.[1] || v, { song: v }, track); $('demo').value = ''; setStatus('') }
       catch (e) { setStatus('Could not load: ' + e.message, true, 3000) }
     }
-    $('song').onchange = () => loadSong($('song').value).then(() => { saveUrl(); play() })
+    $('song').onchange = () => { demoOptions(null); loadSong($('song').value).then(() => { saveUrl(); play() }) }
     $('open').onclick = () => $('file').click()
     $('file').onchange = () => { const f = $('file').files[0]; if (f) f.arrayBuffer().then(b => { loadMidiBuffer(b, f.name, null); $('demo').value = ''; $('song').value = '' }).catch(e => setStatus(e.message, true, 3000)) }
     addEventListener('dragover', e => { e.preventDefault(); document.body.classList.add('dragging') })
