@@ -777,7 +777,7 @@ export function buildGrandPiano({ bench = true, mirror = true } = {}) {
       damper.traverse(o => { if (o.isMesh) o.castShadow = o.receiveShadow = true })
       root.add(damper)
     }
-    action.push({ hammer, restY, strikeY, damper, dRestY, hv: 0, hy: restY, dy: 0, sost: false })
+    action.push({ hammer, restY, strikeY, damper, dRestY, hv: 0, hy: restY, dy: 0, dv: 0, sost: false })
   }
 
   // ── Keys ───────────────────────────────────────────────────────────────
@@ -1000,6 +1000,8 @@ export function buildGrandPiano({ bench = true, mirror = true } = {}) {
   // ── State and animation ────────────────────────────────────────────────
   let lidAngle = 0, lidTarget = THREE.MathUtils.degToRad(32), flapAngle = Math.PI, sustain = false
   const PRESS_W = 0.95 / (0 - D.PIVOT_Z), PRESS_B = 0.95 / (0 - D.PIVOT_Z)   // ~0.95 cm key dip
+  const DAMPER_LIFT = 0.9    // cm off the strings, fully lifted
+  const DAMPER_G = 420      // cm/s², a falling damper (its weight slowed by the lever it drags)
   const KEY_TRAVEL = 0.03   // s for a full key stroke (the pages start a key down this long before its note)
 
   const api = {
@@ -1079,8 +1081,24 @@ export function buildGrandPiano({ bench = true, mirror = true } = {}) {
           // its key lifts it (the key's back end through the damper lever),
           // the right pedal lifts them all (the tray under every damper
           // lever), the middle pedal holds those that were up when it went down
-          const up = k.held || sustain || a.sost ? 0.9 : 0
-          a.dy += (up - a.dy) * Math.min(1, dt * (up ? 40 : 18))
+          // What holds it up: the key's lever starts lifting it halfway down
+          // the key's travel, so the string is free just before the hammer
+          // arrives; the tray rises with the pedal past its free play
+          const full = k.black ? PRESS_B : PRESS_W
+          const byKey = DAMPER_LIFT * THREE.MathUtils.smoothstep(k.angle / full, 0.45, 1)
+          const byTray = DAMPER_LIFT * THREE.MathUtils.smoothstep(pedals[2].value, 0.15, 1)
+          const hold = Math.max(byKey, byTray, a.sost ? DAMPER_LIFT : 0)
+          if (a.dy <= hold) { a.dy = hold; a.dv = 0 }   // carried up by the lever or the tray
+          else {
+            // nothing under it moves as fast as it falls: it drops by its own
+            // weight (slowed by the lever it rides on) and settles on the felt
+            // with a small bounce, or rides the lever / tray down if they're slower
+            a.dv -= DAMPER_G * dt; a.dy += a.dv * dt
+            if (a.dy <= hold) {
+              if (hold > 0) { a.dy = hold; a.dv = 0 }
+              else { a.dy = -a.dy * 0.3; a.dv = Math.abs(a.dv) > 6 ? -a.dv * 0.3 : 0; if (!a.dv) a.dy = 0 }
+            }
+          }
           a.damper.position.y = a.dRestY + a.dy
         }
       }
