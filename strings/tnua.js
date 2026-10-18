@@ -6,7 +6,8 @@
 // start = beats within the bar (resets every bar, may be negative for an
 // up-beat), duration in quarter notes, string 1 = G … 4 = E (0 = not
 // annotated), position 1–12 (diatonic, see POSITION_INDEX), finger 0 = open.
-// No licence file: keep it out of the repository (strings/data/ is ignored).
+// The CSVs are copied in strings/tnua/ (the source repository has no licence
+// file; see strings/tnua/README.md).
 //
 // Pure ES module, no DOM.
 

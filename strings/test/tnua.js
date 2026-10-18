@@ -4,9 +4,8 @@
 //   node strings/test/tnua.js [dataset folder] [--mode=standard] [--bpm=N (default: per-piece tempo)] [--verbose]
 //                             [--weights='{"shift":3}'] [--tune[=rounds]] [--bench=λ] [--all] [--human]
 //
-// Folder defaults to strings/data/TNUA/TNUA_violin_fingering_dataset; fetch it with
-//   git clone https://github.com/Tsung-Ping/Violin-Fingering-Generation strings/data/TNUA
-// (no licence file: keep it in the git-ignored strings/data/).
+// Folder defaults to strings/tnua/, a copy of the dataset's CSVs
+// (github.com/Tsung-Ping/Violin-Fingering-Generation, see strings/tnua/README.md).
 //
 // Scores (mean over the 10 violinists unless stated): string, finger,
 // string+finger (S+F), string+position (S+P), all three; high = best
@@ -25,9 +24,9 @@ import { PIECES, TEMPO, parseCSV, scorePiece, compare, agreement, align } from '
 const here = dirname(fileURLToPath(import.meta.url))
 const argv = process.argv.slice(2)
 const args = Object.fromEntries(argv.filter(a => a.startsWith('--')).map(a => a.slice(2).split('=')).map(([k, v]) => [k, v ?? true]))
-const dir = argv.find(a => !a.startsWith('--')) || join(here, '../data/TNUA/TNUA_violin_fingering_dataset')
+const dir = argv.find(a => !a.startsWith('--')) || join(here, '../tnua')
 if (!existsSync(dir)) {
-  console.error(`TNUA dataset not found in ${dir}\nget it with: git clone --depth 1 https://github.com/Tsung-Ping/Violin-Fingering-Generation ${join(here, '../data/TNUA')}`)
+  console.error(`TNUA dataset not found in ${dir} (see strings/tnua/README.md)`)
   process.exit(1)
 }
 const VIOLINISTS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]

@@ -40,11 +40,10 @@ Other differences from the violin family:
 ## TNUA evaluation
 
 ```
-git clone --depth 1 https://github.com/Tsung-Ping/Violin-Fingering-Generation strings/data/TNUA
 node strings/test/tnua.js [--verbose] [--human] [--mode=…] [--tune --bench=0.08]
 ```
 
-The dataset is 10 violinists × 14 excerpts, about 10,900 notes per violinist. It has no licence file, so it stays in the git-ignored `strings/data/`. The engine sees only pitch and timing, and each piece is played at an approximate tempo.
+The dataset is 10 violinists × 14 excerpts, about 10,900 notes per violinist. Its CSVs are copied in [tnua/](tnua/) ([source and credits](tnua/README.md)), so the page lists the pieces with a violinist selector and the script runs without a separate clone. The engine sees only pitch and timing, and each piece is played at an approximate tempo.
 
 | Fingering | string | finger | string + finger |
 |---|---|---|---|

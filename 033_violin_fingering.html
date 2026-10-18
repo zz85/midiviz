@@ -446,7 +446,7 @@
     ]
     for (const [v, l] of SONGS) $('song').add(new Option(l, v))
     const tg = document.createElement('optgroup')
-    tg.label = 'TNUA dataset (if downloaded to strings/data/TNUA)'
+    tg.label = 'TNUA dataset (10 violinists’ fingerings)'
     for (const p of PIECES) tg.appendChild(new Option(TITLES[p], 'tnua:' + p))
     $('song').appendChild(tg)
     for (let v = 1; v <= 10; v++) $('violinist').add(new Option(`Violinist ${v}`, v))
@@ -485,9 +485,8 @@
       await chooseTrack()
     }
     async function loadTnua(piece, violinist = +$('violinist').value) {
-      const url = `strings/data/TNUA/TNUA_violin_fingering_dataset/vio${violinist}_${piece}.csv`
-      const r = await fetch(url)
-      if (!r.ok) throw new Error(`TNUA not found — clone github.com/Tsung-Ping/Violin-Fingering-Generation into strings/data/TNUA`)
+      const r = await fetch(`strings/tnua/vio${violinist}_${piece}.csv`)
+      if (!r.ok) throw new Error(`TNUA file vio${violinist}_${piece}.csv not found in strings/tnua/`)
       await loadTnuaText(await r.text(), TITLES[piece], { tnua: piece }, piece, violinist)
     }
     async function loadTnuaText(text, title, source, piece = null, violinist = 1) {
