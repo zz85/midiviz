@@ -242,6 +242,7 @@ export function buildLeftHand(violin, { scale = 1 } = {}) {
       pole = new THREE.Vector3(tB.x - 6, tB.y, tB.z + 6)
     }
     twoBone(tB, tipT, tL[0], tL[1], pole, thumb.mid)
+    thumb.base = tB; thumb.target = tipT
     place(thumb.segs[0], tB, thumb.mid); place(thumb.segs[1], thumb.mid, tipT)
     thumb.joints[0].position.copy(tB); thumb.joints[1].position.copy(thumb.mid); thumb.tip.position.copy(tipT)
     for (const m of [...thumb.segs]) { m.scale.x = m.scale.z = size }
@@ -271,6 +272,9 @@ export function buildLeftHand(violin, { scale = 1 } = {}) {
 
   return {
     group, update,
+    // the solved points (instrument frame), for driving another hand (#037): per
+    // finger base (knuckle), cur (fingertip target), pts; the thumb's base, mid, target
+    joints: { fingers, thumb, wrist, knuckle },
     setStyle(style) { for (const m of meshes) m.material = style === 'ghost' ? mats.ghost : mats.skin },
     setScale(v) { size = v },
     setLabels(on) { showLabels = on },
@@ -305,18 +309,22 @@ export function buildBowHand(bow, parent, { scale = 1 } = {}) {
     [V(-3.0, 3.8, 2.1), V(-3.4, 3.4, 1.2), V(-3.6, 2.7, 0.4), V(-3.6, 2.15, 0.15)], // little finger, curved on top
   ]
   const rad = [0.8, 0.85, 0.78, 0.66]
+  const points = { fingers: [], thumb: null, wrist: null }   // in the bow frame (for #037)
   fingerPath.forEach((pts, i) => {
     const P = pts.map(p => p.clone().multiplyScalar(s).add(V(0, stickY * (1 - s), 0)))
+    points.fingers.push(P)
     for (let j = 0; j < 3; j++) place(cyl(rad[i] * (1 - 0.08 * j), rad[i] * (0.92 - 0.08 * j)), P[j], P[j + 1])
     for (let j = 0; j < 4; j++) ball(rad[i] * (1 - 0.08 * j)).position.copy(P[j])
   })
   // thumb: bent, its tip under the stick between frog and grip
   {
     const P = [V(-1.4, 2.6, 2.8), V(-0.2, 1.4, 2.2), V(0.6, 0.9, 0.9), V(0.8, 1.0, 0.25)].map(p => p.multiplyScalar(s))
+    points.thumb = P
     for (let j = 0; j < 3; j++) place(cyl(1.0 - 0.1 * j, 0.9 - 0.1 * j), P[j], P[j + 1])
     for (let j = 0; j < 4; j++) ball(1.0 - 0.1 * j).position.copy(P[j])
   }
   const wristLocal = V(-2.4 * s, stickY + 5.6 * s, 4.2 * s)
+  points.wrist = wristLocal
   const wristBall = ball(2.1)
   wristBall.position.copy(wristLocal)
   // arm in the parent frame
@@ -327,7 +335,7 @@ export function buildBowHand(bow, parent, { scale = 1 } = {}) {
   const fore = armKit.cyl(2.6, 3.2, mats.sleeve), up = armKit.cyl(3.3, 3.8, mats.sleeve), elbowBall = armKit.ball(3.3, mats.sleeve)
   const wrist = new THREE.Vector3(), elbow = new THREE.Vector3()
   return {
-    hand, arm,
+    hand, arm, points,
     update(shoulder, pole) {
       bow.group.updateMatrix()
       wrist.copy(wristLocal).applyMatrix4(bow.group.matrix)

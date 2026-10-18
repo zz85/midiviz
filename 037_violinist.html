@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>#037 Violinist</title>
+  <!--
+    Experiment #037 - Violinist. An anime-style violinist (a VRoid CC0 VRM,
+    cel shaded) plays the solo part of a violin MIDI on a concert stage, with
+    the #033 fingering, left-hand and bow models driving a full-body rig
+    (violinist/rig.js). The rest of the MIDI plays as accompaniment.
+    See violinist/README.md.
+  -->
+  <script src="tonejs-midi.js"></script>
+  <script type="importmap">
+    { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+      "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.5.5/lib/three-vrm.module.min.js"
+    } }
+  </script>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font: 13px/1.35 -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif; color: #eee; }
+    canvas { display: block; touch-action: none; }
+    .bar { position: fixed; left: 0; right: 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 12px; z-index: 5;
+      background: linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0)); transition: opacity 0.6s; }
+    #top { top: 0; }
+    #bottom { bottom: 0; background: linear-gradient(rgba(0,0,0,0), rgba(0,0,0,0.6)); }
+    body.idle .bar { opacity: 0; pointer-events: none; }
+    select, button, input { font: inherit; color: #eee; background: rgba(30,30,36,0.8); border: 1px solid rgba(255,255,255,0.18); border-radius: 6px; padding: 4px 8px; }
+    button { cursor: pointer; }
+    button.on { background: rgba(255, 190, 110, 0.25); }
+    #seek { flex: 1; min-width: 160px; padding: 0; }
+    a { color: #fc9; }
+    #title { font-weight: 600; letter-spacing: 0.02em; }
+    #status { position: fixed; left: 50%; top: 52px; transform: translateX(-50%); padding: 6px 12px; border-radius: 6px; background: rgba(0,0,0,0.6); z-index: 6; display: none; }
+    #start { position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; cursor: pointer;
+      background: radial-gradient(ellipse at center, rgba(0,0,0,0.3), rgba(0,0,0,0.75)); transition: opacity 0.5s; }
+    #start.gone { opacity: 0; pointer-events: none; }
+    #start .play { width: 90px; height: 90px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.85); display: flex; align-items: center; justify-content: center; font-size: 36px; padding-left: 6px; box-sizing: border-box; }
+    #credit { position: fixed; right: 12px; bottom: 44px; font-size: 11px; opacity: 0.55; z-index: 5; text-align: right; max-width: 50vw; }
+    label { display: inline-flex; gap: 4px; align-items: center; }
+  </style>
+</head>
+<body>
+  <div id="top" class="bar">
+    <a href="README.md" title="Experiments">◀</a>
+    <span id="title">#037 Violinist</span>
+    <select id="song" title="Piece"></select>
+    <select id="model" title="Violinist">
+      <option value="vroid-hairsample-male.vrm">Black hair (Chiaki-like)</option>
+      <option value="vroid-sakurada-fumiriya.vrm">Light brown (Mine-like)</option>
+      <option value="vroid-base-male.vrm">Short teal</option>
+    </select>
+    <select id="outfit" title="Outfit">
+      <option value="concert">Concert black</option>
+      <option value="vest">Shirt, vest and tie</option>
+      <option value="own">The model's own</option>
+    </select>
+    <select id="cam" title="Camera">
+      <option value="auto">Director (auto)</option>
+      <option value="front">From the audience</option>
+      <option value="hall">Hall, wide</option>
+      <option value="face">Face</option>
+      <option value="hands">Left hand</option>
+      <option value="bow">Bow and strings</option>
+      <option value="left">From his left</option>
+      <option value="low">Low, in front</option>
+      <option value="behind">Over his shoulder</option>
+      <option value="free">Free</option>
+    </select>
+    <select id="sf" title="Sound">
+      <option value="soundfonts/FluidR3.sf3">FluidR3 GM</option>
+      <option value="soundfonts/Creative(emu10k1)8MBGMSFX.sf2">Creative 8 MB GM</option>
+    </select>
+    <select id="room" title="Room"></select>
+    <label title="Ink outlines"><input type="checkbox" id="outline" checked> Ink</label>
+  </div>
+  <div id="bottom" class="bar">
+    <button id="play">▶</button>
+    <input type="range" id="seek" min="0" max="1" step="0.0001" value="0">
+    <span id="time">0:00 / 0:00</span>
+    <select id="speed" title="Speed"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option></select>
+    <label title="Play the accompaniment"><input type="checkbox" id="accomp" checked> Accompaniment</label>
+  </div>
+  <div id="credit"></div>
+  <div id="status"></div>
+  <div id="start"><div class="play">▶</div><div id="startSong"></div></div>
+
+  <script type="module">
+    import * as THREE from 'three'
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+    import { SoundFontEngine, MidiScheduler } from './soundfont-engine/src/index.js'
+    import { installAcoustics, acousticParams, ROOMS } from './concertstage/acoustics.js'
+    import { INSTRUMENTS, fingerLine } from './strings/fingering.js'
+    import { buildMotion } from './strings/motion.js'
+    import { buildViolin, buildBow } from './strings/violin3d.js'
+    import { buildLeftHand, buildBowHand } from './strings/hand3d.js'
+    import { createViolinistRig } from './violinist/rig.js'
+    import { toonify, tuneMToon, buildStage } from './violinist/stage.js'
+
+    const $ = id => document.getElementById(id)
+    const Q = new URLSearchParams(location.search)
+    const SHOT = Q.has('shot')
+    const setStatus = (msg, ms = 0) => { $('status').textContent = msg; $('status').style.display = msg ? 'block' : 'none'; if (ms) setTimeout(() => setStatus(''), ms) }
+
+    // ── Renderer, scene ────────────────────────────────────────────────────
+    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: SHOT })
+    renderer.setPixelRatio(Math.min(2, devicePixelRatio))
+    renderer.setSize(innerWidth, innerHeight)
+    renderer.shadowMap.enabled = true
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    renderer.outputColorSpace = THREE.SRGBColorSpace
+    document.body.appendChild(renderer.domElement)
+    const scene = new THREE.Scene()
+    const camera = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 1, 6000)
+    camera.position.set(-40, 150, 340)
+    const controls = new OrbitControls(camera, renderer.domElement)
+    controls.target.set(10, 135, 0)
+    controls.enableDamping = true
+    const stage = buildStage(scene, renderer)
+
+    // ── The instrument ─────────────────────────────────────────────────────
+    const INST = INSTRUMENTS.violin
+    const V = buildViolin(INST, { finish: 'red' })
+    scene.add(V.group)
+    const bow = buildBow()
+    V.group.add(bow.group)
+    const leftHand = buildLeftHand(V)            // not added to the scene: its solution drives the rig
+    const bowHand = buildBowHand(bow, V.group)
+    bowHand.hand.visible = false; bowHand.arm.visible = false
+    const inkInstrument = toonify([V.group, bow.group])
+
+    // ── The violinist ──────────────────────────────────────────────────────
+    let vrm = null, rig = null, VRMUtils = null
+    const loader = new GLTFLoader()
+    async function loadModel(file) {
+      setStatus('Loading the violinist…')
+      const mod = await import('@pixiv/three-vrm')
+      VRMUtils = mod.VRMUtils
+      if (!loader._vrm) { loader.register(p => new mod.VRMLoaderPlugin(p)); loader._vrm = true }
+      const gltf = await loader.loadAsync('violinist/assets/models/' + file)
+      const next = gltf.userData.vrm
+      VRMUtils.removeUnnecessaryVertices(gltf.scene)
+      VRMUtils.rotateVRM0(next)
+      next.scene.scale.setScalar(100)     // metres → cm
+      next.scene.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false } })
+      if ($('outfit').value !== 'own') await dress(next, $('outfit').value)
+      tuneMToon(next)
+      if (vrm) { scene.remove(vrm.scene); VRMUtils.deepDispose(vrm.scene) }
+      vrm = next
+      scene.add(vrm.scene)
+      vrm.scene.updateMatrixWorld(true)
+      leftHand.setScale(1)
+      rig = createViolinistRig({ vrm, V, bow, leftHand, bowHand })
+      leftHand.setScale(rig.handScale)
+      applyOutline()
+      setStatus('')
+    }
+    // Outfits: the VRoid samples share one skeleton (the same 64 J_Bip joints
+    // and body), so the base male's shirt, knit vest, tie, trousers and shoes
+    // can be bound onto any of them; recoloured for a concert
+    const OUTFITS = {
+      concert: { Tops: 'vest', Tie: 0x2a2a30, Bottoms: 0x55555c, Shoes: 0x303034 },
+      vest: {},
+    }
+    let donor = null
+    // the navy knit vest → charcoal black; the white shirt is left alone
+    const vestCache = new Map()
+    function blackVest(tex) {
+      if (!tex?.image) return tex
+      if (vestCache.has(tex)) return vestCache.get(tex)
+      const img = tex.image, cv = document.createElement('canvas')
+      cv.width = img.width; cv.height = img.height
+      const g = cv.getContext('2d'); g.drawImage(img, 0, 0)
+      const d = g.getImageData(0, 0, cv.width, cv.height), p = d.data
+      for (let i = 0; i < p.length; i += 4) {
+        const r = p[i], gg = p[i + 1], b = p[i + 2]
+        if (b > r + 12 && (r + gg + b) / 3 < 140) { const l = (r + gg + b) / 3 * 0.32; p[i] = l; p[i + 1] = l; p[i + 2] = l * 1.08 }
+      }
+      g.putImageData(d, 0, 0)
+      const t = new THREE.CanvasTexture(cv)
+      t.colorSpace = tex.colorSpace; t.flipY = tex.flipY; t.wrapS = tex.wrapS; t.wrapT = tex.wrapT
+      vestCache.set(tex, t)
+      return t
+    }
+    async function dress(target, key) {
+      donor ??= await loader.loadAsync('violinist/assets/models/vroid-base-male.vrm')
+      const bones = new Map()
+      target.scene.traverse(o => { if (o.isBone) bones.set(o.name, o) })
+      const old = []
+      target.scene.traverse(o => { if (o.isSkinnedMesh && /^Body/.test(o.name)) old.push(o) })
+      if (!old.length) return
+      const parent = old[0].parent
+      old.forEach(o => o.removeFromParent())
+      const tint = OUTFITS[key] || {}
+      donor.scene.traverse(o => {
+        if (!o.isSkinnedMesh || !/^Body/.test(o.name)) return
+        const sk = new THREE.Skeleton(o.skeleton.bones.map(b => bones.get(b.name)), o.skeleton.boneInverses)
+        const mats = [].concat(o.material).map(m => {
+          const c = m.clone()
+          for (const [k, col] of Object.entries(tint)) {
+            if (!c.name.includes(k) || c.name.includes('Outline')) continue
+            if (col === 'vest') { c.map = blackVest(c.map); if (c.shadeMultiplyTexture) c.shadeMultiplyTexture = c.map; continue }
+            c.color.multiply(new THREE.Color(col)); c.shadeColorFactor?.multiply(new THREE.Color(col))
+          }
+          return c
+        })
+        const m = new THREE.SkinnedMesh(o.geometry, Array.isArray(o.material) ? mats : mats[0])
+        m.name = o.name
+        m.bind(sk, o.bindMatrix)
+        m.castShadow = m.receiveShadow = true; m.frustumCulled = false
+        parent.add(m)
+      })
+    }
+    $('outfit').onchange = async () => { await loadModel($('model').value); saveUrl() }
+    function applyOutline() {
+      const on = $('outline').checked
+      inkInstrument.forEach(o => { o.visible = on })
+      vrm?.scene.traverse(o => { if (o.isMesh) for (const m of [].concat(o.material)) if (m.isMToonMaterial && m.outlineWidthMode !== undefined) { m.userData.ow ??= m.outlineWidthFactor; m.outlineWidthFactor = on ? m.userData.ow : 0 } })
+    }
+    $('outline').onchange = applyOutline
+
+    // ── Songs ──────────────────────────────────────────────────────────────
+    const GROUPS = { 'bach-solo': 'Bach – Sonatas & Partitas (solo)', sonata: 'Violin sonatas', concerto: 'Concertos', showpiece: 'Showpieces' }
+    const index = await (await fetch('violinist/midis/index.json')).json()
+    for (const [g, label] of Object.entries(GROUPS)) {
+      const og = document.createElement('optgroup'); og.label = label
+      for (const e of index.filter(e => e.group === g)) og.appendChild(new Option(`${e.composer.replace('J. S. ', '')} – ${e.title.replace(/^.*?(BWV|Op\.|K\.|HWV|No\.)/, '$1')}`, e.file))
+      $('song').appendChild(og)
+    }
+    $('song').value = Q.get('song') || 'bach_1006_1_preludio.mid'
+    for (const [k, r] of Object.entries(ROOMS)) $('room').add(new Option(r.label, k, k === 'hall', k === 'hall'))
+
+    const song = { entry: null, notes: [], accomp: [], motion: null, duration: 1, drive: null, programs: [] }
+    async function loadSong(file) {
+      const e = index.find(x => x.file === file) || index[0]
+      setStatus('Fingering…')
+      const midi = new Midi(await (await fetch('violinist/midis/' + e.file)).arrayBuffer())
+      // tempo: many LilyPond files play at ♩=60; scale to a typical performance tempo
+      const k = e.suggestedBpm && e.bpm ? e.bpm / e.suggestedBpm : 1
+      // the solo track: by note count (tonejs splits a track at a program change, so try whole channels too)
+      let solo = midi.tracks.filter(t => t.notes.length === e.violinNotes)
+      if (solo.length !== 1) {
+        const ch = [...new Set(midi.tracks.map(t => t.channel))].find(c => midi.tracks.filter(t => t.channel === c).reduce((a, t) => a + t.notes.length, 0) === e.violinNotes)
+        solo = ch != null ? midi.tracks.filter(t => t.channel === ch) : [midi.tracks.reduce((b, t) => (t.notes.length > b.notes.length ? t : b))]
+      }
+      const notes = solo.flatMap(t => t.notes).map(n => ({ pitch: n.midi, on: n.time * k, off: (n.time + Math.max(0.04, n.duration)) * k, velocity: n.velocity }))
+        .sort((a, b) => a.on - b.on || a.pitch - b.pitch)
+      fingerLine(notes, { instrument: 'violin' })
+      // accompaniment: every other track on its own channel and program
+      const others = midi.tracks.filter(t => !solo.includes(t) && t.notes.length)
+      const programs = [[0, 40]]
+      const accomp = []
+      let ch = 1
+      const chOf = new Map()
+      for (const t of others) {
+        const key = t.channel === 9 ? 'drums' : `${t.channel}:${t.instrument.number}`
+        if (!chOf.has(key)) { const c = t.channel === 9 ? 9 : (ch === 9 ? ++ch : ch); chOf.set(key, c); if (c !== 9) { programs.push([c, accompProgram(t.instrument.number)]); ch = Math.min(15, c + 1) } }
+        const c = chOf.get(key)
+        for (const n of t.notes) accomp.push({ midi: n.midi, time: n.time * k, duration: Math.max(0.04, n.duration) * k, velocity: n.velocity * 0.8, channel: c })
+      }
+      Object.assign(song, { entry: e, notes, accomp, programs, motion: buildMotion(notes, { instrument: 'violin' }) })
+      song.duration = Math.max(...notes.map(n => n.off), ...accomp.map(n => n.time + n.duration), 1)
+      song.drive = drivers(notes)
+      $('credit').innerHTML = `${e.composer} – ${e.title}<br>MIDI: ${e.credit || 'Mutopia Project'}, ${e.licence}`
+      $('startSong').textContent = `${e.composer} – ${e.title}`
+      clock.t = 0
+      setStatus('')
+      if (scheduler) loadSchedule()
+    }
+    // a few GM programs in these files are not what the score asks for (see midis/README.md)
+    const accompProgram = p => (p === 6 ? 48 : p === 69 ? 60 : p)
+
+    /** Expression drivers from the solo notes: energy (density, register), breath before phrases. */
+    function drivers(notes) {
+      const step = 0.1, n = Math.ceil((notes.at(-1)?.off || 1) / step) + 20
+      const dens = new Float32Array(n), reg = new Float32Array(n)
+      for (const x of notes) { const i = Math.floor(x.on / step); for (let j = Math.max(0, i - 10); j < Math.min(n, i + 10); j++) { dens[j] += 1 - Math.abs(j - i) / 10; reg[j] += x.pitch } }
+      const energy = new Float32Array(n)
+      for (let i = 0; i < n; i++) energy[i] = dens[i] ? Math.min(1, 0.35 * dens[i] / 6 + 0.65 * Math.max(0, (reg[i] / dens[i] - 62) / 26)) : 0.2
+      const phrases = []
+      let lastOff = -10
+      for (const x of notes) { if (x.on - lastOff > 0.35) phrases.push(x.on); lastOff = Math.max(lastOff, x.off) }
+      return {
+        energy: t => energy[Math.max(0, Math.min(n - 1, Math.round(t / step)))],
+        breath(t) {
+          let b = 0
+          for (const p of phrases) { if (p - t > 0.7) break; const d = t - p; b = Math.max(b, d < 0 ? Math.sin(Math.PI / 2 * (1 + d / 0.7)) : Math.max(0, 1 - d / 0.9)) }
+          return b
+        },
+        phrases,
+      }
+    }
+
+    // ── Sound ──────────────────────────────────────────────────────────────
+    const hall = installAcoustics()
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+    const engine = new SoundFontEngine({ backend: 'oxisynth', vendorPath: new URL('./vendor', import.meta.url).href, audioContext: audioCtx })
+    let soundReady = false, soundLoading = null
+    async function loadSound(v) {
+      soundReady = false
+      try { await engine.loadSoundFont(v); soundReady = true; setPrograms() } catch (e) { console.error(e); setStatus('Sound failed to load: ' + e.message, 4000) }
+    }
+    const ensureSound = () => (soundLoading ??= loadSound($('sf').value))
+    $('sf').onchange = () => { soundLoading = loadSound($('sf').value) }
+    const setPrograms = () => { if (soundReady) for (const [c, p] of song.programs) engine.programChange(c, p) }
+    const applyHall = () => { hall.set(acousticParams({ room: $('room').value, seat: 'mid' })) }
+    $('room').onchange = applyHall
+    applyHall()
+    let scheduler = null
+    const target = {
+      audioContext: audioCtx, resume: () => audioCtx.resume(),
+      noteOn(m, v, c) { if (soundReady && (c === 0 || $('accomp').checked)) engine.noteOn(m, v, c) },
+      noteOff(m, c) { engine.noteOff(m, c) },
+      controlChange(c, cc, v) { engine.controlChange(c, cc, v) },
+      allSoundOff() { engine.allNotesOff?.() },
+    }
+    const clock = { playing: false, t: 0, wall: 0, speed: 1 }
+    const now = () => clock.playing ? clock.t + (performance.now() - clock.wall) / 1000 * clock.speed : clock.t
+    function loadSchedule() {
+      const solo = song.notes.filter(n => !n.unplayable || true).map(n => ({ midi: n.pitch, time: n.on, duration: n.off - n.on, velocity: n.velocity ?? 0.75, channel: 0 }))
+      scheduler.load({ notes: [...solo, ...song.accomp].sort((a, b) => a.time - b.time), controlChanges: [] })
+      setPrograms()
+    }
+    async function play() {
+      if (audioCtx.state !== 'running') audioCtx.resume().catch(() => {})
+      await ensureSound()
+      if (!scheduler) {
+        scheduler = new MidiScheduler(target); await scheduler.init()
+        scheduler.on('time', t => { if (clock.playing && Math.abs(t - now()) > 0.08) { clock.t = t; clock.wall = performance.now() } })
+      }
+      loadSchedule()
+      if (clock.t >= song.duration) clock.t = 0
+      scheduler.speed = clock.speed
+      scheduler.seek(clock.t); scheduler.play()
+      clock.wall = performance.now(); clock.playing = true
+      $('play').textContent = '❚❚'; $('play').classList.add('on')
+    }
+    function pause() {
+      clock.t = now(); clock.playing = false
+      scheduler?.pause(); target.allSoundOff()
+      $('play').textContent = '▶'; $('play').classList.remove('on')
+    }
+    $('play').onclick = () => (clock.playing ? pause() : play())
+    $('speed').onchange = () => { clock.t = now(); clock.wall = performance.now(); clock.speed = +$('speed').value; if (scheduler) scheduler.speed = clock.speed }
+    $('seek').oninput = () => { clock.t = +$('seek').value * song.duration; clock.wall = performance.now(); if (clock.playing) { target.allSoundOff(); scheduler.seek(clock.t) } }
+    $('song').onchange = async () => { const was = clock.playing; pause(); await loadSong($('song').value); director.reset(); if (was) play(); saveUrl() }
+    $('model').onchange = async () => { await loadModel($('model').value); saveUrl() }
+    $('start').onclick = () => { $('start').classList.add('gone'); play() }
+    addEventListener('keydown', e => { if (e.code === 'Space' && e.target === document.body) { e.preventDefault(); $('start').classList.add('gone'); clock.playing ? pause() : play() } })
+    const fmt = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`
+
+    // ── Cameras ────────────────────────────────────────────────────────────
+    // [position, target, fov]; the violinist faces +z, his left (the scroll) at +x
+    const VIEWS = {
+      front: [[-40, 150, 340], [12, 132, 0], 30],
+      hall: [[-60, 300, 1000], [0, 115, 0], 22],
+      face: [[-25, 168, 95], [12, 152, 5], 30],
+      hands: [[120, 165, 115], [38, 140, 30], 30],
+      bow: [[-95, 160, 85], [8, 135, 22], 32],
+      left: [[270, 150, 40], [10, 130, 10], 30],
+      low: [[-70, 55, 250], [5, 140, 0], 32],
+      behind: [[-80, 195, -150], [25, 138, 30], 32],
+    }
+    let tween = null
+    function setView(v, cut = false) {
+      const s = VIEWS[v]; if (!s) return
+      const to = { pos: new THREE.Vector3(...s[0]), target: new THREE.Vector3(...s[1]), fov: s[2] }
+      if (cut) { camera.position.copy(to.pos); controls.target.copy(to.target); camera.fov = to.fov; camera.updateProjectionMatrix(); tween = null; return }
+      tween = { from: { pos: camera.position.clone(), target: controls.target.clone(), fov: camera.fov }, to, t: 0 }
+    }
+    // the director: cuts on phrase starts, every 6–12 s, slow drift within a take
+    const director = {
+      take: null, until: 0, last: '',
+      reset() { this.take = null; this.until = 0 },
+      update(t, dt) {
+        if (!this.take || t >= this.until || t < this.start) {
+          const opts = ['front', 'face', 'hands', 'bow', 'left', 'low', 'behind', 'hall', 'front', 'face'].filter(v => v !== this.last)
+          const seed = Math.floor(t * 7.3 + (song.entry?.violinNotes || 0)) % 997
+          const v = opts[(seed * 31 + 7) % opts.length]
+          this.last = v; this.start = t
+          let len = 6 + ((seed * 17) % 60) / 10
+          const ph = song.drive?.phrases.find(p => p > t + len - 1.5 && p < t + len + 2.5)
+          if (ph) len = ph - t
+          this.until = t + len
+          const s = VIEWS[v]
+          this.take = { a: new THREE.Vector3(...s[0]), tg: new THREE.Vector3(...s[1]), fov: s[2], drift: new THREE.Vector3(((seed % 5) - 2) * 6, ((seed % 3) - 1) * 4, -10 - (seed % 4) * 4) }
+        }
+        const k = (t - this.start) / Math.max(1, this.until - this.start)
+        camera.position.copy(this.take.a).addScaledVector(this.take.drift, k)
+        controls.target.copy(this.take.tg)
+        camera.fov = this.take.fov; camera.updateProjectionMatrix()
+      },
+    }
+    $('cam').onchange = () => { if ($('cam').value !== 'auto') setView($('cam').value); saveUrl() }
+    controls.addEventListener('start', () => { tween = null; if ($('cam').value === 'auto') $('cam').value = 'free' })
+
+    function saveUrl() {
+      if (SHOT) return
+      const p = new URLSearchParams()
+      if ($('song').value !== 'bach_1006_1_preludio.mid') p.set('song', $('song').value)
+      if ($('model').selectedIndex) p.set('model', $('model').value)
+      if ($('cam').value !== 'auto') p.set('view', $('cam').value)
+      if ($('outfit').value !== 'concert') p.set('outfit', $('outfit').value)
+      history.replaceState(null, '', '?' + p.toString())
+    }
+    if (Q.get('model')) $('model').value = Q.get('model')
+    if (Q.get('outfit')) $('outfit').value = Q.get('outfit')
+    if (Q.get('view')) $('cam').value = Q.get('view')
+
+    // ── Load ───────────────────────────────────────────────────────────────
+    await Promise.all([loadModel($('model').value), loadSong($('song').value)])
+    if ($('cam').value !== 'auto') setView($('cam').value, true)
+    if (!SHOT) ensureSound()
+
+    // ── Loop ───────────────────────────────────────────────────────────────
+    let idleT = performance.now()
+    addEventListener('pointermove', () => { idleT = performance.now(); document.body.classList.remove('idle') })
+    addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight) })
+    function frame(t, dt) {
+      const pose = song.motion?.poseAt(t)
+      rig.update(pose, { t, energy: song.drive?.energy(t) ?? 0.4, breath: song.drive?.breath(t) ?? 0 }, dt)
+      vrm.update(dt)
+      if ($('cam').value === 'auto') director.update(t, dt)
+      else if (tween) {
+        tween.t = Math.min(1, tween.t + dt / 1.1)
+        const e = tween.t < 0.5 ? 4 * tween.t ** 3 : 1 - (-2 * tween.t + 2) ** 3 / 2
+        camera.position.lerpVectors(tween.from.pos, tween.to.pos, e)
+        controls.target.lerpVectors(tween.from.target, tween.to.target, e)
+        camera.fov = THREE.MathUtils.lerp(tween.from.fov, tween.to.fov, e); camera.updateProjectionMatrix()
+        if (tween.t >= 1) tween = null
+      }
+      stage.update(t)
+    }
+    if (SHOT) {
+      // headless: settle the springs over the second before t, then draw one frame
+      const t = +(Q.get('t') || 5)
+      $('start').style.display = 'none'
+      for (let i = 60; i >= 0; i--) frame(t - i / 60, 1 / 60)
+      controls.update()
+      renderer.render(scene, camera)
+      window.__info = { t, height: rig.height, handScale: rig.handScale }
+      window.__done = true
+    } else {
+      const clk = new THREE.Clock()
+      renderer.setAnimationLoop(() => {
+        const dt = Math.min(0.05, clk.getDelta())
+        let t = now()
+        if (clock.playing && t > song.duration + 1) { pause(); clock.t = 0; t = 0 }
+        frame(t, dt)
+        controls.update()
+        renderer.render(scene, camera)
+        if (document.activeElement !== $('seek')) $('seek').value = Math.min(1, t / song.duration)
+        $('time').textContent = `${fmt(Math.min(t, song.duration))} / ${fmt(song.duration)}`
+        if (clock.playing && performance.now() - idleT > 3500) document.body.classList.add('idle')
+      })
+    }
+  </script>
+</body>
+</html>

@@ -4,6 +4,14 @@ Midi Visualization Experiments
 
 [WebMscore](webmscore.html) - MuseScore reference renderer (libmscore via WebAssembly)
 
+18 Oct 2026
+
+[Experiment #037 - Violinist](037_violinist.html)
+- An anime-style violinist (VRoid CC0 VRMs, cel shaded, Nodame Cantabile-like stage lighting) plays the solo part of a violin MIDI; the rest plays as accompaniment
+- 48 Mutopia MIDIs: all of Bach's Sonatas & Partitas BWV 1001–1006, sonatas (Bach, Handel, Mozart, Beethoven Kreutzer), concertos (Bach, Vivaldi, Beethoven, Tchaikovsky), Paganini caprices ([list and credits](violinist/midis/README.md))
+- Rig [violinist/rig.js](violinist/rig.js): the #033 fingering, left hand and bow drive the body (violin hold from motion-capture angles, two-bone arm and leg IK, per-finger IK, sway, breath, head on the chin rest) ([notes](violinist/README.md))
+- Research: [biomechanics](violinist/research/01_violinist_biomechanics.md), [character and look](violinist/research/02_character_look.md)
+
 17 Oct 2026
 
 [Experiment #036 - Transcription models on ONNX Runtime Web](036_onnx_transcription.html)
