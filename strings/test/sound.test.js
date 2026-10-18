@@ -4,8 +4,8 @@ import assert from 'node:assert/strict'
 import { fingerLine } from '../fingering.js'
 import { line, melody } from '../exercises.js'
 import { renderPerformance, channel } from '../sound/performance.js'
-import { ViolinSynth, CurveSource, Body, renderCurves, midiHz, NCH, CH } from '../sound/bowed.js'
-import { pitch, cents, spectrumDb, rms } from './audio-util.js'
+import { ViolinSynth, CurveSource, Body, renderCurves, midiHz, NCH, CH, FRAME_RATE } from '../sound/bowed.js'
+import { pitch, cents, spectrumDb, rms, fft } from './audio-util.js'
 
 const SR = 48000
 const finger = (notes, instrument = 'violin') => { const n = notes.map(x => ({ ...x })); fingerLine(n, { instrument }); return n }
@@ -295,6 +295,33 @@ test('hybrid: slurs join without a dip, a note after a rest attacks from silence
 })
 
 // ── automatic bowing (after SWAM) ──
+test('waveguide oversampling: the stick-slip partials above Nyquist no longer fold back between the harmonics (glide A4 → A5)', () => {
+  const frames = 4 * FRAME_RATE, W = 4 * NCH, data = new Float32Array(frames * W)
+  const glide = t => midiHz(69 + 12 * Math.max(0, Math.min(1, (t - 0.5) / 3)))
+  for (let i = 0; i < frames; i++) for (let s = 0; s < 4; s++) {
+    const o = i * W + s * NCH, t = i / FRAME_RATE
+    data[o] = s === 2 ? glide(t) : midiHz([55, 62, 69, 76][s]); data[o + 3] = 0.1
+    if (s === 2) { const e = Math.min(1, t / 0.2) * Math.min(1, (3.7 - t) / 0.1); data[o + 1] = e > 0 ? 0.3 * e : 0; data[o + 2] = e > 0 ? 1 : 0 }
+  }
+  const between = oversample => {
+    const [L] = renderCurves({ frameRate: FRAME_RATE, frames, data }, { sampleRate: SR, params: { oversample } })
+    const n = 4096; let h = 0, x = 0
+    for (let i0 = Math.round(0.8 * SR); i0 + n < 3.4 * SR; i0 += n) {
+      const f0 = glide((i0 + n / 2) / SR), re = new Float64Array(n), im = new Float64Array(n)
+      for (let j = 0; j < n; j++) re[j] = L[i0 + j] * (0.5 - 0.5 * Math.cos(2 * Math.PI * j / (n - 1)))
+      fft(re, im)
+      for (let b = 1; b < n / 2; b++) {
+        const f = b * SR / n; if (f < 1000 || f > 16000) continue
+        const p = re[b] ** 2 + im[b] ** 2, d = Math.abs(f / f0 - Math.round(f / f0))
+        if (d > 0.25) x += p; else if (d < 0.08) h += p
+      }
+    }
+    return 10 * Math.log10(x / h)
+  }
+  const a1 = between(1), a3 = between(3)
+  assert.ok(a3 < a1 - 8 && a3 < -34, `between the harmonics: ${a1.toFixed(1)} dB at 1×, ${a3.toFixed(1)} dB at 3×`)
+})
+
 test('interactive bow pressure: kicks double slipping back to Helmholtz motion (more notes in Helmholtz than fixed force)', () => {
   // the notes that fall into double slipping at fixed force on the sweep
   const cases = [['violin', 60, 0.75], ['violin', 66, 0.75], ['viola', 53, 0.75], ['viola', 59, 0.75], ['viola', 60, 0.75], ['cello', 48, 0.75], ['cello', 62, 0.3], ['cello', 69, 0.3]]
@@ -304,7 +331,8 @@ test('interactive bow pressure: kicks double slipping back to Helmholtz motion (
     const cap = [], orig = Body.prototype.process
     Body.prototype.process = function (x, L, R, n) { cap.push(Float32Array.from(x.subarray(0, n))); return orig.call(this, x, L, R, n) }
     try {
-      const syn = new ViolinSynth(SR, { instrument, bowPress }), src = new CurveSource(perf), L = new Float32Array(128), R = new Float32Array(128)
+      // at 1× (no oversampling), where these notes were found; oversampled they mostly stay in Helmholtz motion anyway
+      const syn = new ViolinSynth(SR, { instrument, bowPress, oversample: 1 }), src = new CurveSource(perf), L = new Float32Array(128), R = new Float32Array(128)
       let t = 0; for (let i = 0; i < 0.8 * SR; i += 128) t = syn.process(src, t, 1 / SR, L, R, 128)
     } finally { Body.prototype.process = orig }
     const raw = new Float32Array(cap.length * 128); cap.forEach((b, i) => raw.set(b, i * 128))

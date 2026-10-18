@@ -148,8 +148,9 @@ const KICK_AFTER = 0.1, KICK_COOL = 0.12, SPP_A = 0.2   // s of bowing before th
 
 /** One waveguide string with a bow and a finger. */
 export class WaveguideString {
-  constructor(sr, { open = 55, Z = 0.3, t60 = 2.5 } = {}) {
+  constructor(sr, { open = 55, Z = 0.3, t60 = 2.5, os = 1 } = {}) {
     this.sr = sr
+    this.os = os
     this.openHz = midiHz(open)
     this.Z = Z
     this.t60 = t60
@@ -198,13 +199,15 @@ export class WaveguideString {
     const N = sr / f0, w = 2 * Math.PI * f0 / sr
     const stopped = f0 > this.openHz * 1.01
     // bridge low-pass: duller for low strings, brighter up the string
-    const aB = Math.min(0.5, 0.1 + 0.18 * (this.openHz / f0)) * (stopped ? 1 : 0.85)
-    const aN = stopped ? 0.18 : 0.04            // the fingertip absorbs more than the nut
+    let aB = Math.min(0.5, 0.1 + 0.18 * (this.openHz / f0)) * (stopped ? 1 : 0.85)
+    let aN = stopped ? 0.18 : 0.04            // the fingertip absorbs more than the nut
     // loop gain from the ring time; damp shortens it to ~0.12 s
     const t60 = Math.exp(Math.log(this.t60 * (stopped ? 0.6 : 1)) * (1 - damp) + Math.log(0.12) * damp)
     const g = Math.pow(10, -3 / (t60 * f0))
     this.gB = g * 0.998; this.gN = 0.998
-    this.aB = aB; this.aN = aN
+    // the loop filters keep their cutoff (in Hz) when the string runs oversampled
+    this.aB = aB = this.os > 1 ? Math.pow(aB, 1 / this.os) : aB
+    this.aN = aN = this.os > 1 ? Math.pow(aN, 1 / this.os) : aN
     const filt = onePoleDelay(aB, w) + onePoleDelay(aN, w)
     const Lb = Math.max(2.2, Math.min(0.45, Math.max(0.02, beta)) * N)
     this.Lb = Lb
@@ -258,7 +261,7 @@ export class WaveguideString {
     if (F > 1e-4) {
       // friction junction (velocity jump dv added to both outgoing waves)
       const c = F / (2 * this.Z)
-      const mus = MU_S * (1 + 0.015 * this.rosin * this.noise())   // rosin grain
+      const mus = MU_S * (1 + 0.015 * Math.sqrt(this.os) * this.rosin * this.noise())   // rosin grain
       const u = vb - vh
       const au = Math.abs(u)
       if (!this.slipping && au <= c * mus) dv = u                  // stick
@@ -358,6 +361,32 @@ export class SourceString {
   }
 }
 
+/**
+ * Decimate by os: a windowed-sinc low-pass (cutoff 0.45 of the output rate,
+ * Blackman, 16·os taps) computed only for the samples that are kept.
+ */
+function decimator(os) {
+  const T = 16 * os + 1, h = new Float32Array(T), fc = 0.45 / os
+  let sum = 0
+  for (let i = 0; i < T; i++) {
+    const x = i - (T - 1) / 2
+    const w = 0.42 - 0.5 * Math.cos(2 * Math.PI * i / (T - 1)) + 0.08 * Math.cos(4 * Math.PI * i / (T - 1))
+    h[i] = w * (x === 0 ? 2 * fc : Math.sin(2 * Math.PI * fc * x) / (Math.PI * x)); sum += h[i]
+  }
+  for (let i = 0; i < T; i++) h[i] /= sum
+  const buf = new Float32Array(2 * T)
+  let w = 0, last = 0
+  return {
+    push(x, out) {
+      buf[w] = buf[w + T] = x; w = w + 1 === T ? 0 : w + 1
+      if (!out) return last
+      let y = 0
+      for (let i = 0; i < T; i++) y += h[i] * buf[w + i]
+      return (last = y)
+    },
+  }
+}
+
 /** Modal body: signature modes + dense bridge-hill modes, two ears. */
 export class Body {
   constructor(sr, spec, seed = 1) {
@@ -419,9 +448,10 @@ export class Body {
  * at(t, out) → fills out[string * NCH + channel] for time t (s).
  */
 export class ViolinSynth {
-  constructor(sr, { instrument = 'violin', model = 'waveguide', tone = null, bowPress = true, rosin = 1, resonance = 1 } = {}) {
+  constructor(sr, { instrument = 'violin', model = 'waveguide', tone = null, bowPress = true, rosin = 1, resonance = 1, oversample = 3 } = {}) {
     this.sr = sr
     this.opts = { bowPress, rosin, resonance }
+    this.oversample = oversample
     this.toneBands = tone
     this.block = 16                       // control interpolation step (samples)
     this.cur = new Float32Array(4 * NCH)
@@ -434,7 +464,13 @@ export class ViolinSynth {
     const I = INSTRUMENTS[instrument] || INSTRUMENTS.violin
     this.instrument = instrument; this.model = model; this.spec = I
     const S = model === 'source' ? SourceString : WaveguideString
-    this.strings = I.open.map((open, s) => new S(this.sr, { open, Z: I.Z[s], t60: I.t60[s] }))
+    // the stick-slip junction makes partials far above Nyquist that fold back
+    // (heard as a scratchy, inharmonic hiss moving against the vibrato), so the
+    // waveguide strings run oversampled (×3 by default) and are decimated
+    // before the body: 13 dB less of that hiss on a glide, at about half the speed
+    this.os = model === 'source' ? 1 : Math.max(1, Math.round(this.oversample))
+    this.strings = I.open.map((open, s) => new S(this.sr * this.os, { open, Z: I.Z[s], t60: I.t60[s], os: this.os }))
+    this.dec = this.os > 1 ? decimator(this.os) : null
     this.setParams(this.opts)
     // sympathetic open strings for the source model
     this.symp = model === 'source' ? I.open.map((open, s) => new WaveguideString(this.sr, { open, Z: I.Z[s], t60: I.t60[s] * 1.3 })) : null
@@ -481,22 +517,28 @@ export class ViolinSynth {
         }
       }
       const sg = this.sgain
-      const inv = 1 / m
+      const os = this.os, dec = this.dec, invOs = 1 / (m * os)
       for (let i = 0; i < m; i++) {
-        const k = (i + 1) * inv
         let sum = 0
-        for (let s = 0; s < 4; s++) {
-          const o = s * NCH
-          const vb = cur[o + 1] + (nxt[o + 1] - cur[o + 1]) * k
-          const F = cur[o + 2] + (nxt[o + 2] - cur[o + 2]) * k
-          const tap = i === 0 ? nxt[o + 5] : 0
-          sum += strs[s].tick(vb, F, tap) * this.spec.Z[s] * sg[s]
+        // os string samples per output sample (os = 1: no oversampling)
+        for (let q = 0; q < os; q++) {
+          const k = (i * os + q + 1) * invOs
+          sum = 0
+          for (let s = 0; s < 4; s++) {
+            const o = s * NCH
+            const vb = cur[o + 1] + (nxt[o + 1] - cur[o + 1]) * k
+            const F = cur[o + 2] + (nxt[o + 2] - cur[o + 2]) * k
+            const tap = i === 0 && q === 0 ? nxt[o + 5] : 0
+            sum += strs[s].tick(vb, F, tap) * this.spec.Z[s] * sg[s]
+          }
+          if (this.model === 'waveguide') {
+            // bridge coupling: every string feels the others' bridge force a little
+            const kc = 0.0025 * this.opts.resonance
+            for (let s = 0; s < 4; s++) strs[s].couple = kc * (sum / this.spec.Z[s] - strs[s].out * sg[s])
+          }
+          if (dec) sum = dec.push(sum, q === os - 1)
         }
-        if (this.model === 'waveguide') {
-          // bridge coupling: every string feels the others' bridge force a little
-          const kc = 0.0025 * this.opts.resonance
-          for (let s = 0; s < 4; s++) strs[s].couple = kc * (sum / this.spec.Z[s] - strs[s].out * sg[s])
-        } else if (this.symp) {
+        if (this.symp) {
           let sy = 0
           for (let s = 0; s < 4; s++) { const st = this.symp[s]; st.couple = 0.004 * sum; sy += st.tick(0, 0, 0) }
           sum += sy * 0.35 * this.opts.resonance
