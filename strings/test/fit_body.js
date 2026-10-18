@@ -30,112 +30,17 @@
 // stereo width. Writes strings/sound/body-iowa.js.
 import { writeFileSync, existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { fingerLine } from '../fingering.js'
-import { renderPerformance } from '../sound/performance.js'
-import { ViolinSynth, CurveSource, midiHz } from '../sound/bowed.js'
-import { ConvBody } from '../sound/body.js'
-import { loadBankNode, hasBank, hasFfmpeg } from './hybrid-bank.js'
-import { fft } from './audio-util.js'
+import { hasBank, hasFfmpeg } from './hybrid-bank.js'
+import { SR, FMAX, VEL, median, renderRaw, collect, spread, bodyResidual, actRms } from './body-eval.js'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const arg = (k, d) => { const a = process.argv.find(x => x.startsWith(`--${k}=`)); return a ? a.split('=')[1] : d }
 const INSTS = arg('instrument', 'violin,viola,cello').split(',')
 const MODELS = arg('model', 'waveguide,source').split(',')
 const QUICK = process.argv.includes('--quick')
-const SR = 48000, NF = 8192, FMAX = 12000
 const GRID = { from: 60, step: 1 / 48, to: 16000 }
 const SIG = 1 / 40
-const VEL = { pp: 0.35, mf: 0.68, ff: 0.95 }
 if (!hasFfmpeg()) { console.error('needs ffmpeg'); process.exit(1) }
-
-const median = a => { const s = Float64Array.from(a).sort(); return s.length ? s[s.length >> 1] : 0 }
-
-/** Averaged Hann power spectrum of x[a, b). */
-function powerSpec(x, a, b) {
-  const P = new Float64Array(NF / 2), w = new Float64Array(NF)
-  for (let i = 0; i < NF; i++) w[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / NF)
-  let n = 0
-  for (let o = a; o + NF <= b; o += NF / 2) {
-    const re = new Float64Array(NF), im = new Float64Array(NF)
-    for (let i = 0; i < NF; i++) re[i] = x[o + i] * w[i]
-    fft(re, im)
-    for (let k = 0; k < NF / 2; k++) P[k] += re[k] * re[k] + im[k] * im[k]
-    n++
-  }
-  for (let k = 0; k < NF / 2; k++) P[k] /= Math.max(1, n)
-  return n ? P : null
-}
-/** Harmonic levels (dB) of f0 up to FMAX, with their SNR against the gaps between harmonics. */
-function harmonics(P, f0) {
-  const bin = SR / NF, out = []
-  for (let k = 1; k * f0 < FMAX; k++) {
-    const c = k * f0 / bin, w = Math.max(2, c * 0.012)
-    let m = Math.round(c)
-    for (let j = Math.floor(c - w); j <= Math.ceil(c + w); j++) if (P[j] > P[m]) m = j
-    let s = 0; for (let j = m - 2; j <= m + 2; j++) s += P[j] || 0
-    const g = Math.round((k + 0.5) * f0 / bin), gw = Math.max(1, Math.round(0.15 * f0 / bin))
-    const gap = []; for (let j = g - gw; j <= g + gw; j++) if (P[j] != null) gap.push(P[j])
-    out.push({ k, f: k * f0, dB: 10 * Math.log10(s + 1e-30), snr: 10 * Math.log10(s / (5 * median(gap) + 1e-30)) })
-  }
-  return out
-}
-/** Harmonics k that sit in a notch (more than 10 dB under the median of k±2). */
-const notched = H => new Set(H.filter((h, i) => {
-  const nb = H.slice(Math.max(0, i - 2), i + 3).map(x => x.dB)
-  return h.dB < median(nb) - 10
-}).map(h => h.k))
-
-/** Our string's bridge force for one note on string s (no body, no EQ, no voicing). */
-function renderRaw(instrument, model, midi, s, vel, secs = 1.6, body = null) {
-  const notes = [{ pitch: midi, on: 0.1, off: secs, velocity: vel }]
-  fingerLine(notes, { instrument })
-  const open = { violin: [55, 62, 69, 76], viola: [48, 55, 62, 69], cello: [36, 43, 50, 57] }[instrument]
-  notes[0].string = s; notes[0].finger = midi === open[s] ? 0 : (notes[0].finger || 1)
-  const perf = renderPerformance(notes, { instrument, style: { vibrato: 0, timing: 0, intonation: 0, variance: 0 } })
-  const syn = new ViolinSynth(SR, { instrument, model, body: body ?? 'modal' })
-  if (!body) {
-    syn.body = { process(x, L, R, n) { L.set(x.subarray(0, n)); R.set(x.subarray(0, n)) }, reset() {} }
-    syn.eq = { process() {}, reset() {} }
-    syn.voicing = null
-  }
-  const src = new CurveSource(perf), N = Math.round((secs + 0.1) * SR), L = new Float32Array(N), R = new Float32Array(N)
-  let t = 0
-  for (let i = 0; i < N; i += 128) { const n = Math.min(128, N - i); t = syn.process(src, t, 1 / SR, L.subarray(i, i + n), R.subarray(i, i + n), n) }
-  return L
-}
-const helmholtz = (H) => H.length >= 3 && H[0].dB > H[1].dB - 3 && H[0].snr > 15
-
-/** All observations for an instrument and model. */
-function collect(instrument, model) {
-  const bank = loadBankNode(instrument)
-  const rows = []
-  let used = 0, skipped = 0
-  for (const [key, pack] of Object.entries(bank.m.packs)) {
-    const [s, dyn] = key.split('_'), x = bank.pcm[key]
-    for (const m of pack.notes) {
-      if (QUICK && m.midi % 3) continue
-      const a = m.offset + m.attackEnd + Math.round(0.05 * SR), b = m.offset + Math.min(m.headEnd, m.attackEnd + Math.round(1.4 * SR))
-      const Pi = powerSpec(x, a, b)
-      if (!Pi) { skipped++; continue }
-      const Hi = harmonics(Pi, m.f0)
-      const y = renderRaw(instrument, model, m.midi, +s, VEL[dyn])
-      const Po = powerSpec(y, Math.round(0.55 * SR), Math.round(1.55 * SR))
-      const Ho = harmonics(Po, midiHz(m.midi))
-      if (!helmholtz(Ho)) { skipped++; continue }
-      const ni = notched(Hi), no = notched(Ho)
-      const obs = []
-      for (let j = 0; j < Math.min(Hi.length, Ho.length); j++) {
-        const hi = Hi[j], ho = Ho[j]
-        if (hi.snr < 12 || ho.snr < 12 || ni.has(hi.k) || no.has(ho.k)) continue
-        obs.push({ k: hi.k, lf: Math.log2(hi.f), r: hi.dB - ho.dB })
-      }
-      if (obs.length < 3) { skipped++; continue }
-      rows.push({ s: +s, dyn, midi: m.midi, f0: m.f0, obs })
-      used++
-    }
-  }
-  return { rows, used, skipped }
-}
 
 const G0 = Math.log2(GRID.from), NG = Math.ceil((Math.log2(GRID.to) - G0) / GRID.step) + 1
 /** Fit B (grid dB), g per row, s per dynamic. */
@@ -176,30 +81,6 @@ function fit(rows) {
   }
   return { B, S, Bat, lo: fit.lo, hi: fit.hi }
 }
-/** Robust spread (dB) of r − g − model over rows, g refit per row. */
-function spread(rows, pred) {
-  const res = []
-  for (const row of rows) {
-    const e = row.obs.map(o => o.r - pred(row, o))
-    const g = median(e)
-    for (const v of e) res.push(Math.abs(v - g))
-  }
-  return { mad: median(res), p90: Float64Array.from(res).sort()[Math.floor(res.length * 0.9)] }
-}
-/** The same observations through the modal body chain (Body + EQ + voicing): its residual as a model. */
-function modalResidual(instrument, model, rows) {
-  const out = []
-  for (const row of rows) {
-    const y = renderRaw(instrument, model, row.midi, row.s, VEL[row.dyn], 1.6, 'modal')
-    const Ho = harmonics(powerSpec(y, Math.round(0.55 * SR), Math.round(1.55 * SR)), midiHz(row.midi))
-    const byK = new Map(Ho.map(h => [h.k, h.dB]))
-    const raw = new Map(harmonics(powerSpec(renderRaw(instrument, model, row.midi, row.s, VEL[row.dyn]), Math.round(0.55 * SR), Math.round(1.55 * SR)), midiHz(row.midi)).map(h => [h.k, h.dB]))
-    // modal "B" for this observation: radiated − bridge force
-    out.push({ ...row, obs: row.obs.filter(o => byK.has(o.k) && raw.has(o.k)).map(o => ({ ...o, m: byK.get(o.k) - raw.get(o.k) })) })
-  }
-  return out
-}
-
 function ripple(seed) {
   let a = seed >>> 0
   const R = () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296 }
@@ -208,15 +89,13 @@ function ripple(seed) {
   const sd = Math.sqrt(sm.reduce((x, y) => x + y * y, 0) / NG)
   return sm.map((v, i) => { const f = 2 ** (G0 + i * GRID.step); return f < 800 ? 0 : 1.5 * v / sd * Math.min(1, (f - 800) / 800) })
 }
-const actRms = L => { let s = 0, n = 0; for (let i = 0; i < L.length; i++) { const v = L[i] * L[i]; if (v > 1e-9) { s += v; n++ } } return Math.sqrt(s / Math.max(1, n)) }
-
 const OUT = here + '../sound/body-iowa.js'
 const data = existsSync(OUT) ? JSON.parse(readFileSync(OUT, 'utf8').match(/BODY_IOWA = (\{[\s\S]*\})\n/)?.[1] ?? '{}') : {}
 for (const instrument of INSTS) {
   if (!hasBank(instrument)) { console.warn(`no ${instrument} bank`); continue }
   for (const model of MODELS) {
     const t0 = Date.now()
-    const { rows, used, skipped } = collect(instrument, model)
+    const { rows, used, skipped } = collect(instrument, model, { quick: QUICK })
     const nObs = rows.reduce((a, r) => a + r.obs.length, 0)
     // cross-validation: fit on even semitones, test on odd, and back
     const cv = []
@@ -225,7 +104,7 @@ for (const instrument of INSTS) {
       const F = fit(tr)
       cv.push(spread(te, (row, o) => F.Bat(o.lf) + F.S[row.dyn] * Math.log2(o.k)))
     }
-    const modal = spread(modalResidual(instrument, model, rows.filter((r, i) => !QUICK || i % 2 === 0)), (row, o) => o.m)
+    const modal = spread(bodyResidual(instrument, model, rows.filter((r, i) => !QUICK || i % 2 === 0)), (row, o) => o.m)
     const F = fit(rows)
     const dB0 = Array.from(F.B, v => Math.round(v * 100) / 100)
     const rp = ripple(instrument.length * 977 + model.length)

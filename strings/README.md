@@ -126,3 +126,13 @@ Limits:
 - One direction: the centre microphone at 5 feet in an anechoic room. There is no directivity and no player movement yet.
 - Below the lowest note (196 Hz on the violin) the curve is extrapolated, so the violin's own low air resonance is not measured.
 - It is the body of the Iowa instruments: a 1998 Tambovsky violin, and for the viola and cello whichever instruments those sessions used.
+
+## Measured body (NBody hammer responses)
+
+A third choice, **Body: Measured (NBody, violin)**: a violin measured directly, not estimated. [Research 05 §5](research/05_commercial_violins.md#5-bodies-in-034-explained) explains the three bodies in plain terms.
+
+- `node strings/test/build_nbody.js [--mics=3,10] [--hi=13000] [--no-eval] [--quick]` downloads Cook and Trueman's NBody violin takes (Princeton, 1998: the bridge struck with a force hammer next to each string, 12 microphones on an icosahedron) into the git-ignored `strings/data/NBody/` and writes `body-nbody.json` there. They carry no licence, so neither the takes nor the result are committed. The page loads the file when the option is chosen and falls back to the Iowa body, with a message, when it is missing.
+- Per microphone and strike point: H = Y·X* / (|X|² + ε), ε = 10⁻³ of the hammer's peak power. The hammer's spectrum falls 20–35 dB above 4 kHz, so this caps the boost at 30 dB. The four strike points are averaged (time-aligned, same microphone), band-limited to 120 Hz–13 kHz, the acoustic delay removed, cut to 4,096 samples at 44.1 kHz (95 % of the energy is within 5–7 ms) with a fade. Microphones 3 and 10 hear the most between 500 Hz and 4 kHz and are the two ears.
+- [sound/body.js](sound/body.js) `ConvBody` takes the impulse responses as they are (`{ ir: [L, R], rate }`), resampled to the context rate with a windowed sinc, through the same partitioned convolution. Violin only: the viola and cello keep the Iowa body. Level per string model matches the Iowa body (−9.6 dB waveguide, −8.6 dB source).
+- Harmonic residual against the Iowa recordings (the measure fit_body.js reports, all notes): 6.2 / 16.0 dB median / p90 (waveguide) and 6.3 / 16.3 (source), against 3.5 / 9.5 for the Iowa body (held out) and 5.5 / 14.9 for the modal one. It is a different violin from the Iowa one: the largest differences are ~8 dB more around 5.8 kHz and less above 11 kHz.
+- The helpers fit_body.js and build_nbody.js share (our string's bridge force for one note, harmonic tables, the residual) are in [test/body-eval.js](test/body-eval.js).

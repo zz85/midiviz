@@ -458,3 +458,28 @@ test('measured body (Iowa): beats the modal body on held-out notes, and the FIR 
   }
   assert.ok(worst < 1.5, `FIR vs curve: worst third-octave ${worst.toFixed(2)} dB`)
 })
+
+test('measured impulse-response body (NBody path): an IR is convolved as it is, resampled with its gain kept; other instruments fall back', async () => {
+  const { resampleIR } = await import('../sound/body.js')
+  // a decaying 1 kHz ring at 44.1 kHz, played at 48 kHz: same ring frequency, same gain at 1 kHz
+  const n = 2048, h = new Float32Array(n)
+  for (let i = 0; i < n; i++) h[i] = Math.exp(-i / 300) * Math.sin(2 * Math.PI * 1000 * i / 44100) * 0.05
+  const body = new ConvBody(48000, { ir: [h, h], rate: 44100, gainDb: 0 })
+  const N = 48000, x = new Float32Array(N), L = new Float32Array(N), R = new Float32Array(N)
+  for (let i = 0; i < N; i++) x[i] = Math.sin(2 * Math.PI * 1000 * i / 48000)
+  body.process(x, L, R, N)
+  // reference: the same ring at 44.1 kHz, direct convolution
+  const M = 44100, y = new Float32Array(M)
+  for (let i = n; i < M; i++) { let s = 0; for (let k = 0; k < n; k++) s += h[k] * Math.sin(2 * Math.PI * 1000 * (i - k) / 44100); y[i] = s }
+  const g = rms(L.subarray(8000)) / rms(y.subarray(8000))
+  assert.ok(Math.abs(20 * Math.log10(g)) < 0.3, `gain at 1 kHz after resampling: ${(20 * Math.log10(g)).toFixed(2)} dB`)
+  assert.equal(resampleIR(h, 44100, 44100).length, n)
+  // a violin IR on the viola falls back to the Iowa body; on the violin it is used
+  const spec = { id: 'test', instrument: 'violin', rate: 44100, gainDb: { waveguide: 0, source: 0 }, ir: [h, h] }
+  assert.equal(new ViolinSynth(48000, { instrument: 'violin', body: spec }).bodyKind, 'nbody')
+  assert.equal(new ViolinSynth(48000, { instrument: 'viola', body: spec }).bodyKind, 'iowa')
+  // a params message with the same body (a new copy, as from the worklet port) does not rebuild it
+  const syn = new ViolinSynth(48000, { instrument: 'violin', body: spec }), b0 = syn.body
+  syn.setParams({ rosin: 1.2, body: { ...spec } })
+  assert.equal(syn.body, b0)
+})

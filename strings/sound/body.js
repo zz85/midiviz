@@ -77,15 +77,44 @@ export function minPhaseFIR(c, dB, sr, L = 4096) {
  * FFT 256). Same interface as the modal Body: process(x, outL, outR, n), any
  * n; the output lags the input by B samples (2.7 ms at 48 kHz).
  */
+/**
+ * Resample an impulse response from rate `from` to rate `to` (windowed sinc,
+ * low-passed below the lower Nyquist). Scaled by from / to so the frequency
+ * response keeps its gain.
+ */
+export function resampleIR(h, from, to) {
+  if (from === to) return Float32Array.from(h)
+  const r = to / from, n = Math.ceil(h.length * r), out = new Float32Array(n)
+  const fc = Math.min(1, r) * 0.95, W = 16           // cutoff (× the source Nyquist), half-width in source samples
+  for (let i = 0; i < n; i++) {
+    const t = i / r, k0 = Math.ceil(t - W / fc), k1 = Math.floor(t + W / fc)
+    let s = 0
+    for (let k = Math.max(0, k0); k <= Math.min(h.length - 1, k1); k++) {
+      const x = (t - k) * fc, w = 0.5 + 0.5 * Math.cos(Math.PI * (t - k) * fc / W)
+      s += h[k] * (x === 0 ? 1 : Math.sin(Math.PI * x) / (Math.PI * x)) * w
+    }
+    out[i] = s * fc / r
+  }
+  return out
+}
+
 export class ConvBody {
+  /**
+   * spec: a magnitude curve (fit_body.js: { from, step, lo, hi, gainDb, dB:
+   * [ear 0, ear 1] }) made into minimum-phase FIRs, or measured impulse
+   * responses ({ ir: [ear 0, ear 1], rate, gainDb }, build_nbody.js) used as
+   * they are, resampled to sr.
+   */
   constructor(sr, spec, { length = 4096 } = {}) {
     const B = this.B = 128, M = 2 * B
-    this.P = Math.ceil(length / B)
-    this.H = spec.dB.map(dB => {
-      const h = minPhaseFIR(spec, dB, sr, this.P * B), parts = []
+    const g = spec.ir ? Math.pow(10, (spec.gainDb ?? 0) / 20) : 1
+    const irs = spec.ir ? spec.ir.map(h => resampleIR(h, spec.rate, sr).map(v => v * g)) : null
+    this.P = Math.ceil((irs ? Math.max(...irs.map(h => h.length)) : length) / B)
+    this.H = (irs || spec.dB).map(d => {
+      const h = irs ? d : minPhaseFIR(spec, d, sr, this.P * B), parts = []
       for (let p = 0; p < this.P; p++) {
         const re = new Float64Array(M), im = new Float64Array(M)
-        for (let i = 0; i < B; i++) re[i] = h[p * B + i]
+        for (let i = 0; i < B; i++) re[i] = h[p * B + i] ?? 0
         fft(re, im)
         parts.push({ re: re.slice(0, B + 1), im: im.slice(0, B + 1) })
       }

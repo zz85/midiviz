@@ -141,6 +141,8 @@
       if (e.type === 'progress') { engineState[e.engine] = e.text; if (e.engine === state.engine) showEngine() }
       if (e.type === 'ready') { engineState[e.engine] = 'ready'; if (e.engine === state.engine) showEngine() }
       if (e.type === 'error') { engineState[e.engine] = 'error: ' + e.message; showEngine(); setStatus(`${ENGINES[e.engine].short}: ${e.message}`, true, 5000) }
+      if (e.type === 'body' && !e.ok) { setStatus(e.message, true, 8000); if (optEl.body) { optEl.body.value = 'iowa'; opt.body = 'iowa'; applyOpts(false); saveUrl() } }
+      if (e.type === 'body' && e.ok) setStatus(`NBody violin body loaded (microphones ${e.mics.join(' + ')})`, false, 2500)
       if (e.type === 'starved' && e.engine === state.engine) starved = performance.now()
     })
     let starved = 0
@@ -240,7 +242,7 @@
       ['head', 'Left hand', 'After SWAM’s Left Hand page'],
       ['harmonics', 'Harmonics', [['0', 'Off'], ['auto', 'Auto (very high notes)'], ['2', '2 (octave)'], ['3', '3 (12th)'], ['4', '4 (two octaves)']], '0', 'Every note as a harmonic: a finger stops the string and another touches it lightly at 1/n of its length, so it sounds the n-th partial (2: an octave above the stop, 3: a twelfth, 4: two octaves). Natural harmonics on an open string when the note allows. Auto: only the notes above the comfortable range of the top string. The waveguide models the touch; the other engines play the sounding pitch with the upper partials taken away'],
       ['head', 'Timbre'],
-      ['body', 'Body', [['iowa', 'Measured (Iowa)'], ['modal', 'Modal (synthetic)']], 'iowa', 'Physical models: the violin / viola / cello body estimated from the University of Iowa recordings (strings/test/fit_body.js: each recorded harmonic against the same harmonic of our string, pooled over every note, string and dynamic; a minimum-phase FIR), or the earlier synthetic body of 10 signature and 42 random modes with a fitted EQ. On held-out notes the measured body is 1.5–2 dB closer to the recordings per harmonic (median) and 5 dB closer at the 90th percentile'],
+      ['body', 'Body', [['iowa', 'Measured (Iowa)'], ['nbody', 'Measured (NBody, violin)'], ['modal', 'Modal (synthetic)']], 'iowa', 'Physical models. NBody: a real violin measured directly by Cook and Trueman (Princeton, 1998): its bridge tapped with a force hammer, the radiated sound recorded by 12 microphones around it; the impulse responses are used as they are, ring included (violin only; viola and cello use the Iowa body). Not in the repo: build it with node strings/test/build_nbody.js. Iowa: the violin / viola / cello body estimated from the University of Iowa recordings (strings/test/fit_body.js: each recorded harmonic against the same harmonic of our string, pooled over every note, string and dynamic; a minimum-phase FIR), or the earlier synthetic body of 10 signature and 42 random modes with a fitted EQ. On held-out notes the measured body is 1.5–2 dB closer to the recordings per harmonic (median) and 5 dB closer at the 90th percentile'],
       ['sordino', 'Sordino', [['0', 'Off'], ['1', 'On (mute)']], '0', 'A mute on the bridge: the bridge hill and everything above ~2 kHz drop about 12 dB (all engines)'],
       ['rosin', 'Rosin', 0, 2, 0.05, 1, 'Physical models: grain of the rosin (stick-slip jitter, bow noise)'],
       ['resonance', 'Resonance', 0, 3, 0.05, 1, 'Physical models: how much the other strings ring in sympathy through the bridge'],

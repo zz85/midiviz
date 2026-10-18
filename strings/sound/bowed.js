@@ -486,21 +486,29 @@ export class ViolinSynth {
   }
   /** bowPress (interactive bow pressure, waveguide), rosin (× grain / bow noise), resonance (× sympathetic coupling). */
   setParams(p) {
-    const was = this.opts.body
+    const key = b => (typeof b === 'object' && b ? b.id ?? b : b)
+    const was = key(this.opts.body)
     Object.assign(this.opts, p)
     for (const st of this.strings) { st.bowPress = !!this.opts.bowPress; st.rosin = this.opts.rosin }
-    if (this.body && p.body != null && p.body !== was) this.makeBody()
+    if (this.body && p.body != null && key(p.body) !== was) this.makeBody()
   }
   /**
    * body: 'iowa' — the response estimated from the Iowa recordings (body.js,
    * body-iowa.js; it replaces the modal body, the tone EQ and the voicing,
    * since the fit covers all three); 'modal' — 10 signature + 42 random modes,
-   * the fitted EQ and voicing (tone.js); or a spec object (fit_body.js).
+   * the fitted EQ and voicing (tone.js); a spec object (fit_body.js); or a
+   * measured impulse-response object ({ id, instrument, rate, ir: [L, R],
+   * gainDb: { waveguide, source } }, build_nbody.js), applied as it is.
    */
   makeBody() {
     const { instrument, model } = this, I = this.spec, b = this.opts.body
-    const spec = typeof b === 'object' && b ? b : b === 'iowa' ? BODY_IOWA[instrument]?.[model] : null
-    this.bodyKind = spec ? 'iowa' : 'modal'
+    let spec = typeof b === 'object' && b ? b : b === 'iowa' ? BODY_IOWA[instrument]?.[model] : null
+    // a measured impulse response (NBody, build_nbody.js) is per instrument; its
+    // gain per string model. Another instrument falls back to the Iowa body.
+    if (spec?.ir) {
+      spec = spec.instrument === instrument ? { ...spec, gainDb: spec.gainDb?.[model] ?? 0 } : BODY_IOWA[instrument]?.[model]
+    }
+    this.bodyKind = spec?.ir ? 'nbody' : spec ? 'iowa' : 'modal'
     if (spec) {
       this.body = new ConvBody(this.sr, spec)
       this.eq = new EQ(this.sr, [])

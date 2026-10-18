@@ -7,7 +7,8 @@
 //   { type: 'play', t, speed } | { type: 'pause' } | { type: 'seek', t } | { type: 'speed', speed }
 //   { type: 'on', string, f0, dyn, id } | { type: 'off', id } | { type: 'bend', id, f0 }
 //   { type: 'level', value }
-//   { type: 'params', bowPress, rosin, resonance }      (ViolinSynth.setParams)
+//   { type: 'params', bowPress, rosin, resonance, body } (ViolinSynth.setParams;
+//                                                         body may be a measured IR object)
 //   { type: 'live', expr, vib, bend }                   live controllers: expression
 //        0…1 or null (CC11 / CC2: the bow's dynamic; velocity then only shapes
 //        the attack), vibrato depth 0…1 or null (CC1; null = automatic), bend cents

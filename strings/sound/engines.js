@@ -90,8 +90,31 @@ export class Lab {
     this.mute[0].gain.setTargetAtTime(on ? -12 : 0, t, 0.02)
     this.mute[1].gain.setTargetAtTime(on ? 2.5 : 0, t, 0.02)
   }
-  /** Physical-model parameters: { bowPress, rosin, resonance, body: 'iowa' | 'modal' } (bowed.js ViolinSynth.setParams). */
-  setParams(p) { Object.assign(this.params, p); for (const e of Object.values(this.engines)) e.setParams?.(this.params) }
+  /**
+   * Physical-model parameters: { bowPress, rosin, resonance, body: 'iowa' |
+   * 'modal' | 'nbody' } (bowed.js ViolinSynth.setParams). 'nbody' is the
+   * Princeton NBody response built by strings/test/build_nbody.js into the
+   * git-ignored strings/data/NBody/ (no licence to redistribute it); it is
+   * fetched once and sent to the engines as the impulse responses themselves.
+   * Until it arrives, or when it is missing, the Iowa body plays.
+   */
+  setParams(p) {
+    Object.assign(this.params, p)
+    const send = () => { for (const e of Object.values(this.engines)) e.setParams?.(this.synthParams()) }
+    if (this.params.body === 'nbody' && !this.nbody) this.loadNBody().then(send)
+    send()
+  }
+  /** this.params with body resolved to what ViolinSynth takes. */
+  synthParams() {
+    const b = this.params.body
+    return { ...this.params, body: b === 'nbody' ? (this.nbody?.ir ? this.nbody : 'iowa') : b }
+  }
+  loadNBody() {
+    return this.nbodyLoading ??= fetch(new URL('../data/NBody/body-nbody.json', import.meta.url))
+      .then(r => { if (!r.ok) throw new Error(`${r.status}`); return r.json() })
+      .then(j => { this.nbody = { ...j, ir: j.ir.map(h => Float32Array.from(h)) }; this.emit({ type: 'body', body: 'nbody', ok: true, mics: j.mics }) })
+      .catch(e => { this.nbody = { missing: true }; this.emit({ type: 'body', body: 'nbody', ok: false, message: 'NBody body not built: run node strings/test/build_nbody.js (it downloads the Princeton responses into strings/data/NBody/)' }) })
+  }
   /** Live controllers: expr (CC11 / CC2, 0…1), vib (CC1 vibrato depth, 0…1), bend (cents). */
   setLive(c) { Object.assign(this.liveCtl, c); for (const e of Object.values(this.engines)) e.liveControl?.(this.liveCtl) }
   resume() { return this.ctx.state === 'running' ? Promise.resolve() : this.ctx.resume() }
@@ -150,7 +173,7 @@ class PhysicalEngine {
     this.node = new AudioWorkletNode(lab.ctx, 'violin-synth', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] })
     this.out = lab.ctx.createGain(); this.out.gain.value = model === 'source' ? 1.2 : 1
     this.node.connect(this.out).connect(lab.pre)
-    this.setParams(lab.params); this.liveControl(lab.liveCtl)
+    this.setParams(lab.synthParams()); this.liveControl(lab.liveCtl)
     this.sent = null; this.instrument = null
   }
   invalidate() { this.sent = null }
@@ -177,7 +200,7 @@ class PhysicalEngine {
   async renderAll() {
     const { renderCurves } = await import('./bowed.js')
     const sr = this.lab.ctx.sampleRate
-    return { chans: renderCurves(this.lab.perf, { sampleRate: sr, instrument: this.lab.perf.instrument, model: this.model, params: this.lab.params }), sr }
+    return { chans: renderCurves(this.lab.perf, { sampleRate: sr, instrument: this.lab.perf.instrument, model: this.model, params: this.lab.synthParams() }), sr }
   }
 }
 
