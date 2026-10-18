@@ -20,6 +20,7 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { subdivide } from './subdivide.js'
+import { createSkirtCloth } from './vrm-skirt.js'
 
 const v3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z)
 
@@ -102,8 +103,22 @@ async function addDress(model, spec, base, colorKey) {
   mesh.name = 'concert-dress'
   mesh.bind(new THREE.Skeleton(bones, D.bones.map(n => inv.get(n) || new THREE.Matrix4())), body.bindMatrix)
   body.parent.add(mesh)
-  for (const o of hidden) o.visible = false
-  return mesh
+  const dress = {
+    mesh, body, on: true, simulate: true, cloth: null, bench: null, color: colorKey in DRESS_COLORS ? colorKey : DRESS_DEFAULT,
+    /** a DRESS_COLORS key, or 'off' for the model's own clothes */
+    set(key) {
+      dress.on = key !== 'off'
+      if (dress.on) {
+        dress.color = key in DRESS_COLORS ? key : DRESS_DEFAULT
+        const c = new THREE.Color(DRESS_COLORS[dress.color])
+        mats.forEach((m, i) => { if (i) return; m.color?.copy(c).multiplyScalar(0.85); m.shadeColorFactor?.copy(c).multiplyScalar(0.5) })
+      }
+      mesh.visible = dress.on
+      for (const o of hidden) o.visible = !dress.on
+    },
+  }
+  dress.set(colorKey || DRESS_DEFAULT)
+  return dress
 }
 
 // MakeHuman reference proportions (the build's 165 cm woman), for the scale
@@ -190,7 +205,7 @@ export async function loadAltCharacter(key, base = new URL('./assets/', import.m
   const spec = MODELS[key]
   if (!spec) throw new Error(`unknown model ${key}`)
   const loader = new GLTFLoader()
-  let vrm = null, VRMUtils = null
+  let vrm = null, VRMUtils = null, dress = null
   if (spec.kind === 'vrm') {
     const mod = await import('@pixiv/three-vrm')
     VRMUtils = mod.VRMUtils
@@ -209,7 +224,7 @@ export async function loadAltCharacter(key, base = new URL('./assets/', import.m
     if (vrm.lookAt) vrm.lookAt.autoUpdate = false
     if (spec.dress) {
       const q = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('vdress') : null
-      if (q !== 'off') await addDress(gltf.scene, spec.dress, base, q).catch(e => console.warn('dress:', e.message))
+      dress = await addDress(gltf.scene, spec.dress, base, q).catch(e => { console.warn('dress:', e.message); return null })
     }
     H = {}
     for (const name of Object.keys(vrm.humanoid.humanBones)) { const b = vrm.humanoid.getRawBoneNode(name); if (b) H[name] = b }
@@ -406,7 +421,7 @@ export async function loadAltCharacter(key, base = new URL('./assets/', import.m
   // with morph targets (a VRM face) or alpha cards are left alone.
   const smoothable = []
   model.traverse(o => {
-    if (!o.isSkinnedMesh || !o.geometry.index || Object.keys(o.geometry.morphAttributes).length) return
+    if (!o.isSkinnedMesh || !o.geometry.index || Object.keys(o.geometry.morphAttributes).length || o.name === 'concert-dress') return
     const m = [].concat(o.material)[0]
     if (m.transparent || m.alphaTest > 0) return
     smoothable.push({ mesh: o, cache: { 0: o.geometry } })
@@ -428,7 +443,7 @@ export async function loadAltCharacter(key, base = new URL('./assets/', import.m
     kind: key, credit: spec.credit, alt: true, vrm,
     group, bones, byName, restWorld, joints: J, skeleton: new THREE.Skeleton(bones),
     meshes: {}, materials: {}, meta: { community: [] }, parts: { eyes: { geometry: eyeGeo } },
-    model, humanoid: H,
+    model, humanoid: H, dress,
     addPart: () => null, ensurePart: async () => {}, partArray: () => null,
     /** let the model follow the rig (blinks too, on a VRM) */
     attachRig(r) { rig = r },
@@ -443,6 +458,19 @@ export async function loadAltCharacter(key, base = new URL('./assets/', import.m
         const em = vrm.expressionManager
         if (em && rig) { em.setValue('blink', Math.max(rig.state.blink || 0, rig.state.lidDrop || 0)) }
         vrm.update(dt)
+      }
+      // the concert dress's skirt as cloth (after the drape, which edits its bind shape)
+      if (dress) {
+        if (dress.on && dress.simulate && !dress.cloth) {
+          dress.cloth = createSkirtCloth({ mesh: dress.mesh, body: dress.body, H })
+          group.add(dress.cloth.mesh)
+        }
+        if (dress.cloth) {
+          group.updateMatrixWorld(true)
+          if (dress.bench) dress.cloth.setBench(dress.bench)
+          dress.cloth.active = dress.simulate
+          dress.cloth.update(dt, dress.on)
+        }
       }
     },
   }
@@ -499,7 +527,7 @@ function drapeSkirt(model, H, spec) {
   model.traverse(o => {
     if (!o.isSkinnedMesh) return
     let under = false; for (let p = o; p; p = p.parent) if (spec.under.test(p.name)) under = true
-    if (!under || !o.visible) return
+    if (!under || (!o.visible && o.name !== 'concert-dress')) return
     const name = [].concat(o.material)[0].name
     if (spec.material.test(name)) skirts.push(o); else skins.push(o)
   })

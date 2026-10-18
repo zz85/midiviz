@@ -222,6 +222,7 @@
     <div class="item" id="resetAll" title="Every option back to its default (the song and its position are kept)">↺ Restore all defaults</div>
     <div class="sect">Pianist</div>
     <div class="field"><label>Model</label><select id="model"><option value="">MakeHuman (realistic, CC0)</option></select></div>
+    <div class="field" id="vdressField" style="display:none" title="The VRoid pianist's concert dress (VRoid HairSample_Female's, refitted to her), or her own cardigan and shorts"><label>Concert dress</label><select id="vdress"><option value="wine" selected>Wine</option><option value="black">Black</option><option value="navy">Navy</option><option value="emerald">Emerald</option><option value="rose">Rose</option><option value="white">White</option><option value="off">Her own clothes</option></select></div>
     <div class="field"><label>Look</label><select id="look"><option value="realistic">Realistic</option><option value="stylized">Stylized (animated feature)</option><option value="cel" selected>Cel shaded (outlines)</option></select></div>
     <div class="field"><label>Smooth (subdivided)</label><select id="smooth"><option value="0">Off</option><option value="1">1× (4× the triangles)</option><option value="2">2× (16×)</option></select></div>
     <div class="field" title="Fold the body down to a low-poly cage first (pianist/simplify.js), then smooth that: the slider is how far (cm) the cage may stray from the modelled shape. It goes as low as it can within that; the face and hands are held 8× tighter. 0 = as modelled"><label>Low poly first <span id="simplifyV">off</span></label><input type="range" id="simplify" min="0" max="3" step="0.05" value="0"></div>
@@ -531,6 +532,18 @@
       // the wardrobe fields (Look … up to Pose) are MakeHuman's: hide them
       document.body.classList.add('altmodel')
       for (let el = $('model').closest('.field').nextElementSibling; el && !(el.classList.contains('sect') && el.textContent === 'Pose'); el = el.nextElementSibling) if (!el.querySelector('#smooth')) el.style.display = 'none'
+      // a model with a concert dress (alt-model.js MODELS[].dress): its colour menu and the skirt simulation
+      if (ch.dress) {
+        $('vdressField').style.display = ''
+        $('clothSim').closest('label').style.display = ''
+        if (params.has('vdress') && [...$('vdress').options].some(o => o.value === params.get('vdress'))) $('vdress').value = params.get('vdress')
+        ch.dress.set($('vdress').value)
+        ch.dress.simulate = params.get('clothsim') !== '0'
+        $('vdress').onchange = () => ch.dress.set($('vdress').value)
+        // the bench top for the skirt to rest on (re-read every frame: the bench moves with Bench distance / height)
+        const benchBox = new THREE.Box3()
+        Object.defineProperty(ch.dress, 'bench', { get: () => (piano.bench.updateMatrixWorld(true), benchBox.setFromObject(piano.bench)) })
+      }
       // Smooth subdivides the model's own meshes (its default from MODELS)
       if (!params.has('smooth') && MODELS[ALT].smooth != null) $('smooth').value = String(MODELS[ALT].smooth)
       ch.smoothFrom = () => +$('smooth').value
@@ -779,7 +792,7 @@
     if (params.get('hairsim') === '0') { $('hairSim').checked = false; hair.simulate = false }
     $('hairSim').onchange = () => { hair.simulate = $('hairSim').checked }
     $('dressOn').onchange = () => { dress.object.visible = $('dressOn').checked; coverBody(dress.object.visible) }
-    $('clothSim').onchange = () => { dress.simulate = $('clothSim').checked }
+    $('clothSim').onchange = () => { dress.simulate = $('clothSim').checked; if (ch.dress) ch.dress.simulate = $('clothSim').checked }
     $('expr').value = params.get('expr') ?? 1
     rig.state.expression = +$('expr').value
     $('expr').oninput = () => { rig.state.expression = +$('expr').value }
@@ -1489,7 +1502,7 @@
       // key, control (selects / ranges / colours: value; checkboxes: 1 / 0)
       ['outfit', 'outfit'], ['dress', 'dressStyle'], ['slit', 'slit'], ['fabric', 'fabric'], ['dcol', 'dressColor'], ['shoes', 'shoeStyle'],
       ['hair', 'hairStyle'], ['hcol', 'hairColor'], ['density', 'hairDensity'], ['hairon', 'hairOn'], ['hairsim', 'hairSim'],
-      ['dresson', 'dressOn'], ['clothsim', 'clothSim'], ['look', 'look'], ['smooth', 'smooth'], ['simplify', 'simplify'],
+      ['dresson', 'dressOn'], ['clothsim', 'clothSim'], ['vdress', 'vdress'], ['look', 'look'], ['smooth', 'smooth'], ['simplify', 'simplify'],
       ['gaze', 'gaze'], ['expr', 'expr'], ['hips', 'hips'], ['posture', 'posture'], ['reach', 'reach'], ['rock', 'rock'], ['sway', 'sway'], ['nod', 'nod'], ['glances', 'glances'], ['armw', 'armw'], ['lifth', 'lifth'], ['wflex', 'wflex'], ['elbow', 'elbowLead'], ['liftoff', 'liftoff'], ['bench', 'benchDist'], ['benchh', 'benchH'],
       ['touch', 'touch'], ['fingering', 'fingering'],
       ['light', 'light'], ['exposure', 'exposure'], ['dof', 'dof'],
