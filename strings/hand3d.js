@@ -5,12 +5,13 @@
 // the instrument however it is held.
 //
 // Left hand: the neck lies between the thumb and the base of the index
-// finger. The knuckles sit beside the fingerboard on the top-string side,
+// finger. The thumb is level with finger 1 or slightly toward the nut. The
+// knuckles sit beside the fingerboard on the top-string side,
 // over the current frame; the fingers arch over the strings and come down on
 // their stops, solved with the coupled-joint planar IK of #029
 // (fingering/hands3d.js solveFinger: DIP ≈ 0.7 PIP, bisection on the PIP
-// angle). The thumb rests under the neck on the bass side, opposite fingers
-// 1–2, and parks at the neck heel in high positions. The forearm runs down to
+// angle). The thumb rests under the neck on the bass side and parks at the
+// neck heel in high positions. The forearm runs down to
 // an elbow under the instrument that swings toward the bass strings.
 //
 // Cello: the neck is upright and the hand is open rather than wrapped around
@@ -235,8 +236,10 @@ export function buildLeftHand(violin, { scale = 1 } = {}) {
       tL = [4.1 * size, 3.5 * size]
       pole = new THREE.Vector3(tB.x - 6, tB.y - 6, tB.z)
     } else {
-      // thumb: under the neck on the bass side opposite finger 1–2, parked at the heel when high
-      const thumbU = Math.min(uA + 0.8 * size, V.x0 - 1.2 * k)
+      // thumb: under the neck on the bass side, level with finger 1 or a little
+      // toward the nut (not behind the middle fingers as on the cello); in high
+      // positions it parks at the neck heel
+      const thumbU = Math.min(uA - 0.7 * size, V.x0 - 1.2 * k)
       tipT = new THREE.Vector3(thumbU, V.fbY(thumbU, 0) - (1.3 + 0.5 * high) * k, half * (0.75 - 0.6 * high) + 0.4)
       tB = wrist.clone().add(new THREE.Vector3(-0.6 * size, 1.4 * size, 1.4 * size))
       pole = new THREE.Vector3(tB.x - 6, tB.y, tB.z + 6)
