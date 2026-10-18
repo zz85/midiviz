@@ -47,7 +47,7 @@ Midi Visualization Experiments
 - Samples, physical modelling (waveguide, SWAM), DDSP / MIDI-DDSP, RAVE / BRAVE, MIDI-to-audio diffusion (VIOLET, ViolinDiff), Suno-style and open text-to-music models (MusicGen, Stable Audio, ACE-Step, Magenta RealTime 2)
 
 [Research - How commercial modelled violins get their sound](strings/research/05_commercial_violins.md)
-- SWAM (samples shaped by modelling, bodies estimated from recordings, interactive bow pressure, behavioural modelling), Expressive E Soliste, Sound Magic Violin One, and what #034's physical models lack
+- SWAM Solo Strings (pure physical and behavioural modelling: selectable bodies, interactive bow pressure, modelled player habits), Expressive E Soliste, Sound Magic Violin One, and what #034's physical models lack
 
 [Research - Audio → MIDI / MusicXML](transcription/research/01_audio_to_midi.md)
 - Options for transcribing audio in the browser: Basic Pitch, MuScriptor, the MT3 family, piano models (Transkun, Kong, Aria-AMT), streaming / low-latency piano, monophonic pitch (SwiftF0, PESTO), source separation, performance MIDI → score, and the runtimes (onnxruntime-web, Transformers.js, tfjs, ggml)
