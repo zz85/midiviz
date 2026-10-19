@@ -44,7 +44,7 @@ import { humanize, HUMANIZE, rng as rngH } from './humanize.js'
 
 export const STYLE = {
   vibrato: 1,        // × depth
-  vibratoRate: 5.8,  // Hz
+  vibratoRate: 6.6,  // Hz (four violinists in the Bach Violin Dataset: median 6.55, strings/test/perf_stats.js)
   portamento: 1,     // × slide length (0 = none)
   dynamics: 1,       // × dynamic range
   phrasing: 1,       // × phrase arches and swells
@@ -143,6 +143,17 @@ export function expressionFromCC(ccs) {
 const ccDyn = v => clamp(1 + 40 * Math.log10(Math.max(0.05, v)) / 19, 0.08, 1)
 
 // minimum bow force F_min ≈ FMIN·(Z/0.3)^ZEXP·v/β² (fitted on the waveguide)
+// fitted to four violinists in the Bach Violin Dataset (Ko, Garner, Kim, Telmányi;
+// strings/test/perf_stats.js, pooled over ~300 sustained notes): vibrato on ~70 % of
+// them, ±13–14 cents, 6.5 Hz, present from the start of the note (continuous
+// vibrato, not a late bloom), notes swelling ~1.5 dB and ending a little louder
+const VIB_W = 1.5       // × (12 + 3·dynamic) cents: measured ±13–14 like the recordings (was (8 + 10·dyn): ±7.4 measured)
+const VIB_ON = 0.06     // onset delay scale (was 0.2: vibrato bloomed after ~0.3 s; players start at once)
+const VIB_EASE = 0.06   // the rate starts this much slower and eases in (was 0.12)
+const VIB_GROW = 0.1    // widening through a long note (was 0.45: long notes got wider than players')
+const VIB_SKIP = 0.25   // share of notes with almost no vibrato (players leave some plain)
+const SWELL = 0.4, SWELL_P = 1.0   // messa di voce on notes ≥ 0.45 s, less on very long ones (was 0.16 from 0.7 s, peak at 42 %); none on harmonics
+const ARCH = 0.6, HEIGHT = 0.03    // phrase arch and higher-is-louder per semitone (were 0.18, 0.012)
 const FMIN = 0.02, ZEXP = 1.5
 // steady force scale and the attack press (×ATK_F decaying in ATK_T s), tuned on
 // strings/test/attack.js with the waveguide's pitch-tracking end losses
@@ -218,7 +229,7 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
       for (const n of ph) {
         const x = (n.on - t0) / D
         const arch = Math.sin(Math.PI * clamp(x * 0.9 + 0.05, 0, 1))
-        phraseGain.set(n, 1 + S.phrasing * (0.18 * (arch - 0.5) + 0.012 * (n.pitch - mean) - (x > 0.85 ? 0.1 : 0)))
+        phraseGain.set(n, 1 + S.phrasing * (ARCH * (arch - 0.5) + HEIGHT * (n.pitch - mean) - (x > 0.85 ? 0.1 : 0)))
       }
     }
     let lastOff = -Infinity
@@ -334,7 +345,7 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
           else if (sk === 'martele') { const x = t - st.t0; env = x <= 0 ? 0 : x < 0.008 ? x / 0.008 : x < maC ? 1 : Math.max(0, 1 - (x - maC) / 0.02) }
           // messa di voce on long notes, phrase arch
           let sw = 1
-          if (nd > 0.7) { const x = clamp((t - n.on) / nd, 0, 1); sw = 1 + S.phrasing * 0.16 * (Math.sin(Math.PI * Math.pow(x, 0.8)) - 0.35) }
+          if (nd > 0.45 && !n.harm) { const x = clamp((t - n.on) / nd, 0, 1); sw = 1 + S.phrasing * SWELL * Math.min(1, 1.5 / nd) * (Math.sin(Math.PI * Math.pow(x, SWELL_P)) - 0.35) }
           // the expression lane moves the bow with the dynamic: faster, heavier and
           // nearer the bridge when louder (SWAM: "the speed of the bow in relation to the pressure")
           const ex = hasE ? E[i] : 0
@@ -457,9 +468,9 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
       if (n.finger && dur >= 0.22 && S.vibrato > 0) {
         const dyn = clamp(dynOf(n) + (hasE ? E[Math.min(frames - 1, Math.round(fr(n.on)))] : 0), 0.08, 1)
         const rate = S.vibratoRate * (1 + (R() - 0.5) * 0.08) + (dyn - 0.5) * 0.5
-        // depth (cents, half the swing): about ±10 p … ±23 f at its widest on long notes (recorded players: ±10–30)
-        const depth = S.vibrato * (8 + 10 * dyn) * (n.harm ? 0.6 : 1) * (dur < 0.4 ? 0.7 : 1)
-        const delay = clamp(0.08 + 0.12 * Math.min(1, dur / 1.2), 0.06, 0.22)
+        // depth (cents, half the swing): ±12–15 nominal, measured ±13–14 like the Bach Violin Dataset players
+        const depth = S.vibrato * VIB_W * (R() < VIB_SKIP ? 0.3 : 1) * (12 + 3 * dyn) * (n.harm ? 0.6 : 1) * (dur < 0.4 ? 0.7 : 1)
+        const delay = clamp(VIB_ON * (0.08 + 0.12 * Math.min(1, dur / 1.2)) / 0.2, 0.01, 0.22)
         const ph0 = R() * 2 * Math.PI
         const end = Math.min(n.off, next && next.on - n.off < 0.2 ? next.on - 0.03 : n.off + 0.08)
         // a player's vibrato is not a sine: each cycle comes a little faster or
@@ -473,9 +484,9 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
           if (age <= 0) continue
           rv += kW * ((R() - 0.5) * 20 - rw - 0.6 * rv); rw += kW * rv
           dv2 += kW * ((R() - 0.5) * 20 - dw - 0.6 * dv2); dw += kW * dv2
-          const env = smooth5(age / 0.35) * (0.85 + 0.45 * smooth5(age / 1.5)) * smooth5((end - t) / 0.08)
+          const env = smooth5(age / (0.35 * VIB_ON / 0.2 + 0.05)) * (0.85 + VIB_GROW * smooth5(age / 1.5)) * smooth5((end - t) / 0.08)
           // the rate eases in (players start slower) and wanders
-          const r = rate * (1 - 0.12 * Math.exp(-age / 0.3)) * (1 + 0.08 * clamp(rw, -1.5, 1.5))
+          const r = rate * (1 - VIB_EASE * Math.exp(-age / 0.3)) * (1 + 0.08 * clamp(rw, -1.5, 1.5))
           ph += 2 * Math.PI * r / frameRate
           vibCents[s][i] = depth * env * (1 + 0.12 * clamp(dw, -1.5, 1.5)) * Math.sin(ph)
         }

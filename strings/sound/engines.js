@@ -58,7 +58,7 @@ export class Lab {
     this.setSordino(false)
     this.pre = ctx.createGain()
     this.pre.connect(this.mute[0]).connect(this.mute[1]).connect(this.bus)
-    this.params = { bowPress: true, rosin: 1, resonance: 1, body: 'iowa' }
+    this.params = { bowPress: true, rosin: 1, resonance: 1, body: 'phil' }
     this.liveCtl = { expr: null, vib: null, bend: 0 }
     this.bus.connect(this.master)
     this.master.connect(this.limiter).connect(ctx.destination)

@@ -156,6 +156,28 @@ After SWAM's moving Bow Pressure / Bow Position knobs and Schoonderwaldt's measu
 - This replaces the hybrid-sampler render as the reference. That render is our own phrasing with recorded tone, not a real phrase.
 - The default is Ko Donghwi, Sonata No. 1, Adagio (Team DR, CC BY 3.0). Long-term spectrum against the recording (third octaves 160 Hz–12 kHz, rms dB): waveguide + Philharmonia 6.9, waveguide + Iowa 8.6, source + Philharmonia 13.2, hybrid 9.4. On the Presto (0–15 s): 4.3, 6.1, 6.1 and 7.0. These are rough, because his room, microphone and YouTube encoding are in the recording.
 
+## Performance fitted to real violinists
+
+`node strings/test/perf_stats.js [--recs=…] [--model=source] [--body=phil] [--style=JSON]` measures sustained single notes (≥ 0.5 s) in Bach Violin Dataset recordings, at their aligned times. It tracks f0 every 10 ms and reports:
+- vibrato: rate, and width (half the swing, cents) of the strongest 3.5–9 Hz component;
+- vibrato onset, by demodulating the f0 at the vibrato rate;
+- note levels, swell and slope.
+
+It then measures our engine on the same notes, at the violinist's timing and through the same hall. Default: eight slow movements by four violinists (Ko, Garner, Kim, Telmányi). Pooled medians, 401 notes:
+
+| | vibrato on | rate | width | onset | level spread | swell | slope |
+|---|---|---|---|---|---|---|---|
+| recordings | 67 % | 6.55 Hz | ±13.3 c | at once (≤ 0.08 s) | 7.8 dB | 1.6 dB | +0.6 dB |
+| before | 41 % | 5.60 Hz | ±7.4 c | 0.31 s | 4.6 dB | 0.3 dB | −0.4 dB |
+| now | 68 % | 6.45 Hz | ±13.2 c | ≤ 0.08 s | 4.9 dB | 1.3 dB | +0.5 dB |
+
+Changes in [sound/performance.js](sound/performance.js):
+- **Vibrato:** default rate 6.6 Hz; depth 1.5 × (12 + 3·dynamic) cents, with less dependence on the dynamic, so loud notes stay within ±28 cents. It starts almost at once and widens only 10 % through a long note. A quarter of the notes get almost none, as players leave some plain.
+- **Messa di voce:** notes from 0.45 s swell, 0.4 × phrasing, less on very long notes (× 1.5 s / duration), none on harmonics.
+- **Phrase arch** 0.6, and +3 % bow speed per semitone above the phrase mean.
+
+The level spread between notes is still short of the players' (4.9 against 7.8 dB). It is their interpretation (echoes, terraced dynamics, accents), which the plain score notes don't carry; the Variance slider at 2.5 reaches 5.7 dB.
+
 ## Measured body (Philharmonia samples)
 
 **Body: Measured (Philharmonia)**: violin, viola and cello bodies estimated as the Iowa ones are, from different instruments and players.
