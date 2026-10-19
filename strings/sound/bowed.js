@@ -491,9 +491,9 @@ export class Body {
  * at(t, out) → fills out[string * NCH + channel] for time t (s).
  */
 export class ViolinSynth {
-  constructor(sr, { instrument = 'violin', model = 'waveguide', tone = null, bowPress = true, rosin = 1, resonance = 1, body = 'iowa', oversample = 3, tilt = 1 } = {}) {
+  constructor(sr, { instrument = 'violin', model = 'waveguide', tone = null, bowPress = true, rosin = 1, resonance = 1, body = 'iowa', oversample = 3, tilt = 1, wgPress = 1 } = {}) {
     this.sr = sr
-    this.opts = { bowPress, rosin, resonance, body, tilt }
+    this.opts = { bowPress, rosin, resonance, body, tilt, wgPress }
     this.tiltLp = new Float64Array(4); this.tiltK = new Float32Array(4); this.tiltKt = new Float32Array(4); this.tiltA = new Float32Array(4)
     this.relF = new Float32Array(4)
     this.oversample = oversample
@@ -613,6 +613,10 @@ export class ViolinSynth {
         }
       }
       const sg = this.sgain
+      // waveguide only: a plain scale on the bow force the string feels (opts.wgPress,
+      // the page's "WG pressure"), after the brightness tilt read the planned force,
+      // so the tone colour stays and only the stick-slip changes
+      const fScale = this.model === 'waveguide' ? (this.opts.wgPress ?? 1) : 1
       const os = this.os, dec = this.dec, invOs = 1 / (m * os)
       for (let i = 0; i < m; i++) {
         let sum = 0
@@ -623,7 +627,7 @@ export class ViolinSynth {
           for (let s = 0; s < 4; s++) {
             const o = s * NCH
             const vb = cur[o + 1] + (nxt[o + 1] - cur[o + 1]) * k
-            const F = cur[o + 2] + (nxt[o + 2] - cur[o + 2]) * k
+            const F = (cur[o + 2] + (nxt[o + 2] - cur[o + 2]) * k) * fScale
             const tap = i === 0 && q === 0 ? nxt[o + 5] : 0
             let x = strs[s].tick(vb, F, tap)
             // brightness tilt (smoothed k, one-pole split at ~3·f0)
