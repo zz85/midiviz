@@ -5,7 +5,7 @@
 // song in a menu. Also draws a caption into an exported video frame.
 // The notes themselves: liner/liner.js and liner/README.md.
 
-import { renderInline, plainText, sectionAt, momentAt, intertitleAt, toVTT, toChapters, INTERTITLE } from './liner.js'
+import { renderInline, plainText, sectionAt, momentAt, intertitleAt, toVTT, toChapters, INTERTITLE, withTitle } from './liner.js'
 
 // ── Intertitle styles ───────────────────────────────────────────────────
 // A kicker (small, letter-spaced capitals: a place and year, a term) over one
@@ -19,20 +19,33 @@ const FACES = [
 	['Liner Montserrat', 300, 'normal', 'montserrat-latin-300-normal'],
 	['Liner Montserrat', 500, 'normal', 'montserrat-latin-500-normal'],
 ]
-// size: of the line, in px at 1080 lines; track: letter-spacing in em
+// [family, weight, style, letter-spacing in em]; size: of the line, in px at 1080 lines
 export const INTERTITLE_STYLES = {
-	serif: { label: 'Serif (Cormorant Garamond)', kicker: ['Liner Cinzel', 400, 'normal', 0.3], line: ['Liner Cormorant', 400, 'normal', 0.01], size: 50 },
-	italic: { label: 'Serif italic', kicker: ['Liner Cinzel', 400, 'normal', 0.3], line: ['Liner Cormorant', 500, 'italic', 0.01], size: 50 },
-	capitals: { label: 'Capitals (Cinzel)', kicker: ['Liner Cinzel', 400, 'normal', 0.42], line: ['Liner Cinzel', 400, 'normal', 0.09], size: 36, upper: true },
-	sans: { label: 'Modern sans (Montserrat, spaced)', kicker: ['Liner Montserrat', 500, 'normal', 0.42], line: ['Liner Montserrat', 300, 'normal', 0.07], size: 36 },
+	serif: { label: 'Serif (Cormorant Garamond)', kicker: ['Liner Cinzel', 400, 'normal', 0.3], line: ['Liner Cormorant', 400, 'normal', 0.01], sub: ['Liner Cormorant', 500, 'italic', 0.02], size: 50 },
+	italic: { label: 'Serif italic', kicker: ['Liner Cinzel', 400, 'normal', 0.3], line: ['Liner Cormorant', 500, 'italic', 0.01], sub: ['Liner Cormorant', 400, 'normal', 0.04], size: 50 },
+	capitals: { label: 'Capitals (Cinzel)', kicker: ['Liner Cinzel', 400, 'normal', 0.42], line: ['Liner Cinzel', 400, 'normal', 0.09], sub: ['Liner Cormorant', 500, 'italic', 0.02], size: 36, upper: true },
+	sans: { label: 'Modern sans (Montserrat, spaced)', kicker: ['Liner Montserrat', 500, 'normal', 0.42], line: ['Liner Montserrat', 300, 'normal', 0.07], sub: ['Liner Montserrat', 300, 'normal', 0.2], size: 36 },
 }
+// colours: kicker, line, small line, the rule under the kicker, the pool behind the words, the glow
+export const INTERTITLE_THEMES = {
+	mono: { label: 'Black and white (grey headings)', k: '#bfbfbf', l: '#f6f6f6', s: '#b5b5b5', r: 'rgba(255,255,255,0.42)', scrim: 'rgba(0,0,0,0.5)', glow: 'rgba(0,0,0,0.65)' },
+	white: { label: 'All white', k: '#ffffff', l: '#ffffff', s: 'rgba(255,255,255,0.82)', r: 'rgba(255,255,255,0.7)', scrim: 'rgba(0,0,0,0.5)', glow: 'rgba(0,0,0,0.65)' },
+	ink: { label: 'Black on light (bright scenes)', k: '#4a4a4a', l: '#101010', s: '#3c3c3c', r: 'rgba(0,0,0,0.45)', scrim: 'rgba(255,255,255,0.55)', glow: 'rgba(255,255,255,0.7)' },
+	warm: { label: 'Warm gold', k: '#ecd2a4', l: '#f4eee4', s: '#d9c7a6', r: 'rgba(230,196,142,0.55)', scrim: 'rgba(0,0,0,0.5)', glow: 'rgba(0,0,0,0.65)' },
+}
+export const INTERTITLE_POSITIONS = {
+	auto: 'Automatic (away from the pianist)',
+	'bottom-left': 'Bottom left', 'bottom-right': 'Bottom right', 'bottom-center': 'Bottom centre',
+	'top-left': 'Top left', 'top-right': 'Top right',
+}
+const posClass = p => ({ 'bottom-left': 'bl', 'bottom-right': 'br', 'bottom-center': 'bc', 'top-left': 'tl', 'top-right': 'tr' })[p] || 'bl'
 const fam = f => `'${f[0]}', Georgia, serif`
 const cssFont = (f, px) => `${f[2]} ${f[1]} ${px}px ${fam(f)}`
 /** wait for a style's fonts (before drawing it into a canvas) */
 export function loadIntertitleFonts(style = 'serif') {
 	const st = INTERTITLE_STYLES[style] || INTERTITLE_STYLES.serif
 	injectFaces()
-	return Promise.all([st.kicker, st.line].map(f => document.fonts.load(cssFont(f, 40)).catch(() => null)))
+	return Promise.all([st.kicker, st.line, st.sub].map(f => document.fonts.load(cssFont(f, 40)).catch(() => null)))
 }
 function injectFaces() {
 	if (document.getElementById('ln-faces')) return
@@ -55,20 +68,29 @@ body.idle .ln-cap.show { cursor: none; }
 .ln-cap .ln-more { margin-left: 8px; opacity: 0.55; font-weight: 600; }
 .ln-i { display: inline-block; width: 13px; height: 13px; margin-right: 4px; border: 1.3px solid currentColor; border-radius: 50%; font: italic 700 9px/13px Georgia, serif; text-align: center; vertical-align: -2px; box-sizing: content-box; }
 .ln-cap b { font-weight: 600; }
-.ln-it { position: absolute; bottom: 21%; color: #f4eee4; pointer-events: none; opacity: 0; z-index: 5; isolation: isolate;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.6), 0 0 22px rgba(0,0,0,0.7); will-change: opacity, filter; }
-.ln-it.left { left: 6vw; max-width: min(46vw, 820px); text-align: left; }
-.ln-it.center { left: 50%; transform: translateX(-50%); width: min(88vw, 1100px); text-align: center; }
-/* a soft dark pool behind the words, so they read over a white dress or a lit keyboard */
-.ln-it::before { content: ''; position: absolute; inset: -1.6em -2.4em; z-index: -1; border-radius: 3em; background: rgba(0,0,0,0.5); filter: blur(28px); pointer-events: none; }
-.ln-it.left::before { left: -12vw; }
+.ln-it { position: absolute; color: var(--l); pointer-events: none; opacity: 0; z-index: 5; isolation: isolate;
+  text-shadow: 0 1px 2px var(--glow), 0 0 22px var(--glow); will-change: opacity, filter; }
+.ln-it.bl, .ln-it.tl { left: 6vw; max-width: min(46vw, 820px); text-align: left; }
+.ln-it.br, .ln-it.tr { right: 6vw; max-width: min(46vw, 820px); text-align: right; }
+.ln-it.bl, .ln-it.br, .ln-it.bc { bottom: 21%; }
+.ln-it.tl, .ln-it.tr { top: 15%; }
+.ln-it.bc { left: 50%; transform: translateX(-50%); width: min(88vw, 1100px); text-align: center; }
+/* a soft pool behind the words, so they read over a white dress or a lit keyboard */
+.ln-it::before { content: ''; position: absolute; inset: -1.6em -2.4em; z-index: -1; border-radius: 3em; background: var(--scrim); filter: blur(28px); pointer-events: none; }
+.ln-it.bl::before, .ln-it.tl::before { left: -12vw; }
+.ln-it.br::before, .ln-it.tr::before { right: -12vw; }
 .ln-it.live { pointer-events: auto; cursor: pointer; }
 body.idle .ln-it.live { cursor: none; }
-.ln-it .k { display: block; color: #ecd2a4; text-transform: uppercase; }
-.ln-it .r { display: block; width: 40px; height: 1px; margin: 0.9em 0 0.75em; background: rgba(230,196,142,0.55); }
-.ln-it.center .r { margin-left: auto; margin-right: auto; }
-.ln-it .l { display: block; max-width: 24em; line-height: 1.28; }
-.ln-it.center .l { margin: 0 auto; }
+.ln-it .k { display: block; color: var(--k); text-transform: uppercase; }
+.ln-it .r { display: block; width: 40px; height: 1px; margin: 0.9em 0 0.75em; background: var(--r); }
+.ln-it.br .r, .ln-it.tr .r { margin-left: auto; }
+.ln-it.bc .r { margin-left: auto; margin-right: auto; }
+.ln-it .l { display: block; max-width: 24em; line-height: 1.28; text-wrap: balance; }
+.ln-it.br .l, .ln-it.tr .l { margin-left: auto; }
+.ln-it.bc .l { margin: 0 auto; }
+.ln-it .s { display: block; margin-top: 0.55em; color: var(--s); text-wrap: balance; }
+/* (letter-spacing pads the right of each letter: right-aligned headings would sit in from the edge) */
+.ln-it.br .k, .ln-it.tr .k { margin-right: -0.3em; }
 .ln-strip { position: relative; height: 12px; margin: 0 0 3px; display: none; }
 .ln-strip.on { display: block; }
 .ln-seg { position: absolute; top: 4px; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.18); cursor: pointer; transition: background 0.2s, top 0.15s, height 0.15s; }
@@ -136,15 +158,15 @@ const escAttr = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&l
  * @param o.host     where the caption and panel go (default document.body)
  * @param o.download (filename, text) => void, for the panel's .vtt button
  */
-export function createLinerOverlay({ seek, title, onSeek, host = document.body, download }) {
+export function createLinerOverlay({ seek, title, onSeek, host = document.body, download, autoPosition = () => 'bottom-left' }) {
 	if (!document.getElementById('ln-css')) document.head.append(Object.assign(document.createElement('style'), { id: 'ln-css', textContent: CSS }))
 	injectFaces()
-	const it = el('div', 'ln-it left'), cap = el('div', 'ln-cap'), strip = el('div', 'ln-strip'), tip = el('div', 'ln-tip'), sub = el('div', 'ln-sub'), panel = el('div', 'ln-panel'), peek = el('div', 'ln-peek')
+	const it = el('div', 'ln-it bl'), cap = el('div', 'ln-cap'), strip = el('div', 'ln-strip'), tip = el('div', 'ln-tip'), sub = el('div', 'ln-sub'), panel = el('div', 'ln-panel'), peek = el('div', 'ln-peek')
 	host.append(it, cap, panel, tip, peek)
 	seek.parentNode.insertBefore(strip, seek)
 	title.after(sub)
 
-	let liner = null, tl = null, duration = 0, mode = 'intertitles', style = 'serif', align = 'left', curIt = null, curM = null, curS = null, capTimer = 0, tab = 'now', cardView = null, lastT = 0
+	let liner = null, tl = null, itl = null, songTitle = null, duration = 0, mode = 'intertitles', style = 'serif', theme = 'mono', position = 'auto', kickers = true, curIt = null, curPos = 'bottom-left', curM = null, curS = null, capTimer = 0, tab = 'now', cardView = null, lastT = 0
 	const cardLink = (id, text) => liner?.cards?.[id] ? `<span class="card-ln" data-card="${id}">${text}</span>` : text
 	const md = s => renderInline(s, cardLink)
 
@@ -162,25 +184,34 @@ export function createLinerOverlay({ seek, title, onSeek, host = document.body, 
 
 	// ── intertitle ──
 	function styleIntertitle() {
-		const st = INTERTITLE_STYLES[style] || INTERTITLE_STYLES.serif
+		const st = INTERTITLE_STYLES[style] || INTERTITLE_STYLES.serif, th = INTERTITLE_THEMES[theme] || INTERTITLE_THEMES.mono
+		for (const k of ['k', 'l', 's', 'r', 'scrim', 'glow']) it.style.setProperty('--' + k, th[k])
+		const big = curIt?.title ? 1.3 : 1
 		const vh = s => `clamp(${Math.round(s * 0.5)}px, ${(s / 10.8).toFixed(2)}vh, ${s}px)`
-		Object.assign(it.querySelector('.k')?.style || {}, { font: `${st.kicker[2]} ${st.kicker[1]} ${vh(st.size * 0.42)} ${fam(st.kicker)}`, letterSpacing: st.kicker[3] + 'em' })
-		Object.assign(it.querySelector('.l')?.style || {}, { font: `${st.line[2]} ${st.line[1]} ${vh(st.size)} ${fam(st.line)}`, letterSpacing: st.line[3] + 'em', textTransform: st.upper ? 'uppercase' : 'none' })
+		const set = (sel, f, size, upper) => { const e = it.querySelector(sel); if (e) Object.assign(e.style, { font: `${f[2]} ${f[1]} ${vh(size)} ${fam(f)}`, letterSpacing: f[3] + 'em', textTransform: upper ? 'uppercase' : 'none' }) }
+		set('.k', st.kicker, st.size * 0.42, true)
+		set('.l', st.line, st.size * big, st.upper)
+		set('.s', st.sub, st.size * 0.52)
 	}
 	function showIntertitle(x) {
 		if (!x) { it.innerHTML = ''; it.style.opacity = 0; return }
-		it.innerHTML = (x.kicker ? `<span class="k">${renderInline(x.kicker)}</span><span class="r"></span>` : '') + `<span class="l">${renderInline(x.text)}</span>`
+		// (where it goes is decided once, as it appears, so it never jumps)
+		curPos = position === 'auto' ? autoPosition() || 'bottom-left' : position
+		it.className = 'ln-it ' + posClass(curPos) + (x.title ? ' title' : '')
+		const k = x.kicker && (kickers || x.title)
+		it.innerHTML = (k ? `<span class="k">${renderInline(x.kicker)}</span><span class="r"></span>` : '') + `<span class="l">${renderInline(x.text)}</span>` + (x.sub ? `<span class="s">${renderInline(x.sub)}</span>` : '')
 		styleIntertitle()
 	}
 	function fadeIntertitle(t) {
-		const a = curIt && mode === 'intertitles' ? itAlpha(curIt, t) : 0
+		const a = curIt && (mode === 'intertitles' || curIt.title) && mode !== 'off' ? itAlpha(curIt, t) : 0
 		it.style.opacity = a.toFixed(3)
 		it.style.filter = a > 0.995 ? '' : `blur(${((1 - a) * 5).toFixed(2)}px)`
 		const k = it.querySelector('.k')
 		if (k) k.style.letterSpacing = ((INTERTITLE_STYLES[style] || INTERTITLE_STYLES.serif).kicker[3] + (1 - a) * 0.12).toFixed(3) + 'em'
 		it.classList.toggle('live', a > 0.5)
 	}
-	it.onclick = () => { if (curIt) curIt.moment != null ? open('notes', curIt.moment) : open('now') }
+	const rebuildScreen = () => { itl = songTitle ? withTitle(tl, songTitle) : tl; curIt = null; showIntertitle(null) }
+	it.onclick = () => { if (curIt && liner) curIt.moment != null ? open('notes', curIt.moment) : open(curIt.title ? 'about' : 'now') }
 
 	// ── seek strip ──
 	function buildStrip() {
@@ -237,7 +268,7 @@ export function createLinerOverlay({ seek, title, onSeek, host = document.body, 
 	function bodyAbout() {
 		let h = liner.overview.map(p => `<p>${md(p)}</p>`).join('')
 		h += `<h3>Sections</h3>` + tl.sections.map((s, i) => `<div class="row${s === curS ? ' cur' : ''}" data-seek="${s.start}"><span class="t">${mmss(s.start)}</span><div><b>${md(s.title)}</b> <span style="color:#8f8a80">${barOf(s.at)}</span><div>${md(s.text || '')}</div></div></div>`).join('')
-		if (tl.intertitles.length) h += `<h3>On screen</h3>` + tl.intertitles.map(x => `<div class="row" data-seek="${x.start}"><span class="t">${mmss(x.start)}</span><div>${x.kicker ? `<span class="k" style="color:#e6c48e">${md(x.kicker)}</span>` : ''}${md(x.text)}</div></div>`).join('')
+		if (itl?.intertitles.length) h += `<h3>On screen</h3>` + itl.intertitles.map(x => `<div class="row" data-seek="${x.start}"><span class="t">${mmss(x.start)}</span><div>${x.kicker ? `<span class="k" style="color:#a9a49a">${md(x.kicker)}</span>` : ''}${md(x.text)}</div></div>`).join('')
 		h += `<div class="tools"><button data-act="chapters">Copy YouTube chapters</button><button data-act="vtt">Download .vtt</button></div>`
 		if (tl.warnings.length) h += `<p class="warn">${tl.warnings.map(escAttr).join('<br>')}</p>`
 		return h
@@ -268,7 +299,7 @@ export function createLinerOverlay({ seek, title, onSeek, host = document.body, 
 		if (t.dataset.seek) return onSeek(+t.dataset.seek)
 		if (t.dataset.m) { t.classList.toggle('open'); return }
 		if (t.dataset.act === 'chapters') { navigator.clipboard?.writeText(toChapters(tl)); t.textContent = 'Copied'; setTimeout(() => { t.textContent = 'Copy YouTube chapters' }, 1500) }
-		if (t.dataset.act === 'vtt') download?.(`${liner.id}.vtt`, toVTT(tl, { from: mode === 'notes' ? 'moments' : 'intertitles' }))
+		if (t.dataset.act === 'vtt') download?.(`${liner.id}.vtt`, toVTT(mode === 'notes' ? tl : itl, { from: mode === 'notes' ? 'moments' : 'intertitles' }))
 	}
 	const open = (t = tab, m = null) => { if (!liner) return; tab = t; cardView = null; focusM = m; panel.classList.add('open'); render() }
 	const close = () => panel.classList.remove('open')
@@ -309,18 +340,19 @@ export function createLinerOverlay({ seek, title, onSeek, host = document.body, 
 	return {
 		/** show a piece's notes on its timeline (or null to clear) */
 		set(l, timeline, dur) {
-			liner = l; tl = l ? timeline : null; duration = dur || 0; curM = curS = curIt = null; lastT = 0; cardView = null
-			cap.innerHTML = ''; showCaption(null); showIntertitle(null); buildStrip(); showSub()
+			liner = l; tl = l ? timeline : null; duration = dur || 0; curM = curS = null; lastT = 0; cardView = null
+			cap.innerHTML = ''; showCaption(null); rebuildScreen(); buildStrip(); showSub()
 			if (!l) close(); else render()
 			if (tl?.warnings.length) console.warn('[liner]', l.id, tl.warnings)
 		},
 		/** call every frame (or on every clock tick) with the song time */
 		update(t) {
-			if (!tl) return
 			lastT = t
-			const m = momentAt(tl, t), s = sectionAt(tl, t), x = intertitleAt(tl, t)
+			const x = intertitleAt(itl, t)
 			if (x !== curIt) { curIt = x; showIntertitle(x) }
 			fadeIntertitle(t)
+			if (!tl) return
+			const m = momentAt(tl, t), s = sectionAt(tl, t)
 			if (m !== curM) { curM = m; showCaption(m); if (tab === 'now' && !cardView) render(); else if (tab === 'notes') render() }
 			if (s !== curS) {
 				curS = s; showSub()
@@ -331,9 +363,18 @@ export function createLinerOverlay({ seek, title, onSeek, host = document.body, 
 		/** what shows on screen as it plays: 'intertitles' (the few marked lines), 'notes' (every note as a caption) or 'off' */
 		get mode() { return mode },
 		set mode(v) { mode = ['intertitles', 'notes', 'off'].includes(v) ? v : 'intertitles'; showCaption(curM); fadeIntertitle(lastT) },
-		/** where intertitles sit: 'left' (the lower third, from the left) or 'center' */
-		get align() { return align },
-		set align(v) { align = v === 'center' ? 'center' : 'left'; it.className = 'ln-it ' + align; fadeIntertitle(lastT) },
+		/** where intertitles sit: a key of INTERTITLE_POSITIONS ('auto' asks autoPosition() as each appears) */
+		get position() { return position },
+		set position(v) { position = INTERTITLE_POSITIONS[v] ? v : 'auto'; const x = curIt; curIt = null; showIntertitle(x); curIt = x; fadeIntertitle(lastT) },
+		get theme() { return theme },
+		set theme(v) { theme = INTERTITLE_THEMES[v] ? v : 'mono'; styleIntertitle() },
+		/** show the small headings (kickers) over the lines (the title keeps its own) */
+		get kickers() { return kickers },
+		set kickers(v) { kickers = !!v; const x = curIt; curIt = null; showIntertitle(x); curIt = x; fadeIntertitle(lastT) },
+		/** the song title as the first intertitle ({ kicker, text, sub }), or null */
+		setTitle(x) { songTitle = x?.text ? x : null; rebuildScreen() },
+		/** the intertitles as they show, the title included (for the export) */
+		get screenTimeline() { return itl },
 		get style() { return style },
 		set style(v) { style = INTERTITLE_STYLES[v] ? v : 'serif'; loadIntertitleFonts(style); styleIntertitle() },
 		get timeline() { return tl },
@@ -343,6 +384,15 @@ export function createLinerOverlay({ seek, title, onSeek, host = document.body, 
 }
 
 // ── Burned-in captions for video export ────────────────────────────────
+
+// wrapped to the fewest lines, then as even as they go (no one-word last line), as text-wrap: balance
+function balanced(g, text, maxW) {
+	const n = wrap(g, text, maxW).length
+	if (n < 2) return wrap(g, text, maxW)
+	let lo = maxW / n, hi = maxW
+	for (let i = 0; i < 12; i++) { const mid = (lo + hi) / 2; if (wrap(g, text, mid).length > n) lo = mid; else hi = mid }
+	return wrap(g, text, hi)
+}
 
 function wrap(g, text, maxW) {
 	const lines = []
@@ -389,52 +439,67 @@ export function drawLinerCaption(g, w, h, tl, t, { fade = 0.4, font = 'Inter, sy
 
 /**
  * Draw the intertitle for song time `t` into a 2D canvas of w × h (a frame of
- * the exported video): the same layout, fonts and fades as on the page.
- * Call loadIntertitleFonts(style) first.
+ * the exported video): the same layout, fonts, colours and fades as on the
+ * page. `position` is one of INTERTITLE_POSITIONS but 'auto' (decide it per
+ * intertitle and pass it in). Call loadIntertitleFonts(style) first.
  */
-export function drawIntertitle(g, w, h, tl, t, { style = 'serif', align = 'left', bottom = 0.21 } = {}) {
+export function drawIntertitle(g, w, h, tl, t, { style = 'serif', theme = 'mono', position = 'bottom-left', kickers = true } = {}) {
 	const x = intertitleAt(tl, t)
 	if (!x) return
 	const a = itAlpha(x, t)
 	if (a <= 0) return
-	const st = INTERTITLE_STYLES[style] || INTERTITLE_STYLES.serif, k = h / 1080
-	const lineSize = st.size * k, kickSize = st.size * 0.42 * k
-	const track = (f, extra = 0) => { if ('letterSpacing' in g) g.letterSpacing = `${((f[3] + extra) * (f === st.kicker ? kickSize : lineSize)).toFixed(2)}px` }
+	const st = INTERTITLE_STYLES[style] || INTERTITLE_STYLES.serif, th = INTERTITLE_THEMES[theme] || INTERTITLE_THEMES.mono, k = h / 1080
+	const pc = posClass(typeof position === 'function' ? position(x) : position)
+	const side = pc[1] === 'l' ? 'left' : pc[1] === 'r' ? 'right' : 'center', top = pc[0] === 't'
+	const lineSize = st.size * k * (x.title ? 1.3 : 1), kickSize = st.size * 0.42 * k, subSize = st.size * 0.52 * k
+	const track = (f, size, extra = 0) => { if ('letterSpacing' in g) g.letterSpacing = `${((f[3] + extra) * size).toFixed(2)}px` }
+	const maxW = Math.min(side === 'center' ? w * 0.8 : Math.min(w * 0.46, 820 * k), lineSize * 24)
 	g.save()
-	g.font = cssFont(st.line, lineSize); track(st.line)
-	const left = align !== 'center'
-	const text = plainText(x.text), lines = wrap(g, st.upper ? text.toUpperCase() : text, Math.min(left ? Math.min(w * 0.46, 820 * k) : w * 0.8, lineSize * 24))
-	const lh = lineSize * 1.28, kickH = x.kicker ? kickSize + kickSize * 0.9 * 2 + 1 : 0
-	const blockH = kickH + lines.length * lh
-	const y0 = h * (1 - bottom) - blockH
-	g.font = cssFont(st.line, lineSize); track(st.line)
-	const textW = Math.max(...lines.map(l => g.measureText(l).width))
-	const x0 = left ? w * 0.06 : (w - textW) / 2, cx = left ? x0 : w / 2
-	// the scrim: a soft dark pool behind the words (as the page's ::before)
+	g.font = cssFont(st.line, lineSize); track(st.line, lineSize)
+	const text = plainText(x.text), lines = balanced(g, st.upper ? text.toUpperCase() : text, maxW)
+	const lineW = Math.max(...lines.map(l => g.measureText(l).width))
+	let subLines = [], subW = 0
+	if (x.sub) { g.font = cssFont(st.sub, subSize); track(st.sub, subSize); subLines = balanced(g, plainText(x.sub), maxW); subW = Math.max(...subLines.map(l => g.measureText(l).width)) }
+	const kick = x.kicker && (kickers || x.title)
+	const lh = lineSize * 1.28, kickH = kick ? kickSize + kickSize * 0.9 * 2 + 1 : 0, subH = subLines.length ? subSize * 0.55 + subLines.length * subSize * 1.3 : 0
+	const blockH = kickH + lines.length * lh + subH
+	const textW = Math.max(lineW, subW)
+	const y0 = top ? h * 0.15 : h * (1 - 0.21) - blockH
+	const ax = side === 'left' ? w * 0.06 : side === 'right' ? w * 0.94 : w / 2
+	// the pool behind the words (as the page's ::before), out to the edge on a side
 	g.globalAlpha = a
 	g.save()
 	const pad = lineSize * 0.8, blur = 28 * k
 	if ('filter' in g) g.filter = `blur(${blur}px)`
-	g.fillStyle = 'rgba(0,0,0,0.5)'
-	const bx = left ? -blur * 2 : x0 - pad * 1.5, bw = left ? x0 + textW + pad * 1.5 + blur * 2 : textW + pad * 3
+	g.fillStyle = th.scrim
+	const bx = side === 'left' ? -blur * 2 : side === 'right' ? ax - textW - pad * 1.5 : ax - textW / 2 - pad * 1.5
+	const bw = side === 'left' ? ax + textW + pad * 1.5 + blur * 2 : side === 'right' ? w - bx + blur * 2 : textW + pad * 3
 	g.beginPath(); g.roundRect ? g.roundRect(bx, y0 - pad, bw, blockH + pad * 2, pad * 1.5) : g.rect(bx, y0 - pad, bw, blockH + pad * 2); g.fill()
 	g.restore()
 	if (a < 0.995 && 'filter' in g) g.filter = `blur(${((1 - a) * 5 * k).toFixed(2)}px)`
-	g.textAlign = left ? 'left' : 'center'; g.textBaseline = 'top'
-	g.shadowColor = 'rgba(0,0,0,0.65)'; g.shadowBlur = 24 * k
+	g.textAlign = side; g.textBaseline = 'top'
+	g.shadowColor = th.glow; g.shadowBlur = 24 * k
 	let y = y0
-	if (x.kicker) {
-		g.font = cssFont(st.kicker, kickSize); track(st.kicker, (1 - a) * 0.12)
-		g.fillStyle = '#ecd2a4'
-		g.fillText(plainText(x.kicker).toUpperCase(), cx, y)
+	if (kick) {
+		g.font = cssFont(st.kicker, kickSize); track(st.kicker, kickSize, (1 - a) * 0.12)
+		g.fillStyle = th.k
+		// (letter-spacing pads the right of every letter: pull right-aligned capitals back by one)
+		g.fillText(plainText(x.kicker).toUpperCase(), side === 'right' ? ax + (st.kicker[3] + (1 - a) * 0.12) * kickSize : ax, y)
 		y += kickSize + kickSize * 0.9
-		g.fillStyle = 'rgba(230,196,142,0.55)'; g.shadowBlur = 0
-		g.fillRect(left ? x0 : cx - 20 * k, y, 40 * k, Math.max(1, k))
+		g.fillStyle = th.r; g.shadowBlur = 0
+		g.fillRect(side === 'left' ? ax : side === 'right' ? ax - 40 * k : ax - 20 * k, y, 40 * k, Math.max(1, k))
 		y += kickSize * 0.9 + 1
 		g.shadowBlur = 24 * k
 	}
-	g.font = cssFont(st.line, lineSize); track(st.line)
-	g.fillStyle = '#f4eee4'
-	lines.forEach((l, i) => g.fillText(l, cx, y + i * lh))
+	g.font = cssFont(st.line, lineSize); track(st.line, lineSize)
+	g.fillStyle = th.l
+	lines.forEach((l, i) => g.fillText(l, ax, y + i * lh))
+	y += lines.length * lh
+	if (subLines.length) {
+		y += subSize * 0.55
+		g.font = cssFont(st.sub, subSize); track(st.sub, subSize)
+		g.fillStyle = th.s
+		subLines.forEach((l, i) => g.fillText(l, ax, y + i * subSize * 1.3))
+	}
 	g.restore()
 }

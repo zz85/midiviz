@@ -299,7 +299,9 @@
     <div class="sect">Liner notes<small>background and analysis for pieces that have notes (ⓘ in Songs)</small></div>
     <div class="field" title="Intertitles: the few short lines the notes mark for the screen, faded in and out with room to read. Every note: each note as a caption as it comes. Click one, or press I, for the full notes"><label>On screen while it plays (I: the notes)</label><select id="linerMode"><option value="intertitles" selected>Intertitles</option><option value="notes">Every note (captions)</option><option value="off">Nothing</option></select></div>
     <div class="field"><label>Intertitle style</label><select id="itStyle"></select></div>
-    <div class="field"><label>Intertitle position</label><select id="itAlign"><option value="left" selected>Lower third, from the left</option><option value="center">Lower centre</option></select></div>
+    <div class="field"><label>Intertitle colours</label><select id="itTheme"></select></div>
+    <div class="field" title="Automatic: each intertitle goes to the side of the frame away from the pianist (her head and hands as the camera sees them), and to the top when the shot looks down on the keys"><label>Intertitle position</label><select id="itPos"></select></div>
+    <label class="chk" title="The small capitals over each line (a place and year, a bar, a term)"><input type="checkbox" id="itHeads" checked>Headings over the lines</label>
     <div class="sect">Stage</div>
     <div class="field"><label>Main light</label><input type="range" id="light" min="0" max="2" step="0.01" value="1"></div>
     <div class="field"><label>Exposure</label><input type="range" id="exposure" min="0.3" max="2.5" step="0.01" value="1"></div>
@@ -362,7 +364,7 @@
     <div class="field"><label>Frame rate</label><select id="exFps"><option>5</option><option>15</option><option>25</option><option>30</option><option selected>60</option></select></div>
     <div class="field"><label>Camera</label><select id="exCam"><option value="auto" selected>Director (auto)</option><option value="current">As on screen</option></select></div>
     <label class="chk"><input type="checkbox" id="exAudio" checked>Include audio (with the hall)</label>
-    <label class="chk"><input type="checkbox" id="exTitle" checked>Title card (fades out as the music starts)</label>
+    <div class="field" title="Title card: the classic card, before the music. First intertitle: the title fades in over the opening bars like the other intertitles (composer, title and the notes' subtitle, in the intertitle style), and also when the song plays here"><label>Song title</label><select id="exTitle"><option value="intertitle" selected>As the first intertitle</option><option value="card">Title card (fades out as the music starts)</option><option value="none">None</option></select></div>
     <label class="chk" title="Draw the liner notes into the picture as they show on screen (Visuals → Liner notes: intertitles, or every note as a caption)"><input type="checkbox" id="exCaps" checked>Liner notes in the picture (as on screen)</label>
     <label class="chk" title="Save the same lines as WebVTT subtitles (upload to YouTube as a subtitle track) and the sections as YouTube chapters for the description, timed to this video"><input type="checkbox" id="exVtt" checked>Save subtitles (.vtt) and YouTube chapters</label>
     <div class="field"><label>Title font</label><select id="exFont">
@@ -427,8 +429,8 @@
     import { createSmoother } from './pianist/subdivide.js'
     import { createDirector, SPOTS, MOVES, FRAME_LABELS, SIZES, spotKind } from './pianist/director.js'
     import { hideBody } from './pianist/shell.js'
-    import { createLinerLibrary, clockOfMidi, buildTimeline, toVTT, toChapters } from './liner/liner.js'
-    import { createLinerOverlay, drawLinerCaption, drawIntertitle, loadIntertitleFonts, INTERTITLE_STYLES } from './liner/overlay.js'
+    import { createLinerLibrary, clockOfMidi, buildTimeline, toVTT, toChapters, titleScreen, withTitle } from './liner/liner.js'
+    import { createLinerOverlay, drawLinerCaption, drawIntertitle, loadIntertitleFonts, INTERTITLE_STYLES, INTERTITLE_THEMES, INTERTITLE_POSITIONS } from './liner/overlay.js'
 
     const $ = id => document.getElementById(id)
     const params = new URLSearchParams(location.search)
@@ -1305,19 +1307,39 @@
     // ── Liner notes (liner/): captions, the notes panel, sections on the seek bar
     const saveText = (name, text) => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 60000) }
     const linerLib = createLinerLibrary()
-    const liner = createLinerOverlay({ seek: $('seek'), title: $('songTitle'), onSeek: t => seekTo(t), download: saveText })
+    // where the pianist is in the frame (her head and hands, in -1..1), for intertitles placed automatically
+    const subjectNdc = { x: 0, y: 0 }
+    const autoPosition = () => (subjectNdc.y < -0.25 ? 'top-' : 'bottom-') + (subjectNdc.x < -0.12 ? 'right' : 'left')
+    const liner = createLinerOverlay({ seek: $('seek'), title: $('songTitle'), onSeek: t => seekTo(t), download: saveText, autoPosition })
     liner.attachMenu($('songList'), linerLib)
     window.__liner = { liner, lib: linerLib }
     for (const [k, st] of Object.entries(INTERTITLE_STYLES)) $('itStyle').append(new Option(st.label, k, k === 'serif', k === 'serif'))
-    $('linerMode').onchange = () => { liner.mode = $('linerMode').value; $('itStyle').disabled = $('itAlign').disabled = liner.mode !== 'intertitles' }
-    $('itAlign').onchange = () => { liner.align = $('itAlign').value }
-    $('itStyle').onchange = () => { liner.style = $('itStyle').value }
+    for (const [k, th] of Object.entries(INTERTITLE_THEMES)) $('itTheme').append(new Option(th.label, k, k === 'mono', k === 'mono'))
+    for (const [k, label] of Object.entries(INTERTITLE_POSITIONS)) $('itPos').append(new Option(label, k, k === 'auto', k === 'auto'))
+    $('linerMode').onchange = () => { liner.mode = $('linerMode').value; for (const id of ['itStyle', 'itTheme', 'itPos', 'itHeads']) $(id).disabled = liner.mode !== 'intertitles' }
+    $('itPos').onchange = () => { liner.position = $('itPos').value }
+    $('itStyle').onchange = () => { liner.style = $('itStyle').value; drawPreview() }
+    $('itTheme').onchange = () => { liner.theme = $('itTheme').value; drawPreview() }
+    $('itHeads').onchange = () => { liner.kickers = $('itHeads').checked }
+    // the song title as the first intertitle: the notes' own (screen: in the
+    // front matter, or composer | title), else "Composer - Title" from the
+    // song list split at the dash, with the export subtitle as its small line
+    function songTitleScreen(l = liner.liner) {
+      const label = $('songTitle').textContent || song?.title || ''
+      const m = /^(.+?)\s+[-–]\s+(.+)$/.exec(label)
+      return titleScreen(l, m ? { kicker: m[1], text: m[2], sub: $('exSub').value.trim() } : label ? { kicker: '', text: label, sub: $('exSub').value.trim() } : null)
+    }
+    const applyTitle = () => liner.setTitle($('exTitle').value === 'intertitle' ? songTitleScreen() : null)
+    $('exTitle').addEventListener('change', applyTitle)
+    $('exSub').addEventListener('input', applyTitle)
     let linerSeq = 0
     async function attachLiner(midi, file, duration) {
       const seq = ++linerSeq
       liner.set(null)
       const l = await linerLib.forFile(file)
-      if (seq === linerSeq && l) liner.set(l, buildTimeline(l, clockOfMidi(midi), duration), duration)
+      if (seq !== linerSeq) return
+      if (l) liner.set(l, buildTimeline(l, clockOfMidi(midi), duration), duration)
+      applyTitle()
     }
     $('songFilter').oninput = () => {
       const q = $('songFilter').value.trim().toLowerCase()
@@ -1571,7 +1593,7 @@
       ['dofamt', 'dofAmt'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
       ['vol', 'vol'], ['room', 'room'], ['seat', 'seat'], ['rv', 'rvAmt'], ['decay', 'rvDecay'], ['tone', 'rvTone'], ['boost', 'boost'], ['amb', 'amb'], ['applause', 'applause'],
       ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exsub', 'exSub'], ['excard', 'exCard'], ['excaps', 'exCaps'], ['exvtt', 'exVtt'],
-      ['notes', 'linerMode'], ['itstyle', 'itStyle'], ['italign', 'itAlign'],
+      ['notes', 'linerMode'], ['itstyle', 'itStyle'], ['itcol', 'itTheme'], ['itpos', 'itPos'], ['itheads', 'itHeads'], ['extitle', 'exTitle'],
     ].filter(([, id]) => $(id))
     const OUTFIT_KEYS = { dress: 'dress', slit: 'slit', fabric: 'fabric', dcol: 'color', shoes: 'shoes', hair: 'hair', hcol: 'hairColor' }
     // (colours without their #, so links stay readable)
@@ -1653,7 +1675,7 @@
     // ── Frame ────────────────────────────────────────────────────────────
     const clock = new THREE.Clock()
     let fixedT = null   // ?t= for headless stills: song time to pose at
-    const head = new THREE.Vector3(), handsC = new THREE.Vector3()
+    const head = new THREE.Vector3(), handsC = new THREE.Vector3(), _ndc = new THREE.Vector3()
     let fxT = 0, exporting = false, exTitleCard = false
     function frame() {
       const dt = Math.min(clock.getDelta(), 1 / 20)
@@ -1715,6 +1737,8 @@
         camera.position.copy(driven.pos); controls.target.copy(driven.target); camera.lookAt(driven.target)
         if (Math.abs(camera.fov - driven.fov) > 1e-3) { camera.fov = driven.fov; camera.updateProjectionMatrix() }
       } else controls.update()
+      // (where she is in the frame: for intertitles placed automatically)
+      { const a = _ndc.copy(head).project(camera), ax = a.x, ay = a.y, b = _ndc.copy(handsC).project(camera); subjectNdc.x = (ax + b.x) / 2; subjectNdc.y = Math.max(ay, b.y) }
       // focus: the face in close shots, the hands looking down at the keys
       const fd = camera.position.distanceTo(focusOn)
       bokeh.uniforms.focus.value += (fd - bokeh.uniforms.focus.value) * (snapFocus ? 1 : 0.1)
@@ -1751,7 +1775,7 @@
       renderer, opts: { transition: null, view: null }, tour: null,
       setTour() {}, setView() {},
       beginOffline(w, h) {
-        exTitleCard = $('exTitle').checked   // (the card reveals the scene: no fade from black too)
+        exTitleCard = $('exTitle').value === 'card'   // (the card reveals the scene: no fade from black too)
         prevPR = renderer.getPixelRatio(); prevView = view
         renderer.setAnimationLoop(null)
         renderer.setPixelRatio(1)
@@ -1803,8 +1827,15 @@
       g.clearRect(0, 0, w, h)
       const src = renderer.domElement, r = Math.max(w / src.width, h / src.height), sw = w / r, sh = h / r
       g.drawImage(src, (src.width - sw) / 2, (src.height - sh) / 2, sw, sh, 0, 0, w, h)
-      cv.style.opacity = $('exTitle').checked ? 1 : 0.35
-      if (!$('exTitle').checked) return
+      cv.style.opacity = $('exTitle').value !== 'none' ? 1 : 0.35
+      if ($('exTitle').value === 'intertitle') {
+        const x = songTitleScreen() || { kicker: 'Frédéric Chopin', text: 'Raindrop Prelude', sub: $('exSub').value.trim() }
+        await loadIntertitleFonts(liner.style)
+        if (job !== previewJob) return
+        drawIntertitle(g, w, h, withTitle(null, x), 3, { style: liner.style, theme: liner.theme, position: liner.position === 'auto' ? autoPosition() : liner.position, kickers: liner.kickers })
+        return
+      }
+      if ($('exTitle').value !== 'card') return
       const { drawTitleCard } = await import('./notation3d/video-export.js')
       drawTitleCard(g, w, h, 0.98 / 4.5, 4.5, { title: song?.title || $('songTitle').textContent || 'Chopin - Raindrop Prelude', subtitle: $('exSub').value.trim(), style: '2d', fadeOut: 3.5, ...titleCardOpts() })
     }
@@ -1825,10 +1856,16 @@
         } catch (e) { if (e.name === 'AbortError') return; console.warn(e) }
       }
       if (scheduler?.playing) { scheduler.pause(); songTarget.allSoundOff(); setPlaying(false) }
-      if ($('exTitle').checked) await loadTitleFont($('exFont').value)
-      const linerTl = liner.timeline, linerMode = liner.mode, itStyle = liner.style, itAlign = liner.align
+      const titleMode = $('exTitle').value
+      if (titleMode === 'card') await loadTitleFont($('exFont').value)
+      // what is on screen: the intertitles (with the title, when it is one) or every note as a caption
+      const linerMode = liner.mode, itOpts = { style: liner.style, theme: liner.theme, kickers: liner.kickers }
+      const linerTl = linerMode === 'notes' ? liner.timeline : liner.screenTimeline
       const burnCaps = $('exCaps').checked && linerTl && linerMode !== 'off'
-      if (burnCaps) await (linerMode === 'notes' ? loadTitleFont('inter') : loadIntertitleFonts(itStyle))
+      if (burnCaps) await (linerMode === 'notes' ? loadTitleFont('inter') : loadIntertitleFonts(itOpts.style))
+      // automatic positions: decided for each intertitle on its first frame, as on the page
+      const itPlaced = new WeakMap()
+      const itPos = x => { if (liner.position !== 'auto') return liner.position; if (!itPlaced.has(x)) itPlaced.set(x, autoPosition()); return itPlaced.get(x) }
       let songZero = 0
       exAbort = new AbortController()
       exporting = true
@@ -1846,10 +1883,10 @@
           tour: null,
           // the card holds ~1 s, then the music starts and the card fades over
           // 3.5 s while the scene focuses in underneath it
-          intro: $('exTitle').checked ? { seconds: 4.5, overlap: 3.5, fadeOut: 3.5, title: song.title, subtitle: $('exSub').value.trim(), style: '2d', ...titleCardOpts() } : null,
+          intro: titleMode === 'card' ? { seconds: 4.5, overlap: 3.5, fadeOut: 3.5, title: song.title, subtitle: $('exSub').value.trim(), style: '2d', ...titleCardOpts() } : null,
           outro: null,
           overlay: !burnCaps ? null : linerMode === 'notes' ? (g, w, h, t) => drawLinerCaption(g, w, h, linerTl, t, { font: TITLE_FONTS.inter?.font || 'Inter, system-ui, sans-serif' })
-            : (g, w, h, t) => drawIntertitle(g, w, h, linerTl, t, { style: itStyle, align: itAlign }),
+            : (g, w, h, t) => drawIntertitle(g, w, h, linerTl, t, { ...itOpts, position: itPos }),
           onTimeline: x => { songZero = x.songZero },
           fileStream, signal: exAbort.signal,
           onProgress: p => {
@@ -1866,7 +1903,7 @@
         // the liner notes as YouTube subtitles and chapters, timed to this video
         if ($('exVtt').checked && linerTl) {
           saveText(name.replace(/\.mp4$/, '.vtt'), toVTT(linerTl, { offset: songZero, from: linerMode === 'notes' ? 'moments' : 'intertitles' }))
-          const ch = toChapters(linerTl, { offset: songZero })
+          const ch = liner.timeline && toChapters(liner.timeline, { offset: songZero })
           if (ch) saveText(name.replace(/\.mp4$/, '-chapters.txt'), ch + '\n')
         }
         $('exStatus').textContent = 'Done: ' + name

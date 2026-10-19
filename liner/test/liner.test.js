@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { parseLiner, parseCard, parseAnchor, barClock, clockOfMidi, buildTimeline, toVTT, toChapters, renderInline, plainText, momentAt, sectionAt, intertitleAt, createLinerLibrary, INTERTITLE } from '../liner.js'
+import { parseLiner, parseCard, parseAnchor, barClock, clockOfMidi, buildTimeline, toVTT, toChapters, renderInline, plainText, momentAt, sectionAt, intertitleAt, createLinerLibrary, INTERTITLE, parsePlay, scoreClock, withTitle, titleScreen, parseScreen } from '../liner.js'
 
 const root = new URL('../../', import.meta.url)
 const { Midi } = createRequire(import.meta.url)('../../tonejs-midi.js')
@@ -89,6 +89,41 @@ No kicker here.
 	assert.match(toVTT(tl, { from: 'intertitles' }), /00:00:04\.000 --> 00:00:\d\d\.\d{3}\nPARIS, 1853\nA short line\./)
 })
 
+test('play: repeats and spread bars map score bars to file bars', () => {
+	assert.deepEqual(parsePlay('1-4, 1-4, 5-6, 7*2, 8'), [{ from: 1, to: 4, span: 1 }, { from: 1, to: 4, span: 1 }, { from: 5, to: 6, span: 1 }, { from: 7, to: 7, span: 2 }, { from: 8, to: 8, span: 1 }])
+	assert.throws(() => parsePlay('1-4, x'))
+	// file bars of 2 s
+	const c = scoreClock({ bars: 13, seconds: a => (a.bar - 1) * 2 + (a.beat - 1) * 0.5 }, parsePlay('1-4, 1-4, 5-6, 7*2, 8'))
+	assert.equal(c.bars, 8); assert.equal(c.fileBars, 13)
+	assert.equal(c.seconds({ bar: 3, beat: 1 }), 4)
+	assert.equal(c.seconds({ bar: 3, beat: 1, pass: 2 }), 12)
+	assert.equal(c.seconds({ bar: 5, beat: 2 }), 16.5)
+	assert.equal(c.seconds({ bar: 7, beat: 6 }), 22.5)    // beat 6 of a bar spread over two: file bar 12, beat 2
+	assert.equal(c.seconds({ bar: 8, beat: 1 }), 24)
+	assert.ok(Number.isNaN(c.seconds({ bar: 5, beat: 1, pass: 2 })))
+	assert.deepEqual(parseAnchor("m3''"), { bar: 3, beat: 1, pass: 3 })
+	const l = parseLiner("---\nplay: 1-4, 1-4, 5-6, 7*2, 8\nbars: 8\n---\n# Moments\n## m3' · trivia\nAgain.\n## m5' · trivia\nNever.")
+	const tl = buildTimeline(l, { bars: 13, seconds: a => (a.bar - 1) * 2 + (a.beat - 1) * 0.5 }, 30)
+	assert.equal(tl.moments.length, 1)
+	assert.equal(tl.moments[0].start, 12)
+	assert.match(tl.warnings.join(), /m5' is not played/)
+})
+
+test('the title as the first intertitle', () => {
+	assert.deepEqual(parseScreen('A | B | C'), { kicker: 'A', text: 'B', sub: 'C' })
+	assert.deepEqual(titleScreen({ meta: { composer: 'X', title: 'Y' } }), { kicker: 'X', text: 'Y' })
+	assert.deepEqual(titleScreen(null, { text: 'Z' }), { text: 'Z' })
+	const tl = { sections: [], moments: [], warnings: [], intertitles: [{ start: 3, end: 9, text: 'a' }, { start: 30, end: 36, text: 'b' }] }
+	const t = withTitle(tl, { kicker: 'K', text: 'Title' })
+	assert.equal(t.intertitles.length, 3)
+	assert.ok(t.intertitles[0].title && t.intertitles[0].start === 0 && t.intertitles[0].end >= 7)
+	assert.equal(t.intertitles[1].start, t.intertitles[0].end + INTERTITLE.gap)    // pushed back to leave the gap
+	assert.equal(t.intertitles[1].end - t.intertitles[1].start, 6)
+	assert.equal(t.intertitles[2].start, 30)
+	assert.equal(tl.intertitles[0].start, 3)    // (a copy)
+	assert.equal(withTitle(null, { text: 'T' }).intertitles.length, 1)
+})
+
 test('inline markdown', () => {
 	assert.equal(renderInline('a **b** *c* `d` [e](https://x.org) [[pedal-point]] <x>', (id, t) => `<u data-c="${id}">${t}</u>`),
 		'a <b>b</b> <i>c</i> <code>d</code> <a href="https://x.org" target="_blank" rel="noopener">e</a> <u data-c="pedal-point">pedal point</u> &lt;x&gt;')
@@ -142,6 +177,40 @@ test('Bach prelude: notes fit Prelude1.mid', () => {
 	assert.equal(intertitleAt(tl, 72).kicker, 'Bar 22')
 	assert.equal(tl.moments[intertitleAt(tl, 72).moment].at.bar, 22)
 	assert.ok(duration > 110 && duration < 125)
+})
+
+test('Moonlight Sonata finale: notes fit mond_3.mid (repeat and cadenza mapped)', () => {
+	const midi = new Midi(readFileSync(new URL('midis/mond_3.mid', root)))
+	const liner = parseLiner(read('liner/pieces/beethoven-op27-2-iii.md'))
+	const duration = Math.max(...midi.tracks.flatMap(t => t.notes.map(n => n.time + n.duration)))
+	const clock = clockOfMidi(midi), tl = buildTimeline(liner, clock, duration)
+	assert.deepEqual(tl.warnings, [])
+	assert.equal(clock.bars, 267)
+	const fileBar = b => midi.header.ticksToSeconds((b - 1) * 1920)    // (4/4 up to file bar 253)
+	const sec = title => tl.sections.find(s => s.title.startsWith(title)).start
+	assert.ok(Math.abs(sec('Exposition again') - fileBar(65)) < 1e-6)
+	assert.ok(Math.abs(sec('Development') - fileBar(129)) < 1e-6)
+	assert.ok(Math.abs(sec('Recapitulation') - fileBar(166)) < 1e-6)
+	assert.ok(Math.abs(sec('Coda') - fileBar(221)) < 1e-6)
+	// the Adagio octaves (score bar 188) are the file's bar 255, after the 2/4 bar 254
+	const adagio = tl.moments.find(m => m.at.bar === 188).start
+	const g1 = midi.tracks.flatMap(t => t.notes).findLast(n => n.midi === 31 && n.duration > 2)    // the held low G
+	assert.ok(Math.abs(adagio - g1.time) < 0.05, `${adagio} vs ${g1.time}`)
+	const t = withTitle(tl, titleScreen(liner))
+	assert.equal(t.intertitles[0].text, 'Moonlight Sonata')
+	assert.ok(t.intertitles.every(x => !x.moved))
+})
+
+test('every piece: captions fit a subtitle, intertitles are short and spaced', () => {
+	for (const f of readdirSync(new URL('liner/pieces/', root))) {
+		const l = parseLiner(read('liner/pieces/' + f))
+		assert.deepEqual(l.warnings, [], f)
+		for (const m of l.moments) assert.ok(plainText(m.caption).length <= 110, `${f}: caption is long for a subtitle: ${m.caption}`)
+		for (const x of l.intertitles) {
+			assert.ok(plainText(x.text).split(/\s+/).length <= INTERTITLE.maxWords && x.kicker.length <= 24, `${f}: ${x.text}`)
+			assert.ok(!/[♯♭]/.test(x.text + x.kicker), `${f}: the intertitle fonts have no ♯ / ♭: ${x.text}`)
+		}
+	}
 })
 
 test('every [[card]] and front-matter card exists and parses', () => {

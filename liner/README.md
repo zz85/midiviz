@@ -13,7 +13,10 @@ them in two layers:
 
 Plus sections on the seek bar and a card when you hover a song in the menu.
 Visuals → Liner notes picks what shows on screen (intertitles, every note as a
-caption, or nothing), the intertitle style and its position. The video export
+caption, or nothing), the intertitle style, colours (black and white by
+default), position (automatic, or a corner) and whether the small headings
+show. Render → Song title makes the title the first intertitle (the default,
+also when a song plays on the page), the classic title card, or nothing. The video export
 draws the same into the picture and saves it as YouTube subtitles (`.vtt`),
 with the sections as chapters.
 
@@ -39,8 +42,11 @@ year: 1722
 collection: The Well-Tempered Clavier, Book I, No. 1
 key: C major
 meter: 4/4
-bars: 35                 # the file must have this many bars (else a warning)
+bars: 35                 # the score's bar count (the file must match, else a warning)
 pickup: 1                # (optional) beats before bar 1
+play: 1-64, 1-64, 65-200 # (optional) the score bars the file plays, in order (below)
+screen: Johann Sebastian Bach | Prelude in C | The Well-Tempered Clavier, Book I
+                         # (optional) the title as an intertitle: kicker | title | small line
 cards: [bach, pedal-point]
 ---
 
@@ -77,7 +83,8 @@ Bach begins a book of preludes in every key. This is the first.
 - **Front matter**: `key: value` lines, `[a, b]` lists, `#` comments. All
   fields are optional; `bars` and `pickup` are used, the rest are shown.
 - **Anchors**: `m22` (bar 22), `m22.3` (beat 3), `m22.2.5` (halfway through
-  beat 2), or a time `@83.4` / `@1:23.4` for files with no bar grid. Bars are
+  beat 2), `m22'` (bar 22 the second time through a repeat, `m22''` the
+  third), or a time `@83.4` / `@1:23.4` for files with no bar grid. Bars are
   placed with the MIDI file's own time signatures and tempo map, so the
   notes follow any tempo, speed or rubato in the file. Number bars as the
   edition named in the front matter does.
@@ -94,7 +101,8 @@ The on-screen lines, written separately from the notes because they are a
 different voice: short, and few. Two ways to write one:
 
 - `screen: Kicker | Line` inside a moment marks that note for the screen
-  (clicking the intertitle opens that note). `screen: Line` has no kicker.
+  (clicking the intertitle opens that note). `screen: Line` has no kicker,
+  and `screen: Kicker | Line | Small line` adds a smaller line under it.
 - `# Intertitles` holds lines that belong to no note: `## m2 Köthen, 1722`
   (anchor, then the kicker) with the line below.
 
@@ -108,10 +116,44 @@ Guidelines, checked by the tests and warned about in the console:
   half the piece. The Bach prelude has 6 in 2 minutes.
 - Avoid ♯ and ♭ (the intertitle fonts are Latin only): write *F sharp*.
 
-Styles (`liner/overlay.js` INTERTITLE_STYLES): Serif (Cormorant Garamond, the
-kicker in spaced Cinzel capitals), Serif italic, Capitals (Cinzel) and Modern
-sans (Montserrat, spaced). Position: the lower third from the left (default:
-it keeps clear of the pianist in the middle of the frame) or the lower centre.
+The song title can be the first intertitle (Render → Song title): the
+front matter's `screen:` (kicker | title | small line), else composer over
+title; for a song without notes, its name from the song list split at the
+dash ("Chopin - Raindrop Prelude"), with the export subtitle as the small
+line. It shows from the first note for 7–11 s, a little larger than the
+others, and pushes any intertitle it would crowd later (keeping the 3 s
+gap). Headings off hides the kickers but not the title's.
+
+Look (`liner/overlay.js`):
+
+- Styles (INTERTITLE_STYLES): Serif (Cormorant Garamond, the kicker in
+  spaced Cinzel capitals), Serif italic, Capitals (Cinzel), Modern sans
+  (Montserrat, spaced).
+- Colours (INTERTITLE_THEMES): black and white with grey headings (default),
+  all white, black on light (for bright scenes), warm gold.
+- Position (INTERTITLE_POSITIONS): automatic, or bottom left / right /
+  centre, top left / right. Automatic puts each intertitle on the side of
+  the frame away from the pianist (the middle of her head and hands as the
+  camera sees them; the left when she is in the middle) and at the top when
+  the shot looks down on the keys. It is decided once as each intertitle
+  appears, on the page and in the export alike.
+
+## Repeats and other mismatches: `play:`
+
+Anchors name the score's bars. When the file plays something other than
+bars 1, 2, 3… in order, `play:` lists the score bars it plays:
+
+```
+play: 1-64, 1-64, 65-186, 187*4, 188-200
+```
+
+is the Moonlight Sonata finale in `midis/mond_3.mid`: the exposition repeat
+written out (so `m21` is the second theme the first time, `m21'` the second
+time), and one score bar, the cadenza in bar 187, spread over four of the
+file's bars (`187*4`; beats in it count on through those bars: `m187.5` is
+the first beat of the second). The test warns when `play:` does not cover the
+whole file, and anything anchored to a bar the file never plays is left out
+with a warning.
 
 ## A card: `cards/<id>.md`
 

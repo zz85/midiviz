@@ -10,8 +10,10 @@ Midi Visualization Experiments
 - X-Ray-style notes on a piece, written in Markdown and tied to bars (`m22`, `m22.3`), placed with the MIDI file's own time signatures and tempo map: captions while it plays (history, analysis, trivia, things to listen for), a notes panel (I: now / about / all notes / people and terms), sections on the seek bar, and a card when hovering a song
 - First piece: Bach's Prelude in C, BWV 846 (`Prelude1.mid`), 6 sections, 18 notes with sources, 5 cards (Bach, the Well-Tempered Clavier, pedal point, diminished seventh, the Bach–Gounod Ave Maria)
 - Intertitles: a few short lines marked for the screen (`screen: Paris, 1853 | Gounod will sing…` on a note, or a `# Intertitles` part), in cinematic type (Cormorant Garamond / Cinzel / Montserrat, letter-spaced kickers), faded in and out by the song clock with room to read; everything else stays in the panel. Or every note as a caption, or nothing
+- Intertitle look: black and white by default (all white, black on light, warm gold), placed automatically away from the pianist or in a chosen corner, headings optional; the song title as the first intertitle (or the classic title card, or none)
+- Second piece: Beethoven's Moonlight Sonata, III. Presto agitato (`midis/mond_3.mid`), 8 sections, 24 notes, 7 intertitles, 6 new cards; `play:` maps score bars to a file that writes out the exposition repeat (`m21'` is the second time) and spreads the cadenza over four bars
 - Video export: the same burned into the picture, or saved next to the MP4 as YouTube subtitles (.vtt) and chapters, timed to the video
-- Tests: `node --test liner/test/liner.test.js` (9)
+- Tests: `node --test liner/test/liner.test.js` (13)
 
 Pedal and transport fixes
 - OxiSynth itself sustains correctly (CC64 ≥ 64, per channel); the players lost pedal changes. Late CCs are now always sent (a skipped one left the pedal stuck), a seek restores each channel's pedals, modulation and expression as the song has them there, and unloading a song lifts its pedals. In `playback_controls.js` / `midi_clock_worklet.js` (#014–#024) and soundfont-engine's `MidiScheduler` (#025–#038)

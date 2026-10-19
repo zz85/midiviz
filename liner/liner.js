@@ -34,20 +34,25 @@ function splitFrontMatter(text) {
 const paragraphs = s => s.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean)
 
 // An anchor is a place in the music: `m22` (bar 22), `m22.3` (beat 3 of
-// it, decimals allowed: `m22.2.5`), or a time `@83.4` / `@1:23.4` for files
-// without a usable bar grid.
-const ANCHOR = String.raw`(?:m\d+(?:\.\d+(?:\.\d+)?)?|@(?:\d+:)?\d+(?:\.\d+)?)`
+// it, decimals allowed: `m22.2.5`), `m22'` (bar 22 the second time through,
+// when the file plays a repeat: see `play:`), or a time `@83.4` / `@1:23.4`
+// for files without a usable bar grid.
+const ANCHOR = String.raw`(?:m\d+(?:\.\d+(?:\.\d+)?)?'*|@(?:\d+:)?\d+(?:\.\d+)?)`
 export function parseAnchor(s) {
-	let m = /^m(\d+)(?:\.(\d+(?:\.\d+)?))?$/.exec(s)
-	if (m) return { bar: +m[1], beat: m[2] ? +m[2] : 1 }
+	let m = /^m(\d+)(?:\.(\d+(?:\.\d+)?))?('*)$/.exec(s)
+	if (m) return m[3] ? { bar: +m[1], beat: m[2] ? +m[2] : 1, pass: m[3].length + 1 } : { bar: +m[1], beat: m[2] ? +m[2] : 1 }
 	m = /^@(?:(\d+):)?(\d+(?:\.\d+)?)$/.exec(s)
 	if (m) return { seconds: (m[1] ? +m[1] * 60 : 0) + +m[2] }
 	return null
 }
 const HEAD = new RegExp(String.raw`^(${ANCHOR})(?:\s*[-–]\s*(${ANCHOR}))?\s*(?:[·:|-]\s*)?(.*)$`)
 
-// `screen: Kicker | Line` (or `screen: Line`): an intertitle
-const parseScreen = s => { const i = s.indexOf('|'); return i < 0 ? { kicker: '', text: s.trim() } : { kicker: s.slice(0, i).trim(), text: s.slice(i + 1).trim() } }
+// `screen: Kicker | Line` (or `screen: Line`, or `screen: Kicker | Line | Small line`): an intertitle
+export function parseScreen(s) {
+	const p = String(s).split('|').map(x => x.trim())
+	if (p.length === 1) return { kicker: '', text: p[0] }
+	return p[2] ? { kicker: p[0], text: p[1], sub: p.slice(2).join(' | ') } : { kicker: p[0], text: p[1] }
+}
 
 /**
  * Parse a piece's liner notes.
@@ -201,6 +206,54 @@ export function clockOfMidi(midi, o = {}) {
 	return barClock(midi.header, { lastTick: last, ...o })
 }
 
+// ── Repeats and other differences between the score and the file ───────
+
+/**
+ * `play:` in the front matter says which score bars the file plays, in order,
+ * when that differs from 1, 2, 3…: `1-64, 1-64, 65-186, 187*4, 188-200`
+ * is a written-out repeat of bars 1–64, and one score bar (187, a cadenza)
+ * that the file spreads over four of its own bars.
+ * @returns [{ from, to, span }] (span: file bars per score bar), or null
+ */
+export function parsePlay(s) {
+	if (!s) return null
+	const out = []
+	for (const part of String(Array.isArray(s) ? s.join(',') : s).split(',').map(x => x.trim()).filter(Boolean)) {
+		const m = /^(\d+)(?:\s*[-–]\s*(\d+))?(?:\s*\*\s*(\d+(?:\.\d+)?))?$/.exec(part)
+		if (!m) throw new Error(`bad play range "${part}"`)
+		out.push({ from: +m[1], to: m[2] ? +m[2] : +m[1], span: m[3] ? +m[3] : 1 })
+	}
+	return out
+}
+
+/**
+ * A clock in score bars over a clock in file bars: anchors name score bars
+ * (m22, or m22' for the second time through), the file plays `play`.
+ */
+export function scoreClock(clock, play) {
+	if (!play) return clock
+	const runs = []
+	let fileBar = 1
+	for (const r of play) { runs.push({ ...r, fileBar }); fileBar += (r.to - r.from + 1) * r.span }
+	const fileBars = fileBar - 1
+	return {
+		bars: Math.max(...play.map(r => r.to)),
+		fileBars,
+		fileClockBars: clock.bars,
+		seconds(a) {
+			if (a.seconds != null) return a.seconds
+			let pass = a.pass || 1
+			for (const r of runs) {
+				if (a.bar < r.from || a.bar > r.to || --pass > 0) continue
+				// (in a score bar spread over several file bars, beats count on through them)
+				const b = a.beat - 1, per = r.span > 1 ? 4 : Infinity
+				return clock.seconds({ bar: r.fileBar + (a.bar - r.from) * r.span + (r.span > 1 ? Math.floor(b / per) : 0), beat: 1 + (r.span > 1 ? b % per : b) })
+			}
+			return NaN
+		},
+	}
+}
+
 // ── Timeline ────────────────────────────────────────────────────────────
 
 // how long a caption stays: ~3 words a second plus a beat to look up,
@@ -214,13 +267,25 @@ const readSecs = s => Math.min(9, Math.max(4, plainText(s).split(/\s+/).length /
  */
 export function buildTimeline(liner, clock, duration) {
 	const warnings = [...liner.warnings]
+	let play = null
+	try { play = parsePlay(liner.meta.play) } catch (e) { warnings.push(e.message) }
+	if (play) {
+		const fileBars = clock.bars
+		clock = scoreClock(clock, play)
+		if (fileBars && clock.fileBars !== fileBars) warnings.push(`play: covers ${clock.fileBars} bars of the file, it has ${fileBars}`)
+	}
 	const want = +liner.meta.bars
 	if (want && clock.bars && want !== clock.bars) warnings.push(`the notes are for ${want} bars, this file has ${clock.bars}`)
-	const check = a => { if (a?.bar && clock.bars && a.bar > clock.bars) warnings.push(`m${a.bar} is past the last bar (${clock.bars})`) }
+	const check = a => {
+		if (a?.bar && clock.bars && a.bar > clock.bars) warnings.push(`m${a.bar} is past the last bar (${clock.bars})`)
+		else if (a?.bar && !Number.isFinite(clock.seconds(a))) warnings.push(`m${a.bar}${"'".repeat((a.pass || 1) - 1)} is not played`)
+	}
 	const at = a => Math.min(duration, clock.seconds(a))
-	const sections = liner.sections.map(s => { check(s.at); return { ...s, start: at(s.at) } }).sort((a, b) => a.start - b.start)
+	const played = x => { const ok = Number.isFinite(clock.seconds(x.at)); if (ok && x.until && !Number.isFinite(clock.seconds(x.until))) delete x.until; return ok }
+	// (anything at a bar the file does not play is warned about and left out)
+	const sections = liner.sections.map(s => { check(s.at); return { ...s } }).filter(played).map(s => ({ ...s, start: at(s.at) })).sort((a, b) => a.start - b.start)
 	sections.forEach((s, i) => { s.end = s.until ? at(s.until) : sections[i + 1]?.start ?? duration })
-	const moments = liner.moments.map((m, src) => { check(m.at); return { ...m, src, start: at(m.at) } }).sort((a, b) => a.start - b.start)
+	const moments = liner.moments.map((m, src) => { check(m.at); return { ...m, src } }).filter(played).map(m => ({ ...m, start: at(m.at) })).sort((a, b) => a.start - b.start)
 	moments.forEach((m, i) => {
 		const next = moments[i + 1]?.start ?? Infinity
 		const want = m.until ? at(m.until) : m.start + readSecs(m.caption)
@@ -230,7 +295,7 @@ export function buildTimeline(liner, clock, duration) {
 	// clear screen between them (warned about, not moved: the writer decides)
 	// (an intertitle from a moment's `screen:` line points at that moment in the sorted list)
 	const sorted = new Map(moments.map((m, j) => [m.src, j]))
-	const intertitles = (liner.intertitles || []).map(x => { check(x.at); return { ...x, moment: x.moment != null ? sorted.get(x.moment) : undefined, start: at(x.at) } }).sort((a, b) => a.start - b.start)
+	const intertitles = (liner.intertitles || []).map(x => { check(x.at); return { ...x } }).filter(played).map(x => ({ ...x, moment: x.moment != null ? sorted.get(x.moment) : undefined, start: at(x.at) })).sort((a, b) => a.start - b.start)
 	intertitles.forEach((x, i) => {
 		const words = plainText(x.text).split(/\s+/).length
 		if (words > INTERTITLE.maxWords) warnings.push(`intertitle at ${mmss(x.start)} has ${words} words (at most ${INTERTITLE.maxWords} read comfortably)`)
@@ -246,6 +311,36 @@ export function buildTimeline(liner, clock, duration) {
 export const INTERTITLE = { fadeIn: 1.2, fadeOut: 1.5, breath: 2.5, perWord: 0.3, min: 5, max: 10, gap: 3, maxWords: 14 }
 export const intertitleSecs = text => Math.min(INTERTITLE.max, INTERTITLE.fadeIn + INTERTITLE.breath + plainText(text).split(/\s+/).length * INTERTITLE.perWord + INTERTITLE.fadeOut)
 const mmss = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`
+/**
+ * The song title as the first intertitle: `screen:` in the front matter
+ * (Kicker | Title | Small line), else the composer over the title; for a
+ * song without notes, `fallback` ({ kicker, text, sub }).
+ */
+export function titleScreen(liner, fallback) {
+	const m = liner?.meta
+	if (m?.screen) return parseScreen(m.screen)
+	if (m?.title) return { kicker: m.composer || '', text: m.title }
+	return fallback || null
+}
+
+/**
+ * A copy of the timeline with `title` as an intertitle from `start`, held a
+ * little longer than the others; the intertitles it would crowd move later
+ * (keeping the clear gap). With no timeline, one with just the title.
+ */
+export function withTitle(tl, title, { start = 0 } = {}) {
+	const base = tl || { sections: [], moments: [], intertitles: [], warnings: [] }
+	if (!title?.text) return base
+	const words = plainText([title.kicker, title.text, title.sub].filter(Boolean).join(' ')).split(/\s+/).length
+	const T = { ...title, title: true, start, end: start + Math.min(11, Math.max(7, INTERTITLE.fadeIn + INTERTITLE.breath + 1.5 + words * INTERTITLE.perWord + INTERTITLE.fadeOut)) }
+	const out = [T]
+	for (const x of base.intertitles || []) {
+		const after = out.at(-1).end + INTERTITLE.gap
+		out.push(x.start >= after ? x : { ...x, start: after, end: after + (x.end - x.start), moved: true })
+	}
+	return { ...base, intertitles: out }
+}
+
 export const intertitleAt = (tl, t) => tl?.intertitles?.find(x => t >= x.start - 0.05 && t < x.end) || null
 
 export const sectionAt = (tl, t) => tl?.sections.findLast(s => t >= s.start - 0.05) || null
@@ -263,7 +358,7 @@ const vttTime = s => { s = Math.max(0, s); const ms = Math.round(s * 1000); retu
 export function toVTT(tl, { offset = 0, speed = 1, kinds = true, from = 'moments' } = {}) {
 	const out = ['WEBVTT', '']
 	const cues = from === 'intertitles'
-		? tl.intertitles.map(x => ({ start: x.start, end: x.end, text: (x.kicker ? plainText(x.kicker).toUpperCase() + '\n' : '') + plainText(x.text) }))
+		? tl.intertitles.map(x => ({ start: x.start, end: x.end, text: (x.kicker ? plainText(x.kicker).toUpperCase() + '\n' : '') + plainText(x.text) + (x.sub ? '\n' + plainText(x.sub) : '') }))
 		: tl.moments.map(m => ({ start: m.start, end: m.end, text: (kinds ? `[${m.kind}] ` : '') + plainText(m.caption).replace(/\n+/g, ' ') }))
 	cues.forEach((c, i) => out.push(String(i + 1), `${vttTime(offset + c.start / speed)} --> ${vttTime(offset + c.end / speed)}`, c.text, ''))
 	return out.join('\n')
