@@ -127,14 +127,46 @@ Limits:
 - Below the lowest note (196 Hz on the violin) the curve is extrapolated, so the violin's own low air resonance is not measured.
 - It is the body of the Iowa instruments: a 1998 Tambovsky violin, and for the viola and cello whichever instruments those sessions used.
 
+## Measured body (Philharmonia samples)
+
+**Body: Measured (Philharmonia)**: violin, viola and cello bodies estimated as the Iowa ones are, from different instruments and players.
+
+- `node strings/test/fit_body_philharmonia.js [--instrument=…] [--model=source,waveguide] [--quick]` downloads the Philharmonia Orchestra's Strings.zip (171 MB) into the git-ignored `strings/data/Philharmonia/`. The samples are free to use but must not be redistributed "as is", so only the fitted curves (`sound/body-philharmonia.js`) are committed. It needs ffmpeg (MP3). It takes about 20 s per instrument and model.
+- It fits the same model as fit_body.js (`r = g + s(dyn)·log2 k + B(k·f)`, same grid and robust kernel regression, shared through [test/body-eval.js](test/body-eval.js)). It uses the 1.5 s "arco-normal" notes at six dynamics, falling back to 1 s takes. They have vibrato, so each note is cut into 8-period frames, each frame gets its own measured f0, and each frame is one row compared with our string played without vibrato. Our fingering picks the string.
+
+| source, dB median / p90 | Philharmonia notes: this body (held out) | … Iowa body | … no body | Iowa notes: this body | … Iowa body (fitted on them) |
+|---|---|---|---|---|---|
+| violin (151 notes, 1,843 frames) | 2.9 / 7.8 | 4.4 / 11.6 | 3.7 / 9.7 | 4.7 / 12.0 | 3.0 / 8.1 |
+| viola (190, 2,343) | 3.0 / 7.9 | 3.6 / 9.5 | 4.1 / 10.6 | 3.1 / 8.6 | 2.5 / 6.7 |
+| cello (187, 2,350) | 2.9 / 7.6 | 3.6 / 9.5 | 4.4 / 11.3 | 3.3 / 8.4 | 2.4 / 6.2 |
+
+| waveguide, dB median / p90 | Philharmonia notes: this body (held out) | … Iowa body | … no body | Iowa notes: this body | … Iowa body (fitted on them) |
+|---|---|---|---|---|---|
+| violin (151 notes) | 3.4 / 9.1 | 4.7 / 12.4 | 4.6 / 12.0 | 4.8 / 12.8 | 3.4 / 9.2 |
+| viola (190) | 3.5 / 9.5 | 4.0 / 10.8 | 4.9 / 12.6 | 4.2 / 10.1 | 3.2 / 8.5 |
+| cello (183) | 3.4 / 9.0 | 4.1 / 10.7 | 5.6 / 14.1 | 3.8 / 9.3 | 3.0 / 7.3 |
+
+  The waveguide was fitted on the string of `4c76b6b` (pitch-tracking end losses). The committed Iowa waveguide body predates that string, so its columns here are from the older fit.
+- The viola and cello bodies agree with the Iowa ones well enough to help on each other's notes, so they mostly capture the instrument family. The two violins differ more: the Iowa violin body is worse than no body on the Philharmonia violin notes, and the Philharmonia violin body is about 11 dB stronger near 1 kHz and 6 dB weaker near 2 kHz.
+- The Philharmonia curves are 3–8 dB brighter than the Iowa ones above 6 kHz (violin and viola), where the Iowa body measured dark on the lyrical demo.
+
 ## Measured body (NBody hammer responses)
 
 A third choice, **Body: Measured (NBody, violin)**: a violin measured directly, not estimated. [Research 05 §5](research/05_commercial_violins.md#5-bodies-in-034-explained) explains the three bodies in plain terms.
 
-- `node strings/test/build_nbody.js [--mics=3,10] [--hi=13000] [--no-eval] [--quick]` downloads Cook and Trueman's NBody violin takes (Princeton, 1998: the bridge struck with a force hammer next to each string, 12 microphones on an icosahedron) into the git-ignored `strings/data/NBody/` and writes `body-nbody.json` there. They carry no licence, so neither the takes nor the result are committed. The page loads the file when the option is chosen and falls back to the Iowa body, with a message, when it is missing.
-- Per microphone and strike point: H = Y·X* / (|X|² + ε), ε = 10⁻³ of the hammer's peak power. The hammer's spectrum falls 20–35 dB above 4 kHz, so this caps the boost at 30 dB. The four strike points are averaged (time-aligned, same microphone), band-limited to 120 Hz–13 kHz, the acoustic delay removed, cut to 4,096 samples at 44.1 kHz (95 % of the energy is within 5–7 ms) with a fade. Microphones 3 and 10 hear the most between 500 Hz and 4 kHz and are the two ears.
+- `node strings/test/build_nbody.js [--mix=all|pair] [--mics=3,10] [--hi=13000] [--no-eval] [--quick]` downloads Cook and Trueman's NBody violin takes (Princeton, 1998: the bridge struck with a force hammer next to each string, 12 microphones on an icosahedron) into the git-ignored `strings/data/NBody/` and writes `body-nbody.json` there. They carry no licence, so neither the takes nor the result are committed. The page loads the file when the option is chosen and falls back to the Iowa body, with a message, when it is missing.
+- Per microphone and strike point: H = Y·X* / (|X|² + ε), ε = 10⁻³ of the hammer's peak power. The hammer's spectrum falls 20–35 dB above 4 kHz, so this caps the boost at 30 dB. The four strike points are averaged (time-aligned, same microphone), band-limited to 120 Hz–13 kHz, the acoustic delay removed, cut to 4,096 samples at 44.1 kHz (95 % of the energy is within 5–7 ms) with a fade. Microphones 3 and 10 hear the most between 500 Hz and 4 kHz and are the two ears (see the next point for how all 12 are used).
 - [sound/body.js](sound/body.js) `ConvBody` takes the impulse responses as they are (`{ ir: [L, R], rate }`), resampled to the context rate with a windowed sinc, through the same partitioned convolution. Violin only: the viola and cello keep the Iowa body. Level per string model matches the Iowa body (−9.6 dB waveguide, −8.6 dB source).
-- Harmonic residual against the Iowa recordings (the measure fit_body.js reports, all notes): 6.2 / 16.0 dB median / p90 (waveguide) and 6.3 / 16.3 (source), against 3.5 / 9.5 for the Iowa body (held out) and 5.5 / 14.9 for the modal one. It is a different violin from the Iowa one: the largest differences are ~8 dB more around 5.8 kHz and less above 11 kHz.
+- **All 12 microphones (default, `--mix=all`).** The two loudest microphones face the top plate, which made the body about 7 dB too strong around 4 kHz on the lyrical demo. Now each ear's magnitude is the power average of all 12 directions, as a listener in a room hears a blend of every direction. The ear keeps its own microphone's measured phase: the correction |average| / |own|, smoothed over 1/6 octave and limited to ±18 dB, is applied as a minimum-phase filter, so nothing rings before the strike. `--mix=pair` gives the two microphones as they are.
+- Harmonic residual against the Iowa recordings (the measure fit_body.js reports, all notes, dB median / p90):
+
+| | waveguide | source |
+|---|---|---|
+| NBody, all 12 microphones | 5.7 / 14.5 | 5.6 / 14.3 |
+| NBody, microphones 3 + 10 only | 6.5 / 16.0 | 6.3 / 15.9 |
+| modal body | 4.7 / 13.4 | 4.4 / 12.2 |
+
+  On the lyrical demo, compared with the hybrid sampler's recorded violin, the 4 kHz band goes from +6 dB to +1 dB and the spectral centroid from 1,935 to 1,149 Hz (recording: 1,478 Hz). It gains about 4 dB around 640 Hz, and stays 15–20 dB short above 8 kHz, where the hammer barely excites the body. Stereo correlation is 0.45 (0.33 with the pair). It is still a different violin from the Iowa one.
 - The helpers fit_body.js and build_nbody.js share (our string's bridge force for one note, harmonic tables, the residual) are in [test/body-eval.js](test/body-eval.js).
 
 ## Waveguide attacks (Guettler) and the playable window

@@ -40,6 +40,7 @@
 import { TONE, LEVEL } from './tone.js'
 import { ConvBody } from './body.js'
 import { BODY_IOWA } from './body-iowa.js'
+import { BODY_PHIL } from './body-philharmonia.js'
 
 export const FRAME_RATE = 250
 export const CH = { f0: 0, vel: 1, force: 2, beta: 3, damp: 4, tap: 5, harm: 6 }
@@ -503,6 +504,7 @@ export class ViolinSynth {
   /**
    * body: 'iowa' — the response estimated from the Iowa recordings (body.js,
    * body-iowa.js; it replaces the modal body, the tone EQ and the voicing,
+   * and so does 'phil', from the Philharmonia samples, body-philharmonia.js;
    * since the fit covers all three); 'modal' — 10 signature + 42 random modes,
    * the fitted EQ and voicing (tone.js); a spec object (fit_body.js); or a
    * measured impulse-response object ({ id, instrument, rate, ir: [L, R],
@@ -510,13 +512,16 @@ export class ViolinSynth {
    */
   makeBody() {
     const { instrument, model } = this, I = this.spec, b = this.opts.body
-    let spec = typeof b === 'object' && b ? b : b === 'iowa' ? BODY_IOWA[instrument]?.[model] : null
+    // 'phil': estimated from the Philharmonia samples (fit_body_philharmonia.js);
+    // a model not fitted yet plays the Iowa body
+    let spec = typeof b === 'object' && b ? b : b === 'iowa' ? BODY_IOWA[instrument]?.[model]
+      : b === 'phil' ? BODY_PHIL[instrument]?.[model] ?? BODY_IOWA[instrument]?.[model] : null
     // a measured impulse response (NBody, build_nbody.js) is per instrument; its
     // gain per string model. Another instrument falls back to the Iowa body.
     if (spec?.ir) {
       spec = spec.instrument === instrument ? { ...spec, gainDb: spec.gainDb?.[model] ?? 0 } : BODY_IOWA[instrument]?.[model]
     }
-    this.bodyKind = spec?.ir ? 'nbody' : spec ? 'iowa' : 'modal'
+    this.bodyKind = spec?.ir ? 'nbody' : spec?.id?.startsWith('phil-') ? 'phil' : spec ? 'iowa' : 'modal'
     if (spec) {
       this.body = new ConvBody(this.sr, spec)
       this.eq = new EQ(this.sr, [])

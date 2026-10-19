@@ -82,7 +82,7 @@ Items 1 and 2 are probably most of the audible gap; the others are refinements. 
 
 A bowed string on its own makes a fairly plain, buzzy tone, and it hardly makes any sound in the air: a string is too thin to push much air. It pushes on the bridge instead, and the bridge shakes the wooden box. The box (top plate, back, ribs, the air inside and the f-holes) radiates the sound you hear, and on the way it filters the string's vibration. Its hundreds of resonances make some frequencies loud and others quiet: the air mode near 280 Hz, the main wood modes around 450–550 Hz, the "bridge hill" around 2–3 kHz, and a dense thicket of smaller peaks and dips above 1 kHz. That filtering is most of what makes a violin sound like a violin and not a synthesiser, and it is also why two violins sound different with the same strings and player.
 
-In a physical model the body is exactly that: a filter between the bridge force the strings produce and the sound that leaves the instrument. The three bodies on #034's **Timbre → Body** menu are three answers to "where does the filter come from?"
+In a physical model the body is exactly that: a filter between the bridge force the strings produce and the sound that leaves the instrument. The bodies on #034's **Timbre → Body** menu are different answers to "where does the filter come from?"
 
 ### Modal (synthetic)
 
@@ -99,13 +99,24 @@ A filter built from recordings of real violins, viola and cello instead of inven
 
 Limits: it captures only how loud each frequency comes out, not how the body rings over time (the phase is made up, minimum-phase). It also includes whatever the room and the microphone added to the Iowa recordings, and whatever our string does differently from a real one, since the fit is against our string.
 
+### Measured (Philharmonia)
+
+The same method as the Iowa body, applied to a second set of real instruments: the Philharmonia Orchestra's free sound samples (violin, viola and cello, chromatic sustained notes at pianissimo to fortissimo, `strings/test/fit_body_philharmonia.js`). Two things differ from Iowa:
+
+- **The notes are played with vibrato.** The script cuts each note into short frames and measures each frame's pitch. As the pitch swings, every harmonic sweeps a little across the body response, so the vibrato traces the body in finer detail. This is the idea behind the 2004 Tommasini–Lucato patent.
+- **Which string each note was played on is not recorded,** so our fingering's choice stands in for it.
+
+Comparing the two estimates is a check on both. Each is a different player, instrument, room and microphone. Whatever they agree on is the violin family's body; whatever they disagree on is the individual instrument or the recording.
+
+Limits: the samples may be used freely but not redistributed "as is", so the 171 MB download stays in the git-ignored `strings/data/Philharmonia/`; only the fitted curves are committed. The fit is against our string, so a model is refitted whenever the string model changes.
+
 ### Measured (NBody)
 
 NBody is a 1998 Princeton project by Perry Cook and Dan Trueman ([ISMA 1998 paper](https://www.cs.princeton.edu/~prc/ism98fin.pdf), [data](https://www.cs.princeton.edu/~prc/NBody/violin/)). They measured a real violin directly, held by a player inside a 4-foot icosahedron of 12 microphones in a foam-lined chamber: they tapped its bridge next to each string with a small force hammer and recorded the response at all 12 microphones. Dividing what a microphone heard by the hammer's force gives the body's actual impulse response, its "ring". Unlike the Iowa estimate it keeps the timing (phase), and with 12 directions it could later imitate the tone changing as a player moves.
 
-`strings/test/build_nbody.js` downloads the takes, divides out the hammer for all four strike points, averages them, band-limits the result to 120 Hz–13 kHz (where the takes are well above their noise), and keeps 93 ms of response. The two microphones that hear the most between 500 Hz and 4 kHz (3 and 10) become the two ears. The response is used as it is, matched in level to the Iowa body.
+`strings/test/build_nbody.js` downloads the takes, divides out the hammer for all four strike points, averages them, band-limits the result to 120 Hz–13 kHz (where the takes are well above their noise), and keeps 93 ms of response. Each ear's tone is the average of all 12 directions, because a listener in a room hears a blend of every direction the violin radiates in. Each ear keeps the timing of one microphone (3 and 10, the loudest), so the two ears still differ. Using just those two microphones as they were made the violin about 7 dB too strong around 4 kHz, because they face the top plate. The response is matched in level to the Iowa body.
 
 Limits:
 - The files have no licence, so they are not in the repo: the script stores them and the result in the git-ignored `strings/data/NBody/`. On a fresh checkout or GitHub Pages the option falls back to the Iowa body until the script is run.
 - It is one violin, measured in 1998. There is no viola or cello; those keep the Iowa body.
-- It is a different instrument from the Iowa one, and it knows nothing about our string. Compared harmonic by harmonic with the Iowa recordings, it is further from them than the Iowa body is (6.2 dB median against 3.5 for the waveguide), and even than the modal body (5.5), whose EQ was fitted to recordings. The largest differences are about 8 dB more energy near 5.8 kHz and less above 11 kHz. That says it is a different violin, not that it is worse: the ear decides.
+- It is a different instrument from the Iowa one, and it knows nothing about our string. Compared harmonic by harmonic with the Iowa recordings, it is further from them than the Iowa body is (5.7 dB median against 3.5 for the waveguide), and slightly further than the modal body (4.7), whose EQ was fitted to recordings. It still has little energy above 8 kHz, where the hammer barely excites the body. That says it is a different violin, not that it is worse: the ear decides.

@@ -508,3 +508,17 @@ test('waveguide attacks (Guettler): most bow starts reach Helmholtz motion withi
   assert.ok(r.ms < 50, `median time to Helmholtz ${r.ms.toFixed(1)} ms`)
   assert.ok(r.stays >= 0.85 * r.total, `stay in Helmholtz ${r.stays}/${r.total}`)
 })
+
+test('measured body (Philharmonia): fitted for violin, viola and cello, beats no body on its held-out notes; unfitted models play the Iowa body', async () => {
+  const { BODY_PHIL } = await import('../sound/body-philharmonia.js')
+  for (const instrument of ['violin', 'viola', 'cello']) {
+    const spec = BODY_PHIL[instrument]?.source
+    assert.ok(spec, `${instrument}: no Philharmonia fit for the source model`)
+    const st = spec.stats
+    assert.ok(st.notes >= 100 && st.harmonics >= 10000, `${instrument}: ${st.notes} notes, ${st.harmonics} harmonics`)
+    assert.ok(st.heldOut.mad < st.flat.mad - 0.3, `${instrument}: held out ${st.heldOut.mad} dB vs no body ${st.flat.mad} dB`)
+    assert.equal(new ViolinSynth(48000, { instrument, model: 'source', body: 'phil' }).bodyKind, 'phil')
+    const wg = new ViolinSynth(48000, { instrument, model: 'waveguide', body: 'phil' }).bodyKind
+    assert.equal(wg, BODY_PHIL[instrument]?.waveguide ? 'phil' : 'iowa')
+  }
+})

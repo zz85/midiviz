@@ -1,7 +1,7 @@
 // A measured violin body from the Princeton NBody impulse responses, for
 // #034's physical models (third option of Timbre → Body; research 05 §4.1b).
 //
-//   node strings/test/build_nbody.js [--mics=3,10] [--hi=13000] [--no-eval] [--quick]
+//   node strings/test/build_nbody.js [--mix=all|pair] [--mics=3,10] [--hi=13000] [--no-eval] [--quick] [--out=body-nbody.json]
 //
 // NBody (Perry Cook and Dan Trueman, Princeton, 1998; "A Database of Measured
 // Musical Instrument Body Radiation Impulse Responses", ISMA 1998): a violin
@@ -100,9 +100,39 @@ const loud = H.map((h, m) => ({ m, dB: bandDb(h, 500, 4000) })).sort((a, b) => b
 const mics = arg('mics', `${loud[0].m + 1},${loud[1].m + 1}`).split(',').map(v => +v - 1)
 console.log('microphones (500 Hz – 4 kHz, dB):', loud.map(x => `${x.m + 1}:${x.dB.toFixed(1)}`).join(' '), '→ ears', mics.map(m => m + 1).join(' + '))
 
-// impulse responses: inverse FFT, common acoustic delay removed, cut to L
+// --mix=all: each ear's magnitude becomes the power average of all 12
+// directions (a listener in a room hears a blend of every direction the
+// violin radiates in), while keeping the ear's own measured phase character.
+// The correction |avg| / |H_ear| is smoothed over 1/6 octave, limited to
+// ±18 dB and applied as a minimum-phase (causal) filter, so nothing rings
+// before the strike. --mix=pair: the two microphones as they are.
+const MIX = arg('mix', 'all')
+const avgPow = new Float64Array(N / 2 + 1)
+for (const h of H) for (let k = 0; k <= N / 2; k++) avgPow[k] += (h.re[k] ** 2 + h.im[k] ** 2) / H.length
+/** Smooth a power spectrum over ±1/12 octave (bins 0…N/2). */
+function smooth(P) {
+  const c = new Float64Array(P.length + 1); for (let k = 0; k < P.length; k++) c[k + 1] = c[k] + P[k]
+  return Float64Array.from(P, (_, k) => { const a = Math.max(0, Math.floor(k / 1.0595)), b = Math.min(P.length - 1, Math.ceil(k * 1.0595)); return (c[b + 1] - c[a]) / (b - a + 1) })
+}
+/** Minimum-phase spectrum (N bins) with the log-magnitude lm[0…N/2] (cepstral folding). */
+function minPhase(lm) {
+  const re = new Float64Array(N), im = new Float64Array(N)
+  for (let k = 0; k <= N / 2; k++) { re[k] = lm[k]; if (k && k < N / 2) re[N - k] = lm[k] }
+  fft(re, im, true)
+  for (let n = 0; n < N; n++) { re[n] /= N; im[n] = 0 }
+  for (let n = 1; n < N / 2; n++) { re[n] *= 2; re[N - n] = 0 }
+  fft(re, im)
+  return { re: Float64Array.from(re, (_, k) => Math.exp(re[k]) * Math.cos(im[k])), im: Float64Array.from(im, (_, k) => Math.exp(re[k]) * Math.sin(im[k])) }
+}
+const sAvg = smooth(avgPow)
 const irs = mics.map(m => {
   const re = Float64Array.from(H[m].re), im = Float64Array.from(H[m].im)
+  if (MIX === 'all') {
+    const own = smooth(Float64Array.from({ length: N / 2 + 1 }, (_, k) => re[k] ** 2 + im[k] ** 2))
+    const lim = 18 * Math.LN10 / 20
+    const C = minPhase(Float64Array.from(own, (p, k) => Math.max(-lim, Math.min(lim, 0.5 * Math.log((sAvg[k] + 1e-30) / (p + 1e-30))))))
+    for (let k = 0; k < N; k++) { const a = re[k], b = im[k]; re[k] = a * C.re[k] - b * C.im[k]; im[k] = a * C.im[k] + b * C.re[k] }
+  }
   fft(re, im, true)
   return Float64Array.from(re, v => v / N)
 })
@@ -119,7 +149,7 @@ const ir = irs.map(h => {
 const energyMs = h => { let e = 0, c = 0; for (const v of h) e += v * v; for (let n = 0; n < h.length; n++) { c += h[n] * h[n]; if (c > 0.95 * e) return n / RATE * 1000 } }
 console.log(`delay removed ${(start / RATE * 1000).toFixed(2)} ms; 95 % of the energy within ${ir.map(h => energyMs(h).toFixed(0)).join(' / ')} ms`)
 
-const body = { id: 'nbody-violin', instrument: 'violin', rate: RATE, mics: mics.map(m => m + 1), gainDb: {}, ir }
+const body = { id: `nbody-violin-${MIX}`, instrument: 'violin', rate: RATE, mix: MIX, mics: mics.map(m => m + 1), gainDb: {}, ir }
 
 // ── level per string model: match the Iowa body on mezzo-forte notes ──
 const open = [55, 62, 69, 76]
@@ -147,5 +177,5 @@ if (!process.argv.includes('--no-eval') && hasBank('violin') && hasFfmpeg()) {
   body.stats = stats
 } else console.log('(skipped the check against the Iowa recordings: needs the Iowa bank and ffmpeg)')
 
-writeFileSync(DIR + 'body-nbody.json', JSON.stringify({ ...body, ir: body.ir.map(h => Array.from(h, v => +v.toPrecision(5))) }))
-console.log('wrote', DIR + 'body-nbody.json')
+writeFileSync(DIR + arg('out', 'body-nbody.json'), JSON.stringify({ ...body, ir: body.ir.map(h => Array.from(h, v => +v.toPrecision(5))) }))
+console.log('wrote', DIR + arg('out', 'body-nbody.json'))

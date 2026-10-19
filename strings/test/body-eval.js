@@ -130,3 +130,56 @@ export function bodyResidual(instrument, model, rows, body = 'modal') {
 
 export const actRms = L => { let s = 0, n = 0; for (let i = 0; i < L.length; i++) { const v = L[i] * L[i]; if (v > 1e-9) { s += v; n++ } } return Math.sqrt(s / Math.max(1, n)) }
 
+
+// ── the body fit (fit_body.js, fit_body_philharmonia.js) ──
+export const GRID = { from: 60, step: 1 / 48, to: 16000 }
+export const SIG = 1 / 40
+export const G0 = Math.log2(GRID.from), NG = Math.ceil((Math.log2(GRID.to) - G0) / GRID.step) + 1
+/** Fit B (grid dB), g per row, s per dynamic. */
+export function fit(rows) {
+  const B = new Float64Array(NG), S = { pp: 0, mf: 0, ff: 0 }
+  const Bat = lf => { const x = (lf - G0) / GRID.step, i = Math.max(0, Math.min(NG - 2, Math.floor(x))), t = Math.max(0, Math.min(1, x - i)); return B[i] + (B[i + 1] - B[i]) * t }
+  let cut = Infinity
+  for (let it = 0; it < 25; it++) {
+    for (const row of rows) row.g = median(row.obs.map(o => o.r - Bat(o.lf) - S[row.dyn] * Math.log2(o.k)))
+    // per-dynamic brightness, mean zero
+    for (const d of Object.keys(S)) {
+      let sxy = 0, sxx = 0
+      for (const row of rows) if (row.dyn === d) for (const o of row.obs) { const e = o.r - row.g - Bat(o.lf), lk = Math.log2(o.k); if (Math.abs(e - S[d] * lk) < cut) { sxy += e * lk; sxx += lk * lk } }
+      S[d] = sxx ? sxy / sxx : 0
+    }
+    const mS = (S.pp + S.mf + S.ff) / 3; for (const d of Object.keys(S)) S[d] -= mS
+    // kernel regression on the grid
+    const num = new Float64Array(NG), den = new Float64Array(NG), res = []
+    for (const row of rows) for (const o of row.obs) {
+      const e = o.r - row.g - S[row.dyn] * Math.log2(o.k)
+      const old = e - Bat(o.lf)
+      res.push(Math.abs(old))
+      if (Math.abs(old) > cut) continue
+      const c = (o.lf - G0) / GRID.step, R = Math.ceil(3 * SIG / GRID.step)
+      for (let i = Math.max(0, Math.floor(c) - R); i <= Math.min(NG - 1, Math.ceil(c) + R); i++) {
+        const w = Math.exp(-0.5 * ((i - c) * GRID.step / SIG) ** 2); num[i] += w * e; den[i] += w
+      }
+    }
+    cut = 2.5 * 1.4826 * median(res)
+    // bins with little data: interpolate from their neighbours
+    const ok = i => den[i] > 0.5
+    for (let i = 0; i < NG; i++) B[i] = ok(i) ? num[i] / den[i] : NaN
+    let first = B.findIndex(v => !isNaN(v)), last = NG - 1; while (isNaN(B[last])) last--
+    for (let i = 0; i < first; i++) B[i] = B[first]
+    for (let i = last + 1; i < NG; i++) B[i] = B[last]
+    for (let i = first; i <= last; i++) if (isNaN(B[i])) { let j = i; while (isNaN(B[j])) j++; for (let q = i; q < j; q++) B[q] = B[i - 1] + (B[j] - B[i - 1]) * (q - i + 1) / (j - i + 1); i = j }
+    fit.lo = 2 ** (G0 + first * GRID.step); fit.hi = 2 ** (G0 + last * GRID.step)
+  }
+  return { B, S, Bat, lo: fit.lo, hi: fit.hi }
+}
+
+/** Smooth seeded ±1.5 dB ripple above 800 Hz on the grid (the second ear). */
+export function ripple(seed) {
+  let a = seed >>> 0
+  const R = () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296 }
+  const w = Array.from({ length: NG }, () => R() - 0.5)
+  const sm = w.map((_, i) => { let s = 0, n = 0; for (let j = i - 8; j <= i + 8; j++) if (w[j] != null) { s += w[j]; n++ } return s / n })
+  const sd = Math.sqrt(sm.reduce((x, y) => x + y * y, 0) / NG)
+  return sm.map((v, i) => { const f = 2 ** (G0 + i * GRID.step); return f < 800 ? 0 : 1.5 * v / sd * Math.min(1, (f - 800) / 800) })
+}

@@ -92,7 +92,7 @@ export class Lab {
   }
   /**
    * Physical-model parameters: { bowPress, rosin, resonance, body: 'iowa' |
-   * 'modal' | 'nbody' } (bowed.js ViolinSynth.setParams). 'nbody' is the
+   * 'phil' | 'modal' | 'nbody' } (bowed.js ViolinSynth.setParams). 'nbody' is the
    * Princeton NBody response built by strings/test/build_nbody.js into the
    * git-ignored strings/data/NBody/ (no licence to redistribute it); it is
    * fetched once and sent to the engines as the impulse responses themselves.
