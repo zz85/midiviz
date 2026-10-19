@@ -191,5 +191,10 @@ Render → Export has two options:
   the first at 0:00, at least three, each 10 s or longer (shorter sections
   merge into the one before).
 
+Render → Length renders the whole song or a test clip: the first 20 s or
+minute, or 20 s / a minute from where the song is now (seek there first).
+A clip's file name says which part it is (`…_0-20s_1080p30.mp4`), its
+`.vtt` holds only the lines inside it, and it has no chapters.
+
 The notes panel can also copy the chapters or save a `.vtt` timed to the song
 itself.

@@ -355,12 +355,13 @@ const vttTime = s => { s = Math.max(0, s); const ms = Math.round(s * 1000); retu
  * WebVTT for the moments. `offset`: video time of song time 0 (a title card
  * and a pre-roll push the music later); `speed`: playback speed.
  */
-export function toVTT(tl, { offset = 0, speed = 1, kinds = true, from = 'moments' } = {}) {
+export function toVTT(tl, { offset = 0, speed = 1, kinds = true, from = 'moments', start: clipA = -Infinity, end: clipB = Infinity } = {}) {
 	const out = ['WEBVTT', '']
 	const cues = from === 'intertitles'
 		? tl.intertitles.map(x => ({ start: x.start, end: x.end, text: (x.kicker ? plainText(x.kicker).toUpperCase() + '\n' : '') + plainText(x.text) + (x.sub ? '\n' + plainText(x.sub) : '') }))
 		: tl.moments.map(m => ({ start: m.start, end: m.end, text: (kinds ? `[${m.kind}] ` : '') + plainText(m.caption).replace(/\n+/g, ' ') }))
-	cues.forEach((c, i) => out.push(String(i + 1), `${vttTime(offset + c.start / speed)} --> ${vttTime(offset + c.end / speed)}`, c.text, ''))
+	// (a clip of the song, start..end in song time: only the cues in it, cut to it)
+	cues.filter(c => c.end > clipA && c.start < clipB).forEach((c, i) => out.push(String(i + 1), `${vttTime(offset + Math.max(c.start, clipA) / speed)} --> ${vttTime(offset + Math.min(c.end, clipB) / speed)}`, c.text, ''))
 	return out.join('\n')
 }
 

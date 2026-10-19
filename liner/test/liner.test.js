@@ -236,6 +236,10 @@ test('VTT and YouTube chapters', () => {
 	assert.equal(ch[0], '0:00 Home: C major')
 	assert.equal(ch.length, 6)
 	assert.equal(ch[4], '1:18 Dominant pedal')    // 2 s + 23 bars × 3.33 s
+	// a clip of the song (song time 70–100 s): only its cues, cut to it
+	const clip = toVTT(tl, { offset: 1 - 70, start: 70, end: 100 })
+	assert.match(clip, /^WEBVTT\n\n1\n00:00:01\.000 --> /)
+	assert.ok(clip.split('-->').length - 1 < tl.moments.length)
 	// sections under 10 s merge away; fewer than three: no chapters
 	assert.equal(toChapters({ sections: [{ start: 0, end: 5, title: 'a' }, { start: 5, end: 30, title: 'b' }] }), '')
 })

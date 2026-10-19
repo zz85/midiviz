@@ -362,6 +362,7 @@
     <div class="sect">Export video (MP4)</div>
     <div class="field"><label>Resolution</label><select id="exRes"><option value="426x240">240p (preview)</option><option value="854x480">480p (preview)</option><option value="1280x720">720p</option><option value="1920x1080" selected>1080p</option><option value="2560x1440">1440p</option><option value="3840x2160">4K</option></select></div>
     <div class="field"><label>Frame rate</label><select id="exFps"><option>5</option><option>15</option><option>25</option><option>30</option><option selected>60</option></select></div>
+    <div class="field" title="How much of the song to render: all of it, or a short test from the start or from where the song is now (the seek bar)"><label>Length</label><select id="exLen"><option value="all" selected>Whole song</option><option value="20">First 20 s (test)</option><option value="60">First minute</option><option value="here20">20 s from the current position</option><option value="here60">1 minute from the current position</option></select></div>
     <div class="field"><label>Camera</label><select id="exCam"><option value="auto" selected>Director (auto)</option><option value="current">As on screen</option></select></div>
     <label class="chk"><input type="checkbox" id="exAudio" checked>Include audio (with the hall)</label>
     <div class="field" title="Title card: the classic card, before the music. First intertitle: the title fades in over the opening bars like the other intertitles (composer, title and the notes' subtitle, in the intertitle style), and also when the song plays here"><label>Song title</label><select id="exTitle"><option value="intertitle" selected>As the first intertitle</option><option value="card">Title card (fades out as the music starts)</option><option value="none">None</option></select></div>
@@ -1592,7 +1593,7 @@
       ['sf', 'sf'], ['avsync', 'avsync'],
       ['dofamt', 'dofAmt'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
       ['vol', 'vol'], ['room', 'room'], ['seat', 'seat'], ['rv', 'rvAmt'], ['decay', 'rvDecay'], ['tone', 'rvTone'], ['boost', 'boost'], ['amb', 'amb'], ['applause', 'applause'],
-      ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exsub', 'exSub'], ['excard', 'exCard'], ['excaps', 'exCaps'], ['exvtt', 'exVtt'],
+      ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exsub', 'exSub'], ['excard', 'exCard'], ['excaps', 'exCaps'], ['exvtt', 'exVtt'], ['exlen', 'exLen'],
       ['notes', 'linerMode'], ['itstyle', 'itStyle'], ['itcol', 'itTheme'], ['itpos', 'itPos'], ['itheads', 'itHeads'], ['extitle', 'exTitle'],
     ].filter(([, id]) => $(id))
     const OUTFIT_KEYS = { dress: 'dress', slit: 'slit', fabric: 'fabric', dcol: 'color', shoes: 'shoes', hair: 'hair', hcol: 'hairColor' }
@@ -1847,7 +1848,11 @@
       if (!song || !fingered) return void ($('exStatus').textContent = song ? 'Still working out the fingering, try again in a moment.' : 'Load a song first (Songs, top left).')
       if (!exportSupported()) return void ($('exStatus').textContent = 'This browser has no WebCodecs video encoder; try Chrome or Edge.')
       const [width, height] = $('exRes').value.split('x').map(Number), fps = +$('exFps').value
-      const name = (song.title || 'pianist').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_') + `_${height}p${fps}.mp4`
+      // the part of the song to render (Length): all of it, or a test clip
+      const len = $('exLen').value, here = /^here/.test(len), secs = len === 'all' ? Infinity : +len.replace('here', '')
+      const clipA = here ? Math.max(0, Math.min(songNow(), song.duration - 1)) : 0, clipB = Math.min(song.duration, clipA + secs)
+      const clip = clipA > 0 || clipB < song.duration
+      const name = (song.title || 'pianist').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_') + (clip ? `_${Math.floor(clipA)}-${Math.ceil(clipB)}s` : '') + `_${height}p${fps}.mp4`
       let fileStream = null
       if (window.showSaveFilePicker) {
         try {
@@ -1875,7 +1880,7 @@
         const blob = await exportVideo({
           stage: stageAdapter,
           song: { schedule: { notes: song.notes, controlChanges: (song.controlChanges || []).filter(c => c.controller !== 7) }, programs, duration: song.duration, title: song.title },
-          width, height, fps, start: 0, end: song.duration,
+          width, height, fps, start: clipA, end: clipB,
           bitrate: defaultBitrate(width, height, fps),
           audio: $('exAudio').checked,
           audioOpts: { vendorPath, soundfonts: [$('sf').value], volume: 1, convertSF3: engine._backend?._convertSF3 ? d => engine._backend._convertSF3(d) : null },
@@ -1902,8 +1907,8 @@
         }
         // the liner notes as YouTube subtitles and chapters, timed to this video
         if ($('exVtt').checked && linerTl) {
-          saveText(name.replace(/\.mp4$/, '.vtt'), toVTT(linerTl, { offset: songZero, from: linerMode === 'notes' ? 'moments' : 'intertitles' }))
-          const ch = liner.timeline && toChapters(liner.timeline, { offset: songZero })
+          saveText(name.replace(/\.mp4$/, '.vtt'), toVTT(linerTl, { offset: songZero, from: linerMode === 'notes' ? 'moments' : 'intertitles', start: clipA, end: clipB }))
+          const ch = !clip && liner.timeline && toChapters(liner.timeline, { offset: songZero })
           if (ch) saveText(name.replace(/\.mp4$/, '-chapters.txt'), ch + '\n')
         }
         $('exStatus').textContent = 'Done: ' + name
