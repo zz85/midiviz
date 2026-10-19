@@ -218,3 +218,21 @@ Through headphones the Source model sounded like raw sawtooth waves. A compariso
 - a corner-sharpness jitter of 10 %, which mostly touches the upper partials
 
 Consecutive periods correlate at 0.5. The steady bow noise in the slip phase is 0.2, up from 0.05. Peak / gap is now 44.5 / 35.3 dB at 1–3 / 3–8 kHz, against the recordings' 45.2 / 34.1 (it was 57.7 / 45.9). Band levels moved by under 1 dB and pitch wobble is about 1 cent. Rosin scales all of it. The Source bodies were refitted: held-out residual 2.5–3.1 dB.
+
+## Measured bodies: matching the energy, not only the median
+
+A long-term comparison over every other Iowa note (third-octave bands, each note normalised to its 300 Hz – 2 kHz power, then averaged as powers, 5 % trimmed) showed that the 2–4 kHz bridge region was roughly right on average (violin −3 dB at 2.5 kHz, viola −3, cello −2 to −5 at 2–4 kHz). An earlier four-note check had said 2–8 dB short. The real gap was higher up: 5–14 dB too little energy at 5–13 kHz on the violin, 4–9 dB on the viola, 3–6 dB on the cello.
+
+The cause is statistical. The body fit matches each harmonic's *median* level in dB, and those medians do match (within 1–2 dB). But a real body has sharp resonances that a harmonic now and then lands on, so the recordings' upper harmonics scatter far more than ours. At an equal median they carry much more energy, and loudness and brightness follow energy.
+
+`fit_body.js` now ends with an energy match. It renders the notes through the fitted body, compares the band energies with the recordings, and adds a smooth correction above 1.25 kHz (80 % of the difference per step, three steps, ±10 dB per step). It skips the step with `--no-energy`; `--out=` writes elsewhere, so instruments can be fitted in parallel.
+
+Worst band above 1.6 kHz, ours − recordings:
+
+| | before | after |
+|---|---|---|
+| violin waveguide / source | −13.8 / −12.4 dB | ±2.5 / ±2.6 dB |
+| viola | −9.4 / −9.3 dB | ±1.7 / ±1.9 dB |
+| cello | −6.4 / −5.1 dB | ±1.3 / ±1.1 dB |
+
+The held-out median residual stays 2.5–3.3 dB. The per-band before / after figures are in each body's `stats.energy`.

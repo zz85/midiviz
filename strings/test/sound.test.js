@@ -562,3 +562,14 @@ test('source model: the upper partials are as noisy between harmonics as the Iow
   // before: 46 dB against the recordings' 34 (a perfectly periodic sawtooth)
   assert.ok(Math.abs(med(ours) - med(iowa)) < 4, `peak / gap 3–8 kHz: ours ${med(ours).toFixed(1)} dB, Iowa ${med(iowa).toFixed(1)} dB`)
 })
+
+test('measured body (Iowa): long-term band energy above 1.6 kHz matches the recordings within 3 dB (it was 5–14 dB short)', async () => {
+  const { BODY_IOWA } = await import('../sound/body-iowa.js')
+  for (const inst of ['violin', 'viola', 'cello']) for (const model of ['waveguide', 'source']) {
+    const e = BODY_IOWA[inst][model].stats.energy
+    const hi = j => e.bands[j] >= 1600
+    const after = Math.max(...e.after.filter((_, j) => hi(j)).map(Math.abs)), before = Math.min(...e.before.filter((_, j) => hi(j)))
+    assert.ok(after < 3, `${inst} ${model}: worst band ${after} dB from the recordings`)
+    assert.ok(before < -4, `${inst} ${model}: the median fit alone was ${before} dB short`)
+  }
+})
