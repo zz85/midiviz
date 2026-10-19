@@ -77,8 +77,8 @@
       <hr>
       <div class="row"><label>Demo</label><select id="demo"></select></div>
       <div class="row"><label>Song</label><select id="song"></select>
-        <button class="b" id="open" title="Open a .mid file (or drop one on the page)">Open…</button>
-        <input id="file" type="file" accept=".mid,.midi,audio/midi" hidden></div>
+        <button class="b" id="open" title="Open a MIDI file or a score (MusicXML / .mxl from MuseScore, Finale, Sibelius, Dorico…), or drop one on the page">Open…</button>
+        <input id="file" type="file" accept=".mid,.midi,audio/midi,.musicxml,.xml,.mxl" hidden></div>
       <div class="row" id="trackRow" hidden><label>Track</label><select id="track"></select></div>
       <div class="row"><label>Type</label><input id="typed" type="text" spellcheck="false" title="Notes: A4 B4 C#5 · double stops D4+B4 · length E5:2 · rest r · string lock E5/A"
         value="G4 A4 B4 C5 D5:2 B4 G4:2 D4+B4:2"><button class="b" id="typedGo">Go</button></div>
@@ -120,6 +120,8 @@
   <script type="module">
     import { fingerLine, INSTRUMENTS, parseNote, noteName } from './strings/fingering.js'
     import { renderPerformance, scaleNotes, scaleExpression, expressionFromCC, STYLE } from './strings/sound/performance.js'
+    import { planArticulation } from './strings/articulation.js'
+    import { readMusicXML, readMXLBrowser } from './strings/score.js'
     import { attackError } from './strings/sound/humanize.js'
     import { NCH, midiHz, INSTRUMENTS as SYNTH } from './strings/sound/bowed.js'
     import { Lab, ENGINES } from './strings/sound/engines.js'
@@ -263,6 +265,7 @@
       ['keepBow', 'After rests', [['0', 'Retake'], ['1', 'Keep alternating']], '0', 'Retake: a new phrase after a rest starts on the starting bow again. Keep alternating: SWAM’s Keep Bow Direction'],
       ['bowLift', 'Bow lift', [['off', 'Off string (rings)'], ['on', 'On string (stops)']], 'off', 'At the end of a phrase the bow leaves the string and lets it ring, or stays on it and stops it'],
       ['crossMute', 'Crossings', [['0', 'Rings'], ['1', 'Mute ≤ 1 semitone'], ['2', 'Mute ≤ 2 semitones'], ['99', 'Mute always']], '2', 'SWAM’s Mono CrossString Muting: in a slur that crosses to another string by a small interval, the old string stops so the two notes do not ring together'],
+      ['art', 'Articulation', [['auto', 'Auto'], ['infer', 'Inferred'], ['off', 'Fixed rule']], 'auto', 'Which notes share a bow (strings/articulation.js). Auto: a score’s slurs (MusicXML / .mxl from MuseScore and others), a MIDI performance’s overlaps and gaps (as SWAM reads them), or, when the notes just touch (most MIDI exports of scores), slurs inferred from the music: short notes by step, in groups that start on the beat, never across a rest, a repeat or a leap. Inferred: always infer. Fixed rule: up to 4 fast notes per bow'],
       ['tremolo', 'Tremolo', [['off', 'Off'], ['slow', 'Slow'], ['fast', 'Fast']], 'off', 'SWAM’s Tremolo: every note long enough is bowed with fast short strokes (each turn bites); short notes stay ordinary'],
       ['tremoloMode', 'Trem. mode', [['hz', 'Free (9 / 15 Hz)'], ['sync', 'Sync (16ths / 32nds)'], ['acc', 'Sync, accelerating']], 'hz', 'Free: a fixed rate. Sync: 16ths (slow) or 32nds (fast) of the piece’s tempo, doubled until at least the minimum. Accelerating: starts at about half speed and reaches it in 0.35 s'],
       ['tremoloMin', 'Trem. min', 4, 16, 1, 8, 'Sync modes: strokes per second at least'],
@@ -302,6 +305,8 @@
       Object.assign(style, st); state.useExpr = opt.expr === 'auto'
       lab.setParams({ bowPress: opt.bowPress === 'on', rosin: +opt.rosin, resonance: +opt.resonance, body: opt.body })
       lab.setSordino(opt.sordino === '1')
+      if (re && state.artMode !== undefined && state.artMode !== opt.art) { state.artMode = opt.art; reloadPiece(); return }
+      state.artMode = opt.art
       if (re && changed) rebuild()
     }
 
@@ -428,9 +433,16 @@
       return out
     }
 
-    function loadPiece(raw, { title = '', source = null, fit = true, expr = null } = {}) {
+    function loadPiece(raw, { title = '', source = null, fit = true, expr = null, meter = null, tempoMap = null } = {}) {
       lab.pause()
-      state.raw = raw; state.title = title; state.source = source; state.fit = fit; state.expr = expr
+      state.raw = raw; state.title = title; state.source = source; state.fit = fit; state.expr = expr; state.meter = meter; state.tempoMap = tempoMap
+      // articulation is planned on the raw notes (prepare() trims overlaps, which are a slur cue)
+      const am = opt.art || 'auto'
+      if (am === 'off') for (const n of raw) { if (n.art?.source !== 'score') delete n.art; else n.art = { ...n.art, source: undefined } }
+      else planArticulation(raw, { mode: am === 'infer' ? 'infer' : 'auto', meter, tempo: tempoMap })
+      const src = raw.find(n => n.art?.source)?.art.source
+      state.artInfo = am === 'off' ? 'fixed rule' : { score: 'the score’s slurs', timing: 'the MIDI’s overlaps and gaps', inferred: 'inferred' }[src] || ''
+      if (optEl.art) optEl.art.title = `${optEl.art.closest('.row').querySelector('label').title}\n\nThis piece: ${state.artInfo}`
       state.notes = prepare(raw, fit)
       fingerLine(state.notes, { instrument: $('instrument').value, mode: $('mode').value })
       state.duration = state.notes.reduce((m, n) => Math.max(m, n.off), 0)
@@ -485,6 +497,9 @@
     let midiTracks = null
     function loadMidiBuffer(buf, title, source, trackIndex = null) {
       const midi = new Midi(buf)
+      const hdr = midi.header
+      const midiMeter = (hdr.timeSignatures || []).map(t => ({ t: hdr.ticksToSeconds(t.ticks), beats: t.timeSignature[0], beatType: t.timeSignature[1] }))
+      const midiTempo = (hdr.tempos || []).map(t => ({ t: t.time ?? hdr.ticksToSeconds(t.ticks), bpm: t.bpm }))
       state.tempo = midi.header.tempos?.[0]?.bpm || 100
       midiTracks = midi.tracks.filter(t => t.notes.length && t.channel !== 9).map((t, i) => {
         const notes = t.notes.map(n => ({ pitch: n.midi, on: n.time, off: n.time + Math.max(0.04, n.duration), velocity: n.velocity }))
@@ -501,9 +516,10 @@
       const best = trackIndex ?? midiTracks.reduce((b, t, i) => (t.score > midiTracks[b].score ? i : b), 0)
       $('track').value = best; $('trackRow').hidden = midiTracks.length < 2
       state.songTitle = title
-      loadPiece(midiTracks[best].notes, { title: `${title} — ${midiTracks[best].name}`, source: { ...source, track: best }, expr: midiTracks[best].expr })
+      state.midiTime = { meter: midiMeter, tempoMap: midiTempo }
+      loadPiece(midiTracks[best].notes, { title: `${title} — ${midiTracks[best].name}`, source: { ...source, track: best }, expr: midiTracks[best].expr, ...state.midiTime })
     }
-    $('track').onchange = () => { const t = midiTracks[+$('track').value]; loadPiece(t.notes, { title: `${state.songTitle} — ${t.name}`, source: { ...state.source, track: +$('track').value }, expr: t.expr }); saveUrl() }
+    $('track').onchange = () => { const t = midiTracks[+$('track').value]; loadPiece(t.notes, { title: `${state.songTitle} — ${t.name}`, source: { ...state.source, track: +$('track').value }, expr: t.expr, ...state.midiTime }); saveUrl() }
     async function loadSong(v, track = null) {
       if (!v) return
       setStatus('Loading…')
@@ -512,11 +528,21 @@
     }
     $('song').onchange = () => { demoOptions(null); loadSong($('song').value).then(() => { saveUrl(); play() }) }
     $('open').onclick = () => $('file').click()
-    $('file').onchange = () => { const f = $('file').files[0]; if (f) f.arrayBuffer().then(b => { loadMidiBuffer(b, f.name, null); $('demo').value = ''; $('song').value = '' }).catch(e => setStatus(e.message, true, 3000)) }
+    $('file').onchange = () => { const f = $('file').files[0]; if (f) openFile(f) }
     addEventListener('dragover', e => { e.preventDefault(); document.body.classList.add('dragging') })
     addEventListener('dragleave', e => { if (!e.relatedTarget) document.body.classList.remove('dragging') })
-    addEventListener('drop', e => { e.preventDefault(); document.body.classList.remove('dragging'); const f = e.dataTransfer.files[0]; if (f) f.arrayBuffer().then(b => loadMidiBuffer(b, f.name, null)) })
-    $('instrument').onchange = () => { if (state.raw.length) loadPiece(state.raw, { title: state.title, source: state.source, fit: state.fit, expr: state.expr }); saveUrl() }
+    addEventListener('drop', e => { e.preventDefault(); document.body.classList.remove('dragging'); const f = e.dataTransfer.files[0]; if (f) openFile(f) })
+    const reloadPiece = () => { if (state.raw.length) loadPiece(state.raw, { title: state.title, source: state.source, fit: state.fit, expr: state.expr, meter: state.meter, tempoMap: state.tempoMap }) }
+    $('instrument').onchange = () => { reloadPiece(); saveUrl() }
+    // a score (MusicXML / .mxl): notes with their slurs and articulation marks
+    async function loadScoreFile(buf, name) {
+      const s = /\.mxl$/i.test(name) ? await readMXLBrowser(buf) : readMusicXML(new TextDecoder().decode(buf))
+      $('demo').value = ''; $('song').value = ''; $('trackRow').hidden = true
+      state.tempo = s.tempo[0]?.bpm || 100
+      loadPiece(s.notes, { title: s.title || name, source: null, fit: true, meter: s.meter, tempoMap: s.tempo })
+      setStatus(`${s.notes.length} notes from the score, ${new Set(s.notes.map(n => n.art.slur).filter(x => x != null)).size} slurs`, false, 3000)
+    }
+    const openFile = f => f.arrayBuffer().then(b => /\.(musicxml|xml|mxl)$/i.test(f.name) ? loadScoreFile(b, f.name) : (loadMidiBuffer(b, f.name, null), $('demo').value = '', $('song').value = '')).catch(e => setStatus(e.message, true, 4000))
     $('mode').onchange = $('instrument').onchange
 
     // ── Transport ──────────────────────────────────────────────────────────

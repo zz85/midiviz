@@ -294,3 +294,43 @@ Short strokes (one note under 180 ms) now press ×1.5 instead of ×2 and reach f
 | short forte notes: peak force p90 / max | 4.1 / 8.7 N | 3.1 / 5.9 N |
 | short notes that go raucous (216) | 11 | 5 |
 | attack.js quick suite | 207 / 288 | 207 / 288 |
+
+## Articulation planner and score input
+
+[research/06_articulation.md](research/06_articulation.md) explains the background: SWAM and the Joshua Bell Violin choose legato, détaché and portamento from overlaps, gaps and velocity. Our violin MIDIs carry none of that, because 94.9 % of note pairs touch exactly.
+
+**[score.js](score.js)** reads MusicXML and compressed `.mxl`, the export format of MuseScore, Finale, Sibelius and Dorico. It keeps what MIDI loses:
+- slurs (as ids);
+- staccato / staccatissimo / spiccato / tenuto / accent / marcato (staccato sounds half its value);
+- up- and down-bow signs;
+- ties (merged), the time signature and tempo, and each note's beat in the bar.
+
+It is a small regex XML walker plus a zip reader, so it runs in Node, workers and the browser (`readMXLBrowser` inflates with `DecompressionStream`). Mutopia's LilyPond sources are not read directly. python-ly (`ly musicxml piece.ly`) converts them, but that path is untested.
+
+**[articulation.js](articulation.js)** decides per note whether it continues the previous bow (`n.art.slurPrev`) and its stroke. It runs before bowing, and `motion.js` follows the plan whenever notes carry one. Three sources, picked automatically:
+
+| Input | Layer | Rule |
+|---|---|---|
+| a score | score | its slurs and marks |
+| a timed MIDI (fewer than 85 % of pairs touching) | timing | SWAM / JBV: an overlap is a slur (a quiet overlap a slide); a gap re-bows; the gap's size sets détaché / staccato / spiccato |
+| a score-export MIDI (every note touching) | inference | short notes (≤ 0.34 s) by step (≤ 3 semitones), similar lengths, up to 8 per bow, a new bow on the beat, never across a rest, a repeated pitch or a chord |
+
+`node strings/test/articulation.js [--tune] [--verbose]` checks the inference against the slurs of the Bach Violin Dataset's MusicXML editions of BWV 1001–1006: 32 movements, 21,570 note pairs, 27.1 % slurred in the editions. Each consecutive pair is scored as slurred or separate bows:
+
+| | slurred P / R / F1 | agreement |
+|---|---|---|
+| all separate bows | 0 / 0 / 0 | 72.9 % |
+| motion.js's fixed rule (≤ 4 fast notes) | 32.9 / 46.4 / 38.5 | 59.8 % |
+| planner inference (tuned on even movements) | 43.1 / 59.6 / 50.0 | 67.7 % |
+| — held out (odd movements) | 34.4 / 51.8 / 41.3 | 60.4 % (rule 47.4 %) |
+
+Bach's slurs are an editor's and vary a lot by movement (training F1 61 % against 41 % held out), so the inference gives a plausible bowing, not the edition's.
+
+In #034, **Open…** (or drag-and-drop) accepts `.musicxml`, `.xml` and `.mxl`. **Articulation** in the Bowing panel offers Auto, Inferred (always infer) or Fixed rule; the label's tooltip names the source for the current piece. Bach's Presto BWV 1001 plays as 419 strokes from the MIDI (inferred) and 584 from the MusicXML (its 94 slurs). Tests: `node --test strings/test/articulation.test.js` (3).
+
+Not done yet:
+- stroke types beyond note length (spiccato with the bow off the string, martelé);
+- automatic re-bows on repeated notes inside a slur;
+- slides from the planner;
+- JBV's speed and interval pitch instability;
+- reading `.mscz` and LilyPond directly.

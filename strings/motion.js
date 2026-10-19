@@ -170,7 +170,9 @@ export function buildMotion(notes, { instrument = 'violin', lead = 0.04, vibrato
     const e = events[i]
     // slur: fast notes that join the previous one, up to 4 per bow, single notes only
     const prevStroke = strokes[strokes.length - 1]
-    const slur = prevStroke && e.notes.length === 1 && prevStroke.events.length < 4 &&
+    // a plan from strings/articulation.js (a score's slurs, a timed MIDI's overlaps, or inference) decides when present
+    const planned = e.notes.every(n => n.art?.source)
+    const slur = planned ? !!prevStroke && e.notes.every(n => n.art.slurPrev) : prevStroke && e.notes.length === 1 && prevStroke.events.length < 4 &&
       e.on - lastOff < 0.03 && (e.off - e.on) < 0.2 && prevStroke.events[prevStroke.events.length - 1].notes.length === 1 &&
       (prevStroke.t1 - prevStroke.t0) < 0.5 && prevStroke.events.every(x => x.off - x.on < 0.2)
     if (slur) {

@@ -91,3 +91,7 @@ A planner that reaches, say, 75 % slur agreement on Bach's Partitas would alread
 - **Live-keyboard latency** (lag windows, look-ahead delays): we render from the score.
 - **Key switches and the velocity-as-articulation conventions** of a keyboard player. Our input is a score, not a performer's MIDI, so velocity is often flat (the files above use 127 throughout or write dynamics in CC7).
 - **JBV's recorded legato transitions:** that is sample data, not a rule. The hybrid engine's synthesized slur is our equivalent.
+
+## 6. Status (19 Oct 2026)
+
+Layers 1 and 2 are built (`strings/articulation.js`), with MusicXML / `.mxl` score input (`strings/score.js`). Mutopia's ground truth turned out to be unnecessary for a first check: the Bach Violin Dataset's MusicXML editions already carry slurs. The results are in [strings/README.md](../README.md#articulation-planner-and-score-input): planner F1 50 % / agreement 68 % against the fixed rule's 39 % / 60 %.
