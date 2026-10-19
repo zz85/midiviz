@@ -23,7 +23,7 @@
 
 import { ddspVoices, DDSPEngine, DDSP_URL, DDSP_SR } from './ddsp.js'
 import { midiHz } from './bowed.js'
-import { SampleBank, hybridRenderer, predictedRms, HYBRID_URL } from './hybrid.js'
+import { SampleBank, hybridRenderer, HYBRID_URL } from './hybrid.js'
 
 export const ENGINES = {
   waveguide: { label: 'Physical: bowed waveguide', short: 'Waveguide', live: true },
@@ -39,6 +39,17 @@ const VSCO_NOTES = { G3: 55, A3: 57, C4: 60, E4: 64, G4: 67, A4: 69, C5: 72, E5:
 const VSCO_MISSING = new Set(['G6_f'])
 const GM_FONT = 'soundfonts/Creative(emu10k1)8MBGMSFX.sf2'
 const TFJS = 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/+esm'
+
+// Output level per engine (dB on its output gain), so the same performance
+// is equally loud on all six: every engine plays at its own fixed level (none
+// is normalised per piece any more, so a quiet piece stays quiet and live notes
+// match the render), and these trims line them up at mezzo-forte. Measured
+// as K-weighted loudness (ITU-R BS.1770) on a test performance of runs, long
+// notes, double stops and low and high notes at p / mf / f
+// (strings/test/loudness.mjs) and on four songs, the Hybrid engine as the reference.
+export const LEVEL_TRIM = { waveguide: 2.9, source: 1.6, ddsp: -0.9, vsco: 3.1, gm: 1.4, hybrid: -0.3 }
+const DDSP_EXPAND = 0.46
+const trimGain = name => Math.pow(10, (LEVEL_TRIM[name] ?? 0) / 20)
 
 export class Lab {
   constructor() {
@@ -159,8 +170,13 @@ export class Lab {
     return this.engine('waveguide').noteOn(m)
   }
   noteOff(id) { for (const e of Object.values(this.engines)) e.noteOff?.(id) }
-  /** Offline render of the current engine for the whole piece → { chans: [L, R], sr }. */
-  async exportWav() { return this.current?.renderAll?.() }
+  /** Offline render of the current engine for the whole piece → { chans: [L, R], sr }, at its playing level. */
+  async exportWav() {
+    const r = await this.current?.renderAll?.()
+    if (!r) return r
+    const g = this.current.out.gain.value
+    return { ...r, chans: r.chans.map(c => { const y = new Float32Array(c.length); for (let i = 0; i < c.length; i++) y[i] = c[i] * g; return y }) }
+  }
 }
 
 /** Expression controller → gain for sample voices (the GM volume curve, 0 dB at 100). */
@@ -171,7 +187,7 @@ class PhysicalEngine {
   constructor(lab, model) {
     this.lab = lab; this.model = model
     this.node = new AudioWorkletNode(lab.ctx, 'violin-synth', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] })
-    this.out = lab.ctx.createGain(); this.out.gain.value = model === 'source' ? 1.2 : 1
+    this.out = lab.ctx.createGain(); this.out.gain.value = trimGain(model)
     this.node.connect(this.out).connect(lab.pre)
     this.setParams(lab.synthParams()); this.liveControl(lab.liveCtl)
     this.sent = null; this.instrument = null
@@ -208,7 +224,7 @@ class PhysicalEngine {
 class BufferEngine {
   constructor(lab, name) {
     this.lab = lab; this.name = name
-    this.out = lab.ctx.createGain(); this.out.connect(lab.pre)
+    this.out = lab.ctx.createGain(); this.out.gain.value = trimGain(name); this.out.connect(lab.pre)
     this.blocks = []; this.sources = []; this.timer = null; this.job = 0
   }
   invalidate() { this.job++; this.blocks = []; this.rendered = null; this.preparing = null }
@@ -266,13 +282,6 @@ class BufferEngine {
   async renderAll() { await this.preparing; return this.rendered }
 }
 
-/** RMS over the sounding part, for loudness matching between engines. */
-function activeRms(L) {
-  let s = 0, n = 0
-  for (let i = 0; i < L.length; i += 4) { const v = L[i] * L[i]; if (v > 1e-7) { s += v; n++ } }
-  return Math.sqrt(s / Math.max(1, n))
-}
-const TARGET_RMS = 0.05
 
 // ── DDSP ─────────────────────────────────────────────────────────────────
 class DDSPEngineUI extends BufferEngine {
@@ -329,7 +338,12 @@ class DDSPEngineUI extends BufferEngine {
       const j = ahead[0] || todo[0]
       const y = await m.window(j.w.f0, j.w.ld)
       if (job !== this.job) return
-      for (let i = 0; i < y.length; i++) y[i] *= 0.4
+      // the model's own loudness response is flat (5 dB from p to f where the
+      // others give 8–12): DDSP_EXPAND more dB per dB of our loudness curve,
+      // frame by frame, around mezzo-forte
+      const { averageMaxLoudness: top, meanLoudness: mid } = m.settings, ld = j.w.ld, k = DDSP_EXPAND * 15 / (top - mid)
+      const gF = f => ld[f] > -110 ? Math.pow(10, Math.max(-12, Math.min(8, k * (ld[f] - mid))) / 20) : 1
+      for (let i = 0; i < y.length; i++) { const f = Math.min(ld.length - 1, i >> 6), f1 = Math.min(ld.length - 1, f + 1), x = (i & 63) / 64; y[i] *= 0.4 * (gF(f) * (1 - x) + gF(f1) * x) }
       DDSPEngine.place(L, j.w.start, y, j.first, j.last)
       j.done = true; done++
       const ready = blocksDone()
@@ -395,9 +409,6 @@ class SampleEngine extends BufferEngine {
     const out = await oc.startRendering()
     if (job !== this.job) return
     const L = out.getChannelData(0), R = out.getChannelData(1)
-    const g = TARGET_RMS / (activeRms(L) || 1)
-    for (let i = 0; i < L.length; i++) { L[i] *= g; R[i] *= g }
-    this.gain = g
     this.rendered = { chans: [L, R], sr }
     this.setBlocks(L, R, sr, job)
     this.lab.emit({ type: 'ready', engine: 'vsco' })
@@ -521,7 +532,7 @@ class GMEngine extends BufferEngine {
       while (e < ev.length && ev[e][0] * sr <= i) {
         const [, kind, n, val] = ev[e++]
         if (kind === 2) tune(n.gmCh, val)
-        else if (kind === 1) s.note_on(n.gmCh, n.pitch, Math.max(1, Math.round((n.velocity ?? 0.75) * 127)))
+        else if (kind === 1) s.note_on(n.gmCh, n.pitch, Math.max(1, Math.min(127, Math.round(gmVelocity(n.velocity ?? 0.75) * 127))))
         else s.note_off(n.gmCh, n.pitch)
       }
       const until = Math.min(N, e < ev.length ? Math.max(i + 1, Math.ceil(ev[e][0] * sr)) : N, i + 4096)
@@ -529,19 +540,20 @@ class GMEngine extends BufferEngine {
       for (let k = 0; k < until - i; k++) { L[i + k] = out[2 * k]; R[i + k] = out[2 * k + 1] }
       i = until
     }
-    const g = TARGET_RMS / (activeRms(L) || 1)
-    for (let k = 0; k < N; k++) { L[k] *= g; R[k] *= g }
     this.rendered = { chans: [L, R], sr }
     this.setBlocks(L, R, sr, job)
     this.lab.emit({ type: 'ready', engine: 'gm' })
   }
 }
 
+// The soundfont's velocity curve spans 16–19 dB from p (0.3) to f (0.9), the
+// other engines 8–12: velocities are bent toward mezzo-forte (unchanged at 0.6)
+const gmVelocity = v => 0.6 * Math.pow(Math.max(0.01, v) / 0.6, 0.56)
+
 // ── Hybrid sampler (hybrid.js) ───────────────────────────────────────────
 // Output level: the renderer normalises every recording to its sustain RMS and
-// scales by the loudness curve (≈ 1 at mezzo-forte). A render is levelled to
-// the other engines from the loudness curves before it starts (predictedRms,
-// within ±1.5 dB of the measured level), so blocks can play as they finish.
+// scales by the loudness curve (≈ 1 at mezzo-forte); HYBRID_GAIN, the same for
+// the render and live notes, and LEVEL_TRIM set the level.
 const HYBRID_GAIN = 0.05
 class HybridEngine extends BufferEngine {
   constructor(lab, name) { super(lab, name); this.banks = new Map(); this.live = new Map(); this.offBeforeOn = new Set() }
@@ -578,7 +590,7 @@ class HybridEngine extends BufferEngine {
     const sr = this.lab.ctx.sampleRate
     const r = hybridRenderer(perf, bank, { sampleRate: sr })
     let published = 0
-    const g = TARGET_RMS / Math.max(0.05, predictedRms(perf))
+    const g = HYBRID_GAIN
     const publish = through => {
       const upto = Math.min(Math.ceil(r.L.length / sr), Math.floor(through))
       if (upto <= published) return

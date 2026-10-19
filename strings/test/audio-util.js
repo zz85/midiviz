@@ -110,3 +110,24 @@ export function readWav(buf) {
   }
   return { sr: fmt.sr, chans }
 }
+
+/**
+ * Loudness (LKFS) of channels at sr: ITU-R BS.1770-4 K-weighting, 400 ms
+ * blocks with 75 % overlap, the absolute (−70) and relative (−10 LU) gates.
+ * A signal shorter than one block is measured as a whole.
+ */
+export function kLoudness(chans, sr) {
+  const biq = (x, [b0, b1, b2, a1, a2]) => { const y = new Float64Array(x.length); let x1 = 0, x2 = 0, y1 = 0, y2 = 0; for (let i = 0; i < x.length; i++) { const v = b0 * x[i] + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2; x2 = x1; x1 = x[i]; y2 = y1; y1 = v; y[i] = v } return y }
+  let K = Math.tan(Math.PI * 1681.974450955533 / sr), Q = 0.7071752369554196, Vh = Math.pow(10, 3.999843853973347 / 20), Vb = Math.pow(Vh, 0.4996667741545416), a0 = 1 + K / Q + K * K
+  const s1 = [(Vh + Vb * K / Q + K * K) / a0, 2 * (K * K - Vh) / a0, (Vh - Vb * K / Q + K * K) / a0, 2 * (K * K - 1) / a0, (1 - K / Q + K * K) / a0]
+  K = Math.tan(Math.PI * 38.13547087602444 / sr); Q = 0.5003270373238773; a0 = 1 + K / Q + K * K
+  const s2 = [1, -2, 1, 2 * (K * K - 1) / a0, (1 - K / Q + K * K) / a0]
+  const ys = chans.map(x => biq(biq(x, s1), s2)), n = ys[0].length
+  const B = Math.min(n, Math.round(0.4 * sr)), H = Math.max(1, Math.round(B / 4)), z = []
+  for (let s = 0; s + B <= n; s += H) { let e = 0; for (const y of ys) for (let i = s; i < s + B; i++) e += y[i] * y[i]; z.push(e / B) }
+  const L = e => -0.691 + 10 * Math.log10(e)
+  let g = z.filter(e => L(e) > -70); if (!g.length) return -Infinity
+  const m = g.reduce((a, b) => a + b, 0) / g.length
+  g = g.filter(e => L(e) > L(m) - 10)
+  return L(g.reduce((a, b) => a + b, 0) / g.length)
+}

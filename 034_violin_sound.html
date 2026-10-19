@@ -804,7 +804,7 @@
     else if (qs.get('typed')) { $('typed').value = qs.get('typed'); state.tempo = 150; loadPiece(parseTyped(qs.get('typed')), { title: 'Typed notes', source: { typed: qs.get('typed') }, fit: false }) }
     else { $('demo').value = qs.get('demo') || 'lyrical'; loadDemo($('demo').value) }
     showPreset()
-    window.__lab = { lab, state }
+    window.__lab = { lab, state, loadPiece }
   </script>
 </body>
 </html>

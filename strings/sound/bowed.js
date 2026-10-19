@@ -41,6 +41,7 @@ import { TONE, LEVEL } from './tone.js'
 import { ConvBody } from './body.js'
 import { BODY_IOWA } from './body-iowa.js'
 import { BODY_PHIL } from './body-philharmonia.js'
+import { LEVEL_BODY } from './level-body.js'
 
 export const FRAME_RATE = 250
 // bow-force brightness tilt per string model and instrument: k = exp(c·(r − r0)) − 1 above ~3·f0
@@ -559,7 +560,10 @@ export class ViolinSynth {
     if (spec) {
       this.body = new ConvBody(this.sr, spec)
       this.eq = new EQ(this.sr, [])
-      this.voicing = null
+      // level by pitch: the measured bodies keep each note's harmonic shape, not
+      // its level; this follows the recordings' loudness across the range
+      // (strings/test/fit_level.js). A spec object or NBody plays without it.
+      this.voicing = typeof b === 'string' ? LEVEL_BODY[instrument]?.[this.bodyKind]?.[model] ?? null : null
     } else {
       this.body = new Body(this.sr, I.body, instrument.length * 31 + 7)
       this.eq = new EQ(this.sr, this.toneBands ?? TONE[instrument]?.[model] ?? TONE.violin[model] ?? [])

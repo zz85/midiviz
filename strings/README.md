@@ -407,3 +407,23 @@ Measured on the demos, Ave Maria and the first 40 s of Bach's Adagio BWV 1001 (2
 | attack.js bow changes reaching Helmholtz motion within 50 ms | 175 / 216 | 162 / 216 |
 
 The last row measures the string's motion, not the sound: in a legato change the old tone is still ringing over the new stroke's first periods.
+
+## Loudness across the engines
+
+All six engines play the same performance at the same loudness, measured as K-weighted loudness (ITU-R BS.1770, LUFS) by `node strings/test/loudness.mjs` (headless Chromium; see the file). A test performance contains scales and long notes at p / mf / f (velocity 0.3 / 0.6 / 0.9), double stops, and low and high notes.
+
+- **No per-piece normalisation.** GM, Samples and Hybrid used to be scaled per piece to a fixed RMS, while the physical models and DDSP played at their own level. On Bach's Adagio BWV 1001 the engines spanned 13 dB (Source −9.4 LUFS, GM −22.7). Now every engine plays at a fixed level, so a quiet piece stays quiet, and live notes match the render. `LEVEL_TRIM` in `engines.js` lines them up at mezzo-forte with Hybrid as the reference. Export WAV is at the playing level.
+- **Dynamic range.** From velocity 0.3 to 0.9, the GM soundfont spanned 16–19 dB and DDSP 5 dB, against 8–12 dB for the others. GM velocities are bent toward mezzo-forte (`gmVelocity`, unchanged at 0.6), and DDSP's output is expanded by 0.46 dB per dB of our loudness curve (`DDSP_EXPAND`). Both now span 9–11 dB.
+- **Level by pitch.** The measured bodies are fitted to each note's harmonic shape, not its level. Through them, the physical models' notes from D6 up came out 9–13 dB below G4, while the Iowa recordings stay level there. `node strings/test/fit_level.js` renders every Iowa mf note on the string it was recorded on. It compares the loudness and writes the smoothed difference (Gaussian, σ 2.5 semitones, mean removed) to `strings/sound/level-body.js` per instrument, body and model. ViolinSynth applies it as the string gain from the current pitch. The spread of recording − ours per note drops from 5.3–7.0 to 4.5–5.2 dB on the violin, 2.8–4.2 to 2.5–3.6 on the viola, and 3.2–4.6 to 1.9–3.3 on the cello.
+
+| LUFS (pre-hall) | test, all | Adagio BWV 1001 | Hornpipe | Dvořák Largo | Für Elise |
+|---|---|---|---|---|---|
+| Waveguide | −21.0 | −13.1 | −23.0 | −22.3 | −30.2 |
+| Source | −21.0 | −13.0 | −22.8 | −22.2 | −30.1 |
+| DDSP | −21.6 | | | | |
+| Samples (VSCO) | −20.4 | −15.2 | −19.7 | −25.0 | −33.1 |
+| GM | −21.2 | −16.8 | −19.8 | −25.1 | −28.9 |
+| Hybrid | −21.3 | −15.1 | −21.2 | −25.0 | −29.3 |
+
+Before, the Adagio measured −12.4 / −9.4 / −22.7 / −21.1 (Waveguide / Source / GM / Hybrid). What remains differs by piece. The physical models add more on double stops (+5.6 dB over a single line, Hybrid +4.1). The Samples' p layer starts slowly, so soft short notes are quieter. The Source engine, the default, plays where it did before (its old gain of 1.2 is now a trim of +1.6 dB).
+
