@@ -136,3 +136,42 @@ A third choice, **Body: Measured (NBody, violin)**: a violin measured directly, 
 - [sound/body.js](sound/body.js) `ConvBody` takes the impulse responses as they are (`{ ir: [L, R], rate }`), resampled to the context rate with a windowed sinc, through the same partitioned convolution. Violin only: the viola and cello keep the Iowa body. Level per string model matches the Iowa body (−9.6 dB waveguide, −8.6 dB source).
 - Harmonic residual against the Iowa recordings (the measure fit_body.js reports, all notes): 6.2 / 16.0 dB median / p90 (waveguide) and 6.3 / 16.3 (source), against 3.5 / 9.5 for the Iowa body (held out) and 5.5 / 14.9 for the modal one. It is a different violin from the Iowa one: the largest differences are ~8 dB more around 5.8 kHz and less above 11 kHz.
 - The helpers fit_body.js and build_nbody.js share (our string's bridge force for one note, harmonic tables, the residual) are in [test/body-eval.js](test/body-eval.js).
+
+## Waveguide attacks (Guettler) and the playable window
+
+The waveguide's attacks crackled. Three scripts measure why, and check the fix:
+
+- `node strings/test/attack.js [--verbose]` plays 432 bow starts: from rest and at bow changes, on every string of violin, viola and cello, at p / mf / f. It reports how long each takes to reach Helmholtz motion (6 regular periods) and whether it stays there. A good attack settles within 50 ms (90 ms if loose, Guettler and Askenfelt 1997).
+- `node strings/test/schelleng.js` measures the playable window (F_min…F_max) per string, contact point and bow speed.
+- `node strings/test/guettler.js` maps the time to Helmholtz motion over bow acceleration × force.
+
+What they showed: the window was far too narrow on low notes. It was ×1.2 between F_min and F_max on the cello C string and ×1.85 on the violin G, and it grows with pitch, not with string mass. The two end losses were one-pole filters with almost fixed cutoffs, so a low note's corners were barely rounded within a period. The fix makes both cutoffs track the note: 2.5·f0 at the bridge, 4·f0 at the finger, 12·f0 at the nut. The other candidates widened nothing or made it worse:
+- friction-curve parameters
+- ring time
+- sympathetic coupling
+- rosin grain
+- a first try at torsional waves
+
+Window (geometric mean over 9 contact-point × bow-speed cases, 5 semitones above the open string):
+
+| | before | after |
+|---|---|---|
+| violin G / A / E | ×1.85 / 3.89 / 7.0 | ×4.27 / 6.18 / 7.44 |
+| cello C / G / A | ×1.20 / 1.28 / 2.86 | ×2.16 / 2.53 / 4.01 |
+
+On top of that, performance.js now starts strokes the way Guettler's diagram asks:
+- a fast bow acceleration that eases off (1 − (1 − x)²)
+- twice the previous steady force, plus a further ×2 press at the start that eases off in 40 ms
+- the Attack style (presets: Baroque 0.35) scales the press, the bite and the ramp
+
+Tuned over a grid of 150 + 192 + 48 + 54 settings on the quick suite.
+
+| attack.js, 432 bow starts | before | after |
+|---|---|---|
+| good | 65 | 317 |
+| reach Helmholtz in time | 110 | 330 |
+| stay in Helmholtz | 244 | 407 |
+| median time to Helmholtz | 91 ms | 35 ms |
+| violin / viola / cello good | 58 / 42 / 12 of 144 | 129 / 107 / 81 of 144 |
+
+The cello from rest is still the weakest: 35 of 72. Because the raw tone changed, the waveguide's measured bodies were refitted. Held-out residual: 3.0–3.4 dB median (it was 3.3–3.5); the modal body's is 4.7–5.1 dB. With the string settling by itself, interactive bow pressure now rarely has anything to correct (182 vs 181 of 189 sweep notes).

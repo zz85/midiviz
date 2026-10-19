@@ -324,7 +324,7 @@ test('waveguide oversampling: the stick-slip partials above Nyquist no longer fo
   assert.ok(a3 < a1 - 8 && a3 < -34, `between the harmonics: ${a1.toFixed(1)} dB at 1×, ${a3.toFixed(1)} dB at 3×`)
 })
 
-test('interactive bow pressure: kicks double slipping back to Helmholtz motion (more notes in Helmholtz than fixed force)', () => {
+test('interactive bow pressure: the sweep stays in Helmholtz motion (≥ 95 %), and the feedback never makes it worse', () => {
   // a sweep: every second semitone over 40, three dynamics, three instruments
   const cases = []
   for (const [instrument, lo] of [['violin', 55], ['viola', 48], ['cello', 36]]) for (const vel of [0.3, 0.75, 1]) for (let m = lo; m <= lo + 40; m += 2) cases.push([instrument, m, vel])
@@ -344,7 +344,9 @@ test('interactive bow pressure: kicks double slipping back to Helmholtz motion (
     return h[1] - Math.max(h[2], h[3]) >= 1 && h[0] < h[1] - 15
   }
   const fixed = cases.filter(c => helm(...c, false)).length, inter = cases.filter(c => helm(...c, true)).length
-  assert.ok(inter >= fixed + 6 && inter >= 0.95 * cases.length, `Helmholtz on ${inter}/${cases.length} with the feedback, ${fixed}/${cases.length} without`)
+  // with the pitch-tracking end losses the string mostly finds Helmholtz motion by itself;
+  // the feedback must never make it worse
+  assert.ok(inter >= fixed && inter >= 0.95 * cases.length, `Helmholtz on ${inter}/${cases.length} with the feedback, ${fixed}/${cases.length} without`)
 })
 
 test('expression lane: CC7 hairpins move bow speed and force together; flat velocities take their dynamic from it', async () => {
@@ -482,4 +484,27 @@ test('measured impulse-response body (NBody path): an IR is convolved as it is, 
   const syn = new ViolinSynth(48000, { instrument: 'violin', body: spec }), b0 = syn.body
   syn.setParams({ rosin: 1.2, body: { ...spec } })
   assert.equal(syn.body, b0)
+})
+
+test('attack: a lighter attack (Baroque) ramps the bow in slower with less bite; 1 is unchanged', () => {
+  const notes = finger(melody('D5 E5 F#5 G5 A5:2', 0.5))
+  const flat = { vibrato: 0, timing: 0, intonation: 0, variance: 0 }
+  const at = attack => {
+    const perf = renderPerformance(notes, { style: { ...flat, attack } })
+    const n = perf.notes[2], F = channel(perf, n.string, CH.force), V = channel(perf, n.string, CH.vel), i0 = Math.round(n.on * perf.frameRate)
+    return { perf, Fpk: Math.max(...F.slice(i0, i0 + 10)) / F[i0 + 40], v10: Math.abs(V[i0 + 3]) / Math.abs(V[i0 + 40]) }
+  }
+  const d = at(1), l = at(0.35)
+  assert.deepEqual(renderPerformance(notes, { style: flat }).data, d.perf.data, 'attack 1 is the default')
+  assert.ok(l.Fpk < 0.6 * d.Fpk, `less bite: force peak / sustain ${d.Fpk.toFixed(2)} → ${l.Fpk.toFixed(2)}`)
+  assert.ok(l.v10 < 0.8 * d.v10, `slower ramp: bow speed after 12 ms ${d.v10.toFixed(2)} → ${l.v10.toFixed(2)} of its sustain`)
+})
+
+test('waveguide attacks (Guettler): most bow starts reach Helmholtz motion within 50 ms (90 ms if loose) and stay there', async () => {
+  const { evaluate } = await import('./attack.js')
+  const r = evaluate({ quick: true })
+  // before the pitch-tracking end losses and the attack press: 44 / 288, median 89 ms
+  assert.ok(r.good >= 0.65 * r.total, `good attacks ${r.good}/${r.total}`)
+  assert.ok(r.ms < 50, `median time to Helmholtz ${r.ms.toFixed(1)} ms`)
+  assert.ok(r.stays >= 0.85 * r.total, `stay in Helmholtz ${r.stays}/${r.total}`)
 })

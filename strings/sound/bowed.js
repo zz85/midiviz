@@ -201,15 +201,23 @@ export class WaveguideString {
     const N = sr / f0, w = 2 * Math.PI * f0 / sr
     const stopped = f0 > this.openHz * 1.01
     // bridge low-pass: duller for low strings, brighter up the string
-    let aB = Math.min(0.5, 0.1 + 0.18 * (this.openHz / f0)) * (stopped ? 1 : 0.85)
-    let aN = stopped ? 0.18 : 0.04            // the fingertip absorbs more than the nut
+    // end losses (one-pole low-passes) that track the note: the bridge side
+    // cuts off at 2.5·f0, the finger at 4·f0 (the nut at 12·f0). With fixed
+    // cutoffs a low note's corners were barely rounded per period, which left
+    // the low strings almost no playable window (cello C ×1.2 between F_min
+    // and F_max, strings/test/schelleng.js) and raucous, unsettled attacks;
+    // tracking widens it on every string (cello C ×2.2, G ×2.9, violin G
+    // ×1.9 → ×3.9; attack.js: good attacks 65 → 300 of 432 with the attack
+    // force in performance.js)
+    const lp = fc => Math.exp(-2 * Math.PI * Math.min(fc, 0.4 * sr / this.os) / (sr / this.os))
+    let aB = lp(2.5 * f0 * (stopped ? 1 : 1.25))
+    let aN = lp((stopped ? 4 : 12) * f0)
     // loop gain from the ring time; damp shortens it to ~0.12 s
     const t60 = Math.exp(Math.log(this.t60 * (stopped ? 0.6 : 1)) * (1 - damp) + Math.log(0.12) * damp)
     const g = Math.pow(10, -3 / (t60 * f0))
     this.gB = g * 0.998; this.gN = 0.998
     // the loop filters keep their cutoff (in Hz) when the string runs oversampled
-    this.aB = aB = this.os > 1 ? Math.pow(aB, 1 / this.os) : aB
-    this.aN = aN = this.os > 1 ? Math.pow(aN, 1 / this.os) : aN
+    this.aB = aB; this.aN = aN                 // already per string sample (oversampled rate)
     const filt = onePoleDelay(aB, w) + onePoleDelay(aN, w)
     const Lb = Math.max(2.2, Math.min(0.45, Math.max(0.02, beta)) * N)
     this.Lb = Lb
