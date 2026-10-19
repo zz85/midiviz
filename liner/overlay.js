@@ -54,7 +54,9 @@ function injectFaces() {
 	document.head.append(Object.assign(document.createElement('style'), { id: 'ln-faces', textContent: FACES.map(([f, w, st, file]) => `@font-face { font-family: '${f}'; font-weight: ${w}; font-style: ${st}; src: url(${FONT_DIR}${file}.woff2) format('woff2'); font-display: swap; }`).join('\n') }))
 }
 // opacity of an intertitle at song time t (fades by song time, so pausing and seeking hold it)
-const itAlpha = (x, t) => Math.max(0, Math.min(1, (t - x.start) / INTERTITLE.fadeIn, (x.end - t) / INTERTITLE.fadeOut))
+const itAlpha = (x, t) => Math.max(0, Math.min(1, (t - x.start) / (x.fadeIn || INTERTITLE.fadeIn), (x.end - t) / (x.fadeOut || INTERTITLE.fadeOut)))
+// the heading's size against the line's: the title's composer a little larger than a line's kicker
+export const KICKER = { line: 0.36, title: 0.42 }
 
 export const KIND_COLORS = { history: '#e8b46a', analysis: '#7cc6c0', trivia: '#e79aa6', listen: '#b7a6f0', technique: '#9fd38a' }
 const KIND_LABEL = { history: 'History', analysis: 'Analysis', trivia: 'Trivia', listen: 'Listen', technique: 'Technique' }
@@ -191,7 +193,7 @@ export function createLinerOverlay({ seek, title, onSeek, host = document.body, 
 		const big = curIt?.title ? 1.3 : 1
 		const vh = s => `clamp(${Math.round(s * 0.5)}px, ${(s / 10.8).toFixed(2)}vh, ${s}px)`
 		const set = (sel, f, size, upper) => { const e = it.querySelector(sel); if (e) Object.assign(e.style, { font: `${f[2]} ${f[1]} ${vh(size)} ${fam(f)}`, letterSpacing: f[3] + 'em', textTransform: upper ? 'uppercase' : 'none' }) }
-		set('.k', st.kicker, st.size * 0.42, true)
+		set('.k', st.kicker, st.size * (curIt?.title ? KICKER.title : KICKER.line), true)
 		set('.l', st.line, st.size * big, st.upper)
 		set('.s', st.sub, st.size * 0.52)
 	}
@@ -466,7 +468,7 @@ export function drawIntertitle(g, w, h, tl, t, { style = 'serif', analysisStyle 
 	const st = styleOf(x, style, INTERTITLE_STYLES[analysisStyle] ? analysisStyle : null), th = INTERTITLE_THEMES[theme] || INTERTITLE_THEMES.mono, k = h / 1080
 	const pc = posClass(typeof position === 'function' ? position(x) : position)
 	const side = pc[1] === 'l' ? 'left' : pc[1] === 'r' ? 'right' : 'center', top = pc[0] === 't'
-	const lineSize = st.size * k * (x.title ? 1.3 : 1), kickSize = st.size * 0.42 * k, subSize = st.size * 0.52 * k
+	const lineSize = st.size * k * (x.title ? 1.3 : 1), kickSize = st.size * (x.title ? KICKER.title : KICKER.line) * k, subSize = st.size * 0.52 * k
 	const track = (f, size, extra = 0) => { if ('letterSpacing' in g) g.letterSpacing = `${((f[3] + extra) * size).toFixed(2)}px` }
 	const maxW = Math.min(side === 'center' ? w * 0.8 : Math.min(w * 0.46, 820 * k), lineSize * 24)
 	g.save()

@@ -361,9 +361,9 @@ export function layoutScreen(tl, { seed = 1, title = null, start = 0 } = {}) {
 	const G = INTERTITLE.gap, L = LAYOUT
 	let pins = sc.pins.map(x => ({ ...x }))
 	if (title?.text) {
-		// the title from the first note, held a little longer, larger; pins it would crowd move later
-		const words = plainText([title.kicker, title.text, title.sub].filter(Boolean).join(' ')).split(/\s+/).length
-		const T = { ...title, title: true, voice: 'story', start, end: start + Math.min(11, Math.max(7, INTERTITLE.fadeIn + INTERTITLE.breath + 1.5 + words * INTERTITLE.perWord + INTERTITLE.fadeOut)) }
+		// the title from the first note, larger, held `title.hold` seconds (else a little longer
+		// than a line: 7–11 s by its words), fading in slower; pins it would crowd move later
+		const T = { ...title, title: true, voice: 'story', start, end: start + titleSecs(title), fadeIn: TITLE.fadeIn, fadeOut: TITLE.fadeOut }
 		const moved = [T]
 		for (const x of pins) { const after = moved.at(-1).end + G; moved.push(x.start >= after ? x : { ...x, start: after, end: after + (x.end - x.start), moved: true }) }
 		pins = moved
@@ -405,6 +405,14 @@ export function titleScreen(liner, fallback) {
 	if (m?.screen) return parseScreen(m.screen)
 	if (m?.title) return { kicker: m.composer || '', text: m.title }
 	return fallback || null
+}
+
+/** The song title as an intertitle: its fades, and the hold when it has none of its own. */
+export const TITLE = { fadeIn: 2.5, fadeOut: 2, min: 7, max: 11, extra: 1.5 }
+export function titleSecs(title) {
+	if (title?.hold > 0) return Math.max(title.hold, TITLE.fadeIn + TITLE.fadeOut + 1)
+	const words = plainText([title?.kicker, title?.text, title?.sub].filter(Boolean).join(' ')).split(/\s+/).length
+	return Math.min(TITLE.max, Math.max(TITLE.min, INTERTITLE.fadeIn + INTERTITLE.breath + TITLE.extra + words * INTERTITLE.perWord + INTERTITLE.fadeOut))
 }
 
 /** The timeline with `title` as an intertitle from `start` (see layoutScreen). */

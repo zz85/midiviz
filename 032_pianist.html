@@ -368,6 +368,7 @@
     <div class="field"><label>Camera</label><select id="exCam"><option value="auto" selected>Director (auto)</option><option value="current">As on screen</option></select></div>
     <label class="chk"><input type="checkbox" id="exAudio" checked>Include audio (with the hall)</label>
     <div class="field" title="Title card: the classic card, before the music. First intertitle: the title fades in over the opening bars like the other intertitles (composer, title and the notes' subtitle, in the intertitle style), and also when the song plays here"><label>Song title</label><select id="exTitle"><option value="none" selected>None (the intertitles open the video)</option><option value="intertitle">As the first intertitle</option><option value="card">Title card (fades out as the music starts)</option></select></div>
+    <div class="field" id="exHoldF" title="How long the song title stays as the first intertitle, fades included. Auto: 7–11 s by its words. The scene comes up from black more slowly under it (half the hold, 3–8 s)"><label>Title hold <span class="val" id="exHoldV"></span></label><input type="range" id="exHold" min="0" max="20" step="0.5" value="0"></div>
     <label class="chk" title="Draw the liner notes into the picture as they show on screen (Visuals → Liner notes: intertitles, or every note as a caption)"><input type="checkbox" id="exCaps" checked>Liner notes in the picture (as on screen)</label>
     <label class="chk" title="Save the same lines as WebVTT subtitles (upload to YouTube as a subtitle track) and the sections as YouTube chapters for the description, timed to this video"><input type="checkbox" id="exVtt" checked>Save subtitles (.vtt) and YouTube chapters</label>
     <div class="field"><label>Title font</label><select id="exFont">
@@ -432,7 +433,7 @@
     import { createSmoother } from './pianist/subdivide.js'
     import { createDirector, SPOTS, MOVES, FRAME_LABELS, SIZES, spotKind } from './pianist/director.js'
     import { hideBody } from './pianist/shell.js'
-    import { createLinerLibrary, clockOfMidi, buildTimeline, toVTT, toChapters, titleScreen, withTitle } from './liner/liner.js'
+    import { createLinerLibrary, clockOfMidi, buildTimeline, toVTT, toChapters, titleScreen, withTitle, titleSecs } from './liner/liner.js'
     import { createLinerOverlay, drawLinerCaption, drawIntertitle, loadIntertitleFonts, INTERTITLE_STYLES, INTERTITLE_THEMES, INTERTITLE_POSITIONS } from './liner/overlay.js'
 
     const $ = id => document.getElementById(id)
@@ -1339,8 +1340,18 @@
       const m = /^(.+?)\s+[-–]\s+(.+)$/.exec(label)
       return titleScreen(l, m ? { kicker: m[1], text: m[2], sub: $('exSub').value.trim() } : label ? { kicker: '', text: label, sub: $('exSub').value.trim() } : null)
     }
-    const applyTitle = () => liner.setTitle($('exTitle').value === 'intertitle' ? songTitleScreen() : null)
+    // with the title as an intertitle the director's opening comes up from black
+    // more slowly, under it (half the hold, 3–8 s); else its usual 2.5 s
+    function applyTitle() {
+      const on = $('exTitle').value === 'intertitle', x = on ? songTitleScreen() : null, hold = +$('exHold').value
+      $('exHoldV').textContent = hold ? hold + ' s' : 'auto (' + (x ? titleSecs(x).toFixed(1) + ' s' : '7–11 s') + ')'
+      $('exHold').disabled = !on
+      liner.setTitle(x && hold ? { ...x, hold } : x)
+      director.opts.fadeIn = x ? Math.min(8, Math.max(3, titleSecs(hold ? { ...x, hold } : x) / 2)) : 2.5
+    }
     $('exTitle').addEventListener('change', applyTitle)
+    $('exHold').addEventListener('input', () => { applyTitle(); drawPreview() })
+    applyTitle()
     $('exSub').addEventListener('input', applyTitle)
     let linerSeq = 0
     async function attachLiner(midi, file, duration) {
@@ -1602,7 +1613,7 @@
       ['sf', 'sf'], ['avsync', 'avsync'],
       ['dofamt', 'dofAmt'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
       ['vol', 'vol'], ['room', 'room'], ['seat', 'seat'], ['rv', 'rvAmt'], ['decay', 'rvDecay'], ['tone', 'rvTone'], ['boost', 'boost'], ['amb', 'amb'], ['applause', 'applause'],
-      ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exsub', 'exSub'], ['excard', 'exCard'], ['excaps', 'exCaps'], ['exvtt', 'exVtt'], ['exlen', 'exLen'],
+      ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exsub', 'exSub'], ['excard', 'exCard'], ['excaps', 'exCaps'], ['exvtt', 'exVtt'], ['exlen', 'exLen'], ['exhold', 'exHold'],
       ['notes', 'linerMode'], ['itstyle', 'itStyle'], ['itstylea', 'itStyleA'], ['itcol', 'itTheme'], ['itpos', 'itPos'], ['itheads', 'itHeads'], ['extitle', 'exTitle'],
     ].filter(([, id]) => $(id))
     const OUTFIT_KEYS = { dress: 'dress', slit: 'slit', fabric: 'fabric', dcol: 'color', shoes: 'shoes', hair: 'hair', hcol: 'hairColor' }
@@ -1840,7 +1851,7 @@
       g.drawImage(src, (src.width - sw) / 2, (src.height - sh) / 2, sw, sh, 0, 0, w, h)
       cv.style.opacity = $('exTitle').value !== 'none' ? 1 : 0.35
       if ($('exTitle').value === 'intertitle') {
-        const x = songTitleScreen() || { kicker: 'Frédéric Chopin', text: 'Raindrop Prelude', sub: $('exSub').value.trim() }
+        const x = { ...(songTitleScreen() || { kicker: 'Frédéric Chopin', text: 'Raindrop Prelude', sub: $('exSub').value.trim() }), ...(+$('exHold').value ? { hold: +$('exHold').value } : {}) }
         await loadIntertitleFonts(liner.style)
         if (job !== previewJob) return
         drawIntertitle(g, w, h, withTitle(null, x), 3, { style: liner.style, analysisStyle: liner.analysisStyle, theme: liner.theme, position: liner.position === 'auto' ? autoPosition() : liner.position, kickers: liner.kickers })

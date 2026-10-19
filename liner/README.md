@@ -142,6 +142,7 @@ Guidelines, checked by the tests and warned about in the console:
 
 - One line of at most 14 words (8–12 is better); a kicker of a few words: a
   place and year, a bar, a term.
+  The kicker is drawn at 0.36 of the line's size (the title's composer at 0.42).
 - Each stays 1.2 s fading in, 2.5 s plus 0.3 s a word, and 1.5 s fading out
   (5–10 s); fades follow the song clock, so pausing holds one.
 - Keep pinned lines 3 s apart, and the total under half the piece.
@@ -153,8 +154,11 @@ front matter's `screen:` (kicker | title | small line), else composer over
 title; for a song without notes, its name from the song list split at the
 dash ("Chopin - Raindrop Prelude"), with the export subtitle as the small
 line), or the classic title card. As an intertitle it shows from the first
-note for 7–11 s, a little larger than the others; pinned lines it would
-crowd move later and the floats start after it. Headings off hides the kickers but not the title's.
+note, a little larger than the others, for Render → Title hold seconds
+(auto: 7–11 s by its words), fading in over 2.5 s and out over 2 s; pinned
+lines it would crowd move later and the floats start after it. Under it the
+director's opening shot comes up from black more slowly: half the hold,
+3–8 s (2.5 s without the title). Headings off hides the kickers but not the title's.
 
 Look (`liner/overlay.js`):
 

@@ -447,7 +447,8 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
 export function createDirector(opts = {}) {
   // follow: false = each shot frames her where she is when it starts and
   // holds that framing (her rocking and sway move within a still frame)
-  const o = { pace: 1, bias: 0, trans: 'mix', follow: false, ...opts }
+  // fadeIn: seconds the opening shot takes to come up from black
+  const o = { pace: 1, bias: 0, trans: 'mix', follow: false, fadeIn: 2.5, ...opts }
   let shots = planShots({ duration: 600 }, o), source = null, idleT = 0
   const anchor = { hands: new THREE.Vector3(0, 76, 0), head: new THREE.Vector3(0, 122, 32), figure: new THREE.Vector3(), piano: new THREE.Vector3(), feet: new THREE.Vector3(0, 12, 18), hammers: new THREE.Vector3(0, 85, -36.5), pedals: new THREE.Vector3(0, 7, -2) }
   let primed = false, swayT = 0
@@ -549,8 +550,8 @@ export function createDirector(opts = {}) {
       out.focus = subj === 'hands' || subj === 'feet' ? 'hands' : subj === 'hammers' || subj === 'pedals' ? 'target' : 'head'
       out.wide = SPOTS[cur.name].size === 2
       out.shot = cur
-      // the opening fades in from black over its first 2.5 s
-      out.fade = idx === 0 && onSong ? sstep(t, 0, 2.5) : 1
+      // the opening fades in from black over its first o.fadeIn seconds
+      out.fade = idx === 0 && onSong ? sstep(t, 0, o.fadeIn || 2.5) : 1
       return out
     },
     /** a fixed view with a looping move: pos/target arrays, move name, wall time */

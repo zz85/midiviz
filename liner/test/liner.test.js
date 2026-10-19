@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { parseLiner, parseCard, parseAnchor, barClock, clockOfMidi, buildTimeline, toVTT, toChapters, renderInline, plainText, momentAt, sectionAt, intertitleAt, createLinerLibrary, INTERTITLE, LAYOUT, layoutScreen, parsePlay, scoreClock, withTitle, titleScreen, parseScreen } from '../liner.js'
+import { parseLiner, parseCard, parseAnchor, barClock, clockOfMidi, buildTimeline, toVTT, toChapters, renderInline, plainText, momentAt, sectionAt, intertitleAt, createLinerLibrary, INTERTITLE, LAYOUT, layoutScreen, parsePlay, scoreClock, withTitle, titleScreen, parseScreen, titleSecs, TITLE } from '../liner.js'
 
 const root = new URL('../../', import.meta.url)
 const { Midi } = createRequire(import.meta.url)('../../tonejs-midi.js')
@@ -155,6 +155,12 @@ test('the title as the first intertitle', () => {
 	assert.equal(t.intertitles[2].start, 30)
 	assert.equal(tl.intertitles[0].start, 3)    // (a copy)
 	assert.equal(withTitle(null, { text: 'T' }).intertitles.length, 1)
+	// a hold of its own (the Title hold setting), and slower fades than a line's
+	const h = withTitle(tl, { kicker: 'K', text: 'Title', hold: 15 }).intertitles
+	assert.equal(h[0].end, 15)
+	assert.ok(h[0].fadeIn > INTERTITLE.fadeIn)
+	assert.equal(h[1].start, 15 + INTERTITLE.gap)
+	assert.equal(titleSecs({ text: 'T', hold: 2 }), TITLE.fadeIn + TITLE.fadeOut + 1)    // (never shorter than its fades)
 })
 
 test('inline markdown', () => {
