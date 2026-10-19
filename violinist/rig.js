@@ -13,7 +13,8 @@
 //  • the left hand: the #033 left-hand model (strings/hand3d.js) is solved
 //    first in the instrument frame (knuckle line, wrist, fingertip targets);
 //    the character's hand is placed on its knuckle line, the arm is two-bone
-//    IK with the elbow under the instrument (swinging toward the G string),
+//    IK with the elbow under the instrument (swinging toward the G string)
+//    and a straight wrist (forearm and hand on one line to the knuckles),
 //    and each finger is solved from the character's own knuckle to the #033
 //    fingertip target with the character's own segment lengths;
 //  • the bow: placed as in #033 from motion.js (contact point near the bridge,
@@ -245,15 +246,19 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
       const m = M.L, J = leftHand.joints, mat = V.group.matrixWorld
       const k1 = toWorld(J.fingers[1].base, mat), k4 = toWorld(J.fingers[4].base, mat)
       const knuckle = k1.clone().add(k4).multiplyScalar(0.5)
-      const wrist0 = toWorld(J.wrist, mat)
       const side = k1.clone().sub(k4)
-      const R = rotFor(m.hand, knuckle.clone().sub(wrist0), side, new THREE.Quaternion())
-      const W = knuckle.clone().sub(m.knuckleOff.clone().applyQuaternion(R))
       const S = wp(m.upper)
       const sMean = [1, 2, 3, 4].reduce((a, f) => a + pose.fingers[f].s, 0) / 4
       const swing = 1 - sMean / Math.max(1, V.S - 1)          // 1 on the G string
       const high = clamp((pose.anchorU - V.x0 * 0.62) / (V.x0 * 0.5), 0, 1)
       const pole = S.clone().add(v3(-14 - 10 * swing - 6 * high, -45, 18))
+      // a straight wrist: the forearm and the hand form one segment from the
+      // elbow to the knuckles, so solve the arm to the knuckles with the hand's
+      // length added to the forearm, then put the wrist on that line
+      const hl = m.knuckleOff.length()
+      const E = twoBone(S.clone(), knuckle.clone(), m.l1, m.l2 + hl, pole.clone(), v3())
+      const R = rotFor(m.hand, knuckle.clone().sub(E), side, new THREE.Quaternion())
+      const W = knuckle.clone().sub(m.knuckleOff.clone().applyQuaternion(R))
       arm(m, S, W, pole, R, side)
       fingersTo(m, mat, J)
     }

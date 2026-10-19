@@ -11,8 +11,9 @@
 // their stops, solved with the coupled-joint planar IK of #029
 // (fingering/hands3d.js solveFinger: DIP ≈ 0.7 PIP, bisection on the PIP
 // angle). The thumb rests under the neck on the bass side and parks at the
-// neck heel in high positions. The forearm runs down to
-// an elbow under the instrument that swings toward the bass strings.
+// neck heel in high positions. The wrist is straight: elbow, wrist and
+// knuckles lie on one line, with the elbow under the instrument, swinging to
+// the player's right for the G string.
 //
 // Cello: the neck is upright and the hand is open rather than wrapped around
 // it. The knuckles sit out to the side of the fingerboard on the A-string
@@ -149,6 +150,16 @@ export function buildLeftHand(violin, { scale = 1 } = {}) {
   const knuckle = new THREE.Vector3(), wrist = new THREE.Vector3(), elbow = new THREE.Vector3(), shoulder = new THREE.Vector3()
   const anchorSmooth = { u: null }
 
+  // violin / viola arm: the elbow under the instrument, swinging toward the
+  // player's right (under the strings) for the G string, closer in high positions
+  function violinElbow(pose, high, size) {
+    const V = violin
+    const sMean = pose.fingers.slice(1, 5).reduce((a, F) => a + F.s, 0) / 4
+    const swing = 1 - sMean / Math.max(1, V.S - 1)
+    elbow.set(V.x0 + V.bodyLen * 0.25 - 4 * high, -24 * size, -9 - 6 * swing)
+    shoulder.set(V.x0 + V.bodyLen + 6, -26, 16)
+  }
+
   function update(pose, dt = 1 / 60) {
     if (!pose) { group.visible = false; return }
     group.visible = true
@@ -209,7 +220,13 @@ export function buildLeftHand(violin, { scale = 1 } = {}) {
     knuckle.addVectors(k1, k4).multiplyScalar(0.5)
     if (thumbPos) wrist.set(uMid + 1.5 * size, yFB + 5.2 * size, -half - 6.5 * size)
     else if (cello) wrist.set(uMid + 1.2 * size, yFB - 1.2 * size, -half - 7.6 * size)
-    else wrist.set(uA + (1.8 + 2.5 * high) * size, yFB - (7.4 - 1.2 * high) * size, -half - (0.9 + 1.6 * high) * size)
+    else {
+      // violin / viola: the hand continues the forearm in a straight line
+      // (elbow → wrist → knuckles), so the elbow is placed first and the wrist
+      // sits on that line a hand's length below the knuckles
+      violinElbow(pose, high, size)
+      wrist.copy(knuckle).addScaledVector(_c.subVectors(elbow, knuckle).normalize(), 8 * size)
+    }
     _c.subVectors(knuckle, wrist)
     palm.position.addVectors(knuckle, wrist).multiplyScalar(0.5).addScaledVector(_d.set(0, cello ? -1 : 0, -1).normalize(), 0.6 * size)
     palm.quaternion.setFromUnitVectors(Y, _c.clone().normalize())
@@ -241,8 +258,9 @@ export function buildLeftHand(violin, { scale = 1 } = {}) {
       // positions it parks at the neck heel
       const thumbU = Math.min(uA - 0.7 * size, V.x0 - 1.2 * k)
       tipT = new THREE.Vector3(thumbU, V.fbY(thumbU, 0) - (1.3 + 0.5 * high) * k, half * (0.75 - 0.6 * high) + 0.4)
-      tB = wrist.clone().add(new THREE.Vector3(-0.6 * size, 1.4 * size, 1.4 * size))
-      pole = new THREE.Vector3(tB.x - 6, tB.y, tB.z + 6)
+      // its root at the base of the palm, on the thumb (G-string) side
+      tB = wrist.clone().lerp(knuckle, 0.3).add(new THREE.Vector3(-0.4 * size, 0.4 * size, 2.2 * size))
+      pole = new THREE.Vector3(tB.x - 6, tB.y - 2, tB.z + 4)
     }
     twoBone(tB, tipT, tL[0], tL[1], pole, thumb.mid)
     thumb.base = tB; thumb.target = tipT
@@ -260,12 +278,6 @@ export function buildLeftHand(violin, { scale = 1 } = {}) {
       // elbow raised out to the A side; shoulder behind the upper bout
       shoulder.set(V.x0 + (V.bass ? 14 : 6), -14, -21)
       twoBone(shoulder.clone(), wrist.clone(), 29, 27, new THREE.Vector3(wrist.x + 4, wrist.y - 6, wrist.z - 40), elbow)
-    } else {
-      // arm: the elbow under the instrument, swinging toward the bass strings
-      const sMean = pose.fingers.slice(1).reduce((a, F) => a + F.s, 0) / 4
-      const swing = 1 - sMean / Math.max(1, V.S - 1)
-      elbow.set(V.x0 + V.bodyLen * 0.25 - 4 * high, -24 * size, -9 - 6 * swing)
-      shoulder.set(V.x0 + V.bodyLen + 6, -26, 16)
     }
     const fa = wrist.clone().addScaledVector(elbow.clone().sub(wrist).normalize(), 1.6 * size)
     place(forearm, fa, elbow)
@@ -277,7 +289,7 @@ export function buildLeftHand(violin, { scale = 1 } = {}) {
     group, update,
     // the solved points (instrument frame), for driving another hand (#037): per
     // finger base (knuckle), cur (fingertip target), pts; the thumb's base, mid, target
-    joints: { fingers, thumb, wrist, knuckle },
+    joints: { fingers, thumb, wrist, knuckle, elbow },
     setStyle(style) { for (const m of meshes) m.material = style === 'ghost' ? mats.ghost : mats.skin },
     setScale(v) { size = v },
     setLabels(on) { showLabels = on },
