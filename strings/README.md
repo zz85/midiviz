@@ -381,3 +381,29 @@ Also, an accented note (a velocity jump of ≥ 0.15 in a file whose velocities v
 | all 49 MIDIs (52,285 pairs) | 24.7 % | 31.9 % |
 
 Tests: `node --test strings/test/articulation.test.js` (5).
+
+## Legato bow changes
+
+Every stroke used to start and end as if detached: the bow slowed over 25–60 ms into the change, rested on the string, then started again with a new attack (the ×2 press, the bite and a small swell). In a legato line that is a hole at every bow change: the sound fell by a median 27 dB (waveguide) or 22 dB (source) for about 30 ms, even though the notes touch and are marked legato.
+
+Now a stroke that starts where the previous one ended (a gap of at most 8 % of the note, or 15 ms), with neither stroke marked spiccato, martelé or staccato, is a bow change inside the phrase, not a new note:
+
+- the old stroke runs on to the next onset and slows only in its last 8 ms;
+- the bow turns through zero at once, and the new stroke reaches full speed in 8 ms;
+- the new stroke keeps 70 % of its attack press (the string still has to start Helmholtz motion the other way; without it the waveguide's attack suite lost 5 % more changes) but none of its bite or swell;
+- short strokes (fast détaché) get half of this, keeping a little articulation.
+
+**Legato** in the expression sliders scales it (1 by default, 0 = detached bow changes as before); the Baroque preset uses 0.6, for bow changes that speak.
+
+Measured on the demos, Ave Maria and the first 40 s of Bach's Adagio BWV 1001 (202 bow changes) , and against the Bach Violin Dataset's recordings at their aligned note changes (10 movements, four violinists, the recital hall on our renders):
+
+| sound at a legato bow change | before | after |
+|---|---|---|
+| waveguide, dry: median dip / time below −10 dB | −27 dB / 30 ms | −11 dB / 2.5 ms |
+| source, dry | −22 dB / 28 ms | −9 dB / 0 ms |
+| source in the hall vs the recordings (median dip) | −11.8 vs −6.1 dB | −6.0 vs −6.1 dB |
+| waveguide crackles per minute (these pieces + the Tchaikovsky passage) | 27.1 | 27.1 |
+| waveguide periods in Helmholtz motion | 92.6 % | 91.3 % |
+| attack.js bow changes reaching Helmholtz motion within 50 ms | 175 / 216 | 162 / 216 |
+
+The last row measures the string's motion, not the sound: in a legato change the old tone is still ringing over the new stroke's first periods.

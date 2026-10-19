@@ -51,6 +51,7 @@ export const STYLE = {
   bowSpeed: 1,       // × bow speed
   pressure: 1,       // × bow force
   contact: 1,        // × distance from the bridge
+  legato: 1,         // legato bow changes (0…1): between connected, unmarked strokes the bow turns quickly and the string keeps sounding; 0 = every stroke starts and ends on its own
   attack: 1,         // how strokes start: < 1 lighter (slower ramp, less bite and press, Baroque), > 1 harder
   autoBow: 1,        // automatic bowing (× the player's continuous bow-pressure / contact-point moves; 0 = static per note)
   ...HUMANIZE,       // timing, intonation, variance (humanize.js)
@@ -159,6 +160,11 @@ const FMIN = 0.02, ZEXP = 1.5
 // strings/test/attack.js with the waveguide's pitch-tracking end losses
 // stroke types: spiccato's contact time and martelé's bowing time (fractions of the
 // time to the next stroke), martelé's pinch (× the stroke's force) and its rest on the string
+// legato bow change: the bow turns in about LEG_T each side; the new stroke keeps
+// 70 % of its attack press (Guettler: the string still has to re-form Helmholtz
+// motion the other way) but none of its bite or swell. Short strokes (fast
+// détaché) get LEG_SHORT of it, keeping a little articulation
+const LEG_T = 0.008, LEG_PRESS = 0.7, LEG_SHORT = 0.5
 const SPIC = 0.5, MART = 0.6, MART_PINCH = 2.2, MART_REST = 0.35
 const PRESS = 2, ATK_F = 2, ATK_T = 0.04
 // short strokes (< 180 ms, one note) press less and speed up half as fast: with
@@ -277,6 +283,24 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
     st.dyn = dynOf(n0)
     st.short = D < 0.18 && st.events.length === 1
   }
+  // Legato bow changes. A stroke that starts where the last one ended (the
+  // notes touch: a gap of at most 8 % of the note, or 15 ms), neither stroke
+  // marked (spiccato, martelé, staccato), is a bow change inside a legato
+  // line, not a new attack: the old stroke runs on to the change and slows only
+  // in its last few ms, the bow turns through zero at once, and the new stroke
+  // speeds up as fast without a new bite. Before, every stroke started and
+  // ended as if detached, and the sound dipped ~27 dB for ~30 ms at each change
+  // (strings/README.md "Legato bow changes")
+  const LEG = clamp(S.legato ?? 1, 0, 1)
+  const marked = st => st.events.some(e => e.notes.some(n => n.art?.stroke))
+  for (let k = 1; k < strokes.length; k++) {
+    const a = strokes[k - 1], b = strokes[k]
+    const gap = b.t0 - a.t1, ioi = b.t0 - a.events[a.events.length - 1].on
+    if (LEG <= 0 || gap > Math.max(0.015, 0.08 * ioi) || marked(a) || marked(b)) continue
+    b.legIn = a.legOut = LEG * (a.short || b.short ? LEG_SHORT : 1)
+    // the old note sounds until the bow changes
+    if (gap > 0) a.t1 = b.t0
+  }
 
   // Write bow controls note by note on their string.
   // A note's bowing segment runs from its onset to the next onset in the same
@@ -305,8 +329,12 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
     const span = Math.max(0.04, Math.min(nextOn, st.t1 + 0.05) - st.t0)
     const spC = clamp(SPIC * span, 0.03, 0.1)
     const maC = clamp(MART * span, 0.05, Math.max(0.05, span - 0.04))
-    const atk = (st.short ? clamp(0.3 * D, 0.012, 0.03) * ATK_SHORT_RAMP : clamp(0.2 * D, 0.025, 0.07)) / Math.sqrt(atkK)
-    const rel = st.short ? clamp(0.35 * D, 0.015, 0.05) : clamp(0.12 * D, 0.025, 0.06)
+    const lgI = st.legIn || 0, lgO = st.legOut || 0
+    const atk0 = (st.short ? clamp(0.3 * D, 0.012, 0.03) * ATK_SHORT_RAMP : clamp(0.2 * D, 0.025, 0.07)) / Math.sqrt(atkK)
+    const rel0 = st.short ? clamp(0.35 * D, 0.015, 0.05) : clamp(0.12 * D, 0.025, 0.06)
+    // a legato bow change turns the bow in about LEG_T each side
+    const atk = atk0 + (Math.min(atk0, LEG_T) - atk0) * lgI
+    const rel = rel0 + (Math.min(rel0, LEG_T) - rel0) * lgO
     const next = strokes[strokes.indexOf(st) + 1]
     const rest = !next || next.t0 - st.t1 > 0.35
     // bow lift 'off string': the bow leaves after a phrase and the string rings;
@@ -338,7 +366,7 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
           // start (Guettler: a fast acceleration with enough force; strings/test/attack.js)
           const xa = (t - st.t0) / atk
           let env = xa <= 0 ? 0 : xa >= 1 ? 1 : 1 - (1 - xa) * (1 - xa)
-          if (!st.short && st.t0 === a) env *= 1 + 0.12 * atkK * Math.exp(-(t - st.t0) / 0.05) * (t >= st.t0 ? 1 : 0)
+          if (!st.short && st.t0 === a) env *= 1 + 0.12 * atkK * (1 - lgI) * Math.exp(-(t - st.t0) / 0.05) * (t >= st.t0 ? 1 : 0)
           env *= t > st.t1 ? 0 : smooth5((st.t1 - t) / rel) * 0.85 + 0.15 * (t <= st.t1 ? 1 : 0)
           if (t > st.t1) env = 0
           if (sk === 'spiccato') { const x = (t - st.t0) / spC; env = x <= 0 || x >= 1 ? 0 : Math.pow(Math.sin(Math.PI * x), 0.6) }
@@ -384,14 +412,14 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
             trm[s][i] = Math.min(trm[s][i], 0.4 + 0.6 * Math.abs(q))
           }
           // Schelleng: F ∝ v/β (geometric middle of the window), a bite on détaché attacks
-          const bite = 1 + (st.short ? 0.5 : 0.2) * atkK
+          const bite = 1 + (st.short ? 0.5 : 0.2) * atkK * (1 - lgI)
           // harmonics are bowed lighter (HARM_F, measured on the waveguide); tremolo a little lighter
           const Fk = (0.55 + 0.9 * dyn) * S.pressure * (n.harm ? HARM_F : 1) * (st.trem ? 0.85 : 1) * (1 + 0.05 * (n.bowVar ?? 0)) * Zs[s] * Math.sqrt(0.1 / bet) * (1 + (bite - 1) * Math.exp(-Math.max(0, t - st.t0) / 0.035))
           let F = Math.max(vF, 0.04 + 0.06 * dyn) * Fk * PRESS * fAuto
           // stay above Schelleng's minimum (F_min ∝ Z² v / β², measured on the waveguide)
           F = Math.max(F, FMIN * S.pressure * (n.harm ? HARM_F : 1) * Math.pow(Zr[s], ZEXP) * vF / (bet * bet))
           // the bow presses in to catch the string and eases off: ×2 at the start, back in ~40 ms
-          if (t >= st.t0 - 0.004 && !sk) F *= 1 + ((st.short ? ATK_F_SHORT : ATK_F) - 1) * atkK * Math.exp(-Math.max(0, t - st.t0) / ATK_T)
+          if (t >= st.t0 - 0.004 && !sk) F *= 1 + ((st.short ? ATK_F_SHORT : ATK_F) - 1) * atkK * (1 - (1 - LEG_PRESS) * lgI) * Math.exp(-Math.max(0, t - st.t0) / ATK_T)
           if (sk) {
             // the stroke's full-speed force, for the pinch and the rest on the string
             const vS = st.V * (0.5 + 0.7 * dyn) * pg

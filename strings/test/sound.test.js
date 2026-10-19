@@ -494,7 +494,8 @@ test('measured impulse-response body (NBody path): an IR is convolved as it is, 
 
 test('attack: a lighter attack (Baroque) ramps the bow in slower with less bite; 1 is unchanged', () => {
   const notes = finger(melody('D5 E5 F#5 G5 A5:2', 0.5))
-  const flat = { vibrato: 0, timing: 0, intonation: 0, variance: 0 }
+  // detached strokes (legato 0): a legato bow change has no attack to lighten
+  const flat = { vibrato: 0, timing: 0, intonation: 0, variance: 0, legato: 0 }
   const at = attack => {
     const perf = renderPerformance(notes, { style: { ...flat, attack } })
     const n = perf.notes[2], F = channel(perf, n.string, CH.force), V = channel(perf, n.string, CH.vel), i0 = Math.round(n.on * perf.frameRate)
@@ -633,4 +634,25 @@ test('short strokes: fast forte détaché and grace notes stay near a player\'s 
   const pk = perf.notes.filter(n => n.off - n.on < 0.2).map(n => { const F = channel(perf, n.string, CH.force); let p = 0; for (let i = Math.floor(n.on * 250); i < n.off * 250; i++) p = Math.max(p, F[i]); return p }).sort((a, b) => a - b)
   const p90 = pk[Math.floor(pk.length * 0.9)]
   assert.ok(p90 <= 4, `peak force p90 ${p90.toFixed(2)} N (players: accents 3–4 N)`)
+})
+
+test('legato bow changes: in a connected line the bow turns fast and the sound barely dips; marked strokes still separate', () => {
+  const flat = { vibrato: 0, timing: 0, intonation: 0, variance: 0 }
+  // quarter notes that touch, each its own bow (repeated pitches and leaps, so nothing is slurred)
+  const line = finger(melody('D5 D5 A5 A5 B5 B5 A5:2', 0.45)).map(n => ({ ...n, art: { source: 'inferred', slurPrev: false, stroke: null } }))
+  const dip = legato => {
+    const perf = renderPerformance(line.map(n => ({ ...n, art: { ...n.art } })), { style: { ...flat, legato } })
+    const [L] = renderCurves(perf, { sampleRate: SR, model: 'source' })
+    const H = 120, at = t => { const i = Math.round(t * SR); let s = 0; for (let j = i; j < i + H; j++) s += L[j] * L[j]; return Math.sqrt(s / H) }
+    const ds = perf.strokes.slice(1).map(st => { const ref = (at(st.t0 - 0.08) + at(st.t0 + 0.07)) / 2; let mn = Infinity; for (let t = st.t0 - 0.04; t < st.t0 + 0.04; t += 0.0025) mn = Math.min(mn, at(t)); return 20 * Math.log10(mn / ref) })
+    return { perf, dip: ds.sort((a, b) => a - b)[ds.length >> 1] }
+  }
+  const on = dip(1), off = dip(0)
+  assert.equal(on.perf.strokes.length, 7, 'still one bow per note')
+  assert.ok(on.perf.strokes.slice(1).every(st => st.legIn === 1))
+  assert.ok(off.dip < -20 && on.dip > -15, `median dip at a bow change: ${off.dip.toFixed(1)} dB detached → ${on.dip.toFixed(1)} dB legato`)
+  // staccato-marked strokes are not legato changes
+  const st = line.map(n => ({ ...n, art: { ...n.art, stroke: 'staccato' } }))
+  const p = renderPerformance(st, { style: flat })
+  assert.ok(p.strokes.every(s => !s.legIn))
 })
