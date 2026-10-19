@@ -37,6 +37,7 @@ export class MidiScheduler extends EventEmitter {
     this._duration = 0;
     this._notes = [];
     this._cc = [];
+    this._keyGen = [];          // per channel·key: count of noteOns (see _handleMessage)
   }
 
   // --- Properties ---
@@ -173,11 +174,16 @@ export class MidiScheduler extends EventEmitter {
         this._target.noteOn?.(note.midi, note.velocity, note.channel ?? 0);
         // Emit for external consumers (e.g. visualization)
         this.emit('noteOn', note);
-        // Schedule noteOff after duration
+        // Schedule noteOff after duration. A repeated note usually starts
+        // exactly where the previous one ends; the timer for the old note's
+        // off can fire after the new noteOn and would silence it, so an off
+        // only goes to the synth if no newer note has started on that key.
         if (note.duration > 0) {
+          const key = (note.channel ?? 0) * 128 + note.midi;
+          const gen = (this._keyGen[key] = (this._keyGen[key] || 0) + 1);
           const offDelay = (note.duration * 1000) / this._speed;
           setTimeout(() => {
-            this._target.noteOff?.(note.midi, note.channel ?? 0);
+            if (this._keyGen[key] === gen) this._target.noteOff?.(note.midi, note.channel ?? 0);
             this.emit('noteOff', note);
           }, offDelay);
         }
