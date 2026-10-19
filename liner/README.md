@@ -2,10 +2,20 @@
 
 X-Ray-style background for the pieces the players play: history, analysis,
 trivia and things to listen for, tied to bars of the music. #032 Pianist shows
-them as captions while a piece plays, as a notes panel (press **I**), as
-sections on the seek bar and as a card when you hover a song in the menu. Its
-video export burns the captions into the picture or saves them as YouTube
-subtitles (`.vtt`) and chapters.
+them in two layers:
+
+- **Intertitles** on screen while the piece plays: a handful of short lines
+  the notes mark for the screen (a kicker such as *Paris, 1853* over one line),
+  in a cinematic serif or spaced sans, faded in and out with room to read.
+- **Everything else** in the notes panel (press **I**, or click an
+  intertitle): what is happening now, the overview and sections, every note
+  with its source, and cards for the people and terms.
+
+Plus sections on the seek bar and a card when you hover a song in the menu.
+Visuals → Liner notes picks what shows on screen (intertitles, every note as a
+caption, or nothing), the intertitle style and its position. The video export
+draws the same into the picture and saves it as YouTube subtitles (`.vtt`),
+with the sections as chapters.
 
 ```
 liner/
@@ -53,6 +63,15 @@ source: Ledbetter (2002)
 ## m24–m31 listen
 A moment with an end. Without one it stays for its reading time (4–9 s),
 never into the next moment.
+
+## m30 · trivia
+In 1853 Charles Gounod published a melody improvised over this prelude.
+
+screen: Paris, 1853 | Gounod will sing an Ave Maria over these chords.
+
+# Intertitles
+## m2 Köthen, 1722
+Bach begins a book of preludes in every key. This is the first.
 ```
 
 - **Front matter**: `key: value` lines, `[a, b]` lists, `#` comments. All
@@ -68,6 +87,31 @@ never into the next moment.
   `[text](url)`) and card links `[[pedal-point]]` or `[[pedal-point|pedal point]]`.
 - **source:** a paragraph starting with `source:` is the citation. Every
   factual claim should have one.
+
+## Intertitles
+
+The on-screen lines, written separately from the notes because they are a
+different voice: short, and few. Two ways to write one:
+
+- `screen: Kicker | Line` inside a moment marks that note for the screen
+  (clicking the intertitle opens that note). `screen: Line` has no kicker.
+- `# Intertitles` holds lines that belong to no note: `## m2 Köthen, 1722`
+  (anchor, then the kicker) with the line below.
+
+Guidelines, checked by the tests and warned about in the console:
+
+- One line of at most 14 words (8–12 is better); a kicker of a few words: a
+  place and year, a bar, a term.
+- Each stays 1.2 s fading in, 2.5 s plus 0.3 s a word, and 1.5 s fading out
+  (5–10 s), or to its `–mNN` end; fades follow the song clock, so pausing holds one.
+- Leave at least 3 s of clear screen between two, and keep the total under
+  half the piece. The Bach prelude has 6 in 2 minutes.
+- Avoid ♯ and ♭ (the intertitle fonts are Latin only): write *F sharp*.
+
+Styles (`liner/overlay.js` INTERTITLE_STYLES): Serif (Cormorant Garamond, the
+kicker in spaced Cinzel capitals), Serif italic, Capitals (Cinzel) and Modern
+sans (Montserrat, spaced). Position: the lower third from the left (default:
+it keeps clear of the pianist in the middle of the frame) or the lower centre.
 
 ## A card: `cards/<id>.md`
 
@@ -95,9 +139,10 @@ source: (optional)
 
 Render → Export has two options:
 
-- **Liner-note captions in the picture**: drawn into each frame, under the
-  title card.
-- **Save subtitles (.vtt) and YouTube chapters**: next to the MP4,
+- **Liner notes in the picture (as on screen)**: drawn into each frame,
+  under the title card: the intertitles in the chosen style and position,
+  or every note as a caption.
+- **Save subtitles (.vtt) and YouTube chapters**: the same lines, next to the MP4,
   `<name>.vtt` (upload under Subtitles in YouTube Studio) and
   `<name>-chapters.txt` (paste into the description). Both are timed to the
   video, title card and pre-roll included. Chapters follow YouTube's rules:

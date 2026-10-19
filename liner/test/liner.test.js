@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { parseLiner, parseCard, parseAnchor, barClock, clockOfMidi, buildTimeline, toVTT, toChapters, renderInline, plainText, momentAt, sectionAt, createLinerLibrary } from '../liner.js'
+import { parseLiner, parseCard, parseAnchor, barClock, clockOfMidi, buildTimeline, toVTT, toChapters, renderInline, plainText, momentAt, sectionAt, intertitleAt, createLinerLibrary, INTERTITLE } from '../liner.js'
 
 const root = new URL('../../', import.meta.url)
 const { Midi } = createRequire(import.meta.url)('../../tonejs-midi.js')
@@ -56,6 +56,39 @@ Three.
 	assert.match(l.warnings.join(), /unknown kind "oddkind"/)
 })
 
+test('intertitles: the # Intertitles part and screen: lines on moments', () => {
+	const l = parseLiner(`# Moments
+## m3 · trivia
+A caption.
+
+screen: Paris, 1853 | A short line.
+
+More.
+## m1 · analysis
+First.
+
+# Intertitles
+## m1 Opening
+Just text.
+## m9
+No kicker here.
+`)
+	assert.deepEqual(l.moments[0].detail, ['More.'])
+	assert.deepEqual(l.intertitles, [
+		{ at: { bar: 1, beat: 1 }, until: undefined, kicker: 'Opening', text: 'Just text.' },
+		{ at: { bar: 9, beat: 1 }, until: undefined, kicker: '', text: 'No kicker here.' },
+		{ at: { bar: 3, beat: 1 }, until: undefined, kicker: 'Paris, 1853', text: 'A short line.', moment: 0 },
+	])
+	// 2 s bars: m1 0 s, m3 4 s (too close: warned), m9 16 s; the screen line points at its moment once sorted
+	const clock = { bars: 10, seconds: a => (a.bar - 1) * 2 }
+	const tl = buildTimeline(l, clock, 20)
+	assert.deepEqual(tl.intertitles.map(x => x.start), [0, 4, 16])
+	assert.equal(tl.moments[tl.intertitles[1].moment].caption, 'A caption.')
+	assert.match(tl.warnings.join(), /intertitles at 0:00 and 0:04 are 0\.0 s apart/)
+	assert.ok(tl.intertitles[0].end - tl.intertitles[0].start >= INTERTITLE.min)
+	assert.match(toVTT(tl, { from: 'intertitles' }), /00:00:04\.000 --> 00:00:\d\d\.\d{3}\nPARIS, 1853\nA short line\./)
+})
+
 test('inline markdown', () => {
 	assert.equal(renderInline('a **b** *c* `d` [e](https://x.org) [[pedal-point]] <x>', (id, t) => `<u data-c="${id}">${t}</u>`),
 		'a <b>b</b> <i>c</i> <code>d</code> <a href="https://x.org" target="_blank" rel="noopener">e</a> <u data-c="pedal-point">pedal point</u> &lt;x&gt;')
@@ -101,6 +134,13 @@ test('Bach prelude: notes fit Prelude1.mid', () => {
 	}
 	assert.equal(sectionAt(tl, 80).title, 'Dominant pedal')
 	assert.equal(momentAt(tl, 73.5).kind, 'history')    // bar 22: the Schwencke bar
+	// intertitles: few, short, with a clear screen between them
+	assert.ok(tl.intertitles.length >= 4 && tl.intertitles.length <= 8)
+	const shown = tl.intertitles.reduce((a, x) => a + x.end - x.start, 0)
+	assert.ok(shown < duration * 0.5, `intertitles on screen ${shown.toFixed(0)} s of ${duration.toFixed(0)}`)
+	for (const x of tl.intertitles) assert.ok(plainText(x.text).split(/\s+/).length <= INTERTITLE.maxWords && x.kicker.length <= 24, x.text)
+	assert.equal(intertitleAt(tl, 72).kicker, 'Bar 22')
+	assert.equal(tl.moments[intertitleAt(tl, 72).moment].at.bar, 22)
 	assert.ok(duration > 110 && duration < 125)
 })
 

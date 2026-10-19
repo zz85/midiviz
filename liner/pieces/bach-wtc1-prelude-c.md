@@ -100,6 +100,8 @@ As a boy in Bonn, Beethoven played this collection.
 
 In 1783 his teacher Christian Gottlob Neefe wrote that the twelve-year-old "plays chiefly The Well-Tempered Clavier of Sebastian Bach, which Herr Neefe put into his hands", calling it "the non plus ultra of our art".
 
+screen: Bonn, 1783 | The twelve-year-old Beethoven plays from this book.
+
 source: Neefe, in Cramer's *Magazin der Musik* (March 1783), quoted in Thayer's *Life of Beethoven*
 
 ## m20 · analysis
@@ -110,6 +112,8 @@ Bar 21 is F major seventh. Then the bass rises a semitone to F♯ (bar 22) and A
 ## m22 · history
 Many 19th-century editions add a bar after this one. Bach did not write it.
 
+screen: Bar 22 | Editors would later add a bar here. Bach never wrote it.
+
 Bach goes straight from the F♯ diminished seventh (bar 22) to a diminished seventh over A♭ (bar 23). Editors around 1800 found the jump too abrupt and put a bar of their own in between. It is usually credited to Christian Friedrich Gottlieb Schwencke and stayed in popular editions for a century, so some copies have 36 bars. This performance has Bach's 35.
 
 source: Ledbetter (2002); Alfred Dürr, *Johann Sebastian Bach: Das Wohltemperierte Klavier* (Bärenreiter, 1998)
@@ -119,24 +123,26 @@ Listen to the low G: it stays for the next eight bars.
 
 This is a dominant [[pedal-point|pedal point]]. Above the G, the chords alternate between G7 and chords that clash with it, and each clash makes the return to G7 sound more like a question waiting for C.
 
-## m26 · trivia
-In 1853 Charles Gounod published a melody improvised over this prelude.
+## m26 · history
+In 1932 Heinrich Schenker drew the whole prelude as one slow line falling to C.
 
-It first appeared as a *Méditation* for violin or cello with piano. Words from the Ave Maria were set to it in 1859, and the [[ave-maria|Bach–Gounod Ave Maria]] became one of the most popular songs of the 19th century. Gounod used an edition with the Schwencke bar.
+His *Fünf Urlinie-Tafeln* (*Five Graphic Music Analyses*) reduce the piece layer by layer until only a stepwise descent in the top voice over I–V–I in the bass remains. It is still a standard example in music theory classes.
 
-source: Wikipedia, "Ave Maria (Bach/Gounod)"
+source: Heinrich Schenker, *Fünf Urlinie-Tafeln* (Vienna, 1932; Dover, 1969)
 
 ## m28 · analysis
 Bar 28 is the most tense chord in the piece: F♯–A–C–E♭ over the low G.
 
 It is a diminished seventh, and none of its notes belong to the G chord it sits on. Bar 29 releases it into C major over G, and bars 30–31 settle back onto G7.
 
-## m30 · history
-In 1932 Heinrich Schenker drew the whole prelude as one slow line falling to C.
+## m30 · trivia
+In 1853 Charles Gounod published a melody improvised over this prelude.
 
-His *Fünf Urlinie-Tafeln* (*Five Graphic Music Analyses*) reduce the piece layer by layer until only a stepwise descent in the top voice over I–V–I in the bass remains. It is still a standard example in music theory classes.
+It first appeared as a *Méditation* for violin or cello with piano. Words from the Ave Maria were set to it in 1859, and the [[ave-maria|Bach–Gounod Ave Maria]] became one of the most popular songs of the 19th century. Gounod used an edition with the Schwencke bar.
 
-source: Heinrich Schenker, *Fünf Urlinie-Tafeln* (Vienna, 1932; Dover, 1969)
+screen: Paris, 1853 | Gounod will sing an Ave Maria over these chords.
+
+source: Wikipedia, "Ave Maria (Bach/Gounod)"
 
 ## m32 · analysis
 The bass reaches low C, two octaves below where it began, and holds it to the end.
@@ -152,3 +158,14 @@ After 32 bars of the same shape, the right hand now rises and turns back down, a
 The prelude ends on a plain C major chord. Next comes the four-voice Fugue in C major.
 
 In both books each prelude is paired with a fugue in the same key.
+
+# Intertitles
+
+## m2 Köthen, 1722
+Bach begins a book of preludes in every key. This is the first.
+
+## m6 One chord a bar
+Each chord broken into the same figure, and played twice.
+
+## m26 Pedal point
+The low G holds beneath every chord, waiting for C.

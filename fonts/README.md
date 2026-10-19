@@ -1,6 +1,6 @@
 # Fonts
 
-Title-card fonts for the video export (#032), from [Fontsource](https://fontsource.org) 5.3.0 (Google Fonts), all under the [SIL Open Font License 1.1](https://openfontlicense.org):
+Title-card and intertitle fonts (#032 video export, liner notes), from [Fontsource](https://fontsource.org) 5.3.0 (Google Fonts), all under the [SIL Open Font License 1.1](https://openfontlicense.org):
 
 | File | Family | Designer |
 |---|---|---|
@@ -10,5 +10,6 @@ Title-card fonts for the video export (#032), from [Fontsource](https://fontsour
 | `great-vibes-*.woff2` | Great Vibes | Rob Leuschke (TypeSETit) |
 | `inter-*.woff2` | Inter | Rasmus Andersson |
 | `poppins-*.woff2` | Poppins | Indian Type Foundry |
+| `montserrat-*.woff2` | Montserrat | Julieta Ulanovsky |
 
 Latin subset only.

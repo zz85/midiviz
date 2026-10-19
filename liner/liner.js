@@ -46,26 +46,34 @@ export function parseAnchor(s) {
 }
 const HEAD = new RegExp(String.raw`^(${ANCHOR})(?:\s*[-–]\s*(${ANCHOR}))?\s*(?:[·:|-]\s*)?(.*)$`)
 
+// `screen: Kicker | Line` (or `screen: Line`): an intertitle
+const parseScreen = s => { const i = s.indexOf('|'); return i < 0 ? { kicker: '', text: s.trim() } : { kicker: s.slice(0, i).trim(), text: s.slice(i + 1).trim() } }
+
 /**
  * Parse a piece's liner notes.
- * @returns {{ meta, overview: string[], sections, moments, warnings: string[] }}
- *   sections: [{ at, title, text }]; moments: [{ at, until?, kind, caption, detail: string[], source? }]
+ * @returns {{ meta, overview: string[], sections, moments, intertitles, warnings: string[] }}
+ *   sections: [{ at, title, text }]; moments: [{ at, until?, kind, caption, detail: string[], source?, screen? }]
+ *   intertitles: [{ at, until?, kicker, text, moment? }] — the few lines shown on screen as the
+ *   piece plays: the `# Intertitles` part, and every moment with a `screen:` line (moment: its index)
  *   (at / until are parsed anchors; text fields are Markdown, see renderInline)
  */
 export function parseLiner(text) {
 	const [meta, body] = splitFrontMatter(text)
-	const out = { meta, overview: [], sections: [], moments: [], warnings: [] }
+	const out = { meta, overview: [], sections: [], moments: [], intertitles: [], warnings: [] }
 	let part = 'overview', cur = null, buf = []
 	const flush = () => {
 		const ps = paragraphs(buf.join('\n')); buf = []
 		if (!cur) { if (part === 'overview') out.overview.push(...ps); return }
-		// a `source:` line anywhere in an entry is its citation
+		// a `source:` line anywhere in an entry is its citation, a `screen:` line its intertitle
 		const rest = []
 		for (const p of ps) {
-			const m = /^source:\s*([\s\S]+)$/i.exec(p)
-			if (m) cur.source = m[1].trim(); else rest.push(p)
+			let m
+			if ((m = /^source:\s*([\s\S]+)$/i.exec(p))) cur.source = m[1].trim()
+			else if ((m = /^screen:\s*([\s\S]+)$/i.exec(p)) && cur.kind) cur.screen = parseScreen(m[1].replace(/\s*\n\s*/g, ' '))
+			else rest.push(p)
 		}
-		if (cur.title !== undefined) cur.text = rest.join('\n\n')
+		if (cur.intertitle) { cur.text = rest.join(' ').replace(/\s*\n\s*/g, ' '); if (!cur.text) out.warnings.push(`intertitle at ${cur.head} has no text`) }
+		else if (cur.title !== undefined) cur.text = rest.join('\n\n')
 		else { cur.caption = rest[0] || ''; cur.detail = rest.slice(1); if (!cur.caption) out.warnings.push(`moment at ${cur.head} has no caption`) }
 		cur = null
 	}
@@ -74,7 +82,7 @@ export function parseLiner(text) {
 		if ((m = /^#\s+(.+?)\s*$/.exec(line))) {
 			flush()
 			const name = m[1].toLowerCase()
-			part = name.startsWith('section') ? 'sections' : name.startsWith('moment') ? 'moments' : 'overview'
+			part = name.startsWith('section') ? 'sections' : name.startsWith('moment') ? 'moments' : name.startsWith('intertitle') || name.startsWith('on screen') ? 'intertitles' : 'overview'
 			if (part === 'overview' && !/^overview/.test(name)) out.warnings.push(`unknown part "# ${m[1]}"`)
 			continue
 		}
@@ -84,6 +92,7 @@ export function parseLiner(text) {
 			if (!h) { out.warnings.push(`bad anchor in "## ${m[1]}"`); cur = null; continue }
 			const at = parseAnchor(h[1]), until = h[2] ? parseAnchor(h[2]) : undefined
 			if (part === 'sections') { cur = { head: h[1], at, until, title: h[3].trim() }; out.sections.push(cur) }
+			else if (part === 'intertitles') { cur = { head: h[1], at, until, kicker: h[3].trim(), intertitle: true }; out.intertitles.push(cur) }
 			else {
 				let kind = h[3].trim().toLowerCase()
 				if (!KINDS.includes(kind)) { if (kind) out.warnings.push(`unknown kind "${kind}" at ${h[1]}`); kind = 'trivia' }
@@ -95,7 +104,9 @@ export function parseLiner(text) {
 		buf.push(line)
 	}
 	flush()
-	for (const x of [...out.sections, ...out.moments]) delete x.head
+	out.moments.forEach((m, i) => { if (m.screen) out.intertitles.push({ at: m.at, until: m.until, ...m.screen, moment: i }) })
+	for (const x of out.intertitles) delete x.intertitle
+	for (const x of [...out.sections, ...out.moments, ...out.intertitles]) delete x.head
 	return out
 }
 
@@ -209,14 +220,33 @@ export function buildTimeline(liner, clock, duration) {
 	const at = a => Math.min(duration, clock.seconds(a))
 	const sections = liner.sections.map(s => { check(s.at); return { ...s, start: at(s.at) } }).sort((a, b) => a.start - b.start)
 	sections.forEach((s, i) => { s.end = s.until ? at(s.until) : sections[i + 1]?.start ?? duration })
-	const moments = liner.moments.map(m => { check(m.at); return { ...m, start: at(m.at) } }).sort((a, b) => a.start - b.start)
+	const moments = liner.moments.map((m, src) => { check(m.at); return { ...m, src, start: at(m.at) } }).sort((a, b) => a.start - b.start)
 	moments.forEach((m, i) => {
 		const next = moments[i + 1]?.start ?? Infinity
 		const want = m.until ? at(m.until) : m.start + readSecs(m.caption)
 		m.end = Math.min(next, Math.max(want, m.start + 2), duration + 3)
 	})
-	return { sections, moments, warnings }
+	// intertitles: fade in, hold for the words plus a breath, fade out; and a
+	// clear screen between them (warned about, not moved: the writer decides)
+	// (an intertitle from a moment's `screen:` line points at that moment in the sorted list)
+	const sorted = new Map(moments.map((m, j) => [m.src, j]))
+	const intertitles = (liner.intertitles || []).map(x => { check(x.at); return { ...x, moment: x.moment != null ? sorted.get(x.moment) : undefined, start: at(x.at) } }).sort((a, b) => a.start - b.start)
+	intertitles.forEach((x, i) => {
+		const words = plainText(x.text).split(/\s+/).length
+		if (words > INTERTITLE.maxWords) warnings.push(`intertitle at ${mmss(x.start)} has ${words} words (at most ${INTERTITLE.maxWords} read comfortably)`)
+		const want = x.until ? at(x.until) - x.start : intertitleSecs(x.text)
+		x.end = Math.min(x.start + Math.max(INTERTITLE.min, want), duration + 3)
+		const prev = intertitles[i - 1]
+		if (prev && x.start - prev.end < INTERTITLE.gap) warnings.push(`intertitles at ${mmss(prev.start)} and ${mmss(x.start)} are ${Math.max(0, x.start - prev.end).toFixed(1)} s apart (leave ${INTERTITLE.gap} s)`)
+	})
+	return { sections, moments, intertitles, warnings }
 }
+
+/** Intertitle timing: fades, breathing room, the clear gap between two, and length. */
+export const INTERTITLE = { fadeIn: 1.2, fadeOut: 1.5, breath: 2.5, perWord: 0.3, min: 5, max: 10, gap: 3, maxWords: 14 }
+export const intertitleSecs = text => Math.min(INTERTITLE.max, INTERTITLE.fadeIn + INTERTITLE.breath + plainText(text).split(/\s+/).length * INTERTITLE.perWord + INTERTITLE.fadeOut)
+const mmss = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`
+export const intertitleAt = (tl, t) => tl?.intertitles?.find(x => t >= x.start - 0.05 && t < x.end) || null
 
 export const sectionAt = (tl, t) => tl?.sections.findLast(s => t >= s.start - 0.05) || null
 export const momentAt = (tl, t) => tl?.moments.find(m => t >= m.start - 0.05 && t < m.end) || null
@@ -230,12 +260,12 @@ const vttTime = s => { s = Math.max(0, s); const ms = Math.round(s * 1000); retu
  * WebVTT for the moments. `offset`: video time of song time 0 (a title card
  * and a pre-roll push the music later); `speed`: playback speed.
  */
-export function toVTT(tl, { offset = 0, speed = 1, kinds = true } = {}) {
+export function toVTT(tl, { offset = 0, speed = 1, kinds = true, from = 'moments' } = {}) {
 	const out = ['WEBVTT', '']
-	tl.moments.forEach((m, i) => {
-		out.push(String(i + 1), `${vttTime(offset + m.start / speed)} --> ${vttTime(offset + m.end / speed)}`)
-		out.push((kinds ? `[${m.kind}] ` : '') + plainText(m.caption).replace(/\n+/g, ' '), '')
-	})
+	const cues = from === 'intertitles'
+		? tl.intertitles.map(x => ({ start: x.start, end: x.end, text: (x.kicker ? plainText(x.kicker).toUpperCase() + '\n' : '') + plainText(x.text) }))
+		: tl.moments.map(m => ({ start: m.start, end: m.end, text: (kinds ? `[${m.kind}] ` : '') + plainText(m.caption).replace(/\n+/g, ' ') }))
+	cues.forEach((c, i) => out.push(String(i + 1), `${vttTime(offset + c.start / speed)} --> ${vttTime(offset + c.end / speed)}`, c.text, ''))
 	return out.join('\n')
 }
 

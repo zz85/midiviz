@@ -1,10 +1,45 @@
-// Liner notes on the page: captions that follow the music, a notes panel
+// Liner notes on the page: intertitles (the few lines marked for the screen)
+// or every note as a caption while the music plays, a notes panel
 // (X-Ray style: what is happening now, the sections, every note, the people
 // and terms), section marks on the seek bar, and a peek card when hovering a
 // song in a menu. Also draws a caption into an exported video frame.
 // The notes themselves: liner/liner.js and liner/README.md.
 
-import { renderInline, plainText, sectionAt, momentAt, toVTT, toChapters } from './liner.js'
+import { renderInline, plainText, sectionAt, momentAt, intertitleAt, toVTT, toChapters, INTERTITLE } from './liner.js'
+
+// ── Intertitle styles ───────────────────────────────────────────────────
+// A kicker (small, letter-spaced capitals: a place and year, a term) over one
+// line of text. Fonts from fonts/ (OFL, see fonts/README.md), under names of
+// their own so a page's @font-face rules don't clash.
+const FONT_DIR = new URL('../fonts/', import.meta.url).href
+const FACES = [
+	['Liner Cormorant', 400, 'normal', 'cormorant-garamond-latin-400-normal'],
+	['Liner Cormorant', 500, 'italic', 'cormorant-garamond-latin-500-italic'],
+	['Liner Cinzel', 400, 'normal', 'cinzel-latin-400-normal'],
+	['Liner Montserrat', 300, 'normal', 'montserrat-latin-300-normal'],
+	['Liner Montserrat', 500, 'normal', 'montserrat-latin-500-normal'],
+]
+// size: of the line, in px at 1080 lines; track: letter-spacing in em
+export const INTERTITLE_STYLES = {
+	serif: { label: 'Serif (Cormorant Garamond)', kicker: ['Liner Cinzel', 400, 'normal', 0.3], line: ['Liner Cormorant', 400, 'normal', 0.01], size: 50 },
+	italic: { label: 'Serif italic', kicker: ['Liner Cinzel', 400, 'normal', 0.3], line: ['Liner Cormorant', 500, 'italic', 0.01], size: 50 },
+	capitals: { label: 'Capitals (Cinzel)', kicker: ['Liner Cinzel', 400, 'normal', 0.42], line: ['Liner Cinzel', 400, 'normal', 0.09], size: 36, upper: true },
+	sans: { label: 'Modern sans (Montserrat, spaced)', kicker: ['Liner Montserrat', 500, 'normal', 0.42], line: ['Liner Montserrat', 300, 'normal', 0.07], size: 36 },
+}
+const fam = f => `'${f[0]}', Georgia, serif`
+const cssFont = (f, px) => `${f[2]} ${f[1]} ${px}px ${fam(f)}`
+/** wait for a style's fonts (before drawing it into a canvas) */
+export function loadIntertitleFonts(style = 'serif') {
+	const st = INTERTITLE_STYLES[style] || INTERTITLE_STYLES.serif
+	injectFaces()
+	return Promise.all([st.kicker, st.line].map(f => document.fonts.load(cssFont(f, 40)).catch(() => null)))
+}
+function injectFaces() {
+	if (document.getElementById('ln-faces')) return
+	document.head.append(Object.assign(document.createElement('style'), { id: 'ln-faces', textContent: FACES.map(([f, w, st, file]) => `@font-face { font-family: '${f}'; font-weight: ${w}; font-style: ${st}; src: url(${FONT_DIR}${file}.woff2) format('woff2'); font-display: swap; }`).join('\n') }))
+}
+// opacity of an intertitle at song time t (fades by song time, so pausing and seeking hold it)
+const itAlpha = (x, t) => Math.max(0, Math.min(1, (t - x.start) / INTERTITLE.fadeIn, (x.end - t) / INTERTITLE.fadeOut))
 
 export const KIND_COLORS = { history: '#e8b46a', analysis: '#7cc6c0', trivia: '#e79aa6', listen: '#b7a6f0', technique: '#9fd38a' }
 const KIND_LABEL = { history: 'History', analysis: 'Analysis', trivia: 'Trivia', listen: 'Listen', technique: 'Technique' }
@@ -20,6 +55,20 @@ body.idle .ln-cap.show { cursor: none; }
 .ln-cap .ln-more { margin-left: 8px; opacity: 0.55; font-weight: 600; }
 .ln-i { display: inline-block; width: 13px; height: 13px; margin-right: 4px; border: 1.3px solid currentColor; border-radius: 50%; font: italic 700 9px/13px Georgia, serif; text-align: center; vertical-align: -2px; box-sizing: content-box; }
 .ln-cap b { font-weight: 600; }
+.ln-it { position: absolute; bottom: 21%; color: #f4eee4; pointer-events: none; opacity: 0; z-index: 5; isolation: isolate;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.6), 0 0 22px rgba(0,0,0,0.7); will-change: opacity, filter; }
+.ln-it.left { left: 6vw; max-width: min(46vw, 820px); text-align: left; }
+.ln-it.center { left: 50%; transform: translateX(-50%); width: min(88vw, 1100px); text-align: center; }
+/* a soft dark pool behind the words, so they read over a white dress or a lit keyboard */
+.ln-it::before { content: ''; position: absolute; inset: -1.6em -2.4em; z-index: -1; border-radius: 3em; background: rgba(0,0,0,0.5); filter: blur(28px); pointer-events: none; }
+.ln-it.left::before { left: -12vw; }
+.ln-it.live { pointer-events: auto; cursor: pointer; }
+body.idle .ln-it.live { cursor: none; }
+.ln-it .k { display: block; color: #ecd2a4; text-transform: uppercase; }
+.ln-it .r { display: block; width: 40px; height: 1px; margin: 0.9em 0 0.75em; background: rgba(230,196,142,0.55); }
+.ln-it.center .r { margin-left: auto; margin-right: auto; }
+.ln-it .l { display: block; max-width: 24em; line-height: 1.28; }
+.ln-it.center .l { margin: 0 auto; }
 .ln-strip { position: relative; height: 12px; margin: 0 0 3px; display: none; }
 .ln-strip.on { display: block; }
 .ln-seg { position: absolute; top: 4px; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.18); cursor: pointer; transition: background 0.2s, top 0.15s, height 0.15s; }
@@ -89,12 +138,13 @@ const escAttr = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&l
  */
 export function createLinerOverlay({ seek, title, onSeek, host = document.body, download }) {
 	if (!document.getElementById('ln-css')) document.head.append(Object.assign(document.createElement('style'), { id: 'ln-css', textContent: CSS }))
-	const cap = el('div', 'ln-cap'), strip = el('div', 'ln-strip'), tip = el('div', 'ln-tip'), sub = el('div', 'ln-sub'), panel = el('div', 'ln-panel'), peek = el('div', 'ln-peek')
-	host.append(cap, panel, tip, peek)
+	injectFaces()
+	const it = el('div', 'ln-it left'), cap = el('div', 'ln-cap'), strip = el('div', 'ln-strip'), tip = el('div', 'ln-tip'), sub = el('div', 'ln-sub'), panel = el('div', 'ln-panel'), peek = el('div', 'ln-peek')
+	host.append(it, cap, panel, tip, peek)
 	seek.parentNode.insertBefore(strip, seek)
 	title.after(sub)
 
-	let liner = null, tl = null, duration = 0, captions = true, curM = null, curS = null, capTimer = 0, tab = 'now', cardView = null, lastT = 0
+	let liner = null, tl = null, duration = 0, mode = 'intertitles', style = 'serif', align = 'left', curIt = null, curM = null, curS = null, capTimer = 0, tab = 'now', cardView = null, lastT = 0
 	const cardLink = (id, text) => liner?.cards?.[id] ? `<span class="card-ln" data-card="${id}">${text}</span>` : text
 	const md = s => renderInline(s, cardLink)
 
@@ -102,13 +152,35 @@ export function createLinerOverlay({ seek, title, onSeek, host = document.body, 
 	function showCaption(m) {
 		clearTimeout(capTimer)
 		cap.classList.remove('show')
-		if (!m || !captions) return
+		if (!m || mode !== 'notes') return
 		capTimer = setTimeout(() => {
 			cap.innerHTML = `<span class="ln-kind" style="color:${KIND_COLORS[m.kind]}">${KIND_LABEL[m.kind]} · ${barOf(m.at) || mmss(m.start)}</span>${renderInline(m.caption)}${m.detail.length || m.source ? '<span class="ln-more">›</span>' : ''}`
 			cap.classList.add('show')
 		}, cap.innerHTML ? 260 : 0)
 	}
 	cap.onclick = () => { if (curM) open('now') }
+
+	// ── intertitle ──
+	function styleIntertitle() {
+		const st = INTERTITLE_STYLES[style] || INTERTITLE_STYLES.serif
+		const vh = s => `clamp(${Math.round(s * 0.5)}px, ${(s / 10.8).toFixed(2)}vh, ${s}px)`
+		Object.assign(it.querySelector('.k')?.style || {}, { font: `${st.kicker[2]} ${st.kicker[1]} ${vh(st.size * 0.42)} ${fam(st.kicker)}`, letterSpacing: st.kicker[3] + 'em' })
+		Object.assign(it.querySelector('.l')?.style || {}, { font: `${st.line[2]} ${st.line[1]} ${vh(st.size)} ${fam(st.line)}`, letterSpacing: st.line[3] + 'em', textTransform: st.upper ? 'uppercase' : 'none' })
+	}
+	function showIntertitle(x) {
+		if (!x) { it.innerHTML = ''; it.style.opacity = 0; return }
+		it.innerHTML = (x.kicker ? `<span class="k">${renderInline(x.kicker)}</span><span class="r"></span>` : '') + `<span class="l">${renderInline(x.text)}</span>`
+		styleIntertitle()
+	}
+	function fadeIntertitle(t) {
+		const a = curIt && mode === 'intertitles' ? itAlpha(curIt, t) : 0
+		it.style.opacity = a.toFixed(3)
+		it.style.filter = a > 0.995 ? '' : `blur(${((1 - a) * 5).toFixed(2)}px)`
+		const k = it.querySelector('.k')
+		if (k) k.style.letterSpacing = ((INTERTITLE_STYLES[style] || INTERTITLE_STYLES.serif).kicker[3] + (1 - a) * 0.12).toFixed(3) + 'em'
+		it.classList.toggle('live', a > 0.5)
+	}
+	it.onclick = () => { if (curIt) curIt.moment != null ? open('notes', curIt.moment) : open('now') }
 
 	// ── seek strip ──
 	function buildStrip() {
@@ -165,12 +237,15 @@ export function createLinerOverlay({ seek, title, onSeek, host = document.body, 
 	function bodyAbout() {
 		let h = liner.overview.map(p => `<p>${md(p)}</p>`).join('')
 		h += `<h3>Sections</h3>` + tl.sections.map((s, i) => `<div class="row${s === curS ? ' cur' : ''}" data-seek="${s.start}"><span class="t">${mmss(s.start)}</span><div><b>${md(s.title)}</b> <span style="color:#8f8a80">${barOf(s.at)}</span><div>${md(s.text || '')}</div></div></div>`).join('')
+		if (tl.intertitles.length) h += `<h3>On screen</h3>` + tl.intertitles.map(x => `<div class="row" data-seek="${x.start}"><span class="t">${mmss(x.start)}</span><div>${x.kicker ? `<span class="k" style="color:#e6c48e">${md(x.kicker)}</span>` : ''}${md(x.text)}</div></div>`).join('')
 		h += `<div class="tools"><button data-act="chapters">Copy YouTube chapters</button><button data-act="vtt">Download .vtt</button></div>`
 		if (tl.warnings.length) h += `<p class="warn">${tl.warnings.map(escAttr).join('<br>')}</p>`
 		return h
 	}
+	let focusM = null
 	function bodyNotes() {
-		return tl.moments.map((m, i) => `<div class="row${m === curM ? ' cur open' : ''}" data-m="${i}"><span class="t">${mmss(m.start)}</span><div><span class="k" style="color:${KIND_COLORS[m.kind]}">${KIND_LABEL[m.kind]} · ${barOf(m.at)}</span>${md(m.caption)}<div class="more">${detailHTML(m)}<p><span class="card-ln" data-seek="${m.start}">▶ Play from here</span></p></div></div></div>`).join('')
+		const onScreen = new Set(tl.intertitles.map(x => x.moment))
+		return tl.moments.map((m, i) => `<div class="row${m === curM ? ' cur' : ''}${m === curM || i === focusM ? ' open' : ''}" data-m="${i}"><span class="t">${mmss(m.start)}</span><div><span class="k" style="color:${KIND_COLORS[m.kind]}">${KIND_LABEL[m.kind]} · ${barOf(m.at)}${onScreen.has(i) ? ' <span style="color:#8f8a80">· on screen</span>' : ''}</span>${md(m.caption)}<div class="more">${detailHTML(m)}<p><span class="card-ln" data-seek="${m.start}">▶ Play from here</span></p></div></div></div>`).join('')
 	}
 	function bodyCard(c) {
 		return `<button class="back">‹ Back</button><h3>${escAttr(c.kind)}</h3><p style="font-size:16px;color:#fff;margin:4px 0 0"><b>${escAttr(c.title)}</b></p>${c.subtitle ? `<div class="by" style="color:#bdb6a8">${escAttr(c.subtitle)}</div>` : ''}${c.body.map(p => `<p>${md(p)}</p>`).join('')}${c.source ? `<div class="src">Source: ${md(c.source)}</div>` : ''}`
@@ -181,6 +256,7 @@ export function createLinerOverlay({ seek, title, onSeek, host = document.body, 
 		const b = cardView ? bodyCard(cardView) : tab === 'now' ? bodyNow() : tab === 'about' ? bodyAbout() : tab === 'notes' ? bodyNotes() : chips(Object.keys(liner.cards)) + Object.values(liner.cards).map(c => `<p><span class="card-ln" data-card="${c.id}">${escAttr(c.title)}</span> — ${md(c.body[0] || '')}</p>`).join('')
 		panel.innerHTML = header() + `<div class="body">${b}</div>`
 		panel.scrollTop = tab === 'now' ? 0 : scroll
+		if (focusM != null && tab === 'notes') { panel.querySelector(`[data-m="${focusM}"]`)?.scrollIntoView({ block: 'center' }); focusM = null }
 	}
 	panel.onclick = ev => {
 		const t = ev.target.closest('[data-tab], [data-card], [data-seek], [data-m], [data-act], .x, .back')
@@ -192,9 +268,9 @@ export function createLinerOverlay({ seek, title, onSeek, host = document.body, 
 		if (t.dataset.seek) return onSeek(+t.dataset.seek)
 		if (t.dataset.m) { t.classList.toggle('open'); return }
 		if (t.dataset.act === 'chapters') { navigator.clipboard?.writeText(toChapters(tl)); t.textContent = 'Copied'; setTimeout(() => { t.textContent = 'Copy YouTube chapters' }, 1500) }
-		if (t.dataset.act === 'vtt') download?.(`${liner.id}.vtt`, toVTT(tl))
+		if (t.dataset.act === 'vtt') download?.(`${liner.id}.vtt`, toVTT(tl, { from: mode === 'notes' ? 'moments' : 'intertitles' }))
 	}
-	const open = (t = tab) => { if (!liner) return; tab = t; cardView = null; panel.classList.add('open'); render() }
+	const open = (t = tab, m = null) => { if (!liner) return; tab = t; cardView = null; focusM = m; panel.classList.add('open'); render() }
 	const close = () => panel.classList.remove('open')
 	const toggle = () => panel.classList.contains('open') ? close() : open()
 
@@ -233,8 +309,8 @@ export function createLinerOverlay({ seek, title, onSeek, host = document.body, 
 	return {
 		/** show a piece's notes on its timeline (or null to clear) */
 		set(l, timeline, dur) {
-			liner = l; tl = l ? timeline : null; duration = dur || 0; curM = curS = null; lastT = 0; cardView = null
-			cap.innerHTML = ''; showCaption(null); buildStrip(); showSub()
+			liner = l; tl = l ? timeline : null; duration = dur || 0; curM = curS = curIt = null; lastT = 0; cardView = null
+			cap.innerHTML = ''; showCaption(null); showIntertitle(null); buildStrip(); showSub()
 			if (!l) close(); else render()
 			if (tl?.warnings.length) console.warn('[liner]', l.id, tl.warnings)
 		},
@@ -242,7 +318,9 @@ export function createLinerOverlay({ seek, title, onSeek, host = document.body, 
 		update(t) {
 			if (!tl) return
 			lastT = t
-			const m = momentAt(tl, t), s = sectionAt(tl, t)
+			const m = momentAt(tl, t), s = sectionAt(tl, t), x = intertitleAt(tl, t)
+			if (x !== curIt) { curIt = x; showIntertitle(x) }
+			fadeIntertitle(t)
 			if (m !== curM) { curM = m; showCaption(m); if (tab === 'now' && !cardView) render(); else if (tab === 'notes') render() }
 			if (s !== curS) {
 				curS = s; showSub()
@@ -250,8 +328,14 @@ export function createLinerOverlay({ seek, title, onSeek, host = document.body, 
 				if (tab === 'about') render()
 			}
 		},
-		get captions() { return captions },
-		set captions(v) { captions = !!v; showCaption(captions ? curM : null) },
+		/** what shows on screen as it plays: 'intertitles' (the few marked lines), 'notes' (every note as a caption) or 'off' */
+		get mode() { return mode },
+		set mode(v) { mode = ['intertitles', 'notes', 'off'].includes(v) ? v : 'intertitles'; showCaption(curM); fadeIntertitle(lastT) },
+		/** where intertitles sit: 'left' (the lower third, from the left) or 'center' */
+		get align() { return align },
+		set align(v) { align = v === 'center' ? 'center' : 'left'; it.className = 'ln-it ' + align; fadeIntertitle(lastT) },
+		get style() { return style },
+		set style(v) { style = INTERTITLE_STYLES[v] ? v : 'serif'; loadIntertitleFonts(style); styleIntertitle() },
 		get timeline() { return tl },
 		get liner() { return liner },
 		open, close, toggle, attachMenu,
@@ -290,7 +374,7 @@ export function drawLinerCaption(g, w, h, tl, t, { fade = 0.4, font = 'Inter, sy
 	const x = (w - boxW) / 2, y = h * (1 - bottom) - boxH + (1 - a) * 10 * k
 	g.fillStyle = 'rgba(16, 16, 16, 0.62)'
 	g.beginPath(); g.roundRect ? g.roundRect(x, y, boxW, boxH, 18 * k) : g.rect(x, y, boxW, boxH); g.fill()
-	g.textAlign = 'center'; g.textBaseline = 'top'
+	g.textAlign = left ? 'left' : 'center'; g.textBaseline = 'top'
 	g.font = `600 ${kindSize}px ${font}`
 	g.fillStyle = KIND_COLORS[m.kind]
 	const label = `${KIND_LABEL[m.kind]} · ${barOf(m.at) || mmss(m.start)}`.toUpperCase()
@@ -300,5 +384,57 @@ export function drawLinerCaption(g, w, h, tl, t, { fade = 0.4, font = 'Inter, sy
 	g.font = `400 ${size}px ${font}`
 	g.fillStyle = '#f4f1ea'
 	lines.forEach((l, i) => g.fillText(l, w / 2, y + pad * 0.7 + kindSize + 10 * k + i * lh))
+	g.restore()
+}
+
+/**
+ * Draw the intertitle for song time `t` into a 2D canvas of w × h (a frame of
+ * the exported video): the same layout, fonts and fades as on the page.
+ * Call loadIntertitleFonts(style) first.
+ */
+export function drawIntertitle(g, w, h, tl, t, { style = 'serif', align = 'left', bottom = 0.21 } = {}) {
+	const x = intertitleAt(tl, t)
+	if (!x) return
+	const a = itAlpha(x, t)
+	if (a <= 0) return
+	const st = INTERTITLE_STYLES[style] || INTERTITLE_STYLES.serif, k = h / 1080
+	const lineSize = st.size * k, kickSize = st.size * 0.42 * k
+	const track = (f, extra = 0) => { if ('letterSpacing' in g) g.letterSpacing = `${((f[3] + extra) * (f === st.kicker ? kickSize : lineSize)).toFixed(2)}px` }
+	g.save()
+	g.font = cssFont(st.line, lineSize); track(st.line)
+	const left = align !== 'center'
+	const text = plainText(x.text), lines = wrap(g, st.upper ? text.toUpperCase() : text, Math.min(left ? Math.min(w * 0.46, 820 * k) : w * 0.8, lineSize * 24))
+	const lh = lineSize * 1.28, kickH = x.kicker ? kickSize + kickSize * 0.9 * 2 + 1 : 0
+	const blockH = kickH + lines.length * lh
+	const y0 = h * (1 - bottom) - blockH
+	g.font = cssFont(st.line, lineSize); track(st.line)
+	const textW = Math.max(...lines.map(l => g.measureText(l).width))
+	const x0 = left ? w * 0.06 : (w - textW) / 2, cx = left ? x0 : w / 2
+	// the scrim: a soft dark pool behind the words (as the page's ::before)
+	g.globalAlpha = a
+	g.save()
+	const pad = lineSize * 0.8, blur = 28 * k
+	if ('filter' in g) g.filter = `blur(${blur}px)`
+	g.fillStyle = 'rgba(0,0,0,0.5)'
+	const bx = left ? -blur * 2 : x0 - pad * 1.5, bw = left ? x0 + textW + pad * 1.5 + blur * 2 : textW + pad * 3
+	g.beginPath(); g.roundRect ? g.roundRect(bx, y0 - pad, bw, blockH + pad * 2, pad * 1.5) : g.rect(bx, y0 - pad, bw, blockH + pad * 2); g.fill()
+	g.restore()
+	if (a < 0.995 && 'filter' in g) g.filter = `blur(${((1 - a) * 5 * k).toFixed(2)}px)`
+	g.textAlign = left ? 'left' : 'center'; g.textBaseline = 'top'
+	g.shadowColor = 'rgba(0,0,0,0.65)'; g.shadowBlur = 24 * k
+	let y = y0
+	if (x.kicker) {
+		g.font = cssFont(st.kicker, kickSize); track(st.kicker, (1 - a) * 0.12)
+		g.fillStyle = '#ecd2a4'
+		g.fillText(plainText(x.kicker).toUpperCase(), cx, y)
+		y += kickSize + kickSize * 0.9
+		g.fillStyle = 'rgba(230,196,142,0.55)'; g.shadowBlur = 0
+		g.fillRect(left ? x0 : cx - 20 * k, y, 40 * k, Math.max(1, k))
+		y += kickSize * 0.9 + 1
+		g.shadowBlur = 24 * k
+	}
+	g.font = cssFont(st.line, lineSize); track(st.line)
+	g.fillStyle = '#f4eee4'
+	lines.forEach((l, i) => g.fillText(l, cx, y + i * lh))
 	g.restore()
 }

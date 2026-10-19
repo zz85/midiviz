@@ -297,7 +297,9 @@
     <div class="field"><label>Hair colour</label><input type="color" id="hairColor" value="#5a3e2a"></div>
     <div class="field"><label>Dress colour</label><input type="color" id="dressColor" value="#8e1d1b"></div>
     <div class="sect">Liner notes<small>background and analysis for pieces that have notes (ⓘ in Songs)</small></div>
-    <label class="chk" title="Short notes about the piece appear as it plays: history, analysis, trivia, things to listen for. Click one, or press I, for the full notes"><input type="checkbox" id="linerOn" checked>Captions while it plays (I: the notes)</label>
+    <div class="field" title="Intertitles: the few short lines the notes mark for the screen, faded in and out with room to read. Every note: each note as a caption as it comes. Click one, or press I, for the full notes"><label>On screen while it plays (I: the notes)</label><select id="linerMode"><option value="intertitles" selected>Intertitles</option><option value="notes">Every note (captions)</option><option value="off">Nothing</option></select></div>
+    <div class="field"><label>Intertitle style</label><select id="itStyle"></select></div>
+    <div class="field"><label>Intertitle position</label><select id="itAlign"><option value="left" selected>Lower third, from the left</option><option value="center">Lower centre</option></select></div>
     <div class="sect">Stage</div>
     <div class="field"><label>Main light</label><input type="range" id="light" min="0" max="2" step="0.01" value="1"></div>
     <div class="field"><label>Exposure</label><input type="range" id="exposure" min="0.3" max="2.5" step="0.01" value="1"></div>
@@ -361,8 +363,8 @@
     <div class="field"><label>Camera</label><select id="exCam"><option value="auto" selected>Director (auto)</option><option value="current">As on screen</option></select></div>
     <label class="chk"><input type="checkbox" id="exAudio" checked>Include audio (with the hall)</label>
     <label class="chk"><input type="checkbox" id="exTitle" checked>Title card (fades out as the music starts)</label>
-    <label class="chk" title="Draw the liner-note captions into the picture (for Shorts and players without subtitles)"><input type="checkbox" id="exCaps">Liner-note captions in the picture</label>
-    <label class="chk" title="Save the liner notes as WebVTT subtitles (upload to YouTube as a subtitle track) and the sections as YouTube chapters for the description, timed to this video"><input type="checkbox" id="exVtt" checked>Save subtitles (.vtt) and YouTube chapters</label>
+    <label class="chk" title="Draw the liner notes into the picture as they show on screen (Visuals → Liner notes: intertitles, or every note as a caption)"><input type="checkbox" id="exCaps" checked>Liner notes in the picture (as on screen)</label>
+    <label class="chk" title="Save the same lines as WebVTT subtitles (upload to YouTube as a subtitle track) and the sections as YouTube chapters for the description, timed to this video"><input type="checkbox" id="exVtt" checked>Save subtitles (.vtt) and YouTube chapters</label>
     <div class="field"><label>Title font</label><select id="exFont">
       <option value="inter" selected>Inter (clean sans, like the page)</option>
       <option value="poppins">Poppins (rounder sans)</option>
@@ -426,7 +428,7 @@
     import { createDirector, SPOTS, MOVES, FRAME_LABELS, SIZES, spotKind } from './pianist/director.js'
     import { hideBody } from './pianist/shell.js'
     import { createLinerLibrary, clockOfMidi, buildTimeline, toVTT, toChapters } from './liner/liner.js'
-    import { createLinerOverlay, drawLinerCaption } from './liner/overlay.js'
+    import { createLinerOverlay, drawLinerCaption, drawIntertitle, loadIntertitleFonts, INTERTITLE_STYLES } from './liner/overlay.js'
 
     const $ = id => document.getElementById(id)
     const params = new URLSearchParams(location.search)
@@ -1306,7 +1308,10 @@
     const liner = createLinerOverlay({ seek: $('seek'), title: $('songTitle'), onSeek: t => seekTo(t), download: saveText })
     liner.attachMenu($('songList'), linerLib)
     window.__liner = { liner, lib: linerLib }
-    $('linerOn').onchange = () => { liner.captions = $('linerOn').checked }
+    for (const [k, st] of Object.entries(INTERTITLE_STYLES)) $('itStyle').append(new Option(st.label, k, k === 'serif', k === 'serif'))
+    $('linerMode').onchange = () => { liner.mode = $('linerMode').value; $('itStyle').disabled = $('itAlign').disabled = liner.mode !== 'intertitles' }
+    $('itAlign').onchange = () => { liner.align = $('itAlign').value }
+    $('itStyle').onchange = () => { liner.style = $('itStyle').value }
     let linerSeq = 0
     async function attachLiner(midi, file, duration) {
       const seq = ++linerSeq
@@ -1566,7 +1571,7 @@
       ['dofamt', 'dofAmt'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
       ['vol', 'vol'], ['room', 'room'], ['seat', 'seat'], ['rv', 'rvAmt'], ['decay', 'rvDecay'], ['tone', 'rvTone'], ['boost', 'boost'], ['amb', 'amb'], ['applause', 'applause'],
       ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exsub', 'exSub'], ['excard', 'exCard'], ['excaps', 'exCaps'], ['exvtt', 'exVtt'],
-      ['notes', 'linerOn'],
+      ['notes', 'linerMode'], ['itstyle', 'itStyle'], ['italign', 'itAlign'],
     ].filter(([, id]) => $(id))
     const OUTFIT_KEYS = { dress: 'dress', slit: 'slit', fabric: 'fabric', dcol: 'color', shoes: 'shoes', hair: 'hair', hcol: 'hairColor' }
     // (colours without their #, so links stay readable)
@@ -1821,8 +1826,9 @@
       }
       if (scheduler?.playing) { scheduler.pause(); songTarget.allSoundOff(); setPlaying(false) }
       if ($('exTitle').checked) await loadTitleFont($('exFont').value)
-      const linerTl = liner.timeline, burnCaps = $('exCaps').checked && linerTl
-      if (burnCaps) await loadTitleFont('inter')
+      const linerTl = liner.timeline, linerMode = liner.mode, itStyle = liner.style, itAlign = liner.align
+      const burnCaps = $('exCaps').checked && linerTl && linerMode !== 'off'
+      if (burnCaps) await (linerMode === 'notes' ? loadTitleFont('inter') : loadIntertitleFonts(itStyle))
       let songZero = 0
       exAbort = new AbortController()
       exporting = true
@@ -1842,7 +1848,8 @@
           // 3.5 s while the scene focuses in underneath it
           intro: $('exTitle').checked ? { seconds: 4.5, overlap: 3.5, fadeOut: 3.5, title: song.title, subtitle: $('exSub').value.trim(), style: '2d', ...titleCardOpts() } : null,
           outro: null,
-          overlay: burnCaps ? (g, w, h, t) => drawLinerCaption(g, w, h, linerTl, t, { font: TITLE_FONTS.inter?.font || 'Inter, system-ui, sans-serif' }) : null,
+          overlay: !burnCaps ? null : linerMode === 'notes' ? (g, w, h, t) => drawLinerCaption(g, w, h, linerTl, t, { font: TITLE_FONTS.inter?.font || 'Inter, system-ui, sans-serif' })
+            : (g, w, h, t) => drawIntertitle(g, w, h, linerTl, t, { style: itStyle, align: itAlign }),
           onTimeline: x => { songZero = x.songZero },
           fileStream, signal: exAbort.signal,
           onProgress: p => {
@@ -1858,7 +1865,7 @@
         }
         // the liner notes as YouTube subtitles and chapters, timed to this video
         if ($('exVtt').checked && linerTl) {
-          saveText(name.replace(/\.mp4$/, '.vtt'), toVTT(linerTl, { offset: songZero }))
+          saveText(name.replace(/\.mp4$/, '.vtt'), toVTT(linerTl, { offset: songZero, from: linerMode === 'notes' ? 'moments' : 'intertitles' }))
           const ch = toChapters(linerTl, { offset: songZero })
           if (ch) saveText(name.replace(/\.mp4$/, '-chapters.txt'), ch + '\n')
         }
