@@ -35,6 +35,16 @@ Drives the VRM's normalised humanoid bones every frame from the #033 models (`st
 - `research/02_character_look.md`: Nodame Cantabile's concert look in three.js terms, model options (VRoid vs MakeHuman male with exact targets, community suits and hair), the recommendation.
 - `research/03_pianist_pair.md`: a pianist who matches the violinist: the VRoid sample women (all eight checked, three CC0 candidates plus AvatarSample_A with previews in `assets/models/candidates/`; the VRMs there are git-ignored), the MakeHuman alternative, and Nodame / Chiaki fan models (none usable in the repo).
 
+## #038 Duo (`../038_duo.html`)
+
+The violinist and the #032 pianist (AvatarSample_A in her concert dress, `pianist/alt-model.js`) on one stage, playing the violin part and the piano part of the same MIDI.
+- Stage: he stands at the origin facing the hall, turned 0.38 rad toward the piano (`?turn=`), so his bow side faces her. The #030 grand stands to his left and behind him (`pianoSide`: x -185, z -150, turned -1.38 so the open lid faces the hall), with her on its bench driven by the #032 rig (`createRig`, gaze on the music). `stage.js` takes the spotlight target, angle and floor pool as options so one beam covers both.
+- `character.js` is the violinist loader, shared with #037: `MODELS`, `OUTFITS`, `loadViolinist(file, {outfit, gain})`, `disposeVRM`, `setOutline`.
+- The piano part is every track but the solo one, fingered in a worker by `fingering/fingering.js` (with two tracks the higher one is the right hand), the sustain pedal from CC64; concerto orchestras are folded onto the keyboard with duplicate notes removed. Sound: FluidR3, violin on channel 0, piano on channel 1.
+- Pieces: the six sonatas, Gounod's Ave Maria, and Bach's E major concerto and Vivaldi's Spring and Winter with the orchestra on the piano.
+- Cameras: front, wide, him, his face, bow, her, her face, keys, over her shoulder, over his. Auto plans the whole piece when it loads: takes of 5–12 s, preferring whichever part is busier against its own average, ending takes on phrase boundaries.
+- Headless: `038_duo.html?shot&view=front&t=20` (sets `__done`, `__info`, `__dbg`).
+
 ## Not done yet
 
 No spring-bone tuning; the forearm twist isn't split; the jacket has no buttons or pockets and the tailcoat's tails don't swing; the director is a simple phrase-aware cutter. Headless check: `?shot&view=front&t=6`.

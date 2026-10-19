@@ -1,0 +1,537 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>#038 Duo</title>
+  <!--
+    Experiment #038 - Duo. The #037 violinist and the #032 VRoid pianist
+    (AvatarSample_A in her concert dress) on one stage, playing violin sonatas
+    together: the violin part drives the #033 fingering / bow and the
+    violinist's rig (violinist/rig.js), the rest of the MIDI is the piano part,
+    fingered by fingering/fingering.js and played by the #032 rig
+    (pianist/rig.js) at the concert grand. See violinist/README.md.
+  -->
+  <script src="tonejs-midi.js"></script>
+  <script type="importmap">
+    { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+      "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.5.5/lib/three-vrm.module.min.js"
+    } }
+  </script>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font: 13px/1.35 -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif; color: #eee; }
+    canvas { display: block; touch-action: none; }
+    .bar { position: fixed; left: 0; right: 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 12px; z-index: 5; transition: opacity 0.6s; }
+    #top { top: 0; background: linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0)); }
+    #bottom { bottom: 0; background: linear-gradient(rgba(0,0,0,0), rgba(0,0,0,0.6)); }
+    body.idle .bar, body.idle #credit { opacity: 0; pointer-events: none; }
+    select, button, input { font: inherit; color: #eee; background: rgba(30,30,36,0.8); border: 1px solid rgba(255,255,255,0.18); border-radius: 6px; padding: 4px 8px; }
+    button { cursor: pointer; }
+    button.on { background: rgba(255, 190, 110, 0.25); }
+    #seek { flex: 1; min-width: 160px; padding: 0; }
+    a { color: #fc9; }
+    #title { font-weight: 600; letter-spacing: 0.02em; }
+    #status { position: fixed; left: 50%; top: 52px; transform: translateX(-50%); padding: 6px 12px; border-radius: 6px; background: rgba(0,0,0,0.6); z-index: 6; display: none; }
+    #start { position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; cursor: pointer;
+      background: radial-gradient(ellipse at center, rgba(0,0,0,0.3), rgba(0,0,0,0.75)); transition: opacity 0.5s; }
+    #start.gone { opacity: 0; pointer-events: none; }
+    #start .play { width: 90px; height: 90px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.85); display: flex; align-items: center; justify-content: center; font-size: 36px; padding-left: 6px; box-sizing: border-box; }
+    #credit { position: fixed; right: 12px; bottom: 44px; font-size: 11px; opacity: 0.55; z-index: 5; text-align: right; max-width: 55vw; transition: opacity 0.6s; }
+    label { display: inline-flex; gap: 4px; align-items: center; }
+  </style>
+</head>
+<body>
+  <div id="top" class="bar">
+    <a href="README.md" title="Experiments">◀</a>
+    <span id="title">#038 Duo</span>
+    <select id="song" title="Piece"></select>
+    <select id="model" title="Violinist"></select>
+    <select id="outfit" title="His outfit"></select>
+    <select id="vdress" title="Her dress"><option value="wine">Wine dress</option><option value="black">Black dress</option><option value="navy">Navy dress</option><option value="emerald">Emerald dress</option><option value="rose">Rose dress</option><option value="white">White dress</option></select>
+    <select id="cam" title="Camera">
+      <option value="auto">Director (auto)</option>
+      <option value="front">The two, from the hall</option>
+      <option value="wide">Hall, wide</option>
+      <option value="him">The violinist</option>
+      <option value="hisFace">His face</option>
+      <option value="bow">Bow and strings</option>
+      <option value="her">The pianist</option>
+      <option value="herFace">Her face</option>
+      <option value="keys">Her hands</option>
+      <option value="overHer">Over her shoulder, to him</option>
+      <option value="overHim">Past him, to her</option>
+      <option value="free">Free</option>
+    </select>
+    <select id="room" title="Room"></select>
+    <label title="Ink outlines"><input type="checkbox" id="outline" checked> Ink</label>
+  </div>
+  <div id="bottom" class="bar">
+    <button id="play">▶</button>
+    <input type="range" id="seek" min="0" max="1" step="0.0001" value="0">
+    <span id="time">0:00 / 0:00</span>
+    <select id="speed" title="Speed"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option></select>
+  </div>
+  <div id="credit"></div>
+  <div id="status"></div>
+  <div id="start"><div class="play">▶</div><div id="startSong"></div></div>
+
+  <script type="module">
+    import * as THREE from 'three'
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+    import { SoundFontEngine, MidiScheduler } from './soundfont-engine/src/index.js'
+    import { installAcoustics, acousticParams, ROOMS } from './concertstage/acoustics.js'
+    import { buildGrandPiano, LOW, HIGH } from './concertstage/concert-grand.js'
+    import { fingerLine } from './strings/fingering.js'
+    import { buildMotion } from './strings/motion.js'
+    import { buildViolin, buildBow } from './strings/violin3d.js'
+    import { buildLeftHand, buildBowHand } from './strings/hand3d.js'
+    import { createViolinistRig } from './violinist/rig.js'
+    import { toonify, buildStage } from './violinist/stage.js'
+    import { loadViolinist, disposeVRM, setOutline, MODELS as VIOLINISTS, OUTFITS } from './violinist/character.js'
+    import { loadAltCharacter } from './pianist/alt-model.js'
+    import { createRig as createPianistRig } from './pianist/rig.js'
+
+    const $ = id => document.getElementById(id)
+    const Q = new URLSearchParams(location.search)
+    const SHOT = Q.has('shot')
+    const v3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z)
+    const setStatus = (msg, ms = 0) => { $('status').textContent = msg; $('status').style.display = msg ? 'block' : 'none'; if (ms) setTimeout(() => setStatus(''), ms) }
+    for (const [f, l] of Object.entries(VIOLINISTS)) $('model').add(new Option(l, f))
+    for (const [k, o] of Object.entries(OUTFITS)) $('outfit').add(new Option(o.label, k))
+    for (const [k, r] of Object.entries(ROOMS)) $('room').add(new Option(r.label, k, k === 'hall', k === 'hall'))
+    for (const [id, key] of [['model', 'model'], ['outfit', 'outfit'], ['vdress', 'vdress'], ['cam', 'view']]) if (Q.get(key) && [...$(id).options].some(o => o.value === Q.get(key))) $(id).value = Q.get(key)
+
+    // ── Renderer and stage ─────────────────────────────────────────────────
+    // The violinist stands at the origin facing the hall (+z). The piano is
+    // upstage on his right, turned so its open lid faces the hall: the
+    // pianist sits at the keyboard on the far side, in profile to the
+    // audience, and sees him over her right shoulder (he sees her past his
+    // scroll).
+    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: SHOT })
+    renderer.setPixelRatio(Math.min(2, devicePixelRatio))
+    renderer.setSize(innerWidth, innerHeight)
+    renderer.shadowMap.enabled = true
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    renderer.outputColorSpace = THREE.SRGBColorSpace
+    document.body.appendChild(renderer.domElement)
+    const scene = new THREE.Scene()
+    const camera = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 1, 8000)
+    const controls = new OrbitControls(camera, renderer.domElement)
+    controls.enableDamping = true
+
+    const pianoSide = new THREE.Group()
+    pianoSide.name = 'piano side'
+    pianoSide.rotation.y = -1.38              // the lid (treble side) toward the hall, a little open to it
+    pianoSide.position.set(-185, 0, -150)
+    scene.add(pianoSide)
+    pianoSide.updateMatrixWorld(true)
+    const P = (x, y, z) => pianoSide.localToWorld(v3(x, y, z))
+    const HER = P(0, 98, 46), KEYS = P(0, 76, 2), MID = HER.clone().lerp(v3(0, 140, 0), 0.5)
+    const stage = buildStage(scene, renderer, { target: [MID.x, 100, MID.z], angle: 0.36, pool: [MID.x, MID.z + 40], poolSize: 620 })
+    // a warm spot of her own, from the hall side
+    const herSpot = new THREE.SpotLight(0xffe0b8, 2.6, 0, 0.2, 0.7, 0)
+    herSpot.position.set(HER.x - 120, 640, HER.z + 620); herSpot.target.position.copy(HER).setY(80)
+    herSpot.castShadow = true; herSpot.shadow.mapSize.set(1024, 1024); herSpot.shadow.bias = -0.0004; herSpot.shadow.normalBias = 0.6
+    scene.add(herSpot, herSpot.target)
+    // the piano's lacquer and plate need something to reflect (as #032)
+    {
+      const pmrem = new THREE.PMREMGenerator(renderer), s = new THREE.Scene()
+      s.background = new THREE.Color(0x010101)
+      const box = (w, h, p, k, c) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(c).multiplyScalar(k), side: THREE.DoubleSide })); m.position.set(...p); m.lookAt(0, 90, 0); s.add(m) }
+      box(260, 260, [-200, 640, 300], 6, 0xffcf9a); box(900, 140, [0, 650, -150], 0.6, 0xffd7a8); box(700, 220, [150, 420, 900], 1.2, 0xffe2c0)
+      scene.environment = pmrem.fromScene(s, 0.015, 1, 6000).texture
+      scene.environmentIntensity = 0.45
+    }
+
+    // ── The piano and the pianist (#032) ───────────────────────────────────
+    const piano = buildGrandPiano({ mirror: false })
+    pianoSide.add(piano.root)
+    piano.setFinish('ebony'); piano.setLid('full')
+    piano.bench.position.z = 47
+    const SEAT_Y = 55.4
+    setStatus('Loading the pianist…')
+    const her = await loadAltCharacter('vroida', new URL('./pianist/assets/', import.meta.url).href)
+    pianoSide.add(her.group)
+    const pRig = createPianistRig(her, { seat: v3(0, SEAT_Y + 8.6, 44) })
+    her.attachRig?.(pRig)
+    pRig.state.gazeMode = 'music'
+    if (her.dress) {
+      her.dress.set($('vdress').value)
+      const benchBox = new THREE.Box3()
+      Object.defineProperty(her.dress, 'bench', { get: () => (piano.bench.updateMatrixWorld(true), benchBox.setFromObject(piano.bench)) })
+    }
+    $('vdress').onchange = () => { her.dress?.set($('vdress').value); saveUrl() }
+    pRig.update(0, 1 / 60)
+
+    // ── The violin and the violinist (#037) ────────────────────────────────
+    const V = buildViolin((await import('./strings/fingering.js')).INSTRUMENTS.violin, { finish: 'red' })
+    scene.add(V.group)
+    const bow = buildBow()
+    V.group.add(bow.group)
+    const leftHand = buildLeftHand(V)
+    const bowHand = buildBowHand(bow, V.group)
+    bowHand.hand.visible = false; bowHand.arm.visible = false
+    const inkInstrument = toonify([V.group, bow.group])
+    let him = null, vRig = null
+    const TURN = +(Q.get('turn') ?? -0.38)
+    async function loadHim() {
+      setStatus('Loading the violinist…')
+      const next = await loadViolinist($('model').value, { base: 'violinist/assets/models/', outfit: $('outfit').value })
+      if (him) { scene.remove(him.scene); disposeVRM(him) }
+      him = next
+      // turned a little toward the piano so the two can see each other (rig.js
+      // measures everything from his rest pose, so it plays in any facing)
+      him.scene.rotation.y += TURN      // (on top of rotateVRM0's half turn)
+      scene.add(him.scene)
+      him.scene.updateMatrixWorld(true)
+      leftHand.setScale(1)
+      vRig = createViolinistRig({ vrm: him, V, bow, leftHand, bowHand })
+      leftHand.setScale(vRig.handScale)
+      applyOutline()
+      setStatus('')
+    }
+    function applyOutline() {
+      const on = $('outline').checked
+      inkInstrument.forEach(o => { o.visible = on })
+      setOutline(him, on); setOutline(her.vrm, on)
+    }
+    $('outline').onchange = applyOutline
+    $('model').onchange = $('outfit').onchange = async () => { await loadHim(); saveUrl() }
+
+    // ── Pieces: the violin part, and everything else on the piano ──────────
+    const index = await (await fetch('violinist/midis/index.json')).json()
+    const REDUCED = ['bach_1042_1_allegro.mid', 'vivaldi_spring_1.mid', 'vivaldi_winter_1.mid']
+    const groups = [
+      ['Violin sonatas', index.filter(e => e.group === 'sonata')],
+      ['With piano', index.filter(e => e.file === 'gounod_ave_maria.mid')],
+      ['Concertos, the orchestra on the piano', index.filter(e => REDUCED.includes(e.file))],
+    ]
+    for (const [label, list] of groups) {
+      const og = document.createElement('optgroup'); og.label = label
+      for (const e of list) og.appendChild(new Option(`${e.composer.replace('J. S. ', '').replace('L. van ', '')} – ${e.title.replace(/^.*?(BWV|Op\.|K\.|HWV|No\.|RV|Ave)/, '$1')}`, e.file))
+      $('song').appendChild(og)
+    }
+    $('song').value = Q.get('song') && [...$('song').options].some(o => o.value === Q.get('song')) ? Q.get('song') : 'beethoven_kreutzer_3_presto.mid'
+
+    const song = { entry: null, violin: [], piano: [], pedal: [], motion: null, duration: 1, drive: null, density: null }
+    let fingerWorker = null
+    /** The piano part's hands and fingers, in a worker (fingering/fingering.js, as #032). */
+    function fingerPiano(notes) {
+      fingerWorker?.terminate()
+      const url = new URL('./fingering/fingering.js', import.meta.url).href
+      const src = `import { fingerPiece } from ${JSON.stringify(url)}
+        onmessage = e => { const r = fingerPiece(e.data); postMessage(r.notes.map(n => [n.hand, n.finger || 0, n.release])) }`
+      fingerWorker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })), { type: 'module' })
+      return new Promise(res => {
+        fingerWorker.onmessage = e => {
+          fingerWorker.terminate(); fingerWorker = null
+          res(notes.map((n, i) => { const [h, f, rel] = e.data[i]; return { ...n, release: rel, hand: h, finger: f } }))
+        }
+        fingerWorker.postMessage(notes.map(n => ({ pitch: n.pitch, on: n.on, off: n.off, velocity: n.velocity, ...(n.hand ? { hand: n.hand } : {}) })))
+      })
+    }
+    async function loadSong(file) {
+      const e = index.find(x => x.file === file) || index[0]
+      setStatus('Fingering…')
+      const midi = new Midi(await (await fetch('violinist/midis/' + e.file)).arrayBuffer())
+      const k = e.suggestedBpm && e.bpm ? e.bpm / e.suggestedBpm : 1
+      // the violin: by its note count (tonejs splits a track at a program change)
+      let solo = midi.tracks.filter(t => t.notes.length === e.violinNotes)
+      if (solo.length !== 1) {
+        const ch = [...new Set(midi.tracks.map(t => t.channel))].find(c => midi.tracks.filter(t => t.channel === c).reduce((a, t) => a + t.notes.length, 0) === e.violinNotes)
+        solo = ch != null ? midi.tracks.filter(t => t.channel === ch) : [midi.tracks[e.violinTrack]]
+      }
+      const violin = solo.flatMap(t => t.notes).map(n => ({ pitch: n.midi, on: n.time * k, off: (n.time + Math.max(0.04, n.duration)) * k, velocity: n.velocity }))
+        .sort((a, b) => a.on - b.on || a.pitch - b.pitch)
+      fingerLine(violin, { instrument: 'violin' })
+      // the piano: every other track; two tracks are the hands (the higher one the right)
+      const others = midi.tracks.filter(t => !solo.includes(t) && t.notes.length && t.channel !== 9)
+      const mean = t => t.notes.reduce((a, n) => a + n.midi, 0) / t.notes.length
+      const hands = others.length === 2 ? new Map([[others[0], mean(others[0]) >= mean(others[1]) ? 'R' : 'L'], [others[1], mean(others[0]) >= mean(others[1]) ? 'L' : 'R']]) : null
+      let piano0 = others.flatMap(t => t.notes.map(n => ({ pitch: n.midi, on: n.time * k, off: (n.time + Math.max(0.04, n.duration)) * k, velocity: Math.min(1, n.velocity * 0.9), ...(hands ? { hand: hands.get(t) } : {}) })))
+        .filter(n => n.pitch >= LOW && n.pitch <= HIGH).sort((a, b) => a.on - b.on || a.pitch - b.pitch)
+      // an orchestra on the piano: the same note in several parts is struck once
+      if (others.length > 2) {
+        const seen = new Map(), out = []
+        for (const n of piano0) { const key = n.pitch + ':' + Math.round(n.on * 50); const o = seen.get(key); if (o) { o.off = Math.max(o.off, n.off); continue } seen.set(key, n); out.push(n) }
+        piano0 = out
+      }
+      const pedal = others.flatMap(t => (t.controlChanges[64] || []).map(c => ({ t: c.time * k, on: c.value >= 0.5 }))).sort((a, b) => a.t - b.t)
+      const pianoNotes = piano0.length ? await fingerPiano(piano0) : []
+      Object.assign(song, { entry: e, violin, piano: pianoNotes, pedal, motion: buildMotion(violin, { instrument: 'violin' }) })
+      song.duration = Math.max(1, ...violin.map(n => n.off), ...pianoNotes.map(n => n.off))
+      song.drive = drivers(violin)
+      song.density = densities()
+      song.meanDensity = [song.violin.length / song.duration, song.piano.length / song.duration]
+      pRig.clear(); pRig.setNotes(pianoNotes)
+      keys.reset()
+      $('credit').innerHTML = `${e.composer} – ${e.title}<br>MIDI: ${e.credit || 'Mutopia Project'}, ${e.licence} · VRoid Project models (pixiv)`
+      $('startSong').textContent = `${e.composer} – ${e.title}`
+      clock.t = 0
+      setStatus('')
+      if (scheduler) loadSchedule()
+    }
+
+    /** The violinist's expression from his notes (as #037): energy, a breath before each phrase. */
+    function drivers(notes) {
+      const step = 0.1, n = Math.ceil((notes.at(-1)?.off || 1) / step) + 20
+      const dens = new Float32Array(n), reg = new Float32Array(n)
+      for (const x of notes) { const i = Math.floor(x.on / step); for (let j = Math.max(0, i - 10); j < Math.min(n, i + 10); j++) { dens[j] += 1 - Math.abs(j - i) / 10; reg[j] += x.pitch } }
+      const energy = new Float32Array(n)
+      for (let i = 0; i < n; i++) energy[i] = dens[i] ? Math.min(1, 0.35 * dens[i] / 6 + 0.65 * Math.max(0, (reg[i] / dens[i] - 62) / 26)) : 0.2
+      const phrases = []
+      let lastOff = -10
+      for (const x of notes) { if (x.on - lastOff > 0.35) phrases.push(x.on); lastOff = Math.max(lastOff, x.off) }
+      return {
+        energy: t => energy[Math.max(0, Math.min(n - 1, Math.round(t / step)))],
+        breath(t) {
+          let b = 0
+          for (const p of phrases) { if (p - t > 0.7) break; const d = t - p; b = Math.max(b, d < 0 ? Math.sin(Math.PI / 2 * (1 + d / 0.7)) : Math.max(0, 1 - d / 0.9)) }
+          return b
+        },
+        phrases,
+      }
+    }
+    /** Who is busy when (notes per second over 4 s), for the director. */
+    function densities() {
+      const step = 0.5, n = Math.ceil(song.duration / step) + 2
+      const a = [new Float32Array(n), new Float32Array(n)]
+      for (const [k, list] of [[0, song.violin], [1, song.piano]]) for (const x of list) { const i = Math.floor(x.on / step); for (let j = Math.max(0, i - 4); j < Math.min(n, i + 4); j++) a[k][j] += 1 / 4 }
+      return t => { const i = Math.max(0, Math.min(n - 1, Math.round(t / step))); return [a[0][i], a[1][i]] }
+    }
+
+    // ── The piano's keys and pedal follow the piano part (as #032 driveKeys) ──
+    const keys = {
+      held: new Map(), idx: 0, t: null, active: [], pedalIdx: 0, sustain: false,
+      reset() { for (const m of this.held.keys()) piano.noteOff(m); this.held.clear(); this.active = []; this.idx = 0; this.t = null; this.pedalIdx = 0; this.setSustain(false) },
+      on(n) { this.held.set(n.pitch, (this.held.get(n.pitch) || 0) + 1); piano.noteOn(n.pitch, n.velocity ?? 0.7) },
+      off(n) { const c = (this.held.get(n.pitch) || 1) - 1; if (c <= 0) { this.held.delete(n.pitch); piano.noteOff(n.pitch) } else this.held.set(n.pitch, c) },
+      setSustain(on) { this.sustain = on; piano.setSustain(on) },
+      drive(t) {
+        const N = song.piano
+        if (this.t == null || t < this.t || t > this.t + 0.5) {
+          for (const m of this.held.keys()) piano.noteOff(m)
+          this.held.clear(); this.active = []; this.idx = 0
+          while (this.idx < N.length && N[this.idx].on < t) { const n = N[this.idx++]; if (n.off > t) { this.on(n); this.active.push(n) } }
+          this.pedalIdx = 0; let s = false
+          while (this.pedalIdx < song.pedal.length && song.pedal[this.pedalIdx].t <= t) s = song.pedal[this.pedalIdx++].on
+          this.setSustain(s)
+        } else {
+          for (let i = this.active.length - 1; i >= 0; i--) if (this.active[i].off <= t) { this.off(this.active[i]); this.active.splice(i, 1) }
+          while (this.idx < N.length && N[this.idx].on <= t) { const n = N[this.idx++]; this.on(n); this.active.push(n) }
+          while (this.pedalIdx < song.pedal.length && song.pedal[this.pedalIdx].t <= t) this.setSustain(song.pedal[this.pedalIdx++].on)
+        }
+        this.t = t
+      },
+    }
+
+    // ── Sound: the violin on channel 0, the piano on channel 1 ─────────────
+    const hall = installAcoustics()
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+    const engine = new SoundFontEngine({ backend: 'oxisynth', vendorPath: new URL('./vendor', import.meta.url).href, audioContext: audioCtx })
+    let soundReady = false, soundLoading = null
+    const ensureSound = () => (soundLoading ??= engine.loadSoundFont('soundfonts/FluidR3.sf3')
+      .then(() => { soundReady = true; engine.programChange(0, 40); engine.programChange(1, 0) })
+      .catch(e => { console.error(e); setStatus('Sound failed to load: ' + e.message, 4000) }))
+    const applyHall = () => hall.set(acousticParams({ room: $('room').value, seat: 'mid' }))
+    $('room').onchange = () => { applyHall(); saveUrl() }
+    if (Q.get('room') && ROOMS[Q.get('room')]) $('room').value = Q.get('room')
+    applyHall()
+    let scheduler = null
+    const target = {
+      audioContext: audioCtx, resume: () => audioCtx.resume(),
+      noteOn(m, v, c) { if (soundReady) engine.noteOn(m, v, c) },
+      noteOff(m, c) { engine.noteOff(m, c) },
+      controlChange(c, cc, v) { engine.controlChange(c, cc, v) },
+      allSoundOff() { engine.allNotesOff?.() },
+    }
+    const clock = { playing: false, t: 0, wall: 0, speed: 1 }
+    const now = () => clock.playing ? clock.t + (performance.now() - clock.wall) / 1000 * clock.speed : clock.t
+    function loadSchedule() {
+      const notes = [
+        ...song.violin.map(n => ({ midi: n.pitch, time: n.on, duration: n.off - n.on, velocity: n.velocity ?? 0.75, channel: 0 })),
+        ...song.piano.map(n => ({ midi: n.pitch, time: n.on, duration: n.off - n.on, velocity: n.velocity ?? 0.7, channel: 1 })),
+      ].sort((a, b) => a.time - b.time)
+      scheduler.load({ notes, controlChanges: song.pedal.map(p => ({ time: p.t, channel: 1, controller: 64, value: p.on ? 127 : 0 })) })
+      if (soundReady) { engine.programChange(0, 40); engine.programChange(1, 0) }
+    }
+    async function play() {
+      if (audioCtx.state !== 'running') audioCtx.resume().catch(() => {})
+      await ensureSound()
+      if (!scheduler) {
+        scheduler = new MidiScheduler(target); await scheduler.init()
+        scheduler.on('time', t => { if (clock.playing && Math.abs(t - now()) > 0.08) { clock.t = t; clock.wall = performance.now() } })
+      }
+      loadSchedule()
+      if (clock.t >= song.duration) clock.t = 0
+      scheduler.speed = clock.speed
+      scheduler.seek(clock.t); scheduler.play()
+      clock.wall = performance.now(); clock.playing = true
+      $('play').textContent = '❚❚'; $('play').classList.add('on')
+    }
+    function pause() {
+      clock.t = now(); clock.playing = false
+      scheduler?.pause(); target.allSoundOff()
+      $('play').textContent = '▶'; $('play').classList.remove('on')
+    }
+    $('play').onclick = () => (clock.playing ? pause() : play())
+    $('speed').onchange = () => { clock.t = now(); clock.wall = performance.now(); clock.speed = +$('speed').value; if (scheduler) scheduler.speed = clock.speed }
+    $('seek').oninput = () => { clock.t = +$('seek').value * song.duration; clock.wall = performance.now(); if (clock.playing) { target.allSoundOff(); scheduler.seek(clock.t) } }
+    $('song').onchange = async () => { const was = clock.playing; pause(); await loadSong($('song').value); director.reset(); if (was) play(); saveUrl() }
+    $('start').onclick = () => { $('start').classList.add('gone'); play() }
+    addEventListener('keydown', e => { if (e.code === 'Space' && e.target === document.body) { e.preventDefault(); $('start').classList.add('gone'); clock.playing ? pause() : play() } })
+    const fmt = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`
+
+    // ── Cameras ────────────────────────────────────────────────────────────
+    // live subjects: his head and violin, her head and hands
+    const S = { hisHead: v3(), violin: v3(), herHead: v3(), hands: v3(), mid: v3() }
+    function subjects() {
+      him.humanoid.getNormalizedBoneNode('head').getWorldPosition(S.hisHead)
+      V.group.localToWorld(S.violin.set(V.x0 + V.bodyLen * 0.5, 0, 0))
+      pianoSide.localToWorld(S.herHead.copy(pRig.pos('head')))
+      const d = pRig.hands
+      S.hands.set(0, 0, 0); let n = 0
+      for (const h of [d.L, d.R]) if (h.visible) { S.hands.add(h.joints.W); n++ }
+      if (n) S.hands.multiplyScalar(1 / n); else S.hands.set(0, 76, 2)
+      pianoSide.localToWorld(S.hands)
+      S.mid.copy(S.hisHead).lerp(S.herHead, 0.5).setY(115)
+    }
+    // [camera position, look-at, fov] from the subjects (he faces +z, she faces about +x)
+    const VIEWS = {
+      front: () => [v3(-60, 175, 520), S.mid.clone().add(v3(15, 0, 40)), 30],
+      wide: () => [v3(-40, 330, 1250), S.mid.clone().setY(100), 24],
+      him: () => [S.hisHead.clone().add(v3(-70, -20, 260)), S.hisHead.clone().add(v3(10, -35, 0)), 28],
+      hisFace: () => [S.hisHead.clone().add(v3(20, 18, 88)), S.hisHead.clone().add(v3(2, -6, 0)), 30],
+      bow: () => [S.violin.clone().add(v3(-95, 25, 70)), S.violin.clone(), 32],
+      her: () => [S.herHead.clone().add(v3(25, -10, 235)), S.herHead.clone().add(v3(25, -25, 0)), 30],
+      herFace: () => [S.herHead.clone().add(v3(62, -14, 52)), S.herHead.clone().add(v3(0, -2, 0)), 30],
+      keys: () => [S.hands.clone().add(v3(-15, 40, 75)), S.hands.clone(), 34],
+      overHer: () => [S.herHead.clone().add(v3(-38, 16, 24)), S.hisHead.clone().add(v3(0, -25, 0)), 34],
+      overHim: () => [S.hisHead.clone().add(v3(38, 14, -62)), S.herHead.clone().add(v3(0, -15, 0)), 34],
+    }
+    let tween = null
+    function setView(v, cut = false) {
+      if (!VIEWS[v] || !him) return
+      subjects()
+      const [pos, tg, fov] = VIEWS[v]()
+      if (cut) { camera.position.copy(pos); controls.target.copy(tg); camera.fov = fov; camera.updateProjectionMatrix(); tween = null; return }
+      tween = { from: { pos: camera.position.clone(), target: controls.target.clone(), fov: camera.fov }, to: { pos, target: tg, fov }, t: 0 }
+    }
+    // The director plans the whole piece when it loads (so a seek or a
+    // headless still lands on the same take): cuts on the violin's phrase
+    // starts, every 5-11 s, favouring whoever is busier (notes per second
+    // over the next few seconds), never the same view twice in a row, back to
+    // the two of them every fourth take, and opening wide.
+    const TAKES = { violin: ['him', 'hisFace', 'bow', 'overHer'], piano: ['her', 'herFace', 'keys', 'overHim'], both: ['front', 'wide', 'front'] }
+    const director = {
+      plan: [],
+      reset() {
+        this.plan = []
+        let t = 0, last = '', count = 0
+        while (t < song.duration + 2) {
+          const seed = Math.floor(t * 7.3 + (song.entry?.violinNotes || 0)) % 997
+          // busier than usual for that part (the piano plays many more notes)
+          const [dv, dp] = song.density ? song.density(t + 2).map((d, i) => d / (song.meanDensity[i] || 1)) : [1, 1]
+          let pool = count % 4 === 0 ? TAKES.both : dv > dp * 1.4 ? TAKES.violin : dp > dv * 1.4 ? TAKES.piano : [...TAKES.violin, ...TAKES.piano]
+          if (count === 0) pool = ['wide']
+          pool = pool.filter(v => v !== last)
+          const v = pool[(seed * 31 + 7) % pool.length]
+          let len = 5 + ((seed * 17) % 60) / 10
+          const ph = song.drive?.phrases.find(p => p > t + len - 1.5 && p < t + len + 2.5)
+          if (ph) len = ph - t
+          this.plan.push({ v, start: t, until: t + len, drift: v3(((seed % 5) - 2) * 5, ((seed % 3) - 1) * 3, -8 - (seed % 4) * 3) })
+          last = v; count++; t += len
+        }
+      },
+      at(t) { let lo = 0, hi = this.plan.length - 1; while (lo < hi) { const m = (lo + hi + 1) >> 1; if (this.plan[m].start <= t) lo = m; else hi = m - 1 } return this.plan[lo] },
+      update(t) {
+        const take = this.at(Math.max(0, t))
+        if (!take) return
+        const k = (t - take.start) / Math.max(1, take.until - take.start)
+        const [pos, tg, fov] = VIEWS[take.v]()
+        camera.position.copy(pos).addScaledVector(take.drift, k)
+        controls.target.copy(tg)
+        camera.fov = fov; camera.updateProjectionMatrix()
+      },
+    }
+    $('cam').onchange = () => { if ($('cam').value !== 'auto') setView($('cam').value); saveUrl() }
+    controls.addEventListener('start', () => { tween = null; if ($('cam').value !== 'free') $('cam').value = 'free' })
+
+    function saveUrl() {
+      if (SHOT) return
+      const p = new URLSearchParams()
+      if ($('song').value !== 'beethoven_kreutzer_3_presto.mid') p.set('song', $('song').value)
+      if ($('model').selectedIndex) p.set('model', $('model').value)
+      if ($('outfit').value !== 'concert') p.set('outfit', $('outfit').value)
+      if ($('vdress').value !== 'wine') p.set('vdress', $('vdress').value)
+      if ($('room').value !== 'hall') p.set('room', $('room').value)
+      if ($('cam').value !== 'auto') p.set('view', $('cam').value)
+      history.replaceState(null, '', '?' + p.toString())
+    }
+
+    // ── Load ───────────────────────────────────────────────────────────────
+    await Promise.all([loadHim(), loadSong($('song').value)])
+    director.reset()
+    if (!SHOT) ensureSound()
+
+    // ── Loop ───────────────────────────────────────────────────────────────
+    let idleT = performance.now()
+    addEventListener('pointermove', () => { idleT = performance.now(); document.body.classList.remove('idle') })
+    addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight) })
+    function frame(t, dt) {
+      // him
+      const pose = song.motion?.poseAt(t)
+      vRig.update(pose, { t, energy: song.drive?.energy(t) ?? 0.4, breath: song.drive?.breath(t) ?? 0 }, dt)
+      him.update(dt)
+      // her
+      keys.drive(t + 0.03)
+      piano.update(dt)
+      pRig.setPedals(false, false, keys.sustain)
+      pRig.update(t, dt)
+      her.group.updateMatrixWorld(true)
+      her.update(dt)
+      // camera
+      subjects()
+      if ($('cam').value === 'auto') director.update(t)
+      else if (tween) {
+        tween.t = Math.min(1, tween.t + dt / 1.1)
+        const e = tween.t < 0.5 ? 4 * tween.t ** 3 : 1 - (-2 * tween.t + 2) ** 3 / 2
+        camera.position.lerpVectors(tween.from.pos, tween.to.pos, e)
+        controls.target.lerpVectors(tween.from.target, tween.to.target, e)
+        camera.fov = THREE.MathUtils.lerp(tween.from.fov, tween.to.fov, e); camera.updateProjectionMatrix()
+        if (tween.t >= 1) tween = null
+      }
+    }
+    if ($('cam').value !== 'auto' && $('cam').value !== 'free') { frame(0, 1 / 60); setView($('cam').value, true) }
+    if (SHOT) {
+      // headless: settle the springs and the skirt over the 1.5 s before t, then draw one frame
+      const t = +(Q.get('t') || 5)
+      $('start').style.display = 'none'
+      document.querySelectorAll('.bar, #credit').forEach(el => { el.style.display = 'none' })
+      for (let i = 90; i >= 0; i--) frame(t - i / 60, 1 / 60)
+      if ($('cam').value !== 'auto' && $('cam').value !== 'free') setView($('cam').value, true)
+      controls.update()
+      camera.lookAt(controls.target)
+      renderer.render(scene, camera)
+      window.__dbg = { director, THREE, scene, camera, renderer, him, her, vRig, pRig, V, bow, piano, pianoSide, song, frame, subjects, S, songDuration: song.duration }
+      window.__info = { t, take: director.at(t)?.v, violin: song.violin.length, piano: song.piano.length }
+      window.__done = true
+    } else {
+      const clk = new THREE.Clock()
+      renderer.setAnimationLoop(() => {
+        const dt = Math.min(0.05, clk.getDelta())
+        let t = now()
+        if (clock.playing && t > song.duration + 1.5) { pause(); clock.t = 0; t = 0 }
+        frame(t, dt)
+        controls.update()
+        renderer.render(scene, camera)
+        if (document.activeElement !== $('seek')) $('seek').value = Math.min(1, t / song.duration)
+        $('time').textContent = `${fmt(Math.min(t, song.duration))} / ${fmt(song.duration)}`
+        if (clock.playing && performance.now() - idleT > 3500) document.body.classList.add('idle')
+      })
+    }
+  </script>
+</body>
+</html>

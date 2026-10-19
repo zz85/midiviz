@@ -99,7 +99,11 @@ export function tuneMToon(vrm, { gain = 0.85 } = {}) {
   })
 }
 
-export function buildStage(scene, renderer) {
+/**
+ * opts (for #038's duo): target (the key spot's aim), angle (its cone),
+ * pool ([x, z] of the light pool on the boards) and poolSize (cm).
+ */
+export function buildStage(scene, renderer, { target = [10, 110, 10], angle = 0.28, pool: poolAt = [0, 20], poolSize = 420 } = {}) {
   scene.background = new THREE.Color(0x050405)
   scene.fog = new THREE.Fog(0x050405, 900, 3200)
   // floor: dark lacquered boards, a warm pool painted under the spot
@@ -125,9 +129,9 @@ export function buildStage(scene, renderer) {
   const rg = pg.createRadialGradient(128, 128, 10, 128, 128, 128)
   rg.addColorStop(0, 'rgba(255,200,130,0.55)'); rg.addColorStop(0.55, 'rgba(255,170,90,0.22)'); rg.addColorStop(1, 'rgba(255,150,70,0)')
   pg.fillStyle = rg; pg.fillRect(0, 0, 256, 256)
-  const pool = new THREE.Mesh(new THREE.PlaneGeometry(420, 420), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(pc), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }))
+  const pool = new THREE.Mesh(new THREE.PlaneGeometry(poolSize, poolSize), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(pc), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }))
   pool.rotation.x = -Math.PI / 2
-  pool.position.set(0, 0.3, 20)
+  pool.position.set(poolAt[0], 0.3, poolAt[1])
   scene.add(pool)
   // back of the stage: a dark wooden shell fading into black
   const shell = new THREE.Mesh(new THREE.CylinderGeometry(900, 900, 900, 64, 1, true, Math.PI * 0.6, Math.PI * 0.8),
@@ -135,9 +139,9 @@ export function buildStage(scene, renderer) {
   shell.position.set(0, 450, 300)
   scene.add(shell)
   // lights: one warm key spot from the front-left above, a cool back rim, a dim fill
-  const key = new THREE.SpotLight(0xffe2b8, 4.2, 0, 0.28, 0.6, 0)
+  const key = new THREE.SpotLight(0xffe2b8, 4.2, 0, angle, 0.6, 0)
   key.position.set(-260, 620, 520)
-  key.target.position.set(10, 110, 10)
+  key.target.position.set(...target)
   key.castShadow = true
   key.shadow.mapSize.set(2048, 2048)
   key.shadow.camera.near = 300; key.shadow.camera.far = 1400
@@ -159,5 +163,5 @@ export function buildStage(scene, renderer) {
   scene.add(edge)
   setInkResolution(renderer.domElement.width, renderer.domElement.height)
   addEventListener('resize', () => setTimeout(() => setInkResolution(renderer.domElement.width, renderer.domElement.height), 0))
-  return { key, rim, fill, floor, update(t) {} }
+  return { key, rim, fill, floor, pool, update(t) {} }
 }

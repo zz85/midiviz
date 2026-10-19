@@ -92,7 +92,6 @@
   <script type="module">
     import * as THREE from 'three'
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
     import { SoundFontEngine, MidiScheduler } from './soundfont-engine/src/index.js'
     import { installAcoustics, acousticParams, ROOMS } from './concertstage/acoustics.js'
     import { INSTRUMENTS, fingerLine } from './strings/fingering.js'
@@ -100,8 +99,8 @@
     import { buildViolin, buildBow } from './strings/violin3d.js'
     import { buildLeftHand, buildBowHand } from './strings/hand3d.js'
     import { createViolinistRig } from './violinist/rig.js'
-    import { toonify, tuneMToon, buildStage } from './violinist/stage.js'
-    import { buildJacket, jacketMaterials, trimUnder } from './violinist/jacket.js'
+    import { toonify, buildStage } from './violinist/stage.js'
+    import { loadViolinist, disposeVRM, setOutline } from './violinist/character.js'
 
     const $ = id => document.getElementById(id)
     const Q = new URLSearchParams(location.search)
@@ -135,23 +134,12 @@
     bowHand.hand.visible = false; bowHand.arm.visible = false
     const inkInstrument = toonify([V.group, bow.group])
 
-    // ── The violinist ──────────────────────────────────────────────────────
-    let vrm = null, rig = null, VRMUtils = null
-    const loader = new GLTFLoader()
+    // ── The violinist (violinist/character.js) ─────────────────────────────
+    let vrm = null, rig = null
     async function loadModel(file) {
       setStatus('Loading the violinist…')
-      const mod = await import('@pixiv/three-vrm')
-      VRMUtils = mod.VRMUtils
-      if (!loader._vrm) { loader.register(p => new mod.VRMLoaderPlugin(p)); loader._vrm = true }
-      const gltf = await loader.loadAsync('violinist/assets/models/' + file)
-      const next = gltf.userData.vrm
-      VRMUtils.removeUnnecessaryVertices(gltf.scene)
-      VRMUtils.rotateVRM0(next)
-      next.scene.scale.setScalar(100)     // metres → cm
-      next.scene.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false } })
-      if ($('outfit').value !== 'own') await dress(next, $('outfit').value)
-      tuneMToon(next)
-      if (vrm) { scene.remove(vrm.scene); VRMUtils.deepDispose(vrm.scene) }
+      const next = await loadViolinist(file, { base: 'violinist/assets/models/', outfit: $('outfit').value })
+      if (vrm) { scene.remove(vrm.scene); disposeVRM(vrm) }
       vrm = next
       scene.add(vrm.scene)
       vrm.scene.updateMatrixWorld(true)
@@ -161,89 +149,11 @@
       applyOutline()
       setStatus('')
     }
-    // Outfits: the VRoid samples share one skeleton (the same 64 J_Bip joints
-    // and body), so the base male's shirt, knit vest, tie, trousers and shoes
-    // can be bound onto any of them; recoloured for a concert
-    const OUTFITS = {
-      concert: { Tops: 'vest:0.5', Tie: 0x2a2a30, Bottoms: 0x55555c, Shoes: 0x303034, jacket: 'jacket' },
-      tails: { Tops: 'vest:2.4', Tie: 0x2a2a30, Bottoms: 0x55555c, Shoes: 0x303034, jacket: 'tails' },
-      vest: { Tops: 'vest', Tie: 0x2a2a30, Bottoms: 0x55555c, Shoes: 0x303034 },
-      school: {},
-    }
-    let donor = null
-    // the navy knit vest → grey by its brightness × k (0.32 charcoal black, 0.62
-    // a mid-grey waistcoat that reads inside a black jacket, 2.4 a white one for
-    // the tailcoat); the white shirt is left alone
-    const vestCache = new Map()
-    function blackVest(tex, k = 0.32) {
-      if (!tex?.image) return tex
-      const key = tex.uuid + k
-      if (vestCache.has(key)) return vestCache.get(key)
-      const img = tex.image, cv = document.createElement('canvas')
-      cv.width = img.width; cv.height = img.height
-      const g = cv.getContext('2d'); g.drawImage(img, 0, 0)
-      const d = g.getImageData(0, 0, cv.width, cv.height), p = d.data
-      for (let i = 0; i < p.length; i += 4) {
-        const r = p[i], gg = p[i + 1], b = p[i + 2]
-        if (b > r + 12 && (r + gg + b) / 3 < 140) { const l = Math.min(235, (r + gg + b) / 3 * k); p[i] = l; p[i + 1] = l; p[i + 2] = Math.min(240, l * 1.04) }
-      }
-      g.putImageData(d, 0, 0)
-      const t = new THREE.CanvasTexture(cv)
-      t.colorSpace = tex.colorSpace; t.flipY = tex.flipY; t.wrapS = tex.wrapS; t.wrapT = tex.wrapT
-      vestCache.set(key, t)
-      return t
-    }
-    async function dress(target, key) {
-      donor ??= await loader.loadAsync('violinist/assets/models/vroid-base-male.vrm')
-      const bones = new Map()
-      target.scene.traverse(o => { if (o.isBone) bones.set(o.name, o) })
-      const old = []
-      target.scene.traverse(o => { if (o.isSkinnedMesh && /^Body/.test(o.name)) old.push(o) })
-      if (!old.length) return
-      const parent = old[0].parent
-      old.forEach(o => o.removeFromParent())
-      const tint = OUTFITS[key] || {}
-      let body = null, cloth = null
-      const under = []
-      donor.scene.traverse(o => {
-        if (!o.isSkinnedMesh || !/^Body/.test(o.name)) return
-        const sk = new THREE.Skeleton(o.skeleton.bones.map(b => bones.get(b.name)), o.skeleton.boneInverses)
-        const mats = [].concat(o.material).map(m => {
-          const c = m.clone()
-          for (const [k, col] of Object.entries(tint)) {
-            if (k === 'jacket') continue
-            if (!c.name.includes(k) || c.name.includes('Outline')) continue
-            if (typeof col === 'string' && col.startsWith('vest')) { c.map = blackVest(c.map, +(col.split(':')[1] || 0.32)); if (c.shadeMultiplyTexture) c.shadeMultiplyTexture = c.map; continue }
-            c.color.multiply(new THREE.Color(col)); c.shadeColorFactor?.multiply(new THREE.Color(col))
-          }
-          return c
-        })
-        let g = o.geometry
-        // under a jacket only the collar and the V of the shirt and vest still show
-        if (tint.jacket && /Tops/.test([].concat(o.material)[0].name)) g = trimUnder(g, o.skeleton, tint.jacket)
-        const m = new THREE.SkinnedMesh(g, Array.isArray(o.material) ? mats : mats[0])
-        m.name = o.name
-        m.bind(sk, o.bindMatrix)
-        m.castShadow = m.receiveShadow = true; m.frustumCulled = false
-        parent.add(m)
-        if (tint.jacket && /SKIN/.test([].concat(o.material)[0].name) && !body) body = m
-        if (/Tops/.test([].concat(o.material)[0].name)) { cloth = [].concat(o.material); under.push(g) }
-        if (/Tie/.test([].concat(o.material)[0].name)) under.push(g)
-      })
-      if (tint.jacket && body && cloth) {
-        const { geometry } = buildJacket(body, { style: tint.jacket, under })
-        const j = new THREE.SkinnedMesh(geometry, jacketMaterials(cloth))
-        j.name = 'jacket'
-        j.bind(body.skeleton, body.bindMatrix)
-        j.castShadow = j.receiveShadow = true; j.frustumCulled = false
-        parent.add(j)
-      }
-    }
     $('outfit').onchange = async () => { await loadModel($('model').value); saveUrl() }
     function applyOutline() {
       const on = $('outline').checked
       inkInstrument.forEach(o => { o.visible = on })
-      vrm?.scene.traverse(o => { if (o.isMesh) for (const m of [].concat(o.material)) if (m.isMToonMaterial && m.outlineWidthMode !== undefined) { m.userData.ow ??= m.outlineWidthFactor; m.outlineWidthFactor = on ? m.userData.ow : 0 } })
+      setOutline(vrm, on)
     }
     $('outline').onchange = applyOutline
 

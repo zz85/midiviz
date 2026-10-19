@@ -6,6 +6,11 @@ Midi Visualization Experiments
 
 18 Oct 2026
 
+[Experiment #038 - Duo](038_duo.html)
+- The #037 violinist and the #032 VRoid pianist in her concert dress on one stage: he plays the violin part, she plays everything else on the #030 grand (fingered by `fingering/`, pedal from CC64)
+- Violin sonatas (Bach, Handel, Mozart, Beethoven Op. 30 No. 2 and the Kreutzer), Gounod's Ave Maria, and three concertos with the orchestra on the piano
+- An auto camera that plans the piece's takes in advance and follows the busier player, plus ten fixed views; menus for his model and outfit, her dress, the room and the ink outline ([notes](violinist/README.md#038-duo-038_duohtml))
+
 [Experiment #037 - Violinist](037_violinist.html)
 - An anime-style violinist (VRoid CC0 VRMs, cel shaded, Nodame Cantabile-like stage lighting) plays the solo part of a violin MIDI; the rest plays as accompaniment
 - 48 Mutopia MIDIs: all of Bach's Sonatas & Partitas BWV 1001–1006, sonatas (Bach, Handel, Mozart, Beethoven Kreutzer), concertos (Bach, Vivaldi, Beethoven, Tchaikovsky), Paganini caprices ([list and credits](violinist/midis/README.md))
