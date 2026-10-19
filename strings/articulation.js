@@ -17,7 +17,9 @@
 //
 // planArticulation(notes, opts) mutates and returns notes, setting on each
 //   n.art = { slurPrev: true when it continues the previous note's bow,
-//             stroke, source: 'score' | 'timing' | 'inferred', ... }
+//             stroke, source: 'score' | 'timing' | 'inferred', portato?:
+//             'portato' | 'loure' (a pulse in the same bow), rebow?: 'repeat',
+//             port?: true (a slide mark or a quiet overlap) | 'inferred', ... }
 // opts: { mode: 'auto' | 'score' | 'timing' | 'infer' | 'off', meter (from
 //         score.js, or [{ t, beats, beatType }]), tempo ([{ t, bpm }]),
 //         ...INFER (the Layer 2 rule parameters) }
@@ -53,6 +55,16 @@ export const INFER = {
   spicMin: 0.06,     // faster than this is sautillé / tremolo territory: left to détaché
   marMin: 0.15,      // s between onsets, at least, for martelé
   marMax: 0.6,
+  // repeated notes and marked notes under a slur (score input):
+  //   a repeat with no mark is played in the same bow with a gentle pulse
+  //   (louré), or re-bowed with repeats: 'rebow'; dots or a dash under the
+  //   slur are portato (a deeper pulse), a line louré. n.art.portato =
+  //   'portato' | 'loure', n.art.rebow = 'repeat'
+  repeats: 'portato',
+  // expressive slides (n.art.port) inferred on slow legato leaps: both notes
+  // at least portMin s (portMinBow across a bow change), the second 1.5× that, an interval of portIv[0]–portIv[1] semitones, at most
+  // one per portEvery s (a slide on every leap is sentimental)
+  portMin: 0.3, portMinBow: 0.45, portIv: [3, 12], portEvery: 6,
   loud: 0.1,         // martelé: velocity this much above the piece's median (or ≥ 0.85 when velocities vary)
 }
 
@@ -83,6 +95,33 @@ function planStrokes(ev, P) {
   }
 }
 
+const PORTATO_MARKS = new Set(['staccato', 'staccatissimo', 'spiccato', 'tenuto', 'portato'])
+
+/**
+ * Expressive slides where the plan has none: slow legato leaps are the classic
+ * place (a lyrical shift in the same bow, or on the old bow before a change),
+ * at most one every P.portEvery s. A score's slide marks (score.js) and a timed
+ * MIDI's quiet overlaps (Layer 1) are kept as they are.
+ */
+function planSlides(ev, P) {
+  // marked slides first: an inferred one keeps portEvery from them on both sides
+  const marked = ev.filter(e => e.notes.some(n => n.art.port)).map(e => e.on)
+  const clear = t => marked.every(m => Math.abs(m - t) >= P.portEvery)
+  let last = -Infinity
+  for (let i = 1; i < ev.length; i++) {
+    const a = ev[i - 1], b = ev[i]
+    if (b.notes.some(n => n.art.port) || !clear(b.on)) continue
+    if (a.notes.length > 1 || b.notes.length > 1) continue
+    const iv = Math.abs(b.top.pitch - a.top.pitch)
+    // slurred, or across a legato bow change when both notes are long (the
+    // slide is on the old bow, then the bow changes: Flesch's B-portamento)
+    // the note slid into is longer: it lands and sings
+    const min = b.top.art.slurPrev ? P.portMin : P.portMinBow
+    const slow = a.off - a.on >= min && b.off - b.on >= 1.5 * min && (b.top.art.slurPrev || b.on - a.off < 0.1)
+    if (slow && iv >= P.portIv[0] && iv <= P.portIv[1] && b.on - last >= P.portEvery) { b.top.art.port = 'inferred'; last = b.on }
+  }
+}
+
 /** onset groups (chords / double stops together), in time order */
 function eventsOf(notes) {
   const ns = notes.filter(n => !n.unplayable).sort((a, b) => a.on - b.on || a.pitch - b.pitch)
@@ -110,11 +149,33 @@ function beatClock(meter, tempo) {
   }
 }
 
+/** A note's marks from a score (score.js), as first read: { slur, stroke, bow, port? } or null. */
+function scoreMarks(n) {
+  const a = n.art
+  if (!a) return null
+  if (a.orig) return a.orig
+  if (a.source !== 'score') return null
+  return { slur: a.slur ?? null, stroke: a.stroke ?? null, bow: a.bow ?? null, ...(a.port ? { port: true } : {}) }
+}
+
+/**
+ * Remove a plan (the fixed rule in motion.js decides again) but keep a score's
+ * marks for the next planArticulation.
+ */
+export function clearArticulation(notes) {
+  for (const n of notes) { const o = scoreMarks(n); if (o) n.art = { ...o, orig: o }; else delete n.art }
+  return notes
+}
+
 export function planArticulation(notes, opts = {}) {
   const { mode = 'auto', meter = null, tempo = null } = opts
   const P = { ...INFER, ...opts }
   const ev = eventsOf(notes)
-  for (const n of notes) n.art = { slur: null, stroke: null, bow: null, ...(n.art || {}), slurPrev: false }
+  // start from the score's own marks (kept in art.orig), never from an earlier plan
+  for (const n of notes) {
+    const o = scoreMarks(n)
+    n.art = o ? { ...o, source: 'score', orig: o, slurPrev: false } : { slur: null, stroke: null, bow: null, slurPrev: false }
+  }
   if (mode === 'off' || ev.length < 2) return notes
   const hasScore = notes.some(n => n.art.source === 'score')
   // does the timing say anything? (a score export: almost every note touches the next)
@@ -132,11 +193,23 @@ export function planArticulation(notes, opts = {}) {
       const a = ev[i - 1], b = ev[i]
       const sa = a.notes.map(n => n.art.slur).find(x => x != null), sb = b.notes.map(n => n.art.slur).find(x => x != null)
       // same slur id, and the earlier note is not where that slur stopped (a slur over one note is just a mark)
-      const cont = sa != null && sa === sb
-      for (const n of b.notes) { n.art.slurPrev = cont; n.art.source = 'score' }
+      let cont = sa != null && sa === sb
+      // under a slur: a repeated note (nothing else changes, so it needs the bow
+      // to speak) and marked notes are pulsed in the same bow, or a repeat re-bows
+      let portato = null
+      if (cont) {
+        const repeat = a.notes.length === b.notes.length && a.notes.every((n, k) => n.pitch === b.notes[k].pitch)
+        const mark = b.notes.map(n => n.art.stroke).find(k => PORTATO_MARKS.has(k))
+        if (mark) portato = mark === 'tenuto' ? 'loure' : 'portato'
+        else if (repeat && P.repeats === 'rebow') cont = false
+        else if (repeat) portato = 'loure'
+        if (!cont) for (const n of b.notes) n.art.rebow = 'repeat'
+      }
+      for (const n of b.notes) { n.art.slurPrev = cont; n.art.source = 'score'; if (portato) n.art.portato = portato }
     }
     for (const n of ev[0].notes) n.art.source = 'score'
     planStrokes(ev, P)
+    if (P.slides !== false) planSlides(ev, P)
     return notes
   }
 
@@ -195,5 +268,6 @@ export function planArticulation(notes, opts = {}) {
     for (const n of b.notes) { n.art.slurPrev = slur; if (!n.art.stroke) n.art.stroke = null; n.art.source = use === 'timing' ? 'timing' : 'inferred' }
   }
   planStrokes(ev, P)
+  if (P.slides !== false) planSlides(ev, P)
   return notes
 }

@@ -356,9 +356,22 @@ In #034, **Open…** (or drag-and-drop) accepts `.musicxml`, `.xml` and `.mxl`. 
 
 Through the waveguide, a 12-note martelé line settles in 6–39 ms per stroke. In a spiccato run most bounces settle within their 45 ms contact, and some stay unsettled, as a real bounced stroke does. Tested in `strings/test/articulation.test.js`.
 
+**Repeats and marks under a slur.** In a score, a slur over a repeated pitch (not tied) or over marked notes keeps one bow. The marked note speaks with a pulse in that bow (`n.art.portato`): the bow slows just before the note, the force falls less than the speed (the bow grips), and the bow presses into the new note.
+- **Portato** (dots under a slur, or the detached-legato mark): a dip of 0.55 × the bow speed. Through the Source model with the Philharmonia body, the sound dips 8.3 dB (waveguide 8.8).
+- **Louré** (a line under a slur, or an unmarked repeat): a dip of 0.35 × the speed, 4.0–5.4 dB in the sound.
+- For comparison, re-bowing the same repeat dips 19 dB (Source) / 23 dB (waveguide), and the phrasing alone dips 1–2 dB.
+- Dots under a slur keep 85 % of the note (they were halved, which left gaps in one bow).
+- **Repeats in slurs** (Bowing panel; `planArticulation(notes, { repeats: 'rebow' })`) changes bow on unmarked repeats instead, as the Joshua Bell Violin does with quick repeats from a keyboard. The **Portato** slider scales both pulse depths, 0 turns them off.
+- The Bach Violin Dataset's editions slur 73 repeated pitches (no portato marks). In score mode, 10 of them end up as pulses in a slur after stroke planning.
+
+**Slides from the plan** (`n.art.port`). A heard slide into the note, 90–220 ms (scaled by the Slides slider) where a shift's slide is 35–160 ms, also when the fingering keeps the position. The fingering pays a cost (`SLIDE_CROSS` in fingering.js) to keep both notes of a planned slide on one string, with the new one stopped. Three sources set it:
+- a score's `<slide>` or `<glissando>` mark;
+- a quiet overlap in a MIDI performance (SWAM's portamento by velocity);
+- inference: a slow legato leap of 3–12 semitones (both notes at least 0.3 s slurred, or 0.45 s across a bow change, the second 1.5 × as long), at most one every 6 s and none within 6 s of a marked one.
+
+Shift slides with no plan behind them are halved across a bow change, where a player hides the shift in the change. On the 48 violin MIDIs (206 min), the planner asks for 1.0 slide per minute (198 heard, the others land on another string), against 10.2 shift slides per minute. On the 32 Bach edition movements it asks for 0.3 per minute. Bach's Gavotte BWV 1006 gets 38 because its MIDI is at half tempo (60 bpm, 6.7 min), so its notes look lyrical. Tested in `strings/test/articulation.test.js`.
+
 Not done yet:
-- automatic re-bows on repeated notes inside a slur;
-- slides from the planner;
 - JBV's speed and interval pitch instability;
 - reading `.mscz` and LilyPond directly.
 

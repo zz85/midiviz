@@ -269,6 +269,8 @@ const inKey = (p, t) => Number.isInteger(DEG[t][((p % 12) + 12) % 12])
 // ── States ─────────────────────────────────────────────────────────────────
 // A state: { b, n: [{ s, f, o }] per note (low → high), open: all open?, u: unary cost }
 
+const SLIDE_CROSS = 6
+
 function noteOptions(M, p, s, lock) {
   // ways to play pitch p on string s: [{ f, o, b, c }] (f = 0: open, b free)
   const { inst } = M
@@ -471,6 +473,7 @@ function solve(M, evs, write) {
     prevTop = evs[i].top
   }
   const N = evs.length
+  const slideTo = evs.map(e => e.notes.length === 1 && !!e.notes[0].art?.port)
   const cost = [], back = []
   for (let i = 0; i < N; i++) {
     const S = lists[i], pb = evs[i].notes.map(n => n.pitch)
@@ -482,7 +485,10 @@ function solve(M, evs, write) {
       for (let s = 0; s < S.length; s++) {
         let best = Infinity, arg = 0
         for (let r = 0; r < P.length; r++) {
-          const v = cp[r] + transition(M, P[r], S[s], pa, pb, dt, gap)
+          let v = cp[r] + transition(M, P[r], S[s], pa, pb, dt, gap)
+          // a planned slide (strings/articulation.js n.art.port) needs both notes on
+          // one string, the new one stopped: anything else costs SLIDE_CROSS
+          if (slideTo[i] && P[r].n.length === 1 && S[s].n.length === 1 && (P[r].n[0].s !== S[s].n[0].s || S[s].open)) v += SLIDE_CROSS
           if (v < best) { best = v; arg = r }
         }
         ci[s] = best + S[s].u; bi[s] = arg

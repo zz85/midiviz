@@ -95,3 +95,11 @@ A planner that reaches, say, 75 % slur agreement on Bach's Partitas would alread
 ## 6. Status (19 Oct 2026)
 
 Layers 1 and 2 are built (`strings/articulation.js`), with MusicXML / `.mxl` score input (`strings/score.js`). Mutopia's ground truth turned out to be unnecessary for a first check: the Bach Violin Dataset's MusicXML editions already carry slurs. The results are in [strings/README.md](../README.md#articulation-planner-and-score-input): planner F1 50 % / agreement 68 % against the fixed rule's 39 % / 60 %.
+
+Since then:
+- **Stroke types:** spiccato and martelé.
+- **Repeats and marks under a slur:** a louré or portato pulse in one bow, or a re-bow as an option.
+- **Slides from the plan:** score marks, quiet overlaps (the SWAM rule above), and an inferred slow legato leap about once every 6 s.
+
+Details are in the strings README.
+

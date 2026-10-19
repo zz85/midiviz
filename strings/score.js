@@ -9,7 +9,8 @@
 //   notes: { pitch, on, off (s), velocity, voice, measure, beat (in the bar,
 //            0-based, in beats of the time signature), art } sorted by onset,
 //   art:   { slur: id | null, stroke: 'staccato' | 'staccatissimo' |
-//            'spiccato' | 'tenuto' | 'accent' | 'marcato' | null,
+//            'spiccato' | 'tenuto' | 'portato' (detached-legato) | 'accent' |
+//            'marcato' | null, port: true after a slide / glissando mark,
 //            bow: 'up' | 'down' | null, source: 'score' }
 //   Staccato notes sound for half their value (staccatissimo a quarter),
 //   ties are merged into one note, grace notes are skipped.
@@ -116,6 +117,8 @@ export function readMusicXML(xml, { part = null, tempo: tempoDefault = 100 } = {
         const techs = allN.filter(c => c.tag === 'technical').flatMap(a => a.children.map(c => c.tag))
         const stroke = ['staccatissimo', 'spiccato', 'staccato', 'marcato', 'accent', 'strong-accent', 'tenuto', 'detached-legato'].find(a => arts.includes(a)) || null
         const bow = techs.includes('up-bow') ? 'up' : techs.includes('down-bow') ? 'down' : null
+        // a slide or glissando ending on this note: an audible portamento into it
+        const port = allN.some(c => (c.tag === 'slide' || c.tag === 'glissando') && c.attrs.type === 'stop')
         const ties = kids(el, 'tie').map(t => t.attrs.type)
         const prev = openTies.get(pitch)
         if (ties.includes('stop') && prev) {
@@ -124,7 +127,7 @@ export function readMusicXML(xml, { part = null, tempo: tempoDefault = 100 } = {
           continue
         }
         const n = { pitch, start: on, end: on + dur, velocity: velocity * (stroke === 'accent' || stroke === 'marcato' || stroke === 'strong-accent' ? 1.15 : 1), voice: +(txt(el, 'voice') || 1), measure: measureNo, mStart,
-          art: { slur, stroke: stroke === 'strong-accent' ? 'marcato' : stroke === 'detached-legato' ? 'tenuto' : stroke, bow, source: 'score' } }
+          art: { slur, stroke: stroke === 'strong-accent' ? 'marcato' : stroke === 'detached-legato' ? 'portato' : stroke, bow, source: 'score', ...(port ? { port: true } : {}) } }
         events.push(n)
         if (ties.includes('start')) openTies.set(pitch, n)
       }
@@ -147,7 +150,9 @@ export function readMusicXML(xml, { part = null, tempo: tempoDefault = 100 } = {
     const [, mb, mt] = meterAt(e.start)
     const beatQ = 4 / mt                     // quarters per beat
     const len = e.end - e.start
-    const k = e.art.stroke === 'staccatissimo' ? 0.25 : e.art.stroke === 'staccato' || e.art.stroke === 'spiccato' ? 0.5 : 1
+    // dots under a slur are portato: the bow keeps going, the note nearly full
+    const k = e.art.slur != null && ['staccatissimo', 'staccato', 'spiccato'].includes(e.art.stroke) ? 0.85
+      : e.art.stroke === 'staccatissimo' ? 0.25 : e.art.stroke === 'staccato' || e.art.stroke === 'spiccato' ? 0.5 : 1
     return {
       pitch: e.pitch, on: tsec(e.start), off: tsec(e.start + Math.max(1 / 64, len * k)), velocity: Math.min(1, e.velocity), voice: e.voice,
       measure: e.measure, beat: (e.start - e.mStart) / beatQ, beatsPerBar: mb, art: e.art,

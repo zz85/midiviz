@@ -120,7 +120,7 @@
   <script type="module">
     import { fingerLine, INSTRUMENTS, parseNote, noteName } from './strings/fingering.js'
     import { renderPerformance, scaleNotes, scaleExpression, expressionFromCC, STYLE } from './strings/sound/performance.js'
-    import { planArticulation } from './strings/articulation.js'
+    import { planArticulation, clearArticulation } from './strings/articulation.js'
     import { readMusicXML, readMXLBrowser } from './strings/score.js'
     import { attackError } from './strings/sound/humanize.js'
     import { NCH, midiHz, INSTRUMENTS as SYNTH } from './strings/sound/bowed.js'
@@ -183,7 +183,7 @@
 
     // expression sliders
     const SL = [
-      ['vibrato', 'Vibrato', 0, 2, 0.05], ['vibratoRate', 'Vib. rate', 4, 7.5, 0.1], ['portamento', 'Slides', 0, 2.5, 0.05],
+      ['vibrato', 'Vibrato', 0, 2, 0.05], ['vibratoRate', 'Vib. rate', 4, 7.5, 0.1], ['portamento', 'Slides', 0, 2.5, 0.05], ['portato', 'Portato', 0, 1.6, 0.05],
       ['dynamics', 'Dynamics', 0, 2, 0.05], ['phrasing', 'Phrasing', 0, 2, 0.05], ['bowSpeed', 'Bow speed', 0.5, 1.6, 0.05],
       ['pressure', 'Pressure', 0.6, 1.8, 0.05], ['contact', 'Contact', 0.5, 1.8, 0.05],
       ['attack', 'Attack', 0, 2, 0.05], ['legato', 'Legato', 0, 1, 0.05], ['autoBow', 'Auto bowing', 0, 2, 0.05],
@@ -191,6 +191,8 @@
       ['timing', 'Timing', 0, 3, 0.05], ['intonation', 'Intonation', 0, 3, 0.05], ['variance', 'Variance', 0, 3, 0.05],
     ]
     const TIPS = {
+      portamento: 'Length of the left hand’s slides: a shift’s (half as long across a bow change, hidden in it) and the audible ones the articulation planner asks for (a score’s slide / glissando marks, a MIDI performance’s quiet overlap, about one slow legato leap in 6 s). 0 = no slides',
+      portato: 'Depth of the pulse on a note inside a slur that has to speak in the same bow: portato (dots under a slur, about an 8 dB dip) and louré (a line under a slur, or a repeated note, about 4 dB). 0 = none',
       legato: 'Bow changes in a legato line (notes that touch, no staccato / spiccato / martelé): 1 = the bow turns quickly and the string keeps sounding, as a player changes bow inside a phrase; 0 = every bow starts and ends like a detached note',
       autoBow: 'How much the bow keeps moving by itself inside each note, as a violinist does (and as SWAM’s moving Bow Pressure / Bow Position knobs): toward the bridge and heavier as a long note swells, lighter toward the tip, a little further out on the lowest string, and a slow wander of both. 0 = one fixed contact point and pressure per note. The live meters top right show the result',
       attack: 'How each bow stroke starts: < 1 lighter (a slower ramp, less bite and swell, as in Baroque playing), > 1 a harder, more biting attack',
@@ -266,6 +268,7 @@
       ['keepBow', 'After rests', [['0', 'Retake'], ['1', 'Keep alternating']], '0', 'Retake: a new phrase after a rest starts on the starting bow again. Keep alternating: SWAM’s Keep Bow Direction'],
       ['bowLift', 'Bow lift', [['off', 'Off string (rings)'], ['on', 'On string (stops)']], 'off', 'At the end of a phrase the bow leaves the string and lets it ring, or stays on it and stops it'],
       ['crossMute', 'Crossings', [['0', 'Rings'], ['1', 'Mute ≤ 1 semitone'], ['2', 'Mute ≤ 2 semitones'], ['99', 'Mute always']], '2', 'SWAM’s Mono CrossString Muting: in a slur that crosses to another string by a small interval, the old string stops so the two notes do not ring together'],
+      ['repeats', 'Repeats in slurs', [['portato', 'Louré (one bow)'], ['rebow', 'Re-bow']], 'portato', 'A score’s slur over a repeated note (the same pitch twice, not tied): Louré keeps the bow and gives the note a gentle pulse, as the slur asks (the Portato slider sets how much); Re-bow changes bow on it, as the Joshua Bell Violin does with quick repeats played from a keyboard'],
       ['art', 'Articulation', [['auto', 'Auto'], ['infer', 'Inferred'], ['off', 'Fixed rule']], 'auto', 'Which notes share a bow (strings/articulation.js). Auto: a score’s slurs (MusicXML / .mxl from MuseScore and others), a MIDI performance’s overlaps and gaps (as SWAM reads them), or, when the notes just touch (most MIDI exports of scores), slurs inferred from the music: short notes by step, in groups that start on the beat, never across a rest, a repeat or a leap. Inferred: always infer. Fixed rule: up to 4 fast notes per bow'],
       ['tremolo', 'Tremolo', [['off', 'Off'], ['slow', 'Slow'], ['fast', 'Fast']], 'off', 'SWAM’s Tremolo: every note long enough is bowed with fast short strokes (each turn bites); short notes stay ordinary'],
       ['tremoloMode', 'Trem. mode', [['hz', 'Free (9 / 15 Hz)'], ['sync', 'Sync (16ths / 32nds)'], ['acc', 'Sync, accelerating']], 'hz', 'Free: a fixed rate. Sync: 16ths (slow) or 32nds (fast) of the piece’s tempo, doubled until at least the minimum. Accelerating: starts at about half speed and reaches it in 0.35 s'],
@@ -307,8 +310,9 @@
       Object.assign(style, st); state.useExpr = opt.expr === 'auto'
       lab.setParams({ bowPress: opt.bowPress === 'on', rosin: +opt.rosin, resonance: +opt.resonance, body: opt.body, wgPress: +opt.wgPress })
       lab.setSordino(opt.sordino === '1')
-      if (re && state.artMode !== undefined && state.artMode !== opt.art) { state.artMode = opt.art; reloadPiece(); return }
-      state.artMode = opt.art
+      const artKey = opt.art + '/' + opt.repeats
+      if (re && state.artMode !== undefined && state.artMode !== artKey) { state.artMode = artKey; reloadPiece(); return }
+      state.artMode = artKey
       if (re && changed) rebuild()
     }
 
@@ -440,8 +444,8 @@
       state.raw = raw; state.title = title; state.source = source; state.fit = fit; state.expr = expr; state.meter = meter; state.tempoMap = tempoMap
       // articulation is planned on the raw notes (prepare() trims overlaps, which are a slur cue)
       const am = opt.art || 'auto'
-      if (am === 'off') for (const n of raw) { if (n.art?.source !== 'score') delete n.art; else n.art = { ...n.art, source: undefined } }
-      else planArticulation(raw, { mode: am === 'infer' ? 'infer' : 'auto', meter, tempo: tempoMap })
+      if (am === 'off') clearArticulation(raw)
+      else planArticulation(raw, { mode: am === 'infer' ? 'infer' : 'auto', meter, tempo: tempoMap, repeats: opt.repeats || 'portato' })
       const src = raw.find(n => n.art?.source)?.art.source
       state.artInfo = am === 'off' ? 'fixed rule' : { score: 'the score’s slurs', timing: 'the MIDI’s overlaps and gaps', inferred: 'inferred' }[src] || ''
       if (optEl.art) optEl.art.title = `${optEl.art.closest('.row').querySelector('label').title}\n\nThis piece: ${state.artInfo}`

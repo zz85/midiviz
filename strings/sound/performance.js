@@ -46,6 +46,7 @@ export const STYLE = {
   vibrato: 1,        // × depth
   vibratoRate: 6.6,  // Hz (four violinists in the Bach Violin Dataset: median 6.55, strings/test/perf_stats.js)
   portamento: 1,     // × slide length (0 = none)
+  portato: 1,        // × depth of portato / louré pulses inside a slur (0 = none)
   dynamics: 1,       // × dynamic range
   phrasing: 1,       // × phrase arches and swells
   bowSpeed: 1,       // × bow speed
@@ -166,6 +167,9 @@ const FMIN = 0.02, ZEXP = 1.5
 // détaché) get LEG_SHORT of it, keeping a little articulation
 const LEG_T = 0.008, LEG_PRESS = 0.7, LEG_SHORT = 0.5
 const SPIC = 0.5, MART = 0.6, MART_PINCH = 2.2, MART_REST = 0.35
+// depth of the bow-speed dip at a portato (dots under a slur) and a louré
+// (a line under a slur, or a repeated note in one bow) pulse
+const PORTATO = 0.55, LOURE = 0.35
 const PRESS = 2, ATK_F = 2, ATK_T = 0.04
 // short strokes (< 180 ms, one note) press less and speed up half as fast: with
 // the full ×2 press on top of their bite they peaked at 4–8.7 N at forte, above
@@ -329,6 +333,16 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
     const span = Math.max(0.04, Math.min(nextOn, st.t1 + 0.05) - st.t0)
     const spC = clamp(SPIC * span, 0.03, 0.1)
     const maC = clamp(MART * span, 0.05, Math.max(0.05, span - 0.04))
+    // portato / louré inside the stroke (strings/articulation.js: marks under a
+    // slur, repeated notes): the bow eases just before the note and presses into
+    // it, so the note speaks without a bow change. Width from the note before
+    const pulses = S.portato > 0 ? st.events.flatMap((e, k) => {
+      const kind = k > 0 && e.notes[0].art?.portato
+      if (!kind) return []
+      return [{ t: e.on, d: Math.min(0.95, (kind === 'portato' ? PORTATO : LOURE) * S.portato), w: clamp(0.15 * (e.on - st.events[k - 1].on), 0.012, 0.04) }]
+    }) : []
+    const pulse = t => { let g = 1; for (const p of pulses) { const u = (t - p.t + 0.8 * p.w) / p.w; if (u > -4 && u < 4) g *= 1 - p.d * Math.exp(-0.5 * u * u) } return g }
+    const press = t => { let g = 1; for (const p of pulses) { const u = t - p.t + 0.003; if (u >= 0 && u < 0.2) g *= 1 + 0.6 * p.d * Math.exp(-u / 0.03) } return g }
     const lgI = st.legIn || 0, lgO = st.legOut || 0
     const atk0 = (st.short ? clamp(0.3 * D, 0.012, 0.03) * ATK_SHORT_RAMP : clamp(0.2 * D, 0.025, 0.07)) / Math.sqrt(atkK)
     const rel0 = st.short ? clamp(0.35 * D, 0.015, 0.05) : clamp(0.12 * D, 0.025, 0.06)
@@ -396,6 +410,7 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
             bet = clamp(bet, bet0 * (Zr[s] > 2 ? 0.97 : 0.85), bet0 > 0.13 ? bet0 : Math.min(0.13, bet0 * 1.15))
             fAuto = (1 + AB * K_TIP * (0.5 - bowAt / 65)) * (1 + AB * K_WF * wF[s][i])
           }
+          if (pulses.length) env *= pulse(t)
           const vmag = st.V * (0.5 + 0.7 * dyn) * pg * sw * env
           // handover across strings inside a slur
           let w = 1
@@ -420,6 +435,9 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
           F = Math.max(F, FMIN * S.pressure * (n.harm ? HARM_F : 1) * Math.pow(Zr[s], ZEXP) * vF / (bet * bet))
           // the bow presses in to catch the string and eases off: ×2 at the start, back in ~40 ms
           if (t >= st.t0 - 0.004 && !sk) F *= 1 + ((st.short ? ATK_F_SHORT : ATK_F) - 1) * atkK * (1 - (1 - LEG_PRESS) * lgI) * Math.exp(-Math.max(0, t - st.t0) / ATK_T)
+          // the force follows the dip less than the speed does (the bow grips
+          // as it slows: the articulation) and presses into the new note
+          if (pulses.length) F *= press(t) * Math.pow(Math.max(0.25, pulse(t)), -0.6)
           if (sk) {
             // the stroke's full-speed force, for the pinch and the rest on the string
             const vS = st.V * (0.5 + 0.7 * dyn) * pg
@@ -461,11 +479,19 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
       let g0 = n.on - 0.006, g1 = n.on + 0.004
       const fromLog = prev && n.on - prev.off < 0.6 ? Math.log2(midiHz(prev.pitch)) : Math.log2(open[s])
       const shift = prev && n.finger && prev.finger && prev.base !== n.base && n.on - prev.off < 0.2
-      if (shift && S.portamento > 0) {
+      // a slide the plan asks for (strings/articulation.js: a score's slide or
+      // glissando mark, a quiet overlap in a MIDI performance, a slow slurred
+      // leap): heard, longer than a shift's, also without a change of position
+      const port = n.art?.port && prev && n.finger && n.on - prev.off < 0.2 && prev.pitch !== n.pitch
+      if ((shift || port) && S.portamento > 0) {
         const iv = Math.abs(n.pitch - prev.pitch)
         const slow = Math.min(n.off - n.on, prev.off - prev.on) > 0.35
-        const pd = clamp(0.03 + 0.011 * iv, 0.035, 0.16) * (slow ? 1.25 : 0.6) * S.portamento
+        let pd = clamp(0.03 + 0.011 * iv, 0.035, 0.16) * (slow ? 1.25 : 0.6) * S.portamento
+        if (port) pd = clamp(0.07 + 0.012 * iv, 0.09, 0.22) * S.portamento
+        // across a bow change (a plan that says so) the shift hides in the change: half as long
+        else if (n.art?.source && !n.art.slurPrev) pd *= 0.5
         g0 = n.on - pd * 0.75; g1 = n.on + pd * 0.25
+        n.slide = port ? 'expressive' : 'shift'
       }
       if (!n.finger) { g0 = n.on - 0.004; g1 = n.on + 0.002 }
       const i0 = Math.max(0, Math.floor(fr(g0))), i1 = Math.min(frames - 1, Math.ceil(fr(holdEnd)))

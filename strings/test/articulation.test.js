@@ -99,3 +99,62 @@ test('timing: a sequencer\'s uniform gate (every note 94 % of its slot) is legat
   planArticulation(g, { meter: [{ t: 0, beats: 4, beatType: 4 }], tempo: [{ t: 0, bpm: 126 }] })
   assert.ok(!g[8].art.slurPrev, 'a clear gap re-bows'); assert.ok(g[12].art.slurPrev, 'an overlap slurs')
 })
+
+// a slur over A A (a repeat), B with a dot and C with a dash under the slur, then a slide mark into a high E
+const XML2 = `<?xml version="1.0"?><score-partwise><part-list><score-part id="P1"><part-name>Violin</part-name></score-part></part-list>
+<part id="P1"><measure number="1"><attributes><divisions>2</divisions><time><beats>4</beats><beat-type>4</beat-type></time></attributes>
+<direction><sound tempo="60"/></direction>
+<note><pitch><step>A</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><notations><slur type="start" number="1"/></notations></note>
+<note><pitch><step>A</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice></note>
+<note><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><notations><articulations><staccato/></articulations></notations></note>
+<note><pitch><step>C</step><alter>1</alter><octave>5</octave></pitch><duration>2</duration><voice>1</voice><notations><articulations><tenuto/></articulations><slur type="stop" number="1"/></notations></note>
+</measure><measure number="2">
+<note><pitch><step>A</step><octave>4</octave></pitch><duration>4</duration><voice>1</voice><notations><slide type="start" number="1"/></notations></note>
+<note><pitch><step>E</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><notations><slide type="stop" number="1"/></notations></note>
+</measure></part></score-partwise>`
+
+test('repeats and marks under a slur: one bow with a louré / portato pulse (or a re-bow); slide marks and slow slurred leaps slide', async () => {
+  const { renderPerformance, channel } = await import('../sound/performance.js')
+  const { CH } = await import('../sound/bowed.js')
+  const s = readMusicXML(XML2)
+  assert.ok(Math.abs(s.notes[2].off - s.notes[2].on - 0.85) < 1e-6, 'a dot under a slur keeps the note nearly full')
+  planArticulation(s.notes, { meter: s.meter, tempo: s.tempo })
+  assert.deepEqual(s.notes.map(n => n.art.slurPrev), [false, true, true, true, false, false])
+  assert.deepEqual(s.notes.map(n => n.art.portato ?? null), [null, 'loure', 'portato', 'loure', null, null])
+  assert.deepEqual(s.notes.map(n => !!n.art.port), [false, false, false, false, false, true], 'no inferred slide next to a marked one')
+  assert.equal(s.notes[5].art.port, true, 'the slide mark')
+  // re-bow instead: the repeat starts a new bow, the marked notes still pulse
+  const r = readMusicXML(XML2).notes; planArticulation(r, { repeats: 'rebow' })
+  assert.deepEqual(r.map(n => n.art.slurPrev), [false, false, true, true, false, false]); assert.equal(r[1].art.rebow, 'repeat')
+  // the sound: a dip at a pulsed note, deeper for portato, while one bow keeps going
+  // (a re-bow of the repeat dips 19-23 dB here; with no pulse only the 1-2 dB of the phrasing)
+  const { renderCurves } = await import('../sound/bowed.js')
+  const notes = s.notes.map(n => ({ ...n })); fingerLine(notes, { instrument: 'violin' })
+  const flat = { vibrato: 0, timing: 0, intonation: 0, variance: 0, autoBow: 0 }, SR = 48000
+  const dips = portato => {
+    const perf = renderPerformance(notes, { style: { ...flat, portato } })
+    const [L] = renderCurves(perf, { sampleRate: SR, model: 'source', tail: 0, params: { body: 'phil' } })
+    const env = t => { const a = Math.round((t - 0.0125) * SR), z = Math.round((t + 0.0125) * SR); let e = 0; for (let i = a; i < z; i++) e += L[i] * L[i]; return 10 * Math.log10(e / (z - a) + 1e-12) }
+    return { perf, d: perf.notes.slice(1, 4).map(n => { let lo = 0; for (let x = -0.06; x <= 0.04; x += 0.005) lo = Math.min(lo, env(n.on + x) - env(n.on - 0.15)); return -lo }) }
+  }
+  const off = dips(0).d, { perf, d: on } = dips(1)
+  assert.ok(off.every(x => x < 2.5), `no pulse: ${off.map(x => x.toFixed(1))} dB`)
+  assert.ok(on[0] > 3 && on[0] < 7 && on[2] > 3 && on[2] < 7 && on[1] > 6 && on[1] < 11, `louré, portato, louré: ${on.map(x => x.toFixed(1))} dB`)
+  assert.equal(perf.strokes[0].events.length, 4, 'all in one bow')
+  const [, , , , a2, e2] = perf.notes
+  // the slide mark: a heard slide (≥ 90 ms) from A4 to E5 on one string
+  assert.equal(a2.string, e2.string, "the slide keeps one string (fingering.js SLIDE_CROSS)")
+  const slideMs = p => {
+    const n = p.notes[5], f = channel(p, n.string, CH.f0)
+    let k = 0; for (let i = Math.round((n.on - 0.3) * p.frameRate); i < Math.round((n.on + 0.1) * p.frameRate); i++) if (f[i] > 452 && f[i] < 640) k++
+    return 1000 * k / p.frameRate
+  }
+  const unmarked = notes.map(n => ({ ...n, art: { ...n.art, port: undefined } }))
+  const plain = slideMs(renderPerformance(unmarked, { style: flat })), marked = slideMs(perf)
+  assert.ok(marked >= 70 && marked > 1.5 * plain, `slide ${marked.toFixed(0)} ms, ${plain.toFixed(0)} ms without the mark`)
+  // inferred: slow slurred leaps slide, at most one every 6 s
+  const m = []; for (let k = 0; k < 16; k++) m.push({ pitch: k % 2 ? 76 : 69, on: k * 0.75, off: (k + 1) * 0.75, velocity: 0.6 })
+  planArticulation(m, { mode: 'infer' })
+  const slid = m.filter(n => n.art.port).map(n => n.on)
+  assert.ok(slid.length >= 1 && slid.every((t, k) => k === 0 || t - slid[k - 1] >= 6), `slides at ${slid}`)
+})
