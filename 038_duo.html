@@ -67,6 +67,7 @@
       <option value="free">Free</option>
     </select>
     <select id="room" title="Room"></select>
+    <select id="vsound" title="Violin sound (the piano is always the GM soundfont)"><option value="gm">Violin: GM soundfont</option><option value="hybrid">Violin: hybrid sampler (#034)</option></select>
     <label title="Ink outlines"><input type="checkbox" id="outline" checked> Ink</label>
     <label title="They bow to the hall, then he gives her a nod to start"><input type="checkbox" id="intro" checked> Bow</label>
   </div>
@@ -88,6 +89,7 @@
     import { buildGrandPiano, LOW, HIGH } from './concertstage/concert-grand.js'
     import { fingerLine } from './strings/fingering.js'
     import { buildMotion } from './strings/motion.js'
+    import { expressionFromCC } from './strings/sound/performance.js'
     import { buildViolin, buildBow } from './strings/violin3d.js'
     import { buildLeftHand, buildBowHand } from './strings/hand3d.js'
     import { createViolinistRig } from './violinist/rig.js'
@@ -265,7 +267,10 @@
       }
       const pedal = others.flatMap(t => (t.controlChanges[64] || []).map(c => ({ t: c.time * k, on: c.value >= 0.5 }))).sort((a, b) => a.t - b.t)
       const pianoNotes = piano0.length ? await fingerPiano(piano0) : []
-      Object.assign(song, { entry: e, violin, piano: pianoNotes, pedal, motion: buildMotion(violin, { instrument: 'violin' }) })
+      // the solo track's hairpins (CC11 / CC7 / CC2) for the hybrid violin
+      const ex = expressionFromCC(solo[0].controlChanges)
+      if (ex) ex.points = ex.points.map(([t, v]) => [t * k, v])
+      Object.assign(song, { expr: ex, entry: e, violin, piano: pianoNotes, pedal, motion: buildMotion(violin, { instrument: 'violin' }) })
       song.duration = Math.max(1, ...violin.map(n => n.off), ...pianoNotes.map(n => n.off))
       song.drive = drivers(violin)
       song.density = densities()
@@ -368,15 +373,51 @@
       },
     }
 
-    // ── Sound: the violin on channel 0, the piano on channel 1 ─────────────
+    // ── Sound: the violin on channel 0, the piano on channel 1 (Creative 8 MB
+    // GM); or the violin from #034's hybrid sampler (Iowa samples played along
+    // #033's fingering and the performance curves), pre-rendered in #034's Lab
+    // on its own audio context and kept in step with the clock ─────────────
     const hall = installAcoustics()
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
     const engine = new SoundFontEngine({ backend: 'oxisynth', vendorPath: new URL('./vendor', import.meta.url).href, audioContext: audioCtx })
     let soundReady = false, soundLoading = null
-    const ensureSound = () => (soundLoading ??= engine.loadSoundFont('soundfonts/FluidR3.sf3')
+    const ensureSound = () => (soundLoading ??= engine.loadSoundFont('soundfonts/Creative(emu10k1)8MBGMSFX.sf2')
       .then(() => { soundReady = true; engine.programChange(0, 40); engine.programChange(1, 0) })
       .catch(e => { console.error(e); setStatus('Sound failed to load: ' + e.message, 4000) }))
-    const applyHall = () => hall.set(acousticParams({ room: $('room').value, seat: 'mid' }))
+    const applyHall = () => { const p = acousticParams({ room: $('room').value, seat: 'mid' }); hall.set(p); hybrid.lab?.setHall(p) }
+    // the hybrid renders to #034's level (0.05 RMS while sounding); the GM violin
+    // here plays at about 0.107 (Creative 8 MB, measured on the Kreutzer)
+    const HYBRID_LEVEL = 2.1
+    const hybrid = {
+      lab: null, P: null, perfFor: null, speed: 0,
+      get on() { return $('vsound').value === 'hybrid' },
+      async ensure() {
+        if (!this.lab) {
+          setStatus('Loading the hybrid violin…')
+          const [{ Lab }, P] = await Promise.all([import('./strings/sound/engines.js'), import('./strings/sound/performance.js')])
+          this.P = P
+          this.lab = new Lab()
+          this.lab.setVolume(HYBRID_LEVEL)
+          this.lab.on(e => {
+            if (e.engine !== 'hybrid') return
+            if (e.type === 'progress') setStatus(e.text)
+            else if (e.type === 'ready') setStatus('')
+            else if (e.type === 'error') setStatus('Hybrid violin: ' + e.message, 6000)
+          })
+          await this.lab.use('hybrid')
+          applyHall()
+        }
+        if (this.perfFor !== song.violin || this.speed !== clock.speed) {
+          this.perfFor = song.violin; this.speed = clock.speed
+          const P = this.P
+          this.lab.setPerformance(P.renderPerformance(P.scaleNotes(song.violin, clock.speed), { instrument: 'violin', expression: P.scaleExpression(song.expr, clock.speed) }))
+        }
+      },
+      // song time t (the lab runs in performance time, song time / speed)
+      start(t) { if (!this.lab) return; if (this.lab.playing) this.lab.seek(t / clock.speed); else this.lab.play(t / clock.speed) },
+      stop() { this.lab?.pause() },
+      time() { return this.lab ? this.lab.time() * clock.speed : 0 },
+    }
     $('room').onchange = () => { applyHall(); saveUrl() }
     if (Q.get('room') && ROOMS[Q.get('room')]) $('room').value = Q.get('room')
     applyHall()
@@ -389,10 +430,11 @@
       allSoundOff() { engine.allNotesOff?.() },
     }
     const clock = { playing: false, t: 0, wall: 0, speed: 1 }
+    const hybridLive = () => hybrid.on && clock.playing && !clock.pending
     const now = () => clock.playing ? clock.t + (performance.now() - clock.wall) / 1000 * clock.speed : clock.t
     function loadSchedule() {
       const notes = [
-        ...song.violin.map(n => ({ midi: n.pitch, time: n.on, duration: n.off - n.on, velocity: n.velocity ?? 0.75, channel: 0 })),
+        ...(hybrid.on ? [] : song.violin).map(n => ({ midi: n.pitch, time: n.on, duration: n.off - n.on, velocity: n.velocity ?? 0.75, channel: 0 })),
         ...song.piano.map(n => ({ midi: n.pitch, time: n.on, duration: n.off - n.on, velocity: n.velocity ?? 0.7, channel: 1 })),
       ].sort((a, b) => a.time - b.time)
       scheduler.load({ notes, controlChanges: song.pedal.map(p => ({ time: p.t, channel: 1, controller: 64, value: p.on ? 127 : 0 })) })
@@ -401,6 +443,7 @@
     async function play() {
       if (audioCtx.state !== 'running') audioCtx.resume().catch(() => {})
       await ensureSound()
+      if (hybrid.on) await hybrid.ensure()
       if (!scheduler) {
         scheduler = new MidiScheduler(target); await scheduler.init()
         scheduler.on('time', t => { if (clock.playing && !clock.pending && Math.abs(t - now()) > 0.08) { clock.t = t; clock.wall = performance.now() } })
@@ -411,19 +454,33 @@
       scheduler.speed = clock.speed
       scheduler.seek(Math.max(0, clock.t))
       clock.pending = clock.t < 0          // the scheduler starts when the clock reaches 0
-      if (!clock.pending) scheduler.play()
+      if (!clock.pending) { scheduler.play(); if (hybrid.on) hybrid.start(clock.t) }
       clock.wall = performance.now(); clock.playing = true
       $('play').textContent = '❚❚'; $('play').classList.add('on')
     }
     function pause() {
       clock.t = now(); clock.playing = false; clock.pending = false
-      scheduler?.pause(); target.allSoundOff()
+      scheduler?.pause(); target.allSoundOff(); hybrid.stop()
       $('play').textContent = '▶'; $('play').classList.remove('on')
     }
     $('play').onclick = () => (clock.playing ? pause() : play())
-    $('speed').onchange = () => { clock.t = now(); clock.wall = performance.now(); clock.speed = +$('speed').value; if (scheduler) scheduler.speed = clock.speed }
-    $('seek').oninput = () => { clock.t = +$('seek').value * song.duration; clock.wall = performance.now(); if (clock.playing) { target.allSoundOff(); scheduler.seek(clock.t); if (clock.pending) { clock.pending = false; scheduler.play() } } }
-    $('song').onchange = async () => { const was = clock.playing; pause(); await loadSong($('song').value); director.reset(); if (was) play(); saveUrl() }
+    $('speed').onchange = async () => {
+      const was = clock.playing && hybrid.on
+      if (was) pause()
+      clock.t = now(); clock.wall = performance.now(); clock.speed = +$('speed').value; if (scheduler) scheduler.speed = clock.speed
+      if (was) play()                                  // (re-renders the hybrid violin at the new speed)
+    }
+    $('vsound').onchange = async () => {
+      const was = clock.playing
+      if (was) pause()
+      if (hybrid.on) await hybrid.ensure()
+      if (scheduler) loadSchedule()
+      if (was) play()
+      saveUrl()
+    }
+    if (Q.get('violin') === 'hybrid') $('vsound').value = 'hybrid'
+    $('seek').oninput = () => { clock.t = +$('seek').value * song.duration; clock.wall = performance.now(); if (clock.playing) { target.allSoundOff(); scheduler.seek(clock.t); if (clock.pending) { clock.pending = false; scheduler.play() } if (hybrid.on) hybrid.start(clock.t) } }
+    $('song').onchange = async () => { const was = clock.playing; pause(); await loadSong($('song').value); director.reset(); if (hybrid.on && hybrid.lab) hybrid.ensure(); if (was) play(); saveUrl() }
     $('start').onclick = () => { $('start').classList.add('gone'); play() }
     addEventListener('keydown', e => { if (e.code === 'Space' && e.target === document.body) { e.preventDefault(); $('start').classList.add('gone'); clock.playing ? pause() : play() } })
     const fmt = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`
@@ -520,6 +577,7 @@
       if ($('outfit').value !== 'concert') p.set('outfit', $('outfit').value)
       if ($('vdress').value !== 'wine') p.set('vdress', $('vdress').value)
       if ($('room').value !== 'hall') p.set('room', $('room').value)
+      if (hybrid.on) p.set('violin', 'hybrid')
       if ($('cam').value !== 'auto') p.set('view', $('cam').value)
       if (!$('intro').checked) p.set('intro', '0')
       history.replaceState(null, '', '?' + p.toString())
@@ -588,7 +646,12 @@
       renderer.setAnimationLoop(() => {
         const dt = Math.min(0.05, clk.getDelta())
         let t = now()
-        if (clock.pending && t >= 0) { clock.pending = false; scheduler.seek(0); scheduler.play(); clock.t = 0; clock.wall = performance.now(); t = 0 }
+        if (clock.pending && t >= 0) { clock.pending = false; scheduler.seek(0); scheduler.play(); clock.t = 0; clock.wall = performance.now(); t = 0; if (hybrid.on) hybrid.start(0) }
+        // the hybrid violin plays on its own audio context: put it back in step if it drifts
+        if (hybridLive() && hybrid.lab.playing && performance.now() - (hybrid.checked || 0) > 1000) {
+          hybrid.checked = performance.now()
+          if (Math.abs(hybrid.time() - t) > 0.06) hybrid.start(t)
+        }
         if (clock.playing && t > song.duration + 1.5) { pause(); clock.t = 0; t = 0 }
         frame(t, dt)
         controls.update()
