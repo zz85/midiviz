@@ -147,6 +147,15 @@ After SWAM's moving Bow Pressure / Bow Position knobs and Schoonderwaldt's measu
 | viola (47 + 97) | 952 | 313 | 633 | 53 → 633 (2.04) | 82 → 635 (2.52) |
 | cello (49 + 85) | 162 | 425 | 293 | 13 → 294 (1.55) | 40 → 290 (1.83) |
 
+## A/B against a real violinist
+
+`node strings/test/ab_recording.js [--rec=ko-donghwi_bwv1001_mov1] [--from=0] [--secs=20] [--engines=…] [--bodies=…] [--room=recital|dry]` downloads the [Bach Violin Dataset](https://github.com/salu133445/bach-violin-dataset) (Dong et al., ICASSP 2022) into the git-ignored `strings/data/BachViolin/`. It is 265 MB: 6.5 hours of Bach's solo sonatas and partitas by 17 violinists, with the score's notes aligned to each recording. Licences differ per collection (public domain, CC BY 3.0, some NC/ND).
+
+- Our engines play the aligned notes at the violinist's own timing. Chords are thinned to two notes, and the result goes through the #030 hall (recital room). The envelope tracks the recording within about 50 ms (envelope correlation 0.8).
+- It writes level-matched WAVs into `strings/data/compare/recording/`: the excerpt, each engine × body, and an A/B file. The comparison page links them.
+- This replaces the hybrid-sampler render as the reference. That render is our own phrasing with recorded tone, not a real phrase.
+- The default is Ko Donghwi, Sonata No. 1, Adagio (Team DR, CC BY 3.0). Long-term spectrum against the recording (third octaves 160 Hz–12 kHz, rms dB): waveguide + Philharmonia 6.9, waveguide + Iowa 8.6, source + Philharmonia 13.2, hybrid 9.4. On the Presto (0–15 s): 4.3, 6.1, 6.1 and 7.0. These are rough, because his room, microphone and YouTube encoding are in the recording.
+
 ## Measured body (Philharmonia samples)
 
 **Body: Measured (Philharmonia)**: violin, viola and cello bodies estimated as the Iowa ones are, from different instruments and players.
