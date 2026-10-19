@@ -45,7 +45,7 @@ import { BODY_PHIL } from './body-philharmonia.js'
 export const FRAME_RATE = 250
 // bow-force brightness tilt per string model and instrument: k = exp(c·(r − r0)) − 1 above ~3·f0
 // (r: log10 bow force over the string's Z^1.5 scale). Fitted by strings/test/fit_tilt.js
-export const TILT = {"waveguide":{"violin":{"c":2.39,"r0":-0.212},"viola":{"c":2.04,"r0":-0.212},"cello":{"c":1.02,"r0":-0.212}},"source":{"violin":{"c":2.16,"r0":-0.212},"viola":{"c":2.52,"r0":-0.212},"cello":{"c":0.9,"r0":-0.212}}}
+export const TILT = {"waveguide":{"violin":{"c":1.77,"r0":-0.212},"viola":{"c":2.04,"r0":-0.212},"cello":{"c":1.55,"r0":-0.212}},"source":{"violin":{"c":1.63,"r0":-0.212},"viola":{"c":2.52,"r0":-0.212},"cello":{"c":1.83,"r0":-0.212}}}
 export const CH = { f0: 0, vel: 1, force: 2, beta: 3, damp: 4, tap: 5, harm: 6 }
 export const NCH = 7
 
