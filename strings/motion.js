@@ -177,7 +177,7 @@ export function buildMotion(notes, { instrument = 'violin', lead = 0.04, vibrato
       (prevStroke.t1 - prevStroke.t0) < 0.5 && prevStroke.events.every(x => x.off - x.on < 0.2)
     if (slur) {
       prevStroke.events.push(e)
-      prevStroke.t1 = e.off
+      prevStroke.t1 = Math.max(prevStroke.t1, e.off)   // a held note in the stroke keeps the bow going
     } else {
       if (prevStroke && e.on - lastOff > 0.6 && !keepBow) dir = bowStart  // retake: new phrase on the starting bow
       else if (prevStroke) dir = -prevStroke.dir

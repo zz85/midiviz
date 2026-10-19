@@ -193,6 +193,13 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
   const R = rng(seed)
   const playable = notesIn.filter(n => n.string != null && !n.unplayable)
   const notes = planHarmonics(humanize(playable, S, seed + 101), inst.open, S.harmonics)
+  // one note at a time on a string: a note held into the next one on its string
+  // ends there (a held voice the fingering put on the same string as the moving one)
+  {
+    const per = [[], [], [], []]
+    for (const n of notes) if (n.string != null) per[n.string].push(n)
+    for (const list of per) { list.sort((a, b) => a.on - b.on); for (let k = 1; k < list.length; k++) if (list[k - 1].off > list[k].on) list[k - 1].off = Math.max(list[k - 1].on + 0.03, list[k].on) }
+  }
   const motion = buildMotion(notes, { instrument, bowStart: S.bowStart < 0 ? -1 : 1, keepBow: !!S.keepBow })
   const strokes = motion.strokes
   const duration = notes.reduce((m, n) => Math.max(m, n.off), 0)
@@ -370,9 +377,17 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
         const bet0 = clamp(b0 * clamp(Math.pow(st.V / 0.35, 0.7), 0.4, 1.3) * (1 + (R() - 0.5) * 0.1), 0.03, 0.24)
         // across a crossing inside a slur the force hands over within ~12 ms
         const xIn = k > 0 && st.events[k - 1].notes.every(m => m.string !== s) ? 0.012 : 0
-        const xOut = ne && ne.notes.every(m => m.string !== s) ? 0.012 : 0
+        // a note held on through the next notes of its slur (a held voice under a
+        // moving one) keeps its bow until it ends; a note that ends before its
+        // stroke does (that, or the shorter note of a double stop) loses the bow
+        // at its own end: the bow leaves its string and plays on on the other
+        const held = !!ne && n.off > ne.on + 0.03
+        const bN = held ? Math.min(n.off, st.t1) : b
+        const own = held ? n.off < st.t1 - 0.03 : !ne && e.notes.some(m => m !== n && m.off > n.off + 0.03)
+        const tE = own ? Math.max(a + 0.02, n.off) : st.t1   // where this note's bowing ends
+        const xOut = ne && !held && ne.notes.every(m => m.string !== s) ? 0.012 : 0
         const i0 = Math.max(0, Math.floor(fr(a - xIn - (sk === 'martele' ? 0.016 : 0.004))))
-        const i1 = Math.min(frames - 1, Math.ceil(fr(b + (ne ? xOut : (lifts ? 0.05 : rest ? 0.3 : 0.02)))))
+        const i1 = Math.min(frames - 1, Math.ceil(fr(own ? tE + 0.015 : bN + (ne && !held ? xOut : (lifts ? 0.05 : rest ? 0.3 : 0.02)))))
         for (let i = i0; i <= i1; i++) {
           const t = T(i)
           // stroke envelope: attack at the stroke's start, release into its end (bow change or lift)
@@ -381,8 +396,8 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
           const xa = (t - st.t0) / atk
           let env = xa <= 0 ? 0 : xa >= 1 ? 1 : 1 - (1 - xa) * (1 - xa)
           if (!st.short && st.t0 === a) env *= 1 + 0.12 * atkK * (1 - lgI) * Math.exp(-(t - st.t0) / 0.05) * (t >= st.t0 ? 1 : 0)
-          env *= t > st.t1 ? 0 : smooth5((st.t1 - t) / rel) * 0.85 + 0.15 * (t <= st.t1 ? 1 : 0)
-          if (t > st.t1) env = 0
+          env *= t > tE ? 0 : smooth5((tE - t) / rel) * 0.85 + 0.15 * (t <= tE ? 1 : 0)
+          if (t > tE) env = 0
           if (sk === 'spiccato') { const x = (t - st.t0) / spC; env = x <= 0 || x >= 1 ? 0 : Math.pow(Math.sin(Math.PI * x), 0.6) }
           else if (sk === 'martele') { const x = t - st.t0; env = x <= 0 ? 0 : x < 0.008 ? x / 0.008 : x < maC ? 1 : Math.max(0, 1 - (x - maC) / 0.02) }
           // messa di voce on long notes, phrase arch
@@ -415,7 +430,7 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
           // handover across strings inside a slur
           let w = 1
           if (xIn && t < a) w = smooth5((t - (a - xIn)) / xIn)
-          if (xOut && t > b - xOut) w = Math.min(w, smooth5((b + xOut - t) / (2 * xOut)))
+          if (xOut && t > bN - xOut) w = Math.min(w, smooth5((bN + xOut - t) / (2 * xOut)))
           if (t < a - xIn - (sk === 'martele' && k === 0 ? 0.016 : 0)) w = 0   // martelé: the pinch comes before the note
           let v = st.dir * vmag
           // tremolo: the bow turns every 1/r s (rounded square wave); the force
@@ -451,10 +466,11 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
             }
           }
           // between strokes the bow rests on the string (light force); in long rests it lifts
-          if (t > st.t1 && sk !== 'martele') F = sk === 'spiccato' ? 0 : lifts ? 0.25 * smooth5(1 - (t - st.t1) / 0.05) : 0.12
+          if (own && t > tE) F = sk === 'martele' ? F : 0.12 * smooth5(1 - (t - tE) / 0.015)   // the bow rolls off this string
+          else if (t > st.t1 && sk !== 'martele') F = sk === 'spiccato' ? 0 : lifts ? 0.25 * smooth5(1 - (t - st.t1) / 0.05) : 0.12
           if (w <= 0) continue
           if (w * F >= force[s][i]) { force[s][i] = w * F; vel[s][i] = v; beta[s][i] = bet }
-          amp[s][i] = Math.max(amp[s][i], w * (t <= st.t1 ? (vmag / bet) / 3.2 : 0))
+          amp[s][i] = Math.max(amp[s][i], w * (t <= tE ? (vmag / bet) / 3.2 : 0))
         }
       }
     }

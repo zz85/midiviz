@@ -576,6 +576,35 @@ export function fingerLine(notes, options = {}) {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 /** "G0 G1 D3 …" (string letter + finger, onset order, chords low → high). */
+
+/**
+ * fingerLine for music with held notes (two voices: a note sustained while
+ * the other voice moves). fingerLine only sees notes that start together, so
+ * it can put a moving note on the string a held note is sounding on, which
+ * cuts the held note off. Each such note is tried again on another string
+ * (beyond the held note, in the direction the voice moves; a free string
+ * that can reach it within 19 semitones), locked there, and the line is
+ * fingered again. A note with its own lockString is left alone.
+ * Returns the number of notes moved.
+ */
+export function fingerHeld(notes, options = {}) {
+  fingerLine(notes, options)
+  const open = (INSTRUMENTS[options.instrument] || INSTRUMENTS.violin).open
+  let moved = 0
+  for (const n of notes) {
+    if (n.string == null || n.unplayable || n.lockString != null) continue
+    const h = notes.find(m => m !== n && m.string === n.string && m.on < n.on - 0.02 && m.off > n.on + 0.05)
+    if (!h) continue
+    const busy = new Set(notes.filter(m => m !== n && m.on < n.off - 0.02 && m.off > n.on + 0.02 && m.string != null).map(m => m.string))
+    const cand = open.map((_, s) => s).filter(s => s !== n.string && !busy.has(s) && n.pitch >= open[s] && n.pitch - open[s] <= 19)
+      .sort((x, y) => Math.abs(x - h.string) - Math.abs(y - h.string) || (n.pitch > h.pitch ? y - x : x - y))
+    const want = cand.find(s => n.pitch > h.pitch ? s > h.string : s < h.string) ?? cand[0]
+    if (want != null) { n.lockString = want; n.heldLock = true; moved++ }
+  }
+  if (moved) fingerLine(notes, options)
+  return moved
+}
+
 export function fingerTokens(notes, instrument = 'violin', { positions = false } = {}) {
   const inst = typeof instrument === 'object' ? instrument : INSTRUMENTS[instrument]
   return notes.filter(n => n.string != null).sort((a, b) => a.on - b.on || a.pitch - b.pitch)

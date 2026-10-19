@@ -679,3 +679,26 @@ test('WG limits: the waveguide multipliers stay playable with Keep playable on, 
   const off = helm(false), on = helm(true)
   assert.ok(on >= 4 && on > off, `Helmholtz on ${on}/5 kept playable, ${off}/5 raw`)
 })
+
+test('held notes: a note held under a moving voice keeps its bow to its end; the shorter note of a double stop lets go; one note per string', async () => {
+  const { fingerHeld } = await import('../fingering.js')
+  const flat = { vibrato: 0, timing: 0, intonation: 0, variance: 0 }
+  // D4 held 2 s under a slurred upper voice (Bach's two-voice writing)
+  const notes = [{ pitch: 62, on: 0.2, off: 2.2, velocity: 0.75 }, ...[74, 76, 77, 76].map((pitch, k) => ({ pitch, on: 0.2 + k * 0.5, off: 0.7 + k * 0.5, velocity: 0.75 }))]
+  notes.forEach((n, k) => { n.art = { source: 'inferred', slurPrev: k > 1, stroke: null } })
+  fingerHeld(notes, { instrument: 'violin' })
+  const perf = renderPerformance(notes, { style: flat })
+  const d = perf.notes.find(n => n.pitch === 62)
+  assert.ok(perf.notes.filter(n => n !== d).every(n => n.string !== d.string), 'the moving voice is on another string')
+  const F = channel(perf, d.string, CH.force), V = channel(perf, d.string, CH.vel)
+  for (const t of [0.5, 1.0, 1.5, 2.0]) assert.ok(F[Math.round(t * 250)] > 0.2 && Math.abs(V[Math.round(t * 250)]) > 0.05, `held D bowed at ${t} s (F ${F[Math.round(t * 250)].toFixed(2)} N)`)
+  // a double stop whose lower note is half as long: that string lets go at its end
+  const ds = finger([{ pitch: 62, on: 0.2, off: 0.7, velocity: 0.75 }, { pitch: 71, on: 0.2, off: 1.2, velocity: 0.75 }])
+  const p2 = renderPerformance(ds, { style: flat }), lo = p2.notes.find(n => n.pitch === 62), hi = p2.notes.find(n => n.pitch === 71)
+  assert.ok(channel(p2, lo.string, CH.force)[Math.round(1.0 * 250)] < 0.02, 'the short note lets go')
+  assert.ok(channel(p2, hi.string, CH.force)[Math.round(1.0 * 250)] > 0.2, 'the long one goes on')
+  // two notes on one string: the first ends where the second starts
+  const same = finger([{ pitch: 69, on: 0.2, off: 1.5, velocity: 0.75 }, { pitch: 71, on: 0.7, off: 1.2, velocity: 0.75 }].map(n => ({ ...n, lockString: 2 })))
+  const p3 = renderPerformance(same, { style: flat })
+  assert.ok(Math.abs(p3.notes[0].off - p3.notes[1].on) < 0.01)
+})

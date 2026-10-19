@@ -456,3 +456,13 @@ All six engines play the same performance at the same loudness, measured as K-we
 
 Before, the Adagio measured −12.4 / −9.4 / −22.7 / −21.1 (Waveguide / Source / GM / Hybrid). What remains differs by piece. The physical models add more on double stops (+5.6 dB over a single line, Hybrid +4.1). The Samples' p layer starts slowly, so soft short notes are quieter. The Source engine, the default, plays where it did before (its old gain of 1.2 is now a trim of +1.6 dB).
 
+
+## Held notes no longer cut off
+
+Long notes stopped suddenly in two-voice writing: a note held while the other voice moves (Bach's sonatas, the concertos' double stops). Three things cut them, none of them the automatic bowing:
+
+- **Thinning to two voices** (`prepare()` in 034_violin_sound.html) ended every sounding note at the next onset. It cut 779 of the 3,326 notes of 0.8 s or more in our 49 violin MIDIs by 30 % or more. It now lets a held note sound on as a double stop, and ends it only when a third voice would sound (the oldest held note goes) or the new notes repeat its pitch: 75 notes.
+- **The bow** (performance.js) ended each note's bowing at the next onset in its stroke, so a held note under a slurred moving voice lost the bow there; a note that ended inside its stroke (the shorter note of a double stop) went on being bowed as an open string. A held note now keeps the bow to its own end, a note that ends before its stroke lets go of its string, and `motion.js` no longer shortens a stroke when a slurred note ends before a held one.
+- **The fingering** only looks at notes that start together, so it put 191 moving notes on the string a held note was sounding on. `fingerHeld()` (fingering.js) moves those to another free string (beyond the held note, the way the voice moves) and fingers the line again; 77 remain, and on a shared string the earlier note now ends where the next one starts.
+
+Long notes cut by 30 % or more: 779 → 94 (75 for a third voice, 19 sharing a string). Test: "held notes" in sound.test.js.

@@ -120,7 +120,7 @@
 
   <script src="tonejs-midi.js"></script>
   <script type="module">
-    import { fingerLine, INSTRUMENTS, parseNote, noteName } from './strings/fingering.js'
+    import { fingerLine, fingerHeld, INSTRUMENTS, parseNote, noteName } from './strings/fingering.js'
     import { renderPerformance, scaleNotes, scaleExpression, expressionFromCC, STYLE } from './strings/sound/performance.js'
     import { planArticulation, clearArticulation } from './strings/articulation.js'
     import { readMusicXML, readMXLBrowser } from './strings/score.js'
@@ -460,7 +460,14 @@
       return notes
     }
 
-    /** Fit to the instrument (octave transposition) and thin to two voices. */
+    /**
+     * Fit to the instrument (octave transposition) and thin to two voices: at
+     * most two notes start together, and a held note goes on sounding under the
+     * next ones (a double stop) unless that would make three voices (the oldest
+     * held note then ends) or the new notes repeat its pitch. It used to end
+     * every held note at the next onset, which cut off 779 of the 3,326 notes
+     * of 0.8 s or more in our violin MIDIs.
+     */
     function prepare(raw, fit) {
       const I = inst()
       const lo = I.open[0], hi = I.open[3] + I.maxB[3] + 5
@@ -477,7 +484,10 @@
         let j = i
         while (j < notes.length && notes[j].on - notes[i].on < 0.03) j++
         const grp = notes.slice(i, j).filter((n, k, arr) => arr.findIndex(m => m.pitch === n.pitch) === k).slice(0, 2)
-        for (const o of out) if (o.off > notes[i].on + 0.02 && o.on < notes[i].on) o.off = Math.max(o.on + 0.03, notes[i].on - 0.005)
+        const t = notes[i].on, cut = o => { o.off = Math.max(o.on + 0.03, t - 0.005) }
+        const held = out.filter(o => o.off > t + 0.02 && o.on < t)
+        for (const o of held) if (grp.some(g => g.pitch === o.pitch)) cut(o)
+        held.filter(o => o.off > t + 0.02).sort((a, b) => b.on - a.on).slice(Math.max(0, 2 - grp.length)).forEach(cut)
         out.push(...grp)
         i = j
       }
@@ -495,7 +505,8 @@
       state.artInfo = am === 'off' ? 'fixed rule' : { score: 'the score’s slurs', timing: 'the MIDI’s overlaps and gaps', inferred: 'inferred' }[src] || ''
       if (optEl.art) optEl.art.title = `${optEl.art.closest('.row').querySelector('label').title}\n\nThis piece: ${state.artInfo}`
       state.notes = prepare(raw, fit)
-      fingerLine(state.notes, { instrument: $('instrument').value, mode: $('mode').value })
+      // held notes: a moving note is kept off the string a held note sounds on
+      fingerHeld(state.notes, { instrument: $('instrument').value, mode: $('mode').value })
       state.duration = state.notes.reduce((m, n) => Math.max(m, n.off), 0)
       lab.pausedAt = 0
       rebuild()
