@@ -41,6 +41,8 @@
     hr { border: 0; border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 8px 0; }
     .row { display: flex; align-items: center; gap: 6px; margin: 5px 0; }
     .row > label:first-child { flex: 0 0 70px; color: #a9a196; }
+    .row[title] > label:first-child { cursor: help; text-decoration: underline dotted rgba(169,161,150,0.5); text-underline-offset: 3px; }
+    .row[title] { cursor: default; }
     select, input[type=range], input[type=text] { flex: 1; min-width: 0; }
     select, input[type=text] { background: #1d1b19; color: #eee6d8; border: 1px solid #3d3933; border-radius: 4px; padding: 2px 4px; font: inherit; }
     input[type=range] { accent-color: #c9a24a; }
@@ -75,17 +77,17 @@
       <div id="engines"></div>
       <div id="engineInfo"></div>
       <hr>
-      <div class="row"><label>Demo</label><select id="demo"></select></div>
-      <div class="row"><label>Song</label><select id="song"></select>
+      <div class="row" title="Short test passages, each showing one thing (vibrato and shifts, double stops, tremolo…)"><label>Demo</label><select id="demo"></select></div>
+      <div class="row" title="Pieces from MIDI files (Open… or drop your own .mid / MusicXML). The violin plays the track chosen below"><label>Song</label><select id="song"></select>
         <button class="b" id="open" title="Open a MIDI file or a score (MusicXML / .mxl from MuseScore, Finale, Sibelius, Dorico…), or drop one on the page">Open…</button>
         <input id="file" type="file" accept=".mid,.midi,audio/midi,.musicxml,.xml,.mxl" hidden></div>
-      <div class="row" id="trackRow" hidden><label>Track</label><select id="track"></select></div>
+      <div class="row" id="trackRow" hidden title="Which track of the file the violin plays"><label>Track</label><select id="track"></select></div>
       <div class="row"><label>Type</label><input id="typed" type="text" spellcheck="false" title="Notes: A4 B4 C#5 · double stops D4+B4 · length E5:2 · rest r · string lock E5/A"
         value="G4 A4 B4 C5 D5:2 B4 G4:2 D4+B4:2"><button class="b" id="typedGo">Go</button></div>
-      <div class="row"><label>Instrument</label><select id="instrument">
+      <div class="row" title="Violin, viola or cello: the fingering, the string model and the body change with it"><label>Instrument</label><select id="instrument">
         <option value="violin">Violin</option><option value="viola">Viola</option><option value="cello">Cello</option>
       </select></div>
-      <div class="row"><label>Fingering</label><select id="mode">
+      <div class="row" title="How the left hand chooses strings and positions (#033 fingering styles)"><label>Fingering</label><select id="mode">
         <option value="standard">Standard</option><option value="expressive">Expressive (stay on a string)</option>
         <option value="beginner">Beginner (1st position)</option><option value="nearest">Fewest shifts</option>
       </select></div>
@@ -96,7 +98,7 @@
         <input id="seek" type="range" min="0" max="1" step="0.0005" value="0">
         <span id="songTime">0:00 / 0:00</span>
       </div>
-      <div class="row"><label>Speed</label><select id="speed">
+      <div class="row" title="Playback speed. Pitch stays the same"><label>Speed</label><select id="speed">
         <option value="0.5">50%</option><option value="0.75">75%</option><option value="1" selected>100%</option><option value="1.25">125%</option>
       </select>
         <span class="chk"><input id="loop" type="checkbox" checked>Loop</span>
@@ -105,11 +107,11 @@
       <hr>
       <div id="sliders"></div>
       <hr>
-      <div class="row"><label>Room</label><select id="room"></select></div>
-      <div class="row"><label>Seat</label><select id="seat"></select></div>
-      <div class="row"><label>Reverb</label><input id="amount" type="range" min="0" max="2" step="0.05" value="1"><span class="val" id="amountV"></span></div>
-      <div class="row"><label>Volume</label><input id="volume" type="range" min="0" max="2" step="0.05" value="1"><span class="val" id="volumeV"></span></div>
-      <div id="hint">1–6 switch engines while playing (same spot). Space plays, Esc hides the panel. Lines: pitch per string (vibrato, slides), bow speed (± = down / up) and force below.</div>
+      <div class="row" title="The hall around the violin. Dry = no room"><label>Room</label><select id="room"></select></div>
+      <div class="row" title="Where you sit: nearer = more direct sound, further = more room"><label>Seat</label><select id="seat"></select></div>
+      <div class="row" title="How much reverb. 0 = none, 1 = the room as chosen, 2 = twice as much"><label>Reverb</label><input id="amount" type="range" min="0" max="2" step="0.05" value="1"><span class="val" id="amountV"></span></div>
+      <div class="row" title="Master volume (100 % = normal; a limiter stops clipping)"><label>Volume</label><input id="volume" type="range" min="0" max="2" step="0.05" value="1"><span class="val" id="volumeV"></span></div>
+      <div id="hint">Hover any control’s name (dotted underline) for how to use it. 1–6 switch engines while playing (same spot). Space plays, Esc hides the panel. Lines: pitch per string (vibrato, slides), bow speed (± = down / up) and force below.</div>
     </div>
   </div>
   <div id="status" class="hidden"></div>
@@ -190,6 +192,43 @@
       // humanize (strings/sound/humanize.js)
       ['timing', 'Timing', 0, 3, 0.05], ['intonation', 'Intonation', 0, 3, 0.05], ['variance', 'Variance', 0, 3, 0.05],
     ]
+    // how to use each control: the first line of its tooltip (hover the name or the slider)
+    const USE = {
+      vibrato: 'Vibrato width. Right = wider, left = narrower, 0 = none. 1 ≈ ±13 cents, as the recorded violinists',
+      vibratoRate: 'Vibrato speed in Hz. 6.6 = the recorded violinists; 5 slow and warm, 7+ fast and nervous',
+      portamento: 'Audible slides on shifts. Right = longer, more Romantic slides; 0 = none',
+      portato: 'Pulse on repeated notes inside one bow. Right = more separation; 0 = smooth',
+      dynamics: 'How far apart loud and soft notes are. Right = bigger contrast, 0 = everything at one level',
+      phrasing: 'Phrase shaping: swells on long notes and arches over phrases. Right = more shaped, 0 = flat',
+      bowSpeed: 'How fast the bow moves. Right = faster (louder, freer), left = slower (more concentrated). Force and contact follow',
+      pressure: 'How hard the bow presses, as the automatic bowing plans it. Right = heavier, brighter, more bite; left = lighter, airier. The plan keeps it playable',
+      contact: 'Where the bow plays. Left = nearer the bridge (brighter, needs more force), right = toward the fingerboard (softer, flute-like). Force is replanned to match',
+      attack: 'Note starts. Right = harder, biting attacks; left = gentle, slower starts (Baroque)',
+      legato: 'Bow changes in connected lines. 1 = smooth and seamless, 0 = every bow change is heard',
+      autoBow: 'How much the bow moves by itself inside each note (pressure and contact point, like a player). Right = livelier, 0 = static. Watch the meters top right',
+      timing: 'Human timing. Right = looser onsets, 0 = machine-exact',
+      intonation: 'Human intonation. Right = notes land further off pitch and settle, 0 = perfectly in tune',
+      variance: 'Note-to-note variety in dynamics and bowing. Right = more variety (closer to real players around 2.5), 0 = uniform',
+      tremoloMin: 'Sync tremolo modes: the slowest strokes per second allowed',
+      wgPress: 'Waveguide only (engine 1). A raw multiplier on the bow force the string gets, on top of the automatic bowing: < 1 lighter (often less scratch), > 1 heavier. 1 = as planned. The meters show the result',
+      wgPos: 'Waveguide only (engine 1). A raw multiplier on the bow–bridge distance the string gets, on top of the automatic bowing: < 1 nearer the bridge, > 1 toward the fingerboard. 1 = as planned. Force is not replanned (use WG pressure with it). The meters show the result',
+      rosin: 'Physical models. Right = grittier bow (more grain and noise), 0 = glassy',
+      resonance: 'Physical models. How much the open strings ring along. Right = more halo, 0 = dry',
+      expr: 'Where the dynamic comes from: the file’s expression controllers, or only note velocities',
+      bowPress: 'Interactive: the bow corrects its own pressure when the string breaks up (recommended). Fixed: exactly as planned',
+      bowStart: 'Direction of the first stroke after a rest',
+      keepBow: 'After a rest: start again on the same bow (retake), or keep alternating',
+      bowLift: 'At the end of a phrase: lift the bow and let the string ring, or stop it on the string',
+      crossMute: 'In a slur that moves to another string: let the old string ring, or stop it for close intervals',
+      repeats: 'Repeated notes under a slur: in one bow with a pulse (louré), or with a new bow each',
+      art: 'How slurs are chosen when the file has none: guessed from the music (Auto / Inferred), or a fixed rule',
+      tremolo: 'Play every long note as fast bow tremolo',
+      tremoloMode: 'Tremolo speed: fixed, or locked to the tempo',
+      harmonics: 'Play notes as harmonics (glassy, flute-like)',
+      body: 'The violin’s wooden body (its tone). Philharmonia: closest to a real player by ear. Try the others for colour',
+      sordino: 'A mute on the bridge: darker, veiled tone',
+    }
+    const tipFor = (k, more) => [USE[k], more].filter(Boolean).join('\n\n')
     const TIPS = {
       portamento: 'Length of the left hand’s slides: a shift’s (half as long across a bow change, hidden in it) and the audible ones the articulation planner asks for (a score’s slide / glissando marks, a MIDI performance’s quiet overlap, about one slow legato leap in 6 s). 0 = no slides',
       portato: 'Depth of the pulse on a note inside a slur that has to speak in the same bow: portato (dots under a slur, about an 8 dB dip) and louré (a line under a slur, or a repeated note, about 4 dB). 0 = none',
@@ -235,7 +274,8 @@
         $('sliders').appendChild(h)
       }
       const r = document.createElement('div'); r.className = 'row'
-      r.innerHTML = `<label title="${TIPS[k] || ''}">${label}</label><input type="range" min="${lo}" max="${hi}" step="${step}" value="${style[k]}"><span class="val"></span>`
+      r.title = tipFor(k, TIPS[k])
+      r.innerHTML = `<label>${label}</label><input type="range" min="${lo}" max="${hi}" step="${step}" value="${style[k]}"><span class="val"></span>`
       const inp = r.querySelector('input'), v = r.querySelector('.val')
       const show = () => { v.textContent = (+inp.value).toFixed(k === 'vibratoRate' ? 1 : 2) }
       if (qs.has(k)) inp.value = qs.get(k)
@@ -279,6 +319,7 @@
       ['body', 'Body', [['iowa', 'Measured (Iowa)'], ['phil', 'Measured (Philharmonia)'], ['nbody', 'Measured (NBody, violin)'], ['modal', 'Modal (synthetic)']], 'phil', 'Physical models. Default Philharmonia: closest by ear to a real violinist (Bach Violin Dataset A/B). Philharmonia: the violin / viola / cello body estimated the same way as Iowa, from the Philharmonia Orchestra samples (different instruments and players, recorded with vibrato; strings/test/fit_body_philharmonia.js). NBody: a real violin measured directly by Cook and Trueman (Princeton, 1998): its bridge tapped with a force hammer, the radiated sound recorded by 12 microphones around it; the impulse responses are used as they are, ring included (violin only; viola and cello use the Iowa body). Not in the repo: build it with node strings/test/build_nbody.js. Iowa: the violin / viola / cello body estimated from the University of Iowa recordings (strings/test/fit_body.js: each recorded harmonic against the same harmonic of our string, pooled over every note, string and dynamic; a minimum-phase FIR), or the earlier synthetic body of 10 signature and 42 random modes with a fitted EQ. On held-out notes the measured body is 1.5–2 dB closer to the recordings per harmonic (median) and 5 dB closer at the 90th percentile'],
       ['sordino', 'Sordino', [['0', 'Off'], ['1', 'On (mute)']], '0', 'A mute on the bridge: the bridge hill and everything above ~2 kHz drop about 12 dB (all engines)'],
       ['wgPress', 'WG pressure', 0.25, 1.5, 0.05, 1, 'Waveguide only: scales the bow force the string feels (0.5 = half). The brightness that follows bow force is left as planned, so this changes only how the bow grips: lower can mean less scratch, too low gives a whistly, unsteady or octave-high tone. Interactive bow press still corrects real double slipping'],
+      ['wgPos', 'WG position', 0.3, 2, 0.05, 1, 'Waveguide only: scales the bow–bridge distance the string feels (< 1 nearer the bridge, > 1 toward the fingerboard). Unlike Contact (Expression block), the bow force is not replanned for it: nearer the bridge a string needs more force (its minimum rises as 1/distance²), so low values can lose the clean tone (a thin, whistly, surface sound) and high values can turn raucous unless WG pressure is lowered too'],
       ['rosin', 'Rosin', 0, 2, 0.05, 1, 'Physical models: grain of the rosin (stick-slip jitter, bow noise)'],
       ['resonance', 'Resonance', 0, 3, 0.05, 1, 'Physical models: how much the other strings ring in sympathy through the bridge'],
     ]
@@ -288,13 +329,15 @@
       const [k, label] = o, r = document.createElement('div'); r.className = 'row'
       if (Array.isArray(o[2])) {
         const [, , choices, def, tip] = o
-        r.innerHTML = `<label title="${tip}">${label}</label><select>${choices.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>${k === 'expr' ? '<span class="val" id="exprV"></span>' : ''}`
+        r.title = tipFor(k, tip)
+        r.innerHTML = `<label>${label}</label><select>${choices.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>${k === 'expr' ? '<span class="val" id="exprV"></span>' : ''}`
         const sel = r.querySelector('select'); sel.value = qs.get(k) ?? def; opt[k] = sel.value; optEl[k] = sel
         sel.onchange = () => { opt[k] = sel.value; applyOpts(true); saveUrl() }
         OPTDEF[k] = def
       } else {
         const [, , lo, hi, step, def, tip] = o
-        r.innerHTML = `<label title="${tip}">${label}</label><input type="range" min="${lo}" max="${hi}" step="${step}"><span class="val"></span>`
+        r.title = tipFor(k, tip)
+        r.innerHTML = `<label>${label}</label><input type="range" min="${lo}" max="${hi}" step="${step}"><span class="val"></span>`
         const inp = r.querySelector('input'), v = r.querySelector('.val')
         inp.value = qs.get(k) ?? def; opt[k] = inp.value; OPTDEF[k] = String(def); optEl[k] = inp
         const show = () => { v.textContent = (+inp.value).toFixed(2) }; show()
@@ -308,7 +351,7 @@
         tremolo: opt.tremolo, tremoloMode: opt.tremoloMode, tremoloMin: +opt.tremoloMin, harmonics: opt.harmonics === 'auto' ? 'auto' : +opt.harmonics }
       const changed = Object.keys(st).some(k => style[k] !== st[k]) || state.useExpr !== (opt.expr === 'auto')
       Object.assign(style, st); state.useExpr = opt.expr === 'auto'
-      lab.setParams({ bowPress: opt.bowPress === 'on', rosin: +opt.rosin, resonance: +opt.resonance, body: opt.body, wgPress: +opt.wgPress })
+      lab.setParams({ bowPress: opt.bowPress === 'on', rosin: +opt.rosin, resonance: +opt.resonance, body: opt.body, wgPress: +opt.wgPress, wgPos: +opt.wgPos })
       lab.setSordino(opt.sordino === '1')
       const artKey = opt.art + '/' + opt.repeats
       if (re && state.artMode !== undefined && state.artMode !== artKey) { state.artMode = artKey; reloadPiece(); return }
@@ -726,7 +769,7 @@
           g.stroke()
           g.globalAlpha = 0.8
           g.beginPath()
-          for (let i = i0; i <= i1; i++) { const F = perf.data[i * Wd + o + 2]; const x = X(i / fr), y = yf - Math.min(1, F / 1.6) * bowH; i === i0 ? g.moveTo(x, y) : g.lineTo(x, y) }
+          for (let i = i0; i <= i1; i++) { const F = perf.data[i * Wd + o + 2] * (state.engine === 'waveguide' ? +opt.wgPress || 1 : 1); const x = X(i / fr), y = yf - Math.min(1, F / 1.6) * bowH; i === i0 ? g.moveTo(x, y) : g.lineTo(x, y) }
           g.stroke(); g.globalAlpha = 1
         }
         // contact point (β) as a dashed trace in the force lane: up = nearer the bridge
@@ -735,7 +778,7 @@
           const o = s * NCH, yf = bowTop + bowH + 12 + bowH
           g.strokeStyle = SCOL[s] + 'b0'; g.beginPath(); let on = false
           for (let i = i0; i <= i1; i++) {
-            const F = perf.data[i * Wd + o + 2], be = perf.data[i * Wd + o + 3], x = X(i / fr), y = yf - Math.max(0, Math.min(1, (0.2 - be) / 0.16)) * bowH
+            const F = perf.data[i * Wd + o + 2], be = perf.data[i * Wd + o + 3] * (state.engine === 'waveguide' ? +opt.wgPos || 1 : 1), x = X(i / fr), y = yf - Math.max(0, Math.min(1, (0.2 - be) / 0.16)) * bowH
             if (F > 0.05) { on ? g.lineTo(x, y) : g.moveTo(x, y); on = true } else on = false
           }
           g.stroke()
@@ -743,7 +786,7 @@
         g.setLineDash([])
         g.fillStyle = '#8f887d'
         g.fillText('bow speed (down +, up −)', x0, bowTop - 6)
-        g.fillText('bow force (solid) · contact point (dashed, up = nearer the bridge)', x0, bowTop + bowH + 6)
+        g.fillText('bow force (solid) · contact point (dashed, up = nearer the bridge) · as the string gets them', x0, bowTop + bowH + 6)
         drawMeters(perf, tP, x1)
         g.strokeStyle = 'rgba(255,255,255,0.08)'; g.beginPath(); g.moveTo(x0, bowTop + bowH / 2); g.lineTo(x1, bowTop + bowH / 2); g.stroke()
         // playhead
@@ -779,10 +822,13 @@
       const Wd = 4 * NCH, i = Math.max(0, Math.min(perf.frames - 1, Math.round(t * perf.frameRate)))
       let s = -1, best = 0.05
       for (let k = 0; k < 4; k++) { const F = perf.data[i * Wd + k * NCH + 2]; if (F > best && Math.abs(perf.data[i * Wd + k * NCH + 1]) > 0.01) { best = F; s = k } }
+      // what the string gets: the waveguide applies WG pressure and WG position on top of the plan
+      const wg = state.engine === 'waveguide', kF = wg ? +opt.wgPress || 1 : 1, kB = wg ? +opt.wgPos || 1 : 1
+      best *= kF
       if (s >= 0) {
         const Z = (SYNTH[$('instrument').value] || SYNTH.violin).Z[s]
         const pr = Math.max(0, Math.min(1, (Math.log10(best / Math.pow(Z / 0.3, 1.5)) + 1.3) / 1.8))
-        const be = perf.data[i * Wd + s * NCH + 3]
+        const be = perf.data[i * Wd + s * NCH + 3] * kB
         meter.p += (pr - meter.p) * 0.3; meter.b += (be - meter.b) * 0.3; meter.s = s
       }
       const cx = xR - 150, cy = 40, R = 22

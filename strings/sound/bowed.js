@@ -492,9 +492,9 @@ export class Body {
  * at(t, out) → fills out[string * NCH + channel] for time t (s).
  */
 export class ViolinSynth {
-  constructor(sr, { instrument = 'violin', model = 'waveguide', tone = null, bowPress = true, rosin = 1, resonance = 1, body = 'iowa', oversample = 3, tilt = 1, wgPress = 1 } = {}) {
+  constructor(sr, { instrument = 'violin', model = 'waveguide', tone = null, bowPress = true, rosin = 1, resonance = 1, body = 'iowa', oversample = 3, tilt = 1, wgPress = 1, wgPos = 1 } = {}) {
     this.sr = sr
-    this.opts = { bowPress, rosin, resonance, body, tilt, wgPress }
+    this.opts = { bowPress, rosin, resonance, body, tilt, wgPress, wgPos }
     this.tiltLp = new Float64Array(4); this.tiltK = new Float32Array(4); this.tiltKt = new Float32Array(4); this.tiltA = new Float32Array(4)
     this.relF = new Float32Array(4)
     this.oversample = oversample
@@ -590,7 +590,11 @@ export class ViolinSynth {
         const o = s * NCH
         // geometry from the average over the step (pitch glides stay smooth at 3 kHz)
         const f = 0.5 * (cur[o] + nxt[o])
-        strs[s].setup(f, 0.5 * (cur[o + 3] + nxt[o + 3]), 0.5 * (cur[o + 4] + nxt[o + 4]), nxt[o + 6])
+        // waveguide only: a plain scale on the bow–bridge distance the string feels
+        // (opts.wgPos, the page's "WG position"; < 1 nearer the bridge). The bow
+        // force is NOT replanned for it, unlike the Contact slider
+        const bScale = this.model === 'waveguide' ? (this.opts.wgPos ?? 1) : 1
+        strs[s].setup(f, 0.5 * (cur[o + 3] + nxt[o + 3]) * bScale, 0.5 * (cur[o + 4] + nxt[o + 4]), nxt[o + 6])
         // bow-force brightness: bow force sets how sharp the Helmholtz corner
         // is, the strongest timbre control a violinist has (Schoonderwaldt 2009:
         // spectral centroid 0.8–3 kHz across the playable window, mostly from
