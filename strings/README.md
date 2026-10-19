@@ -236,3 +236,17 @@ Worst band above 1.6 kHz, ours − recordings:
 | cello | −6.4 / −5.1 dB | ±1.3 / ±1.1 dB |
 
 The held-out median residual stays 2.5–3.3 dB. The per-band before / after figures are in each body's `stats.energy`.
+
+## Waveguide: per-slip jitter
+
+The Source model's per-period jitter applied to the waveguide too: its upper harmonics stood 56 / 46 dB above the gaps between them at 1–3 / 3–8 kHz, against the Iowa recordings' 45 / 34. Each slip now draws the next period's bow force (15 % rms) and static friction (3 % rms), correlated 0.5 between periods and scaled by Rosin. Result: 44 / 36 dB.
+
+Friction jitter costs attacks and Helmholtz stability faster than force jitter, which is why most of it is force:
+- the 20 % / 10 % mix matched the texture best but dropped the attack suite to 185 of 288;
+- at 15 % / 3 %, attack.js gives 310 of 432 good (317 before) with a median of 33 ms (35 before).
+
+Two tests now run their check with Rosin 0, because they measure something the jitter blurs on purpose:
+- the oversampling test measures aliasing;
+- the bow-pressure sweep measures the bowing regime. The rosin grain alone moves that sweep by about 3 notes (179 / 182 of 189 at Rosin 0 / 1 before this change), so its bar is 94 %.
+
+The waveguide bodies were refitted with the energy match. Held-out residual: 2.9–3.4 dB. Every band above 1.6 kHz is within 2.4 dB of the recordings.

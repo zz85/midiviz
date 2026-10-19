@@ -183,6 +183,7 @@ export class WaveguideString {
     this.bowPress = false
     this.kF = 0; this.slips = 0; this.acc = 0; this.spp = 1; this.bowAge = 0; this.cool = 0; this.kick = 1; this.kicks = 0; this.stick = 0
     this.rosin = 1         // × rosin grain (μs jitter)
+    this.jMu = 0; this.jF = 0   // per-slip jitter of static friction and bow force
   }
   reset() { this.bridge.clear(); this.nut.clear(); this.tA.clear(); this.tB.clear(); this.tC.clear(); this.harm = 0; this.lpB = this.lpN = 0; this.slipping = false; this.out = 0; this.kF = 0; this.spp = 1; this.bowAge = 0 }
   noise() { let s = this.seed; s ^= s << 13; s ^= s >>> 17; s ^= s << 5; this.seed = s >>> 0; return (this.seed / 4294967296) * 2 - 1 }
@@ -271,8 +272,8 @@ export class WaveguideString {
     }
     if (F > 1e-4) {
       // friction junction (velocity jump dv added to both outgoing waves)
-      const c = F / (2 * this.Z)
-      const mus = MU_S * (1 + 0.015 * Math.sqrt(this.os) * this.rosin * this.noise())   // rosin grain
+      const c = F * (1 + this.jF) / (2 * this.Z)
+      const mus = MU_S * (1 + this.jMu + 0.015 * Math.sqrt(this.os) * this.rosin * this.noise())   // rosin grain
       const u = vb - vh
       const au = Math.abs(u)
       if (!this.slipping && au <= c * mus) dv = u                  // stick
@@ -284,6 +285,18 @@ export class WaveguideString {
         else { dv = u - Math.sign(u) * D; this.slipping = true }
       }
     } else this.slipping = true
+    // a new slip: draw the next period's force and static friction. The bow hair
+    // and rosin never grip the same way twice, so no two periods are identical
+    // (as for the Source model: a perfectly periodic string left the gaps between
+    // the upper harmonics 9–11 dB cleaner than the Iowa recordings). 15 % force,
+    // 3 % static friction rms, correlated 0.5 between periods; Rosin scales it.
+    // Friction jitter costs attacks and Helmholtz stability faster than force
+    // jitter, hence the split (attack.js: 211 → 204 of 288 good)
+    if (this.slipping && !was && F > 1e-4 && this.rosin > 0) {
+      const g = () => (this.noise() + this.noise() + this.noise()) * 0.577
+      this.jMu = JIT_R * this.jMu + JIT_Q * 0.03 * g() * this.rosin
+      this.jF = JIT_R * this.jF + JIT_Q * 0.15 * g() * this.rosin
+    }
     if (this.bowPress) {
       // a slip counts when the stick before it lasted ≥ 0.3 period (micro-slips
       // inside one slip phase do not: measured on the sweep, this separates
