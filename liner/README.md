@@ -6,17 +6,20 @@ them in two layers:
 
 - **Intertitles** on screen while the piece plays: a handful of short lines
   the notes mark for the screen (a kicker such as *Paris, 1853* over one line),
-  in a cinematic serif or spaced sans, faded in and out with room to read.
+  faded in and out with room to read. Stories float (densest at the start,
+  placed by a seeded generator); lines about the music come after it is heard,
+  in a voice of their own.
 - **Everything else** in the notes panel (press **I**, or click an
   intertitle): what is happening now, the overview and sections, every note
   with its source, and cards for the people and terms.
 
 Plus sections on the seek bar and a card when you hover a song in the menu.
 Visuals → Liner notes picks what shows on screen (intertitles, every note as a
-caption, or nothing), the intertitle style, colours (black and white by
-default), position (automatic, or a corner) and whether the small headings
-show. Render → Song title makes the title the first intertitle (the default,
-also when a song plays on the page), the classic title card, or nothing. The video export
+caption, or nothing), the story and analysis styles, colours (black and
+white by default), position (automatic, or a corner), whether the small
+headings show, and the take of the floating intertitles. Render → Song title
+adds the title (as the first intertitle, or the classic title card; off by
+default). The video export
 draws the same into the picture and saves it as YouTube subtitles (`.vtt`),
 with the sections as chapters.
 
@@ -98,31 +101,60 @@ Bach begins a book of preludes in every key. This is the first.
 ## Intertitles
 
 The on-screen lines, written separately from the notes because they are a
-different voice: short, and few. Two ways to write one:
+different voice: short, and few. They come in two kinds.
 
-- `screen: Kicker | Line` inside a moment marks that note for the screen
-  (clicking the intertitle opens that note). `screen: Line` has no kicker,
-  and `screen: Kicker | Line | Small line` adds a smaller line under it.
-- `# Intertitles` holds lines that belong to no note: `## m2 Köthen, 1722`
-  (anchor, then the kicker) with the line below.
+**Pinned** lines are about the music, so they belong where it happens:
+
+- `screen: Kicker | Line` inside a moment. It appears at the moment's bar,
+  or, when the moment has a range (`## m188-m190 · analysis`), when the
+  range ends: after the listener has heard what it describes. The notes
+  panel and the seek bar still show the moment where it starts.
+- `## m24-m27 listen · Pedal point` in `# Intertitles` (anchor or range, an
+  optional kind, the kicker), the line below.
+
+**Floating** lines are stories (history, trivia) that fit anywhere:
+
+- `aside: Kicker | Line` inside a moment: the moment stays at its bar in
+  the panel, its intertitle floats.
+- `## ~ Köthen, 1722` in `# Intertitles`, or `## ~m1-m64 Kicker` to keep it
+  somewhere in those bars.
+
+Floats keep their written order (so a story can run in time order) and are
+placed by a seeded generator (`layoutScreen`, LAYOUT in `liner.js`): the
+first 3–6 s in, then one every 20–30 s through the first 100 s, where
+attention is highest, then the rest spread over what is left (±30 %), never
+over a pinned line or within 3 s of one (a float that would run into one
+goes before it if the rhythm allows, else after it), never in the last 10 s.
+Visuals → Liner notes → *take* steps the seed: each take places the floats
+differently, and the same take always places them the same way, on the page
+and in the export (`&itseed=` in the address bar).
+
+In every form `Line` can also be `Line | Small line`, and `screen: Line`
+alone has no kicker.
+
+Voices: an intertitle's kind (from its moment, or `analysis ·` in its
+heading; `# Intertitles` lines are history by default) gives it a voice.
+History and trivia are the story, in the Intertitle style (serif by
+default); analysis, listen and technique are commentary, in the Analysis
+style (spaced Montserrat by default, or *same as the story*).
 
 Guidelines, checked by the tests and warned about in the console:
 
 - One line of at most 14 words (8–12 is better); a kicker of a few words: a
   place and year, a bar, a term.
 - Each stays 1.2 s fading in, 2.5 s plus 0.3 s a word, and 1.5 s fading out
-  (5–10 s), or to its `–mNN` end; fades follow the song clock, so pausing holds one.
-- Leave at least 3 s of clear screen between two, and keep the total under
-  half the piece. The Bach prelude has 6 in 2 minutes.
+  (5–10 s); fades follow the song clock, so pausing holds one.
+- Keep pinned lines 3 s apart, and the total under half the piece.
 - Avoid ♯ and ♭ (the intertitle fonts are Latin only): write *F sharp*.
 
-The song title can be the first intertitle (Render → Song title): the
+The song title is off by default, so the opening belongs to the
+intertitles. Render → Song title can make it the first intertitle (the
 front matter's `screen:` (kicker | title | small line), else composer over
 title; for a song without notes, its name from the song list split at the
 dash ("Chopin - Raindrop Prelude"), with the export subtitle as the small
-line. It shows from the first note for 7–11 s, a little larger than the
-others, and pushes any intertitle it would crowd later (keeping the 3 s
-gap). Headings off hides the kickers but not the title's.
+line), or the classic title card. As an intertitle it shows from the first
+note for 7–11 s, a little larger than the others; pinned lines it would
+crowd move later and the floats start after it. Headings off hides the kickers but not the title's.
 
 Look (`liner/overlay.js`):
 

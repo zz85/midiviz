@@ -57,6 +57,8 @@ Beethoven wrote this sonata in 1801. It was published the next year in Vienna.
 
 Giovanni Cappi printed it in 1802 as Op. 27 No. 2, paired with No. 1 in E♭ major. Both carry the title *Sonata quasi una fantasia*: a sonata in the manner of a fantasy, free in its order and its forms.
 
+aside: Vienna, 1801 | A sonata “in the manner of a fantasy”.
+
 source: Charles Rosen, *Beethoven's Piano Sonatas: A Short Companion* (Yale, 2002)
 
 ## m3 · analysis
@@ -79,7 +81,7 @@ The opening figure starts again, but the bass now goes through A♯ and G toward
 
 These are [[diminished-seventh|diminished seventh]] and dominant chords: the transition to the second key.
 
-## m21 · analysis
+## m21-m25 · analysis
 The second theme, in G♯ minor.
 
 In a minor-key sonata the second theme usually goes to the relative major, which would be E major here. Beethoven picks the dominant minor instead, so the exposition never leaves minor.
@@ -91,7 +93,7 @@ In June 1801 Beethoven wrote to his friend Franz Wegeler that his hearing had be
 
 He asked Wegeler to keep it a secret. A year later, in October 1802, he wrote the Heiligenstadt Testament, a letter to his brothers about his deafness that was found among his papers after his death.
 
-screen: Vienna, 1801 | Beethoven tells a friend that he is losing his hearing.
+aside: June 1801 | Beethoven tells a friend that he is losing his hearing.
 
 source: Beethoven to Franz Wegeler, 29 June 1801; Lewis Lockwood, *Beethoven: The Music and the Life* (Norton, 2003)
 
@@ -105,12 +107,14 @@ In this performance the sixteenth notes go by at about 11 a second.
 
 The marking is *Presto agitato*, very fast and agitated. The right hand's broken chords have to stay even at that speed, with the accented chords landing exactly on the beat.
 
+aside: Presto agitato | About eleven notes a second, in the right hand alone.
+
 ## m5' · history
 The name "Moonlight" is not Beethoven's.
 
 In 1832, five years after Beethoven died, the poet and critic Ludwig Rellstab compared the first movement to moonlight shining on Lake Lucerne. The name stuck to the whole sonata.
 
-screen: 1832 | A critic hears moonlight in the first movement. The name sticks.
+aside: 1832 | A critic hears moonlight in the first movement. The name sticks.
 
 source: Wikipedia, "Piano Sonata No. 14 (Beethoven)"
 
@@ -119,7 +123,7 @@ The sonata is dedicated to Countess Giulietta Guicciardi, his pupil.
 
 In November 1801 Beethoven wrote to Wegeler of "a dear, enchanting girl who loves me and whom I love". She is usually taken to be Giulietta. In 1803 she married Count Wenzel Robert von Gallenberg.
 
-screen: Giulietta | Dedicated to his pupil, Countess Giulietta Guicciardi.
+aside: Giulietta | Dedicated to his pupil, Countess Giulietta Guicciardi.
 
 source: Beethoven to Franz Wegeler, 16 November 1801; Lockwood (2003)
 
@@ -128,6 +132,8 @@ Beethoven grew tired of this sonata's fame.
 
 His pupil Carl Czerny remembered him saying: "Everybody is always talking about the C♯ minor sonata! Surely I have written better things."
 
+aside: Beethoven, later | “Surely I have written better things.”
+
 source: Czerny's recollection, quoted in Wikipedia, "Piano Sonata No. 14 (Beethoven)"
 
 ## m65 · analysis
@@ -135,7 +141,7 @@ The development opens with the first theme in C♯ major.
 
 The major mode lasts only a few bars. By bar 71 the second theme is back, now in F♯ minor.
 
-## m87 · listen
+## m87-m91 · listen
 Listen to the bass: it holds G♯ for thirteen bars.
 
 Above this dominant [[pedal-point|pedal point]] the right hand's figures climb and pile up, and the ear waits for C♯ minor to return.
@@ -158,9 +164,11 @@ Chopin's Fantaisie-Impromptu, written in 1834, is also in C♯ minor.
 
 It opens with fast figures over a rolling bass, and in 1947 the theorist Ernst Oster argued that it is modelled on this movement. Chopin never published it. His friend Julian Fontana did, in 1855, six years after Chopin's death.
 
+aside: Paris, 1834 | Chopin writes his Fantaisie-Impromptu, in the same key.
+
 source: Ernst Oster, "The Fantaisie-Impromptu: A Tribute to Beethoven", *Musicology* 1 (1947); see the card
 
-## m157 · analysis
+## m157-m159 · analysis
 The coda begins: forty-four more bars, almost a second development.
 
 Long codas are a habit of Beethoven's. This one starts over a falling bass, like the opening.
@@ -176,12 +184,12 @@ The second theme, one last time.
 ## m185 · listen
 A chromatic scale climbs from the bass, and a trill opens a short cadenza that runs down the keyboard.
 
-## m188 · analysis
+## m188-m190 · analysis
 Adagio: two bars of bare octaves in the bass, G and then G♯.
 
 The music almost stops on the dominant before the final rush.
 
-screen: Adagio | For two bars, the storm stops.
+screen: Adagio | For two bars, the storm stopped.
 
 ## m190 · listen
 Tempo primo: the broken chords one last time, and two final chords.

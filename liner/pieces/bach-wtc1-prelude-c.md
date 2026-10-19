@@ -100,7 +100,7 @@ As a boy in Bonn, Beethoven played this collection.
 
 In 1783 his teacher Christian Gottlob Neefe wrote that the twelve-year-old "plays chiefly The Well-Tempered Clavier of Sebastian Bach, which Herr Neefe put into his hands", calling it "the non plus ultra of our art".
 
-screen: Bonn, 1783 | The twelve-year-old Beethoven plays from this book.
+aside: Bonn, 1783 | The twelve-year-old Beethoven plays from this book.
 
 source: Neefe, in Cramer's *Magazin der Musik* (March 1783), quoted in Thayer's *Life of Beethoven*
 
@@ -109,7 +109,7 @@ A B♭ turns C major into C7, and the music leans toward F.
 
 Bar 21 is F major seventh. Then the bass rises a semitone to F♯ (bar 22) and A♭ (bar 23), with diminished seventh chords above both.
 
-## m22 · history
+## m22-m23 · history
 Many 19th-century editions add a bar after this one. Bach did not write it.
 
 screen: Bar 22 | Editors would later add a bar here. Bach never wrote it.
@@ -140,7 +140,7 @@ In 1853 Charles Gounod published a melody improvised over this prelude.
 
 It first appeared as a *Méditation* for violin or cello with piano. Words from the Ave Maria were set to it in 1859, and the [[ave-maria|Bach–Gounod Ave Maria]] became one of the most popular songs of the 19th century. Gounod used an edition with the Schwencke bar.
 
-screen: Paris, 1853 | Gounod will sing an Ave Maria over these chords.
+aside: Paris, 1853 | Gounod will sing an Ave Maria over these chords.
 
 source: Wikipedia, "Ave Maria (Bach/Gounod)"
 
@@ -161,11 +161,11 @@ In both books each prelude is paired with a fugue in the same key.
 
 # Intertitles
 
-## m2 Köthen, 1722
+## ~ Köthen, 1722
 Bach begins a book of preludes in every key. This is the first.
 
-## m6 One chord a bar
+## m1-m7 analysis · One chord a bar
 Each chord broken into the same figure, and played twice.
 
-## m26 Pedal point
+## m24-m27 listen · Pedal point
 The low G holds beneath every chord, waiting for C.

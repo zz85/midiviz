@@ -298,7 +298,9 @@
     <div class="field"><label>Dress colour</label><input type="color" id="dressColor" value="#8e1d1b"></div>
     <div class="sect">Liner notes<small>background and analysis for pieces that have notes (ⓘ in Songs)</small></div>
     <div class="field" title="Intertitles: the few short lines the notes mark for the screen, faded in and out with room to read. Every note: each note as a caption as it comes. Click one, or press I, for the full notes"><label>On screen while it plays (I: the notes)</label><select id="linerMode"><option value="intertitles" selected>Intertitles</option><option value="notes">Every note (captions)</option><option value="off">Nothing</option></select></div>
-    <div class="field"><label>Intertitle style</label><select id="itStyle"></select></div>
+    <div class="field" title="The story: history, trivia and the title"><label>Intertitle style</label><select id="itStyle"></select></div>
+    <div class="field" title="The intertitles about the music itself (analysis, things to listen for), in a voice of their own"><label>Analysis style</label><select id="itStyleA"><option value="same">Same as the story</option></select></div>
+    <div class="field" title="History and trivia float: the first a few seconds in, then one every 20–30 s through the opening, then spread over the rest. Each take places them differently (the same take, the same places, here and in the export). Lines about the music stay where the music is"><label>Floating intertitles: take <span class="val" id="itSeedV">1</span></label><div class="btnrow" style="padding:0"><button id="itSeedPrev" class="sec">‹ Previous take</button><button id="itSeedNext" class="sec">Next take ›</button></div></div>
     <div class="field"><label>Intertitle colours</label><select id="itTheme"></select></div>
     <div class="field" title="Automatic: each intertitle goes to the side of the frame away from the pianist (her head and hands as the camera sees them), and to the top when the shot looks down on the keys"><label>Intertitle position</label><select id="itPos"></select></div>
     <label class="chk" title="The small capitals over each line (a place and year, a bar, a term)"><input type="checkbox" id="itHeads" checked>Headings over the lines</label>
@@ -365,7 +367,7 @@
     <div class="field" title="How much of the song to render: all of it, or a short test from the start or from where the song is now (the seek bar)"><label>Length</label><select id="exLen"><option value="all" selected>Whole song</option><option value="20">First 20 s (test)</option><option value="60">First minute</option><option value="here20">20 s from the current position</option><option value="here60">1 minute from the current position</option></select></div>
     <div class="field"><label>Camera</label><select id="exCam"><option value="auto" selected>Director (auto)</option><option value="current">As on screen</option></select></div>
     <label class="chk"><input type="checkbox" id="exAudio" checked>Include audio (with the hall)</label>
-    <div class="field" title="Title card: the classic card, before the music. First intertitle: the title fades in over the opening bars like the other intertitles (composer, title and the notes' subtitle, in the intertitle style), and also when the song plays here"><label>Song title</label><select id="exTitle"><option value="intertitle" selected>As the first intertitle</option><option value="card">Title card (fades out as the music starts)</option><option value="none">None</option></select></div>
+    <div class="field" title="Title card: the classic card, before the music. First intertitle: the title fades in over the opening bars like the other intertitles (composer, title and the notes' subtitle, in the intertitle style), and also when the song plays here"><label>Song title</label><select id="exTitle"><option value="none" selected>None (the intertitles open the video)</option><option value="intertitle">As the first intertitle</option><option value="card">Title card (fades out as the music starts)</option></select></div>
     <label class="chk" title="Draw the liner notes into the picture as they show on screen (Visuals → Liner notes: intertitles, or every note as a caption)"><input type="checkbox" id="exCaps" checked>Liner notes in the picture (as on screen)</label>
     <label class="chk" title="Save the same lines as WebVTT subtitles (upload to YouTube as a subtitle track) and the sections as YouTube chapters for the description, timed to this video"><input type="checkbox" id="exVtt" checked>Save subtitles (.vtt) and YouTube chapters</label>
     <div class="field"><label>Title font</label><select id="exFont">
@@ -1315,9 +1317,16 @@
     liner.attachMenu($('songList'), linerLib)
     window.__liner = { liner, lib: linerLib }
     for (const [k, st] of Object.entries(INTERTITLE_STYLES)) $('itStyle').append(new Option(st.label, k, k === 'serif', k === 'serif'))
+    for (const [k, st] of Object.entries(INTERTITLE_STYLES)) $('itStyleA').append(new Option(st.label, k, k === 'sans', k === 'sans'))
+    $('itStyleA').onchange = () => { liner.analysisStyle = $('itStyleA').value }
+    // the take (seed) of the floating intertitles: in the address bar as &itseed=
+    const setSeed = n => { liner.seed = n; $('itSeedV').textContent = liner.seed }
+    $('itSeedPrev').onclick = () => setSeed(liner.seed - 1)
+    $('itSeedNext').onclick = () => setSeed(liner.seed + 1)
+    if (+params.get('itseed') > 1) { liner.seed = +params.get('itseed'); $('itSeedV').textContent = liner.seed }
     for (const [k, th] of Object.entries(INTERTITLE_THEMES)) $('itTheme').append(new Option(th.label, k, k === 'mono', k === 'mono'))
     for (const [k, label] of Object.entries(INTERTITLE_POSITIONS)) $('itPos').append(new Option(label, k, k === 'auto', k === 'auto'))
-    $('linerMode').onchange = () => { liner.mode = $('linerMode').value; for (const id of ['itStyle', 'itTheme', 'itPos', 'itHeads']) $(id).disabled = liner.mode !== 'intertitles' }
+    $('linerMode').onchange = () => { liner.mode = $('linerMode').value; for (const id of ['itStyle', 'itStyleA', 'itTheme', 'itPos', 'itHeads', 'itSeedPrev', 'itSeedNext']) $(id).disabled = liner.mode !== 'intertitles' }
     $('itPos').onchange = () => { liner.position = $('itPos').value }
     $('itStyle').onchange = () => { liner.style = $('itStyle').value; drawPreview() }
     $('itTheme').onchange = () => { liner.theme = $('itTheme').value; drawPreview() }
@@ -1594,7 +1603,7 @@
       ['dofamt', 'dofAmt'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
       ['vol', 'vol'], ['room', 'room'], ['seat', 'seat'], ['rv', 'rvAmt'], ['decay', 'rvDecay'], ['tone', 'rvTone'], ['boost', 'boost'], ['amb', 'amb'], ['applause', 'applause'],
       ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exsub', 'exSub'], ['excard', 'exCard'], ['excaps', 'exCaps'], ['exvtt', 'exVtt'], ['exlen', 'exLen'],
-      ['notes', 'linerMode'], ['itstyle', 'itStyle'], ['itcol', 'itTheme'], ['itpos', 'itPos'], ['itheads', 'itHeads'], ['extitle', 'exTitle'],
+      ['notes', 'linerMode'], ['itstyle', 'itStyle'], ['itstylea', 'itStyleA'], ['itcol', 'itTheme'], ['itpos', 'itPos'], ['itheads', 'itHeads'], ['extitle', 'exTitle'],
     ].filter(([, id]) => $(id))
     const OUTFIT_KEYS = { dress: 'dress', slit: 'slit', fabric: 'fabric', dcol: 'color', shoes: 'shoes', hair: 'hair', hcol: 'hairColor' }
     // (colours without their #, so links stay readable)
@@ -1646,6 +1655,7 @@
       if (camFree && view !== 'auto' && camSnap) q.set('cam', camSnap); else q.delete('cam')
       if (speeds[speedI] === 1) q.delete('speed'); else q.set('speed', speeds[speedI])
       if (loop) q.set('loop', '1'); else q.delete('loop')
+      if (liner.seed > 1) q.set('itseed', liner.seed); else q.delete('itseed')
       if (songFile) q.set('song', songFile); else q.delete('song')
       const t = song ? songNow() : sharedSong?.[1] || 0
       if ((withTime || sharedSong) && songFile && t > 0.5) q.set('at', t.toFixed(1)); else q.delete('at')   // (a shared position stays until it plays)
@@ -1833,7 +1843,7 @@
         const x = songTitleScreen() || { kicker: 'Frédéric Chopin', text: 'Raindrop Prelude', sub: $('exSub').value.trim() }
         await loadIntertitleFonts(liner.style)
         if (job !== previewJob) return
-        drawIntertitle(g, w, h, withTitle(null, x), 3, { style: liner.style, theme: liner.theme, position: liner.position === 'auto' ? autoPosition() : liner.position, kickers: liner.kickers })
+        drawIntertitle(g, w, h, withTitle(null, x), 3, { style: liner.style, analysisStyle: liner.analysisStyle, theme: liner.theme, position: liner.position === 'auto' ? autoPosition() : liner.position, kickers: liner.kickers })
         return
       }
       if ($('exTitle').value !== 'card') return
@@ -1864,10 +1874,10 @@
       const titleMode = $('exTitle').value
       if (titleMode === 'card') await loadTitleFont($('exFont').value)
       // what is on screen: the intertitles (with the title, when it is one) or every note as a caption
-      const linerMode = liner.mode, itOpts = { style: liner.style, theme: liner.theme, kickers: liner.kickers }
+      const linerMode = liner.mode, itOpts = { style: liner.style, analysisStyle: liner.analysisStyle, theme: liner.theme, kickers: liner.kickers }
       const linerTl = linerMode === 'notes' ? liner.timeline : liner.screenTimeline
       const burnCaps = $('exCaps').checked && linerTl && linerMode !== 'off'
-      if (burnCaps) await (linerMode === 'notes' ? loadTitleFont('inter') : loadIntertitleFonts(itOpts.style))
+      if (burnCaps) await (linerMode === 'notes' ? loadTitleFont('inter') : loadIntertitleFonts(itOpts.style, itOpts.analysisStyle))
       // automatic positions: decided for each intertitle on its first frame, as on the page
       const itPlaced = new WeakMap()
       const itPos = x => { if (liner.position !== 'auto') return liner.position; if (!itPlaced.has(x)) itPlaced.set(x, autoPosition()); return itPlaced.get(x) }

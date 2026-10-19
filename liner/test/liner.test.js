@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { parseLiner, parseCard, parseAnchor, barClock, clockOfMidi, buildTimeline, toVTT, toChapters, renderInline, plainText, momentAt, sectionAt, intertitleAt, createLinerLibrary, INTERTITLE, parsePlay, scoreClock, withTitle, titleScreen, parseScreen } from '../liner.js'
+import { parseLiner, parseCard, parseAnchor, barClock, clockOfMidi, buildTimeline, toVTT, toChapters, renderInline, plainText, momentAt, sectionAt, intertitleAt, createLinerLibrary, INTERTITLE, LAYOUT, layoutScreen, parsePlay, scoreClock, withTitle, titleScreen, parseScreen } from '../liner.js'
 
 const root = new URL('../../', import.meta.url)
 const { Midi } = createRequire(import.meta.url)('../../tonejs-midi.js')
@@ -56,7 +56,7 @@ Three.
 	assert.match(l.warnings.join(), /unknown kind "oddkind"/)
 })
 
-test('intertitles: the # Intertitles part and screen: lines on moments', () => {
+test('intertitles: pinned (screen:, ## mN) and floating (aside:, ## ~), kinds and voices', () => {
 	const l = parseLiner(`# Moments
 ## m3 · trivia
 A caption.
@@ -64,29 +64,62 @@ A caption.
 screen: Paris, 1853 | A short line.
 
 More.
-## m1 · analysis
+## m5-m7 · analysis
+Heard.
+
+screen: Two bars | Shown when they are over.
+## m1 · history
 First.
+
+aside: 1801 | A fact for any time.
 
 # Intertitles
 ## m1 Opening
 Just text.
-## m9
-No kicker here.
+## m9 listen · Bass
+No kicker? No: a kind and a kicker.
+## ~ Floating
+Any time.
+## ~m10-m12 analysis · In a window
+Somewhere in bars 10 to 12.
 `)
 	assert.deepEqual(l.moments[0].detail, ['More.'])
-	assert.deepEqual(l.intertitles, [
-		{ at: { bar: 1, beat: 1 }, until: undefined, kicker: 'Opening', text: 'Just text.' },
-		{ at: { bar: 9, beat: 1 }, until: undefined, kicker: '', text: 'No kicker here.' },
-		{ at: { bar: 3, beat: 1 }, until: undefined, kicker: 'Paris, 1853', text: 'A short line.', moment: 0 },
+	assert.deepEqual(l.intertitles.map(x => [x.kicker, x.kind, x.voice, !!x.float]), [
+		['Opening', 'history', 'story', false], ['Bass', 'listen', 'analysis', false], ['Floating', 'history', 'story', true],
+		['In a window', 'analysis', 'analysis', true], ['Paris, 1853', 'trivia', 'story', false], ['Two bars', 'analysis', 'analysis', false], ['1801', 'history', 'story', true],
 	])
-	// 2 s bars: m1 0 s, m3 4 s (too close: warned), m9 16 s; the screen line points at its moment once sorted
-	const clock = { bars: 10, seconds: a => (a.bar - 1) * 2 }
-	const tl = buildTimeline(l, clock, 20)
-	assert.deepEqual(tl.intertitles.map(x => x.start), [0, 4, 16])
-	assert.equal(tl.moments[tl.intertitles[1].moment].caption, 'A caption.')
-	assert.match(tl.warnings.join(), /intertitles at 0:00 and 0:04 are 0\.0 s apart/)
-	assert.ok(tl.intertitles[0].end - tl.intertitles[0].start >= INTERTITLE.min)
-	assert.match(toVTT(tl, { from: 'intertitles' }), /00:00:04\.000 --> 00:00:\d\d\.\d{3}\nPARIS, 1853\nA short line\./)
+	assert.deepEqual(l.intertitles[3].from, { bar: 10, beat: 1 })
+	// 10 s bars over 200 s: a range shows when it ends (m7 = 60 s), not when it starts
+	const clock = { bars: 20, seconds: a => (a.bar - 1) * 10 }
+	const tl = buildTimeline(l, clock, 200)
+	const by = k => tl.intertitles.find(x => x.kicker === k)
+	assert.equal(by('Two bars').start, 60)
+	assert.equal(by('Paris, 1853').start, 20)
+	assert.equal(tl.moments[by('Paris, 1853').moment].caption, 'A caption.')
+	assert.deepEqual(tl.warnings, [])
+	// floats: in written order, never over a pinned one or within the gap of it, the windowed one in its window
+	const fl = tl.intertitles.filter(x => x.float)
+	assert.deepEqual(fl.map(x => x.kicker), ['Floating', 'In a window', '1801'])
+	assert.ok(fl[1].start >= 90 && fl[1].start <= 110)
+	const all = tl.intertitles
+	for (let i = 1; i < all.length; i++) assert.ok(all[i].start >= all[i - 1].end + INTERTITLE.gap - 1e-9, `${all[i - 1].kicker} / ${all[i].kicker}`)
+	// the same take, the same places; another take, other places
+	assert.deepEqual(layoutScreen(tl, { seed: 1 }).intertitles.map(x => x.start), tl.intertitles.map(x => x.start))
+	assert.notDeepEqual(layoutScreen(tl, { seed: 2 }).intertitles.map(x => x.start), tl.intertitles.map(x => x.start))
+	assert.match(toVTT(tl, { from: 'intertitles' }), /00:00:20\.000 --> 00:00:\d\d\.\d{3}\nPARIS, 1853\nA short line\./)
+})
+
+test('layout: floats open the piece densely, then spread out, and all fit', () => {
+	const floats = Array.from({ length: 10 }, (_, i) => ({ float: true, kicker: 'F' + i, text: 'A line of about eight words to read here.', len: 7, from: 0, to: Infinity }))
+	for (const seed of [1, 2, 3, 4, 5]) {
+		const x = layoutScreen({ sections: [], moments: [], warnings: [], screen: { id: 'test', pins: [{ start: 40, end: 48, text: 'pin' }], floats, duration: 420 } }, { seed })
+		const f = x.intertitles.filter(i => i.float).map(i => i.start)
+		assert.equal(x.dropped, 0)
+		assert.ok(f[0] >= LAYOUT.first[0] && f[0] <= LAYOUT.first[1], `first at ${f[0]}`)
+		const gaps = f.slice(1).map((t, i) => t - f[i])
+		assert.ok(gaps.slice(0, 2).every(g => g <= 40), `opening gaps ${gaps.slice(0, 2)}`)
+		assert.ok(f.at(-1) <= 420 - LAYOUT.endClear)
+	}
 })
 
 test('play: repeats and spread bars map score bars to file bars', () => {
@@ -168,14 +201,18 @@ test('Bach prelude: notes fit Prelude1.mid', () => {
 		assert.ok(plainText(m.caption).length <= 110, `caption ${i} is long for a subtitle: ${m.caption}`)
 	}
 	assert.equal(sectionAt(tl, 80).title, 'Dominant pedal')
-	assert.equal(momentAt(tl, 73.5).kind, 'history')    // bar 22: the Schwencke bar
+	assert.equal(momentAt(tl, 71).kind, 'history')    // bar 22: the Schwencke bar
 	// intertitles: few, short, with a clear screen between them
 	assert.ok(tl.intertitles.length >= 4 && tl.intertitles.length <= 8)
+	assert.equal(tl.intertitles[0].voice, 'story')    // (a fact opens it, a few seconds in)
+	assert.ok(tl.intertitles[0].start < 8)
 	const shown = tl.intertitles.reduce((a, x) => a + x.end - x.start, 0)
 	assert.ok(shown < duration * 0.5, `intertitles on screen ${shown.toFixed(0)} s of ${duration.toFixed(0)}`)
 	for (const x of tl.intertitles) assert.ok(plainText(x.text).split(/\s+/).length <= INTERTITLE.maxWords && x.kicker.length <= 24, x.text)
-	assert.equal(intertitleAt(tl, 72).kicker, 'Bar 22')
-	assert.equal(tl.moments[intertitleAt(tl, 72).moment].at.bar, 22)
+	// the bar 22 line comes as bar 23 begins (after the jump the editors smoothed)
+	assert.equal(intertitleAt(tl, 75).kicker, 'Bar 22')
+	assert.ok(Math.abs(intertitleAt(tl, 75).start - 22 * 10 / 3) < 1e-3)
+	assert.equal(tl.moments[intertitleAt(tl, 75).moment].at.bar, 22)
 	assert.ok(duration > 110 && duration < 125)
 })
 

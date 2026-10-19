@@ -5,7 +5,7 @@
 // song in a menu. Also draws a caption into an exported video frame.
 // The notes themselves: liner/liner.js and liner/README.md.
 
-import { renderInline, plainText, sectionAt, momentAt, intertitleAt, toVTT, toChapters, INTERTITLE, withTitle } from './liner.js'
+import { renderInline, plainText, sectionAt, momentAt, intertitleAt, toVTT, toChapters, INTERTITLE, layoutScreen } from './liner.js'
 
 // ── Intertitle styles ───────────────────────────────────────────────────
 // A kicker (small, letter-spaced capitals: a place and year, a term) over one
@@ -41,12 +41,14 @@ export const INTERTITLE_POSITIONS = {
 const posClass = p => ({ 'bottom-left': 'bl', 'bottom-right': 'br', 'bottom-center': 'bc', 'top-left': 'tl', 'top-right': 'tr' })[p] || 'bl'
 const fam = f => `'${f[0]}', Georgia, serif`
 const cssFont = (f, px) => `${f[2]} ${f[1]} ${px}px ${fam(f)}`
-/** wait for a style's fonts (before drawing it into a canvas) */
-export function loadIntertitleFonts(style = 'serif') {
-	const st = INTERTITLE_STYLES[style] || INTERTITLE_STYLES.serif
+/** wait for the styles' fonts (before drawing them into a canvas) */
+export function loadIntertitleFonts(...styles) {
 	injectFaces()
-	return Promise.all([st.kicker, st.line, st.sub].map(f => document.fonts.load(cssFont(f, 40)).catch(() => null)))
+	const fs = styles.flat().filter(Boolean).flatMap(k => { const st = INTERTITLE_STYLES[k] || INTERTITLE_STYLES.serif; return [st.kicker, st.line, st.sub] })
+	return Promise.all(fs.map(f => document.fonts.load(cssFont(f, 40)).catch(() => null)))
 }
+// an intertitle's style: the story voice (history, trivia, the title) or the analysis voice
+const styleOf = (x, style, analysisStyle) => INTERTITLE_STYLES[x?.voice === 'analysis' && analysisStyle ? analysisStyle : style] || INTERTITLE_STYLES.serif
 function injectFaces() {
 	if (document.getElementById('ln-faces')) return
 	document.head.append(Object.assign(document.createElement('style'), { id: 'ln-faces', textContent: FACES.map(([f, w, st, file]) => `@font-face { font-family: '${f}'; font-weight: ${w}; font-style: ${st}; src: url(${FONT_DIR}${file}.woff2) format('woff2'); font-display: swap; }`).join('\n') }))
@@ -166,7 +168,7 @@ export function createLinerOverlay({ seek, title, onSeek, host = document.body, 
 	seek.parentNode.insertBefore(strip, seek)
 	title.after(sub)
 
-	let liner = null, tl = null, itl = null, songTitle = null, duration = 0, mode = 'intertitles', style = 'serif', theme = 'mono', position = 'auto', kickers = true, curIt = null, curPos = 'bottom-left', curM = null, curS = null, capTimer = 0, tab = 'now', cardView = null, lastT = 0
+	let liner = null, tl = null, itl = null, songTitle = null, seed = 1, duration = 0, mode = 'intertitles', style = 'serif', analysisStyle = 'sans', theme = 'mono', position = 'auto', kickers = true, curIt = null, curPos = 'bottom-left', curM = null, curS = null, capTimer = 0, tab = 'now', cardView = null, lastT = 0
 	const cardLink = (id, text) => liner?.cards?.[id] ? `<span class="card-ln" data-card="${id}">${text}</span>` : text
 	const md = s => renderInline(s, cardLink)
 
@@ -184,7 +186,7 @@ export function createLinerOverlay({ seek, title, onSeek, host = document.body, 
 
 	// ── intertitle ──
 	function styleIntertitle() {
-		const st = INTERTITLE_STYLES[style] || INTERTITLE_STYLES.serif, th = INTERTITLE_THEMES[theme] || INTERTITLE_THEMES.mono
+		const st = styleOf(curIt, style, analysisStyle), th = INTERTITLE_THEMES[theme] || INTERTITLE_THEMES.mono
 		for (const k of ['k', 'l', 's', 'r', 'scrim', 'glow']) it.style.setProperty('--' + k, th[k])
 		const big = curIt?.title ? 1.3 : 1
 		const vh = s => `clamp(${Math.round(s * 0.5)}px, ${(s / 10.8).toFixed(2)}vh, ${s}px)`
@@ -207,10 +209,15 @@ export function createLinerOverlay({ seek, title, onSeek, host = document.body, 
 		it.style.opacity = a.toFixed(3)
 		it.style.filter = a > 0.995 ? '' : `blur(${((1 - a) * 5).toFixed(2)}px)`
 		const k = it.querySelector('.k')
-		if (k) k.style.letterSpacing = ((INTERTITLE_STYLES[style] || INTERTITLE_STYLES.serif).kicker[3] + (1 - a) * 0.12).toFixed(3) + 'em'
+		if (k) k.style.letterSpacing = (styleOf(curIt, style, analysisStyle).kicker[3] + (1 - a) * 0.12).toFixed(3) + 'em'
 		it.classList.toggle('live', a > 0.5)
 	}
-	const rebuildScreen = () => { itl = songTitle ? withTitle(tl, songTitle) : tl; curIt = null; showIntertitle(null) }
+	const rebuildScreen = () => {
+		itl = tl || songTitle ? layoutScreen(tl, { seed, title: songTitle }) : null
+		if (itl?.dropped) console.warn(`[liner] ${itl.dropped} floating intertitle(s) did not fit`)
+		curIt = null; showIntertitle(null)
+		if (tab === 'about') render()
+	}
 	it.onclick = () => { if (curIt && liner) curIt.moment != null ? open('notes', curIt.moment) : open(curIt.title ? 'about' : 'now') }
 
 	// ── seek strip ──
@@ -375,8 +382,15 @@ export function createLinerOverlay({ seek, title, onSeek, host = document.body, 
 		setTitle(x) { songTitle = x?.text ? x : null; rebuildScreen() },
 		/** the intertitles as they show, the title included (for the export) */
 		get screenTimeline() { return itl },
+		/** the story voice's style (history, trivia, the title) */
 		get style() { return style },
 		set style(v) { style = INTERTITLE_STYLES[v] ? v : 'serif'; loadIntertitleFonts(style); styleIntertitle() },
+		/** the analysis voice's style (analysis, listen, technique); 'same' = as the story */
+		get analysisStyle() { return analysisStyle || 'same' },
+		set analysisStyle(v) { analysisStyle = INTERTITLE_STYLES[v] ? v : null; if (analysisStyle) loadIntertitleFonts(analysisStyle); styleIntertitle() },
+		/** the take: where the floating intertitles fall (the same seed, the same places) */
+		get seed() { return seed },
+		set seed(v) { seed = Math.max(1, Math.floor(+v) || 1); rebuildScreen() },
 		get timeline() { return tl },
 		get liner() { return liner },
 		open, close, toggle, attachMenu,
@@ -441,14 +455,15 @@ export function drawLinerCaption(g, w, h, tl, t, { fade = 0.4, font = 'Inter, sy
  * Draw the intertitle for song time `t` into a 2D canvas of w × h (a frame of
  * the exported video): the same layout, fonts, colours and fades as on the
  * page. `position` is one of INTERTITLE_POSITIONS but 'auto' (decide it per
- * intertitle and pass it in). Call loadIntertitleFonts(style) first.
+ * intertitle and pass it in). `analysisStyle` styles the analysis voice ('same': as
+ * the story). Call loadIntertitleFonts(style, analysisStyle) first.
  */
-export function drawIntertitle(g, w, h, tl, t, { style = 'serif', theme = 'mono', position = 'bottom-left', kickers = true } = {}) {
+export function drawIntertitle(g, w, h, tl, t, { style = 'serif', analysisStyle = 'sans', theme = 'mono', position = 'bottom-left', kickers = true } = {}) {
 	const x = intertitleAt(tl, t)
 	if (!x) return
 	const a = itAlpha(x, t)
 	if (a <= 0) return
-	const st = INTERTITLE_STYLES[style] || INTERTITLE_STYLES.serif, th = INTERTITLE_THEMES[theme] || INTERTITLE_THEMES.mono, k = h / 1080
+	const st = styleOf(x, style, INTERTITLE_STYLES[analysisStyle] ? analysisStyle : null), th = INTERTITLE_THEMES[theme] || INTERTITLE_THEMES.mono, k = h / 1080
 	const pc = posClass(typeof position === 'function' ? position(x) : position)
 	const side = pc[1] === 'l' ? 'left' : pc[1] === 'r' ? 'right' : 'center', top = pc[0] === 't'
 	const lineSize = st.size * k * (x.title ? 1.3 : 1), kickSize = st.size * 0.42 * k, subSize = st.size * 0.52 * k

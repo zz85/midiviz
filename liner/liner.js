@@ -4,6 +4,8 @@
 // YouTube chapters. The page UI is liner/overlay.js.
 
 export const KINDS = ['history', 'analysis', 'trivia', 'listen', 'technique']
+// the two voices of the intertitles: the story (history, trivia) and the commentary on the music
+export const voiceOf = kind => ['analysis', 'listen', 'technique'].includes(kind) ? 'analysis' : 'story'
 
 // ── Parsing ─────────────────────────────────────────────────────────────
 
@@ -57,10 +59,11 @@ export function parseScreen(s) {
 /**
  * Parse a piece's liner notes.
  * @returns {{ meta, overview: string[], sections, moments, intertitles, warnings: string[] }}
- *   sections: [{ at, title, text }]; moments: [{ at, until?, kind, caption, detail: string[], source?, screen? }]
- *   intertitles: [{ at, until?, kicker, text, moment? }] — the few lines shown on screen as the
- *   piece plays: the `# Intertitles` part, and every moment with a `screen:` line (moment: its index)
- *   (at / until are parsed anchors; text fields are Markdown, see renderInline)
+ *   sections: [{ at, title, text }]; moments: [{ at, until?, kind, caption, detail: string[], source?, screen?, aside? }]
+ *   intertitles: [{ at?, until?, float?, from?, to?, kind, voice, kicker, text, sub?, moment? }] — the
+ *   few lines shown on screen as the piece plays: the `# Intertitles` part, and every moment with a
+ *   `screen:` line (pinned to the music) or an `aside:` line (floating: placed by layoutScreen)
+ *   (at / until / from / to are parsed anchors; text fields are Markdown, see renderInline)
  */
 export function parseLiner(text) {
 	const [meta, body] = splitFrontMatter(text)
@@ -74,7 +77,7 @@ export function parseLiner(text) {
 		for (const p of ps) {
 			let m
 			if ((m = /^source:\s*([\s\S]+)$/i.exec(p))) cur.source = m[1].trim()
-			else if ((m = /^screen:\s*([\s\S]+)$/i.exec(p)) && cur.kind) cur.screen = parseScreen(m[1].replace(/\s*\n\s*/g, ' '))
+			else if ((m = /^(screen|aside):\s*([\s\S]+)$/i.exec(p)) && cur.kind) cur[m[1].toLowerCase()] = parseScreen(m[2].replace(/\s*\n\s*/g, ' '))
 			else rest.push(p)
 		}
 		if (cur.intertitle) { cur.text = rest.join(' ').replace(/\s*\n\s*/g, ' '); if (!cur.text) out.warnings.push(`intertitle at ${cur.head} has no text`) }
@@ -93,11 +96,18 @@ export function parseLiner(text) {
 		}
 		if ((m = /^##\s+(.+?)\s*$/.exec(line)) && part !== 'overview') {
 			flush()
+			// an intertitle that floats: `## ~ Kicker`, or `## ~m1-m64 Kicker` (somewhere in those bars)
+			const fl = part === 'intertitles' && new RegExp(String.raw`^~\s*(?:(${ANCHOR})\s*[-–]\s*(${ANCHOR}))?\s*(?:[·:|-]\s*)?(.*)$`).exec(m[1])
+			if (fl) {
+				cur = { head: '~', float: true, ...(fl[1] ? { from: parseAnchor(fl[1]), to: parseAnchor(fl[2]) } : {}), ...kindKicker(fl[3], 'history'), intertitle: true }
+				out.intertitles.push(cur)
+				continue
+			}
 			const h = HEAD.exec(m[1])
 			if (!h) { out.warnings.push(`bad anchor in "## ${m[1]}"`); cur = null; continue }
 			const at = parseAnchor(h[1]), until = h[2] ? parseAnchor(h[2]) : undefined
 			if (part === 'sections') { cur = { head: h[1], at, until, title: h[3].trim() }; out.sections.push(cur) }
-			else if (part === 'intertitles') { cur = { head: h[1], at, until, kicker: h[3].trim(), intertitle: true }; out.intertitles.push(cur) }
+			else if (part === 'intertitles') { cur = { head: h[1], at, until, ...kindKicker(h[3], 'history'), intertitle: true }; out.intertitles.push(cur) }
 			else {
 				let kind = h[3].trim().toLowerCase()
 				if (!KINDS.includes(kind)) { if (kind) out.warnings.push(`unknown kind "${kind}" at ${h[1]}`); kind = 'trivia' }
@@ -109,10 +119,19 @@ export function parseLiner(text) {
 		buf.push(line)
 	}
 	flush()
-	out.moments.forEach((m, i) => { if (m.screen) out.intertitles.push({ at: m.at, until: m.until, ...m.screen, moment: i }) })
-	for (const x of out.intertitles) delete x.intertitle
+	out.moments.forEach((m, i) => {
+		if (m.screen) out.intertitles.push({ at: m.at, until: m.until, kind: m.kind, ...m.screen, moment: i })
+		if (m.aside) out.intertitles.push({ float: true, kind: m.kind, ...m.aside, moment: i })
+	})
+	for (const x of out.intertitles) { delete x.intertitle; x.voice = voiceOf(x.kind) }
 	for (const x of [...out.sections, ...out.moments, ...out.intertitles]) delete x.head
 	return out
+}
+
+// `analysis · Kicker` in an intertitle heading: its kind (and so its voice), then the kicker
+function kindKicker(s, kind) {
+	const m = new RegExp(String.raw`^(${KINDS.join('|')})\b\s*(?:[·:|-]\s*)?(.*)$`, 'i').exec(String(s).trim())
+	return m ? { kind: m[1].toLowerCase(), kicker: m[2].trim() } : { kind, kicker: String(s).trim() }
 }
 
 /** A card: something the notes link to with [[id]] (a person, a work, a term). */
@@ -291,25 +310,90 @@ export function buildTimeline(liner, clock, duration) {
 		const want = m.until ? at(m.until) : m.start + readSecs(m.caption)
 		m.end = Math.min(next, Math.max(want, m.start + 2), duration + 3)
 	})
-	// intertitles: fade in, hold for the words plus a breath, fade out; and a
-	// clear screen between them (warned about, not moved: the writer decides)
-	// (an intertitle from a moment's `screen:` line points at that moment in the sorted list)
+	// intertitles. Pinned ones (`screen:`) appear at their bar, or, given a
+	// range (m188-m190), when it ends: after the listener has heard it. Floating
+	// ones (`aside:`, `## ~`) are placed by layoutScreen. Each fades in, holds
+	// for the words plus a breath, and fades out.
 	const sorted = new Map(moments.map((m, j) => [m.src, j]))
-	const intertitles = (liner.intertitles || []).map(x => { check(x.at); return { ...x } }).filter(played).map(x => ({ ...x, moment: x.moment != null ? sorted.get(x.moment) : undefined, start: at(x.at) })).sort((a, b) => a.start - b.start)
-	intertitles.forEach((x, i) => {
-		const words = plainText(x.text).split(/\s+/).length
-		if (words > INTERTITLE.maxWords) warnings.push(`intertitle at ${mmss(x.start)} has ${words} words (at most ${INTERTITLE.maxWords} read comfortably)`)
-		const want = x.until ? at(x.until) - x.start : intertitleSecs(x.text)
-		x.end = Math.min(x.start + Math.max(INTERTITLE.min, want), duration + 3)
-		const prev = intertitles[i - 1]
-		if (prev && x.start - prev.end < INTERTITLE.gap) warnings.push(`intertitles at ${mmss(prev.start)} and ${mmss(x.start)} are ${Math.max(0, x.start - prev.end).toFixed(1)} s apart (leave ${INTERTITLE.gap} s)`)
+	const words = x => plainText(x.text).split(/\s+/).length
+	const all = (liner.intertitles || []).map(x => ({ ...x, moment: x.moment != null ? sorted.get(x.moment) : undefined }))
+	for (const x of all) if (words(x) > INTERTITLE.maxWords) warnings.push(`intertitle "${plainText(x.text).slice(0, 30)}…" has ${words(x)} words (at most ${INTERTITLE.maxWords} read comfortably)`)
+	const pins = all.filter(x => !x.float).map(x => { check(x.at); if (x.until) check(x.until); return x }).filter(played).map(x => {
+		const start = x.until ? at(x.until) : at(x.at)
+		return { ...x, start, end: Math.min(start + intertitleSecs(x.text), duration + 3) }
+	}).sort((a, b) => a.start - b.start)
+	pins.forEach((x, i) => { const prev = pins[i - 1]; if (prev && x.start - prev.end < INTERTITLE.gap) warnings.push(`pinned intertitles at ${mmss(prev.start)} and ${mmss(x.start)} are ${Math.max(0, x.start - prev.end).toFixed(1)} s apart (leave ${INTERTITLE.gap} s)`) })
+	const floats = all.filter(x => x.float).map(x => {
+		const w = x.from ? [at(x.from), at(x.to)] : [0, Infinity]
+		return { ...x, len: intertitleSecs(x.text), from: w[0], to: w[1] }
 	})
-	return { sections, moments, intertitles, warnings }
+	const screen = { id: liner.id || liner.meta.id || liner.meta.title || '', pins, floats, duration }
+	const tl = { sections, moments, warnings, screen }
+	tl.intertitles = layoutScreen(tl).intertitles
+	return tl
 }
 
 /** Intertitle timing: fades, breathing room, the clear gap between two, and length. */
 export const INTERTITLE = { fadeIn: 1.2, fadeOut: 1.5, breath: 2.5, perWord: 0.3, min: 5, max: 10, gap: 3, maxWords: 14 }
-export const intertitleSecs = text => Math.min(INTERTITLE.max, INTERTITLE.fadeIn + INTERTITLE.breath + plainText(text).split(/\s+/).length * INTERTITLE.perWord + INTERTITLE.fadeOut)
+/**
+ * Where floating intertitles go: the first a few seconds in, then one every
+ * 20–30 s through the opening (when attention is highest), then the rest
+ * spread over what is left, each ±30 %; never over a pinned one or within
+ * the gap of it, never in the last 10 s. Floats keep their written order.
+ */
+export const LAYOUT = { first: [3, 6], opening: 100, openingGap: [20, 30], minGap: 18, spread: 0.3, endClear: 10 }
+
+// a small seeded generator (mulberry32) and a string hash, so a layout is the same on the page and in the export
+const mulberry32 = a => () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296 }
+const hashStr = s => { let h = 2166136261; for (const c of String(s)) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return h >>> 0 }
+
+/**
+ * The intertitles as they show: the pinned ones, the title (if given) at the
+ * start, and the floating ones placed by a seeded generator (LAYOUT). `seed`
+ * picks the take: the same seed always gives the same placement.
+ * @returns a copy of the timeline with `intertitles` (and `dropped`: floats that did not fit)
+ */
+export function layoutScreen(tl, { seed = 1, title = null, start = 0 } = {}) {
+	const base = tl || { sections: [], moments: [], intertitles: [], warnings: [] }
+	const sc = base.screen || { id: '', pins: base.intertitles || [], floats: [], duration: Infinity }
+	const rnd = mulberry32(hashStr(sc.id) ^ Math.imul(seed | 0, 0x9E3779B1))
+	const between = ([a, b]) => a + rnd() * (b - a)
+	const G = INTERTITLE.gap, L = LAYOUT
+	let pins = sc.pins.map(x => ({ ...x }))
+	if (title?.text) {
+		// the title from the first note, held a little longer, larger; pins it would crowd move later
+		const words = plainText([title.kicker, title.text, title.sub].filter(Boolean).join(' ')).split(/\s+/).length
+		const T = { ...title, title: true, voice: 'story', start, end: start + Math.min(11, Math.max(7, INTERTITLE.fadeIn + INTERTITLE.breath + 1.5 + words * INTERTITLE.perWord + INTERTITLE.fadeOut)) }
+		const moved = [T]
+		for (const x of pins) { const after = moved.at(-1).end + G; moved.push(x.start >= after ? x : { ...x, start: after, end: after + (x.end - x.start), moved: true }) }
+		pins = moved
+	}
+	const out = [...pins]
+	const D = Number.isFinite(sc.duration) ? sc.duration : Infinity, lastAt = D - L.endClear
+	const clash = (a, b) => out.filter(p => p.start < b + G && p.end + G > a)
+	let t = title?.text ? pins[0].end + G : start + between(L.first)
+	let dropped = 0, prev = -Infinity
+	sc.floats.forEach((f, i) => {
+		t = Math.max(t, f.from ?? 0)
+		// in the way of a pinned one: before it if there is room (the rhythm holds), else after it
+		const c0 = clash(t, t + f.len)
+		if (c0.length) {
+			const early = Math.min(...c0.map(p => p.start)) - G - f.len
+			if (early >= Math.max(prev + L.minGap * 0.8, f.from ?? 0, start + L.first[0]) && !clash(early, early + f.len).length) t = early
+		}
+		for (let c, n = 0; (c = clash(t, t + f.len)).length && n < 100; n++) t = Math.max(...c.map(p => p.end)) + G + rnd() * 2
+		if (t > Math.min(lastAt, (f.to ?? Infinity))) { dropped++; return }
+		out.push({ ...f, start: t, end: t + f.len })
+		prev = t
+		const left = sc.floats.length - i - 1
+		t += t < start + L.opening ? between(L.openingGap) : Math.max(L.minGap, (lastAt - t) / (left + 1) * (1 - L.spread + 2 * L.spread * rnd()))
+	})
+	out.sort((a, b) => a.start - b.start)
+	return { ...base, intertitles: out, dropped }
+}
+
+
+export const intertitleSecs = text => Math.min(INTERTITLE.max, Math.max(INTERTITLE.min, INTERTITLE.fadeIn + INTERTITLE.breath + plainText(text).split(/\s+/).length * INTERTITLE.perWord + INTERTITLE.fadeOut))
 const mmss = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`
 /**
  * The song title as the first intertitle: `screen:` in the front matter
@@ -323,23 +407,8 @@ export function titleScreen(liner, fallback) {
 	return fallback || null
 }
 
-/**
- * A copy of the timeline with `title` as an intertitle from `start`, held a
- * little longer than the others; the intertitles it would crowd move later
- * (keeping the clear gap). With no timeline, one with just the title.
- */
-export function withTitle(tl, title, { start = 0 } = {}) {
-	const base = tl || { sections: [], moments: [], intertitles: [], warnings: [] }
-	if (!title?.text) return base
-	const words = plainText([title.kicker, title.text, title.sub].filter(Boolean).join(' ')).split(/\s+/).length
-	const T = { ...title, title: true, start, end: start + Math.min(11, Math.max(7, INTERTITLE.fadeIn + INTERTITLE.breath + 1.5 + words * INTERTITLE.perWord + INTERTITLE.fadeOut)) }
-	const out = [T]
-	for (const x of base.intertitles || []) {
-		const after = out.at(-1).end + INTERTITLE.gap
-		out.push(x.start >= after ? x : { ...x, start: after, end: after + (x.end - x.start), moved: true })
-	}
-	return { ...base, intertitles: out }
-}
+/** The timeline with `title` as an intertitle from `start` (see layoutScreen). */
+export const withTitle = (tl, title, { start = 0, seed = 1 } = {}) => layoutScreen(tl, { title, start, seed })
 
 export const intertitleAt = (tl, t) => tl?.intertitles?.find(x => t >= x.start - 0.05 && t < x.end) || null
 
