@@ -278,7 +278,7 @@ export function createLinerOverlay({ seek, title, onSeek, host = document.body, 
 		let h = liner.overview.map(p => `<p>${md(p)}</p>`).join('')
 		h += `<h3>Sections</h3>` + tl.sections.map((s, i) => `<div class="row${s === curS ? ' cur' : ''}" data-seek="${s.start}"><span class="t">${mmss(s.start)}</span><div><b>${md(s.title)}</b> <span style="color:#8f8a80">${barOf(s.at)}</span><div>${md(s.text || '')}</div></div></div>`).join('')
 		if (itl?.intertitles.length) h += `<h3>On screen</h3>` + itl.intertitles.map(x => `<div class="row" data-seek="${x.start}"><span class="t">${mmss(x.start)}</span><div>${x.kicker ? `<span class="k" style="color:#a9a49a">${md(x.kicker)}</span>` : ''}${md(x.text)}</div></div>`).join('')
-		h += `<div class="tools"><button data-act="chapters">Copy YouTube chapters</button><button data-act="vtt">Download .vtt</button></div>`
+		h += `<div class="tools"><button data-act="chapters">Copy YouTube chapters</button></div><div class="tools"><button data-act="vtt" title="The intertitles as this take places them, in song time">Intertitles .vtt</button><button data-act="notesvtt" title="Every note's caption, in song time">All notes .vtt</button></div>`
 		if (tl.warnings.length) h += `<p class="warn">${tl.warnings.map(escAttr).join('<br>')}</p>`
 		return h
 	}
@@ -308,7 +308,8 @@ export function createLinerOverlay({ seek, title, onSeek, host = document.body, 
 		if (t.dataset.seek) return onSeek(+t.dataset.seek)
 		if (t.dataset.m) { t.classList.toggle('open'); return }
 		if (t.dataset.act === 'chapters') { navigator.clipboard?.writeText(toChapters(tl)); t.textContent = 'Copied'; setTimeout(() => { t.textContent = 'Copy YouTube chapters' }, 1500) }
-		if (t.dataset.act === 'vtt') download?.(`${liner.id}.vtt`, toVTT(mode === 'notes' ? tl : itl, { from: mode === 'notes' ? 'moments' : 'intertitles' }))
+		if (t.dataset.act === 'vtt' && itl) download?.(`${liner.id}.vtt`, toVTT(itl, { from: 'intertitles' }))
+		if (t.dataset.act === 'notesvtt') download?.(`${liner.id}.notes.vtt`, toVTT(tl, { from: 'moments' }))
 	}
 	const open = (t = tab, m = null) => { if (!liner) return; tab = t; cardView = null; focusM = m; panel.classList.add('open'); render() }
 	const close = () => panel.classList.remove('open')

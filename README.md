@@ -12,7 +12,7 @@ Midi Visualization Experiments
 - Intertitles: a few short lines marked for the screen (`screen: Paris, 1853 | Gounod will sing…` on a note, or a `# Intertitles` part), in cinematic type (Cormorant Garamond / Cinzel / Montserrat, letter-spaced kickers), faded in and out by the song clock with room to read; everything else stays in the panel. Or every note as a caption, or nothing
 - Intertitle look: black and white by default (all white, black on light, warm gold), placed automatically away from the pianist or in a chosen corner, headings optional; the song title as an intertitle or the classic title card (off by default)
 - Second piece: Beethoven's Moonlight Sonata, III. Presto agitato (`midis/mond_3.mid`), 8 sections, 24 notes, 11 intertitles (7 stories, 4 about the music), 6 new cards; `play:` maps score bars to a file that writes out the exposition repeat (`m21'` is the second time) and spreads the cadenza over four bars
-- Video export: the same burned into the picture, or saved next to the MP4 as YouTube subtitles (.vtt) and chapters, timed to the video
+- Video export: the same burned into the picture, and saved next to the MP4 as two YouTube subtitle tracks (the intertitles, and every note) and chapters, timed to the video
 - Stories and analysis apart: history and trivia float (`aside:` / `## ~`), placed by a seeded generator, one every 20–30 s through the opening, then spread out; lines about the music are pinned and come when the passage they describe ends (`m188-m190`), in their own style (spaced Montserrat); the song title is off by default
 - Tests: `node --test liner/test/liner.test.js` (14)
 

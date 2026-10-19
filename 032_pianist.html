@@ -370,7 +370,7 @@
     <div class="field" title="Title card: the classic card, before the music. First intertitle: the title fades in over the opening bars like the other intertitles (composer, title and the notes' subtitle, in the intertitle style), and also when the song plays here"><label>Song title</label><select id="exTitle"><option value="none" selected>None (the intertitles open the video)</option><option value="intertitle">As the first intertitle</option><option value="card">Title card (fades out as the music starts)</option></select></div>
     <div class="field" id="exHoldF" title="How long the song title stays as the first intertitle, fades included. Auto: 7–11 s by its words. The scene comes up from black more slowly under it (half the hold, 3–8 s)"><label>Title hold <span class="val" id="exHoldV"></span></label><input type="range" id="exHold" min="0" max="20" step="0.5" value="0"></div>
     <label class="chk" title="Draw the liner notes into the picture as they show on screen (Visuals → Liner notes: intertitles, or every note as a caption)"><input type="checkbox" id="exCaps" checked>Liner notes in the picture (as on screen)</label>
-    <label class="chk" title="Save the same lines as WebVTT subtitles (upload to YouTube as a subtitle track) and the sections as YouTube chapters for the description, timed to this video"><input type="checkbox" id="exVtt" checked>Save subtitles (.vtt) and YouTube chapters</label>
+    <label class="chk" title="Two WebVTT subtitle files, timed to this video, whatever is on screen: name.vtt with the intertitles and name.notes.vtt with every note's caption (upload each to YouTube as its own subtitle track), and the sections as YouTube chapters for the description"><input type="checkbox" id="exVtt" checked>Save subtitles (intertitles .vtt, all notes .notes.vtt) and YouTube chapters</label>
     <div class="field"><label>Title font</label><select id="exFont">
       <option value="inter" selected>Inter (clean sans, like the page)</option>
       <option value="poppins">Poppins (rounder sans)</option>
@@ -1926,9 +1926,13 @@
           a.href = URL.createObjectURL(blob); a.download = name; a.click()
           setTimeout(() => URL.revokeObjectURL(a.href), 60000)
         }
-        // the liner notes as YouTube subtitles and chapters, timed to this video
-        if ($('exVtt').checked && linerTl) {
-          saveText(name.replace(/\.mp4$/, '.vtt'), toVTT(linerTl, { offset: songZero, from: linerMode === 'notes' ? 'moments' : 'intertitles', start: clipA, end: clipB }))
+        // the liner notes as two YouTube subtitle tracks, timed to this video, whatever
+        // is on screen: <name>.vtt the intertitles (the title too, when it is one, and the
+        // floats as this take places them), <name>.notes.vtt every note's caption; and chapters
+        if ($('exVtt').checked) {
+          const vtt = { offset: songZero, start: clipA, end: clipB }, its = liner.screenTimeline, notes = liner.timeline
+          if (its?.intertitles.length) saveText(name.replace(/\.mp4$/, '.vtt'), toVTT(its, { ...vtt, from: 'intertitles' }))
+          if (notes?.moments.length) saveText(name.replace(/\.mp4$/, '.notes.vtt'), toVTT(notes, { ...vtt, from: 'moments' }))
           const ch = !clip && liner.timeline && toChapters(liner.timeline, { offset: songZero })
           if (ch) saveText(name.replace(/\.mp4$/, '-chapters.txt'), ch + '\n')
         }

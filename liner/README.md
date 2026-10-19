@@ -220,10 +220,17 @@ Render → Export has two options:
 - **Liner notes in the picture (as on screen)**: drawn into each frame,
   under the title card: the intertitles in the chosen style and position,
   or every note as a caption.
-- **Save subtitles (.vtt) and YouTube chapters**: the same lines, next to the MP4,
-  `<name>.vtt` (upload under Subtitles in YouTube Studio) and
-  `<name>-chapters.txt` (paste into the description). Both are timed to the
-  video, title card and pre-roll included. Chapters follow YouTube's rules:
+- **Save subtitles and YouTube chapters**: next to the MP4, whatever is on
+  screen, two subtitle tracks and the chapters:
+  - `<name>.vtt`: the intertitles (heading over line; the title too when it
+    is one, and the floats as the current take places them),
+  - `<name>.notes.vtt`: every note's caption (its first paragraph, with its
+    kind: `[history] …`),
+  - `<name>-chapters.txt`: the sections, to paste into the description.
+
+  Upload each `.vtt` under Subtitles in YouTube Studio as its own track (for
+  example English and English "Program notes"); viewers pick one in the
+  player. All are timed to the video, title card and pre-roll included. Chapters follow YouTube's rules:
   the first at 0:00, at least three, each 10 s or longer (shorter sections
   merge into the one before).
 
@@ -232,5 +239,5 @@ minute, or 20 s / a minute from where the song is now (seek there first).
 A clip's file name says which part it is (`…_0-20s_1080p30.mp4`), its
 `.vtt` holds only the lines inside it, and it has no chapters.
 
-The notes panel can also copy the chapters or save a `.vtt` timed to the song
+The notes panel can also copy the chapters or save either track (intertitles or all notes) timed to the song
 itself.
