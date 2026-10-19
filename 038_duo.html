@@ -51,7 +51,7 @@
     <select id="song" title="Piece"></select>
     <select id="model" title="Violinist"></select>
     <select id="outfit" title="His outfit"></select>
-    <select id="vdress" title="Her dress"><option value="wine">Wine dress</option><option value="black">Black dress</option><option value="navy">Navy dress</option><option value="emerald">Emerald dress</option><option value="rose">Rose dress</option><option value="white">White dress</option></select>
+    <select id="vdress" title="Her dress"><option value="wine">Wine dress</option><option value="black">Black dress</option><option value="navy">Navy dress</option><option value="emerald">Emerald dress</option><option value="rose">Rose dress</option><option value="white">White dress</option><option value="off">Casual: her cardigan</option></select>
     <select id="cam" title="Camera">
       <option value="auto">Director (auto)</option>
       <option value="front">The two, from the hall</option>
@@ -69,7 +69,7 @@
       <option value="free">Free</option>
     </select>
     <select id="room" title="Room"></select>
-    <select id="vsound" title="Violin sound (the piano is always the GM soundfont)"><option value="gm">Violin: GM soundfont</option><option value="hybrid">Violin: hybrid sampler (#034)</option></select>
+    <select id="vsound" title="Violin sound (#034's engines; the piano is the Full Grand Piano soundfont)"><option value="gm">Violin: GM soundfont</option><option value="hybrid">Violin: hybrid sampler (#034)</option><option value="waveguide">Violin: bowed waveguide (#034)</option><option value="source">Violin: Helmholtz source-filter (#034)</option></select>
     <label title="Ink outlines"><input type="checkbox" id="outline" checked> Ink</label>
     <label title="They bow to the hall, then he gives her a nod to start"><input type="checkbox" id="intro" checked> Bow</label>
   </div>
@@ -278,6 +278,7 @@
       song.drive = drivers(violin)
       song.density = densities()
       song.meanDensity = [song.violin.length / song.duration, song.piano.length / song.duration]
+      song.glances = soloGlances(violin, pianoNotes)
       pRig.clear(); pRig.setNotes(pianoNotes)
       keys.reset()
       $('credit').innerHTML = `${e.composer} – ${e.title}<br>MIDI: ${e.credit || 'Mutopia Project'}, ${e.licence} · VRoid Project models (pixiv)`
@@ -307,6 +308,55 @@
         phrases,
       }
     }
+    /**
+     * Where she looks up at him. Three kinds of moment, the way an accompanist
+     * keeps contact:
+     *  - his solos: he plays and she strikes nothing (no piano onset from 0.8 s
+     *    before to 0.5 s after) for 1.2 s or more: a glance from 0.25 s in, up
+     *    to 3.5 s, one every 7 s in a long solo, back on the keys 0.5 s before
+     *    her next entry;
+     *  - his entries: the first note after he has rested 1.5 s or more, from
+     *    0.6 s before it (to come in with his bow) to 1 s after;
+     *  - where her part is light (under 45 % of its usual onsets per second over
+     *    4 s) while he is at least as busy as usual: 2.5 s, at most one every 8 s.
+     * Returns sorted, merged [[from, to], …] in song time.
+     */
+    function soloGlances(vNotes, pNotes) {
+      const on = pNotes.map(n => n.on).sort((a, b) => a - b)
+      const count = (a, b) => { const f = x => { let lo = 0, hi = on.length; while (lo < hi) { const m = (lo + hi) >> 1; if (on[m] < x) lo = m + 1; else hi = m } return lo }; return f(b) - f(a) }
+      const busy = t => count(t - 0.8, t + 0.5) > 0
+      const runs = []
+      for (const n of vNotes) { const r = runs.at(-1); if (r && n.on - r[1] < 0.4) r[1] = Math.max(r[1], n.off); else runs.push([n.on, n.off]) }
+      const G = []
+      for (const [a, b] of runs) {
+        let start = null
+        for (let t = a; t <= b + 0.05; t += 0.05) {
+          const solo = t < b && !busy(t)
+          if (solo && start == null) start = t
+          if (!solo && start != null) {
+            if (t - start >= 1.2) for (let g = start + 0.25; g < t - 0.7; g += 7) G.push([g, Math.min(g + 3.5, t - 0.2)])
+            start = null
+          }
+        }
+      }
+      let lastOff = -Infinity
+      for (const n of vNotes) { if (n.on - lastOff >= 1.5 && n.on > 0.5) G.push([n.on - 0.6, n.on + 1]); lastOff = Math.max(lastOff, n.off) }
+      const dur = Math.max(1, ...vNotes.map(n => n.off), ...pNotes.map(n => n.off))
+      const pMean = on.length / dur, vOn = vNotes.map(n => n.on)
+      const vCount = (a, b) => vOn.filter(x => x >= a && x < b).length
+      const vMean = vOn.length / dur
+      let last = -Infinity
+      for (let t = 2; t < dur - 3; t += 0.5) {
+        if (t - last < 8) continue
+        if (count(t - 2, t + 2) / 4 < 0.45 * pMean && vCount(t - 2, t + 2) / 4 >= vMean) { G.push([t, t + 2.5]); last = t }
+      }
+      G.sort((x, y) => x[0] - y[0])
+      const out = []
+      for (const g of G) { const o = out.at(-1); if (o && g[0] <= o[1] + 0.3) o[1] = Math.max(o[1], g[1]); else out.push(g.slice()) }
+      return out
+    }
+    const glanceAt = t => { const G = song.glances || []; let lo = 0, hi = G.length - 1; while (lo < hi) { const m = (lo + hi + 1) >> 1; if (G[m][0] <= t) lo = m; else hi = m - 1 } return G[lo] && G[lo][0] <= t && t < G[lo][1] }
+
     /** Who is busy when (notes per second over 4 s), for the director. */
     function densities() {
       const step = 0.5, n = Math.ceil(song.duration / step) + 2
@@ -376,49 +426,60 @@
       },
     }
 
-    // ── Sound: the violin on channel 0, the piano on channel 1 (Creative 8 MB
-    // GM); or the violin from #034's hybrid sampler (Iowa samples played along
-    // #033's fingering and the performance curves), pre-rendered in #034's Lab
-    // on its own audio context and kept in step with the clock ─────────────
+    // ── Sound: the violin on channel 0 (Creative 8 MB GM), the piano on
+    // channel 1 (Full Grand Piano, a second synth: its presets fill programs
+    // 0–64, so stacked on the GM font it would take the violin's 40 too). Or
+    // the violin from one of #034's engines, played by #034's Lab on its own
+    // audio context and kept in step with the clock: the hybrid sampler (Iowa
+    // samples along #033's fingering and the performance curves, pre-rendered
+    // progressively), or the bowed waveguide or Helmholtz source-filter
+    // physical models (real time, in an AudioWorklet, from the same curves) ──
     const hall = installAcoustics()
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
     const engine = new SoundFontEngine({ backend: 'oxisynth', vendorPath: new URL('./vendor', import.meta.url).href, audioContext: audioCtx })
+    const pianoEngine = new SoundFontEngine({ backend: 'oxisynth', vendorPath: new URL('./vendor', import.meta.url).href, audioContext: audioCtx })
+    const synthFor = c => (c === 1 ? pianoEngine : engine)
     let soundReady = false, soundLoading = null
-    const ensureSound = () => (soundLoading ??= engine.loadSoundFont('soundfonts/Creative(emu10k1)8MBGMSFX.sf2')
-      .then(() => { soundReady = true; engine.programChange(0, 40); engine.programChange(1, 0); applyBalance() })
+    const programs = () => { engine.programChange(0, 40); pianoEngine.programChange(1, 0) }
+    const ensureSound = () => (soundLoading ??= Promise.all([engine.loadSoundFont('soundfonts/Creative(emu10k1)8MBGMSFX.sf2'), pianoEngine.loadSoundFont('soundfonts/Full Grand Piano.sf2')])
+      .then(() => { soundReady = true; programs(); applyBalance() })
       .catch(e => { console.error(e); setStatus('Sound failed to load: ' + e.message, 4000) }))
     const applyHall = () => { const p = acousticParams({ room: $('room').value, seat: 'mid' }); hall.set(p); hybrid.lab?.setHall(p) }
-    // the hybrid renders to #034's level (0.05 RMS while sounding); the GM violin
-    // here plays at about 0.107 (Creative 8 MB, measured on the Kreutzer)
-    const HYBRID_LEVEL = 2.1
+    // levels while sounding, measured on the Kreutzer finale: the GM violin 0.107
+    // RMS, the GM piano 0.145 and the Full Grand 0.230 (so it plays 4 dB down to
+    // keep the old balance); #034's Lab out of its hall at unity: the hybrid
+    // 0.047, the waveguide 0.061, the source-filter 0.090
+    const LAB_LEVEL = { hybrid: 2.1, waveguide: 1.6, source: 1.1 }
+    const PIANO_TRIM = -4
     // balance (dB, + = violin): the other part is turned down by that much,
     // the soundfont through CC7 (GM volume, 40·log10: 0 dB at 100), the hybrid by its gain
     const balance = () => { const b = +$('balance').value; return { v: Math.min(0, b), p: Math.min(0, -b) } }
     const cc7 = dB => Math.max(0, Math.min(127, Math.round(100 * Math.pow(10, dB / 40))))
     function applyBalance() {
       const { v, p } = balance()
-      if (soundReady) { engine.controlChange(0, 7, cc7(v)); engine.controlChange(1, 7, cc7(p)) }
-      hybrid.lab?.setVolume(HYBRID_LEVEL * Math.pow(10, v / 20))
+      if (soundReady) { engine.controlChange(0, 7, cc7(v)); pianoEngine.controlChange(1, 7, cc7(p + PIANO_TRIM)) }
+      if (hybrid.on) hybrid.lab?.setVolume(LAB_LEVEL[hybrid.name] * Math.pow(10, v / 20))
     }
     const hybrid = {
-      lab: null, P: null, perfFor: null, speed: 0,
-      get on() { return $('vsound').value === 'hybrid' },
+      lab: null, P: null, perfFor: null, speed: 0, using: null,
+      get name() { return $('vsound').value },
+      get on() { return this.name in LAB_LEVEL },
       async ensure() {
         if (!this.lab) {
-          setStatus('Loading the hybrid violin…')
+          setStatus('Loading the violin engine…')
           const [{ Lab }, P] = await Promise.all([import('./strings/sound/engines.js'), import('./strings/sound/performance.js')])
           this.P = P
           this.lab = new Lab()
           applyBalance()
           this.lab.on(e => {
-            if (e.engine !== 'hybrid') return
+            if (e.engine !== this.using) return
             if (e.type === 'progress') setStatus(e.text)
             else if (e.type === 'ready') setStatus('')
-            else if (e.type === 'error') setStatus('Hybrid violin: ' + e.message, 6000)
+            else if (e.type === 'error') setStatus('Violin: ' + e.message, 6000)
           })
-          await this.lab.use('hybrid')
           applyHall()
         }
+        if (this.using !== this.name) { this.using = this.name; await this.lab.use(this.name); applyBalance() }
         if (this.perfFor !== song.violin || this.speed !== clock.speed) {
           this.perfFor = song.violin; this.speed = clock.speed
           const P = this.P
@@ -436,10 +497,10 @@
     let scheduler = null
     const target = {
       audioContext: audioCtx, resume: () => audioCtx.resume(),
-      noteOn(m, v, c) { if (soundReady) engine.noteOn(m, v, c) },
-      noteOff(m, c) { engine.noteOff(m, c) },
-      controlChange(c, cc, v) { engine.controlChange(c, cc, v) },
-      allSoundOff() { engine.allNotesOff?.() },
+      noteOn(m, v, c) { if (soundReady) synthFor(c).noteOn(m, v, c) },
+      noteOff(m, c) { synthFor(c).noteOff(m, c) },
+      controlChange(c, cc, v) { synthFor(c).controlChange(c, cc, v) },
+      allSoundOff() { engine.allNotesOff?.(); pianoEngine.allNotesOff?.() },
     }
     const clock = { playing: false, t: 0, wall: 0, speed: 1 }
     const hybridLive = () => hybrid.on && clock.playing && !clock.pending
@@ -450,7 +511,7 @@
         ...song.piano.map(n => ({ midi: n.pitch, time: n.on, duration: n.off - n.on, velocity: n.velocity ?? 0.7, channel: 1 })),
       ].sort((a, b) => a.time - b.time)
       scheduler.load({ notes, controlChanges: song.pedal.map(p => ({ time: p.t, channel: 1, controller: 64, value: p.on ? 127 : 0 })) })
-      if (soundReady) { engine.programChange(0, 40); engine.programChange(1, 0); applyBalance() }
+      if (soundReady) { programs(); applyBalance() }
     }
     async function play() {
       if (audioCtx.state !== 'running') audioCtx.resume().catch(() => {})
@@ -485,12 +546,12 @@
     $('vsound').onchange = async () => {
       const was = clock.playing
       if (was) pause()
-      if (hybrid.on) await hybrid.ensure()
+      if (hybrid.on) await hybrid.ensure(); else applyBalance()
       if (scheduler) loadSchedule()
       if (was) play()
       saveUrl()
     }
-    if (Q.get('violin') === 'hybrid') $('vsound').value = 'hybrid'
+    if ([...$('vsound').options].some(o => o.value === Q.get('violin'))) $('vsound').value = Q.get('violin')
     if (Q.get('bal') != null && isFinite(+Q.get('bal'))) $('balance').value = Q.get('bal')
     $('balance').oninput = () => applyBalance()
     $('balance').onchange = () => saveUrl()
@@ -593,7 +654,7 @@
       if ($('outfit').value !== 'concert') p.set('outfit', $('outfit').value)
       if ($('vdress').value !== 'wine') p.set('vdress', $('vdress').value)
       if ($('room').value !== 'hall') p.set('room', $('room').value)
-      if (hybrid.on) p.set('violin', 'hybrid')
+      if (hybrid.on) p.set('violin', hybrid.name)
       if (+$('balance').value) p.set('bal', $('balance').value)
       if ($('cam').value !== 'auto') p.set('view', $('cam').value)
       if (!$('intro').checked) p.set('intro', '0')
@@ -627,7 +688,7 @@
       piano.update(dt)
       pRig.setPedals(false, false, keys.sustain)
       pRig.state.bowLean = standing ? I.herBend : 0
-      pRig.state.lookAt = I?.cue && t > STAND_END + 0.9 ? her.group.worldToLocal(S.hisHead.clone()) : null
+      pRig.state.lookAt = (I?.cue && t > STAND_END + 0.9) || (!I && glanceAt(t)) ? her.group.worldToLocal(S.hisHead.clone()) : null
       pRig.update(t, dt)
       her.group.updateMatrixWorld(true)
       her.update(dt)

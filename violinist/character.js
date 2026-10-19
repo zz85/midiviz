@@ -22,10 +22,13 @@ export const OUTFITS = {
   tails: { label: 'Tailcoat', Tops: 'vest:2.4', Tie: 0x2a2a30, Bottoms: 0x55555c, Shoes: 0x303034, jacket: 'tails' },
   vest: { label: 'Shirt, vest and tie', Tops: 'vest', Tie: 0x2a2a30, Bottoms: 0x55555c, Shoes: 0x303034 },
   school: { label: 'School uniform' },
+  // HairSample_Male's own clothes on any of them (same skeleton): a white hoodie, dark trousers
+  casual: { label: 'Casual: white hoodie', donor: 'vroid-hairsample-male.vrm' },
   own: { label: "The model's own" },
 }
 
-let loader = null, VRMUtils = null, donor = null
+let loader = null, VRMUtils = null
+const donors = new Map()
 async function getLoader() {
   if (loader) return loader
   const mod = await import('@pixiv/three-vrm')
@@ -74,7 +77,10 @@ function blackVest(tex, k = 0.32) {
 }
 
 async function dress(target, key, base) {
-  donor ??= await (await getLoader()).loadAsync(base + 'vroid-base-male.vrm')
+  const tint = OUTFITS[key] || {}
+  const file = tint.donor || 'vroid-base-male.vrm'
+  if (!donors.has(file)) donors.set(file, (await getLoader()).loadAsync(base + file).catch(e => { donors.delete(file); throw e }))
+  const donor = (await donors.get(file)).userData.vrm
   const bones = new Map()
   target.scene.traverse(o => { if (o.isBone) bones.set(o.name, o) })
   const old = []
@@ -82,16 +88,18 @@ async function dress(target, key, base) {
   if (!old.length) return
   const parent = old[0].parent
   old.forEach(o => o.removeFromParent())
-  const tint = OUTFITS[key] || {}
   let body = null, cloth = null
   const under = []
   donor.scene.traverse(o => {
     if (!o.isSkinnedMesh || !/^Body/.test(o.name)) return
-    const sk = new THREE.Skeleton(o.skeleton.bones.map(b => bones.get(b.name)), o.skeleton.boneInverses)
+    // a donor bone the target lacks (e.g. the hoodie's own spring bones) rides
+    // on its nearest ancestor that the target has
+    const mapBone = b => { for (let x = b; x; x = x.parent) if (bones.has(x.name)) return bones.get(x.name); return bones.values().next().value }
+    const sk = new THREE.Skeleton(o.skeleton.bones.map(mapBone), o.skeleton.boneInverses)
     const mats = [].concat(o.material).map(m => {
       const c = m.clone()
       for (const [k, col] of Object.entries(tint)) {
-        if (k === 'jacket' || k === 'label') continue
+        if (k === 'jacket' || k === 'label' || k === 'donor') continue
         if (!c.name.includes(k) || c.name.includes('Outline')) continue
         if (typeof col === 'string' && col.startsWith('vest')) { c.map = blackVest(c.map, +(col.split(':')[1] || 0.32)); if (c.shadeMultiplyTexture) c.shadeMultiplyTexture = c.map; continue }
         c.color.multiply(new THREE.Color(col)); c.shadeColorFactor?.multiply(new THREE.Color(col))
