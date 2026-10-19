@@ -188,8 +188,13 @@ export function buildLeftHand(violin, { scale = 1 } = {}) {
         const spread = 2.15 * size
         F.base.set(uMid + (f - 2.5) * spread, yFB + 1.2 * size, -half - 3.2 * size)
       } else {
+        // violin / viola: the knuckle line sits beside the neck toward the nut
+        // from the stops (index knuckle at the nut in 1st position), so the
+        // fingers slant back toward the player as they come over the strings,
+        // unlike the cello's, which cross the neck square
         const spread = 1.85 * size * (1 - 0.25 * high)
-        F.base.set(uA - 0.8 * size + (f - 1) * spread, yFB - (1.9 - 0.8 * high) * size, -half - (2.3 + 0.4 * high) * size)
+        const back = (2.6 - 1.2 * high) * size
+        F.base.set(uA - back + (f - 1) * spread, yFB - (1.9 - 0.8 * high) * size, -half - (2.3 + 0.4 * high) * size)
       }
       const P = pose.fingers[f]
       const s = P.s

@@ -97,7 +97,6 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
     m.side = kI.clone().sub(kL)                     // rest index side
     measure(m.hand, kMid.clone().sub(pH), m.side)
     m.knuckleOff = kMid.clone().sub(pH)            // rest wrist → knuckle midpoint (world)
-    m.indexOff = kI.clone().sub(pH); m.littleOff = kL.clone().sub(pH)
     m.handB = rest.get(m.hand).B.clone()
     m.fingers = FINGERS.map(F => {
       const bs = ['Proximal', 'Intermediate', 'Distal'].map(k => H(s + F + k))
@@ -113,7 +112,7 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
       const bs = ['Metacarpal', 'Proximal', 'Distal'].map(k => H(s + 'Thumb' + k))
       const P = bs.map(wp)
       const l1 = P[1].distanceTo(P[2])
-      m.thumb = { bones: bs, len: [l1, l1 * 0.85], rootOff: P[1].clone().sub(pH) }   // rest wrist → thumb MCP (world)
+      m.thumb = { bones: bs, len: [l1, l1 * 0.85] }
       measure(bs[0], P[1].clone().sub(P[0]), Y)
       measure(bs[1], P[2].clone().sub(P[1]), Y)
       measure(bs[2], P[2].clone().sub(P[1]), Y)
@@ -175,8 +174,7 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
   const fwd0 = v3().crossVectors(side0, Y).normalize()
 
   // ── state that smooths over frames ──
-  const st = { sway: 0, lean: 0, turn: 0, rClav: 0, lRoll: 0, lookT: v3() }
-  const _qr = new THREE.Quaternion()
+  const st = { sway: 0, lean: 0, turn: 0, rClav: 0, lookT: v3() }
   const opts = { sway: 1, lean: 1, expression: 1 }
 
   /**
@@ -267,25 +265,10 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
       // length added to the forearm, then put the wrist on that line
       const hl = m.knuckleOff.length()
       const E = twoBone(S.clone(), knuckle.clone(), m.l1, m.l2 + hl, pole.clone(), v3())
-      const dir = knuckle.clone().sub(E).normalize()
-      const R0 = rotFor(m.hand, dir, side, new THREE.Quaternion())
-      const W = knuckle.clone().sub(m.knuckleOff.clone().applyQuaternion(R0))
-      // the forearm can still turn (pronate / supinate) about that line without
-      // bending the wrist: pick the turn that lets the thumb reach its place
-      // under the neck while the index and little knuckles stay near #033's
-      const tipT = toWorld(J.thumb.target, mat), reachT = (m.thumb.len[0] + m.thumb.len[1]) * 0.95
-      const kI = toWorld(J.fingers[1].base, mat), kL = toWorld(J.fingers[4].base, mat)
-      let best = null
-      for (let deg = -90; deg <= 90; deg += 5) {
-        const Rq = _qr.setFromAxisAngle(dir, THREE.MathUtils.degToRad(deg)).multiply(R0)
-        const root = W.clone().add(m.thumb.rootOff.clone().applyQuaternion(Rq))
-        const thumbErr = Math.max(0, root.distanceTo(tipT) - reachT)
-        const kErr = W.clone().add(m.indexOff.clone().applyQuaternion(Rq)).distanceTo(kI) + W.clone().add(m.littleOff.clone().applyQuaternion(Rq)).distanceTo(kL)
-        const c = thumbErr + 0.2 * kErr + 0.004 * Math.abs(deg)
-        if (!best || c < best.c) best = { c, deg }
-      }
-      st.lRoll += (best.deg - st.lRoll) * Math.min(1, dt * 12)
-      const R = new THREE.Quaternion().setFromAxisAngle(dir, THREE.MathUtils.degToRad(st.lRoll)).multiply(R0)
+      // the hand's own orientation (which way the fingers point) comes from
+      // #033's knuckle line; only its direction follows the forearm
+      const R = rotFor(m.hand, knuckle.clone().sub(E), side, new THREE.Quaternion())
+      const W = knuckle.clone().sub(m.knuckleOff.clone().applyQuaternion(R))
       arm(m, S, W, pole, R, side)
       fingersTo(m, mat, J)
     }
@@ -398,9 +381,21 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
       chain(F.bones, F.pts.map(p => p.clone().applyMatrix4(mat)), side)
     }
     // thumb: under the neck, two-bone onto its target
-    const T = m.thumb, J1 = wp(T.bones[1])
+    const T = m.thumb
     setWorldQ(T.bones[0], _qq.copy(handR).multiply(rest.get(T.bones[0]).q))
     const tip = toWorld(J.thumb.target, mat)
+    // out of reach: the metacarpal swings toward the target at the CMC joint
+    // (up to 35°), as a real thumb opposes under the neck
+    let J1 = wp(T.bones[1])
+    if (J1.distanceTo(tip) > 0.97 * (T.len[0] + T.len[1])) {
+      const C = wp(T.bones[0]), a = J1.clone().sub(C).normalize(), b = tip.clone().sub(C).normalize()
+      const full = Math.acos(clamp(a.dot(b), -1, 1))
+      if (full > 1e-3) {
+        const q = new THREE.Quaternion().setFromAxisAngle(a.clone().cross(b).normalize(), Math.min(full, 0.6))
+        setWorldQ(T.bones[0], q.multiply(wq(T.bones[0])))
+        J1 = wp(T.bones[1])
+      }
+    }
     const pole = toWorld(J.thumb.base.clone().add(v3(-6, 0, 6)), mat)
     const mid = twoBone(J1.clone(), tip.clone(), T.len[0], T.len[1], pole, v3())
     const back = Y.clone().applyQuaternion(handR)
