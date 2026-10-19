@@ -386,6 +386,8 @@ export function drawOutroCard(g, w, h, k, secs, { title, subtitle, credits = [] 
  * @param {{seconds:number, title:string, subtitle?:string, credit?:string}|null} [o.intro] - title card
  * @param {{seconds:number, title:string, subtitle?:string, credits:{role,name}[], music?:'ring'|'fade'}|null} [o.outro]
  *        - credits card; music 'ring' = after the end, 'fade' = overlaps the ending while the music fades out
+ * @param {(g:CanvasRenderingContext2D, w:number, h:number, t:number)=>void} [o.overlay] - draws over each music frame (song time t), under the cards
+ * @param {({songZero:number, fps:number, frames:number})=>void} [o.onTimeline] - told where song time 0 lands in the video (seconds)
  * @param {boolean} o.audio
  * @param {object} o.audioOpts - { vendorPath, soundfonts, convertSF3, volume }
  * @param {function} [o.audioFx] - (planar Float32Array [L…, R…], frames, sampleRate) => void, processes each audio chunk in place
@@ -415,6 +417,8 @@ export async function exportVideo(o) {
 	const fadeA = Math.round(outroStart * SAMPLE_RATE / fps), fadeB = Math.round((outroStart + outroFrames) * SAMPLE_RATE / fps)
 	const intro3D = o.intro?.style === '3d' && stage.titleMesh
 	const introSamples = Math.round(musicStart * SAMPLE_RATE / fps)
+	// where song time 0 lands in the video (for captions written alongside it)
+	o.onTimeline?.({ songZero: musicStart / fps - t0, fps, frames })
 
 	const vc = await pickVideoCodec(width, height, fps, bitrate)
 	const ac = o.audio ? await pickAudioCodec() : null
@@ -447,7 +451,7 @@ export async function exportVideo(o) {
 	if (o.transition) stage.opts.transition = o.transition
 	// 2D canvas for compositing the title card over the WebGL frame
 	let card = null
-	if (introFrames || outroFrames) {
+	if (introFrames || outroFrames || o.overlay) {
 		card = document.createElement('canvas')
 		card.width = width; card.height = height
 		card.g = card.getContext('2d')
@@ -470,11 +474,13 @@ export async function exportVideo(o) {
 			if (intro3D) stage.setIntroShot(introK)
 			stage.update(t, 1 / fps, i >= musicStart && !(inOutro && !outroFade), t)
 			let src = stage.renderer.domElement
-			if (inIntro || inOutro) {
+			if (inIntro || inOutro || o.overlay) {
 				const g = card.g
 				g.drawImage(src, 0, 0, width, height)
+				// (a caller's overlay, e.g. captions, while the music runs: under the cards)
+				if (o.overlay && i >= musicStart) o.overlay(g, width, height, t)
 				if (inIntro) drawTitleCard(g, width, height, introK, o.intro.seconds, { ...o.intro, style: intro3D ? '3d' : '2d' })
-				else drawOutroCard(g, width, height, (outroI + 0.5) / outroFrames, o.outro.seconds, o.outro)
+				else if (inOutro) drawOutroCard(g, width, height, (outroI + 0.5) / outroFrames, o.outro.seconds, o.outro)
 				src = card
 			}
 			const frame = new VideoFrame(src, { timestamp: Math.round(i * 1e6 / fps), duration: Math.round(1e6 / fps) })

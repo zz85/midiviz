@@ -296,6 +296,8 @@
     <div class="field"><label>Strand density</label><select id="hairDensity"><option value="0.5">Light</option><option value="1" selected>Full</option><option value="1.6">Dense</option></select></div>
     <div class="field"><label>Hair colour</label><input type="color" id="hairColor" value="#5a3e2a"></div>
     <div class="field"><label>Dress colour</label><input type="color" id="dressColor" value="#8e1d1b"></div>
+    <div class="sect">Liner notes<small>background and analysis for pieces that have notes (ⓘ in Songs)</small></div>
+    <label class="chk" title="Short notes about the piece appear as it plays: history, analysis, trivia, things to listen for. Click one, or press I, for the full notes"><input type="checkbox" id="linerOn" checked>Captions while it plays (I: the notes)</label>
     <div class="sect">Stage</div>
     <div class="field"><label>Main light</label><input type="range" id="light" min="0" max="2" step="0.01" value="1"></div>
     <div class="field"><label>Exposure</label><input type="range" id="exposure" min="0.3" max="2.5" step="0.01" value="1"></div>
@@ -359,6 +361,8 @@
     <div class="field"><label>Camera</label><select id="exCam"><option value="auto" selected>Director (auto)</option><option value="current">As on screen</option></select></div>
     <label class="chk"><input type="checkbox" id="exAudio" checked>Include audio (with the hall)</label>
     <label class="chk"><input type="checkbox" id="exTitle" checked>Title card (fades out as the music starts)</label>
+    <label class="chk" title="Draw the liner-note captions into the picture (for Shorts and players without subtitles)"><input type="checkbox" id="exCaps">Liner-note captions in the picture</label>
+    <label class="chk" title="Save the liner notes as WebVTT subtitles (upload to YouTube as a subtitle track) and the sections as YouTube chapters for the description, timed to this video"><input type="checkbox" id="exVtt" checked>Save subtitles (.vtt) and YouTube chapters</label>
     <div class="field"><label>Title font</label><select id="exFont">
       <option value="inter" selected>Inter (clean sans, like the page)</option>
       <option value="poppins">Poppins (rounder sans)</option>
@@ -421,6 +425,8 @@
     import { createSmoother } from './pianist/subdivide.js'
     import { createDirector, SPOTS, MOVES, FRAME_LABELS, SIZES, spotKind } from './pianist/director.js'
     import { hideBody } from './pianist/shell.js'
+    import { createLinerLibrary, clockOfMidi, buildTimeline, toVTT, toChapters } from './liner/liner.js'
+    import { createLinerOverlay, drawLinerCaption } from './liner/overlay.js'
 
     const $ = id => document.getElementById(id)
     const params = new URLSearchParams(location.search)
@@ -1294,6 +1300,20 @@
         $('songList').append(it)
       }
     }
+    // ── Liner notes (liner/): captions, the notes panel, sections on the seek bar
+    const saveText = (name, text) => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 60000) }
+    const linerLib = createLinerLibrary()
+    const liner = createLinerOverlay({ seek: $('seek'), title: $('songTitle'), onSeek: t => seekTo(t), download: saveText })
+    liner.attachMenu($('songList'), linerLib)
+    window.__liner = { liner, lib: linerLib }
+    $('linerOn').onchange = () => { liner.captions = $('linerOn').checked }
+    let linerSeq = 0
+    async function attachLiner(midi, file, duration) {
+      const seq = ++linerSeq
+      liner.set(null)
+      const l = await linerLib.forFile(file)
+      if (seq === linerSeq && l) liner.set(l, buildTimeline(l, clockOfMidi(midi), duration), duration)
+    }
     $('songFilter').oninput = () => {
       const q = $('songFilter').value.trim().toLowerCase()
       for (const el of $('songList').children) if (!el.classList.contains('sect')) el.style.display = !q || el.dataset.q.includes(q) ? '' : 'none'
@@ -1440,12 +1460,13 @@
         const sch = await ensureScheduler()
         if (sch.playing) sch.stop()
         songTarget.allSoundOff()
-        const s = midiToSchedule(new Midi(buffer))
+        const midi = new Midi(buffer), s = midiToSchedule(midi)
         s.notes = s.notes.filter(n => n.channel !== 9 && n.midi >= LOW && n.midi <= HIGH)
         if (!s.notes.length) throw new Error('no notes in file')
         s.duration = s.notes.reduce((m, n) => Math.max(m, n.time + n.duration), 0)
         s.title = s.title || String(name || '').replace(/\.midi?$/i, '')
         song = s; fingered = false
+        attachLiner(midi, songFile || name, s.duration)
         rig.clear()
         fingerInWorker(s.notes)
         await ensureSound()
@@ -1515,12 +1536,13 @@
       $('transport').style.touchAction = 'pan-y'
     }
     $('seek').addEventListener('input', () => { seeking = true })
-    $('seek').addEventListener('change', () => {
-      seeking = false
+    $('seek').addEventListener('change', () => { seeking = false; if (scheduler) seekTo(+$('seek').value * scheduler.duration) })
+    function seekTo(t) {
       if (!scheduler || !song) return
-      songTarget.allSoundOff(); scheduler.seek(+$('seek').value * scheduler.duration)
+      songTarget.allSoundOff(); scheduler.seek(Math.max(0, Math.min(t, scheduler.duration)))
       music.songT = scheduler.currentTime; music.wall = performance.now()
-    })
+      showTime(scheduler.currentTime)
+    }
     const speeds = [0.5, 0.75, 1, 1.25]
     let speedI = 2, loop = false
     $('speedBtn').onclick = () => { speedI = (speedI + 1) % speeds.length; $('speedLbl').textContent = speeds[speedI] + '×'; if (scheduler) { music.songT = songNow(); music.wall = performance.now(); scheduler.speed = speeds[speedI] } }
@@ -1543,7 +1565,8 @@
       ['sf', 'sf'], ['avsync', 'avsync'],
       ['dofamt', 'dofAmt'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
       ['vol', 'vol'], ['room', 'room'], ['seat', 'seat'], ['rv', 'rvAmt'], ['decay', 'rvDecay'], ['tone', 'rvTone'], ['boost', 'boost'], ['amb', 'amb'], ['applause', 'applause'],
-      ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exsub', 'exSub'], ['excard', 'exCard'],
+      ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exsub', 'exSub'], ['excard', 'exCard'], ['excaps', 'exCaps'], ['exvtt', 'exVtt'],
+      ['notes', 'linerOn'],
     ].filter(([, id]) => $(id))
     const OUTFIT_KEYS = { dress: 'dress', slit: 'slit', fabric: 'fabric', dcol: 'color', shoes: 'shoes', hair: 'hair', hcol: 'hairColor' }
     // (colours without their #, so links stay readable)
@@ -1696,6 +1719,7 @@
       renderer.toneMappingExposure = +$('exposure').value * (dirShot && !userCam && ((offline && !exTitleCard) || scheduler?.playing) ? dirShot.fade ?? 1 : 1)
       grain.uniforms.uTime.value = fxT
       if (!offline && scheduler?.playing && performance.now() - idleT > 2500) document.body.classList.add('idle')
+      if (!offline) liner.update(songNow())
       // nothing to post-process on the light path: draw straight to the screen
       if (LOWQ && !bokeh.enabled && !bloom.enabled && !$('filmGrain').checked) renderer.render(scene, camera)
       else composer.render()
@@ -1797,6 +1821,9 @@
       }
       if (scheduler?.playing) { scheduler.pause(); songTarget.allSoundOff(); setPlaying(false) }
       if ($('exTitle').checked) await loadTitleFont($('exFont').value)
+      const linerTl = liner.timeline, burnCaps = $('exCaps').checked && linerTl
+      if (burnCaps) await loadTitleFont('inter')
+      let songZero = 0
       exAbort = new AbortController()
       exporting = true
       $('exStart').disabled = true
@@ -1815,6 +1842,8 @@
           // 3.5 s while the scene focuses in underneath it
           intro: $('exTitle').checked ? { seconds: 4.5, overlap: 3.5, fadeOut: 3.5, title: song.title, subtitle: $('exSub').value.trim(), style: '2d', ...titleCardOpts() } : null,
           outro: null,
+          overlay: burnCaps ? (g, w, h, t) => drawLinerCaption(g, w, h, linerTl, t, { font: TITLE_FONTS.inter?.font || 'Inter, system-ui, sans-serif' }) : null,
+          onTimeline: x => { songZero = x.songZero },
           fileStream, signal: exAbort.signal,
           onProgress: p => {
             $('exBar').firstElementChild.style.width = (p.frame / p.frames * 100).toFixed(1) + '%'
@@ -1826,6 +1855,12 @@
           const a = document.createElement('a')
           a.href = URL.createObjectURL(blob); a.download = name; a.click()
           setTimeout(() => URL.revokeObjectURL(a.href), 60000)
+        }
+        // the liner notes as YouTube subtitles and chapters, timed to this video
+        if ($('exVtt').checked && linerTl) {
+          saveText(name.replace(/\.mp4$/, '.vtt'), toVTT(linerTl, { offset: songZero }))
+          const ch = toChapters(linerTl, { offset: songZero })
+          if (ch) saveText(name.replace(/\.mp4$/, '-chapters.txt'), ch + '\n')
         }
         $('exStatus').textContent = 'Done: ' + name
       } catch (e) {
