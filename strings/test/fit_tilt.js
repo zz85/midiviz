@@ -1,7 +1,7 @@
 // Fit the bow-force brightness tilt (strings/sound/bowed.js TILT) for #034's
 // physical models, against the Philharmonia Orchestra recordings.
 //
-//   node strings/test/fit_tilt.js [--instrument=violin,viola,cello] [--quick]
+//   node strings/test/fit_tilt.js [--instrument=violin,viola,cello] [--sources=phil,iowa] [--r0=-0.212] [--quick]
 //
 // A violinist's strongest timbre control is bow force: within the playable
 // window the spectral centroid moves from about 0.8 to 3 kHz, mostly with
@@ -15,8 +15,9 @@
 // performance keeps it near the minimum force, which scales so). r0 is set to
 // the median r of mezzo-forte notes, so the
 // average tone (what the measured bodies were fitted to) stays put; c is
-// searched per instrument so the median pp → ff brightening matches its
-// recordings. Needs ffmpeg and the Philharmonia samples
+// searched per instrument so the median pp → ff brightening matches the
+// target: the mean of the Philharmonia median and the Iowa median (two players,
+// instruments and rooms; --sources=phil or --sources=iowa for one of them). Needs ffmpeg and the Philharmonia samples
 // (fit_body_philharmonia.js downloads them into strings/data/Philharmonia/).
 // Prints the result per instrument and rewrites TILT in bowed.js.
 import { execFileSync } from 'node:child_process'
@@ -26,11 +27,13 @@ import { fingerLine, parseNote } from '../fingering.js'
 import { renderPerformance } from '../sound/performance.js'
 import { ViolinSynth, CurveSource, TILT } from '../sound/bowed.js'
 import { fft } from './audio-util.js'
+import { loadBankNode, hasBank } from './hybrid-bank.js'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const arg = (k, d) => { const a = process.argv.find(x => x.startsWith(`--${k}=`)); return a ? a.split('=')[1] : d }
 const INSTS = arg('instrument', 'violin,viola,cello').split(',')
 const QUICK = process.argv.includes('--quick')
+const SOURCES = arg('sources', 'phil,iowa').split(',')
 const SR = 48000, DIR = here + '../data/Philharmonia/Strings/'
 const VEL = { pianissimo: 0.3, 'mezzo-forte': 0.68, fortissimo: 0.95 }
 if (!INSTS.every(i => existsSync(DIR + i))) { console.error('run node strings/test/fit_body_philharmonia.js first (it downloads the samples)'); process.exit(1) }
@@ -80,7 +83,33 @@ function ours(instrument, model, midi, dyn) {
   return { c: centroid(L, Math.round(0.4 * SR), Math.round(1.5 * SR)), r: median(rs) }
 }
 
+/** Iowa: median pp → ff brightening over notes recorded at both dynamics on the same string. */
+function iowaMedian(instrument) {
+  if (!hasBank(instrument)) return null
+  const bank = loadBankNode(instrument), sr = bank.m.sampleRate, d = []
+  for (let s = 0; s < 4; s++) {
+    const pp = bank.m.packs[`${s}_pp`], ff = bank.m.packs[`${s}_ff`]
+    if (!pp || !ff) continue
+    const c = (key, m) => { const lo = m.offset + m.attackEnd + Math.round(0.05 * sr), hi = m.offset + Math.min(m.headEnd, m.attackEnd + Math.round(1.4 * sr)); return hi - lo > 8192 ? centroid(bank.pcm[key], lo, hi) : null }
+    for (const a of pp.notes) {
+      const b = ff.notes.find(n => n.midi === a.midi); if (!b) continue
+      const cp = c(`${s}_pp`, a), cf = c(`${s}_ff`, b)
+      if (cp && cf) d.push(1200 * Math.log2(cf / cp))
+    }
+  }
+  return d.length ? { n: d.length, med: median(d) } : null
+}
 const recs = Object.fromEntries(INSTS.map(i => [i, recorded(i)]))
+// target per instrument: the mean of each source's median (two players, two instruments, two rooms)
+const target = {}
+for (const i of INSTS) {
+  const t = []
+  if (SOURCES.includes('phil')) t.push(median(recs[i].map(x => x.rec)))
+  const io = SOURCES.includes('iowa') ? iowaMedian(i) : null
+  if (io) { t.push(io.med); console.log(`${i}: Iowa ${io.n} pp/ff pairs, median brightening ${io.med.toFixed(0)} cents`) }
+  target[i] = t.reduce((a, b) => a + b, 0) / t.length
+  console.log(`${i}: target ${target[i].toFixed(0)} cents (${SOURCES.join(' + ')})`)
+}
 for (const i of INSTS) console.log(`${i}: ${recs[i].length} recorded pp/ff pairs, median brightening ${median(recs[i].map(x => x.rec)).toFixed(0)} cents`)
 const result = {}
 for (const model of ['waveguide', 'source']) {
@@ -88,11 +117,12 @@ for (const model of ['waveguide', 'source']) {
   TILT[model] = { c: 0, r0: 0.5 }
   const rMf = []
   for (const i of INSTS) for (const n of recs[i]) rMf.push(ours(i, model, n.midi, 'mezzo-forte').r)
-  const r0 = +median(rMf).toFixed(3)
+  // --r0= keeps the shared neutral point when only some instruments are refitted
+  const r0 = arg('r0', null) != null ? +arg('r0') : +median(rMf).toFixed(3)
   console.log(`${model}: mezzo-forte r median ${r0}`)
   result[model] = {}
   for (const i of INSTS) {
-    const rec = median(recs[i].map(x => x.rec))
+    const rec = target[i]
     const err = c => {
       TILT[model] = { [i]: { c, r0 } }
       const d = median(recs[i].map(n => 1200 * Math.log2(ours(i, model, n.midi, 'fortissimo').c / ours(i, model, n.midi, 'pianissimo').c)))
@@ -107,10 +137,12 @@ for (const model of ['waveguide', 'source']) {
     }
     const c = +((lo + hi) / 2).toFixed(2), fin = err(c), off = err(0)
     result[model][i] = { c, r0 }
-    console.log(`${model} ${i}: r0 ${r0}, c ${c}; pp → ff brightening ${off.d.toFixed(0)} → ${fin.d.toFixed(0)} cents (recordings ${rec.toFixed(0)})`)
+    console.log(`${model} ${i}: r0 ${r0}, c ${c}; pp → ff brightening ${off.d.toFixed(0)} → ${fin.d.toFixed(0)} cents (target ${rec.toFixed(0)})`)
   }
 }
 const file = here + '../sound/bowed.js'
-const src = readFileSync(file, 'utf8').replace(/export const TILT = \{[^\n]*\}/, `export const TILT = ${JSON.stringify(result)}`)
+const prev = JSON.parse(readFileSync(file, 'utf8').match(/export const TILT = (\{[^\n]*\})/)[1])
+for (const m of Object.keys(result)) prev[m] = { ...(prev[m]?.c != null ? {} : prev[m]), ...result[m] }
+const src = readFileSync(file, 'utf8').replace(/export const TILT = \{[^\n]*\}/, `export const TILT = ${JSON.stringify(prev)}`)
 writeFileSync(file, src)
 console.log('wrote TILT to', file)
