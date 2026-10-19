@@ -207,3 +207,14 @@ Tuned over a grid of 150 + 192 + 48 + 54 settings on the quick suite.
 | violin / viola / cello good | 58 / 42 / 12 of 144 | 129 / 107 / 81 of 144 |
 
 The cello from rest is still the weakest: 35 of 72. Because the raw tone changed, the waveguide's measured bodies were refitted. Held-out residual: 3.0–3.4 dB median (it was 3.3–3.5); the modal body's is 4.7–5.1 dB. With the string settling by itself, interactive bow pressure now rarely has anything to correct (182 vs 181 of 189 sweep notes).
+
+## Source model: per-period jitter and bow noise
+
+Through headphones the Source model sounded like raw sawtooth waves. A comparison with the Iowa recordings (same notes, no vibrato) showed that its brightness was not the problem: it had 2–12 dB *less* energy than the recordings at 2–16 kHz. The difference was between the harmonics. From 3 to 8 kHz, each harmonic peak stood 46 dB above the gap halfway to the next one, against 34 dB in the recordings: a perfectly periodic sawtooth, with clean lines and silence between them. A real string never repeats a period exactly.
+
+`SourceString` now draws, at every period:
+- a period jitter of 0.2 % rms
+- an amplitude jitter of 3 %
+- a corner-sharpness jitter of 10 %, which mostly touches the upper partials
+
+Consecutive periods correlate at 0.5. The steady bow noise in the slip phase is 0.2, up from 0.05. Peak / gap is now 44.5 / 35.3 dB at 1–3 / 3–8 kHz, against the recordings' 45.2 / 34.1 (it was 57.7 / 45.9). Band levels moved by under 1 dB and pitch wobble is about 1 cent. Rosin scales all of it. The Source bodies were refitted: held-out residual 2.5–3.1 dB.

@@ -542,3 +542,23 @@ test('vibrato: narrow (at most ±28 cents on long fortissimo notes at the defaul
   assert.ok(cv(per) > 0.025, `cycle length varies ${(100 * cv(per)).toFixed(1)} %`)
   assert.ok(cv(amp) > 0.06, `cycle width varies ${(100 * cv(amp)).toFixed(1)} %`)
 })
+
+test('source model: the upper partials are as noisy between harmonics as the Iowa recordings (per-period jitter, bow noise)', async t => {
+  const { hasBank, hasFfmpeg, loadBankNode } = await import('./hybrid-bank.js')
+  if (!hasFfmpeg() || !hasBank('violin')) return t.skip('no Iowa bank or no ffmpeg')
+  const { fft } = await import('./audio-util.js')
+  const N = 8192, bin = SR / N
+  const spec = (x, a, b) => { const P = new Float64Array(N / 2); let n = 0; for (let o = a; o + N <= b; o += N / 2) { const re = new Float64Array(N), im = new Float64Array(N); for (let i = 0; i < N; i++) re[i] = x[o + i] * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / N)); fft(re, im); for (let k = 0; k < N / 2; k++) P[k] += re[k] ** 2 + im[k] ** 2; n++ } return P }
+  const pg = (P, f0) => { const r = []; for (let h = Math.ceil(3000 / f0); h * f0 < 8000; h++) { const kp = Math.round(h * f0 / bin); let p = 0; for (let j = kp - 2; j <= kp + 2; j++) p = Math.max(p, P[j]); r.push(10 * Math.log10(p / (P[Math.round((h + 0.5) * f0 / bin)] + 1e-30))) } return r.sort((a, b) => a - b)[r.length >> 1] }
+  const bank = loadBankNode('violin'), iowa = [], ours = []
+  for (const [m, s] of [[62, 1], [66, 1], [69, 2], [74, 2], [76, 3], [81, 3]]) {
+    const nt = bank.m.packs[`${s}_mf`].notes.find(n => n.midi === m), x = bank.pcm[`${s}_mf`]
+    iowa.push(pg(spec(x, nt.offset + nt.attackEnd + 2400, nt.offset + Math.min(nt.headEnd, nt.attackEnd + 72000)), nt.f0))
+    const notes = finger([{ pitch: m, on: 0.1, off: 1.8, velocity: 0.68 }]); notes[0].string = s; notes[0].finger = m === [55, 62, 69, 76][s] ? 0 : notes[0].finger || 1
+    const [L] = renderCurves(renderPerformance(notes, { style: flat }), { sampleRate: SR, model: 'source' })
+    ours.push(pg(spec(L, 0.5 * SR, 1.7 * SR), midiHz(m)))
+  }
+  const med = a => [...a].sort((x, y) => x - y)[a.length >> 1]
+  // before: 46 dB against the recordings' 34 (a perfectly periodic sawtooth)
+  assert.ok(Math.abs(med(ours) - med(iowa)) < 4, `peak / gap 3–8 kHz: ours ${med(ours).toFixed(1)} dB, Iowa ${med(iowa).toFixed(1)} dB`)
+})

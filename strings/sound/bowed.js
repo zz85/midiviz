@@ -312,6 +312,8 @@ export class WaveguideString {
   }
 }
 
+const JIT_R = 0.5, JIT_Q = Math.sqrt(1 - JIT_R * JIT_R)   // per-period jitter: correlation between periods
+
 /** Helmholtz source-filter string (sawtooth + bow noise + ring-down). */
 export class SourceString {
   constructor(sr, { open = 55, Z = 0.3, t60 = 2.5 } = {}) {
@@ -322,6 +324,7 @@ export class SourceString {
     this.jit = 0
     this.rosin = 1        // × bow noise
     this.out = 0
+    this.pj = 0; this.aj = 0; this.cj = 0   // per-period jitter: period, amplitude, corner sharpness
   }
   reset() { this.env = this.atk = this.lp1 = this.lp2 = this.nz1 = this.nz2 = 0; this.out = 0 }
   noise() { let s = this.seed; s ^= s << 13; s ^= s >>> 17; s ^= s << 5; this.seed = s >>> 0; return (this.seed / 4294967296) * 2 - 1 }
@@ -346,27 +349,40 @@ export class SourceString {
     if (target > this.env) this.env += (target - this.env) * 0.004
     else this.env = target + (this.env - target) * (F > 1e-4 ? 0.996 : this.rel)
     this.jit += (this.noise() * 0.0007 - this.jit) * 0.002
-    const f = this.f0 * (1 + this.jit + this.atk * 0.004 * this.noise())
+    const f = this.f0 * (1 + this.jit + this.pj + this.atk * 0.004 * this.noise())
     const dt = f / sr
     this.ph += dt
-    if (this.ph >= 1) this.ph -= 1
+    if (this.ph >= 1) {
+      this.ph -= 1
+      // a new period: the stick-slip never repeats exactly (rosin, bow hair, the
+      // string's own irregularity). Correlated per-period draws, so the jitter has
+      // a short memory as on a real string
+      // a short memory as on a real string. Tuned so the gap between harmonics
+      // (peak/gap, 1–3 and 3–8 kHz) matches the Iowa recordings within 0.5 dB:
+      // 0.2 % period, 3 % amplitude, 10 % corner sharpness (rms per period)
+      const g = () => (this.noise() + this.noise() + this.noise()) * 0.577
+      this.pj = JIT_R * this.pj + JIT_Q * 0.002 * g() * this.rosin
+      this.aj = JIT_R * this.aj + JIT_Q * 0.03 * g() * this.rosin
+      this.cj = JIT_R * this.cj + JIT_Q * 0.1 * g() * this.rosin
+    }
     // band-limited sawtooth
     let saw = 2 * this.ph - 1, t = this.ph
     if (t < dt) { t /= dt; saw -= t + t - t * t - 1 } else if (t > 1 - dt) { t = (t - 1) / dt; saw -= t * t + t + t + 1 }
     // corner rounding: two one-pole low-passes, cutoff up with force and down with beta
     // harmonics: the touch takes most of the upper partials away (a flute-like tone)
-    const fc = Math.min(sr * 0.45, (f * (4 + 26 * fr) * (0.1 / Math.max(0.05, this.beta)) ** 0.5 + 800 * fr) * (this.harm ? 0.3 : 1))
+    const fc = Math.min(sr * 0.45, (f * (4 + 26 * fr) * (0.1 / Math.max(0.05, this.beta)) ** 0.5 + 800 * fr) * (this.harm ? 0.3 : 1) * Math.exp(this.cj))
     const a = Math.exp(-2 * Math.PI * fc / sr)
     this.lp1 = (1 - a) * saw + a * this.lp1
     this.lp2 = (1 - a) * this.lp1 + a * this.lp2
     // bow noise: band-passed, gated to the slip phase (ph < β), louder on attacks and at low force
+    // (0.2 at rest level: it was 0.05, four times too clean between the harmonics)
     const n = this.noise()
     this.nz1 += (n - this.nz1) * 0.35
     this.nz2 += (this.nz1 - this.nz2) * 0.05
     const hp = this.nz1 - this.nz2
     const gate = this.ph < this.beta * 1.4 ? 1 : 0.25
-    const nAmp = av * this.rosin * (this.harm ? 0.6 : 1) * (0.05 + 0.6 * this.atk + 0.15 * Math.max(0, 0.4 - fr)) * gate
-    const y = this.env * (this.lp2 * 0.065) + nAmp * hp * 0.5 + (tap ? tap * 0.3 * n : 0)
+    const nAmp = av * this.rosin * (this.harm ? 0.6 : 1) * (0.2 + 0.6 * this.atk + 0.15 * Math.max(0, 0.4 - fr)) * gate
+    const y = this.env * (this.lp2 * 0.065) * (1 + this.aj) + nAmp * hp * 0.5 + (tap ? tap * 0.3 * n : 0)
     this.out = y
     return y
   }
