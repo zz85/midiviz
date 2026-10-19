@@ -339,3 +339,23 @@ Not done yet:
 - slides from the planner;
 - JBV's speed and interval pitch instability;
 - reading `.mscz` and LilyPond directly.
+
+## Articulation: fewer détaché notes
+
+Two rules made most MIDIs play détaché:
+
+- **Timing mode trusted any gap.** A MIDI whose notes do not all touch was read as a performance, where only an overlap slurs. A sequencer's uniform gate looks like that. B. Fisher's Tchaikovsky concerto plays every note at 94 % of its slot, so 81 % of its pairs have a small gap and nothing overlapped: 0 of its 5,599 notes were slurred. The same happened to six Mutopia files whose chords overlap their next note (Bach's Sarabande BWV 1002, Andante 1003, Adagio, Fuga and Largo 1005, Paganini's Caprice 24). Now an overlap still slurs and a clear gap still takes a new bow (with its stroke). A gap up to the file's typical gap + 10 % of the slot (at least 15 %) counts as the file's legato, and inference decides those pairs.
+- **Inference never slurred notes over 0.34 s.** That was tuned on the Bach editions, whose tempos are fast, and it left slow movements and lyrical MIDIs détaché: Ave Maria, Bach's Gavotte, Menuets and Bourrée BWV 1006 were 0–1 % slurred. Now a note up to 0.8 s can join a slur, and a group must fit in one bow (2 s). The Bach score agreement is unchanged (slurred F1 50.5 %, agreement 67.3 %; held out 42.1 / 60.4 %).
+
+Also, an accented note (a velocity jump of ≥ 0.15 in a file whose velocities vary) and the note after it take their own bows.
+
+| slurred note pairs | before | after |
+|---|---|---|
+| Tchaikovsky concerto I (B. Fisher, 5,599 notes) | 0 % | 37 % |
+| Bach Bourrée / Gavotte BWV 1006 | 0 / 1 % | 49 / 22 % |
+| Bach Largo BWV 1005 | 2 % | 38 % |
+| Gounod Ave Maria | 0 % | 14 % |
+| Paganini Caprice 24 | 1 % | 27 % |
+| all 49 MIDIs (52,285 pairs) | 24.7 % | 31.9 % |
+
+Tests: `node --test strings/test/articulation.test.js` (5).

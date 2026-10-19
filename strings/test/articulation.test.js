@@ -47,7 +47,7 @@ test('planner: the score\'s slur becomes one bow in motion.js; timing (overlap) 
   assert.ok(timed[2].art.slurPrev && !timed[1].art.slurPrev, 'an overlap slurs, a gap re-bows')
   assert.equal(timed[0].art.stroke, 'martele', 'a 60 % gap at 4 notes / s: a stopped stroke (martelé; spiccato when faster)')
   // inference on touching notes
-  const melody = [[69, 0], [71, 0.125], [72, 0.25], [72, 0.375], [74, 0.5], [86, 0.625], [84, 0.75], [83, 1.25]].map(([pitch, on], i, a) => ({ pitch, on, off: a[i + 1]?.[1] ?? on + 0.5 }))
+  const melody = [[69, 0], [71, 0.125], [72, 0.25], [72, 0.375], [74, 0.5], [86, 0.625], [84, 0.75], [83, 1.75]].map(([pitch, on], i, a) => ({ pitch, on, off: a[i + 1]?.[1] ?? on + 1 }))
   planArticulation(melody, { mode: 'infer', meter: [{ t: 0, beats: 4, beatType: 4 }], tempo: [{ t: 0, bpm: 120 }] })
   const sp = melody.map(n => n.art.slurPrev)
   assert.ok(sp[1] && sp[2], 'steps slur'); assert.ok(!sp[3], 'a repeated pitch re-bows'); assert.ok(!sp[5], 'a leap re-bows'); assert.ok(!sp[7], 'a long note re-bows')
@@ -86,4 +86,16 @@ test('stroke types: fast separate notes are spiccato (the bow leaves the string)
   const ma = perf.notes.find(n => n.pitch === 71)
   assert.ok(at(ma, CH.force, ma.on - 0.006) > 0.3 && at(ma, CH.vel, ma.on - 0.006) === 0, 'martelé: pinched before it moves')
   assert.ok(Math.abs(at(ma, CH.vel, ma.on + 0.36)) < 0.01 && at(ma, CH.force, ma.on + 0.36) > 0.1, 'martelé: stopped, resting on the string')
+})
+
+test('timing: a sequencer\'s uniform gate (every note 94 % of its slot) is legato, so inference decides; overlaps still slur, clear gaps still re-bow', () => {
+  // B. Fisher's Tchaikovsky concerto: 16ths by step, each 112 of 119 ms
+  const ns = [69, 71, 73, 74, 76, 74, 73, 71, 69, 71, 73, 74, 76, 78, 80, 81].map((pitch, k) => ({ pitch, on: k * 0.119, off: k * 0.119 + 0.112, velocity: 0.88 }))
+  planArticulation(ns, { meter: [{ t: 0, beats: 4, beatType: 4 }], tempo: [{ t: 0, bpm: 126 }] })
+  assert.equal(ns[0].art.source, 'timing')
+  assert.ok(ns.filter(n => n.art.slurPrev).length >= 8, `slurred: ${ns.map(n => n.art.slurPrev ? '‿' : '|').join('')}`)
+  // the same with a real gap in the middle: a new bow there, and an overlap still slurs across a leap
+  const g = ns.map(n => ({ ...n, art: undefined })); g[7].off = g[7].on + 0.05; g[11].off = g[12].on + 0.02; g[12].pitch = 86
+  planArticulation(g, { meter: [{ t: 0, beats: 4, beatType: 4 }], tempo: [{ t: 0, bpm: 126 }] })
+  assert.ok(!g[8].art.slurPrev, 'a clear gap re-bows'); assert.ok(g[12].art.slurPrev, 'an overlap slurs')
 })

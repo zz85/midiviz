@@ -31,7 +31,11 @@
 // vary by movement (27 % of note pairs slurred; train F1 61 %), so this is a
 // plausible bowing, not the edition's.
 export const INFER = {
-  maxDur: 0.34,      // s: notes longer than this start their own bow
+  // s: notes longer than this start their own bow (0.34 tuned on Bach; the editions'
+  // tempos are fast, so the score is the same at 0.8, which lets slow movements and
+  // lyrical MIDIs slur pairs of eighths: Ave Maria, Bach's Bourrée 0 → 14 / 49 %)
+  maxDur: 0.8,
+  maxBow: 2,         // s: a slurred group must fit in one bow (a slow mf bow lasts ~2 s)
   maxRatio: 2.1,     // a slur does not join notes whose lengths differ by more than this
   maxLeap: 3,        // semitones: a wider leap takes a new bow (slurs follow steps)
   maxGroup: 8,       // notes per bow at most
@@ -136,33 +140,36 @@ export function planArticulation(notes, opts = {}) {
     return notes
   }
 
+  // Layer 1, the timing: an overlap is a slur (SWAM / JBV) and a clear gap a new
+  // bow, its size the stroke. Notes that touch, or leave the small uniform gap
+  // of a sequencer's gate (B. Fisher's Tchaikovsky: each note 94 % of its
+  // slot, 81 % of its pairs), say nothing about the bow: Layer 2 decides
+  // those, as it does every pair of an untimed export.
+  const cue = new Array(ev.length).fill(null)
   if (use === 'timing') {
+    const rel = i => (ev[i].on - ev[i - 1].off) / Math.max(1e-3, ev[i].on - ev[i - 1].on)
+    const gs = []; for (let i = 1; i < ev.length; i++) { const g = rel(i); if (g >= -0.01 && g < 0.45) gs.push(g) }
+    gs.sort((a, b) => a - b)
+    const gate = Math.max(0.15, (gs[gs.length >> 1] ?? 0) + 0.1)   // a gap up to this is the file's legato
     for (let i = 1; i < ev.length; i++) {
-      const a = ev[i - 1], b = ev[i], ioi = b.on - a.on
-      const gap = (b.on - a.off) / Math.max(1e-3, ioi)
+      const a = ev[i - 1], b = ev[i], ioi = b.on - a.on, gap = rel(i)
       const single = a.notes.length === 1 && b.notes.length === 1
-      // overlap: a slur (SWAM / JBV); a quiet overlapping note: a slide (SWAM's portamento by velocity)
-      const over = gap < -0.01 && single
-      for (const n of b.notes) {
-        n.art.slurPrev = over
-        n.art.source = 'timing'
-        if (over && (n.velocity ?? 0.7) < 0.75 * (a.top.velocity ?? 0.7)) n.art.port = true
-      }
-    }
-    for (const e of ev) {
-      const i = ev.indexOf(e), next = ev[i + 1]
-      if (!next) continue
-      const ioi = next.on - e.on, gap = (next.on - e.off) / Math.max(1e-3, ioi)
+      if (gap < -0.01 && single) {
+        cue[i] = true
+        // a quiet overlapping note: a slide (SWAM's portamento by velocity)
+        for (const n of b.notes) if ((n.velocity ?? 0.7) < 0.75 * (a.top.velocity ?? 0.7)) n.art.port = true
+      } else if (gap > gate) cue[i] = false
       // the gap's size: the stroke (JBV's Adaptive Shorts): short and fast → spiccato
-      const stroke = gap > 0.45 ? (ioi < 0.2 ? 'spiccato' : 'staccato') : gap > 0.15 ? 'staccato' : null
-      for (const n of e.notes) { if (!n.art.stroke) n.art.stroke = stroke; n.art.source = 'timing' }
+      const stroke = gap > Math.max(0.45, gate + 0.2) ? (ioi < 0.2 ? 'spiccato' : 'staccato') : gap > gate ? 'staccato' : null
+      for (const n of a.notes) if (!n.art.stroke) n.art.stroke = stroke
     }
-    planStrokes(ev, P)
-    return notes
   }
 
   // ── Layer 2: inference ──
-  let group = 1
+  // an accented note takes its own bow, and so does the note after it: a jump
+  // of ≥ 0.15 in velocity, in a file whose velocities vary
+  const vs = ev.map(e => e.top.velocity ?? 0.7), vVaried = Math.max(...vs) - Math.min(...vs) > 0.05
+  let group = 1, g0 = ev[0]?.on ?? 0
   for (let i = 0; i < ev.length; i++) {
     const b = ev[i], a = ev[i - 1]
     let slur = false
@@ -174,15 +181,18 @@ export function planArticulation(notes, opts = {}) {
       const leap = Math.abs(b.top.pitch - a.top.pitch) > P.maxLeap
       const long = Math.max(ioiA, db) > P.maxDur
       const ratio = Math.max(da, db) / Math.max(1e-3, Math.min(da, db)) > P.maxRatio
-      slur = nb && !rest && !repeat && !leap && !long && !ratio && group < P.maxGroup
+      const bowFull = b.off - g0 > P.maxBow   // the group would not fit in one bow
+      const accent = vVaried && Math.abs((b.top.velocity ?? 0.7) - (a.top.velocity ?? 0.7)) >= 0.15
+      slur = cue[i] ?? (nb && !rest && !repeat && !leap && !long && !ratio && !bowFull && !accent && group < P.maxGroup)
       // a group ends at a beat: the note on the beat takes a new bow
-      if (slur && P.beatBreak && beatAt && group >= (P.beatMin ?? 2)) {
+      if (slur && cue[i] == null && P.beatBreak && beatAt && group >= (P.beatMin ?? 2)) {
         const x = beatAt(b.on), frac = x - Math.round(x)
         if (Math.abs(frac) < 0.02) slur = false
       }
     }
     group = slur ? group + 1 : 1
-    for (const n of b.notes) { n.art.slurPrev = slur; if (!n.art.stroke) n.art.stroke = null; n.art.source = 'inferred' }
+    if (!slur) g0 = b.on
+    for (const n of b.notes) { n.art.slurPrev = slur; if (!n.art.stroke) n.art.stroke = null; n.art.source = use === 'timing' ? 'timing' : 'inferred' }
   }
   planStrokes(ev, P)
   return notes
