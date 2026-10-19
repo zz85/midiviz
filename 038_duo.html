@@ -26,6 +26,8 @@
     .bar { position: fixed; left: 0; right: 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 12px; z-index: 5; transition: opacity 0.6s; }
     #top { top: 0; background: linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0)); }
     #bottom { bottom: 0; background: linear-gradient(rgba(0,0,0,0), rgba(0,0,0,0.6)); }
+    #balanceBox { font-size: 12px; color: #bbb; white-space: nowrap; display: flex; align-items: center; gap: 4px; }
+    #balance { width: 90px; }
     body.idle .bar, body.idle #credit { opacity: 0; pointer-events: none; }
     select, button, input { font: inherit; color: #eee; background: rgba(30,30,36,0.8); border: 1px solid rgba(255,255,255,0.18); border-radius: 6px; padding: 4px 8px; }
     button { cursor: pointer; }
@@ -75,6 +77,7 @@
     <button id="play">▶</button>
     <input type="range" id="seek" min="0" max="1" step="0.0001" value="0">
     <span id="time">0:00 / 0:00</span>
+    <label id="balanceBox" title="Balance between the violin and the piano (the other one is turned down, up to 12 dB). Double-click to centre">Piano <input type="range" id="balance" min="-12" max="12" step="0.5" value="0"> Violin</label>
     <select id="speed" title="Speed"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option></select>
   </div>
   <div id="credit"></div>
@@ -382,12 +385,21 @@
     const engine = new SoundFontEngine({ backend: 'oxisynth', vendorPath: new URL('./vendor', import.meta.url).href, audioContext: audioCtx })
     let soundReady = false, soundLoading = null
     const ensureSound = () => (soundLoading ??= engine.loadSoundFont('soundfonts/Creative(emu10k1)8MBGMSFX.sf2')
-      .then(() => { soundReady = true; engine.programChange(0, 40); engine.programChange(1, 0) })
+      .then(() => { soundReady = true; engine.programChange(0, 40); engine.programChange(1, 0); applyBalance() })
       .catch(e => { console.error(e); setStatus('Sound failed to load: ' + e.message, 4000) }))
     const applyHall = () => { const p = acousticParams({ room: $('room').value, seat: 'mid' }); hall.set(p); hybrid.lab?.setHall(p) }
     // the hybrid renders to #034's level (0.05 RMS while sounding); the GM violin
     // here plays at about 0.107 (Creative 8 MB, measured on the Kreutzer)
     const HYBRID_LEVEL = 2.1
+    // balance (dB, + = violin): the other part is turned down by that much,
+    // the soundfont through CC7 (GM volume, 40·log10: 0 dB at 100), the hybrid by its gain
+    const balance = () => { const b = +$('balance').value; return { v: Math.min(0, b), p: Math.min(0, -b) } }
+    const cc7 = dB => Math.max(0, Math.min(127, Math.round(100 * Math.pow(10, dB / 40))))
+    function applyBalance() {
+      const { v, p } = balance()
+      if (soundReady) { engine.controlChange(0, 7, cc7(v)); engine.controlChange(1, 7, cc7(p)) }
+      hybrid.lab?.setVolume(HYBRID_LEVEL * Math.pow(10, v / 20))
+    }
     const hybrid = {
       lab: null, P: null, perfFor: null, speed: 0,
       get on() { return $('vsound').value === 'hybrid' },
@@ -397,7 +409,7 @@
           const [{ Lab }, P] = await Promise.all([import('./strings/sound/engines.js'), import('./strings/sound/performance.js')])
           this.P = P
           this.lab = new Lab()
-          this.lab.setVolume(HYBRID_LEVEL)
+          applyBalance()
           this.lab.on(e => {
             if (e.engine !== 'hybrid') return
             if (e.type === 'progress') setStatus(e.text)
@@ -438,7 +450,7 @@
         ...song.piano.map(n => ({ midi: n.pitch, time: n.on, duration: n.off - n.on, velocity: n.velocity ?? 0.7, channel: 1 })),
       ].sort((a, b) => a.time - b.time)
       scheduler.load({ notes, controlChanges: song.pedal.map(p => ({ time: p.t, channel: 1, controller: 64, value: p.on ? 127 : 0 })) })
-      if (soundReady) { engine.programChange(0, 40); engine.programChange(1, 0) }
+      if (soundReady) { engine.programChange(0, 40); engine.programChange(1, 0); applyBalance() }
     }
     async function play() {
       if (audioCtx.state !== 'running') audioCtx.resume().catch(() => {})
@@ -479,6 +491,10 @@
       saveUrl()
     }
     if (Q.get('violin') === 'hybrid') $('vsound').value = 'hybrid'
+    if (Q.get('bal') != null && isFinite(+Q.get('bal'))) $('balance').value = Q.get('bal')
+    $('balance').oninput = () => applyBalance()
+    $('balance').onchange = () => saveUrl()
+    $('balance').ondblclick = () => { $('balance').value = 0; applyBalance(); saveUrl() }
     $('seek').oninput = () => { clock.t = +$('seek').value * song.duration; clock.wall = performance.now(); if (clock.playing) { target.allSoundOff(); scheduler.seek(clock.t); if (clock.pending) { clock.pending = false; scheduler.play() } if (hybrid.on) hybrid.start(clock.t) } }
     $('song').onchange = async () => { const was = clock.playing; pause(); await loadSong($('song').value); director.reset(); if (hybrid.on && hybrid.lab) hybrid.ensure(); if (was) play(); saveUrl() }
     $('start').onclick = () => { $('start').classList.add('gone'); play() }
@@ -578,6 +594,7 @@
       if ($('vdress').value !== 'wine') p.set('vdress', $('vdress').value)
       if ($('room').value !== 'hall') p.set('room', $('room').value)
       if (hybrid.on) p.set('violin', 'hybrid')
+      if (+$('balance').value) p.set('bal', $('balance').value)
       if ($('cam').value !== 'auto') p.set('view', $('cam').value)
       if (!$('intro').checked) p.set('intro', '0')
       history.replaceState(null, '', '?' + p.toString())
