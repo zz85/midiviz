@@ -30,6 +30,9 @@ export const STROKE = {
   WRIST_SPEED: 45,  // knuckle height per second of free time in a wrist stroke
   LEAP: 0.12,       // arc height per cm the hand travels (cm), up to LEAP_MAX
   LEAP_MAX: 6,
+  ROLL: 0.2,        // forearm rotation (rad) toward a thumb or little finger about to play
+  ROLL_MAX: 0.4,
+  ROLL_SPEED: 8,    // rad/s the forearm turns at most (a fast tremolo rocks less far)
   SHORT: 0.25,      // free time under this lifts less again (fast passages stay on the keys)
   LEAD: 0.002,      // wrist tilt per cm/s of vertical hand speed (× wrist flexibility): small,
                     // an expert's forearm and hand fall as one, the wrist fairly firm
@@ -44,7 +47,7 @@ const fall = u => (u <= 0 ? 1 : u >= 1 ? 0 : 1 - (0.4 * u * u + 0.6 * smooth(u))
 /**
  * notes: one hand's [{ on, off, release?, velocity? (0..1), pitch?, finger? }]
  * (without pitches, no passage is recognised: arm strokes only).
- * opts: { armWeight = 1, flex = 1, liftOff = 1, height = 1 } (0 turns each
+ * opts: { armWeight = 1, flex = 1, liftOff = 1, height = 1, rotation = 1 } (0 turns each
  * part off; height scales every lift after the time limits, so it raises
  * fast passages too),
  * velRange: [quiet, loud] velocities of the piece (default: from these notes).
@@ -58,20 +61,20 @@ export function velocityRange(notes) {
   return v.length ? [v[Math.floor(0.25 * (v.length - 1))], v[Math.floor(0.97 * (v.length - 1))]] : [0.4, 0.8]
 }
 
-export function planStrokes(notes, { armWeight = 1, flex = 1, liftOff = 1, height = 1, velRange = null } = {}) {
+export function planStrokes(notes, { armWeight = 1, flex = 1, liftOff = 1, height = 1, rotation = 1, velRange = null } = {}) {
   const up = n => n.release ?? n.off
   const own = notes.filter(n => up(n) > n.on).sort((a, b) => a.on - b.on)
-  const empty = { at: () => [0, 0], t0: 0, h: 1 / STROKE.HZ, n: 0, lift: new Float32Array(0), tilt: new Float32Array(0), windows: [] }
+  const empty = { at: () => [0, 0, 0], t0: 0, h: 1 / STROKE.HZ, n: 0, lift: new Float32Array(0), tilt: new Float32Array(0), roll: new Float32Array(0), windows: [] }
   if (!own.length) return empty
 
   // onset groups (chords): time, loudest velocity, latest release
   const groups = []
   for (let i = 0; i < own.length;) {
     let j = i, v = 0, end = 0, dur = Infinity
-    const ps = []
-    while (j < own.length && own[j].on - own[i].on < 0.04) { v = Math.max(v, own[j].velocity ?? 0.7); end = Math.max(end, up(own[j])); dur = Math.min(dur, up(own[j]) - own[j].on); if (own[j].pitch != null) ps.push(own[j].pitch); j++ }
+    const ps = [], fs = []
+    while (j < own.length && own[j].on - own[i].on < 0.04) { v = Math.max(v, own[j].velocity ?? 0.7); end = Math.max(end, up(own[j])); dur = Math.min(dur, up(own[j]) - own[j].on); if (own[j].pitch != null) ps.push(own[j].pitch); if (own[j].finger >= 1) fs.push(own[j].finger); j++ }
     ps.sort((a, b) => a - b)
-    groups.push({ t: own[i].on, v, end, dur, ps, x: ps.length ? ps.reduce((a, p) => a + keyX(p), 0) / ps.length : null })
+    groups.push({ t: own[i].on, v, end, dur, ps, fs, x: ps.length ? ps.reduce((a, p) => a + keyX(p), 0) / ps.length : null })
     i = j
   }
   // what kind of passage each group is in (from its predecessor):
@@ -208,14 +211,53 @@ export function planStrokes(notes, { armWeight = 1, flex = 1, liftOff = 1, heigh
   // hand pivots about it), with no low-pass, they are quick
   for (let i = 0; i < N; i++) if (wk[i] > 0) { lift[i] += wk[i]; tilt[i] -= Math.asin(Math.min(0.9, wk[i] / STROKE.WRIST_LEN)) }
 
-  const out = [0, 0]
+  // ── Forearm rotation ──
+  // Running notes and broken figures are played by turning the forearm, not
+  // by lifting the hand: it rolls toward the finger about to play (the thumb
+  // side down for the thumb, the little-finger side for 4 and 5) and gets
+  // there as the key goes down, so alternations (tremolos, broken octaves,
+  // Alberti bass) rock the hand and a scale drifts gently. Chords stay
+  // nearly level, a little toward their heavier side. More for quick and
+  // loud notes; back to level once the hand has let go and has time.
+  // Positive = the little-finger side down.
+  const roll = new Float32Array(N)
+  if (rotation > 0) {
+    const side = f => (f - 3) / 2
+    const keys = []
+    for (let k = 0; k < groups.length; k++) {
+      const g = groups[k]
+      if (!g.fs.length) continue
+      const ioi = Math.min(k > 0 ? g.t - groups[k - 1].t : 1, k < groups.length - 1 ? groups[k + 1].t - g.t : 1)
+      const quick = clamp((0.7 - ioi) / 0.45, 0.35, 1)
+      const avg = g.fs.reduce((a, f) => a + side(f), 0) / g.fs.length
+      const amt = g.fs.length >= 3 ? 0.35 : g.fs.length === 2 ? 0.8 : 1
+      keys.push([g.t - 0.01, clamp(rotation * STROKE.ROLL * amt * quick * (0.7 + 0.5 * loudness(g.v)) * avg, -STROKE.ROLL_MAX, STROKE.ROLL_MAX), g.end])
+    }
+    // the roll held from the last note, easing back to level once the hand
+    // has let go and nothing is due for a while
+    let pv = 0, pe = -Infinity, pt = t0
+    const held = (t, gap) => gap > 0.6 ? pv * (1 - smooth((t - pe - 0.1) / 0.5)) : pv
+    for (let [b, vb, eb] of [...keys, [t1 + 1, 0, t1 + 1]]) {
+      const gap = b - pt, win = Math.min(0.14, Math.max(0.03, 0.8 * gap)), m0 = b - win
+      const vs = held(m0, gap)
+      vb = vs + clamp(vb - vs, -STROKE.ROLL_SPEED * win, STROKE.ROLL_SPEED * win)
+      for (let i = Math.max(0, idx(pt)); i <= Math.min(N - 1, idx(b)); i++) {
+        const t = t0 + i * h
+        roll[i] = t < m0 ? held(t, gap) : vs + (vb - vs) * smooth((t - m0) / win)
+      }
+      pv = vb; pe = eb; pt = b
+    }
+  }
+
+  const out = [0, 0, 0]
   function at(t) {
     const u = (t - t0) / h, i = Math.floor(u)
-    if (!(i >= 0 && i < N - 1)) { out[0] = i >= N - 1 ? lift[N - 1] : 0; out[1] = 0; return out }
+    if (!(i >= 0 && i < N - 1)) { out[0] = i >= N - 1 ? lift[N - 1] : 0; out[1] = 0; out[2] = 0; return out }
     const w = u - i
     out[0] = lift[i] + (lift[i + 1] - lift[i]) * w
     out[1] = tilt[i] + (tilt[i + 1] - tilt[i]) * w
+    out[2] = roll[i] + (roll[i + 1] - roll[i]) * w
     return out
   }
-  return { at, t0, h, n: N, lift, tilt, windows }
+  return { at, t0, h, n: N, lift, tilt, roll, windows }
 }

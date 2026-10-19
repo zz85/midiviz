@@ -505,9 +505,11 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     // for crossings plus the wrist stroke's tilt: both moved the joints)
     const pitch = d.pitch + (d.strokeTilt || 0)
     if (pitch) { const qp = _q.setFromAxisAngle(_v.set(c, 0, sn), -pitch); e1.applyQuaternion(qp); e2.applyQuaternion(qp) }
-    // roll toward the side that presses (the driver's J.R carries it)
-    const Rr = Jd.R.clone().multiplyScalar(a.s)   // toward the little finger
-    const roll = Math.asin(clamp(-Rr.y, -0.3, 0.3))
+    // the forearm's roll (the driver rolled the knuckles by it; positive =
+    // the little-finger side down)
+    // (the rest frame's lateral axis points toward each hand's own little
+    // finger, so the left hand's turn about the forward axis is mirrored)
+    const roll = a.s * (d.handRoll ?? Math.asin(clamp(-Jd.R.clone().multiplyScalar(a.s).y, -0.45, 0.45)))
     const fwdAxis = e2.clone().negate()
     const qr = _q.setFromAxisAngle(fwdAxis, roll)
     e0.applyQuaternion(qr); e1.applyQuaternion(qr)

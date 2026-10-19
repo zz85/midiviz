@@ -127,3 +127,49 @@ test('a leap travels in an arc; running notes stay on the keys', () => {
   expect(run.windows.slice(2).filter(w => isFinite(w.L)).every(w => w.kind === 'run')).toBe(true)
   expect(maxIn(run, 1.3, 2.5)).toBeLessThan(0.5)
 })
+
+// forearm rotation: fingered notes
+const fing = (ps, fs, ioi, v, dur = 0.08, t = 1) => ps.map((p, i) => ({ pitch: p, finger: fs[i], on: t + i * ioi, off: t + i * ioi + dur, velocity: v }))
+const rollAt = (p, t) => p.at(t)[2]
+
+test('the forearm rocks toward the finger about to play', () => {
+  // a tremolo 1-5-1-5 (C-G) and an Alberti bass 5-1-3-1
+  const trem = fing(Array.from({ length: 16 }, (_, i) => i % 2 ? 67 : 60), Array.from({ length: 16 }, (_, i) => i % 2 ? 5 : 1), 0.12, 0.7)
+  const p = planStrokes(trem, { velRange: [0.4, 0.95] })
+  for (const n of trem.slice(2, -2)) {
+    const r = rollAt(p, n.on)
+    expect(Math.sign(r)).toBe(n.finger === 5 ? 1 : -1)
+    expect(Math.abs(r)).toBeGreaterThan(0.12)
+  }
+  const alb = fing(Array.from({ length: 16 }, (_, i) => [48, 55, 52, 55][i % 4]), Array.from({ length: 16 }, (_, i) => [5, 1, 3, 1][i % 4]), 0.15, 0.55, 0.12)
+  const q = planStrokes(alb, { velRange: [0.4, 0.95] })
+  expect(rollAt(q, alb[4].on)).toBeGreaterThan(0.08)
+  expect(rollAt(q, alb[5].on)).toBeLessThan(-0.08)
+  expect(Math.abs(rollAt(q, alb[6].on))).toBeLessThan(0.03)
+})
+
+test('chords stay nearly level; slow notes settle back; the setting scales it', () => {
+  const ch = [0, 1, 2, 3].flatMap(i => [[60, 1], [64, 3], [67, 5]].map(([p, f]) => ({ pitch: p, finger: f, on: 1 + i * 0.5, off: 1.4 + i * 0.5, velocity: 0.8 })))
+  const pc = planStrokes(ch)
+  for (let t = 1; t < 3; t += 0.01) expect(Math.abs(rollAt(pc, t))).toBeLessThan(0.02)
+  const slow = [{ pitch: 72, finger: 5, on: 1, off: 1.3, velocity: 0.7 }, { pitch: 60, finger: 1, on: 4, off: 4.3, velocity: 0.7 }]
+  const ps = planStrokes(slow)
+  expect(Math.abs(rollAt(ps, 1))).toBeGreaterThan(0.05)
+  expect(Math.abs(rollAt(ps, 2.5))).toBeLessThan(0.005)
+  expect(rollAt(ps, 4)).toBeLessThan(-0.05)
+  const trem = fing([60, 67, 60, 67, 60, 67], [1, 5, 1, 5, 1, 5], 0.12, 0.7)
+  expect(Math.abs(rollAt(planStrokes(trem, { rotation: 0 }), trem[3].on))).toBe(0)
+  expect(Math.abs(rollAt(planStrokes(trem, { rotation: 2 }), trem[3].on))).toBeCloseTo(2 * Math.abs(rollAt(planStrokes(trem), trem[3].on)), 4)
+})
+
+test('the roll stays in range and changes smoothly', () => {
+  const notes = fing(Array.from({ length: 60 }, (_, i) => i % 2 ? 72 : 60), Array.from({ length: 60 }, (_, i) => i % 2 ? 5 : 1), 0.06, 1, 0.04)
+  const p = planStrokes(notes, { rotation: 2.5 })
+  let last = 0
+  for (let t = 0; t < 6; t += 1 / 240) {
+    const r = rollAt(p, t)
+    expect(Math.abs(r)).toBeLessThanOrEqual(STROKE.ROLL_MAX + 1e-6)
+    expect(Math.abs(r - last)).toBeLessThan(0.06)
+    last = r
+  }
+})

@@ -328,6 +328,7 @@
     <div class="field" title="How much loudness comes from the arm: before a loud note the hand lifts in the time it has and falls into the key (0 = fingers only, the hand stays on the keys)"><label>Arm weight</label><input type="range" id="armw" min="0" max="2" step="0.1" value="1"><span id="armwV">1×</span></div>
     <div class="field" title="How high the hands go above the keys: scales every lift (preparation, bounce and lift-off) after the time limits, so at 2× even fast passages come off the keys"><label>Lift height</label><input type="range" id="lifth" min="0" max="2.5" step="0.1" value="1"><span id="lifthV">1×</span></div>
     <div class="field" title="How much the wrist leads the hand up and down, gives on impact and dips under long notes"><label>Wrist flexibility</label><input type="range" id="wflex" min="0" max="2" step="0.1" value="1"><span id="wflexV">1×</span></div>
+    <div class="field" title="How much the forearm turns in running notes and broken figures: the hand rolls toward the thumb or the little finger about to play (tremolos, broken octaves, Alberti bass rock it; chords stay level)"><label>Forearm rotation</label><input type="range" id="frot" min="0" max="2.5" step="0.1" value="1"><span id="frotV">1×</span></div>
     <div class="sect">Fingers<small>Chopin: let each finger fall, in its own way</small></div>
     <div class="field" title="Fall: each finger rises in the free time before its note (higher for louder notes) and falls onto the key, each in its own way: the thumb low from the base of the hand, the 2nd light and quick, the 3rd steady, the 4th rising a little with the 3rd, the 5th firm. Press: every finger the same, pushed down as in #029 / #030"><label>Finger touch</label><select id="touch"><option value="fall" selected>Fall (each its own way)</option><option value="press">Press (all alike)</option></select></div>
     <div class="field" title="Chopin: the 4th finger is not avoided, the 5th takes the outer voice of a chord (the top in the right hand, the bass in the left), the 3rd sings long melody notes. Standard: the usual textbook rules"><label>Fingering</label><select id="fingering"><option value="standard" selected>Standard</option><option value="chopin">Chopin</option></select></div>
@@ -838,7 +839,7 @@
       $(k).value = params.get(k) ?? 1; set(); $(k).oninput = set
     }
     // wrist strokes (pianist/stroke.js): re-planned when a slider moves
-    for (const [k, o] of [['armw', 'armWeight'], ['lifth', 'height'], ['wflex', 'flex'], ['liftoff', 'liftOff']]) {
+    for (const [k, o] of [['armw', 'armWeight'], ['lifth', 'height'], ['wflex', 'flex'], ['frot', 'rotation'], ['liftoff', 'liftOff']]) {
       const set = () => { rig.hands.setStrokeOpts({ [o]: +$(k).value }); $(k + 'V').textContent = (+$(k).value).toFixed(1).replace(/\.0$/, '') + '×' }
       $(k).value = params.get(k) ?? 1; set(); $(k).oninput = set
     }
@@ -1535,7 +1536,7 @@
       ['outfit', 'outfit'], ['dress', 'dressStyle'], ['slit', 'slit'], ['fabric', 'fabric'], ['dcol', 'dressColor'], ['shoes', 'shoeStyle'],
       ['hair', 'hairStyle'], ['hcol', 'hairColor'], ['density', 'hairDensity'], ['hairon', 'hairOn'], ['hairsim', 'hairSim'],
       ['dresson', 'dressOn'], ['clothsim', 'clothSim'], ['vdress', 'vdress'], ['look', 'look'], ['smooth', 'smooth'], ['simplify', 'simplify'],
-      ['gaze', 'gaze'], ['expr', 'expr'], ['hips', 'hips'], ['posture', 'posture'], ['reach', 'reach'], ['rock', 'rock'], ['sway', 'sway'], ['nod', 'nod'], ['glances', 'glances'], ['armw', 'armw'], ['lifth', 'lifth'], ['wflex', 'wflex'], ['elbow', 'elbowLead'], ['liftoff', 'liftoff'], ['bench', 'benchDist'], ['benchh', 'benchH'],
+      ['gaze', 'gaze'], ['expr', 'expr'], ['hips', 'hips'], ['posture', 'posture'], ['reach', 'reach'], ['rock', 'rock'], ['sway', 'sway'], ['nod', 'nod'], ['glances', 'glances'], ['armw', 'armw'], ['lifth', 'lifth'], ['wflex', 'wflex'], ['frot', 'frot'], ['elbow', 'elbowLead'], ['liftoff', 'liftoff'], ['bench', 'benchDist'], ['benchh', 'benchH'],
       ['touch', 'touch'], ['fingering', 'fingering'],
       ['light', 'light'], ['exposure', 'exposure'], ['dof', 'dof'],
       ['move', 'camMove'], ['pace', 'dirPace'], ['favour', 'dirBias'], ['trans', 'dirTrans'], ['shotnames', 'shotLbl'], ['follow', 'camFollow'], ['dfar', 'dirFar'], ['dmed', 'dirMed'], ['dclose', 'dirClose'],

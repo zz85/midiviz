@@ -140,6 +140,17 @@ Tuning after the first version (17 Oct): preparation heights and the arm's
 speed limit doubled (14 cm at full velocity, ~80 cm/s); lift-offs cut to about
 a third (final lift 2–5 cm, phrase ends 1–2 cm).
 
+- **Forearm rotation** (19 Oct): running notes and broken figures turn the
+  forearm instead of lifting the hand. The hand rolls toward the finger about
+  to play (thumb side down for 1, little-finger side for 4 and 5), arriving as
+  the key goes down: tremolos, broken octaves and Alberti bass rock it, a scale
+  drifts gently, chords stay nearly level. 0.2 rad for a 1 or 5 at default,
+  more for quick and loud notes, at most 0.4 rad and 8 rad/s (a fast tremolo
+  rocks less far), level again once the hand has let go (Forearm rotation
+  slider). The roll is about the hand's long axis through the middle knuckle
+  and the wrist, so the wrist stays put and the solved and rendered knuckles
+  agree.
+
 ### 3.2 In the hand driver
 
 `hand-driver.js` adds the lift to the knuckle height and the tilt to the
