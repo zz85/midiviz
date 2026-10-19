@@ -68,6 +68,8 @@ export const HOLD = {
  * leftHand: buildLeftHand(V) (hidden; used for its solution),
  * bowHand: buildBowHand(bow, V.group) (hidden; no longer used: the grip is grip() below).
  */
+const smooth01 = x => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x))
+
 export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
   const H = name => vrm.humanoid.getNormalizedBoneNode(name)
   const root = vrm.scene
@@ -267,8 +269,21 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
       const E = twoBone(S.clone(), knuckle.clone(), m.l1, m.l2 + hl, pole.clone(), v3())
       // the hand's own orientation (which way the fingers point) comes from
       // #033's knuckle line; only its direction follows the forearm
-      const R = rotFor(m.hand, knuckle.clone().sub(E), side, new THREE.Quaternion())
+      let R = rotFor(m.hand, knuckle.clone().sub(E), side, new THREE.Quaternion())
       const W = knuckle.clone().sub(m.knuckleOff.clone().applyQuaternion(R))
+      // high positions: the knuckles are over the upper bout, and the straight
+      // line from the elbow would put the wrist inside the body. The wrist stays
+      // under the back instead (the heel of the hand against the shoulder of the
+      // violin) and bends just that much
+      toLocalM.copy(mat).invert()
+      const Wl = W.clone().applyMatrix4(toLocalM)
+      const over = smooth01((Wl.x - V.x0) / (3 * V.k))
+      const yMax = -2.2 * V.k
+      if (over > 0 && Wl.y > yMax) {
+        Wl.y += (yMax - Wl.y) * over
+        W.copy(Wl.applyMatrix4(mat))
+        R = rotFor(m.hand, knuckle.clone().sub(W), side, new THREE.Quaternion())
+      }
       arm(m, S, W, pole, R, side)
       fingersTo(m, mat, J)
     }

@@ -11,7 +11,7 @@ All are engraved from scores, so they play in strict time. Many Bach files have 
 ## The character
 
 `assets/models/`: three VRoid Project sample males (CC0, see `assets/models/CREDITS.md`), loaded with `@pixiv/three-vrm`. They share one skeleton, so the Outfit menu binds Base_Male's shirt, vest, tie, trousers and shoes onto any of them (`?outfit=`):
-- `concert` (default): a black suit jacket over a grey waistcoat; `tails`: a tailcoat (front cut at the waist, two split tails to the knee) over a white waistcoat; `vest`: shirt, charcoal vest and tie; `school`: the samples' navy vest; `own`: the model's own clothes.
+- `concert` (default): a black suit jacket over a grey waistcoat; `tails`: a tailcoat (front cut at the waist, two split tails to the knee) over a white waistcoat; `vest`: shirt, charcoal vest and tie; `school`: the samples' navy vest; `casual`: HairSample_Male's white hoodie and dark trousers; `own`: the model's own clothes.
 - The jacket and tailcoat (`jacket.js`) are cut from the character's own body skin (torso and arm triangles, sleeves to the wrist, a V opening with satin lapels), pushed out along the normals far enough to clear the shirt and vest beneath, and skinned with the body's weights, so they follow the rig exactly. The shirt and vest under them are trimmed to what still shows (collar and V; for the tailcoat the waistcoat below the cut).
 The look (`stage.js`): MToon pushed to two tones with a warm rim, the violin and bow in toon materials with a constant-pixel ink outline, one warm spotlight, a cool back light, a dark hall.
 
@@ -21,13 +21,13 @@ Drives the VRM's normalised humanoid bones every frame from the #033 models (`st
 - feet planted (left forward), two-bone leg IK; hips sway and dip with the energy of the passage;
 - spine lean and breath, a turn that follows the bow; the scroll lifts on the breath before a phrase;
 - violin on the chest frame: 40° left of facing, scroll up 4°, rolled 30° (E side down), defaults from Margulies 2023 (`research/01_violinist_biomechanics.md` §2); head turned 26°, tilted 14° onto the chin rest;
-- left hand: #033's hand model is solved in the violin frame; the character's hand goes on its knuckle line, the arm is two-bone IK with the elbow under the violin (toward the G string, further in high positions), each finger is solved to #033's fingertip targets with the character's own finger lengths, and the thumb sits under the neck;
+- left hand: #033's hand model is solved in the violin frame; the character's hand goes on its knuckle line, the arm is two-bone IK with the elbow under the violin (toward the G string, further in high positions), each finger is solved to #033's fingertip targets with the character's own finger lengths, and the thumb sits under the neck; in high positions the wrist stays under the violin's back (the heel of the hand against the upper bout) and bends just that much;
 - bow placed as in #033 (contact near the bridge, tilted to the string); the right hand takes a Franco-Belgian hold (`grip()` in rig.js: palm down over the stick, index, middle and ring draped over the far side, little finger curved on top, thumb bent under the stick at the frog; pronating toward the tip), the arm is two-bone IK with the elbow higher on the lower strings, the clavicle comes forward when the tip is out of reach;
 - eyes follow the left hand and the contact point.
 
 ## Collision sweep
 
-`node violinist/test/collisions.mjs [song.mid[@model.vrm][@outfit]] …` plays pieces headless (every 0.25 s, up to 240 s each) and checks the bow against the head and torso, the right forearm against the torso, the right elbow against the body's midline, the left elbow against the violin's back and both arms against the violin body, with the sleeve thickness added; exits 1 on a failure. It needs the parent folder served (`BASE`, default `http://127.0.0.1:8000/midiviz/`), playwright-core (`PLAYWRIGHT`) and a Chromium (`CHROME`). Current closest gaps on the four default runs: bow–head 8 cm, bow–torso 12.6, forearm–torso 3.2, elbow–midline 15, left elbow–violin 4.0.
+`node violinist/test/collisions.mjs [song.mid[@model.vrm][@outfit]] …` plays pieces headless (every 0.25 s, up to 240 s each) and checks the bow against the head and torso, the right forearm against the torso, the right elbow against the body's midline, the left elbow against the violin's back and both arms against the violin body, with the sleeve thickness added; exits 1 on a failure. It needs the parent folder served (`BASE`, default `http://127.0.0.1:8000/midiviz/`), playwright-core (`PLAYWRIGHT`) and a Chromium (`CHROME`). Current closest gaps on the four default runs: bow–head 8 cm, bow–torso 12.6, forearm–torso 2.4, elbow–midline 9.7, left elbow–violin 4.3.
 
 ## Research
 
