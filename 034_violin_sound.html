@@ -184,10 +184,12 @@
       ['vibrato', 'Vibrato', 0, 2, 0.05], ['vibratoRate', 'Vib. rate', 4, 7.5, 0.1], ['portamento', 'Slides', 0, 2.5, 0.05],
       ['dynamics', 'Dynamics', 0, 2, 0.05], ['phrasing', 'Phrasing', 0, 2, 0.05], ['bowSpeed', 'Bow speed', 0.5, 1.6, 0.05],
       ['pressure', 'Pressure', 0.6, 1.8, 0.05], ['contact', 'Contact', 0.5, 1.8, 0.05],
+      ['attack', 'Attack', 0, 2, 0.05],
       // humanize (strings/sound/humanize.js)
       ['timing', 'Timing', 0, 3, 0.05], ['intonation', 'Intonation', 0, 3, 0.05], ['variance', 'Variance', 0, 3, 0.05],
     ]
     const TIPS = {
+      attack: 'How each bow stroke starts: < 1 lighter (a slower ramp, less bite and swell, as in Baroque playing), > 1 a harder, more biting attack',
       bowSpeed: 'Scales the automatic bow speed (set per stroke from its length and dynamic)',
       pressure: 'Scales the automatic bow pressure (kept inside the playable window for each speed and contact point; Interactive bow pressure corrects it while it sounds)',
       contact: 'Scales the automatic contact point: < 1 nearer the bridge (brighter), > 1 toward the fingerboard',
@@ -208,8 +210,8 @@
       student: { label: 'Student', tip: 'An intermediate student: 1st position, slow narrow vibrato, flat dynamics, notes landing off pitch, uneven timing and bow, a heavier bow nearer the fingerboard',
         style: { vibrato: 0.4, vibratoRate: 4.8, portamento: 0.4, dynamics: 0.6, phrasing: 0.4, pressure: 1.2, contact: 1.25, timing: 2.2, intonation: 2.5, variance: 2 },
         opt: { rosin: '1.4' }, mode: 'beginner' },
-      baroque: { label: 'Baroque', tip: 'Historically informed style: vibrato only as a light ornament, almost no slides, notes swelling and fading (messa di voce) with phrases shaped by the bow, a lighter, faster bow away from the bridge, lower positions; the bow leaves the string between phrases',
-        style: { vibrato: 0.15, vibratoRate: 5.2, portamento: 0.15, dynamics: 0.9, phrasing: 1.6, bowSpeed: 1.15, pressure: 0.8, contact: 1.2 },
+      baroque: { label: 'Baroque', tip: 'Historically informed style: vibrato only as a light ornament, almost no slides, notes swelling and fading (messa di voce) with phrases shaped by the bow, strokes that start lightly, a lighter, faster bow away from the bridge, lower positions; the bow leaves the string between phrases',
+        style: { vibrato: 0.15, vibratoRate: 5.2, portamento: 0.15, dynamics: 0.9, phrasing: 1.6, bowSpeed: 1.15, pressure: 0.8, contact: 1.2, attack: 0.35 },
         opt: { bowLift: 'off', keepBow: '0' }, mode: 'nearest' },
     }
     {
