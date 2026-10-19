@@ -97,6 +97,7 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
     m.side = kI.clone().sub(kL)                     // rest index side
     measure(m.hand, kMid.clone().sub(pH), m.side)
     m.knuckleOff = kMid.clone().sub(pH)            // rest wrist → knuckle midpoint (world)
+    m.indexOff = kI.clone().sub(pH); m.littleOff = kL.clone().sub(pH)
     m.handB = rest.get(m.hand).B.clone()
     m.fingers = FINGERS.map(F => {
       const bs = ['Proximal', 'Intermediate', 'Distal'].map(k => H(s + F + k))
@@ -112,7 +113,7 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
       const bs = ['Metacarpal', 'Proximal', 'Distal'].map(k => H(s + 'Thumb' + k))
       const P = bs.map(wp)
       const l1 = P[1].distanceTo(P[2])
-      m.thumb = { bones: bs, len: [l1, l1 * 0.85] }
+      m.thumb = { bones: bs, len: [l1, l1 * 0.85], rootOff: P[1].clone().sub(pH) }   // rest wrist → thumb MCP (world)
       measure(bs[0], P[1].clone().sub(P[0]), Y)
       measure(bs[1], P[2].clone().sub(P[1]), Y)
       measure(bs[2], P[2].clone().sub(P[1]), Y)
@@ -174,7 +175,8 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
   const fwd0 = v3().crossVectors(side0, Y).normalize()
 
   // ── state that smooths over frames ──
-  const st = { sway: 0, lean: 0, turn: 0, rClav: 0, lookT: v3() }
+  const st = { sway: 0, lean: 0, turn: 0, rClav: 0, lRoll: 0, lookT: v3() }
+  const _qr = new THREE.Quaternion()
   const opts = { sway: 1, lean: 1, expression: 1 }
 
   /**
@@ -265,8 +267,25 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
       // length added to the forearm, then put the wrist on that line
       const hl = m.knuckleOff.length()
       const E = twoBone(S.clone(), knuckle.clone(), m.l1, m.l2 + hl, pole.clone(), v3())
-      const R = rotFor(m.hand, knuckle.clone().sub(E), side, new THREE.Quaternion())
-      const W = knuckle.clone().sub(m.knuckleOff.clone().applyQuaternion(R))
+      const dir = knuckle.clone().sub(E).normalize()
+      const R0 = rotFor(m.hand, dir, side, new THREE.Quaternion())
+      const W = knuckle.clone().sub(m.knuckleOff.clone().applyQuaternion(R0))
+      // the forearm can still turn (pronate / supinate) about that line without
+      // bending the wrist: pick the turn that lets the thumb reach its place
+      // under the neck while the index and little knuckles stay near #033's
+      const tipT = toWorld(J.thumb.target, mat), reachT = (m.thumb.len[0] + m.thumb.len[1]) * 0.95
+      const kI = toWorld(J.fingers[1].base, mat), kL = toWorld(J.fingers[4].base, mat)
+      let best = null
+      for (let deg = -90; deg <= 90; deg += 5) {
+        const Rq = _qr.setFromAxisAngle(dir, THREE.MathUtils.degToRad(deg)).multiply(R0)
+        const root = W.clone().add(m.thumb.rootOff.clone().applyQuaternion(Rq))
+        const thumbErr = Math.max(0, root.distanceTo(tipT) - reachT)
+        const kErr = W.clone().add(m.indexOff.clone().applyQuaternion(Rq)).distanceTo(kI) + W.clone().add(m.littleOff.clone().applyQuaternion(Rq)).distanceTo(kL)
+        const c = thumbErr + 0.2 * kErr + 0.004 * Math.abs(deg)
+        if (!best || c < best.c) best = { c, deg }
+      }
+      st.lRoll += (best.deg - st.lRoll) * Math.min(1, dt * 12)
+      const R = new THREE.Quaternion().setFromAxisAngle(dir, THREE.MathUtils.degToRad(st.lRoll)).multiply(R0)
       arm(m, S, W, pole, R, side)
       fingersTo(m, mat, J)
     }
@@ -294,7 +313,9 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
       S = wp(m.upper)
       const sb = bw.s ?? 1.5
       const level = 1 - sb / Math.max(1, V.S - 1)                // 1 = G string: elbow high
-      const pole = S.clone().add(v3(-30, -34 + 22 * level + 12 * tip, -12))
+      // pole low enough that the elbow sits near the measured heights per string
+      // (research 01 §4.3: upper arm 30–40° from the body on E, 60–75° on G)
+      const pole = S.clone().add(v3(-30, -55 + 22 * level + 12 * tip, -12))
       arm(m, S, W, pole, R, side)
       gripTo(m, mat, G, n)
     }
