@@ -127,6 +127,26 @@ Limits:
 - Below the lowest note (196 Hz on the violin) the curve is extrapolated, so the violin's own low air resonance is not measured.
 - It is the body of the Iowa instruments: a 1998 Tambovsky violin, and for the viola and cello whichever instruments those sessions used.
 
+## Automatic bowing and bow-force brightness
+
+After SWAM's moving Bow Pressure / Bow Position knobs and Schoonderwaldt's measurements of violinists; [research 05 §6](research/05_commercial_violins.md#6-why-swams-bow-pressure-and-bow-position-knobs-keep-moving-and-automatic-bowing-in-034) has the background.
+
+- **Auto bowing** (`style.autoBow`, slider in the Expression block, default 1; 0 = one contact point and pressure per note). Inside each stroke, [sound/performance.js](sound/performance.js) moves:
+  - the contact point toward the bridge with the swell of a long note (× 0.9 · note-length weight · swell ÷ string weight Z/0.3, limited to ±12 %);
+  - the contact point +6 % on the lowest string;
+  - the force ±6 % from frog to tip;
+  - both through slow seeded wanders (~0.6 s and ~0.9 s lowpassed noise, 7 % and 5 % RMS).
+
+  The moves never take a note planned near the bridge closer to it on a heavy string, nor one planned far out further out. Force follows the contact point through the existing F ∝ v/β rule and the minimum-force floor.
+- **Live meters:** **Bow pressure** (bow force on the string's own Z^1.5 scale, log) and **Bow position** (bow–bridge distance as a fraction of the string), at the top right of the view, plus a dashed contact-point trace in the force lane.
+- **Bow-force brightness** ([sound/bowed.js](sound/bowed.js) `TILT`): each string is tilted above ~3·f0 by k = exp(c·(r − r0)) − 1, with r = log10(F / (Z/0.3)^1.5). It is neutral at mezzo-forte (r0 = the mf median, −0.21). `node strings/test/fit_tilt.js` fits c per instrument and model so that the median pp → ff brightening (spectral centroid) matches the Philharmonia pp/ff pairs (~12 min, needs the Philharmonia samples and ffmpeg). Results are in the table below. Without the tilt our strings brightened 15–80 cents from pp to ff, the "same tone at every dynamic" that sounded like a sawtooth. `ViolinSynth({ tilt: 0 })` turns it off; the Helmholtz-motion tests measure the string with it off.
+
+| pp → ff brightening, cents (median) | recordings | waveguide before → after (c) | source before → after (c) |
+|---|---|---|---|
+| violin (30 pairs) | 521 | 17 → 520 (2.39) | 58 → 521 (2.16) |
+| viola (47) | 952 | 35 → 906 (4.95) | 82 → 907 (4.97) |
+| cello (49) | 162 | 15 → 162 (1.02) | 41 → 172 (0.90) |
+
 ## Measured body (Philharmonia samples)
 
 **Body: Measured (Philharmonia)**: violin, viola and cello bodies estimated as the Iowa ones are, from different instruments and players.

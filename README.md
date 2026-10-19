@@ -60,6 +60,7 @@ Midi Visualization Experiments
 
 16 Oct 2026
 
+- Auto bowing (Expression block): inside every note the contact point and bow force keep moving as a violinist's do (toward the bridge as a long note swells, lighter toward the tip, slow wander), shown on live Bow pressure / Bow position meters; and bow-force brightness, a tilt per string that follows the force, fitted per instrument to the Philharmonia pp → ff brightening (violin 521 cents; our strings had 15–80, the sawtooth-like same tone at every dynamic; `node strings/test/fit_tilt.js`)
 [Experiment #033 - Violin & Viola Fingering](033_violin_fingering.html)
 - Automatic fingering for violin, viola, cello and double bass (string, position and finger for every note, double stops and chords on adjacent strings; the bass with Simandl's 1-2-4, the 4→3 switch at the crook of the neck and thumb position, [research](strings/research/04_double_bass.md)), from exercises, MIDI tracks, typed notes, TNUA files, a MIDI keyboard or clicks on the fingerboard
 - Research briefs: [what violinists do](strings/research/01_violinist_rules.md) (positions and finger patterns, shifting, string choice, open strings, Galamian / Flesch / Cooper scale fingerings, double stops, viola vs violin) and [published algorithms](strings/research/02_algorithms.md) (Sayegh, Maezawa, Nagata's HMM, the TNUA dataset and models, guitar tablature, bowing physics, violinist motion)

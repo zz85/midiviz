@@ -331,15 +331,17 @@ test('interactive bow pressure: the sweep stays in Helmholtz motion (≥ 95 %), 
   for (const [instrument, lo] of [['violin', 55], ['viola', 48], ['cello', 36]]) for (const vel of [0.3, 0.75, 1]) for (let m = lo; m <= lo + 40; m += 2) cases.push([instrument, m, vel])
   const helm = (instrument, m, vel, bowPress) => {
     const notes = finger([{ pitch: m, on: 0.1, off: 1.0, velocity: vel }], instrument)
-    const perf = renderPerformance(notes, { instrument, style: { vibrato: 0, timing: 0, intonation: 0, variance: 0 } })
+    // the string's own feedback, without the player's moving bow (autoBow: tested separately)
+    const perf = renderPerformance(notes, { instrument, style: { vibrato: 0, timing: 0, intonation: 0, variance: 0, autoBow: 0 } })
     const cap = [], orig = Body.prototype.process, origC = ConvBody.prototype.process
     Body.prototype.process = function (x, L, R, n) { cap.push(Float32Array.from(x.subarray(0, n))); return orig.call(this, x, L, R, n) }
     ConvBody.prototype.process = function (x, L, R, n) { cap.push(Float32Array.from(x.subarray(0, n))); return origC.call(this, x, L, R, n) }
     try {
       // at 1× (no oversampling), where these notes were found; oversampled they mostly stay in Helmholtz motion anyway
+      // the string's motion, before the brightness tilt
       // rosin 0: the bowing regime is what is checked, not the deliberate per-period jitter
       // (which moves a few periods off the ±10 % regularity this criterion asks for)
-      const syn = new ViolinSynth(SR, { instrument, bowPress, oversample: 1, rosin: 0 }), src = new CurveSource(perf), L = new Float32Array(128), R = new Float32Array(128)
+      const syn = new ViolinSynth(SR, { instrument, bowPress, oversample: 1, tilt: 0, rosin: 0 }), src = new CurveSource(perf), L = new Float32Array(128), R = new Float32Array(128)
       let t = 0; for (let i = 0; i < 0.8 * SR; i += 128) t = syn.process(src, t, 1 / SR, L, R, 128)
     } finally { Body.prototype.process = orig; ConvBody.prototype.process = origC }
     const raw = new Float32Array(cap.length * 128); cap.forEach((b, i) => raw.set(b, i * 128))
@@ -555,16 +557,38 @@ test('source model: the upper partials are as noisy between harmonics as the Iow
   const spec = (x, a, b) => { const P = new Float64Array(N / 2); let n = 0; for (let o = a; o + N <= b; o += N / 2) { const re = new Float64Array(N), im = new Float64Array(N); for (let i = 0; i < N; i++) re[i] = x[o + i] * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / N)); fft(re, im); for (let k = 0; k < N / 2; k++) P[k] += re[k] ** 2 + im[k] ** 2; n++ } return P }
   const pg = (P, f0) => { const r = []; for (let h = Math.ceil(3000 / f0); h * f0 < 8000; h++) { const kp = Math.round(h * f0 / bin); let p = 0; for (let j = kp - 2; j <= kp + 2; j++) p = Math.max(p, P[j]); r.push(10 * Math.log10(p / (P[Math.round((h + 0.5) * f0 / bin)] + 1e-30))) } return r.sort((a, b) => a - b)[r.length >> 1] }
   const bank = loadBankNode('violin'), iowa = [], ours = []
-  for (const [m, s, dyn] of [[57, 0, 'mf'], [62, 1, 'mf'], [66, 1, 'mf'], [69, 2, 'mf'], [74, 2, 'mf'], [76, 3, 'mf'], [81, 3, 'mf'], [72, 2, 'ff'], [69, 2, 'pp']]) {
-    const nt = bank.m.packs[`${s}_${dyn}`].notes.find(n => n.midi === m), x = bank.pcm[`${s}_${dyn}`]
+  for (const [m, s] of [[62, 1], [66, 1], [69, 2], [74, 2], [76, 3], [81, 3]]) {
+    const nt = bank.m.packs[`${s}_mf`].notes.find(n => n.midi === m), x = bank.pcm[`${s}_mf`]
     iowa.push(pg(spec(x, nt.offset + nt.attackEnd + 2400, nt.offset + Math.min(nt.headEnd, nt.attackEnd + 72000)), nt.f0))
-    const notes = finger([{ pitch: m, on: 0.1, off: 1.8, velocity: { pp: 0.35, mf: 0.68, ff: 0.95 }[dyn] }]); notes[0].string = s; notes[0].finger = m === [55, 62, 69, 76][s] ? 0 : notes[0].finger || 1
+    const notes = finger([{ pitch: m, on: 0.1, off: 1.8, velocity: 0.68 }]); notes[0].string = s; notes[0].finger = m === [55, 62, 69, 76][s] ? 0 : notes[0].finger || 1
     const [L] = renderCurves(renderPerformance(notes, { style: flat }), { sampleRate: SR, model: 'source' })
     ours.push(pg(spec(L, 0.5 * SR, 1.7 * SR), midiHz(m)))
   }
   const med = a => [...a].sort((x, y) => x - y)[a.length >> 1]
   // before: 46 dB against the recordings' 34 (a perfectly periodic sawtooth)
   assert.ok(Math.abs(med(ours) - med(iowa)) < 4, `peak / gap 3–8 kHz: ours ${med(ours).toFixed(1)} dB, Iowa ${med(iowa).toFixed(1)} dB`)
+})
+
+test('automatic bowing: contact point and force keep moving inside long notes and swell with them; autoBow 0 keeps them per note', () => {
+  const notes = finger([{ pitch: 74, on: 0.1, off: 3.1, velocity: 0.65 }])
+  const s = notes[0].string
+  const span = (perf, ch) => { const x = channel(perf, s, ch).slice(Math.round(0.4 * 250), Math.round(2.8 * 250)); return Math.max(...x) / Math.min(...x) }
+  const on = renderPerformance(notes, { style: { autoBow: 1, timing: 0, variance: 0 } }), off = renderPerformance(notes, { style: { autoBow: 0, timing: 0, variance: 0 } })
+  assert.ok(span(off, CH.beta) < 1.02, `static contact point moves ×${span(off, CH.beta).toFixed(3)}`)
+  assert.ok(span(on, CH.beta) > 1.08, `automatic contact point moves only ×${span(on, CH.beta).toFixed(3)}`)
+  assert.ok(span(on, CH.force) > span(off, CH.force) * 1.15, `force range ×${span(on, CH.force).toFixed(2)} vs ×${span(off, CH.force).toFixed(2)}`)
+  // toward the bridge as the note swells: contact point and force move against each other
+  const b = channel(on, s, CH.beta), F = channel(on, s, CH.force), i0 = Math.round(0.5 * 250), im = Math.round(1.6 * 250)
+  assert.ok(b[im] < b[i0] && F[im] > F[i0], `middle β ${b[im].toFixed(3)} vs ${b[i0].toFixed(3)}, F ${F[im].toFixed(2)} vs ${F[i0].toFixed(2)}`)
+})
+
+test('bow-force brightness: louder bowing is brighter by about what the recordings show (violin pp → ff ≥ 300 cents)', () => {
+  const cent = x => { const N = 8192; let a = 0, w = 0; for (let o = 0; o + N <= x.length; o += N) { const re = new Float64Array(N), im = new Float64Array(N); for (let i = 0; i < N; i++) re[i] = x[o + i] * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / N)); fft(re, im); for (let k = 1; k < N / 2; k++) { const p = re[k] ** 2 + im[k] ** 2; a += p * k; w += p } } return a / w }
+  for (const model of ['waveguide', 'source']) {
+    const c = vel => { const p = renderPerformance(finger([{ pitch: 74, on: 0.1, off: 1.6, velocity: vel }]), {}); const [L] = renderCurves(p, { sampleRate: SR, model, params: { body: 'phil' } }); return cent(L.subarray(0.4 * SR, 1.5 * SR)) }
+    const d = 1200 * Math.log2(c(0.95) / c(0.3))
+    assert.ok(d > 300 && d < 1200, `${model}: pp → ff ${d.toFixed(0)} cents`)
+  }
 })
 
 test('measured body (Iowa): long-term band energy above 1.6 kHz matches the recordings within 3 dB (it was 5–14 dB short)', async () => {

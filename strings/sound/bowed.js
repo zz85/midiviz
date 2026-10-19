@@ -43,6 +43,9 @@ import { BODY_IOWA } from './body-iowa.js'
 import { BODY_PHIL } from './body-philharmonia.js'
 
 export const FRAME_RATE = 250
+// bow-force brightness tilt per string model and instrument: k = exp(c·(r − r0)) − 1 above ~3·f0
+// (r: log10 bow force over the string's Z^1.5 scale). Fitted by strings/test/fit_tilt.js
+export const TILT = {"waveguide":{"violin":{"c":2.39,"r0":-0.212},"viola":{"c":4.95,"r0":-0.212},"cello":{"c":1.02,"r0":-0.212}},"source":{"violin":{"c":2.16,"r0":-0.212},"viola":{"c":4.97,"r0":-0.212},"cello":{"c":0.9,"r0":-0.212}}}
 export const CH = { f0: 0, vel: 1, force: 2, beta: 3, damp: 4, tap: 5, harm: 6 }
 export const NCH = 7
 
@@ -488,9 +491,11 @@ export class Body {
  * at(t, out) → fills out[string * NCH + channel] for time t (s).
  */
 export class ViolinSynth {
-  constructor(sr, { instrument = 'violin', model = 'waveguide', tone = null, bowPress = true, rosin = 1, resonance = 1, body = 'iowa', oversample = 3 } = {}) {
+  constructor(sr, { instrument = 'violin', model = 'waveguide', tone = null, bowPress = true, rosin = 1, resonance = 1, body = 'iowa', oversample = 3, tilt = 1 } = {}) {
     this.sr = sr
-    this.opts = { bowPress, rosin, resonance, body }
+    this.opts = { bowPress, rosin, resonance, body, tilt }
+    this.tiltLp = new Float64Array(4); this.tiltK = new Float32Array(4); this.tiltKt = new Float32Array(4); this.tiltA = new Float32Array(4)
+    this.relF = new Float32Array(4)
     this.oversample = oversample
     this.toneBands = tone
     this.block = 16                       // control interpolation step (samples)
@@ -582,6 +587,24 @@ export class ViolinSynth {
         // geometry from the average over the step (pitch glides stay smooth at 3 kHz)
         const f = 0.5 * (cur[o] + nxt[o])
         strs[s].setup(f, 0.5 * (cur[o + 3] + nxt[o + 3]), 0.5 * (cur[o + 4] + nxt[o + 4]), nxt[o + 6])
+        // bow-force brightness: bow force sets how sharp the Helmholtz corner
+        // is, the strongest timbre control a violinist has (Schoonderwaldt 2009:
+        // spectral centroid 0.8–3 kHz across the playable window, mostly from
+        // force). Our string models change far too little by themselves, so a
+        // tilt above ~3·f0 follows the force: r = log10 of the force over the
+        // string's own scale (Z^1.5, as its minimum force). TILT is fitted to the
+        // Philharmonia pp/ff brightness by strings/test/fit_tilt.js
+        {
+          const v = Math.abs(0.5 * (cur[o + 1] + nxt[o + 1])), F = 0.5 * (cur[o + 2] + nxt[o + 2])
+          if (v > 0.01 && F > 1e-3) this.relF[s] = Math.log10(F / Math.pow(this.spec.Z[s] / 0.3, 1.5))
+          const Tm = TILT[this.model] ?? TILT.waveguide, T = Tm[this.instrument] ?? Tm.violin ?? Tm, amt = this.opts.tilt ?? 1
+          // harmonics are bowed light on purpose (HARM_F) and the touch already shapes
+          // their spectrum: no force tilt there (it would cut the sounding partial,
+          // which sits just under the split, against the stopped fundamental)
+          this.tiltKt[s] = nxt[o + 6] >= 1.5 ? 0 : Math.max(-0.85, Math.min(3, Math.exp(amt * T.c * (this.relF[s] - T.r0)) - 1))
+          const srS = this.sr * this.os
+          this.tiltA[s] = 1 - Math.exp(-2 * Math.PI * Math.max(500, 3 * f) / srS)
+        }
         const V = this.voicing
         if (V) {
           const p = Math.max(0, Math.min(V.dB.length - 1.001, 69 + 12 * Math.log2(f / 440) - V.from)), j = p | 0
@@ -602,7 +625,12 @@ export class ViolinSynth {
             const vb = cur[o + 1] + (nxt[o + 1] - cur[o + 1]) * k
             const F = cur[o + 2] + (nxt[o + 2] - cur[o + 2]) * k
             const tap = i === 0 && q === 0 ? nxt[o + 5] : 0
-            sum += strs[s].tick(vb, F, tap) * this.spec.Z[s] * sg[s]
+            let x = strs[s].tick(vb, F, tap)
+            // brightness tilt (smoothed k, one-pole split at ~3·f0)
+            this.tiltK[s] += (this.tiltKt[s] - this.tiltK[s]) * 0.002
+            const lp = (this.tiltLp[s] += this.tiltA[s] * (x - this.tiltLp[s]))
+            x += this.tiltK[s] * (x - lp)
+            sum += x * this.spec.Z[s] * sg[s]
           }
           if (this.model === 'waveguide') {
             // bridge coupling: every string feels the others' bridge force a little

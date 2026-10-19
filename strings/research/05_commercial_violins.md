@@ -120,3 +120,49 @@ Limits:
 - The files have no licence, so they are not in the repo: the script stores them and the result in the git-ignored `strings/data/NBody/`. On a fresh checkout or GitHub Pages the option falls back to the Iowa body until the script is run.
 - It is one violin, measured in 1998. There is no viola or cello; those keep the Iowa body.
 - It is a different instrument from the Iowa one, and it knows nothing about our string. Compared harmonic by harmonic with the Iowa recordings, it is further from them than the Iowa body is (5.7 dB median against 3.5 for the waveguide), and slightly further than the modal body (4.7), whose EQ was fitted to recordings. It still has little energy above 8 kHz, where the hammer barely excites the body. That says it is a different violin, not that it is worse: the ear decides.
+
+## 6. Why SWAM's Bow Pressure and Bow Position knobs keep moving, and automatic bowing in #034
+
+### What SWAM does
+
+The moving knobs in SWAM's demo videos are not a hidden "player" inside the engine. According to the [SWAM Solo Strings manual](https://images.equipboard.com/uploads/item/manual/109721/audio-modeling-swam-solo-strings-bundle-manual.pdf) (v2.1; the v3 manual is not public), the GUI shows the live value of each parameter, and four mechanisms move it:
+
+- **Expression** (CC11, CC2 or aftertouch) is the main control, "interpreted as the speed of the bow in relation to the bow pressure". The manual calls an expression controller "absolutely necessary": without one the instrument refuses to play in real time.
+- **MIDI mapping.** The manual's own examples map Bow Pressure and Bow Position to the same controller as Expression: pressure 55→80 and position 80→40 as CC11 rises. One pedal then moves all three together, "to play nearer the ponticello in function of the Expression and Bow Pressure". The demos are played this way, or with automation lanes drawn in a DAW. That is why the knobs move.
+- **Interactive BowPress** corrects the bow pressure while the note sounds, "to maintain a good vibrating sound".
+- **Random Bow** adds "randomness of the bow pressure, speed and position", and Random Finger adds randomness of the finger's pitch.
+
+So SWAM leaves the bow to the player's controller. The realism in its demos comes from a person, or a programmed curve, moving pressure and position all the time.
+
+### What violinists do with the bow
+
+Schoonderwaldt measured violinists with motion capture and a force sensor on the bow ([PhD, KTH 2009](https://www.speech.kth.se/publications/pdfs/schoonderwaldt_e.pdf)):
+
+- **Crescendo:** bow force and bow speed go up and the bow moves toward the bridge, in coordination. Diminuendo reverses all three.
+- **Note length:** long notes change their dynamic mainly through the contact point, because the bow length limits the speed. Fast notes change it mainly through bow speed.
+- **G string:** the contact point sits a little further from the bridge, which suits its higher force limits.
+- **Brightness:** within the playable range the spectral centroid runs from about 0.8 kHz (light, far from the bridge) to 3 kHz (heavy, near the bridge). It is set mostly by bow force; the contact point matters much less.
+- **Forces:** pp is usually under 0.5 N, normal playing up to 2.5 N, accents 3–4 N.
+
+### What #034 does now
+
+**Automatic bowing** (`style.autoBow`, the **Auto bowing** slider, default 1) moves the contact point and force inside every note, as a violinist does. Nothing has to be drawn or played on a controller:
+
+- **Swell:** as a long note swells (its messa di voce and phrase arch), the contact point moves toward the bridge. Bow speed and force follow from the existing rules (F ∝ v/β, kept above the minimum force), so all three move together. The move is scaled down on heavy strings and limited, so a note planned close to the bridge is never taken closer.
+- **Position on the bow:** the force is lighter toward the tip (±6 %), because the bow's weight sits at the frog.
+- **Lowest string:** the contact point sits a little further from the bridge on the G string, or the C string on viola and cello.
+- **Slow wander:** both contact point and force wander slowly (SWAM's Random Bow), but never outside the range where the string speaks.
+
+The page shows the result as two live meters in SWAM's style, **Bow pressure** and **Bow position**, plus a dashed contact-point trace under the force lane.
+
+**Bow-force brightness** turned out to matter more than the automation itself. Our two string models barely changed their tone with bow force. From pianissimo to fortissimo, the Philharmonia recordings get brighter by a median 521 cents of spectral centroid on violin, 952 on viola and 162 on cello. Our waveguide got brighter by 15–35 cents and our source model by 40–80. Every dynamic had the same spectral shape, which is the "sawtooth" quality: a synth tone that only gets louder. Each string is now tilted above about 3·f0 by an amount that follows its bow force (`TILT` in bowed.js). The tilt is fitted per instrument and string model to the Philharmonia pp/ff pairs by `strings/test/fit_tilt.js`, and is neutral at mezzo-forte, so the measured bodies still fit.
+
+Measured on sustained violin notes, slow tone movement (spectral centroid, 0.2–3 Hz, below the vibrato):
+
+| | brightness wander | level wander |
+|---|---|---|
+| VSCO recordings (sustained notes, one bow) | 83 cents | 0.87 dB |
+| before (static bow, no tilt) | 2–5 cents | 0.17 dB |
+| automatic bowing + brightness tilt | 40–43 cents | 0.5 dB |
+
+That is about half of what the recorded player does, up from almost nothing.

@@ -21,6 +21,13 @@
 //          rests on it (damping it) at short ones
 //   beta   bow–bridge distance / vibrating length: nearer the bridge for
 //          forte and in high positions, toward the fingerboard for piano
+//          Automatic bowing (style.autoBow, after violinists measured by
+//          Schoonderwaldt 2009 and the bow hold): within a note the contact
+//          point and force keep moving: toward the bridge and heavier as a long
+//          note swells (long notes change their dynamic mainly with the
+//          contact point, fast ones with bow speed), lighter toward the tip,
+//          a little further out on the G string, and a slow wander of both
+//          (SWAM's Random Bow)
 //   damp   extra string damping when a finger lifts off a stopped note
 //   tap    the left-hand finger landing on the string
 //
@@ -45,6 +52,7 @@ export const STYLE = {
   pressure: 1,       // × bow force
   contact: 1,        // × distance from the bridge
   attack: 1,         // how strokes start: < 1 lighter (slower ramp, less bite and press, Baroque), > 1 harder
+  autoBow: 1,        // automatic bowing (× the player's continuous bow-pressure / contact-point moves; 0 = static per note)
   ...HUMANIZE,       // timing, intonation, variance (humanize.js)
   // play modes, after SWAM's Right Hand / Polyphony pages
   bowStart: 1,       // first stroke: 1 down-bow, -1 up-bow
@@ -168,6 +176,21 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
   // heavier strings need more force for the same Helmholtz motion (Schelleng: F ∝ Z)
   const Zr = (SYNTH[instrument] || SYNTH.violin).Z.map(z => z / 0.3)
   const Zs = Zr.map(z => Math.sqrt(z * 0.3 / 0.37))
+  // automatic bowing: a slow, smooth wander of contact point and force per string
+  // (two first-order lowpasses of seeded noise, ~0.6 s and ~0.9 s), unit RMS
+  const AB = Math.max(0, S.autoBow ?? 1)
+  // contact point: × swell of a long note (÷ string weight), + on the lowest string,
+  // wander; force: frog → tip lightening, wander
+  const K_SW = 0.9, K_G = 0.06, K_WB = 0.07, K_TIP = 0.12, K_WF = 0.05
+  const wander = (sd, tau) => {
+    const Rn = rngH(seed * 977 + sd), out = new Float32Array(frames), a = Math.exp(-1 / (tau * frameRate))
+    let x = 0, y = 0
+    for (let i = 0; i < frames; i++) { x = a * x + (1 - a) * (Rn() - 0.5); y = a * y + (1 - a) * x; out[i] = y }
+    let e = 0; for (let i = 0; i < frames; i++) e += out[i] * out[i]
+    const g = 1 / Math.sqrt(e / frames || 1); for (let i = 0; i < frames; i++) out[i] *= g
+    return out
+  }
+  const wB = [0, 1, 2, 3].map(s => wander(11 + s, 0.6)), wF = [0, 1, 2, 3].map(s => wander(29 + s, 0.9))
 
   // ── per-note context ──
   const byString = [[], [], [], []]
@@ -294,7 +317,24 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
           // nearer the bridge when louder (SWAM: "the speed of the bow in relation to the pressure")
           const ex = hasE ? E[i] : 0
           const dyn = hasE ? clamp(dynN + ex, 0.08, 1) : dyn0
-          const bet = hasE ? clamp(bet0 * (1 - 0.35 * (ex - ex0)), 0.03, 0.24) : bet0
+          let bet = hasE ? clamp(bet0 * (1 - 0.35 * (ex - ex0)), 0.03, 0.24) : bet0
+          // automatic bowing: the contact point follows the swell of a long note
+          // (messa di voce sw, phrase arch pg: toward the bridge as it grows),
+          // sits a little further out on the lowest string, and wanders slowly;
+          // the force is lighter toward the tip (the bow's weight is at the frog,
+          // only partly made up by the arm) and wanders too
+          let fAuto = 1
+          if (AB > 0 && t >= st.t0 && t <= st.t1) {
+            const L = clamp((nd - 0.25) / 0.9, 0, 1)
+            const swell = sw * Math.pow(pg, 0.5) - 1
+            const bowAt = st.start + (st.end - st.start) * clamp((t - st.t0) / D, 0, 1)
+            bet = clamp(bet * clamp(1 - AB * K_SW * L * swell / Zr[s], 0.88, 1.12) * (1 + AB * (s === 0 ? K_G : 0)) * (1 + AB * K_WB * (0.4 + 0.6 * L) * wB[s][i]), 0.03, 0.24)
+            // the moves stay where the string speaks easily: they may not take a note
+            // planned near the bridge closer to it (forte on a heavy string) or one
+            // planned far out (high positions) further out (subharmonics, strings/test/sound.test.js)
+            bet = clamp(bet, bet0 * (Zr[s] > 2 ? 0.97 : 0.85), bet0 > 0.13 ? bet0 : Math.min(0.13, bet0 * 1.15))
+            fAuto = (1 + AB * K_TIP * (0.5 - bowAt / 65)) * (1 + AB * K_WF * wF[s][i])
+          }
           const vmag = st.V * (0.5 + 0.7 * dyn) * pg * sw * env
           // handover across strings inside a slur
           let w = 1
@@ -314,7 +354,7 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
           const bite = 1 + (st.short ? 0.5 : 0.2) * atkK
           // harmonics are bowed lighter (HARM_F, measured on the waveguide); tremolo a little lighter
           const Fk = (0.55 + 0.9 * dyn) * S.pressure * (n.harm ? HARM_F : 1) * (st.trem ? 0.85 : 1) * (1 + 0.05 * (n.bowVar ?? 0)) * Zs[s] * Math.sqrt(0.1 / bet) * (1 + (bite - 1) * Math.exp(-Math.max(0, t - st.t0) / 0.035))
-          let F = Math.max(vF, 0.04 + 0.06 * dyn) * Fk * PRESS
+          let F = Math.max(vF, 0.04 + 0.06 * dyn) * Fk * PRESS * fAuto
           // stay above Schelleng's minimum (F_min ∝ Z² v / β², measured on the waveguide)
           F = Math.max(F, FMIN * S.pressure * (n.harm ? HARM_F : 1) * Math.pow(Zr[s], ZEXP) * vF / (bet * bet))
           // the bow presses in to catch the string and eases off: ×2 at the start, back in ~40 ms
