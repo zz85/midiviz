@@ -388,8 +388,9 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     state.t += dt
     // root: hips on the bench, a slight forward tilt of the pelvis
     const r = ROOT
-    const pelvisTilt = 0.06 + state.lean * 0.25
+    const pelvisTilt = state.stand ? state.lean * 0.7 : 0.06 + state.lean * 0.25
     const seat = seatP.copy(seat0); seat.z -= state.reachSlide || 0
+    if (state.stand) seat.set(seat0.x, hipMid.y - 0.6, seat0.z)
     wQ[r].setFromEuler(new THREE.Euler(-pelvisTilt, state.turn * 0.25, 0, 'YXZ')).multiply(restQ[r])
     wP[r].copy(rootFromHip).applyQuaternion(_q.setFromEuler(new THREE.Euler(-pelvisTilt, 0, 0))).add(seat)
     // weight on one sit bone: the pelvis rolls about the loaded one (7 cm off
@@ -476,7 +477,7 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     const d = a.drv
     d.shoulder.copy(S)
     const Jd = d.joints
-    if (!d.visible) { restArm(a); return }
+    if (!d.visible || state.stand) { restArm(a); return }
     // two-bone IK, elbows out and down, as the driver
     tW.copy(Jd.W)
     const v = _v.subVectors(tW, S)
@@ -534,7 +535,8 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
   function restArm(a) {
     // no song: hands in the lap
     const S = pos(bones[a.ua1].name)
-    const lap = v3(a.s * 9, 62, 26)
+    // (standing: hands together in front of her, following the bow down)
+    const lap = state.stand ? v3(a.s * 2.5, hipMid.y - 14 - 30 * state.lean, seat0.z - 13 - 32 * state.lean) : v3(a.s * 9, 62, 26)
     const v = _v.subVectors(lap, S), L = Math.min(v.length(), a.UPPER + a.FORE - 1)
     const n = v.normalize().clone()
     const cosA = clamp((a.UPPER ** 2 + L * L - a.FORE ** 2) / (2 * a.UPPER * L), -1, 1), sinA = Math.sqrt(1 - cosA * cosA)
@@ -582,6 +584,7 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     glanceW += (w - glanceW) * (1 - Math.exp(-dt * (slow ? 1.6 : 6)))
     state.lidDrop += (inner * 0.8 - state.lidDrop) * (1 - Math.exp(-dt * 3))
     look.copy(handsAt).lerp(glanceP, glanceW)
+    if (state.lookAt) look.copy(state.lookAt)
     // eyes: a quick saccade when the target jumps, smooth pursuit otherwise;
     // the head follows more slowly. A big gaze shift often comes with a blink
     const top = pos('neck01')
@@ -689,7 +692,8 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     const l = leg[side], s = side === 'R' ? 1 : -1
     hipP.copy(pos(bones[l.ul1].name))
     // where the ball of the foot goes
-    if (side === 'R') ball.copy(pedalPoint(2, state.pedal[2], 8.5)).add(v3(0.5, 1.2, 0))
+    if (state.stand) ball.set(s * 8, 2.4, seat0.z - 11 + (s > 0 ? 2 : -2))
+    else if (side === 'R') ball.copy(pedalPoint(2, state.pedal[2], 8.5)).add(v3(0.5, 1.2, 0))
     else {
       const una = pedalPoint(0, state.pedal[0], 8.5).add(v3(-1, 1.2, 0))
       const floor = v3(-17, 2.4, 6)
@@ -966,7 +970,7 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     // breathing deepens with the phrase
     state.breathAmp = 1 + 1.2 * x * E
   }
-  Object.assign(state, { songT: 0, playing: false, exLean: 0, exSide: 0, exTurn: 0, exNod: 0, exRoll: 0, exShrug: 0, breathAmp: 1, hipRoll: 0, hipShift: 1, elbowLead: 1, posture: 0.5, reach: 1, rock: 1, sway: 1, nod: 1, glances: 1, gazeMode: 'music', blink: 0, lidDrop: 0 })
+  Object.assign(state, { songT: 0, playing: false, exLean: 0, exSide: 0, exTurn: 0, exNod: 0, exRoll: 0, exShrug: 0, breathAmp: 1, hipRoll: 0, hipShift: 1, elbowLead: 1, posture: 0.5, reach: 1, rock: 1, sway: 1, nod: 1, glances: 1, gazeMode: 'music', blink: 0, lidDrop: 0, stand: 0, bowLean: 0, lookAt: null })
 
   const LOOK = 0.4, _fw = v3(), _sd = v3(), TURN_R = 25   // s ahead the body watches for keys out of reach
   /** Posture from the hands: lean / turn toward them, further when out of reach. */
@@ -1095,6 +1099,8 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
       state.songT = t
       hands.update(t, dt)
       body(dt)
+      // standing (for a bow): the bend is all she does
+      if (state.stand) { state.lean = state.bowLean || 0; state.side = 0; state.turn = 0 }
       pose(dt)
     },
     pos, quat, bone: n => bones[idx[n]],

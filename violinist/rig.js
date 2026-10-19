@@ -169,13 +169,20 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
   const toWorld = (p, mat) => p.clone().applyMatrix4(mat)
   const toLocalM = new THREE.Matrix4()
 
+  // his left and his facing at rest (for a bow, whichever way he stands)
+  const side0 = wp(M.L.upper).sub(wp(M.R.upper)).setY(0).normalize()
+  const fwd0 = v3().crossVectors(side0, Y).normalize()
+
   // ── state that smooths over frames ──
   const st = { sway: 0, lean: 0, turn: 0, rClav: 0, lookT: v3() }
   const opts = { sway: 1, lean: 1, expression: 1 }
 
   /**
    * pose: motion.js poseAt(t). drive: { t, energy (0..1), phrase (0..1 through
-   * the phrase), breath (0..1, a cue before a phrase), playing }.
+   * the phrase), breath (0..1, a cue before a phrase), playing,
+   * rest (violin and bow lowered in his hands), bend (a bow from the hips,
+   * radians), nod (radians, a cue with the violin up), look (world point for
+   * the eyes) }.
    */
   function update(pose, drive, dt = 1 / 60) {
     const t = drive.t
@@ -203,11 +210,12 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
     turn(B.spine, new THREE.Euler(st.lean * 0.35 + breath, -0.05 + st.turn * 0.3, st.sway * 0.004, 'YXZ'))
     if (B.chest && B.chest !== chestBone) turn(B.chest, new THREE.Euler(st.lean * 0.35, st.turn * 0.35, 0, 'YXZ'))
     turn(chestBone, new THREE.Euler(st.lean * 0.3 - breath, st.turn * 0.35, 0.03, 'YXZ'))
+    if (drive.rest) { restPose(drive); return }
 
     // ── the violin on the chest ──
     const chestQ = wq(chestBone).multiply(_q.copy(rest.get(chestBone).q).invert())
     const neckP = wp(B.neck)
-    const yaw = THREE.MathUtils.degToRad(HOLD.yaw), pitch = THREE.MathUtils.degToRad(HOLD.pitch + 8 * (drive.breath || 0)), roll = THREE.MathUtils.degToRad(HOLD.roll)
+    const yaw = THREE.MathUtils.degToRad(HOLD.yaw), pitch = THREE.MathUtils.degToRad(HOLD.pitch + 8 * (drive.breath || 0)) - (drive.nod || 0), roll = THREE.MathUtils.degToRad(HOLD.roll)
     const d = v3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)).applyQuaternion(chestQ)
     const xI = d.clone().negate()
     // z (G side): horizontal, perpendicular to the axis, then rolled up about the axis
@@ -225,7 +233,7 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
     // ── neck and head onto the chin rest ──
     const ht = THREE.MathUtils.degToRad
     turn(B.neck, new THREE.Euler(ht(HOLD.headNod) * 0.4, ht(HOLD.headTurn) * 0.4, -ht(HOLD.headTilt) * 0.4, 'YXZ'))
-    const nod = ht(HOLD.headNod) * 0.6 + 0.05 * Math.sin(2 * Math.PI * t / 3.1) * opts.expression
+    const nod = ht(HOLD.headNod) * 0.6 + (drive.nod || 0) * 0.5 + 0.05 * Math.sin(2 * Math.PI * t / 3.1) * opts.expression
     turn(B.head, new THREE.Euler(nod, ht(HOLD.headTurn) * 0.6, -ht(HOLD.headTilt) * 0.6, 'YXZ'))
 
     if (!pose) { relaxArms(); legs(); return }
@@ -295,7 +303,46 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
     // eyes on the left hand (or on the bow when it travels)
     if (vrm.lookAt) {
       const goal = toWorld(V.bowContact(bw.s ?? 1.5), V.group.matrixWorld).lerp(toWorld(leftHand.joints.knuckle, V.group.matrixWorld), 0.55)
-      st.lookT.lerp(goal, Math.min(1, dt * 3))
+      st.lookT.lerp(drive.look || goal, Math.min(1, dt * (drive.look ? 6 : 3)))
+      lookObj.position.copy(st.lookT)
+    }
+  }
+
+  // ── at rest: the violin by its neck in the left hand, the bow in the right,
+  // and a bow from the hips ──
+  function restPose(drive) {
+    const bend = drive.bend || 0
+    if (bend) {
+      setWorldQ(B.hips, _qq.setFromAxisAngle(side0, bend * 0.8).multiply(wq(B.hips)))
+      B.hips.updateMatrixWorld(true)
+      turn(B.spine, null); setWorldQ(B.spine, _qq.setFromAxisAngle(side0, bend * 0.12).multiply(wq(B.spine)))
+    }
+    turn(B.neck, null); setWorldQ(B.neck, _qq.setFromAxisAngle(side0, 0.05 + bend * 0.15).multiply(wq(B.neck)))
+    turn(B.head, null); setWorldQ(B.head, _qq.setFromAxisAngle(side0, 0.04 + bend * 0.2).multiply(wq(B.head)))
+    relaxArms()
+    legs()
+    const down = v3(0, -1, 0)
+    // the violin hangs from his left hand, body down, a little forward and out
+    const gL = wp(M.L.hand).addScaledVector(down, 7 * V.k).addScaledVector(fwd0, 2)
+    const xI = down.clone().addScaledVector(fwd0, 0.3).addScaledVector(side0, 0.15).normalize()
+    const yI = side0.clone().addScaledVector(xI, -side0.dot(xI)).normalize()
+    const zI = v3().crossVectors(xI, yI)
+    _m.makeBasis(xI, yI, zI)
+    V.group.quaternion.setFromRotationMatrix(_m)
+    V.group.position.copy(gL).sub(v3(V.x0 * 0.55, 0.8 * V.k, 0).applyQuaternion(V.group.quaternion))
+    V.group.updateMatrixWorld(true)
+    V.layoutStrings(new Array(V.S).fill(null), new Array(V.S).fill(0), 0)
+    leftHand.update(null)
+    // the bow from the right hand, the tip down and forward
+    const gR = wp(M.R.hand).addScaledVector(down, 6 * V.k)
+    const bx = down.clone().multiplyScalar(0.8).addScaledVector(fwd0, 0.6).normalize()
+    const bz = side0.clone(), by = v3().crossVectors(bz, bx)
+    _m.makeBasis(bx, by, bz)
+    bow.group.quaternion.setFromRotationMatrix(_m).premultiply(_q.copy(V.group.quaternion).invert())
+    bow.group.position.copy(V.group.worldToLocal(gR))
+    bow.group.updateMatrixWorld(true)
+    if (vrm.lookAt) {
+      st.lookT.lerp(drive.look || wp(B.head).addScaledVector(fwd0, 400).add(v3(0, -60 - 200 * bend, 0)), 0.1)
       lookObj.position.copy(st.lookT)
     }
   }

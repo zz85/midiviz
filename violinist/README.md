@@ -42,7 +42,8 @@ The violinist and the #032 pianist (AvatarSample_A in her concert dress, `pianis
 - `character.js` is the violinist loader, shared with #037: `MODELS`, `OUTFITS`, `loadViolinist(file, {outfit, gain})`, `disposeVRM`, `setOutline`.
 - The piano part is every track but the solo one, fingered in a worker by `fingering/fingering.js` (with two tracks the higher one is the right hand), the sustain pedal from CC64; concerto orchestras are folded onto the keyboard with duplicate notes removed. Sound: FluidR3, violin on channel 0, piano on channel 1.
 - Pieces: the six sonatas, Gounod's Ave Maria, and Bach's E major concerto and Vivaldi's Spring and Winter with the orchestra on the piano.
-- Cameras: front, wide, him, his face, bow, her, her face, keys, over her shoulder, over his. Auto plans the whole piece when it loads: takes of 5–12 s, preferring whichever part is busier against its own average, ending takes on phrase boundaries.
+- Before the music (Bow, on by default; `?intro=0` off): an 11 s opening from the top of a piece. She stands beside him in front of the piano and they bow to the hall together; then, at the instruments, he raises the violin, looks to her, she looks back, and he nods on the upbeat. `rig.js` takes `rest`, `bend`, `nod` and `look` in its drive (violin and bow lowered in his hands for `rest`); `pianist/rig.js` gains `state.stand`, `bowLean` and `lookAt`.
+- Cameras: front, wide, two closer two-shots (duo, duoLow), him, his face, bow, her, her face, keys, over her shoulder, over his. Auto plans the whole piece when it loads: takes of 5–12 s ending on phrase boundaries. Where both parts are near their usual busyness (a duet passage) it takes two-shots; otherwise it prefers whichever part is busier against its own average.
 - Headless: `038_duo.html?shot&view=front&t=20` (sets `__done`, `__info`, `__dbg`).
 
 ## Not done yet

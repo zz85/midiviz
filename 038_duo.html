@@ -54,6 +54,8 @@
       <option value="auto">Director (auto)</option>
       <option value="front">The two, from the hall</option>
       <option value="wide">Hall, wide</option>
+      <option value="duo">The two, closer</option>
+      <option value="duoLow">The two, low from the hall</option>
       <option value="him">The violinist</option>
       <option value="hisFace">His face</option>
       <option value="bow">Bow and strings</option>
@@ -66,6 +68,7 @@
     </select>
     <select id="room" title="Room"></select>
     <label title="Ink outlines"><input type="checkbox" id="outline" checked> Ink</label>
+    <label title="They bow to the hall, then he gives her a nod to start"><input type="checkbox" id="intro" checked> Bow</label>
   </div>
   <div id="bottom" class="bar">
     <button id="play">▶</button>
@@ -198,6 +201,8 @@
       setOutline(him, on); setOutline(her.vrm, on)
     }
     $('outline').onchange = applyOutline
+    if (Q.get('intro') === '0') $('intro').checked = false
+    $('intro').onchange = () => saveUrl()
     $('model').onchange = $('outfit').onchange = async () => { await loadHim(); saveUrl() }
 
     // ── Pieces: the violin part, and everything else on the piano ──────────
@@ -302,6 +307,42 @@
       return t => { const i = Math.max(0, Math.min(n - 1, Math.round(t / step))); return [a[0][i], a[1][i]] }
     }
 
+    // ── Before the music: a bow together, then a nod to start ──────────────
+    // Song time runs from -INTRO. Until STAND_END she stands beside him in
+    // front of the piano and he holds the violin and bow down; both bow (from
+    // BOW0). Then a cut (the director's), she is at the keyboard, he has the
+    // violin up and looks to her, she looks back; he nods at NOD and breathes
+    // in on the upbeat (the rig's breath before the first phrase).
+    const INTRO = 11, STAND_END = -4.6, BOW0 = -9.2, NOD = -1.15
+    const smooth = x => x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x)
+    // a bow: 1 s down, a short hold, 1.1 s up
+    const bowCurve = u => 0.62 * (smooth(u / 1.0) - smooth((u - 1.5) / 1.1))
+    const nodCurve = t => { const d = (t - NOD) / 0.28; return 0.16 * Math.exp(-d * d) - 0.05 * Math.exp(-(((t - NOD - 0.45) / 0.25) ** 2)) }
+    // where she stands for the bow: downstage of the piano, at his right hand
+    // (stage view: to his left), facing the hall
+    const STAND_AT = v3(-118, 0, 22)
+    const herHome = { pos: null, rotY: 0 }
+    let wasStanding = false
+    function introPose(t) {
+      return {
+        standing: t < STAND_END,
+        bend: bowCurve(t - BOW0), herBend: bowCurve(t - BOW0 - 0.12) * 1.15,
+        cue: t >= STAND_END && t < -0.35, nod: t < 0.4 ? nodCurve(t) : 0,
+      }
+    }
+    function placeHer(standing) {
+      if (!herHome.pos) { herHome.pos = her.group.position.clone(); herHome.rotY = her.group.rotation.y }
+      if (standing) {
+        // her front (-z in the rig frame) to the hall: total yaw π
+        const yaw = Math.PI - pianoSide.rotation.y
+        her.group.rotation.y = yaw
+        const hips = v3(0, 0, 44).applyAxisAngle(v3(0, 1, 0), Math.PI)        // seat spot, in world orientation
+        pianoSide.worldToLocal(her.group.position.copy(STAND_AT).sub(hips))
+      } else { her.group.position.copy(herHome.pos); her.group.rotation.y = herHome.rotY }
+      her.group.updateMatrixWorld(true)
+      pRig.state.stand = standing ? 1 : 0
+    }
+
     // ── The piano's keys and pedal follow the piano part (as #032 driveKeys) ──
     const keys = {
       held: new Map(), idx: 0, t: null, active: [], pedalIdx: 0, sustain: false,
@@ -362,23 +403,26 @@
       await ensureSound()
       if (!scheduler) {
         scheduler = new MidiScheduler(target); await scheduler.init()
-        scheduler.on('time', t => { if (clock.playing && Math.abs(t - now()) > 0.08) { clock.t = t; clock.wall = performance.now() } })
+        scheduler.on('time', t => { if (clock.playing && !clock.pending && Math.abs(t - now()) > 0.08) { clock.t = t; clock.wall = performance.now() } })
       }
       loadSchedule()
       if (clock.t >= song.duration) clock.t = 0
+      if (clock.t === 0 && $('intro').checked) clock.t = -INTRO
       scheduler.speed = clock.speed
-      scheduler.seek(clock.t); scheduler.play()
+      scheduler.seek(Math.max(0, clock.t))
+      clock.pending = clock.t < 0          // the scheduler starts when the clock reaches 0
+      if (!clock.pending) scheduler.play()
       clock.wall = performance.now(); clock.playing = true
       $('play').textContent = '❚❚'; $('play').classList.add('on')
     }
     function pause() {
-      clock.t = now(); clock.playing = false
+      clock.t = now(); clock.playing = false; clock.pending = false
       scheduler?.pause(); target.allSoundOff()
       $('play').textContent = '▶'; $('play').classList.remove('on')
     }
     $('play').onclick = () => (clock.playing ? pause() : play())
     $('speed').onchange = () => { clock.t = now(); clock.wall = performance.now(); clock.speed = +$('speed').value; if (scheduler) scheduler.speed = clock.speed }
-    $('seek').oninput = () => { clock.t = +$('seek').value * song.duration; clock.wall = performance.now(); if (clock.playing) { target.allSoundOff(); scheduler.seek(clock.t) } }
+    $('seek').oninput = () => { clock.t = +$('seek').value * song.duration; clock.wall = performance.now(); if (clock.playing) { target.allSoundOff(); scheduler.seek(clock.t); if (clock.pending) { clock.pending = false; scheduler.play() } } }
     $('song').onchange = async () => { const was = clock.playing; pause(); await loadSong($('song').value); director.reset(); if (was) play(); saveUrl() }
     $('start').onclick = () => { $('start').classList.add('gone'); play() }
     addEventListener('keydown', e => { if (e.code === 'Space' && e.target === document.body) { e.preventDefault(); $('start').classList.add('gone'); clock.playing ? pause() : play() } })
@@ -390,18 +434,20 @@
     function subjects() {
       him.humanoid.getNormalizedBoneNode('head').getWorldPosition(S.hisHead)
       V.group.localToWorld(S.violin.set(V.x0 + V.bodyLen * 0.5, 0, 0))
-      pianoSide.localToWorld(S.herHead.copy(pRig.pos('head')))
+      her.group.localToWorld(S.herHead.copy(pRig.pos('head')))
       const d = pRig.hands
       S.hands.set(0, 0, 0); let n = 0
       for (const h of [d.L, d.R]) if (h.visible) { S.hands.add(h.joints.W); n++ }
       if (n) S.hands.multiplyScalar(1 / n); else S.hands.set(0, 76, 2)
-      pianoSide.localToWorld(S.hands)
+      her.group.localToWorld(S.hands)
       S.mid.copy(S.hisHead).lerp(S.herHead, 0.5).setY(115)
     }
     // [camera position, look-at, fov] from the subjects (he faces +z, she faces about +x)
     const VIEWS = {
       front: () => [v3(-60, 175, 520), S.mid.clone().add(v3(15, 0, 40)), 30],
       wide: () => [v3(-40, 330, 1250), S.mid.clone().setY(100), 24],
+      duo: () => [S.mid.clone().add(v3(150, 25, 400)), S.mid.clone().add(v3(5, -10, 0)), 30],
+      duoLow: () => [S.mid.clone().add(v3(70, -75, 340)), S.mid.clone().add(v3(-5, 5, 0)), 34],
       him: () => [S.hisHead.clone().add(v3(-70, -20, 260)), S.hisHead.clone().add(v3(10, -35, 0)), 28],
       hisFace: () => [S.hisHead.clone().add(v3(20, 18, 88)), S.hisHead.clone().add(v3(2, -6, 0)), 30],
       bow: () => [S.violin.clone().add(v3(-95, 25, 70)), S.violin.clone(), 32],
@@ -424,17 +470,24 @@
     // starts, every 5-11 s, favouring whoever is busier (notes per second
     // over the next few seconds), never the same view twice in a row, back to
     // the two of them every fourth take, and opening wide.
-    const TAKES = { violin: ['him', 'hisFace', 'bow', 'overHer'], piano: ['her', 'herFace', 'keys', 'overHim'], both: ['front', 'wide', 'front'] }
+    const TAKES = { violin: ['him', 'hisFace', 'bow', 'overHer'], piano: ['her', 'herFace', 'keys', 'overHim'], both: ['front', 'wide', 'front'], duet: ['duo', 'front', 'duoLow', 'overHer', 'overHim', 'duo'] }
     const director = {
       plan: [],
       reset() {
-        this.plan = []
-        let t = 0, last = '', count = 0
+        // the bow (from the hall) and the nod (over her shoulder, to him)
+        this.plan = [
+          { v: 'front', start: -INTRO, until: STAND_END, drift: v3(0, 0, -30) },
+          { v: 'overHer', start: STAND_END, until: 0, drift: v3(0, 0, -4) },
+        ]
+        let t = 0, last = 'overHer', count = 0
         while (t < song.duration + 2) {
           const seed = Math.floor(t * 7.3 + (song.entry?.violinNotes || 0)) % 997
           // busier than usual for that part (the piano plays many more notes)
           const [dv, dp] = song.density ? song.density(t + 2).map((d, i) => d / (song.meanDensity[i] || 1)) : [1, 1]
-          let pool = count % 4 === 0 ? TAKES.both : dv > dp * 1.4 ? TAKES.violin : dp > dv * 1.4 ? TAKES.piano : [...TAKES.violin, ...TAKES.piano]
+          // a duet passage (both at least near their usual busyness, neither
+          // far ahead): the two of them in one frame
+          const duet = dv > 0.6 && dp > 0.6 && dv < dp * 1.6 && dp < dv * 1.6
+          let pool = duet ? TAKES.duet : count % 4 === 0 ? TAKES.both : dv > dp * 1.4 ? TAKES.violin : dp > dv * 1.4 ? TAKES.piano : [...TAKES.violin, ...TAKES.piano]
           if (count === 0) pool = ['wide']
           pool = pool.filter(v => v !== last)
           const v = pool[(seed * 31 + 7) % pool.length]
@@ -447,7 +500,7 @@
       },
       at(t) { let lo = 0, hi = this.plan.length - 1; while (lo < hi) { const m = (lo + hi + 1) >> 1; if (this.plan[m].start <= t) lo = m; else hi = m - 1 } return this.plan[lo] },
       update(t) {
-        const take = this.at(Math.max(0, t))
+        const take = this.at(t)
         if (!take) return
         const k = (t - take.start) / Math.max(1, take.until - take.start)
         const [pos, tg, fov] = VIEWS[take.v]()
@@ -468,6 +521,7 @@
       if ($('vdress').value !== 'wine') p.set('vdress', $('vdress').value)
       if ($('room').value !== 'hall') p.set('room', $('room').value)
       if ($('cam').value !== 'auto') p.set('view', $('cam').value)
+      if (!$('intro').checked) p.set('intro', '0')
       history.replaceState(null, '', '?' + p.toString())
     }
 
@@ -481,17 +535,28 @@
     addEventListener('pointermove', () => { idleT = performance.now(); document.body.classList.remove('idle') })
     addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight) })
     function frame(t, dt) {
+      const I = t < 0.4 ? introPose(t) : null
+      const standing = !!I?.standing
+      if (standing !== wasStanding) placeHer(standing)
       // him
-      const pose = song.motion?.poseAt(t)
-      vRig.update(pose, { t, energy: song.drive?.energy(t) ?? 0.4, breath: song.drive?.breath(t) ?? 0 }, dt)
+      subjects()
+      const pose = standing ? null : song.motion?.poseAt(Math.max(0, t))
+      vRig.update(pose, {
+        t, energy: song.drive?.energy(Math.max(0, t)) ?? 0.4, breath: song.drive?.breath(t) ?? 0,
+        rest: standing, bend: standing ? I.bend : 0, nod: I?.nod || 0,
+        look: I?.cue ? S.herHead.clone().add(v3(0, -4, 0)) : standing && t > BOW0 + 2.7 ? S.herHead.clone() : null,
+      }, dt)
       him.update(dt)
       // her
       keys.drive(t + 0.03)
       piano.update(dt)
       pRig.setPedals(false, false, keys.sustain)
+      pRig.state.bowLean = standing ? I.herBend : 0
+      pRig.state.lookAt = I?.cue && t > STAND_END + 0.9 ? her.group.worldToLocal(S.hisHead.clone()) : null
       pRig.update(t, dt)
       her.group.updateMatrixWorld(true)
       her.update(dt)
+      if (standing !== wasStanding) { wasStanding = standing; her.dress?.cloth?.settle(1) }
       // camera
       subjects()
       if ($('cam').value === 'auto') director.update(t)
@@ -523,12 +588,13 @@
       renderer.setAnimationLoop(() => {
         const dt = Math.min(0.05, clk.getDelta())
         let t = now()
+        if (clock.pending && t >= 0) { clock.pending = false; scheduler.seek(0); scheduler.play(); clock.t = 0; clock.wall = performance.now(); t = 0 }
         if (clock.playing && t > song.duration + 1.5) { pause(); clock.t = 0; t = 0 }
         frame(t, dt)
         controls.update()
         renderer.render(scene, camera)
-        if (document.activeElement !== $('seek')) $('seek').value = Math.min(1, t / song.duration)
-        $('time').textContent = `${fmt(Math.min(t, song.duration))} / ${fmt(song.duration)}`
+        if (document.activeElement !== $('seek')) $('seek').value = Math.max(0, Math.min(1, t / song.duration))
+        $('time').textContent = `${fmt(Math.max(0, Math.min(t, song.duration)))} / ${fmt(song.duration)}`
         if (clock.playing && performance.now() - idleT > 3500) document.body.classList.add('idle')
       })
     }
