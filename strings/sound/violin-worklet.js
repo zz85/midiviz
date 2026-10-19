@@ -48,7 +48,12 @@ class LiveSource {
         // vibrato: CC1 sets the depth directly (0…1 → 0…40 cents); otherwise a delayed automatic one
         if (st.target > this.open[s] * 1.01) {
           if (this.ctl.vib != null) { st.vph = (st.vph ?? 0) + 2 * Math.PI * (5.2 + 1.2 * this.ctl.vib) / 3000; vib = 40 * this.ctl.vib * Math.sin(st.vph) }
-          else if (age > 0.35) vib = Math.min(1, (age - 0.35) / 0.4) * (14 + 16 * d) * Math.sin(2 * Math.PI * 5.8 * (age - 0.35))
+          else if (age > 0.35) {
+            // narrow (as performance.js) and a little irregular: the rate wanders ±8 % and the width ±12 %
+            st.vw = (st.vw ?? 0) * 0.998 + (Math.random() - 0.5) * 0.2; st.vd = (st.vd ?? 0) * 0.998 + (Math.random() - 0.5) * 0.2
+            st.vph = (st.vph ?? 0) + 2 * Math.PI * 5.8 * (1 + 0.08 * Math.max(-1.5, Math.min(1.5, st.vw))) / 3000
+            vib = Math.min(1, (age - 0.35) / 0.4) * (8 + 10 * d) * (1 + 0.12 * Math.max(-1.5, Math.min(1.5, st.vd))) * Math.sin(st.vph)
+          }
         }
       } else { st.damp *= 0.995 }
       if (!st.on) st.rel = 1

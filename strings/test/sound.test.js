@@ -522,3 +522,23 @@ test('measured body (Philharmonia): fitted for violin, viola and cello, beats no
     assert.equal(wg, BODY_PHIL[instrument]?.waveguide ? 'phil' : 'iowa')
   }
 })
+
+test('vibrato: narrow (at most ±28 cents on long fortissimo notes at the default) and irregular from cycle to cycle', () => {
+  const notes = finger(melody('B4:4 D5:4 F#5:4', 0.5), 'violin').map(n => ({ ...n, velocity: 1 }))
+  const perf = renderPerformance(notes, { style: { timing: 0, intonation: 0, variance: 0 } })
+  let widest = 0; const per = [], amp = []
+  for (const n of perf.notes) {
+    const f = channel(perf, n.string, CH.f0), c = []
+    for (let i = Math.round((n.on + 0.5) * 250); i < Math.round((n.off - 0.1) * 250); i++) c.push(cents(f[i], midiHz(n.pitch)))
+    for (const x of c) widest = Math.max(widest, Math.abs(x))
+    let last = -1, lo = 0, hi = 0
+    for (let i = 1; i < c.length; i++) {
+      lo = Math.min(lo, c[i]); hi = Math.max(hi, c[i])
+      if (c[i - 1] < 0 && c[i] >= 0) { const x = i - 1 + c[i - 1] / (c[i - 1] - c[i]); if (last >= 0) { per.push(x - last); amp.push(hi - lo) } last = x; lo = hi = 0 }
+    }
+  }
+  const cv = a => { const m = a.reduce((x, y) => x + y, 0) / a.length; return Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / a.length) / m }
+  assert.ok(widest > 12 && widest <= 28, `widest ±${widest.toFixed(1)} cents`)
+  assert.ok(cv(per) > 0.025, `cycle length varies ${(100 * cv(per)).toFixed(1)} %`)
+  assert.ok(cv(amp) > 0.06, `cycle width varies ${(100 * cv(amp)).toFixed(1)} %`)
+})

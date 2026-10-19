@@ -5,7 +5,8 @@
 // FRAME_RATE per string:
 //
 //   f0     the stopped pitch, with vibrato on long stopped notes (5–6.5 Hz,
-//          15–35 cents, starting late and growing, none on open strings),
+//          ±10–20 cents, irregular from cycle to cycle, starting late and
+//          growing, none on open strings),
 //          portamento on shifts (the old finger slides, the new one lands; a
 //          longer slide for wider and slower shifts), fast finger changes
 //          inside a position, a slow intonation drift, and the open pitch
@@ -382,17 +383,27 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
       if (n.finger && dur >= 0.22 && S.vibrato > 0) {
         const dyn = clamp(dynOf(n) + (hasE ? E[Math.min(frames - 1, Math.round(fr(n.on)))] : 0), 0.08, 1)
         const rate = S.vibratoRate * (1 + (R() - 0.5) * 0.08) + (dyn - 0.5) * 0.5
-        const depth = S.vibrato * (13 + 19 * dyn) * (n.harm ? 0.6 : 1) * (dur > 1 ? 1.15 : 1) * (dur < 0.4 ? 0.7 : 1)
+        // depth (cents, half the swing): about ±10 p … ±23 f at its widest on long notes (recorded players: ±10–30)
+        const depth = S.vibrato * (8 + 10 * dyn) * (n.harm ? 0.6 : 1) * (dur < 0.4 ? 0.7 : 1)
         const delay = clamp(0.08 + 0.12 * Math.min(1, dur / 1.2), 0.06, 0.22)
         const ph0 = R() * 2 * Math.PI
         const end = Math.min(n.off, next && next.on - n.off < 0.2 ? next.on - 0.03 : n.off + 0.08)
+        // a player's vibrato is not a sine: each cycle comes a little faster or
+        // slower (±8 %) and wider or narrower (±12 %), slowly wandering (two
+        // smoothed random walks of unit spread, ~1.5 Hz); it starts slow and narrow and widens
+        // through a long note (up to +30 % after 1.5 s)
+        let ph = ph0, rw = 0, rv = 0, dw = 0, dv2 = 0
+        const kW = 2 * Math.PI * 1.5 / frameRate
         for (let i = Math.floor(fr(n.on)); i <= Math.min(frames - 1, Math.ceil(fr(end))); i++) {
           const t = T(i), age = t - n.on - delay
           if (age <= 0) continue
-          const env = smooth5(age / 0.28) * (1 + 0.15 * Math.min(1, age / 1.5)) * smooth5((end - t) / 0.08)
-          // rate eases in a little (players start slower)
-          const ph = ph0 + 2 * Math.PI * rate * (age - 0.06 * (1 - Math.exp(-age / 0.3)))
-          vibCents[s][i] = depth * env * Math.sin(ph)
+          rv += kW * ((R() - 0.5) * 20 - rw - 0.6 * rv); rw += kW * rv
+          dv2 += kW * ((R() - 0.5) * 20 - dw - 0.6 * dv2); dw += kW * dv2
+          const env = smooth5(age / 0.35) * (0.85 + 0.45 * smooth5(age / 1.5)) * smooth5((end - t) / 0.08)
+          // the rate eases in (players start slower) and wanders
+          const r = rate * (1 - 0.12 * Math.exp(-age / 0.3)) * (1 + 0.08 * clamp(rw, -1.5, 1.5))
+          ph += 2 * Math.PI * r / frameRate
+          vibCents[s][i] = depth * env * (1 + 0.12 * clamp(dw, -1.5, 1.5)) * Math.sin(ph)
         }
       }
     }
