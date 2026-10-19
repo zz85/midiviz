@@ -147,6 +147,11 @@ const FMIN = 0.02, ZEXP = 1.5
 // steady force scale and the attack press (×ATK_F decaying in ATK_T s), tuned on
 // strings/test/attack.js with the waveguide's pitch-tracking end losses
 const PRESS = 2, ATK_F = 2, ATK_T = 0.04
+// short strokes (< 180 ms, one note) press less and speed up half as fast: with
+// the full ×2 press on top of their bite they peaked at 4–8.7 N at forte, above
+// a player's 3–4 N accents, and cracked (the Tchaikovsky concerto's chord
+// strokes, strings/README.md "Short strokes")
+const ATK_F_SHORT = 1.5, ATK_SHORT_RAMP = 2
 const HARM_F = 0.6   // harmonics are bowed lighter (the touch takes energy; at full force they crack)
 const smooth5 = x => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * x * (x * (6 * x - 15) + 10))
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x))
@@ -274,7 +279,7 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
     st.trem = tremR && D >= 2 / tremR && st.events.length === 1 ? tremR : 0   // not inside slurs
     if (st.trem) for (const e of st.events) for (const n of e.notes) n.trem = { t0: st.t0, r: tremR, acc: tremAcc }
     const atkK = Math.max(0.05, S.attack ?? 1)
-    const atk = (st.short ? clamp(0.3 * D, 0.012, 0.03) : clamp(0.2 * D, 0.025, 0.07)) / Math.sqrt(atkK)
+    const atk = (st.short ? clamp(0.3 * D, 0.012, 0.03) * ATK_SHORT_RAMP : clamp(0.2 * D, 0.025, 0.07)) / Math.sqrt(atkK)
     const rel = st.short ? clamp(0.35 * D, 0.015, 0.05) : clamp(0.12 * D, 0.025, 0.06)
     const next = strokes[strokes.indexOf(st) + 1]
     const rest = !next || next.t0 - st.t1 > 0.35
@@ -358,7 +363,7 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
           // stay above Schelleng's minimum (F_min ∝ Z² v / β², measured on the waveguide)
           F = Math.max(F, FMIN * S.pressure * (n.harm ? HARM_F : 1) * Math.pow(Zr[s], ZEXP) * vF / (bet * bet))
           // the bow presses in to catch the string and eases off: ×2 at the start, back in ~40 ms
-          if (t >= st.t0 - 0.004) F *= 1 + (ATK_F - 1) * atkK * Math.exp(-Math.max(0, t - st.t0) / ATK_T)
+          if (t >= st.t0 - 0.004) F *= 1 + ((st.short ? ATK_F_SHORT : ATK_F) - 1) * atkK * Math.exp(-Math.max(0, t - st.t0) / ATK_T)
           // between strokes the bow rests on the string (light force); in long rests it lifts
           if (t > st.t1) F = lifts ? 0.25 * smooth5(1 - (t - st.t1) / 0.05) : 0.12
           if (w <= 0) continue

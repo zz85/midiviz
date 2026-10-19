@@ -270,3 +270,18 @@ Two tests now run their check with Rosin 0, because they measure something the j
 - the bow-pressure sweep measures the bowing regime. The rosin grain alone moves that sweep by about 3 notes (179 / 182 of 189 at Rosin 0 / 1 before this change), so its bar is 94 %.
 
 The waveguide bodies were refitted with the energy match. Held-out residual: 2.9–3.4 dB. Every band above 1.6 kHz is within 2.4 dB of the recordings.
+
+## Short strokes: less press (the Tchaikovsky cracks)
+
+The waveguide cracked in fast forte chord strokes, for example the G♯3 + F4/B4 passage at 4:37 of the Tchaikovsky concerto's first movement (112 ms strokes). On held notes the automatic bowing sits in the middle of the measured playable window (Schelleng; median 52 % up it, 1.5–3.5× below F_max), within the forces Schoonderwaldt measured (mf 0.94 N, f 1.61 N median). Short strokes were the exception. Three boosts multiplied at their start: the ×2 force scale, the ×2 attack press and the short-stroke bite of ×1.5. Their peaks reached 4–8.7 N at forte, above a player's 3–4 N accents.
+
+Short strokes (one note under 180 ms) now press ×1.5 instead of ×2 and reach full bow speed half as fast. Of the variants tried (no press, less bite, a cap at a fraction of the Schelleng maximum, a cap in the release, slower ramp alone), this one cut the most crackles without making attacks worse:
+
+| | before | after |
+|---|---|---|
+| crackles (3–10 kHz bursts), concerto 4:30–4:52 | 7 | 1 |
+| crackles, concerto 3:20–5:30 | 15 | 9 |
+| crackles, demos + Bach Adagio (74 s) | 6 | 4 |
+| short forte notes: peak force p90 / max | 4.1 / 8.7 N | 3.1 / 5.9 N |
+| short notes that go raucous (216) | 11 | 5 |
+| attack.js quick suite | 207 / 288 | 207 / 288 |

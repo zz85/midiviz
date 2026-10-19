@@ -621,3 +621,16 @@ test('waveguide: the upper partials are as noisy between harmonics as the Iowa r
   assert.ok(Math.abs(med(ours) - med(iowa)) < 4, `peak / gap 3–8 kHz: ours ${med(ours).toFixed(1)} dB, Iowa ${med(iowa).toFixed(1)} dB`)
   assert.ok(med(clean) > med(ours) + 6, `without the jitter (rosin 0) the gaps are ${(med(clean) - med(ours)).toFixed(1)} dB cleaner`)
 })
+
+test('short strokes: fast forte détaché and grace notes stay near a player\'s accent force (the Tchaikovsky cracks)', () => {
+  // a 50–120 ms note from rest, four détaché notes of that length, a held note; every string, forte
+  const notes = []; let t = 0.1
+  for (const open of [55, 62, 69, 76]) for (const d of [2, 5, 9]) for (const dur of [0.05, 0.08, 0.12]) {
+    for (let k = 0; k < 5; k++) { notes.push({ pitch: open + d + [0, 2, 0, 2, 4][k], on: t, off: t + dur, velocity: 1 }); t += dur }
+    notes.push({ pitch: open + d + 5, on: t, off: t + 0.4, velocity: 1 }); t += 0.9
+  }
+  const perf = renderPerformance(finger(notes), { style: { vibrato: 0, timing: 0, intonation: 0, variance: 0 } })
+  const pk = perf.notes.filter(n => n.off - n.on < 0.2).map(n => { const F = channel(perf, n.string, CH.force); let p = 0; for (let i = Math.floor(n.on * 250); i < n.off * 250; i++) p = Math.max(p, F[i]); return p }).sort((a, b) => a - b)
+  const p90 = pk[Math.floor(pk.length * 0.9)]
+  assert.ok(p90 <= 4, `peak force p90 ${p90.toFixed(2)} N (players: accents 3–4 N)`)
+})
