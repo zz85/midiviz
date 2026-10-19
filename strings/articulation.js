@@ -37,6 +37,46 @@ export const INFER = {
   maxGroup: 8,       // notes per bow at most
   beatBreak: true,   // a note on the beat starts a new bow…
   beatMin: 1,        // …once the group has this many notes
+  // stroke types for separately bowed notes (n.art.stroke):
+  //   'spiccato'  off the string: the bow is dropped and bounces off, the
+  //               string rings between notes. Fast détaché runs (≥ 5 notes /
+  //               s, ≤ spicMax s apart, at least two in a row), not loud
+  //   'martele'   on the string: pinched before it moves, a fast bitten
+  //               stroke, then the bow stops on the string. Loud separate
+  //               notes of moderate length, or accented ones
+  strokes: true,
+  spicMax: 0.2,      // s between onsets, at most, for spiccato
+  spicMin: 0.06,     // faster than this is sautillé / tremolo territory: left to détaché
+  marMin: 0.15,      // s between onsets, at least, for martelé
+  marMax: 0.6,
+  loud: 0.1,         // martelé: velocity this much above the piece's median (or ≥ 0.85 when velocities vary)
+}
+
+/**
+ * Stroke types from the plan (slurPrev) and the notes: spiccato and martelé
+ * (see INFER). Marks from a score win: spiccato / staccato marks on fast notes
+ * become spiccato, staccato on slower ones, accent and marcato become martelé.
+ */
+function planStrokes(ev, P) {
+  const vels = ev.map(e => e.top.velocity ?? 0.7).sort((a, b) => a - b)
+  const med = vels[vels.length >> 1], varied = vels[vels.length - 1] - vels[0] > 0.05
+  // time to the next onset, or the note's own length before a rest (the last note of a run belongs to it)
+  const ioi = i => (ev[i + 1] && ev[i + 1].on - ev[i].off < 0.3 ? ev[i + 1].on : ev[i].off) - ev[i].on
+  const sep = i => ev[i] && !ev[i].top.art.slurPrev && !(ev[i + 1] && ev[i + 1].top.art.slurPrev) && ev[i].notes.length === 1
+  const fastSep = i => sep(i) && ioi(i) <= P.spicMax && ioi(i) >= P.spicMin
+  for (let i = 0; i < ev.length; i++) {
+    const e = ev[i], n = e.top, d = ioi(i), mark = n.art.stroke
+    if (!sep(i)) { if (mark === 'spiccato' || mark === 'martele') n.art.stroke = null; continue }
+    let k = null
+    if (mark === 'spiccato' || ((mark === 'staccato' || mark === 'staccatissimo') && d <= P.spicMax)) k = 'spiccato'
+    else if (mark === 'staccato' || mark === 'staccatissimo' || mark === 'accent' || mark === 'marcato') k = 'martele'
+    else if (!mark && P.strokes) {
+      const loud = varied && ((n.velocity ?? 0.7) >= med + P.loud || (n.velocity ?? 0.7) >= 0.85)
+      if (fastSep(i) && (fastSep(i - 1) || fastSep(i + 1)) && !loud) k = 'spiccato'
+      else if (loud && d >= P.marMin && d <= P.marMax) k = 'martele'
+    }
+    if (k) for (const m of e.notes) m.art.stroke = k
+  }
 }
 
 /** onset groups (chords / double stops together), in time order */
@@ -92,6 +132,7 @@ export function planArticulation(notes, opts = {}) {
       for (const n of b.notes) { n.art.slurPrev = cont; n.art.source = 'score' }
     }
     for (const n of ev[0].notes) n.art.source = 'score'
+    planStrokes(ev, P)
     return notes
   }
 
@@ -116,6 +157,7 @@ export function planArticulation(notes, opts = {}) {
       const stroke = gap > 0.45 ? (ioi < 0.2 ? 'spiccato' : 'staccato') : gap > 0.15 ? 'staccato' : null
       for (const n of e.notes) { if (!n.art.stroke) n.art.stroke = stroke; n.art.source = 'timing' }
     }
+    planStrokes(ev, P)
     return notes
   }
 
@@ -142,5 +184,6 @@ export function planArticulation(notes, opts = {}) {
     group = slur ? group + 1 : 1
     for (const n of b.notes) { n.art.slurPrev = slur; if (!n.art.stroke) n.art.stroke = null; n.art.source = 'inferred' }
   }
+  planStrokes(ev, P)
   return notes
 }

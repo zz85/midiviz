@@ -146,6 +146,9 @@ const ccDyn = v => clamp(1 + 40 * Math.log10(Math.max(0.05, v)) / 19, 0.08, 1)
 const FMIN = 0.02, ZEXP = 1.5
 // steady force scale and the attack press (×ATK_F decaying in ATK_T s), tuned on
 // strings/test/attack.js with the waveguide's pitch-tracking end losses
+// stroke types: spiccato's contact time and martelé's bowing time (fractions of the
+// time to the next stroke), martelé's pinch (× the stroke's force) and its rest on the string
+const SPIC = 0.5, MART = 0.6, MART_PINCH = 2.2, MART_REST = 0.35
 const PRESS = 2, ATK_F = 2, ATK_T = 0.04
 // short strokes (< 180 ms, one note) press less and speed up half as fast: with
 // the full ×2 press on top of their bite they peaked at 4–8.7 N at forte, above
@@ -279,6 +282,18 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
     st.trem = tremR && D >= 2 / tremR && st.events.length === 1 ? tremR : 0   // not inside slurs
     if (st.trem) for (const e of st.events) for (const n of e.notes) n.trem = { t0: st.t0, r: tremR, acc: tremAcc }
     const atkK = Math.max(0.05, S.attack ?? 1)
+    // stroke types from the articulation plan (strings/articulation.js): a single-note stroke
+    //   spiccato  the bow drops onto the string and bounces off within SPIC of the note:
+    //             speed and force rise and fall together, then the bow is off and the string rings
+    //   martele   pinched: force on the string before the bow moves, a bitten fast start, the
+    //             bow stops after MART of the note and rests on the string (it is stopped)
+    const sk0 = st.events.length === 1 ? st.events[0].notes[0].art?.stroke : null
+    const sk = S.strokes === 0 ? null : sk0 === 'spiccato' || sk0 === 'martele' ? sk0 : null
+    st.kind = sk
+    const nextOn = strokes[strokes.indexOf(st) + 1]?.t0 ?? st.t1 + 0.3
+    const span = Math.max(0.04, Math.min(nextOn, st.t1 + 0.05) - st.t0)
+    const spC = clamp(SPIC * span, 0.03, 0.1)
+    const maC = clamp(MART * span, 0.05, Math.max(0.05, span - 0.04))
     const atk = (st.short ? clamp(0.3 * D, 0.012, 0.03) * ATK_SHORT_RAMP : clamp(0.2 * D, 0.025, 0.07)) / Math.sqrt(atkK)
     const rel = st.short ? clamp(0.35 * D, 0.015, 0.05) : clamp(0.12 * D, 0.025, 0.06)
     const next = strokes[strokes.indexOf(st) + 1]
@@ -303,7 +318,7 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
         // across a crossing inside a slur the force hands over within ~12 ms
         const xIn = k > 0 && st.events[k - 1].notes.every(m => m.string !== s) ? 0.012 : 0
         const xOut = ne && ne.notes.every(m => m.string !== s) ? 0.012 : 0
-        const i0 = Math.max(0, Math.floor(fr(a - xIn - 0.004)))
+        const i0 = Math.max(0, Math.floor(fr(a - xIn - (sk === 'martele' ? 0.016 : 0.004))))
         const i1 = Math.min(frames - 1, Math.ceil(fr(b + (ne ? xOut : (lifts ? 0.05 : rest ? 0.3 : 0.02)))))
         for (let i = i0; i <= i1; i++) {
           const t = T(i)
@@ -315,6 +330,8 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
           if (!st.short && st.t0 === a) env *= 1 + 0.12 * atkK * Math.exp(-(t - st.t0) / 0.05) * (t >= st.t0 ? 1 : 0)
           env *= t > st.t1 ? 0 : smooth5((st.t1 - t) / rel) * 0.85 + 0.15 * (t <= st.t1 ? 1 : 0)
           if (t > st.t1) env = 0
+          if (sk === 'spiccato') { const x = (t - st.t0) / spC; env = x <= 0 || x >= 1 ? 0 : Math.pow(Math.sin(Math.PI * x), 0.6) }
+          else if (sk === 'martele') { const x = t - st.t0; env = x <= 0 ? 0 : x < 0.008 ? x / 0.008 : x < maC ? 1 : Math.max(0, 1 - (x - maC) / 0.02) }
           // messa di voce on long notes, phrase arch
           let sw = 1
           if (nd > 0.7) { const x = clamp((t - n.on) / nd, 0, 1); sw = 1 + S.phrasing * 0.16 * (Math.sin(Math.PI * Math.pow(x, 0.8)) - 0.35) }
@@ -345,7 +362,7 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
           let w = 1
           if (xIn && t < a) w = smooth5((t - (a - xIn)) / xIn)
           if (xOut && t > b - xOut) w = Math.min(w, smooth5((b + xOut - t) / (2 * xOut)))
-          if (t < a - xIn) w = 0
+          if (t < a - xIn - (sk === 'martele' && k === 0 ? 0.016 : 0)) w = 0   // martelé: the pinch comes before the note
           let v = st.dir * vmag
           // tremolo: the bow turns every 1/r s (rounded square wave); the force
           // follows the stroke's speed, not the turns, so each change bites
@@ -363,9 +380,21 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
           // stay above Schelleng's minimum (F_min ∝ Z² v / β², measured on the waveguide)
           F = Math.max(F, FMIN * S.pressure * (n.harm ? HARM_F : 1) * Math.pow(Zr[s], ZEXP) * vF / (bet * bet))
           // the bow presses in to catch the string and eases off: ×2 at the start, back in ~40 ms
-          if (t >= st.t0 - 0.004) F *= 1 + ((st.short ? ATK_F_SHORT : ATK_F) - 1) * atkK * Math.exp(-Math.max(0, t - st.t0) / ATK_T)
+          if (t >= st.t0 - 0.004 && !sk) F *= 1 + ((st.short ? ATK_F_SHORT : ATK_F) - 1) * atkK * Math.exp(-Math.max(0, t - st.t0) / ATK_T)
+          if (sk) {
+            // the stroke's full-speed force, for the pinch and the rest on the string
+            const vS = st.V * (0.5 + 0.7 * dyn) * pg
+            const Fs = Math.max(Math.max(vS, 0.04 + 0.06 * dyn) * Fk * PRESS, FMIN * S.pressure * Math.pow(Zr[s], ZEXP) * vS / (bet * bet))
+            if (sk === 'spiccato') { const x = (t - st.t0) / spC; F = x <= 0 || x >= 1 ? 0 : Fs * Math.pow(Math.sin(Math.PI * x), 0.8) }
+            else {
+              const x = t - st.t0
+              F = x < 0 ? MART_PINCH * Fs * smooth5((x + 0.016) / 0.012)
+                : x < maC + 0.02 ? Fs * (1 + (MART_PINCH - 1) * Math.exp(-x / 0.03) * atkK)
+                : MART_REST * Fs
+            }
+          }
           // between strokes the bow rests on the string (light force); in long rests it lifts
-          if (t > st.t1) F = lifts ? 0.25 * smooth5(1 - (t - st.t1) / 0.05) : 0.12
+          if (t > st.t1 && sk !== 'martele') F = sk === 'spiccato' ? 0 : lifts ? 0.25 * smooth5(1 - (t - st.t1) / 0.05) : 0.12
           if (w <= 0) continue
           if (w * F >= force[s][i]) { force[s][i] = w * F; vel[s][i] = v; beta[s][i] = bet }
           amp[s][i] = Math.max(amp[s][i], w * (t <= st.t1 ? (vmag / bet) / 3.2 : 0))

@@ -45,7 +45,7 @@ test('planner: the score\'s slur becomes one bow in motion.js; timing (overlap) 
   planArticulation(timed)
   assert.equal(timed[0].art.source, 'timing')
   assert.ok(timed[2].art.slurPrev && !timed[1].art.slurPrev, 'an overlap slurs, a gap re-bows')
-  assert.equal(timed[0].art.stroke, 'staccato', 'a 60 % gap at 4 notes / s: staccato (spiccato when faster)')
+  assert.equal(timed[0].art.stroke, 'martele', 'a 60 % gap at 4 notes / s: a stopped stroke (martelé; spiccato when faster)')
   // inference on touching notes
   const melody = [[69, 0], [71, 0.125], [72, 0.25], [72, 0.375], [74, 0.5], [86, 0.625], [84, 0.75], [83, 1.25]].map(([pitch, on], i, a) => ({ pitch, on, off: a[i + 1]?.[1] ?? on + 0.5 }))
   planArticulation(melody, { mode: 'infer', meter: [{ t: 0, beats: 4, beatType: 4 }], tempo: [{ t: 0, bpm: 120 }] })
@@ -61,4 +61,29 @@ test('planner inference agrees with the Bach editions better than the fixed rule
   const pl = A.f1(sum(mvs.map(m => A.inferred(m)))), rule = A.f1(sum(mvs.map(A.builtin)))
   // measured: planner F1 50.0 / agreement 67.7 %, rule 38.5 / 59.8 %
   assert.ok(pl.F1 > rule.F1 + 0.08 && pl.acc > rule.acc + 0.05, `slurred-pair F1 ${(100 * pl.F1).toFixed(1)} vs ${(100 * rule.F1).toFixed(1)}, agreement ${(100 * pl.acc).toFixed(1)} vs ${(100 * rule.acc).toFixed(1)} %`)
+})
+
+test('stroke types: fast separate notes are spiccato (the bow leaves the string), loud separate ones martelé (pinched, then stopped on the string)', async () => {
+  const { renderPerformance, channel } = await import('../sound/performance.js')
+  const { CH } = await import('../sound/bowed.js')
+  // a fast détaché run (leaps keep it separate) and loud accented quarters among quieter ones
+  const run = [69, 76, 69, 76, 69, 76, 69, 76].map((pitch, k) => ({ pitch, on: k * 0.15, off: (k + 1) * 0.15, velocity: 0.6 }))
+  const qs = [69, 71, 73, 74, 76, 78].map((pitch, k) => ({ pitch, on: 2 + k * 0.4, off: 2 + (k + 1) * 0.4, velocity: k % 2 ? 0.95 : 0.6 }))
+  const notes = [...run, ...qs]
+  planArticulation(notes, { mode: 'infer' })
+  assert.ok(run.every(n => n.art.stroke === 'spiccato'), `run: ${run.map(n => n.art.stroke)}`)
+  assert.deepEqual(qs.map(n => n.art.stroke), [null, 'martele', null, 'martele', null, 'martele'])
+  // flat velocities (MIDI exports at 127): no martelé from velocity
+  const flat = qs.map(n => ({ ...n, velocity: 1, art: undefined })); planArticulation(flat, { mode: 'infer' })
+  assert.ok(flat.every(n => n.art.stroke == null))
+  fingerLine(notes, { instrument: 'violin' })
+  const perf = renderPerformance(notes, { style: { vibrato: 0, timing: 0, intonation: 0, variance: 0, autoBow: 0 } })
+  const at = (n, ch, t) => channel(perf, n.string, ch)[Math.round(t * perf.frameRate)]
+  // spiccato: the bow is off the string for the last part of each note
+  const sp = perf.notes.find(n => n.pitch === 76 && n.on > 0.1 && n.on < 1)
+  assert.ok(at(sp, CH.force, sp.on + 0.03) > 0.2 && at(sp, CH.force, sp.on + 0.12) === 0 && at(sp, CH.vel, sp.on + 0.12) === 0, 'spiccato: off the string after the bounce')
+  // martelé: force before the bow moves, then the bow stops and rests on the string before the next note
+  const ma = perf.notes.find(n => n.pitch === 71)
+  assert.ok(at(ma, CH.force, ma.on - 0.006) > 0.3 && at(ma, CH.vel, ma.on - 0.006) === 0, 'martelé: pinched before it moves')
+  assert.ok(Math.abs(at(ma, CH.vel, ma.on + 0.36)) < 0.01 && at(ma, CH.force, ma.on + 0.36) > 0.1, 'martelé: stopped, resting on the string')
 })

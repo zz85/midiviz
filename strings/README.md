@@ -328,8 +328,13 @@ Bach's slurs are an editor's and vary a lot by movement (training F1 61 % agains
 
 In #034, **Open…** (or drag-and-drop) accepts `.musicxml`, `.xml` and `.mxl`. **Articulation** in the Bowing panel offers Auto, Inferred (always infer) or Fixed rule; the label's tooltip names the source for the current piece. Bach's Presto BWV 1001 plays as 419 strokes from the MIDI (inferred) and 584 from the MusicXML (its 94 slurs). Tests: `node --test strings/test/articulation.test.js` (3).
 
+**Stroke types.** The planner also marks separately bowed notes with a stroke type, which performance.js plays:
+- **Spiccato** (`n.art.stroke = 'spiccato'`): the bow is dropped and bounces off. Speed and force rise and fall together over half the time to the next note (30–100 ms), then the bow is off and the string rings. It applies to fast détaché runs (0.06–0.2 s between onsets, at least two in a row, not loud), to spiccato marks, and to staccato marks on fast notes.
+- **Martelé** (`'martele'`): the bow is pinched on the string 16 ms before it moves (force × 2.2, no speed), takes a bitten start, then stops after 60 % of the slot and rests on the string (35 % force), which stops it. It applies to separate notes 0.15–0.6 s long that are louder than the piece's median velocity by 0.1 (only when velocities vary: MIDI exports at a flat 127 get none), to accent and marcato marks, and to staccato marks on slower notes. A timed MIDI's staccato gaps become martelé, or spiccato when fast.
+
+Through the waveguide, a 12-note martelé line settles in 6–39 ms per stroke. In a spiccato run most bounces settle within their 45 ms contact, and some stay unsettled, as a real bounced stroke does. Tested in `strings/test/articulation.test.js`.
+
 Not done yet:
-- stroke types beyond note length (spiccato with the bow off the string, martelé);
 - automatic re-bows on repeated notes inside a slur;
 - slides from the planner;
 - JBV's speed and interval pitch instability;
