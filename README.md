@@ -4,6 +4,13 @@ Midi Visualization Experiments
 
 [WebMscore](webmscore.html) - MuseScore reference renderer (libmscore via WebAssembly)
 
+19 Oct 2026
+
+Pedal and transport fixes
+- OxiSynth itself sustains correctly (CC64 ≥ 64, per channel); the players lost pedal changes. Late CCs are now always sent (a skipped one left the pedal stuck), a seek restores each channel's pedals, modulation and expression as the song has them there, and unloading a song lifts its pedals. In `playback_controls.js` / `midi_clock_worklet.js` (#014–#024) and soundfont-engine's `MidiScheduler` (#025–#038)
+- #023: resume after pause continued from 0 (every play reloaded the song into the clock worklet); it now keeps its position, and a seek while paused sticks
+- Tests: `node --test test/playback.test.js soundfont-engine/test/scheduler.test.js` (11)
+
 18 Oct 2026
 
 [Experiment #038 - Duo](038_duo.html)

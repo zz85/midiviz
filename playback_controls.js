@@ -367,8 +367,6 @@ class PlaybackControls {
       this.els.progress.onmousedown = () => this.seeking = true;
       this.els.progress.onmouseup = () => {
         this.seek(this.els.progress.value * this.duration);
-        this.lastPlayed = -1;
-        this.lastPlayedCC = -1;
         this.seeking = false;
       };
     }
@@ -418,6 +416,8 @@ class PlaybackControls {
   }
 
   _reset() {
+    // Lift the pedals of the song being unloaded, or its last held notes ring on
+    this._releasePedals();
     this.allNotes = [];
     this.allCC = [];
     this.lastPlayed = -1;
@@ -482,10 +482,18 @@ class PlaybackControls {
   play() {
     this.instrument.resume();
     if (!this.playing) {
+      // Play after the end of the song starts it again
+      if (this.duration && this.lapse >= this.duration) this.seek(0);
       this.playing = true;
       if (this.useBackgroundClock) {
         this._ensureClock().then(() => {
-          this._clock.load(this.allNotes, this.allCC);
+          // Load the song into the clock only when it changed: loading rewinds the
+          // clock to 0, so a resume after pause must keep the clock's own position
+          if (this._clockSong !== this.allNotes) {
+            this._clock.load(this.allNotes, this.allCC);
+            this._clockSong = this.allNotes;
+            if (this.lapse > 0) this._clock.seek(this.lapse); // seeked before the clock existed
+          }
           this._clock.setSpeed(this.speed);
           this._clock.play();
         });
@@ -518,7 +526,39 @@ class PlaybackControls {
       this.start = this._getAudioContext().currentTime - this.lapse / this.speed;
     }
     this.lastPlayed = -1;
-    this.lastPlayedCC = -1;
+    this.lastPlayedCC = this._restoreControllers(time) - 1;
+  }
+
+  // Controllers whose state must be reset when no event sets them before a seek target
+  static ccDefaults = { 1: 0, 11: 127, 64: 0, 66: 0, 67: 0 };
+
+  /**
+   * Sends each channel's controller values as they stand just before `time`
+   * (the last event before it, or the default for pedals / modulation / expression),
+   * so a seek lands with the pedal up or down as the song has it there.
+   * Returns the index of the first CC at or after `time`.
+   */
+  _restoreControllers(time) {
+    const cc = this.allCC || [];
+    let idx = cc.findIndex(c => c.time >= time);
+    if (idx < 0) idx = cc.length;
+    if (!this.instrument?.controlChange) return idx;
+    const state = new Map(); // "channel:ctrl" -> value
+    for (const c of cc) {
+      if (c.ctrl in PlaybackControls.ccDefaults) state.set(c.channel + ':' + c.ctrl, PlaybackControls.ccDefaults[c.ctrl]);
+    }
+    for (let i = 0; i < idx; i++) state.set(cc[i].channel + ':' + cc[i].ctrl, cc[i].value);
+    for (const [key, value] of state) {
+      const [channel, ctrl] = key.split(':').map(Number);
+      this.instrument.controlChange(channel, ctrl, value);
+    }
+    return idx;
+  }
+
+  _releasePedals() {
+    if (!this.instrument?.controlChange || !this.allCC?.length) return;
+    const channels = new Set(this.allCC.map(c => c.channel));
+    for (const ch of channels) for (const ctrl of [64, 66, 67]) this.instrument.controlChange(ch, ctrl, 0);
   }
 
   setSpeed(val) {
@@ -614,13 +654,12 @@ class PlaybackControls {
         this.lastPlayed = i;
       }
 
-      // Process control changes (sustain pedal, etc.)
+      // Process control changes (sustain pedal, etc.). Unlike a late note, a late CC
+      // is still sent: skipping it would leave the pedal in the wrong state.
       for (let i = this.lastPlayedCC + 1; i < this.allCC.length; i++) {
         const cc = this.allCC[i];
         if (cc.time > this.lapse) break;
-        if (cc.time >= this.lapse - 0.05 && this.instrument.controlChange) {
-          this.instrument.controlChange(cc.channel, cc.ctrl, cc.value);
-        }
+        this.instrument.controlChange?.(cc.channel, cc.ctrl, cc.value);
         this.lastPlayedCC = i;
       }
     }

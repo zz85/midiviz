@@ -19,6 +19,9 @@ import { EventEmitter } from './events.js';
  * scheduler.play();
  * ```
  */
+// Controller values with no event before a seek target fall back to these
+const CC_DEFAULTS = { 1: 0, 11: 127, 64: 0, 66: 0, 67: 0 };
+
 export class MidiScheduler extends EventEmitter {
   /**
    * @param {object} target - Object with noteOn/noteOff/controlChange methods (e.g. SoundFontEngine)
@@ -141,6 +144,7 @@ export class MidiScheduler extends EventEmitter {
     this._currentTime = time;
     this._node?.port.postMessage({ type: 'seek', data: { time } });
     this._target.allSoundOff?.();
+    this._restoreControllers(time);
   }
 
   /**
@@ -164,6 +168,31 @@ export class MidiScheduler extends EventEmitter {
   }
 
   // --- Internal ---
+
+  /**
+   * Send each channel's controller values as they stand just before `time`
+   * (the last event before it, or the default for pedals / modulation /
+   * expression), so playback resumes with the pedal where the song has it.
+   * The worklet resumes from the first CC at or after `time`. Each restored
+   * value is also emitted as a 'cc' event so pedal visuals follow.
+   */
+  _restoreControllers(time) {
+    const cc = this._cc || [];
+    const state = new Map(); // "channel:controller" -> value
+    for (const c of cc) {
+      const def = CC_DEFAULTS[c.controller];
+      if (def !== undefined) state.set(`${c.channel ?? 0}:${c.controller}`, def);
+    }
+    for (const c of cc) {
+      if (c.time >= time) continue;
+      state.set(`${c.channel ?? 0}:${c.controller}`, c.value);
+    }
+    for (const [key, value] of state) {
+      const [channel, controller] = key.split(':').map(Number);
+      this._target.controlChange?.(channel, controller, value);
+      this.emit('cc', { time, channel, controller, value });
+    }
+  }
 
   _handleMessage(data) {
     const { type, note, cc, lapse } = data;

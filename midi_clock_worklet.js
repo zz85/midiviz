@@ -31,8 +31,12 @@ class MidiClockProcessor extends AudioWorkletProcessor {
         case 'seek':
           this.lapseFrames = data.time * sampleRate;
           this.startFrame = currentFrame - this.lapseFrames / this.speed;
-          this.lastNoteIdx = this.notes.findIndex(n => n.time > data.time) - 1;
-          this.lastCCIdx = this.ccEvents.findIndex(c => c.time > data.time) - 1;
+          {
+            // Index of the last event before the target (the main thread restores CC state up to it)
+            const before = (list, t) => { const i = list.findIndex(e => e.time >= t); return (i < 0 ? list.length : i) - 1; };
+            this.lastNoteIdx = before(this.notes, data.time);
+            this.lastCCIdx = before(this.ccEvents, data.time);
+          }
           break;
         case 'speed':
           this.speed = data.speed;
@@ -64,9 +68,8 @@ class MidiClockProcessor extends AudioWorkletProcessor {
       const cc = this.ccEvents[i];
       if (!cc) break;
       if (cc.time > lapse + 0.05) break;
-      if (cc.time >= lapse - 0.02) {
-        this.port.postMessage({ type: 'cc', cc });
-      }
+      // Late CCs are still sent: a dropped pedal event would leave the pedal stuck
+      this.port.postMessage({ type: 'cc', cc });
       this.lastCCIdx = i;
     }
 
