@@ -125,7 +125,7 @@
     import { planArticulation, clearArticulation } from './strings/articulation.js'
     import { readMusicXML, readMXLBrowser } from './strings/score.js'
     import { attackError } from './strings/sound/humanize.js'
-    import { NCH, midiHz, INSTRUMENTS as SYNTH } from './strings/sound/bowed.js'
+    import { NCH, midiHz, INSTRUMENTS as SYNTH, wgApply } from './strings/sound/bowed.js'
     import { Lab, ENGINES } from './strings/sound/engines.js'
     import { ROOMS, SEATS, acousticParams } from './concertstage/acoustics.js'
 
@@ -227,6 +227,7 @@
       harmonics: 'Play notes as harmonics (glassy, flute-like)',
       body: 'The violin’s wooden body (its tone). Philharmonia: closest to a real player by ear. Try the others for colour',
       sordino: 'A mute on the bridge: darker, veiled tone',
+      wgLimits: 'Waveguide only. Keep playable (recommended): WG pressure and WG position cannot push the bow off the string’s playable range. Off: raw, for experiments',
     }
     const tipFor = (k, more) => [USE[k], more].filter(Boolean).join('\n\n')
     const TIPS = {
@@ -320,6 +321,7 @@
       ['sordino', 'Sordino', [['0', 'Off'], ['1', 'On (mute)']], '0', 'A mute on the bridge: the bridge hill and everything above ~2 kHz drop about 12 dB (all engines)'],
       ['wgPress', 'WG pressure', 0.25, 1.5, 0.05, 1, 'Waveguide only: scales the bow force the string feels (0.5 = half). The brightness that follows bow force is left as planned, so this changes only how the bow grips: lower can mean less scratch, too low gives a whistly, unsteady or octave-high tone. Interactive bow press still corrects real double slipping'],
       ['wgPos', 'WG position', 0.3, 2, 0.05, 1, 'Waveguide only: scales the bow–bridge distance the string feels (< 1 nearer the bridge, > 1 toward the fingerboard). Unlike Contact (Expression block), the bow force is not replanned for it: nearer the bridge a string needs more force (its minimum rises as 1/distance²), so low values can lose the clean tone (a thin, whistly, surface sound) and high values can turn raucous unless WG pressure is lowered too'],
+      ['wgLimits', 'WG limits', [['on', 'Keep playable'], ['off', 'Off (raw)']], 'on', 'Keep playable: the bow stays between 1/50 and 1/4 of the string from the bridge, and the force inside the range where the string can sound cleanly at that spot and speed. Off: the multipliers apply as they are'],
       ['rosin', 'Rosin', 0, 2, 0.05, 1, 'Physical models: grain of the rosin (stick-slip jitter, bow noise)'],
       ['resonance', 'Resonance', 0, 3, 0.05, 1, 'Physical models: how much the other strings ring in sympathy through the bridge'],
     ]
@@ -351,7 +353,7 @@
         tremolo: opt.tremolo, tremoloMode: opt.tremoloMode, tremoloMin: +opt.tremoloMin, harmonics: opt.harmonics === 'auto' ? 'auto' : +opt.harmonics }
       const changed = Object.keys(st).some(k => style[k] !== st[k]) || state.useExpr !== (opt.expr === 'auto')
       Object.assign(style, st); state.useExpr = opt.expr === 'auto'
-      lab.setParams({ bowPress: opt.bowPress === 'on', rosin: +opt.rosin, resonance: +opt.resonance, body: opt.body, wgPress: +opt.wgPress, wgPos: +opt.wgPos })
+      lab.setParams({ bowPress: opt.bowPress === 'on', rosin: +opt.rosin, resonance: +opt.resonance, body: opt.body, wgPress: +opt.wgPress, wgPos: +opt.wgPos, wgLimits: opt.wgLimits !== 'off' })
       lab.setSordino(opt.sordino === '1')
       const artKey = opt.art + '/' + opt.repeats
       if (re && state.artMode !== undefined && state.artMode !== artKey) { state.artMode = artKey; reloadPiece(); return }
@@ -769,7 +771,7 @@
           g.stroke()
           g.globalAlpha = 0.8
           g.beginPath()
-          for (let i = i0; i <= i1; i++) { const F = perf.data[i * Wd + o + 2] * (state.engine === 'waveguide' ? +opt.wgPress || 1 : 1); const x = X(i / fr), y = yf - Math.min(1, F / 1.6) * bowH; i === i0 ? g.moveTo(x, y) : g.lineTo(x, y) }
+          for (let i = i0; i <= i1; i++) { const F = strGets(perf, i, o, s).F; const x = X(i / fr), y = yf - Math.min(1, F / 1.6) * bowH; i === i0 ? g.moveTo(x, y) : g.lineTo(x, y) }
           g.stroke(); g.globalAlpha = 1
         }
         // contact point (β) as a dashed trace in the force lane: up = nearer the bridge
@@ -778,15 +780,22 @@
           const o = s * NCH, yf = bowTop + bowH + 12 + bowH
           g.strokeStyle = SCOL[s] + 'b0'; g.beginPath(); let on = false
           for (let i = i0; i <= i1; i++) {
-            const F = perf.data[i * Wd + o + 2], be = perf.data[i * Wd + o + 3] * (state.engine === 'waveguide' ? +opt.wgPos || 1 : 1), x = X(i / fr), y = yf - Math.max(0, Math.min(1, (0.2 - be) / 0.16)) * bowH
+            const F = perf.data[i * Wd + o + 2], be = strGets(perf, i, o, s).beta, x = X(i / fr), y = yf - betaY(be) * bowH
             if (F > 0.05) { on ? g.lineTo(x, y) : g.moveTo(x, y); on = true } else on = false
           }
           g.stroke()
         }
         g.setLineDash([])
+        { const yf = bowTop + bowH + 12 + bowH; g.font = '10px Helvetica'; g.textAlign = 'right'
+          for (const [be, lab] of [[1 / 4, '1/4'], [1 / 10, '1/10'], [1 / 25, '1/25'], [1 / 50, '1/50']]) {
+            const y = yf - betaY(be) * bowH
+            g.strokeStyle = 'rgba(120,160,220,0.12)'; g.beginPath(); g.moveTo(x0, y); g.lineTo(x1, y); g.stroke()
+            g.fillStyle = 'rgba(140,170,220,0.6)'; g.fillText(lab, x1 - 2, y - 5)
+          }
+          g.textAlign = 'left'; g.font = '11px Helvetica, Arial' }
         g.fillStyle = '#8f887d'
         g.fillText('bow speed (down +, up −)', x0, bowTop - 6)
-        g.fillText('bow force (solid) · contact point (dashed, up = nearer the bridge) · as the string gets them', x0, bowTop + bowH + 6)
+        g.fillText('bow force (solid) · contact point (dashed, log scale, fraction of the string from the bridge) · as the string gets them', x0, bowTop + bowH + 6)
         drawMeters(perf, tP, x1)
         g.strokeStyle = 'rgba(255,255,255,0.08)'; g.beginPath(); g.moveTo(x0, bowTop + bowH / 2); g.lineTo(x1, bowTop + bowH / 2); g.stroke()
         // playhead
@@ -814,6 +823,15 @@
     }
     requestAnimationFrame(draw)
 
+    // what the string gets at frame i on string o (the waveguide applies WG pressure / position and the limits)
+    function strGets(perf, i, o, s) {
+      const Wd = 4 * NCH, F = perf.data[i * Wd + o + 2], v = perf.data[i * Wd + o + 1], be = perf.data[i * Wd + o + 3]
+      if (state.engine !== 'waveguide') return { F, beta: be }
+      return wgApply(F, v, be, (SYNTH[$('instrument').value] || SYNTH.violin).Z[s], +opt.wgPress || 1, +opt.wgPos || 1, opt.wgLimits !== 'off')
+    }
+    // contact-point lane: log scale, 1/2 of the string (bottom) … 1/100 (top)
+    const betaY = be => Math.max(0, Math.min(1, Math.log(0.5 / Math.max(1e-3, be)) / Math.log(50)))
+
     // live bow meters (after SWAM's Bow Pressure / Bow Position knobs): the
     // bowed string at the playhead, pressure = bow force on the string's own
     // scale (log, 0 flautando … 1 scratch), position = bow–bridge distance
@@ -823,12 +841,12 @@
       let s = -1, best = 0.05
       for (let k = 0; k < 4; k++) { const F = perf.data[i * Wd + k * NCH + 2]; if (F > best && Math.abs(perf.data[i * Wd + k * NCH + 1]) > 0.01) { best = F; s = k } }
       // what the string gets: the waveguide applies WG pressure and WG position on top of the plan
-      const wg = state.engine === 'waveguide', kF = wg ? +opt.wgPress || 1 : 1, kB = wg ? +opt.wgPos || 1 : 1
-      best *= kF
+      let gets = null
+      if (s >= 0) { gets = strGets(perf, i, s * NCH, s); best = gets.F }
       if (s >= 0) {
         const Z = (SYNTH[$('instrument').value] || SYNTH.violin).Z[s]
         const pr = Math.max(0, Math.min(1, (Math.log10(best / Math.pow(Z / 0.3, 1.5)) + 1.3) / 1.8))
-        const be = perf.data[i * Wd + s * NCH + 3] * kB
+        const be = gets.beta
         meter.p += (pr - meter.p) * 0.3; meter.b += (be - meter.b) * 0.3; meter.s = s
       }
       const cx = xR - 150, cy = 40, R = 22
@@ -841,7 +859,7 @@
       }
       const live = s >= 0
       knob(cx, live ? meter.p : 0, 'Bow pressure', live ? meter.p.toFixed(2) : '–')
-      knob(cx + 80, live ? 1 - (meter.b - 0.03) / 0.21 : 0, 'Bow position', live ? `1/${(1 / meter.b).toFixed(0)}` : '–')
+      knob(cx + 80, live ? betaY(meter.b) : 0, 'Bow position', live ? `1/${(1 / meter.b).toFixed(0)}` : '–')
       if (live) { g.fillStyle = SCOL[meter.s]; g.font = '11px Helvetica'; g.fillText(inst().strings[meter.s] + ' string', cx - 32, cy + R + 24) }
     }
 

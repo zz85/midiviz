@@ -178,6 +178,22 @@ Changes in [sound/performance.js](sound/performance.js):
 
 The level spread between notes is still short of the players' (4.9 against 7.8 dB). It is their interpretation (echoes, terraced dynamics, accents), which the plain score notes don't carry; the Variance slider at 2.5 reaches 5.7 dB.
 
+## Waveguide multipliers (WG pressure, WG position, WG limits)
+
+Three Timbre controls for the waveguide only, applied after the automatic bowing in [sound/bowed.js](sound/bowed.js):
+- **WG pressure** scales the bow force the string gets.
+- **WG position** scales the bow–bridge distance it gets.
+- **WG limits** (`wgApply`, `WG_LIMITS`), default *Keep playable*. It holds the contact point between 1/50 and 1/4 of the string from the bridge. It also keeps the force inside the window our waveguide can play at that spot: 0.3 × Schelleng's lower force and 0.25 × his upper force, which are the factors measured on this string. A planned attack press that already overshoots its own window keeps its overshoot. *Off (raw)* applies the multipliers as they are.
+
+The meters and lanes show what the string gets. Measured on 117 steady notes (violin, viola, cello; p, mf, f), notes in Helmholtz motion:
+
+| WG pressure × position | raw | kept playable |
+|---|---|---|
+| 1 × 1 | 116 | 116 (no change) |
+| 0.3 × 0.3 | 4 | 107 |
+| 1 × 0.5 | 85 | 102 |
+| 1 × 2 | 55 | 110 |
+
 ## Measured body (Philharmonia samples)
 
 **Body: Measured (Philharmonia)**: violin, viola and cello bodies estimated as the Iowa ones are, from different instruments and players.

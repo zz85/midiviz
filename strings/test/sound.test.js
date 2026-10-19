@@ -12,13 +12,13 @@ const SR = 48000
 const finger = (notes, instrument = 'violin') => { const n = notes.map(x => ({ ...x })); fingerLine(n, { instrument }); return n }
 
 /** Render with a tap on the bridge force before the body (to judge the string itself). */
-function renderRaw(perf, { instrument = 'violin', model = 'waveguide', secs } = {}) {
+function renderRaw(perf, { instrument = 'violin', model = 'waveguide', secs, opts = {} } = {}) {
   const cap = []
   const orig = Body.prototype.process, origC = ConvBody.prototype.process
   Body.prototype.process = function (x, L, R, n) { cap.push(Float32Array.from(x.subarray(0, n))); return orig.call(this, x, L, R, n) }
   ConvBody.prototype.process = function (x, L, R, n) { cap.push(Float32Array.from(x.subarray(0, n))); return origC.call(this, x, L, R, n) }
   try {
-    const syn = new ViolinSynth(SR, { instrument, model }), src = new CurveSource(perf)
+    const syn = new ViolinSynth(SR, { instrument, model, ...opts }), src = new CurveSource(perf)
     const N = Math.round((secs ?? perf.frames / perf.frameRate) * SR), L = new Float32Array(N), R = new Float32Array(N)
     let t = 0
     for (let i = 0; i < N; i += 128) { const n = Math.min(128, N - i); t = syn.process(src, t, 1 / SR, L.subarray(i, i + n), R.subarray(i, i + n), n) }
@@ -655,4 +655,27 @@ test('legato bow changes: in a connected line the bow turns fast and the sound b
   const st = line.map(n => ({ ...n, art: { ...n.art, stroke: 'staccato' } }))
   const p = renderPerformance(st, { style: flat })
   assert.ok(p.strokes.every(s => !s.legIn))
+})
+
+test('WG limits: the waveguide multipliers stay playable with Keep playable on, and change nothing at 1', async () => {
+  const { wgApply, WG_LIMITS } = await import('../sound/bowed.js')
+  assert.deepEqual(wgApply(0.5, 0.3, 0.1, 0.3, 1, 1, true), { F: 0.5, beta: 0.1 })
+  const r = wgApply(0.5, 0.3, 0.1, 0.3, 0.3, 0.1, true)
+  assert.equal(r.beta, WG_LIMITS.betaLo, 'contact point held at 1/50')
+  assert.ok(r.F > 0.15, `force raised to the window at 1/50 (${r.F.toFixed(2)})`)
+  assert.equal(wgApply(0.5, 0.3, 0.1, 0.3, 0.3, 0.1, false).beta, 0.1 * 0.1, 'raw when off')
+  // a raw 0.3 × 0.3 starves almost every note; kept playable most stay in Helmholtz motion
+  const helm = wgLimits => {
+    let ok = 0
+    for (const m of [62, 69, 74, 79, 86]) {
+      const notes = finger([{ pitch: m, on: 0.1, off: 1.0, velocity: 0.7 }])
+      const perf = renderPerformance(notes, { style: { vibrato: 0, timing: 0, variance: 0, intonation: 0 } })
+      const { raw } = renderRaw(perf, { secs: 0.8, opts: { wgPress: 0.3, wgPos: 0.3, wgLimits } })
+      const f = midiHz(m), h = spectrumDb(raw.subarray(0.5 * SR, 0.5 * SR + 8192), SR, [f / 2, f, 2 * f, 3 * f])
+      if (h[1] - Math.max(h[2], h[3]) >= 1 && h[0] < h[1] - 15) ok++
+    }
+    return ok
+  }
+  const off = helm(false), on = helm(true)
+  assert.ok(on >= 4 && on > off, `Helmholtz on ${on}/5 kept playable, ${off}/5 raw`)
 })

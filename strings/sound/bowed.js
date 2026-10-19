@@ -44,6 +44,38 @@ import { BODY_PHIL } from './body-philharmonia.js'
 import { LEVEL_BODY } from './level-body.js'
 
 export const FRAME_RATE = 250
+
+// The waveguide's raw multipliers (the page's WG pressure / WG position) on top
+// of the planned bow. With limits on ("Keep playable", default) they cannot take
+// the bow outside where a real bow can be (1/50 … 1/4 of the string from the
+// bridge) nor the force outside the playable window at the new position
+// (Schelleng's lower and upper force for this speed, string and contact point):
+// a plan that is itself outside the window (attack presses) keeps its own value.
+// loK / hiK: the window our waveguide actually has, as fractions of the Schelleng
+// formulas' lower and upper force (measured: 117 notes × multipliers, Helmholtz
+// motion kept on 102–116 of them where the raw multipliers kept 4–85)
+export const WG_LIMITS = { betaLo: 0.02, betaHi: 0.25, loK: 0.3, hiK: 0.25 }
+export function wgApply(F, v, beta, Z, kF = 1, kB = 1, limits = true) {
+  let b = beta * kB, f = F * kF
+  if (!limits || (kF === 1 && kB === 1)) return { F: f, beta: b }
+  b = Math.max(WG_LIMITS.betaLo, Math.min(WG_LIMITS.betaHi, b))
+  const av = Math.abs(v)
+  if (av > 1e-3) {
+    const [lo, hi] = wgWindow(F, av, beta, b, Z)
+    f = Math.max(lo, Math.min(hi, f))
+  }
+  return { F: f, beta: b }
+}
+/**
+ * The force window at contact point b (Schelleng's lower and upper force for
+ * this speed and string), moved with the plan: a plan that sits outside its own
+ * window (an attack press above the top) keeps its overshoot at the new spot.
+ */
+export function wgWindow(Fp, av, bPlan, b, Z) {
+  const lo = WG_LIMITS.loK * 0.02 * Math.pow(Z / 0.3, 1.5) * av / (b * b), hi = WG_LIMITS.hiK * 2 * Z * av / ((MU_S - MU_D) * b)
+  const r = bPlan / b
+  return [Math.min(lo, Fp * r * r), Math.max(hi, Fp * r)]
+}
 // bow-force brightness tilt per string model and instrument: k = exp(c·(r − r0)) − 1 above ~3·f0
 // (r: log10 bow force over the string's Z^1.5 scale). Fitted by strings/test/fit_tilt.js
 export const TILT = {"waveguide":{"violin":{"c":1.77,"r0":-0.212},"viola":{"c":2.04,"r0":-0.212},"cello":{"c":1.55,"r0":-0.212}},"source":{"violin":{"c":1.63,"r0":-0.212},"viola":{"c":2.52,"r0":-0.212},"cello":{"c":1.83,"r0":-0.212}}}
@@ -492,9 +524,10 @@ export class Body {
  * at(t, out) → fills out[string * NCH + channel] for time t (s).
  */
 export class ViolinSynth {
-  constructor(sr, { instrument = 'violin', model = 'waveguide', tone = null, bowPress = true, rosin = 1, resonance = 1, body = 'iowa', oversample = 3, tilt = 1, wgPress = 1, wgPos = 1 } = {}) {
+  constructor(sr, { instrument = 'violin', model = 'waveguide', tone = null, bowPress = true, rosin = 1, resonance = 1, body = 'iowa', oversample = 3, tilt = 1, wgPress = 1, wgPos = 1, wgLimits = true } = {}) {
     this.sr = sr
-    this.opts = { bowPress, rosin, resonance, body, tilt, wgPress, wgPos }
+    this.opts = { bowPress, rosin, resonance, body, tilt, wgPress, wgPos, wgLimits }
+    this.fLo = new Float32Array(4); this.fHi = new Float32Array(4).fill(Infinity); this.fR = new Float32Array(4).fill(1)
     this.tiltLp = new Float64Array(4); this.tiltK = new Float32Array(4); this.tiltKt = new Float32Array(4); this.tiltA = new Float32Array(4)
     this.relF = new Float32Array(4)
     this.oversample = oversample
@@ -593,8 +626,19 @@ export class ViolinSynth {
         // waveguide only: a plain scale on the bow–bridge distance the string feels
         // (opts.wgPos, the page's "WG position"; < 1 nearer the bridge). The bow
         // force is NOT replanned for it, unlike the Contact slider
-        const bScale = this.model === 'waveguide' ? (this.opts.wgPos ?? 1) : 1
-        strs[s].setup(f, 0.5 * (cur[o + 3] + nxt[o + 3]) * bScale, 0.5 * (cur[o + 4] + nxt[o + 4]), nxt[o + 6])
+        const wgOn = this.model === 'waveguide', kB = wgOn ? (this.opts.wgPos ?? 1) : 1, kF = wgOn ? (this.opts.wgPress ?? 1) : 1
+        const lim = this.opts.wgLimits !== false && (kB !== 1 || kF !== 1)
+        const bPlan = 0.5 * (cur[o + 3] + nxt[o + 3])
+        let bUse = bPlan * kB
+        if (lim) bUse = Math.max(WG_LIMITS.betaLo, Math.min(WG_LIMITS.betaHi, bUse))
+        // the force window at the contact point the string gets (applied per sample below)
+        if (lim) {
+          const av = Math.abs(0.5 * (cur[o + 1] + nxt[o + 1])), Z = this.spec.Z[s]
+          this.fLo[s] = av > 1e-3 ? 0.02 * Math.pow(Z / 0.3, 1.5) * av / (bUse * bUse) : 0
+          this.fHi[s] = av > 1e-3 ? 2 * Z * av / ((MU_S - MU_D) * bUse) : Infinity
+          this.fR[s] = bPlan / bUse
+        } else { this.fLo[s] = 0; this.fHi[s] = Infinity; this.fR[s] = 1 }
+        strs[s].setup(f, bUse, 0.5 * (cur[o + 4] + nxt[o + 4]), nxt[o + 6])
         // bow-force brightness: bow force sets how sharp the Helmholtz corner
         // is, the strongest timbre control a violinist has (Schoonderwaldt 2009:
         // spectral centroid 0.8–3 kHz across the playable window, mostly from
@@ -635,7 +679,13 @@ export class ViolinSynth {
           for (let s = 0; s < 4; s++) {
             const o = s * NCH
             const vb = cur[o + 1] + (nxt[o + 1] - cur[o + 1]) * k
-            const F = (cur[o + 2] + (nxt[o + 2] - cur[o + 2]) * k) * fScale
+            const Fp = cur[o + 2] + (nxt[o + 2] - cur[o + 2]) * k
+            let F = Fp * fScale
+            // Keep playable: inside the window at the contact point the string gets (wgWindow)
+            if (this.fHi[s] !== Infinity) {
+              const r = this.fR[s], lo = Math.min(this.fLo[s] * WG_LIMITS.loK, Fp * r * r), hi = Math.max(this.fHi[s] * WG_LIMITS.hiK, Fp * r)
+              F = F < lo ? lo : F > hi ? hi : F
+            }
             const tap = i === 0 && q === 0 ? nxt[o + 5] : 0
             let x = strs[s].tick(vb, F, tap)
             // brightness tilt (smoothed k, one-pole split at ~3·f0)
