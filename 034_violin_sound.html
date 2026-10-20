@@ -79,8 +79,8 @@
       <hr>
       <div class="row" title="Short test passages, each showing one thing (vibrato and shifts, double stops, tremolo…)"><label>Demo</label><select id="demo"></select></div>
       <div class="row" title="Pieces from MIDI files (Open… or drop your own .mid / MusicXML). The violin plays the track chosen below"><label>Song</label><select id="song"></select>
-        <button class="b" id="open" title="Open a MIDI file or a score (MusicXML / .mxl from MuseScore, Finale, Sibelius, Dorico…), or drop one on the page">Open…</button>
-        <input id="file" type="file" accept=".mid,.midi,audio/midi,.musicxml,.xml,.mxl" hidden></div>
+        <button class="b" id="open" title="Open a MIDI file or a score (MuseScore .mscz / .mscx, or MusicXML / .mxl from MuseScore, Finale, Sibelius, Dorico…), or drop one on the page">Open…</button>
+        <input id="file" type="file" accept=".mid,.midi,audio/midi,.musicxml,.xml,.mxl,.mscz,.mscx" hidden></div>
       <div class="row" id="trackRow" hidden title="Which track of the file the violin plays"><label>Track</label><select id="track"></select></div>
       <div class="row"><label>Type</label><input id="typed" type="text" spellcheck="false" title="Notes: A4 B4 C#5 · double stops D4+B4 · length E5:2 · rest r · string lock E5/A"
         value="G4 A4 B4 C5 D5:2 B4 G4:2 D4+B4:2"><button class="b" id="typedGo">Go</button></div>
@@ -123,7 +123,7 @@
     import { fingerLine, fingerHeld, INSTRUMENTS, parseNote, noteName } from './strings/fingering.js'
     import { renderPerformance, scaleNotes, scaleExpression, expressionFromCC, STYLE } from './strings/sound/performance.js'
     import { planArticulation, clearArticulation } from './strings/articulation.js'
-    import { readMusicXML, readMXLBrowser } from './strings/score.js'
+    import { readScoreFile, SCORE_FILE } from './strings/score.js'
     import { attackError } from './strings/sound/humanize.js'
     import { NCH, midiHz, INSTRUMENTS as SYNTH, wgApply } from './strings/sound/bowed.js'
     import { Lab, ENGINES } from './strings/sound/engines.js'
@@ -581,7 +581,9 @@
       state.midiTime = { meter: midiMeter, tempoMap: midiTempo }
       loadPiece(midiTracks[best].notes, { title: `${title} — ${midiTracks[best].name}`, source: { ...source, track: best }, expr: midiTracks[best].expr, ...state.midiTime })
     }
-    $('track').onchange = () => { const t = midiTracks[+$('track').value]; loadPiece(t.notes, { title: `${state.songTitle} — ${t.name}`, source: { ...state.source, track: +$('track').value }, expr: t.expr, ...state.midiTime }); saveUrl() }
+    $('track').onchange = () => {
+      if (state.score && !midiTracks.length) { loadScoreFile(state.score.buf, state.score.name, +$('track').value).catch(e => setStatus(e.message, true, 4000)); return }
+      const t = midiTracks[+$('track').value]; loadPiece(t.notes, { title: `${state.songTitle} — ${t.name}`, source: { ...state.source, track: +$('track').value }, expr: t.expr, ...state.midiTime }); saveUrl() }
     async function loadSong(v, track = null) {
       if (!v) return
       setStatus('Loading…')
@@ -596,15 +598,27 @@
     addEventListener('drop', e => { e.preventDefault(); document.body.classList.remove('dragging'); const f = e.dataTransfer.files[0]; if (f) openFile(f) })
     const reloadPiece = () => { if (state.raw.length) loadPiece(state.raw, { title: state.title, source: state.source, fit: state.fit, expr: state.expr, meter: state.meter, tempoMap: state.tempoMap }) }
     $('instrument').onchange = () => { reloadPiece(); saveUrl() }
-    // a score (MusicXML / .mxl): notes with their slurs and articulation marks
-    async function loadScoreFile(buf, name) {
-      const s = /\.mxl$/i.test(name) ? await readMXLBrowser(buf) : readMusicXML(new TextDecoder().decode(buf))
-      $('demo').value = ''; $('song').value = ''; $('trackRow').hidden = true
+    // a score (MusicXML / .mxl, MuseScore .mscz / .mscx): notes with their slurs and
+    // articulation marks; the Track menu picks the part, and a viola or cello part
+    // switches the instrument
+    async function loadScoreFile(buf, name, part = null) {
+      const s = await readScoreFile(name, buf, part == null ? {} : { part })
+      if (!s.notes.length) throw new Error(`no notes in ${s.parts[s.part]?.name || 'that part'}`)
+      $('demo').value = ''; $('song').value = ''
+      midiTracks = []
+      state.score = { buf, name }
+      $('track').innerHTML = ''
+      s.parts.forEach((p, i) => $('track').add(new Option(p.name, i)))
+      $('track').value = s.part; $('trackRow').hidden = s.parts.length < 2
+      const pn = (s.parts[s.part]?.name || '').toLowerCase()
+      const inst = /viol(on)?cello|cello/.test(pn) ? 'cello' : /viola|alto/.test(pn) ? 'viola' : /violin|violon|violino/.test(pn) ? 'violin' : null
+      if (inst && $('instrument').value !== inst) $('instrument').value = inst
       state.tempo = s.tempo[0]?.bpm || 100
-      loadPiece(s.notes, { title: s.title || name, source: null, fit: true, meter: s.meter, tempoMap: s.tempo })
+      const title = [s.title || name, s.parts.length > 1 ? s.parts[s.part]?.name : ''].filter(Boolean).join(' — ')
+      loadPiece(s.notes, { title, source: null, fit: true, meter: s.meter, tempoMap: s.tempo })
       setStatus(`${s.notes.length} notes from the score, ${new Set(s.notes.map(n => n.art.slur).filter(x => x != null)).size} slurs`, false, 3000)
     }
-    const openFile = f => f.arrayBuffer().then(b => /\.(musicxml|xml|mxl)$/i.test(f.name) ? loadScoreFile(b, f.name) : (loadMidiBuffer(b, f.name, null), $('demo').value = '', $('song').value = '')).catch(e => setStatus(e.message, true, 4000))
+    const openFile = f => f.arrayBuffer().then(b => SCORE_FILE.test(f.name) ? loadScoreFile(b, f.name) : (state.score = null, loadMidiBuffer(b, f.name, null), $('demo').value = '', $('song').value = '')).catch(e => setStatus(e.message, true, 4000))
     $('mode').onchange = $('instrument').onchange
 
     // ── Transport ──────────────────────────────────────────────────────────

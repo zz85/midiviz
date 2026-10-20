@@ -389,7 +389,7 @@ Shift slides with no plan behind them are halved across a bow change, where a pl
 
 Not done yet:
 - JBV's speed and interval pitch instability;
-- reading `.mscz` and LilyPond directly.
+- reading LilyPond directly (Mutopia: convert with python-ly, `ly musicxml piece.ly`, untested).
 
 ## Articulation: fewer détaché notes
 
@@ -466,3 +466,33 @@ Long notes stopped suddenly in two-voice writing: a note held while the other vo
 - **The fingering** only looks at notes that start together, so it put 191 moving notes on the string a held note was sounding on. `fingerHeld()` (fingering.js) moves those to another free string (beyond the held note, the way the voice moves) and fingers the line again; 77 remain, and on a shared string the earlier note now ends where the next one starts.
 
 Long notes cut by 30 % or more: 779 → 94 (75 for a third voice, 19 sharing a string). Test: "held notes" in sound.test.js.
+
+## MuseScore files
+
+`strings/score.js` reads MuseScore's own files directly, with no MusicXML export step: `readMSCX(text)`, `readMSCZ(buf, inflateRaw)` and `readMSCZBrowser(buf)`. `readScoreFile(name, buf)` picks the reader by extension (`.musicxml` / `.xml`, `.mxl`, `.mscx`, `.mscz`). All of them return what `readMusicXML` returns, with `parts` and the index of the `part` read, so the articulation planner sees the same slurs and marks.
+
+- **Versions.** MuseScore 3 and 4 (file versions 3.01–4.60) are supported. MuseScore 2 files are refused with a message asking to re-save them; the .mscz is a zip of one `.mscx`.
+- **Timing.** A note's place comes from `durationType` + `dots` inside nested tuplets, from `<location>` moves inside a voice, and from measure lengths (`len`, irregular bars). Tempo marks are quarters per second. MuseScore 4's "a tempo" and "tempo primo" carry a placeholder tempo, so they are read as the marked tempo in force and the first tempo.
+- **Spanners.** Slurs, ties and glissandi name their end as `{ measures, fractions }` from where they start. A slur covers the notes of its voice from its start to its end. Ties are merged into one note, and a glissando into a note is a slide (`art.port`).
+- **Marks.** Articulation symbols are mapped to the MusicXML names MuseScore's exporter writes (`articStaccatoAbove` → staccato, `articTenutoStaccato` → detached-legato = portato, …), and `stringsUpBow` / `stringsDownBow` become bowings. Grace notes are skipped, as in readMusicXML.
+- **Parts.** The `.mscz`'s root score is read, not the `Excerpts/` part scores. MuseScore 4.6 drops staff ids, which are then implicit. A part without tempo marks takes the top staff's.
+
+Two MusicXML reader fixes came out of the comparison:
+- MuseScore exports tempo marks in the first part only, so a viola or cello part used to play at the 100 bpm default. A part without tempo marks now takes the first part's.
+- A chord's articulation is written on one of its notes; it now applies to all of them.
+
+**Checked against MuseScore's own MusicXML.** `node strings/test/mscz.js` compares the two readers on the OpenScore String Quartets corpus (CC0, github.com/OpenScore/StringQuartets). Each score there ships as `.mscx` / `.mscz` together with MuseScore's `.mxl` export. 35 scores (18 `.mscx` in format 3.02, 17 `.mscz` in 3.02 / 4.50 / 4.60), all four parts, 275,499 notes:
+
+| | Agreement |
+|---|---|
+| Notes found by both (pitch, bar, beat) | 99.4 % |
+| Same length | 98.7 % |
+| Slur pairs (consecutive notes in one slur or not) | 99.5 % of 258,388 |
+| Stroke marks | 99.9 % of 51,809 |
+| Bowings | 99.7 % of 1,595 |
+| Slides (glissandi) | 100 % of 26 |
+
+Most remaining differences come from the exporter rather than the score. Berg's Lyric Suite part 1 has 15 notes that differ by two octaves. A few slurs the exporter splits at system breaks. Gradual tempo changes (rit. / accel. lines) are ignored by both readers. Reading all 140 parts takes 29 s in Node, for 16 MB uncompressed per large score. Unit tests are in `strings/test/score.test.js`.
+
+**In #034.** Open… and drag-and-drop take `.mscz` and `.mscx`. For a score with several parts, the Track menu lists them (Violin 1, Violin 2, Viola, Violoncello). A viola or cello part switches the instrument.
+
