@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>Experiment #041 - Harmony</title>
+  <!--
+    Experiment #041 - chord and key analysis of a MIDI file as it loads and plays.
+
+    harmony/harmony.js       keys (profiles + Viterbi, then a second pass from the
+                             chords), chords (template scoring over segments,
+                             semi-Markov Viterbi with bass, metre, figuration,
+                             key prior and root motion), Roman numerals,
+                             functions, cadences, spelling; instant naming of
+                             what sounds now (for MIDI in)
+    harmony/worker.js        runs the analysis off the main thread
+    harmony/research/        the theory and how other apps do it
+    harmony/test/            node --test harmony/test/harmony.test.js
+                             node harmony/test/bps.js (Beethoven sonatas, BPS-FH)
+  -->
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #0d0c0b; font: 13px/1.35 "Helvetica Neue", Arial, sans-serif; color: #e8e2d6; }
+    canvas { display: block; }
+    #roll { position: absolute; left: 0; top: 0; touch-action: none; cursor: crosshair; }
+    #panel {
+      position: absolute; top: 10px; right: 10px; width: 300px; padding: 10px 12px; max-height: calc(100% - 40px); overflow: auto;
+      background: rgba(18, 16, 14, 0.9); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 10px;
+      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5); z-index: 2;
+    }
+    #panel h1 { margin: 0 0 2px; font: 300 17px/1.2 Georgia, serif; letter-spacing: 0.04em; color: #f3e6c4; }
+    #panel h1 a { color: inherit; text-decoration: none; }
+    #panel .sub { font-size: 11px; color: #9c958a; margin-bottom: 6px; }
+    #panel .sub a { color: #9c958a; }
+    #panel.collapsed .body { display: none; }
+    #toggle { float: right; background: none; border: 0; color: #d8b56a; font-size: 15px; cursor: pointer; }
+    hr { border: 0; border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 8px 0; }
+    .row { display: flex; align-items: center; gap: 6px; margin: 5px 0; }
+    .row > label:first-child { flex: 0 0 68px; color: #a9a196; }
+    select, input[type=range] { flex: 1; min-width: 0; }
+    select { background: #1d1b19; color: #eee6d8; border: 1px solid #3d3933; border-radius: 4px; padding: 2px 4px; font: inherit; }
+    input[type=checkbox] { accent-color: #c9a24a; }
+    .chk { display: flex; align-items: center; gap: 3px; color: #cfc6b8; margin-right: 6px; white-space: nowrap; }
+    button.b { background: #26231f; color: #eee6d8; border: 1px solid #4a443b; border-radius: 4px; padding: 3px 8px; cursor: pointer; font: inherit; font-size: 12px; }
+    button.b:hover { background: #35302a; }
+    button.b.on { background: #c9a24a; color: #111; border-color: #c9a24a; }
+    #songTime { font: 11px monospace; color: #b9b0a2; min-width: 72px; text-align: right; }
+    #now { text-align: center; padding: 4px 0 2px; }
+    #now .sym { font: 400 34px/1.1 Georgia, serif; color: #f6ead0; min-height: 38px; }
+    #now .rn { font: 400 20px/1.2 Georgia, serif; color: #e7c77c; min-height: 24px; }
+    #now .fn { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #9c958a; min-height: 14px; }
+    #now .key { font-size: 12px; color: #cfc6b8; margin-top: 3px; min-height: 16px; }
+    #now .tones { font-size: 12px; margin-top: 3px; min-height: 16px; }
+    #now .tones span { margin: 0 3px; }
+    #now .instant { font-size: 11.5px; color: #9c958a; margin-top: 4px; min-height: 15px; }
+    #now .instant b { color: #cfc6b8; font-weight: normal; }
+    #cof { display: block; margin: 4px auto 0; }
+    #stats { font-size: 11.5px; color: #c9c0b2; }
+    #stats .k { color: #8f887d; }
+    #stats table { border-collapse: collapse; margin-top: 3px; }
+    #stats td { padding: 0 8px 0 0; }
+    #legend { display: flex; gap: 8px; margin-top: 6px; font-size: 11px; color: #b9b0a2; flex-wrap: wrap; }
+    #legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 3px; vertical-align: -1px; }
+    #hint { color: #8f887d; font-size: 11px; margin-top: 6px; }
+    #tip { position: absolute; pointer-events: none; z-index: 4; background: rgba(20, 18, 16, 0.95); border: 1px solid #4a443b; border-radius: 6px; padding: 6px 8px; font-size: 12px; display: none; max-width: 260px; }
+    #tip .k { color: #8f887d; }
+    #status { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); padding: 6px 10px; border-radius: 6px; background: rgba(14, 13, 12, 0.85); border: 1px solid #3d3933; font-size: 12px; z-index: 3; }
+    #status.hidden { display: none; }
+    #status.error { border-color: #c44; color: #f99; }
+    #dropHint { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; font: 300 26px Georgia, serif; color: #f3e6c4; background: rgba(0, 0, 0, 0.55); pointer-events: none; z-index: 5; }
+    body.dragging #dropHint { display: flex; }
+  </style>
+</head>
+<body>
+  <canvas id="roll"></canvas>
+  <div id="tip"></div>
+  <div id="panel">
+    <button id="toggle" title="Collapse">–</button>
+    <h1><a href="README.md" title="Back to experiments">#041 · Harmony</a></h1>
+    <div class="sub">chords, keys and Roman numerals as it plays · <a href="harmony/research/01_harmony.md">research</a></div>
+    <div class="body">
+      <div class="row"><label>Song</label><select id="song"></select>
+        <button class="b" id="open" title="Open a .mid file (or drop one on the page)">Open…</button>
+        <input id="file" type="file" accept=".mid,.midi,audio/midi" hidden></div>
+      <div class="row">
+        <button class="b" id="play" title="Play / pause (Space)">▶</button>
+        <button class="b" id="stop" title="Stop">■</button>
+        <input id="seek" type="range" min="0" max="1" step="0.0005" value="0">
+        <span id="songTime">0:00 / 0:00</span>
+      </div>
+      <div class="row"><label>Speed</label><select id="speed" style="flex:0 0 64px">
+        <option value="0.5">50%</option><option value="0.75">75%</option><option value="1" selected>100%</option><option value="1.25">125%</option>
+      </select>
+        <span class="chk"><input id="loop" type="checkbox">Loop</span>
+        <span class="chk"><input id="sound" type="checkbox" checked>Sound</span></div>
+      <div class="row"><label></label><button class="b" id="midiIn" style="white-space:nowrap" title="Name the chords you play on a MIDI keyboard">MIDI in</button></div>
+      <hr>
+      <div id="now">
+        <div class="sym" id="nowSym"></div>
+        <div class="rn" id="nowRn"></div>
+        <div class="fn" id="nowFn"></div>
+        <div class="key" id="nowKey"></div>
+        <div class="tones" id="nowTones"></div>
+        <div class="instant" id="nowInstant" title="What a chord display that only looks at the notes sounding right now would say"></div>
+      </div>
+      <canvas id="cof" width="236" height="236" title="Circle of fifths: the ring is the local key (outer major, inner minor), the dot the chord's root"></canvas>
+      <hr>
+      <div class="row"><label>Chords</label><select id="vocab">
+        <option value="triads">Triads only</option>
+        <option value="classical" selected>Classical (triads + sevenths)</option>
+        <option value="pop">Pop / jazz (+ sus, 6, add9, 9ths, 5)</option>
+      </select></div>
+      <div class="row"><label>Keys</label><select id="keysrc" title="Where the local keys come from: #041's own key finding, or AugmentedNet (the trained network of #042) on onnxruntime-web">
+        <option value="own" selected>From the notes (profiles + chords)</option><option value="augnet">AugmentedNet (#042, trained)</option>
+      </select></div>
+      <div class="row" id="profileRow"><label>Key profile</label><select id="profile">
+        <option value="aarden" selected>Aarden–Essen</option>
+        <option value="temperley">Temperley–Kostka–Payne</option>
+        <option value="krumhansl">Krumhansl–Kessler</option>
+        <option value="bellman">Bellman–Budge</option>
+        <option value="sapp">Sapp (simple)</option>
+      </select></div>
+      <div class="row"><label>Labels</label><select id="labels">
+        <option value="both" selected>Symbols + numerals</option><option value="sym">Chord symbols</option><option value="rn">Roman numerals</option>
+      </select></div>
+      <div class="row"><label>Colour</label><select id="colour">
+        <option value="role" selected>Notes by role in the chord</option><option value="func">Notes by function</option><option value="track">Notes by track</option>
+      </select></div>
+      <div class="row"><label></label>
+        <span class="chk" title="Notes held by the sustain pedal count (less than held keys)"><input id="pedal" type="checkbox" checked>Pedal</span>
+        <span class="chk" title="An extra lane naming each onset on its own, as a DAW's chord display does"><input id="instantLane" type="checkbox">Instant lane</span>
+      </div>
+      <div class="row"><label></label>
+        <span class="chk" title="Mark the notes outside the chord: suspensions (s), appoggiaturas (a), accented passing (ap), passing (p) and neighbour (n) notes"><input id="nct" type="checkbox" checked>Non-chord tones</span>
+      </div>
+      <div class="row"><label>Zoom</label><input id="zoom" type="range" min="20" max="400" value="70"></div>
+      <div class="row"><label></label>
+        <button class="b" id="exportLab" title="Chords as a MIREX .lab file (Harte syntax), for comparing with other tools">Export .lab</button>
+        <button class="b" id="exportChart" title="A chord chart by bar, with keys and numerals">Export chart</button>
+      </div>
+      <div id="legend"></div>
+      <hr>
+      <div id="stats"></div>
+      <div id="hint">Click the lanes or the roll to seek; hover a chord for the alternatives, a note for its role (s suspension, a appoggiatura). Space plays, Esc hides the panel, ← / → move by chord.</div>
+    </div>
+  </div>
+  <div id="status" class="hidden"></div>
+  <div id="dropHint">Drop a MIDI file to analyse it</div>
+
+  <script src="tonejs-midi.js"></script>
+  <script type="module">
+    import { SoundFontEngine, MidiScheduler } from './soundfont-engine/src/index.js'
+    import { beatGrid, keySignatureOf, keyName, keyShort, chordIndexAt, toneRole, nameChord, progressions, fifthOfPc, fifthName, spellNear, tonicFifth, QUALITIES } from './harmony/harmony.js'
+    import { midiToSchedule } from './notation3d/midi-score.js'
+    import { measuresOfMidi } from './augnet/augnet.js'
+
+    const $ = id => document.getElementById(id)
+    const params = new URLSearchParams(location.search)
+    function setStatus(msg, error = false) { const s = $('status'); s.textContent = msg; s.classList.toggle('hidden', !msg); s.classList.toggle('error', error) }
+    const escapeHtml = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+
+    // ── Colours ────────────────────────────────────────────────────────────
+    const ROLE = { root: '#e9b44c', third: '#e0625a', fifth: '#5b9fe0', seventh: '#a274dc', ext: '#47c2a2', nct: '#6d675e' }
+    const ROLE_NAME = { root: 'root', third: 'third', fifth: 'fifth', seventh: 'seventh', ext: '6th / 9th / sus', nct: 'not in the chord' }
+    const FUNC = { T: '#4f86c6', PD: '#58a868', D: '#d4643c', '?': '#77706a' }
+    const FUNC_NAME = { T: 'tonic', PD: 'predominant', D: 'dominant', '?': 'chromatic' }
+    const ORN = {
+      passing: { letter: 'p', name: 'passing note', colour: '#8a837a' }, neighbour: { letter: 'n', name: 'neighbour note', colour: '#8a837a' },
+      suspension: { letter: 's', name: 'suspension', colour: '#d9a441' }, appoggiatura: { letter: 'a', name: 'appoggiatura', colour: '#d0679a' },
+      'accented passing': { letter: 'ap', name: 'accented passing note', colour: '#b07ac8' },
+    }
+    const TRACK = ['#e9b44c', '#5b9fe0', '#e0625a', '#58a868', '#a274dc', '#47c2a2', '#d08a4c', '#c7c06a', '#e07aa8', '#7ab8d8', '#a0a060', '#b08060', '#60a0a0', '#9080c0', '#c06060', '#80c080']
+    const keyHue = k => (fifthOfPc(k.tonic) + (k.mode === 'minor' ? 3 : 0)) * 30 % 360
+    const keyColour = (k, a = 1) => `hsla(${keyHue(k)}, ${k.mode === 'major' ? 45 : 35}%, ${k.mode === 'major' ? 42 : 30}%, ${a})`
+
+    // ── Sound ──────────────────────────────────────────────────────────────
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+    const engine = new SoundFontEngine({ backend: 'oxisynth', vendorPath: new URL('./vendor', import.meta.url).href, audioContext: audioCtx })
+    let soundReady = false
+    const LIVE = 15
+    ;(async () => {
+      try {
+        await engine.loadSoundFontStack(['soundfonts/Creative(emu10k1)8MBGMSFX.sf2', 'soundfonts/Motif_ES6_Concert_Piano.sf2'])
+        soundReady = true
+        applyPrograms()
+      } catch (e) { console.warn('soundfont', e); setStatus('Sound failed to load: ' + e.message, true); setTimeout(() => setStatus(''), 3000) }
+    })()
+    const unlockAudio = () => { if (audioCtx.state !== 'running') audioCtx.resume().then(() => engine.resume?.()).catch(() => {}) }
+
+    // ── Piece state ────────────────────────────────────────────────────────
+    const state = { title: '', notes: [], sched: null, grid: null, keySig: null, pedal: [], duration: 0, result: null, lo: 48, hi: 84, instant: [], url: null, bars: [] }
+    const clock = { playing: false, t: 0, wall: 0, speed: 1 }
+    const now = () => clock.playing ? clock.t + (performance.now() - clock.wall) / 1000 * clock.speed : clock.t
+
+    // ── Analysis worker ────────────────────────────────────────────────────
+    const worker = new Worker(new URL('./harmony/worker.js', import.meta.url), { type: 'module' })
+    let jobId = 0
+    const pending = new Map()
+    worker.onmessage = ({ data }) => { const p = pending.get(data.id); pending.delete(data.id); if (p) data.error ? p.reject(new Error(data.error)) : p.resolve(data.result) }
+    const runAnalysis = (notes, options) => new Promise((resolve, reject) => { const id = ++jobId; pending.set(id, { resolve, reject }); worker.postMessage({ id, notes, options }) })
+
+    // ── AugmentedNet's keys (onnxruntime-web, started on first use) ───────
+    const ORT_CDN = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/'
+    let anet = null
+    function augnet() {
+      if (anet) return anet
+      const w = new Worker(new URL('./augnet/worker.js', import.meta.url), { type: 'module' })
+      const pending = new Map()
+      let ok, fail
+      const ready = new Promise((res, rej) => { ok = res; fail = rej })
+      w.onmessage = ({ data }) => {
+        if (data.type === 'ready') ok(data)
+        else if (data.type === 'error' && data.id == null) fail(new Error(data.message))
+        else { const p = pending.get(data.id); pending.delete(data.id); if (p) data.type === 'error' ? p.reject(new Error(data.message)) : p.resolve(data) }
+      }
+      w.postMessage({ type: 'init', ort: ORT_CDN + 'ort.wasm.min.mjs', wasmPaths: ORT_CDN, ep: 'wasm', base: new URL('./augnet/', import.meta.url).href })
+      let n = 0
+      anet = { ready, run: msg => ready.then(() => new Promise((resolve, reject) => { const i = ++n; pending.set(i, { resolve, reject }); w.postMessage({ ...msg, type: 'analyze', id: i }) })) }
+      return anet
+    }
+    /** AugmentedNet's local keys in seconds, with their spelling: [{ start, end, tonic, mode, tf }] (cached per file) */
+    async function augnetKeys() {
+      if (state.augKeys) return state.augKeys
+      const midi = state.midi, ppq = midi.header.ppq, sec = q => midi.header.ticksToSeconds(q * ppq)
+      setStatus('AugmentedNet: finding the keys…')
+      const res = await augnet().run({ notes: state.notes.map(n => ({ pitch: n.pitch, on: n.ticks / ppq, dur: n.durTicks / ppq })), measures: measuresOfMidi(midi), spell: 'key' })
+      state.augKeys = res.keys.map(k => ({ start: sec(k.start), end: sec(k.end), tonic: k.tonic, mode: k.mode, tf: k.tf }))
+      state.augMs = res.ms.total
+      return state.augKeys
+    }
+
+    let analysisJob = 0
+    async function analyseNow() {
+      if (!state.notes.length) return
+      const id = ++analysisJob
+      const forFile = state.midi
+      let keys
+      if ($('keysrc').value === 'augnet') {
+        try { keys = await augnetKeys() }
+        catch (e) { console.error(e); setStatus('AugmentedNet failed, using #041\'s own keys: ' + e.message, true); setTimeout(() => setStatus(''), 4000) }
+        if (id !== analysisJob || forFile !== state.midi) return
+      }
+      setStatus(`Analysing ${state.notes.length} notes…`)
+      const options = {
+        keys,
+        beats: state.grid.beats.map(b => ({ time: b.time, strength: b.strength })), aligned: state.grid.aligned,
+        pedal: $('pedal').checked ? state.pedal : [], keySig: state.keySig,
+        vocabulary: $('vocab').value, keyProfile: $('profile').value,
+      }
+      try {
+        const r = await runAnalysis(state.notes.map(n => ({ pitch: n.pitch, on: n.on, off: n.off, channel: n.channel })), options)
+        if (id !== analysisJob) return // a newer request is on its way
+        r.keySource = keys ? 'augnet' : 'own'
+        state.result = r
+        // non-chord-tone candidates, and each note's chord and role (by its onset)
+        for (const n of state.notes) n.orn = null
+        for (const o of r.ornaments || []) state.notes[o.index].orn = o
+        for (const n of state.notes) {
+          // a suspension is judged in the chord it is held into
+          const ci = chordIndexAt(r.chords, (n.orn ? n.orn.from : n.on) + 0.01)
+          const c = r.chords[ci]
+          n.role = c ? toneRole(c, n.pitch) : 'nct'
+          if (n.role !== 'nct') n.orn = null // a chord tone after all
+          n.func = c?.func || '?'
+        }
+        computeInstant()
+        showStats()
+        setStatus('')
+        lastShown = -2
+      } catch (e) { console.error(e); setStatus('Analysis failed: ' + e.message, true) }
+    }
+
+    // a lane naming each onset on its own (what a DAW's chord display shows)
+    function computeInstant() {
+      state.instant = []
+      if (!$('instantLane').checked) return
+      const ns = state.notes
+      const onsets = [...new Set(ns.map(n => Math.round(n.on * 50) / 50))].sort((a, b) => a - b)
+      let j = 0, last = null
+      const sounding = []
+      for (const t of onsets) {
+        const set = ns.filter(n => n.on <= t + 0.015 && n.off > t + 0.015).map(n => n.pitch)
+        const best = set.length >= 2 ? nameChord(set, { vocabulary: $('vocab').value, key: keyAt(t) })[0] : null
+        const sym = best ? best.symbol : '·'
+        if (last && last.sym === sym) { last.end = t; continue }
+        if (last) last.end = t
+        last = { start: t, end: t, sym }
+        state.instant.push(last)
+      }
+      if (last) last.end = state.duration
+    }
+    const keyAt = t => { const ks = state.result?.keys || []; for (const k of ks) if (t >= k.start && t < k.end) return k; return ks.at(-1) || null }
+
+    function showStats() {
+      const r = state.result
+      if (!r) { $('stats').innerHTML = ''; return }
+      const cad = {}
+      for (const c of r.chords) if (c.cadence) cad[c.cadence] = (cad[c.cadence] || 0) + 1
+      const kinds = {}
+      for (const c of r.chords) if (c.kind) kinds[c.kind] = (kinds[c.kind] || 0) + 1
+      const named = r.chords.filter(c => c.root != null).length
+      const prog = progressions(r.chords, 6)
+      let html = `<div><b>${escapeHtml(state.title)}</b></div>
+        <div><span class="k">home key</span> ${keyName(r.global)} <span class="k">· regions</span> ${r.keys.length}${r.keySource === 'augnet' ? ` <span class="k">(AugmentedNet, ${state.augMs.toFixed(0)} ms)</span>` : ''}${state.keySig != null ? ` <span class="k">· file says</span> ${escapeHtml(state.fileKey)}` : ''}</div>
+        <div><span class="k">chords</span> ${named} <span class="k">· analysed in</span> ${r.ms.toFixed(0)} ms${r.metre ? '' : ' <span class="k">(no beat grid: metre ignored)</span>'}</div>
+        <div><span class="k">diatonic</span> ${kinds.diatonic || 0} <span class="k">· applied</span> ${kinds.applied || 0} <span class="k">· mixture</span> ${kinds.mixture || 0}${kinds.neapolitan ? ` <span class="k">· N</span> ${kinds.neapolitan}` : ''}${kinds.aug6 ? ` <span class="k">· aug 6th</span> ${kinds.aug6}` : ''} <span class="k">· other</span> ${kinds.chromatic || 0}</div>`
+      if (Object.keys(cad).length) html += `<div><span class="k">cadences</span> ${['PAC', 'IAC', 'HC', 'DC', 'PC'].filter(k => cad[k]).map(k => `${k} ${cad[k]}`).join(' · ')}</div>`
+      if (prog.length) html += `<div class="k" style="margin-top:4px">most common moves</div><table>${prog.map(p => `<tr><td>${escapeHtml(p.move)}</td><td class="k">${p.count}×</td></tr>`).join('')}</table>`
+      $('stats').innerHTML = html
+    }
+
+    // ── Loading ────────────────────────────────────────────────────────────
+    const SONGS = [
+      ['', '— choose a song —'],
+      ['midis/bach_846.mid', 'Bach – Prelude & Fugue in C, BWV 846'],
+      ['midis/pachelbel_canon.mid', 'Pachelbel – Canon in D'],
+      ['midis/elise.mid', 'Beethoven – Für Elise'],
+      ['midis/mond_1.mid', 'Beethoven – Moonlight Sonata, I'],
+      ['midis/pathetique_2.mid', 'Beethoven – Pathétique, II'],
+      ['midis/mz_545_1.mid', 'Mozart – Sonata K. 545, I'],
+      ['midis/chpn-p4.mid', 'Chopin – Prelude in E minor, Op. 28/4'],
+      ['midis/chpn_op27_2.mid', 'Chopin – Nocturne Op. 27/2'],
+      ['midis/scn15_7.mid', 'Schumann – Träumerei'],
+      ['midis/deb_clai.mid', 'Debussy – Clair de lune'],
+      ['midis/river_flows_in_you.mid', 'Yiruma – River Flows in You'],
+      ['midis/kiss_the_rain.mid', 'Yiruma – Kiss the Rain'],
+      ['midis/comptine.mid', 'Tiersen – Comptine d’un autre été'],
+      ['JVKE - golden hour.mid', 'JVKE – golden hour'],
+      ['Heart and Soul Piano Duet The Real Version.mid', 'Carmichael – Heart and Soul'],
+      ['midis/libertango.mid', 'Piazzolla – Libertango'],
+      ['entertainer.mid', 'Joplin – The Entertainer'],
+      ['midis/zelda_overworld.mid', 'Kondo – Zelda overworld'],
+      ['hedwig_theme.mid', 'Williams – Hedwig’s Theme'],
+    ]
+    for (const [v, l] of SONGS) $('song').add(new Option(l, v))
+
+    async function loadBuffer(buf, title, url = null) {
+      stopPlayback()
+      const midi = new Midi(buf)
+      const sched = midiToSchedule(midi)
+      const notes = []
+      midi.tracks.forEach((t, ti) => {
+        if (t.channel === 9) return
+        for (const n of t.notes) notes.push({ pitch: n.midi, on: n.time, off: n.time + Math.max(0.03, n.duration), ticks: n.ticks, durTicks: Math.max(1, n.durationTicks), velocity: n.velocity, channel: t.channel, track: ti })
+      })
+      if (!notes.length) throw new Error('no pitched notes in the file')
+      notes.sort((a, b) => a.on - b.on || a.pitch - b.pitch)
+      const pedal = []
+      midi.tracks.forEach(t => { for (const e of t.controlChanges?.[64] || []) pedal.push({ time: e.time, value: Math.round(e.value * 127), channel: t.channel }) })
+      const ks = midi.header.keySignatures?.[0]
+      Object.assign(state, {
+        title, url, midi, notes, sched, pedal, augKeys: null, grid: beatGrid(midi), keySig: keySignatureOf(midi), fileKey: ks ? `${ks.key} ${ks.scale}` : '',
+        duration: Math.max(...notes.map(n => n.off)), result: null,
+        lo: Math.min(...notes.map(n => n.pitch)) - 2, hi: Math.max(...notes.map(n => n.pitch)) + 2,
+        maxLen: Math.max(...notes.map(n => n.off - n.on)),
+      })
+      state.bars = state.grid.beats.filter(b => b.strength === 1)
+      clock.t = 0
+      applyPrograms()
+      showTime()
+      await analyseNow()
+    }
+    function applyPrograms() { if (soundReady && state.sched) for (const [ch, p] of state.sched.programs) if (ch !== LIVE) engine.programChange(ch, p) }
+    async function loadSongUrl(url, autoplay = true) {
+      if (!url) return
+      setStatus('Loading song…')
+      try {
+        const buf = await (await fetch(encodeURI(url))).arrayBuffer()
+        await loadBuffer(buf, SONGS.find(s => s[0] === url)?.[1] || url.split('/').pop(), url)
+        saveUrl()
+        if (autoplay) play()
+      } catch (e) { console.error(e); setStatus('Could not load song: ' + e.message, true) }
+    }
+    async function loadFile(f) {
+      try { $('song').value = ''; await loadBuffer(await f.arrayBuffer(), f.name.replace(/\.midi?$/i, '')); saveUrl(); play() }
+      catch (e) { console.error(e); setStatus(`Could not read ${f.name}: ${e.message}`, true) }
+    }
+    $('song').onchange = () => loadSongUrl($('song').value)
+    $('open').onclick = () => $('file').click()
+    $('file').onchange = () => { const f = $('file').files[0]; if (f) loadFile(f); $('file').value = '' }
+    addEventListener('dragover', ev => { ev.preventDefault(); document.body.classList.add('dragging') })
+    addEventListener('dragleave', ev => { if (!ev.relatedTarget) document.body.classList.remove('dragging') })
+    addEventListener('drop', ev => { ev.preventDefault(); document.body.classList.remove('dragging'); const f = ev.dataTransfer.files[0]; if (f) loadFile(f) })
+    for (const id of ['vocab', 'profile', 'pedal', 'keysrc']) $(id).onchange = () => { analyseNow(); saveUrl(); showKeySource() }
+    const showKeySource = () => { $('profileRow').style.display = $('keysrc').value === 'augnet' ? 'none' : '' }
+    $('instantLane').onchange = () => { computeInstant(); saveUrl() }
+    for (const id of ['labels', 'colour']) $(id).onchange = () => { drawLegend(); saveUrl() }
+
+    // ── Playback ───────────────────────────────────────────────────────────
+    let scheduler = null
+    const songTarget = {
+      audioContext: audioCtx,
+      resume: () => audioCtx.resume(),
+      noteOn(m, v, ch) { if (soundReady && $('sound').checked) engine.noteOn(m, v, ch) },
+      noteOff(m, ch) { engine.noteOff(m, ch) },
+      controlChange(ch, cc, v) { engine.controlChange(ch, cc, v) },
+      allSoundOff() { for (let ch = 0; ch < 15; ch++) engine.controlChange(ch, 64, 0); engine.allNotesOff?.() },
+    }
+    async function ensureScheduler() {
+      if (scheduler) return scheduler
+      scheduler = new MidiScheduler(songTarget)
+      await scheduler.init()
+      scheduler.on('time', t => { if (clock.playing && Math.abs(t - now()) > 0.08) { clock.t = t; clock.wall = performance.now() } })
+      return scheduler
+    }
+    let loaded = null
+    async function play() {
+      if (!state.notes.length) return
+      unlockAudio()
+      if (now() >= state.duration) clock.t = 0
+      const sch = await ensureScheduler()
+      if (loaded !== state.sched) { sch.load({ notes: state.sched.notes.map(n => ({ ...n })), controlChanges: state.sched.controlChanges }); loaded = state.sched }
+      sch.speed = clock.speed
+      sch.seek(clock.t)
+      sch.play()
+      clock.wall = performance.now(); clock.playing = true
+      $('play').textContent = '❚❚'; $('play').classList.add('on')
+    }
+    function pause() {
+      clock.t = now(); clock.playing = false
+      scheduler?.pause(); songTarget.allSoundOff()
+      $('play').textContent = '▶'; $('play').classList.remove('on')
+    }
+    function stopPlayback() { pause(); clock.t = 0; scheduler?.stop() }
+    function seekTo(t) {
+      clock.t = Math.max(0, Math.min(state.duration, t)); clock.wall = performance.now()
+      if (clock.playing && scheduler) { songTarget.allSoundOff(); scheduler.seek(clock.t) }
+      showTime()
+    }
+    $('play').onclick = () => clock.playing ? pause() : play()
+    $('stop').onclick = () => { stopPlayback(); showTime() }
+    $('speed').onchange = () => { clock.t = now(); clock.wall = performance.now(); clock.speed = +$('speed').value; if (scheduler) scheduler.speed = clock.speed }
+    let seeking = false
+    $('seek').addEventListener('input', () => { seeking = true; clock.t = +$('seek').value * state.duration; clock.wall = performance.now() })
+    $('seek').addEventListener('change', () => { seeking = false; seekTo(+$('seek').value * state.duration) })
+    const fmt = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`
+    function showTime() {
+      const t = Math.min(now(), state.duration)
+      $('songTime').textContent = `${fmt(t)} / ${fmt(state.duration)}`
+      if (!seeking) $('seek').value = state.duration ? t / state.duration : 0
+    }
+    addEventListener('keydown', ev => {
+      if (ev.target.closest?.('select, input')) return
+      if (ev.code === 'Space') { ev.preventDefault(); $('play').click() }
+      if (ev.code === 'Escape') $('panel').style.display = $('panel').style.display === 'none' ? '' : 'none'
+      if ((ev.code === 'ArrowRight' || ev.code === 'ArrowLeft') && state.result) {
+        ev.preventDefault()
+        const cs = state.result.chords, t = now()
+        let i = chordIndexAt(cs, t)
+        if (i < 0) i = cs.findIndex(c => c.start > t) - 1
+        const j = ev.code === 'ArrowRight' ? Math.min(cs.length - 1, i + 1) : (t - cs[Math.max(0, i)].start > 0.6 ? i : Math.max(0, i - 1))
+        seekTo(cs[Math.max(0, j)].start + 0.001)
+      }
+    })
+    $('toggle').onclick = () => { const c = $('panel').classList.toggle('collapsed'); $('toggle').textContent = c ? '+' : '–' }
+
+    // ── Live (MIDI keyboard) ───────────────────────────────────────────────
+    const live = new Map() // pitch → velocity
+    let liveAt = 0
+    $('midiIn').onclick = async () => {
+      if (!navigator.requestMIDIAccess) return setStatus('Web MIDI is not available in this browser', true)
+      try {
+        const access = await navigator.requestMIDIAccess()
+        const hook = () => { for (const inp of access.inputs.values()) inp.onmidimessage = onMidi }
+        hook(); access.onstatechange = hook
+        $('midiIn').classList.add('on')
+        setStatus(access.inputs.size ? '' : 'No MIDI inputs found')
+        if (!access.inputs.size) setTimeout(() => setStatus(''), 2500)
+      } catch (e) { setStatus('MIDI access denied', true) }
+    }
+    function onMidi(e) {
+      const [st, d1, d2] = e.data, type = st & 0xf0
+      if (type === 0x90 && d2 > 0) { unlockAudio(); if (soundReady && $('sound').checked) engine.noteOn(d1, d2 / 127, LIVE); live.set(d1, d2 / 127); liveAt = performance.now() }
+      else if (type === 0x80 || type === 0x90) { engine.noteOff(d1, LIVE); live.delete(d1); liveAt = performance.now() }
+      else if (type === 0xb0 && d1 === 64) engine.controlChange(LIVE, 64, d2)
+    }
+
+    // ── "Now" card and circle of fifths ────────────────────────────────────
+    let lastShown = -2, lastLive = ''
+    function spellPc(pc, c, key) {
+      if (c && c.root != null) {
+        const def = QUALITIES[c.quality], k = def.tones.indexOf((pc - c.root + 12) % 12)
+        if (k >= 0 && c.tones) return c.tones[k]
+      }
+      const tf = key ? (key.tf ?? tonicFifth(key.tonic, key.mode)) : 0
+      return fifthName(spellNear(pc, tf + 1.5))
+    }
+    function showNow(t) {
+      const r = state.result
+      // live input takes over the card while keys are held (and a moment after)
+      if (live.size || performance.now() - liveAt < 1500) {
+        const ps = [...live.keys()].sort((a, b) => a - b)
+        const sig = ps.join(',')
+        if (sig === lastLive) return
+        lastLive = sig; lastShown = -2
+        const key = r?.global || null
+        const best = ps.length ? nameChord(ps, { vocabulary: $('vocab').value, key }) : []
+        const c = best[0]
+        $('nowSym').textContent = c ? c.symbol : ''
+        $('nowRn').textContent = ''
+        $('nowFn').textContent = ps.length ? 'you play' : ''
+        $('nowKey').textContent = best.length > 1 ? 'or ' + best.slice(1, 4).map(x => x.symbol).join(', ') : ''
+        $('nowTones').innerHTML = ps.map(p => { const role = c && !c.single ? toneRole(c, p) : 'root'; return `<span style="color:${ROLE[role]}">${spellPc(p % 12, c?.single ? null : c, key)}</span>` }).join('')
+        $('nowInstant').textContent = ''
+        drawCof(key, c && !c.single ? c : null)
+        return
+      }
+      lastLive = ''
+      if (!r) return
+      const i = chordIndexAt(r.chords, t)
+      if (i === lastShown) return
+      lastShown = i
+      const c = r.chords[i]
+      const key = c?.key || keyAt(t)
+      if (!c || c.root == null) {
+        $('nowSym').textContent = c ? 'N.C.' : ''; $('nowRn').textContent = ''; $('nowFn').textContent = ''
+        $('nowKey').textContent = key ? keyName(key) : ''; $('nowTones').innerHTML = ''; $('nowInstant').textContent = ''
+        drawCof(key, null); return
+      }
+      $('nowSym').textContent = c.symbol
+      $('nowRn').textContent = c.rn + (c.cadence ? `  ·  ${c.cadence}` : '')
+      const kindWord = { applied: 'applied ', mixture: 'borrowed ', neapolitan: 'Neapolitan · ', aug6: 'augmented sixth · ', chromatic: '' }[c.kind] || ''
+      $('nowFn').textContent = kindWord + FUNC_NAME[c.func || '?'] + (c.cadence ? ' · ' + { PAC: 'perfect authentic cadence', IAC: 'imperfect authentic cadence', HC: 'half cadence', DC: 'deceptive cadence', PC: 'plagal cadence' }[c.cadence] : '')
+      $('nowKey').textContent = 'in ' + keyName(key) + (c.confidence < 0.35 ? ' · unsure' : '')
+      const roles = ['root', 'third', 'fifth', 'seventh', 'ext']
+      $('nowTones').innerHTML = QUALITIES[c.quality].tones.map((iv, k) => `<span style="color:${ROLE[roles[Math.min(k, 4)] === 'seventh' && !QUALITIES[c.quality].seventh ? 'ext' : roles[Math.min(k, 4)]]}">${c.tones[k]}</span>`).join('')
+      // what an instant chord display would say over the first moment of this chord
+      const ps = state.notes.filter(n => n.on <= c.start + 0.03 && n.off > c.start + 0.02).map(n => n.pitch)
+      const inst = ps.length >= 2 ? nameChord(ps, { vocabulary: $('vocab').value, key })[0] : null
+      $('nowInstant').innerHTML = inst && inst.symbol !== c.symbol ? `notes struck alone: <b>${inst.symbol}</b>` : ''
+      drawCof(key, c)
+    }
+    const cof = $('cof'), cctx = cof.getContext('2d')
+    const cofTrail = []
+    function drawCof(key, chord) {
+      const W = cof.width, H = cof.height, cx = W / 2, cy = H / 2
+      cctx.clearRect(0, 0, W, H)
+      const R1 = 108, R2 = 80, R3 = 56
+      cctx.font = '12px Georgia, serif'; cctx.textAlign = 'center'; cctx.textBaseline = 'middle'
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2 - Math.PI / 2, a0 = a - Math.PI / 12, a1 = a + Math.PI / 12
+        const majPc = (i * 7) % 12, minPc = (majPc + 9) % 12
+        const isMaj = key && key.mode === 'major' && key.tonic === majPc, isMin = key && key.mode === 'minor' && key.tonic === minPc
+        for (const [ri, ro, on, k] of [[R2, R1, isMaj, { tonic: majPc, mode: 'major' }], [R3, R2, isMin, { tonic: minPc, mode: 'minor' }]]) {
+          cctx.beginPath(); cctx.arc(cx, cy, ro, a0, a1); cctx.arc(cx, cy, ri, a1, a0, true); cctx.closePath()
+          cctx.fillStyle = on ? keyColour(k, 1) : keyColour(k, 0.22); cctx.fill()
+          cctx.strokeStyle = '#0d0c0b'; cctx.lineWidth = 1.5; cctx.stroke()
+          const rm = (ri + ro) / 2
+          cctx.fillStyle = on ? '#fff' : '#a59d90'
+          const mf = i > 6 ? i - 12 : i
+          cctx.fillText(k.mode === 'major' ? fifthName(mf) : fifthName(mf + 3).toLowerCase(), cx + Math.cos(a) * rm, cy + Math.sin(a) * rm)
+        }
+      }
+      // chord roots: a fading trail and the current one
+      if (chord && chord.root != null && cofTrail.at(-1)?.chord !== chord) { cofTrail.push({ chord, root: chord.root }); if (cofTrail.length > 6) cofTrail.shift() }
+      const pos = pc => { const i = fifthOfPc(pc); const a = (i / 12) * Math.PI * 2 - Math.PI / 2; return [cx + Math.cos(a) * 38, cy + Math.sin(a) * 38] }
+      cctx.lineWidth = 2
+      for (let k = 1; k < cofTrail.length; k++) {
+        const [x0, y0] = pos(cofTrail[k - 1].root), [x1, y1] = pos(cofTrail[k].root)
+        cctx.strokeStyle = `rgba(233, 180, 76, ${0.1 + 0.6 * k / cofTrail.length})`
+        cctx.beginPath(); cctx.moveTo(x0, y0); cctx.lineTo(x1, y1); cctx.stroke()
+      }
+      if (chord && chord.root != null) {
+        const [x, y] = pos(chord.root)
+        cctx.fillStyle = FUNC[chord.func || '?']
+        cctx.beginPath(); cctx.arc(x, y, 9, 0, Math.PI * 2); cctx.fill()
+        cctx.fillStyle = '#fff'; cctx.font = '10px Georgia, serif'
+        cctx.fillText(chord.name.replace(/(maj7|m7♭5|dim7|dim|aug|m7|7|m|sus4|sus2|6|add9|9|5|\(add9\))+$/, '') || '', x, y + 0.5)
+      }
+      cctx.fillStyle = '#cfc6b8'; cctx.font = '12px Georgia, serif'
+      if (key) cctx.fillText(keyShort(key), cx, cy)
+    }
+
+    // ── Roll ───────────────────────────────────────────────────────────────
+    const roll = $('roll'), ctx = roll.getContext('2d')
+    let W = 0, H = 0, dpr = 1
+    function resize() {
+      dpr = Math.min(2, devicePixelRatio || 1)
+      W = innerWidth; H = innerHeight
+      roll.width = W * dpr; roll.height = H * dpr; roll.style.width = W + 'px'; roll.style.height = H + 'px'
+    }
+    addEventListener('resize', resize); resize()
+    const L = { key: [8, 22], chord: [34, 50], instant: [88, 20], kb: 34 }
+    const rollTop = () => $('instantLane').checked ? 116 : 92
+    const rightEdge = () => ($('panel').style.display === 'none' ? W : W - 322)
+    const pxPerSec = () => +$('zoom').value
+    const headX = () => L.kb + (rightEdge() - L.kb) * 0.3
+    const xOf = (t, t0) => headX() + (t - t0) * pxPerSec()
+    const tOf = (x, t0) => t0 + (x - headX()) / pxPerSec()
+    const yOf = p => { const top = rollTop(), bot = H - 12; return bot - (p - state.lo + 1) * (bot - top) / (state.hi - state.lo + 1) }
+    const isBlack = p => [1, 3, 6, 8, 10].includes(p % 12)
+
+    function labelFor(c, w) {
+      const mode = $('labels').value
+      const sym = c.symbol, rn = c.rn || ''
+      if (mode === 'sym') return [sym, '']
+      if (mode === 'rn') return [rn, '']
+      return [sym, rn]
+    }
+    function fitText(s, w, font) {
+      ctx.font = font
+      if (ctx.measureText(s).width <= w) return s
+      while (s.length > 1 && ctx.measureText(s + '…').width > w) s = s.slice(0, -1)
+      return s.length > 1 ? s + '…' : ''
+    }
+
+    function draw() {
+      const t0 = now()
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      ctx.fillStyle = '#0d0c0b'; ctx.fillRect(0, 0, W, H)
+      if (!state.notes.length) {
+        ctx.fillStyle = '#6d675e'; ctx.font = '300 22px Georgia, serif'; ctx.textAlign = 'center'
+        ctx.fillText('Choose a song or drop a MIDI file', rightEdge() / 2, H / 2)
+        return
+      }
+      const right = rightEdge(), tA = tOf(L.kb, t0), tB = tOf(right, t0)
+      const r = state.result
+      const top = rollTop(), bot = H - 12
+      const rowH = (bot - top) / (state.hi - state.lo + 1)
+      // pitch rows
+      for (let p = state.lo; p <= state.hi; p++) if (isBlack(p)) { ctx.fillStyle = '#121110'; ctx.fillRect(L.kb, yOf(p), right - L.kb, rowH) }
+      // chord backgrounds in the roll (very faint function tint)
+      if (r) for (const c of r.chords) {
+        if (c.end < tA || c.start > tB || c.root == null) continue
+        ctx.fillStyle = FUNC[c.func || '?'] + '12'
+        ctx.fillRect(xOf(c.start, t0), top, (c.end - c.start) * pxPerSec(), bot - top)
+      }
+      // bars
+      ctx.strokeStyle = '#2a2724'; ctx.lineWidth = 1
+      ctx.fillStyle = '#5d574f'; ctx.font = '10px monospace'; ctx.textAlign = 'left'
+      for (const b of state.bars) {
+        if (b.time < tA - 1 || b.time > tB) continue
+        const x = Math.round(xOf(b.time, t0)) + 0.5
+        ctx.beginPath(); ctx.moveTo(x, L.key[0]); ctx.lineTo(x, bot); ctx.stroke()
+        if (pxPerSec() * state.grid.beatSec > 12 || b.bar % 4 === 1) ctx.fillText(b.bar, x + 2, top + 10)
+      }
+      // keys lane
+      if (r) for (const k of r.keys) {
+        if (k.end < tA || k.start > tB) continue
+        const x0 = Math.max(L.kb, xOf(k.start, t0)), x1 = Math.min(right, xOf(k.end, t0))
+        ctx.fillStyle = keyColour(k, 0.9); ctx.fillRect(x0, L.key[0], x1 - x0 - 1, L.key[1])
+        ctx.fillStyle = '#f2ead8'; ctx.font = '12px Georgia, serif'; ctx.textAlign = 'left'
+        ctx.fillText(fitText(keyName(k), x1 - x0 - 8, '12px Georgia, serif'), x0 + 4, L.key[0] + 15)
+      }
+      // chord lane
+      const [cy, ch] = L.chord
+      if (r) for (const c of r.chords) {
+        if (c.end < tA || c.start > tB) continue
+        const x0 = xOf(c.start, t0), x1 = xOf(c.end, t0), w = x1 - x0
+        if (c.root == null) { ctx.fillStyle = '#1c1a18'; ctx.fillRect(x0, cy, w - 1, ch); continue }
+        const active = t0 >= c.start && t0 < c.end
+        ctx.fillStyle = FUNC[c.func || '?'] + (active ? 'ff' : '88')
+        ctx.fillRect(x0, cy, Math.max(1, w - 1), ch)
+        if (c.kind === 'applied' || c.kind === 'mixture' || c.kind === 'chromatic') { ctx.fillStyle = 'rgba(0,0,0,0.25)'; for (let x = x0; x < x1 - 1; x += 6) ctx.fillRect(x, cy + ch - 4, 3, 4) }
+        const [a, b] = labelFor(c, w)
+        ctx.textAlign = 'left'; ctx.fillStyle = '#fff'
+        const lx = Math.max(x0, L.kb), lw = x1 - lx // a chord that began off-screen keeps its label at the edge
+        const t1 = fitText(a, lw - 6, '600 15px Georgia, serif')
+        if (t1) { ctx.font = '600 15px Georgia, serif'; ctx.fillText(t1, lx + 3, cy + 18) }
+        if (b) { const t2 = fitText(b, lw - 6, '13px Georgia, serif'); if (t2) { ctx.fillStyle = '#f6e6c0'; ctx.font = '13px Georgia, serif'; ctx.fillText(t2, lx + 3, cy + 38) } }
+        if (c.cadence) {
+          ctx.fillStyle = '#f3e6c4'; ctx.font = '600 10px Helvetica, Arial'; ctx.textAlign = 'right'
+          ctx.fillText(c.cadence, x0 - 3, cy - 3)
+          ctx.strokeStyle = '#f3e6c4'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x0, cy - 2); ctx.lineTo(x0, cy + ch); ctx.stroke(); ctx.lineWidth = 1
+        }
+      }
+      // instant lane
+      if ($('instantLane').checked) {
+        const [iy, ih] = L.instant
+        ctx.fillStyle = '#5d574f'; ctx.font = '10px Helvetica'; ctx.textAlign = 'left'
+        ctx.fillText('notes alone', L.kb + 2, iy - 2)
+        for (const s of state.instant) {
+          if (s.end < tA || s.start > tB) continue
+          const x0 = xOf(s.start, t0), w = (s.end - s.start) * pxPerSec()
+          ctx.fillStyle = '#26231f'; ctx.fillRect(x0, iy, Math.max(1, w - 1), ih)
+          const tx = fitText(s.sym, w - 4, '11px Georgia, serif')
+          if (tx) { ctx.fillStyle = '#b9b0a2'; ctx.font = '11px Georgia, serif'; ctx.fillText(tx, x0 + 2, iy + 14) }
+        }
+      }
+      // notes
+      const colour = $('colour').value
+      const ns = state.notes
+      let lo = 0, hi = ns.length
+      const from = tA - state.maxLen
+      while (lo < hi) { const m = (lo + hi) >> 1; if (ns[m].on < from) lo = m + 1; else hi = m }
+      for (let i = lo; i < ns.length && ns[i].on <= tB; i++) {
+        const n = ns[i]
+        if (n.off < tA) continue
+        const x0 = xOf(n.on, t0), x1 = xOf(n.off, t0), y = yOf(n.pitch)
+        const col = colour === 'role' ? ROLE[n.role || 'nct'] : colour === 'func' ? FUNC[n.func || '?'] : TRACK[n.track % TRACK.length]
+        const sounding = t0 >= n.on && t0 < n.off
+        if (colour === 'role' && n.role === 'nct') { ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.strokeRect(x0 + 0.5, y + 0.5, Math.max(2, x1 - x0 - 1), Math.max(2, rowH - 1)) }
+        else { ctx.fillStyle = col; ctx.globalAlpha = sounding ? 1 : 0.8; ctx.fillRect(x0, y, Math.max(2, x1 - x0 - 1), Math.max(2, rowH - 1)); ctx.globalAlpha = 1 }
+        if (sounding) { ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(x0, y, Math.max(2, x1 - x0 - 1), Math.max(1, rowH * 0.35)) }
+        if (n.orn && $('nct').checked) {
+          // the ornamental part of a suspension, and a letter for the kind
+          const ox0 = xOf(n.orn.from, t0), ox1 = xOf(Math.min(n.off, n.orn.to), t0)
+          ctx.fillStyle = ORN[n.orn.type].colour; ctx.globalAlpha = 0.55
+          ctx.fillRect(ox0, y, Math.max(2, ox1 - ox0 - 1), Math.max(2, rowH - 1)); ctx.globalAlpha = 1
+          if (rowH >= 7 && ox1 - ox0 >= 9) { ctx.fillStyle = '#fff'; ctx.font = `600 ${Math.min(11, rowH)}px Helvetica, Arial`; ctx.textAlign = 'left'; ctx.fillText(ORN[n.orn.type].letter, ox0 + 2, y + Math.min(rowH - 1, 10)) }
+        }
+      }
+      // playhead
+      const hx = headX()
+      ctx.fillStyle = 'rgba(243, 230, 196, 0.85)'; ctx.fillRect(hx - 1, L.key[0], 2, bot - L.key[0])
+      // keyboard (left), lit by the sounding notes
+      const lit = new Map()
+      for (let i = lo; i < ns.length && ns[i].on <= t0; i++) { const n = ns[i]; if (n.off > t0) lit.set(n.pitch, colour === 'role' ? ROLE[n.role || 'nct'] : colour === 'func' ? FUNC[n.func || '?'] : TRACK[n.track % TRACK.length]) }
+      for (const [p] of live) lit.set(p, '#f3e6c4')
+      for (let p = state.lo; p <= state.hi; p++) {
+        const y = yOf(p)
+        ctx.fillStyle = lit.get(p) || (isBlack(p) ? '#1a1816' : '#d8d0c2')
+        ctx.fillRect(0, y, isBlack(p) ? L.kb * 0.62 : L.kb - 2, Math.max(1, rowH - (isBlack(p) ? 1 : 0.5)))
+        if (p % 12 === 0 && rowH >= 6) { ctx.fillStyle = '#6d675e'; ctx.font = '9px monospace'; ctx.textAlign = 'right'; ctx.fillText('C' + (p / 12 - 1), L.kb - 4, y + rowH - 1) }
+      }
+      ctx.fillStyle = '#0d0c0b'; ctx.fillRect(0, 0, L.kb, top - 2)
+    }
+
+    // ── Hover and click ────────────────────────────────────────────────────
+    roll.addEventListener('pointermove', ev => {
+      const r = state.result, tip = $('tip')
+      if (r && ev.offsetY > rollTop()) {
+        // a note under the pointer
+        const t = tOf(ev.offsetX, now())
+        const p = Math.round(state.lo - 1 + (H - 12 - ev.offsetY) / ((H - 12 - rollTop()) / (state.hi - state.lo + 1)) + 0.5)
+        const n = state.notes.find(n => n.pitch === p && n.on <= t && t < n.off)
+        if (!n) { tip.style.display = 'none'; return }
+        const c = r.chords[chordIndexAt(r.chords, (n.orn ? n.orn.from : n.on) + 0.01)]
+        const name = spellPc(n.pitch % 12, c, c?.key) + (Math.floor(n.pitch / 12) - 1)
+        const what = n.orn ? ORN[n.orn.type].name + (n.orn.figure ? ' ' + n.orn.figure : '') : ROLE_NAME[n.role || 'nct']
+        tip.innerHTML = `<b>${escapeHtml(name)}</b> · ${escapeHtml(what)}${c && c.root != null ? ` <span class="k">of ${escapeHtml(c.symbol)}</span>` : ''}`
+        tip.style.display = 'block'
+        tip.style.left = Math.min(ev.clientX + 12, innerWidth - 270) + 'px'; tip.style.top = (ev.clientY + 14) + 'px'
+        return
+      }
+      if (!r || ev.offsetY > L.chord[0] + L.chord[1] || ev.offsetY < L.chord[0]) { tip.style.display = 'none'; return }
+      const t = tOf(ev.offsetX, now())
+      const c = r.chords[chordIndexAt(r.chords, t)]
+      if (!c || c.root == null) { tip.style.display = 'none'; return }
+      const bar = state.bars.filter(b => b.time <= c.start + 1e-6).at(-1)
+      tip.innerHTML = `<b>${escapeHtml(c.symbol)}</b> · ${escapeHtml(c.rn)} <span class="k">in ${keyName(c.key)}</span><br>
+        <span class="k">${FUNC_NAME[c.func || '?']}${c.kind && c.kind !== 'diatonic' ? ' · ' + c.kind : ''}${bar ? ' · bar ' + bar.bar : ''} · ${(c.end - c.start).toFixed(2)} s</span><br>
+        <span class="k">certainty</span> ${(100 * c.confidence).toFixed(0)} %${c.alts?.length ? `<br><span class="k">or</span> ${c.alts.map(a => escapeHtml(altName(a, c.key))).join(', ')}` : ''}`
+      tip.style.display = 'block'
+      tip.style.left = Math.min(ev.clientX + 12, innerWidth - 270) + 'px'; tip.style.top = (ev.clientY + 14) + 'px'
+    })
+    roll.addEventListener('pointerleave', () => { $('tip').style.display = 'none' })
+    const altName = (a, key) => fifthName(spellNear(a.root, (key.tf ?? tonicFifth(key.tonic, key.mode)) + 1.5)) + QUALITIES[a.quality].sym
+    let drag = null
+    roll.addEventListener('pointerdown', ev => { drag = { x: ev.clientX, t: now(), moved: false }; roll.setPointerCapture(ev.pointerId) })
+    roll.addEventListener('pointermove', ev => {
+      if (!drag) return
+      if (Math.abs(ev.clientX - drag.x) > 4) drag.moved = true
+      if (drag.moved) { clock.t = Math.max(0, Math.min(state.duration, drag.t - (ev.clientX - drag.x) / pxPerSec())); clock.wall = performance.now() }
+    })
+    roll.addEventListener('pointerup', ev => {
+      if (!drag) return
+      if (drag.moved) seekTo(clock.t)
+      else seekTo(tOf(ev.offsetX, drag.t))
+      drag = null
+    })
+    roll.addEventListener('wheel', ev => { ev.preventDefault(); const z = $('zoom'); z.value = Math.max(+z.min, Math.min(+z.max, +z.value * Math.exp(-ev.deltaY * 0.001))); saveUrl() }, { passive: false })
+
+    // ── Exports ────────────────────────────────────────────────────────────
+    function download(text, name, type = 'text/plain') {
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(new Blob([text], { type }))
+      a.download = name; a.click()
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+    }
+    const baseName = () => (state.title || 'harmony').replace(/[^\w.-]+/g, '_')
+    const HARTE = { M: 'maj', m: 'min', d: 'dim', a: 'aug', D7: '7', M7: 'maj7', m7: 'min7', h7: 'hdim7', d7: 'dim7', sus4: 'sus4', sus2: 'sus2', '7sus4': 'sus4(b7)', M6: 'maj6', m6: 'min6', add9: 'maj(9)', madd9: 'min(9)', D9: '9', M9: 'maj9', m9: 'min9', P5: '1(5)' }
+    const HARTE_PC = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B']
+    $('exportLab').onclick = () => {
+      const r = state.result
+      if (!r) return
+      const deg = c => { const iv = (c.bass - c.root + 12) % 12; return { 3: 'b3', 4: '3', 7: '5', 6: 'b5', 8: '#5', 10: 'b7', 11: '7', 9: '6', 5: '4', 2: '2' }[iv] }
+      const lines = r.chords.map(c => {
+        const lab = c.root == null ? 'N' : HARTE_PC[c.root] + ':' + HARTE[c.quality] + (c.bass != null && c.bass !== c.root && deg(c) ? '/' + deg(c) : '')
+        return `${c.start.toFixed(3)}\t${c.end.toFixed(3)}\t${lab}`
+      })
+      download(lines.join('\n') + '\n', baseName() + '.lab')
+    }
+    $('exportChart').onclick = () => {
+      const r = state.result
+      if (!r) return
+      const bars = state.bars
+      const out = [`${state.title}`, `Home key: ${keyName(r.global)}`, '']
+      let lastKey = null
+      for (let b = 0; b < bars.length; b++) {
+        const s = bars[b].time, e = b + 1 < bars.length ? bars[b + 1].time : state.duration
+        const cs = r.chords.filter(c => c.end > s + 0.01 && c.start < e - 0.01 && c.root != null)
+        if (!cs.length) continue
+        const k = cs[0].key
+        if (!lastKey || k.tonic !== lastKey.tonic || k.mode !== lastKey.mode) { out.push(`[${keyName(k)}]`); lastKey = k }
+        out.push(`${String(bars[b].bar).padStart(4)} | ${cs.map(c => c.symbol.padEnd(8)).join(' ')} | ${cs.map(c => c.rn + (c.cadence ? ` (${c.cadence})` : '')).join(' ')}`)
+      }
+      download(out.join('\n') + '\n', baseName() + '_chords.txt')
+    }
+
+    function drawLegend() {
+      const c = $('colour').value
+      const items = c === 'role' ? Object.entries(ROLE).map(([k, v]) => [v, ROLE_NAME[k]]) : c === 'func' ? Object.entries(FUNC).map(([k, v]) => [v, FUNC_NAME[k]]) : []
+      $('legend').innerHTML = (c !== 'func' ? `<span class="k" style="flex-basis:100%;color:#8f887d">chords: ${Object.entries(FUNC).map(([k, v]) => `<i style="background:${v}"></i>${FUNC_NAME[k]}`).join(' ')}</span>` : '') +
+        items.map(([col, name]) => `<span><i style="background:${col}"></i>${name}</span>`).join('') +
+        ($('nct').checked ? `<span style="flex-basis:100%;color:#8f887d">outside the chord: ${['suspension', 'appoggiatura', 'accented passing', 'passing'].map(k => `<i style="background:${ORN[k].colour}"></i>${ORN[k].letter} ${k === 'passing' ? 'passing / n neighbour' : ORN[k].name}`).join(' ')}</span>` : '')
+    }
+    drawLegend()
+
+    // ── URL ────────────────────────────────────────────────────────────────
+    function saveUrl() {
+      const q = new URLSearchParams()
+      if (state.url) q.set('song', state.url)
+      for (const [id, def] of [['vocab', 'classical'], ['keysrc', 'own'], ['profile', 'aarden'], ['labels', 'both'], ['colour', 'role'], ['zoom', '70']]) if ($(id).value !== def) q.set(id, $(id).value)
+      if (!$('pedal').checked) q.set('pedal', '0')
+      if (!$('nct').checked) q.set('nct', '0')
+      if ($('instantLane').checked) q.set('instant', '1')
+      history.replaceState(null, '', q.toString() ? '?' + q : location.pathname)
+    }
+    for (const id of ['vocab', 'keysrc', 'profile', 'labels', 'colour', 'zoom']) if (params.has(id)) $(id).value = params.get(id)
+    showKeySource()
+    if (params.get('pedal') === '0') $('pedal').checked = false
+    if (params.get('nct') === '0') $('nct').checked = false
+    $('nct').onchange = () => { saveUrl(); drawLegend() }
+    if (params.get('instant') === '1') $('instantLane').checked = true
+    drawLegend()
+    $('zoom').onchange = saveUrl
+
+    // ── Loop ───────────────────────────────────────────────────────────────
+    function frame() {
+      let t = now()
+      if (clock.playing && t >= state.duration + 0.5) {
+        if ($('loop').checked) { clock.t = 0; clock.wall = performance.now(); scheduler?.seek(0) }
+        else { pause(); clock.t = state.duration }
+        t = now()
+      }
+      draw()
+      showNow(t)
+      showTime()
+      requestAnimationFrame(frame)
+    }
+    drawCof(null, null)
+    requestAnimationFrame(frame)
+    const first = params.get('song') ?? 'midis/bach_846.mid'
+    if (first) { $('song').value = SONGS.some(s => s[0] === first) ? first : ''; loadSongUrl(first, false) }
+  </script>
+</body>
+</html>
