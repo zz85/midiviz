@@ -82,6 +82,7 @@
         <button class="b" id="open" title="Open a MIDI file or a score: MuseScore .mscz / .mscx, LilyPond .ly (Mutopia: the .ly, or its -lys.zip, or all its .ly files at once), or MusicXML / .mxl from MuseScore, Finale, Sibelius, Dorico… Or drop it on the page">Open…</button>
         <input id="file" type="file" accept=".mid,.midi,audio/midi,.musicxml,.xml,.mxl,.mscz,.mscx,.ly,.ily,.zip" multiple hidden></div>
       <div class="row" id="trackRow" hidden title="Which track of the file the violin plays"><label>Track</label><select id="track"></select></div>
+      <div class="row" id="perfRow" hidden title="Play the piece as a real violinist did: the timing, the dynamics and each note's pitch (vibrato, intonation) measured from their recording in the Bach Violin Dataset (strings/expression.js, violinist/performances). The bowing still comes from the score (Articulation). Rules: the MIDI's timing with #034's own dynamics and vibrato"><label>Performer</label><select id="performer"></select><span class="val" id="perfV"></span></div>
       <div class="row"><label>Type</label><input id="typed" type="text" spellcheck="false" title="Notes: A4 B4 C#5 · double stops D4+B4 · length E5:2 · rest r · string lock E5/A"
         value="G4 A4 B4 C5 D5:2 B4 G4:2 D4+B4:2"><button class="b" id="typedGo">Go</button></div>
       <div class="row" title="Violin, viola or cello: the fingering, the string model and the body change with it"><label>Instrument</label><select id="instrument">
@@ -126,6 +127,7 @@
     import { readScoreFile, SCORE_FILE } from './strings/score.js'
     import { readLilyPondFiles } from './strings/lilypond.js'
     import { loadScore, matchScore } from './violinist/score-art.js'
+    import { applyRecording } from './strings/expression.js'
     import { attackError } from './strings/sound/humanize.js'
     import { NCH, midiHz, INSTRUMENTS as SYNTH, wgApply } from './strings/sound/bowed.js'
     import { Lab, ENGINES } from './strings/sound/engines.js'
@@ -436,6 +438,42 @@
       ['midis/fly_einaudi.mid', 'Einaudi – Fly'],
     ]
     for (const [v, l] of SONGS) $('song').add(new Option(l, v))
+    // Bach's Sonatas and Partitas: each with its Mutopia score's bowing, and most with recorded performers (Performer)
+    const BACH = [
+      ['violinist/midis/bach_1001_1_adagio.mid', 'Bach – BWV 1001 I. Adagio'],
+      ['violinist/midis/bach_1001_2_fuga.mid', 'Bach – BWV 1001 II. Fuga (Allegro)'],
+      ['violinist/midis/bach_1001_3_siciliana.mid', 'Bach – BWV 1001 III. Siciliana'],
+      ['violinist/midis/bach_1001_4_presto.mid', 'Bach – BWV 1001 IV. Presto'],
+      ['violinist/midis/bach_1002_1_allemanda.mid', 'Bach – BWV 1002 I. Allemanda'],
+      ['violinist/midis/bach_1002_2_double.mid', 'Bach – BWV 1002 II. Double'],
+      ['violinist/midis/bach_1002_3_corrente.mid', 'Bach – BWV 1002 III. Corrente'],
+      ['violinist/midis/bach_1002_4_double_presto.mid', 'Bach – BWV 1002 IV. Double (Presto)'],
+      ['violinist/midis/bach_1002_5_sarabande.mid', 'Bach – BWV 1002 V. Sarabande'],
+      ['violinist/midis/bach_1002_6_double.mid', 'Bach – BWV 1002 VI. Double'],
+      ['violinist/midis/bach_1002_7_borea.mid', 'Bach – BWV 1002 VII. Tempo di Borea'],
+      ['violinist/midis/bach_1002_8_double.mid', 'Bach – BWV 1002 VIII. Double'],
+      ['violinist/midis/bach_1003_1_grave.mid', 'Bach – BWV 1003 I. Grave'],
+      ['violinist/midis/bach_1003_2_fuga.mid', 'Bach – BWV 1003 II. Fuga'],
+      ['violinist/midis/bach_1003_3_andante.mid', 'Bach – BWV 1003 III. Andante'],
+      ['violinist/midis/bach_1003_4_allegro.mid', 'Bach – BWV 1003 IV. Allegro'],
+      ['violinist/midis/bach_1004_1_allemanda.mid', 'Bach – BWV 1004 I. Allemanda'],
+      ['violinist/midis/bach_1004_2_corrente.mid', 'Bach – BWV 1004 II. Corrente'],
+      ['violinist/midis/bach_1004_3_sarabanda.mid', 'Bach – BWV 1004 III. Sarabanda'],
+      ['violinist/midis/bach_1004_4_giga.mid', 'Bach – BWV 1004 IV. Giga'],
+      ['violinist/midis/bach_1004_5_ciaccona.mid', 'Bach – BWV 1004 V. Ciaccona (Chaconne)'],
+      ['violinist/midis/bach_1005_1_adagio.mid', 'Bach – BWV 1005 I. Adagio'],
+      ['violinist/midis/bach_1005_2_fuga.mid', 'Bach – BWV 1005 II. Fuga (Alla breve)'],
+      ['violinist/midis/bach_1005_3_largo.mid', 'Bach – BWV 1005 III. Largo'],
+      ['violinist/midis/bach_1005_4_allegro_assai.mid', 'Bach – BWV 1005 IV. Allegro assai'],
+      ['violinist/midis/bach_1006_1_preludio.mid', 'Bach – BWV 1006 I. Preludio'],
+      ['violinist/midis/bach_1006_2_loure.mid', 'Bach – BWV 1006 II. Loure'],
+      ['violinist/midis/bach_1006_3_gavotte.mid', 'Bach – BWV 1006 III. Gavotte en Rondeau'],
+      ['violinist/midis/bach_1006_4_menuet_1.mid', 'Bach – BWV 1006 IV. Menuet I'],
+      ['violinist/midis/bach_1006_5_menuet_2.mid', 'Bach – BWV 1006 V. Menuet II'],
+      ['violinist/midis/bach_1006_6_bourree.mid', 'Bach – BWV 1006 VI. Bourrée'],
+      ['violinist/midis/bach_1006_7_gigue.mid', 'Bach – BWV 1006 VII. Gigue'],
+    ]
+    { const g = document.createElement('optgroup'); g.label = 'Bach – Sonatas & Partitas (score bowing, performers)'; for (const [v, l] of BACH) g.append(new Option(l, v)); $('song').append(g) }
 
     const state = { engine: names.includes(qs.get('engine')) ? qs.get('engine') : 'source', raw: [], notes: [], perf: null, duration: 0, speed: 1, title: '', source: null }
     const inst = () => INSTRUMENTS[$('instrument').value]
@@ -523,8 +561,8 @@
       const ex = state.useExpr ? state.expr : null
       style.tempo = (state.tempo || 100) * state.speed
       state.perf = renderPerformance(scaleNotes(state.notes, state.speed), { instrument: $('instrument').value, style, seed: 7 + 1000 * (take - 1), expression: scaleExpression(ex, state.speed) })
-      $('exprV').textContent = state.expr ? `CC${state.expr.cc}` : 'none in file'
-      $('exprV').title = state.expr ? `${state.expr.points.length} controller events in this track` : 'This piece has no moving CC11 / CC7 / CC2: the dynamics come from the note velocities'
+      $('exprV').textContent = state.expr?.recorded ? 'recording' : state.expr ? `CC${state.expr.cc}` : 'none in file'
+      $('exprV').title = state.expr?.recorded ? 'The dynamics of the chosen performer’s recording (Performer)' : state.expr ? `${state.expr.points.length} controller events in this track` : 'This piece has no moving CC11 / CC7 / CC2: the dynamics come from the note velocities'
       lab.setPerformance(state.perf)
       lab.pausedAt = songT / state.speed
       if (was) lab.play(lab.pausedAt)
@@ -542,7 +580,7 @@
     }
     function loadDemo(k) {
       const d = DEMOS.find(x => x[0] === k); if (!d) return
-      $('song').value = ''; $('trackRow').hidden = true
+      $('song').value = ''; $('trackRow').hidden = true; $('perfRow').hidden = true
       demoOptions(d[4])
       state.tempo = 60 / d[3]
       loadPiece(parseTyped(d[2], d[3]), { title: d[1], source: { demo: k }, fit: false })
@@ -552,7 +590,7 @@
       try {
         const notes = parseTyped($('typed').value); state.tempo = 150
         if (!notes.length) throw new Error('no notes')
-        $('demo').value = ''; $('song').value = ''; $('trackRow').hidden = true
+        $('demo').value = ''; $('song').value = ''; $('trackRow').hidden = true; $('perfRow').hidden = true
         loadPiece(notes, { title: 'Typed notes', source: { typed: $('typed').value }, fit: false }); saveUrl(); play()
       } catch (e) { setStatus(e.message, true, 2500) }
     }
@@ -588,11 +626,40 @@
       $('track').value = best; $('trackRow').hidden = midiTracks.length < 2
       state.songTitle = title
       state.midiTime = { meter: midiMeter, tempoMap: midiTempo }
-      loadPiece(midiTracks[best].notes, { title: `${title} — ${midiTracks[best].name}`, source: { ...source, track: best }, expr: midiTracks[best].expr, ...state.midiTime })
+      return playTrack(best, source)
+    }
+    // the violin track as written, or as the chosen performer played it (strings/expression.js)
+    const recordings = new Map()
+    async function playTrack(k, source) {
+      const t = midiTracks[k], id = $('performer').value
+      let notes = t.notes, expr = t.expr, info = ''
+      if (id && t.score0 && !$('perfRow').hidden) {
+        try {
+          if (!recordings.has(id)) recordings.set(id, fetch(`violinist/performances/${id}.json`).then(r => r.json()))
+          const rec = await recordings.get(id), c = t.notes.map(n => ({ ...n }))
+          const ex = applyRecording(rec, c)
+          if (ex) { notes = c; expr = ex; info = `${Math.floor(rec.seconds / 60)}:${String(Math.floor(rec.seconds % 60)).padStart(2, '0')}, ${rec.licence}` }
+          $('perfRow').title = $('perfRow').title.split('\n\n')[0] + `\n\n${rec.violinist}: ${rec.title}. Recording ${rec.licence}, ${rec.url}; ${Math.round(100 * rec.found)} % of the notes found in it, pitch measured on ${rec.pitched}. ${rec.dataset}`
+        } catch (e) { setStatus('Could not load the performance: ' + e.message, true, 3000) }
+      }
+      $('perfV').textContent = info
+      loadPiece(notes, { title: `${state.songTitle} — ${t.name}`, source: { ...source, track: k }, expr, ...(expr?.recorded ? {} : state.midiTime) })
     }
     $('track').onchange = () => {
       if (state.score && !midiTracks.length) { loadScoreFile(state.score.buf, state.score.name, +$('track').value).catch(e => setStatus(e.message, true, 4000)); return }
-      const t = midiTracks[+$('track').value]; loadPiece(t.notes, { title: `${state.songTitle} — ${t.name}`, source: { ...state.source, track: +$('track').value }, expr: t.expr, ...state.midiTime }); saveUrl() }
+      playTrack(+$('track').value, state.source).then(saveUrl) }
+    $('performer').onchange = () => { const was = lab.playing; playTrack(+$('track').value, state.source).then(() => { saveUrl(); if (was) play() }) }
+    let perfIndex = null
+    /** The performers recorded for a violin piece (violinist/performances/index.json) in the Performer menu. */
+    async function showPerformers(file) {
+      perfIndex ??= await fetch('violinist/performances/index.json').then(r => r.json()).catch(() => [])
+      const list = file ? perfIndex.filter(p => p.file === file) : []
+      const want = $('performer').value || qs.get('performer') || ''
+      $('performer').innerHTML = '<option value="">Rules (as written)</option>' + list.map(p => `<option value="${p.rec}">${p.violinist}</option>`).join('')
+      $('performer').value = list.some(p => p.rec === want) ? want : ''
+      $('perfRow').hidden = !list.length
+      $('perfV').textContent = ''
+    }
     let violinIndex = null
     async function loadSong(v, track = null) {
       if (!v) return
@@ -605,7 +672,8 @@
           violinIndex ??= await (await fetch('violinist/midis/index.json')).json()
           score = await loadScore(violinIndex.find(e => e.file === v.split('/').pop())).catch(() => null)
         }
-        loadMidiBuffer(buf, SONGS.find(s => s[0] === v)?.[1] || v, { song: v }, track, score); $('demo').value = ''; setStatus('')
+        await showPerformers(v.startsWith('violinist/midis/') ? v.split('/').pop() : null)
+        await loadMidiBuffer(buf, [...SONGS, ...BACH].find(s => s[0] === v)?.[1] || v, { song: v }, track, score); $('demo').value = ''; setStatus('')
       }
       catch (e) { setStatus('Could not load: ' + e.message, true, 3000) }
     }
@@ -633,7 +701,7 @@
       // buf: one file's bytes, or a Map name → text of several .ly files dropped together
       const s = buf instanceof Map ? readLilyPondFiles(buf, part == null ? {} : { part }) : await readScoreFile(name, buf, part == null ? {} : { part })
       if (!s.notes.length) throw new Error(`no notes in ${s.parts[s.part]?.name || 'that part'}`)
-      $('demo').value = ''; $('song').value = ''
+      $('demo').value = ''; $('song').value = ''; $('perfRow').hidden = true
       midiTracks = []
       state.score = { buf, name }
       $('track').innerHTML = ''
@@ -648,7 +716,7 @@
       const miss = s.missing?.length ? ` · ${s.missing.length} included file${s.missing.length > 1 ? 's' : ''} not found (${s.missing.slice(0, 2).join(', ')}): drop all the .ly files together or open the -lys.zip` : ''
       setStatus(`${s.notes.length} notes from the score, ${new Set(s.notes.map(n => n.art.slur).filter(x => x != null)).size} slurs${miss}`, !!miss, miss ? 8000 : 3000)
     }
-    const openFile = f => f.arrayBuffer().then(b => SCORE_FILE.test(f.name) ? loadScoreFile(b, f.name) : (state.score = null, loadMidiBuffer(b, f.name, null), $('demo').value = '', $('song').value = '')).catch(e => setStatus(e.message, true, 4000))
+    const openFile = f => f.arrayBuffer().then(b => SCORE_FILE.test(f.name) ? loadScoreFile(b, f.name) : (state.score = null, $('perfRow').hidden = true, loadMidiBuffer(b, f.name, null), $('demo').value = '', $('song').value = '')).catch(e => setStatus(e.message, true, 4000))
     $('mode').onchange = $('instrument').onchange
 
     // ── Transport ──────────────────────────────────────────────────────────
@@ -754,7 +822,7 @@
       if ($('instrument').value !== 'violin') p.set('instrument', $('instrument').value)
       if ($('mode').value !== 'standard') p.set('mode', $('mode').value)
       if (state.source?.demo) p.set('demo', state.source.demo)
-      if (state.source?.song) { p.set('song', state.source.song); if (state.source.track != null) p.set('track', state.source.track) }
+      if (state.source?.song) { p.set('song', state.source.song); if (state.source.track != null) p.set('track', state.source.track); if (!$('perfRow').hidden && $('performer').value) p.set('performer', $('performer').value) }
       if (state.source?.typed) p.set('typed', state.source.typed)
       if ($('speed').value !== '1') p.set('speed', $('speed').value)
       p.set('room', $('room').value); p.set('seat', $('seat').value)

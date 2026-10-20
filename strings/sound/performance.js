@@ -192,7 +192,12 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
   const inst = INSTRUMENTS[instrument] || INSTRUMENTS.violin
   const R = rng(seed)
   const playable = notesIn.filter(n => n.string != null && !n.unplayable)
-  const notes = planHarmonics(humanize(playable, S, seed + 101), inst.open, S.harmonics)
+  // a recorded performance (strings/expression.js) brings its own timing,
+  // intonation, dynamics and phrasing: no humanized timing or attack pitch,
+  // no rule-made phrase arches and swells
+  const REC = !!expression?.recorded
+  const notes = planHarmonics(humanize(playable, REC ? { ...S, timing: 0, intonation: 0 } : S, seed + 101), inst.open, S.harmonics)
+  const PH = REC ? 0 : S.phrasing
   // one note at a time on a string: a note held into the next one on its string
   // ends there (a held voice the fingering put on the same string as the moving one)
   {
@@ -246,7 +251,7 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
       for (const n of ph) {
         const x = (n.on - t0) / D
         const arch = Math.sin(Math.PI * clamp(x * 0.9 + 0.05, 0, 1))
-        phraseGain.set(n, 1 + S.phrasing * (ARCH * (arch - 0.5) + HEIGHT * (n.pitch - mean) - (x > 0.85 ? 0.1 : 0)))
+        phraseGain.set(n, 1 + PH * (ARCH * (arch - 0.5) + HEIGHT * (n.pitch - mean) - (x > 0.85 ? 0.1 : 0)))
       }
     }
     let lastOff = -Infinity
@@ -265,7 +270,16 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
   const flatVel = vels.length > 0 && Math.max(...vels) - Math.min(...vels) < 0.03
   const E = new Float32Array(frames)
   let hasE = false
-  if (expression?.points?.length) {
+  if (expression?.dyn) {
+    // a lane of dynamics (a recording's level, strings/expression.js), rate frames per second from t0
+    const D = expression.dyn, r = expression.rate, t0 = expression.t0 || 0
+    for (let i = 0; i < frames; i++) {
+      const u = (T(i) - t0) * r, k = Math.floor(u), w = u - k
+      const d = k < 0 ? D[0] : k >= D.length - 1 ? D[D.length - 1] : D[k] + (D[k + 1] - D[k]) * w
+      E[i] = S.dynamics * (d - 0.55)
+    }
+    hasE = true
+  } else if (expression?.points?.length) {
     const P = expression.points
     const dA = P.map(([, v]) => ccDyn(v))
     const ref = flatVel ? 0.55 : [...dA].sort((a, b) => a - b)[dA.length >> 1]
@@ -402,7 +416,7 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
           else if (sk === 'martele') { const x = t - st.t0; env = x <= 0 ? 0 : x < 0.008 ? x / 0.008 : x < maC ? 1 : Math.max(0, 1 - (x - maC) / 0.02) }
           // messa di voce on long notes, phrase arch
           let sw = 1
-          if (nd > 0.45 && !n.harm) { const x = clamp((t - n.on) / nd, 0, 1); sw = 1 + S.phrasing * SWELL * Math.min(1, 1.5 / nd) * (Math.sin(Math.PI * Math.pow(x, SWELL_P)) - 0.35) }
+          if (nd > 0.45 && !n.harm) { const x = clamp((t - n.on) / nd, 0, 1); sw = 1 + PH * SWELL * Math.min(1, 1.5 / nd) * (Math.sin(Math.PI * Math.pow(x, SWELL_P)) - 0.35) }
           // the expression lane moves the bow with the dynamic: faster, heavier and
           // nearer the bridge when louder (SWAM: "the speed of the bow in relation to the pressure")
           const ex = hasE ? E[i] : 0
@@ -483,6 +497,7 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
   const logf = [0, 1, 2, 3].map(s => new Float32Array(frames).fill(Math.log2(open[s])))
   const vibCents = [0, 1, 2, 3].map(() => new Float32Array(frames))
   const harmC = [0, 1, 2, 3].map(() => new Float32Array(frames))
+  const recM = [0, 1, 2, 3].map(() => new Uint8Array(frames))
   for (let s = 0; s < 4; s++) {
     const list = byString[s]
     // unique onsets (a double stop never puts two notes on one string)
@@ -513,11 +528,16 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
       const i0 = Math.max(0, Math.floor(fr(g0))), i1 = Math.min(frames - 1, Math.ceil(fr(holdEnd)))
       // the finger lands a little off pitch and settles (humanize.js)
       const ac = (n.attackCents ?? 0) / 1200, ast = Math.max(0.01, n.attackSettle ?? 0.05)
+      // a recorded pitch curve (cents from the note, strings/expression.js): the
+      // player's landing, vibrato and intonation, held at its ends, while the note sounds
+      const rc = n.rec, recAt = rc ? t => { const u = clamp((t - rc.t0) * rc.rate, 0, rc.c.length - 1), k = Math.floor(u), w = u - k; return (rc.c[k] + ((rc.c[k + 1] ?? rc.c[k]) - rc.c[k]) * w) / 1200 } : null
+      const recEnd = Math.min(holdEnd, n.off + 0.05)
       for (let i = i0; i <= i1; i++) {
         const t = T(i)
         const x = (t - g0) / Math.max(1e-3, g1 - g0)
-        const err = ac ? ac * (1 - smooth5((t - g1) / ast)) : 0
+        const err = recAt ? (t <= recEnd ? recAt(t) * S.vibrato : 0) : ac ? ac * (1 - smooth5((t - g1) / ast)) : 0
         logf[s][i] = fromLog + (target + err - fromLog) * smooth5(x)
+        if (recAt && t <= recEnd) recM[s][i] = 1
         harmC[s][i] = n.harm || 0
       }
       // the finger lifts after a stopped note with no follower: damp, then back to open
@@ -535,7 +555,7 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
       }
       // vibrato: stopped notes long enough to feel it
       const dur = n.off - n.on
-      if (n.finger && dur >= 0.22 && S.vibrato > 0) {
+      if (n.finger && dur >= 0.22 && S.vibrato > 0 && !rc) {
         const dyn = clamp(dynOf(n) + (hasE ? E[Math.min(frames - 1, Math.round(fr(n.on)))] : 0), 0.08, 1)
         const rate = S.vibratoRate * (1 + (R() - 0.5) * 0.08) + (dyn - 0.5) * 0.5
         // depth (cents, half the swing): ±12–15 nominal, measured ±13–14 like the Bach Violin Dataset players
@@ -567,7 +587,7 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
     for (let i = 0; i < frames; i++) {
       dv += (R() - 0.5) * 0.02 - dv * 0.02
       d += dv; d *= 0.995
-      f0[s][i] = Math.pow(2, logf[s][i] + (vibCents[s][i] + clamp(d, -2.5, 2.5)) / 1200)
+      f0[s][i] = Math.pow(2, logf[s][i] + (vibCents[s][i] + (recM[s][i] ? 0 : clamp(d, -2.5, 2.5))) / 1200)
     }
   }
 
@@ -631,6 +651,6 @@ export function channel(perf, s, ch) {
 }
 
 /** Time-scale a note list (playback speed): notes at 1/speed. */
-export const scaleNotes = (notes, speed) => speed === 1 ? notes : notes.map(n => ({ ...n, on: n.on / speed, off: n.off / speed }))
+export const scaleNotes = (notes, speed) => speed === 1 ? notes : notes.map(n => ({ ...n, on: n.on / speed, off: n.off / speed, ...(n.rec ? { rec: { ...n.rec, t0: n.rec.t0 / speed, rate: n.rec.rate * speed } } : {}) }))
 /** Time-scale an expression lane (expressionFromCC) the same way. */
-export const scaleExpression = (ex, speed) => !ex || speed === 1 ? ex : { ...ex, points: ex.points.map(([t, v]) => [t / speed, v]) }
+export const scaleExpression = (ex, speed) => !ex || speed === 1 ? ex : ex.dyn ? { ...ex, rate: ex.rate * speed, t0: (ex.t0 || 0) / speed } : { ...ex, points: ex.points.map(([t, v]) => [t / speed, v]) }

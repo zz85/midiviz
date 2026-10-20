@@ -38,6 +38,10 @@ These figures are after ScoreShift learned to read slurs merged into note ink an
 
 `node violinist/tools/build_scores.js` rebuilds `violinist/scores` and the `score` entries from the sources (`node strings/test/fetch_mutopia_ly.js` fetches them into the git-ignored `strings/data/MutopiaLy`).
 
+## Their performances: playing like a violinist
+
+For the Sonatas and Partitas, [violinist/performances](../performances/README.md) holds how four violinists of the Bach Violin Dataset played these same MIDI notes (timing, dynamics, pitch curves; 47 recordings, public domain or CC BY), measured from their recordings and matched to the MIDI notes by pitch sequence (98 % found). #034 plays them under Performer, with the bowing from the score or an edition.
+
 ## Files
 
 Duration is as stored (at the file's tempo). Violin track: index, track name, 0-based channel, GM program.

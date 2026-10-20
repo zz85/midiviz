@@ -525,3 +525,23 @@ The scores carry their own articulation: 19.7 % of the note pairs are slurred, a
 
 **In #034.** Open… and drag-and-drop take a `.ly`, a Mutopia `-lys.zip`, or several `.ly` files at once, for a piece split into `\include` files. The Track menu lists the staves of every movement, with the solo violin chosen by default. When includes are missing, the status line names them.
 
+
+## Playing like a recorded violinist
+
+For Bach's Sonatas and Partitas #034 can now play a piece as a real violinist did. Song → a Bach movement, then Performer → Emil Telmányi, John Garner, Ko Donghwi or MinJi Kim (47 recordings from the Bach Violin Dataset, public domain or CC BY; [violinist/performances](../violinist/performances/README.md)). The bowing still comes from the score or an edition (Articulation), because the audio does not show it; everything else comes from the player:
+
+- **Timing.** Each note's onset and end as played, from the dataset's alignment. Where the player skipped a repeat our MIDI writes out, or took one it does not, one pass is kept and the clock follows the local tempo across the other ([build_performances.js](../violinist/tools/build_performances.js)).
+- **Dynamics.** The recording's level inside the notes (RMS over 40 ms, 50 frames per second) becomes a lane of dynamics, which `performance.js` plays with the bow as it plays a CC11 lane: speed, force and contact point together. The rule-made phrase arches and swells are off, and so are humanized timing and attack pitch.
+- **Left hand.** Each sustained note's pitch curve (normalised difference function, ±150 cents around the note, at the recording's own tuning) replaces our vibrato, landing error and drift: the player's vibrato, where it starts and stops, and their intonation. The measured swing is widened by 1.25, because the analysis window and the room narrow it (our own render with a known ±14-cent vibrato through the hall reads ±11.3).
+- **Listen and correct.** Our instrument does not answer a lane the way the recorded violin did (bodies, strings and double stops differ), so the build plays each movement on the Source model, measures the level it got, moves the lane by the difference (averaged over ±0.15 s), and repeats three times. Without this the rendered note levels correlate 0.26–0.77 with the player's; with it 0.84–0.92.
+
+`node strings/test/expression_ab.js [--recs=…] [--secs=300] [--model=source] [--body=phil]` compares, on five movements by the four players (whole movements up to 5 min), the recording's notes with ours at the player's timing played by our rules, and with the player's expression:
+
+| | Rules (player's timing only) | Player's expression |
+|---|---|---|
+| Level, 0.25 s frames, correlation with the recording (median) | 0.26 | 0.87 |
+| Note levels, correlation (median) | 0.21 | 0.89 |
+| Pitch curve error on single notes, cents RMS (median) | 13.8 | 5.1 |
+| Vibrato width on long single notes, ours / player's | ±12 / ±4–15 (one width for all) | ±4.4 / ±3.9 (Ko), ±12.8 / ±14.7 (Garner), ±10.0 / ±10.9 (Telmányi) |
+
+On the Waveguide model (Iowa body), with the lane corrected for Source, the note levels still correlate 0.79. Our rules give every player the same ±12-cent vibrato; the players range from Ko's near-baroque ±4 to Garner's ±15. Tests: `node --test strings/test/expression.test.js` (4: measuring level, vibrato and intonation; storage; the renderer following a pitch curve and a lane; the correction).
