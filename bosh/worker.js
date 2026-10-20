@@ -16,11 +16,12 @@ self.onmessage = ({ data }) => {
 		const check = verifyPlan(plan.lines, plan.pads, { frames: plan.duration })
 		const track = writeTrack({
 			label, creator: 'midiviz #044 Bosh',
-			description: `${plan.pads.length} landings on the notes of ${label}, planned with Line Rider 6.2 physics; music starts at ${hits[0].leadIn.toFixed(2)} s`,
+			description: `${plan.pads.length} landings on the notes of ${label}${plan.stats.loops ? `, ${plan.stats.loops} loops` : ''}, planned with Line Rider 6.2 physics; music starts at ${hits[0].leadIn.toFixed(2)} s`,
 			duration: plan.duration, lines: plan.lines,
 		})
 		const pads = check.results.map(r => ({ ...r, pitch: hits[r.hit].pitch, strength: hits[r.hit].strength, time: hits[r.hit].time }))
-		self.postMessage({ id, result: { track, pads, hits, skipped: plan.skipped, stats: { ...plan.stats, exact: check.exact, crash: check.crash }, leadIn: hits[0].leadIn } })
+		const loopsWanted = hits.filter(h => h.move === 'loop').length
+		self.postMessage({ id, result: { track, pads, hits, skipped: plan.skipped, stats: { ...plan.stats, exact: check.exact, takeoffsExact: check.takeoffs, crash: check.crash, loopsWanted }, leadIn: hits[0].leadIn } })
 	} catch (e) {
 		self.postMessage({ id, error: e.message })
 	}

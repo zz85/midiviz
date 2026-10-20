@@ -23,6 +23,14 @@ const tracks = []
 	const plan = planTrack(hits, { seed: 3 })
 	tracks.push({ name: 'planned Für Elise, 12 s', start: { x: 0, y: 0 }, velocity: { x: 0.4, y: 0 }, frames: plan.duration, lines: plan.lines.map(l => ({ id: l.id, type: l.type, x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2, flipped: l.flipped, leftExtended: l.leftExtended, rightExtended: l.rightExtended })) })
 }
+// 1b. 25 s of a generated track with loops (red-lined loops, take-offs on notes)
+{
+	const midi = new Midi(readFileSync(new URL('../../midis/mz_331_3.mid', import.meta.url)))
+	const hits = pickHits(onsetsOf(midi, { beats: beatGrid(midi).beats }).filter(g => g.time < 25), { rate: 1.26, minGap: 0.25, excitement: 1, loops: true, takeoffs: true })
+	const plan = planTrack(hits, { excitement: 1 })
+	if (!plan.stats.loops) throw new Error('expected a loop in the excerpt')
+	tracks.push({ name: `planned Rondo alla Turca, 25 s, ${plan.stats.loops} loops`, start: { x: 0, y: 0 }, velocity: { x: 0.4, y: 0 }, frames: plan.duration, lines: plan.lines.map(l => ({ id: l.id, type: l.type, x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2, flipped: l.flipped, leftExtended: l.leftExtended, rightExtended: l.rightExtended })) })
+}
 // 2. into a wall: Bosh comes off the sled
 tracks.push({
 	name: 'crash into a wall', start: { x: 0, y: 0 }, velocity: { x: 0.4, y: 0 }, frames: 200,

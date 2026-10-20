@@ -45,6 +45,8 @@
     .row { display: flex; align-items: center; gap: 6px; margin: 5px 0; }
     .row > label:first-child { flex: 0 0 70px; color: #aaa196; }
     .row > input[type="range"], .row > select { flex: 1; min-width: 0; }
+    .range-pair { display: flex; flex: 1; min-width: 0; gap: 4px; }
+    .range-pair input { width: 50%; min-width: 0; }
     button, select, input[type="number"] {
       min-height: 27px; border: 1px solid #4a443b; border-radius: 5px;
       background: #26231f; color: var(--text);
@@ -78,6 +80,10 @@
     #stats .bad { color: #f08a7a; }
     #stats .key { color: #8f877c; }
     #selection { min-height: 16px; color: #cfc6b9; font-size: 11px; }
+    #flowNow {
+      margin: 5px 0 2px; color: #cfc6b9; font-size: 10.5px;
+    }
+    #flowNow .key { color: #8f877c; }
     #hint { margin-top: 7px; color: #8f877c; font-size: 10.5px; }
     #status {
       position: fixed; top: 12px; left: 50%; z-index: 5;
@@ -120,34 +126,56 @@
       </div>
       <hr>
       <div class="row">
-        <label>Landings</label>
-        <input id="rate" type="range" min="0.6" max="2.6" step="0.05" value="1.35">
+        <label title="Calm passages use the left value; busy passages approach the right value">Landings</label>
+        <span class="range-pair">
+          <input id="rateLow" aria-label="Calm landing rate" type="range" min="0.1" max="5" step="0.05" value="0.6">
+          <input id="rateHigh" aria-label="Busy landing rate" type="range" min="0.5" max="8" step="0.05" value="3.2">
+        </span>
         <span class="value" id="rateValue"></span>
       </div>
       <div class="row">
-        <label>Min gap</label>
-        <input id="gap" type="range" min="0.2" max="0.65" step="0.01" value="0.32">
+        <label title="Busy passages use the left floor; calm passages use the right floor">Gap floor</label>
+        <span class="range-pair">
+          <input id="gapLow" aria-label="Busy minimum gap" type="range" min="0.08" max="1.5" step="0.01" value="0.14">
+          <input id="gapHigh" aria-label="Calm minimum gap" type="range" min="0.15" max="4" step="0.01" value="0.8">
+        </span>
         <span class="value" id="gapValue"></span>
       </div>
       <div class="row">
-        <label>Pitch height</label>
-        <input id="pitch" type="range" min="0" max="7" step="0.5" value="3">
+        <label title="A physical target band, not an animation speed">Pace band</label>
+        <span class="range-pair">
+          <input id="paceLow" aria-label="Calm physical pace" type="range" min="0.5" max="16" step="0.1" value="5.5">
+          <input id="paceHigh" aria-label="Busy physical pace" type="range" min="3" max="24" step="0.1" value="12">
+        </span>
+        <span class="value" id="paceValue"></span>
+      </div>
+      <div class="row">
+        <label title="One visible course gesture spans this many bars; busy music uses the short end and calm music the long end">Phrase span</label>
+        <span class="range-pair">
+          <input id="phraseLow" aria-label="Busy phrase span" type="range" min="1" max="16" step="1" value="2">
+          <input id="phraseHigh" aria-label="Calm phrase span" type="range" min="2" max="32" step="1" value="10">
+        </span>
+        <span class="value" id="phraseValue"></span>
+      </div>
+      <div class="row">
+        <label title="Vertical pixels per semitone after phrase shaping">Pitch height</label>
+        <input id="pitch" type="range" min="0" max="18" step="0.5" value="6">
         <span class="value" id="pitchValue"></span>
       </div>
       <div class="row">
-        <label>Pace</label>
-        <select id="pace">
-          <option value="slow">Slow</option>
-          <option value="normal" selected>Normal</option>
-          <option value="fast">Fast</option>
-        </select>
-        <label>Take</label>
-        <input id="seed" type="number" min="1" max="9999" value="43">
+        <label title="Uphill can transition into real loops above 45°; downhill can approach vertical">Hill angles</label>
+        <span class="range-pair">
+          <input id="upAngle" aria-label="Uphill and loop angle" type="range" min="0" max="75" step="1" value="48">
+          <input id="downAngle" aria-label="Downhill angle" type="range" min="0" max="88" step="1" value="78">
+        </span>
+        <span class="value" id="angleValue"></span>
       </div>
       <div class="row">
-        <label></label>
+        <label>Take</label>
+        <input id="seed" type="number" min="1" max="9999" value="43">
         <button id="generate" class="primary">Generate from MIDI</button>
       </div>
+      <div id="flowNow"><span class="key">Adaptive flow</span> follows the score after generation</div>
       <div id="planning"><div></div></div>
       <hr>
       <div class="row">
@@ -186,7 +214,7 @@
       <hr>
       <div class="row">
         <label>Zoom</label>
-        <input id="zoom" type="range" min="0.5" max="5" step="0.05" value="1.35">
+        <input id="zoom" type="range" min="0.15" max="12" step="0.05" value="1.35">
         <span class="value" id="zoomValue"></span>
       </div>
       <div class="checks">

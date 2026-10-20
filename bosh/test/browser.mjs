@@ -38,11 +38,18 @@ const info = await page.evaluate(() => {
 	return { pads: ride.padList.length, exact, crash: ride.frames.crash, lines: ride.lines.length, duration: ride.duration, stats: ride.result.stats, ms: ride.result.ms }
 })
 console.log(SONG, `planned in ${(info.ms / 1000).toFixed(1)} s (page up ${((Date.now() - t0) / 1000).toFixed(1)} s):`, info.exact, '/', info.pads, 'pads on their frame, crash', info.crash, '·', info.lines, 'lines ·', info.duration.toFixed(0), 's')
-for (let k = 0; k < SHOTS; k++) {
-	const t = info.duration * (k + 0.5) / SHOTS
+// evenly through the ride, then in the middle of the first loops and at the top of the highest jumps
+const moments = await page.evaluate(n => {
+	const { ride } = window.bosh
+	const at = Array.from({ length: n }, (_, k) => ['even', ride.duration * (k + 0.5) / n])
+	for (const p of ride.padList.filter(p => p.kind === 'loop').slice(0, 2)) at.push(['loop', (p.frame - p.gap * 0.55) / 40])
+	for (const p of [...ride.padList].sort((a, b) => b.apex - a.apex).slice(0, 2)) at.push(['jump', (p.takeoff + p.Tf * 0.5) / 40])
+	return at
+}, SHOTS)
+for (const [k, [kind, t]] of moments.entries()) {
 	await page.evaluate(t => window.bosh.seekTo(t), t)
 	await page.waitForTimeout(150)
-	await page.screenshot({ path: `${OUT}/shot${k}.png` })
+	await page.screenshot({ path: `${OUT}/shot${k}-${kind}.png` })
 }
 console.log('screenshots in', OUT, errors.length ? '\nerrors:\n' + errors.join('\n') : '')
 await browser.close()

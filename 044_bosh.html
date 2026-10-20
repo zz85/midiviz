@@ -10,9 +10,12 @@
     bosh/physics.js          Line Rider 6.2 physics after lr-core (the engine of
                              linerider.com), bit for bit (bosh/test/oracle.mjs)
     bosh/music.js            which notes to land on (metre, melody, loudness,
-                             length; dynamic programming for a rate)
-    bosh/planner.js          beam search over kickers, drops and pads, every
-                             candidate simulated; a pad under Bosh on the frame
+                             length; dynamic programming for a rate), loops for
+                             repeated bars and runs, take-off notes
+    bosh/geometry.js         smooth curves cut into short lines; loops
+    bosh/planner.js          beam search over kickers, dives, drops and loops,
+                             every candidate simulated; a pad under Bosh on the
+                             frame, the run-up solved for a take-off note
     bosh/render.js           lines, pads, Bosh, camera
     bosh/track.js            .track.json for linerider.com / Line Rider Advanced
     bosh/worker.js           plans off the main thread
@@ -85,6 +88,12 @@
       <div class="row"><label title="How many notes a second he lands on, at most">Landings</label><input id="rate" type="range" min="0.6" max="4" step="0.1" value="1.8"><span class="val" id="rateV"></span></div>
       <div class="row"><label title="The shortest time between two landings">Min gap</label><input id="gap" type="range" min="0.15" max="0.6" step="0.01" value="0.25"><span class="val" id="gapV"></span></div>
       <div class="row"><label title="How much higher the pads are when the melody is higher">Pitch → height</label><input id="pitch" type="range" min="0" max="8" step="0.5" value="3"><span class="val" id="pitchV"></span></div>
+      <div class="row"><label title="Bigger air, fewer and longer jumps, more loops, faster">Excitement</label><input id="exc" type="range" min="0" max="1" step="0.05" value="0.6"><span class="val" id="excV"></span></div>
+      <div class="row"><label></label>
+        <span class="chk" title="Loop-the-loops where a bar is played again or a fast run sweeps up or down"><input id="loops" type="checkbox" checked>Loops</span>
+        <span class="chk" title="Before a long gap, leave the ramp on a note too, not only land on one"><input id="takeoffs" type="checkbox" checked>Take-offs on notes</span></div>
+      <div class="row"><label></label>
+        <span class="chk" title="Red (acceleration) lines: pads that speed him up or slow him down, red-lined loops. Off: his speed comes only from gravity — downhill and drops speed him up, climbs and hard landings slow him down"><input id="red" type="checkbox">Red lines</span></div>
       <div class="row"><label title="How fast he rides, quiet music to busy, loud music">Speed</label><select id="pace">
         <option value="slow">Slow (3–5.5 px/frame)</option><option value="normal" selected>Normal (4.5–8.5)</option><option value="fast">Fast (6–11)</option>
       </select></div>
@@ -95,7 +104,8 @@
       <div id="progress"><div></div></div>
       <hr>
       <div class="row"><label>Zoom</label><input id="zoom" type="range" min="0.3" max="3" step="0.05" value="1.3"><span class="val" id="zoomV"></span></div>
-      <div class="row"><label>Look</label><select id="theme"><option value="paper" selected>Paper</option><option value="night">Night</option></select></div>
+      <div class="row"><label>Look</label><select id="theme"><option value="paper" selected>Paper</option><option value="night">Night</option></select>
+        <span class="chk" title="Zoom out for loops and big jumps"><input id="autoZoom" type="checkbox" checked>Auto zoom</span></div>
       <hr>
       <div id="stats"></div>
       <div id="hint">Space plays, ← / → jump 5 s, + / − zoom, Esc hides the panel. A saved track opens in linerider.com and Line Rider Advanced and rides the same there; the music starts at the run-up time written in its description.</div>
@@ -111,8 +121,8 @@
     import { midiToSchedule } from './notation3d/midi-score.js'
     import { onsetsOf } from './bosh/music.js'
     import { readTrack } from './bosh/track.js'
-    import { rideFrames, cameraPath, drawFrame, THEMES, pitchColour } from './bosh/render.js'
-    import { FPS } from './bosh/physics.js'
+    import { rideFrames, cameraPath, drawFrame, pointAt, THEMES, pitchColour } from './bosh/render.js'
+    import { FPS, P, makeLine } from './bosh/physics.js'
 
     const $ = id => document.getElementById(id)
     const params = new URLSearchParams(location.search)
@@ -208,8 +218,8 @@
     function options() {
       const [speedLow, speedHigh] = PACE[$('pace').value]
       return {
-        pick: { rate: +$('rate').value, minGap: +$('gap').value },
-        plan: { seed: +$('seed').value || 1, beam: +$('beam').value || 4, pitchScale: +$('pitch').value, speedLow, speedHigh },
+        pick: { rate: +$('rate').value * (1 - 0.3 * +$('exc').value), minGap: +$('gap').value, excitement: +$('exc').value, loops: $('loops').checked, takeoffs: $('takeoffs').checked },
+        plan: { seed: +$('seed').value || 1, beam: +$('beam').value || 4, pitchScale: +$('pitch').value, speedLow, speedHigh, excitement: +$('exc').value, red: $('red').checked },
       }
     }
     async function generate() {
@@ -240,12 +250,22 @@
     function showTrack(json, { result = null, title = '' } = {}) {
       stopPlayback()
       const t = readTrack(json)
+      t.lines = t.lines.map(makeLine) // with normals and lengths, for drawing red lines
       const frames = Math.max(t.duration || 0, result ? 0 : 40 * 60)
       const r = rideFrames(t.lines, { start: t.start, velocity: t.velocity, frames })
-      const pads = new Map()
-      for (const p of result?.pads || []) pads.set(p.lineId, { frame: p.frame, pitch: p.pitch, strength: p.strength })
+      const pads = new Map(), takeoffs = []
+      for (const p of result?.pads || []) {
+        pads.set(p.lineId, { frame: p.frame, pitch: p.pitch, strength: p.strength })
+        // a ring from the lip when he leaves it on a note: where his sled was the frame before
+        if (p.onNote) { const a = pointAt(r, p.toff - 1, P.TAIL), b = pointAt(r, p.toff - 1, P.NOSE); takeoffs.push({ frame: p.toff, x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, pitch: result.hits[p.hit].takeoffPitch ?? p.pitch }) }
+      }
+      const cam = cameraPath(r)
+      // his speed, frame by frame (from the physics: px a frame), for the strip
+      const speeds = new Float32Array(frames + 1)
+      for (let k = 1; k <= frames; k++) speeds[k] = Math.hypot(cam.bodyX[k] - cam.bodyX[k - 1], cam.bodyY[k] - cam.bodyY[k - 1])
+      speeds[0] = speeds[1]
       Object.assign(ride, {
-        track: json, lines: t.lines, frames: r, cam: cameraPath(r), pads, padList: result?.pads || [],
+        track: json, lines: t.lines, frames: r, cam, speeds, maxSpeed: Math.max(4, ...speeds), pads, takeoffs, padList: result?.pads || [],
         leadIn: result?.leadIn ?? 0, duration: frames / FPS, result, title,
       })
       if (!result) Object.assign(song, { sched: null })
@@ -268,7 +288,9 @@
         <div><span class="k">Landings</span> <b>${s.landed}</b> of ${s.hits} chosen notes${s.skipped ? ` <span class="bad">(${s.skipped} skipped)</span>` : ''}</div>
         <div class="${exact === ride.padList.length ? 'ok' : 'bad'}">${exact === ride.padList.length ? '✓' : '✗'} ${exact} / ${ride.padList.length} touch their pad first on the note's frame (re-ridden from the start)</div>
         <div class="${ride.frames.crash == null ? 'ok' : 'bad'}">${ride.frames.crash == null ? '✓ never comes off the sled' : '✗ crashes at ' + (ride.frames.crash / FPS).toFixed(1) + ' s'}</div>
-        <div><span class="k">Moves</span> ${kinds.kick || 0} kickers · ${kinds.drop || 0} drops · ${ride.padList.filter(p => p.pad !== 'solid').length} red pads</div>
+        ${s.takeoffNotes ? `<div class="${s.takeoffsExact === s.onNote ? 'ok' : 'bad'}">${s.takeoffsExact === s.onNote ? '✓' : '✗'} ${s.takeoffsExact} / ${s.onNote} take-offs leave the lip on their note's frame (${s.takeoffNotes} asked for)</div>` : ''}
+        <div><span class="k">Speed</span> ${ride.lines.some(l => l.type === 1) ? `${ride.lines.filter(l => l.type === 1).length} red lines push him` : 'from gravity only: slopes, drops, climbs and landings'} · ${Math.min(...ride.padList.map(p => p.speed)).toFixed(1)}–${Math.max(...ride.padList.map(p => p.speed)).toFixed(1)} px/frame at landings</div>
+        <div><span class="k">Moves</span> ${kinds.kick || 0} kickers · ${kinds.dive || 0} dives · ${kinds.climb || 0} climbs · ${kinds.drop || 0} drops · <b>${kinds.loop || 0} loops</b>${s.loopsWanted ? ` (${s.loopsWanted} asked for)` : ''} · ${ride.padList.filter(p => p.pad !== 'solid').length} red pads · highest jump ${Math.round(Math.max(0, ...ride.padList.map(p => p.apex || 0)))} px</div>
         <div><span class="k">Track</span> ${ride.lines.length} lines · ${(ride.duration).toFixed(0)} s · music from ${ride.leadIn.toFixed(2)} s</div>
         <div><span class="k">Planned</span> in ${(res.ms / 1000).toFixed(1)} s, ${(s.frames / 1e6).toFixed(2)} M frames of physics</div>`
     }
@@ -343,18 +365,21 @@
     }
 
     // ── Settings ───────────────────────────────────────────────────────────
-    const shows = { rate: v => `${v}/s`, gap: v => `${(+v).toFixed(2)} s`, pitch: v => `${v} px`, zoom: v => `${(+v).toFixed(2)}×` }
+    const shows = { rate: v => `${v}/s`, gap: v => `${(+v).toFixed(2)} s`, pitch: v => `${v} px`, exc: v => `${Math.round(v * 100)} %`, zoom: v => `${(+v).toFixed(2)}×` }
     for (const [id, f] of Object.entries(shows)) { const show = () => { $(id + 'V').textContent = f($(id).value) }; $(id).addEventListener('input', show); show() }
-    for (const id of ['rate', 'gap', 'pitch', 'pace', 'seed', 'beam']) $(id).addEventListener('change', () => { saveUrl(); generate() })
-    for (const id of ['zoom', 'theme', 'trail']) $(id).addEventListener('change', saveUrl)
-    const KEYS = ['rate', 'gap', 'pitch', 'pace', 'seed', 'beam', 'zoom', 'theme']
+    for (const id of ['rate', 'gap', 'pitch', 'exc', 'loops', 'takeoffs', 'red', 'pace', 'seed', 'beam']) $(id).addEventListener('change', () => { saveUrl(); generate() })
+    for (const id of ['zoom', 'theme', 'trail', 'autoZoom']) $(id).addEventListener('change', saveUrl)
+    const KEYS = ['rate', 'gap', 'pitch', 'exc', 'pace', 'seed', 'beam', 'zoom', 'theme']
+    const CHECKS = ['loops', 'takeoffs', 'red', 'autoZoom']
     function saveUrl() {
       const q = new URLSearchParams()
       if ($('song').value) q.set('song', $('song').value)
       for (const k of KEYS) q.set(k, $(k).value)
+      for (const k of CHECKS) q.set(k, $(k).checked ? 1 : 0)
       history.replaceState(null, '', '?' + q)
     }
     for (const k of KEYS) if (params.has(k)) { $(k).value = params.get(k); $(k).dispatchEvent(new Event('input')) }
+    for (const k of CHECKS) if (params.has(k)) $(k).checked = params.get(k) === '1'
 
     addEventListener('keydown', ev => {
       if (ev.target.closest?.('select, input')) return
@@ -386,8 +411,20 @@
         ctx.fillStyle = pitchColour(p.pitch, p.frame <= f ? 50 : 70, p.frame <= f ? 0.95 : 0.5)
         ctx.fillRect(x - 0.75 * dpr, y - (3 + 9 * p.strength) * dpr, 1.5 * dpr, (6 + 18 * p.strength) * dpr)
       }
+      // his speed: rising downhill and in drops, falling on climbs and in hard landings
+      const sp = ride.speeds, top = y - 14 * dpr, span = 34 * dpr, step = Math.max(1, Math.floor(total / w))
+      ctx.fillStyle = theme === THEMES.night ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)'
+      ctx.fillRect(0, top - span, w, span)
+      ctx.strokeStyle = theme === THEMES.night ? 'rgba(232,230,223,0.55)' : 'rgba(29,29,31,0.45)'
+      ctx.lineWidth = 1 * dpr
+      ctx.beginPath()
+      for (let k = 0; k <= total; k += step) { const x = k / total * w, yy = top - sp[k] / ride.maxSpeed * span; k ? ctx.lineTo(x, yy) : ctx.moveTo(x, yy) }
+      ctx.stroke()
       ctx.fillStyle = theme.line
-      ctx.fillRect(f / total * w - 1 * dpr, y - 10 * dpr, 2 * dpr, 26 * dpr)
+      ctx.fillRect(f / total * w - 1 * dpr, top - span, 2 * dpr, y + 16 * dpr - (top - span))
+      ctx.font = `${11 * dpr}px Helvetica, Arial, sans-serif`
+      const v = sp[Math.min(total, Math.round(f))]
+      ctx.fillText(`${v.toFixed(1)} px/frame`, Math.min(w - 90 * dpr, f / total * w + 5 * dpr), top - span + 11 * dpr)
     }
 
     function frame() {
@@ -398,7 +435,7 @@
       if (!ride.frames) { ctx.fillStyle = theme.bg; ctx.fillRect(0, 0, canvas.width, canvas.height); return }
       const f = Math.min(ride.frames.frames, now() * FPS)
       const zoom = 3.4 * (canvas.height / 1000) * +$('zoom').value
-      drawFrame(ctx, { lines: ride.lines, ride: ride.frames, cam: ride.cam, pads: ride.pads, f, view: { w: canvas.width, h: canvas.height, zoom }, theme, trail: $('trail').checked })
+      drawFrame(ctx, { lines: ride.lines, ride: ride.frames, cam: ride.cam, pads: ride.pads, takeoffs: ride.takeoffs, f, view: { w: canvas.width, h: canvas.height, zoom }, theme, trail: $('trail').checked, autoZoom: $('autoZoom').checked })
       drawTimeline(f, theme)
     }
     requestAnimationFrame(frame)

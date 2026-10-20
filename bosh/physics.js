@@ -173,20 +173,18 @@ export class Track {
 			if (list && !list.length) this.cells.delete(key)
 		}
 	}
-	forget(line) {
-		this.version++
-		for (const c of line.cellsXY) for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) this.near.delete(hashIntPair(c.x + i, c.y + j))
-	}
+	forget() { this.version++ } // the neighbourhood lists rebuild when next asked for
 	/** lr-core's getLinesNearEntity for a point in cell (gx, gy): the 3 × 3 cells, x outer, each newest first. */
 	nearCell(gx, gy) {
 		const key = hashIntPair(gx, gy)
-		let list = this.near.get(key)
-		if (list === undefined) {
-			list = []
+		let entry = this.near.get(key)
+		if (entry === undefined || entry.version !== this.version) {
+			const list = []
 			for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) { const c = this.cells.get(hashIntPair(i + gx, j + gy)); if (c) for (const l of c) list.push(l) }
-			this.near.set(key, list)
+			if (entry === undefined) this.near.set(key, entry = { version: this.version, list })
+			else { entry.version = this.version; entry.list = list }
 		}
-		return list
+		return entry.list
 	}
 	nextId() { return this.maxId + 1 }
 	/** Collidable lines whose cells are near (x, y) — as the rider would look them up. */

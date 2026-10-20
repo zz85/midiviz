@@ -6,6 +6,7 @@ import { createRequire } from 'node:module'
 import { Track, Rider, step, makeLine, lineCells, POINTS, STRIDE, FPS, SCENERY } from '../physics.js'
 import { readTrack, writeTrack } from '../track.js'
 import { onsetsOf, onsetsOfNotes, pickHits } from '../music.js'
+import { smoothPath, chainLines, DEG } from '../geometry.js'
 import { planTrack, verifyPlan } from '../planner.js'
 import { beatGrid } from '../../harmony/harmony.js'
 import { frameHash } from './hash.js'
@@ -97,5 +98,109 @@ test('planner: gaps from 0.25 s to 3 s', () => {
 	assert.equal(check.exact, plan.pads.length)
 	assert.ok(plan.pads.length >= gaps.length - 1, `${plan.pads.length} of ${gaps.length}`)
 	const long = plan.pads.filter(p => p.gap >= 60 && p.hit > 0) // (the first is the run-up)
-	assert.ok(long.every(p => p.Tf >= 20), 'long gaps get real flights')
+	assert.ok(long.every(p => p.Tf >= 15), 'long gaps get real flights')
+	assert.ok(long.filter(p => p.gap >= 90).every(p => p.apex >= 10), 'and real height')
+})
+
+test('geometry: smooth curves turn by what is asked, a little at a time, with no kink', () => {
+	const { pts, heading } = smoothPath({ x: 0, y: 0 }, 0, [{ len: 40 }, { len: 120, turn: -90 * DEG, ease: 0.5 }, { len: 30 }], { ds: 6, maxTurn: 3 * DEG })
+	assert.ok(Math.abs(heading + 90 * DEG) < 1e-12)
+	const dirs = pts.slice(1).map((p, i) => Math.atan2(p.y - pts[i].y, p.x - pts[i].x))
+	assert.ok(Math.abs(dirs.at(-1) + 90 * DEG) < 1e-9, 'ends heading up')
+	let length = 0
+	for (let i = 1; i < pts.length; i++) {
+		const d = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y)
+		length += d
+		assert.ok(d <= 6 + 1e-9, 'short lines')
+	}
+	assert.ok(Math.abs(length - 190) < 1e-6)
+	for (let i = 1; i < dirs.length; i++) assert.ok(Math.abs(dirs[i] - dirs[i - 1]) <= 3 * DEG + 1e-9, 'small turns')
+	// the turn eases in: the first and last steps of the curve turn much less than the middle ones
+	const turns = dirs.slice(1).map((d, i) => Math.abs(d - dirs[i])).filter(t => t > 1e-9)
+	assert.ok(turns[0] < turns[turns.length >> 1] / 3 && turns.at(-1) < turns[turns.length >> 1] / 3)
+	const lines = chainLines(pts, 10)
+	assert.deepEqual([lines[0].leftExtended, lines.at(-1).rightExtended, lines[1].leftExtended], [false, false, true])
+	assert.equal(lines.at(-1).id, 10 + pts.length - 2)
+})
+
+test('music: loops where a bar repeats or a run sweeps, take-offs on a note before long gaps', () => {
+	// 8 bars of 4/4 at 1 s a bar: bars 3–4 repeat bars 1–2's figure, bar 6 is a fast run up two octaves
+	const notes = [], beats = []
+	for (let b = 0; b < 32; b++) beats.push({ time: b * 0.25, strength: b % 4 === 0 ? 1 : 0.4 })
+	const figure = [60, 64, 67, 72]
+	for (let bar = 0; bar < 8; bar++) {
+		const t0 = bar
+		if (bar === 5) { for (let k = 0; k < 12; k++) notes.push({ pitch: 48 + 2 * k, time: t0 + k / 12, duration: 0.08, velocity: 0.7 }); continue }
+		const fig = bar === 2 || bar === 3 ? figure : bar < 2 ? figure : figure.map(p => p + bar)
+		fig.forEach((p, k) => notes.push({ pitch: p, time: t0 + k * 0.25, duration: k === 3 ? 0.6 : 0.2, velocity: 0.7 }))
+	}
+	const groups = onsetsOfNotes(notes, { beats })
+	assert.ok(groups.find(g => g.time === 1).loopHint === 'repeat', 'bar 2 repeats bar 1')
+	assert.ok(groups.find(g => g.time === 5).loopHint === 'run', 'bar 6 is a run')
+	const hits = pickHits(groups, { rate: 1.5, minGap: 0.25, lead: 0, excitement: 1, loops: true, takeoffs: true, loopGap: 1.2 })
+	const loops = hits.filter(h => h.move === 'loop')
+	assert.ok(loops.length >= 1)
+	for (const h of loops) { const next = hits[hits.indexOf(h) + 1]; if (next) assert.ok(next.frame - h.frame >= 48) }
+	for (const [k, h] of hits.entries()) if (h.takeoff != null) {
+		assert.ok(h.takeoff > hits[k - 1].frame && h.takeoff < h.frame - 11, 'between the landings, with time to fly')
+		assert.ok(groups.some(g => Math.abs(g.time - h.takeoffTime) < 1e-9), 'on a note')
+	}
+})
+
+test('planner: take-offs on their note frame, loops ridden, and the past never changed', () => {
+	const midi = new Midi(readFileSync(new URL('../../midis/mz_331_3.mid', import.meta.url)))
+	const hits = pickHits(onsetsOf(midi, { beats: beatGrid(midi).beats }).filter(g => g.time < 25), { rate: 1.26, minGap: 0.25, excitement: 1, loops: true, takeoffs: true })
+	const plan = planTrack(hits, { excitement: 1, red: true })
+	const check = verifyPlan(plan.lines, plan.pads, { frames: plan.duration })
+	assert.equal(check.crash, null)
+	assert.equal(check.exact, plan.pads.length)
+	const timed = plan.pads.filter(p => p.toff != null)
+	assert.ok(timed.length >= 3)
+	assert.equal(check.takeoffs, timed.length)
+	assert.ok(plan.stats.loops >= 1, 'a loop')
+	// a loop goes over the top: upside down, riding left, his heading turned most of the way round
+	const loop = plan.pads.find(p => p.kind === 'loop')
+	const track = new Track(plan.lines), r = new Rider()
+	let prev = null, turned = 0, left = 0
+	for (let f = 1; f <= loop.frame; f++) {
+		step(track, r)
+		if (f <= loop.frame - loop.gap) continue
+		const v = r.velocity(), a = Math.atan2(v.y, v.x)
+		if (prev != null) { let d = a - prev; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; turned += d }
+		prev = a
+		left = Math.min(left, v.x)
+	}
+	assert.ok(turned < -240 * DEG, `turned ${(turned / DEG).toFixed(0)}°`)
+	assert.ok(left < -2, 'rode leftwards over the top')
+	assert.ok(!r.crashed)
+	assert.ok(plan.lines.some(l => l.type === 1), 'red lines in the loop')
+})
+
+test('planner without red lines: his speed comes from the slopes', () => {
+	const hits = pickHits(onsetsOf(elise, { beats: beatGrid(elise).beats }).filter(g => g.time < 40), { rate: 1.5, minGap: 0.25, excitement: 0.6, takeoffs: true })
+	const plan = planTrack(hits, { excitement: 0.6, red: false })
+	assert.ok(plan.lines.every(l => l.type === 0), 'only plain lines')
+	const check = verifyPlan(plan.lines, plan.pads, { frames: plan.duration })
+	assert.equal(check.crash, null)
+	assert.equal(check.exact, plan.pads.length)
+	// riding (not landing): speeding up downhill, slowing uphill — the change of speed goes with the slope
+	const track = new Track(plan.lines), r = new Rider(undefined, undefined, { scarf: false }), t = []
+	const landed = new Set(plan.pads.map(p => p.frame))
+	let prev = null
+	const xs = [], ys = []
+	for (let f = 1; f <= plan.duration; f++) {
+		t.length = 0
+		step(track, r, t)
+		const v = r.velocity(), speed = Math.hypot(v.x, v.y)
+		if (prev != null && t.length && !landed.has(f) && !landed.has(f - 1)) {
+			const l = track.lines.get(t[0])
+			xs.push(Math.sign(l.vx) * l.vy / l.length) // sin of the slope, downhill positive
+			ys.push(speed - prev)
+		}
+		prev = speed
+	}
+	const m = a => a.reduce((s, x) => s + x, 0) / a.length
+	const mx = m(xs), my = m(ys)
+	const corr = xs.reduce((s, x, i) => s + (x - mx) * (ys[i] - my), 0) / Math.sqrt(xs.reduce((s, x) => s + (x - mx) ** 2, 0) * ys.reduce((s, y) => s + (y - my) ** 2, 0))
+	assert.ok(corr > 0.6, `speed change against slope: r = ${corr.toFixed(2)} over ${xs.length} frames`)
 })

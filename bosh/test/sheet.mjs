@@ -8,7 +8,7 @@ import { extname, join, normalize } from 'node:path'
 
 const PW = process.env.PLAYWRIGHT || '/tmp/pw/node_modules/playwright-core/index.mjs'
 const CHROME = process.env.CHROME || `${process.env.HOME}/Library/Caches/ms-playwright/chromium_headless_shell-1208/chrome-headless-shell-mac-arm64/chrome-headless-shell`
-const [trackFile, padsFile, out, firstArg = '0', tilesArg = '11'] = process.argv.slice(2)
+const [trackFile, padsFile, out, firstArg = '0', tilesArg = '11', only = ''] = process.argv.slice(2)
 if (!out) { console.error('usage: node bosh/test/sheet.mjs <track.json> <pads.json> <out.png> [first-pad] [tiles]'); process.exit(2) }
 
 const root = new URL('../../', import.meta.url).pathname
@@ -28,11 +28,14 @@ const browser = await chromium.launch({ executablePath: CHROME })
 const page = await browser.newPage()
 page.on('console', m => console.log('page:', m.text()))
 await page.goto(base)
-const data = { track: JSON.parse(readFileSync(trackFile, 'utf8')), pads: JSON.parse(readFileSync(padsFile, 'utf8')), first: +firstArg, tiles: +tilesArg }
-const png = await page.evaluate(async ({ track, pads, first, tiles }) => {
+let padList = JSON.parse(readFileSync(padsFile, 'utf8'))
+const data = { track: JSON.parse(readFileSync(trackFile, 'utf8')), pads: padList, first: +firstArg, tiles: +tilesArg, only }
+const png = await page.evaluate(async ({ track, pads, first, tiles, only }) => {
 	const { rideFrames, cameraPath, drawFrame, drawBosh, THEMES, pitchColour } = await import('/bosh/render.js')
 	const { readTrack } = await import('/bosh/track.js')
+	const { makeLine } = await import('/bosh/physics.js')
 	const t = readTrack(track)
+	t.lines = t.lines.map(makeLine)
 	const ride = rideFrames(t.lines, { start: t.start, velocity: t.velocity, frames: t.duration })
 	const cam = cameraPath(ride)
 	const padMap = new Map(pads.map(p => [p.lineId, { frame: p.frame, pitch: p.pitch ?? 60 + (p.hit % 12), strength: p.strength ?? 0.5 }]))
@@ -55,22 +58,25 @@ const png = await page.evaluate(async ({ track, pads, first, tiles }) => {
 		ctx.restore()
 		ctx.fillStyle = '#000'; ctx.font = '12px sans-serif'; ctx.fillText(`${t.lines.length} lines, ${ride.frames} frames, ${pads.length} pads, crash ${ride.crash}`, 8, Hh - 8)
 	}
+	const shown = only ? pads.map((p, i) => [p, i]).filter(([p]) => p.kind === only) : pads.map((p, i) => [p, i])
 	for (let k = 0; k < tiles; k++) {
-		const pad = pads[first + k]
+		const [pad, idx] = shown[first + k] ?? []
 		if (!pad) break
 		const col = (k + 1) % cols, row = Math.floor((k + 1) / cols)
 		const f = pad.frame
 		ctx.save(); ctx.translate(col * W, row * Hh); ctx.beginPath(); ctx.rect(0, 0, W, Hh); ctx.clip()
-		const c = { x: cam.bodyX[f] + 25, y: cam.bodyY[f] - 8 }
-		drawFrame(ctx, { lines: t.lines, ride, cam, pads: padMap, f, view: { w: W, h: Hh, zoom: 3 }, centre: c })
+		const fc = pad.kind === 'loop' ? Math.round(f - pad.gap * 0.55) : f
+		const c = { x: cam.bodyX[fc] + (pad.kind === 'loop' ? 0 : 25), y: cam.bodyY[fc] - 8 }
+		drawFrame(ctx, { lines: t.lines, ride, cam, pads: padMap, f, view: { w: W, h: Hh, zoom: pad.kind === 'loop' ? 1.5 : 3 }, centre: c })
 		// ghosts of the frames before the landing
-		ctx.translate(W / 2, Hh / 2); ctx.scale(3, 3)
+		const zz = pad.kind === 'loop' ? 1.5 : 3
+		ctx.translate(W / 2, Hh / 2); ctx.scale(zz, zz)
 		ctx.translate(-c.x, -c.y); ctx.globalAlpha = 0.18
-		for (let g = pad.takeoff ?? f - 8; g < f; g += 3) drawBosh(ctx, ride, g)
+		for (let g = pad.kind === 'loop' ? f - pad.gap : pad.takeoff ?? f - 8; g < f; g += 3) drawBosh(ctx, ride, g)
 		ctx.restore()
 		ctx.fillStyle = '#000'; ctx.font = '12px sans-serif'
 		const touch = ride.firstTouch.get(pad.lineId)
-		ctx.fillText(`pad ${first + k} hit ${pad.hit} f${f} touch ${touch} ${pad.kind} Tf ${pad.Tf} apex ${pad.apex?.toFixed(1)} v ${pad.speed?.toFixed(1)} s ${pad.stress?.toFixed(2)}`, col * W + 6, row * Hh + 14)
+		ctx.fillText(`pad ${idx} hit ${pad.hit} f${f} touch ${touch} ${pad.kind} Tf ${pad.Tf} apex ${pad.apex?.toFixed(1)} v ${pad.speed?.toFixed(1)} s ${pad.stress?.toFixed(2)}`, col * W + 6, row * Hh + 14)
 	}
 	return canvas.toDataURL('image/png')
 }, data)

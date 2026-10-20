@@ -31,11 +31,6 @@ import {
 const $ = id => document.getElementById(id)
 const canvas = $('view')
 const ctx = canvas.getContext('2d')
-const PACE = {
-  slow: [3, 5.5],
-  normal: [4.5, 8.5],
-  fast: [6, 11],
-}
 
 const song = {
   title: 'Chopin – Minute Waltz',
@@ -55,6 +50,7 @@ const ride = {
   pads: [],
   padsByLine: new Map(),
   leadIn: 0,
+  flow: null,
   originalLineCount: 0,
   title: 'Minute Waltz',
 }
@@ -266,7 +262,7 @@ class MidiSynth {
 
 const synth = new MidiSynth()
 
-const worker = new Worker(new URL('../bosh/worker.js', import.meta.url), { type: 'module' })
+const worker = new Worker(new URL('./worker.mjs', import.meta.url), { type: 'module' })
 const jobs = new Map()
 worker.onmessage = ({ data }) => {
   const job = jobs.get(data.id)
@@ -280,11 +276,22 @@ worker.onmessage = ({ data }) => {
 }
 
 function generationOptions() {
-  const [speedLow, speedHigh] = PACE[$('pace').value]
+  const rateLow = Number($('rateLow').value)
+  const rateHigh = Number($('rateHigh').value)
+  const gapLow = Number($('gapLow').value)
+  const gapHigh = Number($('gapHigh').value)
+  const speedLow = Number($('paceLow').value)
+  const speedHigh = Number($('paceHigh').value)
+  const phraseLow = Number($('phraseLow').value)
+  const phraseHigh = Number($('phraseHigh').value)
+  const upAngle = Number($('upAngle').value)
+  const downAngle = Number($('downAngle').value)
   return {
     pick: {
-      rate: Number($('rate').value),
-      minGap: Number($('gap').value),
+      rateLow,
+      rateHigh,
+      gapLow,
+      gapHigh,
     },
     plan: {
       seed: Number($('seed').value) || 1,
@@ -292,6 +299,17 @@ function generationOptions() {
       pitchScale: Number($('pitch').value),
       speedLow,
       speedHigh,
+      phraseLow,
+      phraseHigh,
+      upAngle,
+      downAngle,
+      excitement: clamp((Math.max(upAngle, downAngle) - 20) / 55, 0, 1),
+      red: upAngle >= 45,
+      // A phrase is the visible macro-line. Real Line Rider physics still
+      // needs collision-safe editable segments underneath that gesture.
+      lineLow: 4,
+      lineHigh: 14,
+      ds: 14,
     },
   }
 }
@@ -329,6 +347,7 @@ async function generate() {
       title: song.title,
       pads: result.pads,
       leadIn: result.leadIn,
+      flow: result.flow,
       generated: true,
     })
     setStatus('')
@@ -385,6 +404,7 @@ async function loadFile(file) {
         title: project.title || file.name.replace(/\.track\.json$|\.json$/i, ''),
         pads: project.pads || [],
         leadIn: project.leadIn || 0,
+        flow: project.flow || null,
         generated: false,
       })
     } else {
@@ -401,6 +421,7 @@ async function applyTrack(json, {
   title = 'Line Rider track',
   pads = [],
   leadIn = 0,
+  flow = null,
   generated = false,
 } = {}) {
   const parsed = readTrack(json)
@@ -411,6 +432,7 @@ async function applyTrack(json, {
   ride.pads = pads.map(pad => ({ ...pad }))
   ride.padsByLine = new Map(ride.pads.map(pad => [pad.lineId, pad]))
   ride.leadIn = leadIn
+  ride.flow = flow
   ride.originalLineCount = ride.lines.length
   ride.title = title
   editor.undo = []
@@ -467,6 +489,34 @@ function updateStats() {
   const exact = ride.pads.filter(pad => ride.frames.firstTouch.get(pad.lineId) === pad.frame).length
   const editDelta = ride.lines.length - ride.originalLineCount
   const lineChange = editDelta ? ` · ${editDelta > 0 ? '+' : ''}${editDelta} lines` : ''
+  const speeds = ride.pads.map(pad => pad.speed).filter(Number.isFinite).sort((a, b) => a - b)
+  const gaps = ride.pads.slice(1)
+    .map((pad, index) => (pad.frame - ride.pads[index].frame) / FPS)
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b)
+  const percentile = (values, amount) => values.length
+    ? values[Math.round((values.length - 1) * amount)]
+    : null
+  const speedLow = percentile(speeds, 0.1)
+  const speedHigh = percentile(speeds, 0.9)
+  const gapLow = percentile(gaps, 0.1)
+  const gapHigh = percentile(gaps, 0.9)
+  const gestures = new Map()
+  for (const pad of ride.pads) {
+    if (pad.gestureIndex == null || gestures.has(pad.gestureIndex)) continue
+    gestures.set(pad.gestureIndex, pad.gestureBars)
+  }
+  const gestureBars = [...gestures.values()].filter(Number.isFinite)
+  const heights = ride.pads.map(pad => pad.courseHeight).filter(Number.isFinite).sort((a, b) => a - b)
+  const heightLow = percentile(heights, 0.1)
+  const heightHigh = percentile(heights, 0.9)
+  const loops = ride.pads.filter(pad => pad.kind === 'loop').length
+  const gestureSummary = gestures.size && gestureBars.length && heightLow != null
+    ? `<div><span class="key">Music shape</span> ${gestures.size} phrase gestures · ${Math.min(...gestureBars)}–${Math.max(...gestureBars)} bars · ${(heightHigh - heightLow).toFixed(0)} px elevation · ${loops} ridden loop${loops === 1 ? '' : 's'} <span class="key">(10–90%)</span></div>`
+    : ''
+  const flowStats = speedLow == null || gapLow == null
+    ? ''
+    : `<div><span class="key">Actual flow</span> pace ${speedLow.toFixed(1)}–${speedHigh.toFixed(1)} px/f · gaps ${gapLow.toFixed(2)}–${gapHigh.toFixed(2)} s <span class="key">(10–90%)</span></div>`
   $('stats').innerHTML = `
     <div><span class="key">Track</span> ${ride.lines.length} editable segments${lineChange} · ${FPS} fps</div>
     <div class="${crash == null ? 'ok' : 'bad'}">${crash == null
@@ -474,7 +524,8 @@ function updateStats() {
       : `✗ Bosh crashes at ${(crash / FPS).toFixed(2)} s`}</div>
     ${ride.pads.length
       ? `<div class="${exact === ride.pads.length ? 'ok' : 'bad'}">${exact}/${ride.pads.length} note landings still exact after edits</div>`
-      : '<div><span class="key">Loaded track</span> edit it, then re-run physics</div>'}`
+      : '<div><span class="key">Loaded track</span> edit it, then re-run physics</div>'}
+    ${gestureSummary}${flowStats}`
 }
 
 function pushUndo(snapshot = copyLines(ride.lines)) {
@@ -790,6 +841,36 @@ function render() {
 function updateTransport(time = currentTime()) {
   $('seek').value = ride.duration ? clamp(time / ride.duration, 0, 1) : 0
   $('time').textContent = `${formatTime(time)} / ${formatTime(ride.duration)}`
+  updateFlowIndicator(time)
+}
+
+function updateFlowIndicator(time) {
+  const pads = ride.pads
+  if (!ride.flow || !pads.length || pads[0].targetRate == null) {
+    $('flowNow').innerHTML = '<span class="key">Adaptive flow</span> follows the score after generation'
+    return
+  }
+  const frame = time * FPS
+  let low = 0
+  let high = pads.length - 1
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2)
+    if (pads[middle].frame <= frame) low = middle
+    else high = middle - 1
+  }
+  const pad = pads[low]
+  const targetSpeed =
+    ride.flow.speedLow + (ride.flow.speedHigh - ride.flow.speedLow) * (pad.energy ?? pad.activity ?? 0.5)
+  const actual = Number.isFinite(pad.speed) ? ` · actual ${pad.speed.toFixed(1)}` : ''
+  const slope = pad.loopRequested
+    ? `loop from ${Math.abs(pad.targetSlopeAngle).toFixed(0)}° climb`
+    : Number.isFinite(pad.targetSlopeAngle)
+    ? `${pad.targetSlopeAngle >= 0 ? 'uphill' : 'downhill'} ${Math.abs(pad.targetSlopeAngle).toFixed(0)}°`
+    : 'natural contour'
+  $('flowNow').innerHTML =
+    `<span class="key">Here</span> ${pad.targetRate.toFixed(2)}/s · ` +
+    `gap ≥ ${pad.gapFloor.toFixed(2)} s · pace target ${targetSpeed.toFixed(1)}${actual} px/f · ` +
+    `gesture ${pad.gestureBars ?? '—'} bars · ${slope}`
 }
 
 async function play() {
@@ -1077,10 +1158,34 @@ for (const [id, property] of [['leftExtended', 'leftExtended'], ['rightExtended'
 $('zoom').addEventListener('input', () => {
   $('zoomValue').textContent = `${Number($('zoom').value).toFixed(2)}×`
 })
-$('rate').addEventListener('input', () => { $('rateValue').textContent = `${$('rate').value}/s` })
-$('gap').addEventListener('input', () => { $('gapValue').textContent = `${Number($('gap').value).toFixed(2)} s` })
+
+function setupRangePair(lowId, highId, outputId, format) {
+  const low = $(lowId)
+  const high = $(highId)
+  const update = changed => {
+    if (Number(low.value) > Number(high.value)) {
+      if (changed === low) high.value = low.value
+      else low.value = high.value
+    }
+    $(outputId).textContent = format(Number(low.value), Number(high.value))
+  }
+  low.addEventListener('input', () => update(low))
+  high.addEventListener('input', () => update(high))
+  update()
+}
+
+setupRangePair('rateLow', 'rateHigh', 'rateValue', (low, high) => `${low.toFixed(2)}–${high.toFixed(2)}/s`)
+setupRangePair('gapLow', 'gapHigh', 'gapValue', (low, high) => `${low.toFixed(2)}–${high.toFixed(2)} s`)
+setupRangePair('paceLow', 'paceHigh', 'paceValue', (low, high) => `${low.toFixed(1)}–${high.toFixed(1)}`)
+setupRangePair('phraseLow', 'phraseHigh', 'phraseValue', (low, high) => `${low}–${high} bars`)
 $('pitch').addEventListener('input', () => { $('pitchValue').textContent = `${$('pitch').value} px` })
-for (const id of ['zoom', 'rate', 'gap', 'pitch']) $(id).dispatchEvent(new Event('input'))
+const updateAngles = () => {
+  $('angleValue').textContent = `↑${$('upAngle').value}° ↓${$('downAngle').value}°`
+}
+$('upAngle').addEventListener('input', updateAngles)
+$('downAngle').addEventListener('input', updateAngles)
+for (const id of ['zoom', 'pitch']) $(id).dispatchEvent(new Event('input'))
+updateAngles()
 
 addEventListener('dragover', event => {
   event.preventDefault()
