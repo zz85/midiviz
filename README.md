@@ -9,7 +9,8 @@ Midi Visualization Experiments
 YouTube Shorts for [#032 Pianist](032_pianist.html) ([notes](pianist/README.md#youtube-shorts))
 - Render → Format → YouTube Short: 1080×1920, a clip of up to 3 minutes with its own camera plan (only spots framed for a tall screen, the hands first, cuts every 3–6 s on phrase starts, ending on the opening framing so the loop is seamless), the title and intertitles inside YouTube's safe area, fades so the loop doesn't click, and a ready description (`-short.txt`)
 - A clip strip to choose it: energy, sections and phrases of the piece, edges that snap to phrase starts and ends, 15–90 s / whole-piece chips, three suggested clips with reasons ([pianist/shorts.js](pianist/shorts.js): a strong first 3 s, the loudest passage, a breath at the end), and a looped 9:16 preview with the safe area
-- Tests: `bun test pianist/test` (5 new); contact sheet `node pianist/test/shorts_sheet.mjs`
+- Layout: one picture, or stacked: her above and her hands below (split 50 / 50, 60 / 40, 40 / 60 or 2/3 / 1/3), each with its own camera, never cutting together; or a lesson view below, #030's falling notes in each hand's colour with finger numbers, lit keys and sparks ([pianist/lesson.js](pianist/lesson.js))
+- Tests: `bun test pianist/test` (6 new); contact sheet `node pianist/test/shorts_sheet.mjs`
 
 [Experiment #042 - AugmentedNet](042_augmentednet.html)
 - AugmentedNet (Nápoles López, Gotham & Fujinaga, ISMIR 2021; MIT), a trained Roman numeral network, exported from Keras to ONNX (460 KB, [augnet/tools/export_augmentednet.py](augnet/tools/export_augmentednet.py)) and run on onnxruntime-web 1.30 in a worker; its input encoding and decoding ported from `inference.py` to JS ([augnet/augnet.js](augnet/augnet.js)), with the music21 tables it needs precomputed, so no Python or music21 in the browser

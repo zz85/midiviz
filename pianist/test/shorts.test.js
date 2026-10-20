@@ -108,3 +108,31 @@ test('a Short ends on the framing it opened with', () => {
   expect(Math.abs(o.fov - f0)).toBeLessThan(1)
   expect(d.update(a, 1 / 30, live).fade).toBe(1)
 })
+
+test('a stacked Short: her above and the hands below, each on its own plan, never cutting together', () => {
+  // (her: close or medium, from the front half; not from the hall)
+  const { HALVES } = { HALVES: { her: n => ['head', 'figure'].includes(SPOTS[n].subj), hands: n => ['hands', 'hammers'].includes(SPOTS[n].subj) } }
+  for (let k = 0; k < 20; k++) {
+    const s = song(k), a = s.phrases[10 + k][0], b = a + 35 + k
+    const lo = planShort(s, { window: [a, b], half: 'hands' })
+    const cuts = lo.slice(1).map(x => x.t0)
+    const hi = planShort(s, { window: [a, b], half: 'her', avoid: cuts })
+    for (const [plan, f] of [[lo, HALVES.hands], [hi, HALVES.her]]) {
+      for (const x of plan) {
+        expect(f(x.name)).toBe(true)
+        expect(SPOTS[x.name].size).toBeLessThan(2)
+      }
+      expect(plan.at(-1).name).toBe(plan[0].name)
+      expect(plan[0].t0).toBeLessThanOrEqual(a - 1)
+    }
+    // her face shows: nothing from behind
+    for (const x of hi) expect(Math.abs(((SPOTS[x.name].az + 540) % 360) - 180)).toBeGreaterThanOrEqual(60)
+    // the top cuts less often, and never with the bottom
+    const her = hi.slice(1).map(x => x.t0)
+    expect(her.length).toBeLessThan(cuts.length)
+    for (const t of her) for (const c of cuts) expect(Math.abs(t - c)).toBeGreaterThanOrEqual(0.8 - 1e-9)
+  }
+  const d = createDirector({ half: 'her', window: [20, 50] })
+  d.setSong(song(1))
+  expect(d.update(20, 1 / 30, { head: new Vector3(0, 122, 32), hands: new Vector3(0, 76, 0) }).fade).toBe(1)
+})

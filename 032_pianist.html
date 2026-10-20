@@ -179,6 +179,9 @@
     /* YouTube Shorts: the render panel's fields, the clip strip, the 9:16 preview */
     #shortFields, body.fmtshort #renderPop .wideOnly { display: none; }
     body.fmtshort #shortFields { display: block; }
+    #shortFields .stackOnly { display: none; }
+    body.layoutstack #shortFields .stackOnly { display: block; }
+    body.layoutstack:not(.handslesson) #shortFields .lessonOnly { display: none; }
     #clipStrip { position: absolute; left: 12px; right: 12px; bottom: 112px; z-index: 24; display: none; padding: 8px 12px 10px; border-radius: 12px; background: rgba(22, 22, 22, 0.92); backdrop-filter: blur(8px); }
     body.clipping #clipStrip { display: block; }
     body.clipping.idle #clipStrip { opacity: 1; pointer-events: auto; }
@@ -389,6 +392,10 @@
     <div class="field" title="YouTube Short: 9:16 at 1080×1920, a clip of the piece (up to 3 minutes) with its own camera plan (hands first, quick cuts, framed for a tall screen) and the text kept clear of YouTube's buttons"><label>Format</label><select id="exFormat"><option value="wide" selected>Landscape video (16:9)</option><option value="short">YouTube Short (9:16)</option></select></div>
     <div id="shortFields">
       <div class="field"><label>Clip <span class="val" id="exClipV">–</span></label><div class="btnrow" style="padding:0"><button id="exClipBtn" class="sec">Choose the clip…</button></div></div>
+      <div class="field" title="Stacked: two pictures one above the other, her in the top half and her hands in the bottom one, each with its own camera (the top cuts less often, and never together with the bottom)"><label>Layout</label><select id="exLayout"><option value="one" selected>One picture</option><option value="stack">Stacked: her above, the hands below</option></select></div>
+      <div class="field stackOnly" title="How the frame is shared: her picture's height against the hands' (60 / 40 gives her face more room; 40 / 60 more of the keyboard)"><label>Split (her / hands)</label><select id="exSplit"><option value="50" selected>50 / 50</option><option value="60">60 / 40</option><option value="40">40 / 60</option><option value="67">2/3 / 1/3</option></select></div>
+      <div class="field stackOnly" title="Camera: her hands filmed, with their own camera plan. Lesson view: the keyboard from above her head with falling notes in each hand's colour (as #030's lesson mode), the finger numbers on them, lit keys and sparks"><label>Hands half</label><select id="exHandsHalf"><option value="camera" selected>Camera (her hands)</option><option value="lesson">Lesson view (falling notes)</option></select></div>
+      <div class="field stackOnly lessonOnly" title="First person: from just behind her head, as she sees the keys, the notes falling down a lane that stands up behind them (as #030's First Person). From above: high over the keys, the lane lying flat on the piano"><label>Lesson view</label><select id="exLessonView"><option value="first" selected>First person (upright lane)</option><option value="top">From above (flat lane)</option></select></div>
       <label class="chk" title="Composer and title in the top band for the first 3.5 s (the Short starts on the music: no title card)"><input type="checkbox" id="exShortTitle" checked>Title over the first seconds</label>
       <div class="field" title="Goes into the description saved next to the video (name-short.txt)"><label>Link to the full video</label><input type="text" id="exFullUrl" placeholder="https://youtu.be/…" style="width:100%;box-sizing:border-box;background:#2b2b2b;color:#eee;border:1px solid #444;border-radius:6px;padding:4px 6px;font:inherit"></div>
     </div>
@@ -461,7 +468,8 @@
     import { midiToSchedule } from './notation3d/midi-score.js'
     import { exportVideo, exportSupported, defaultBitrate } from './notation3d/video-export.js'
     import { installAcoustics, offlineHall, acousticParams, rt60Of, ROOMS, SEATS } from './concertstage/acoustics.js'
-    import { buildGrandPiano, LOW, HIGH } from './concertstage/concert-grand.js'
+    import { buildGrandPiano, LOW, HIGH, DIM } from './concertstage/concert-grand.js'
+    import { createLessonView, LESSON_VIEWS } from './pianist/lesson.js'
     import { loadCharacter } from './pianist/character.js'
     import { loadAltCharacter, MODELS } from './pianist/alt-model.js'
     import { createRig } from './pianist/rig.js'
@@ -516,6 +524,9 @@
     const piano = buildGrandPiano({ mirror: LOWQ ? false : { width: 1600, height: 900 } })
     scene.add(piano.root)
     piano.setFinish('ebony'); piano.setLid('full')
+    // the lesson view (falling notes) for the hands half of a stacked Short
+    const lesson = createLessonView({ piano, DIM, LOW, HIGH })
+    scene.add(lesson.group)
     if (piano.mirror) piano.mirror.material.uniforms.strength.value = 0.55
     // her bench, moved in to fit a 165 cm pianist
     piano.bench.position.z = 47
@@ -1018,7 +1029,7 @@
     }
     // every director spot is a view too: the hand-placed ones above, the rest
     // placed from the spot's angle around its subject where it rests
-    let applyFrameViews = () => {}, shortFrame = false   // (shortFrame: the 9:16 camera plan of a Short, preview or export)
+    let applyFrameViews = () => {}, shortFrame = false, stacked = false, director2 = null, dirSource = null   // (shortFrame: the 9:16 camera plan of a Short, preview or export)
     {
       const REST = { hands: [0, 79, 10], head: [0, 124, 27], figure: [0, 101, 21], piano: [0, 90, -70], feet: [0, 12, 18], hammers: [0, 85, -36.5], pedals: [0, 7, -2] }
       const spotView = sp => {
@@ -1094,16 +1105,18 @@
       director.set('sizes', dirSizes())
     }
     $('dirPace').value = String(director.opts.pace); $('dirBias').value = String(director.opts.bias); $('dirTrans').value = director.opts.trans
-    $('dirPace').onchange = () => director.set('pace', +$('dirPace').value)
-    $('dirBias').onchange = () => director.set('bias', +$('dirBias').value)
-    $('dirTrans').onchange = () => director.set('trans', $('dirTrans').value)
+    // (a stacked Short's second plan, the hands, follows the same options)
+    const dirSet = (k, v) => { director.set(k, v); if (director2) { director2.set(k, v); if (stacked) applyShortPlan() } }
+    $('dirPace').onchange = () => dirSet('pace', +$('dirPace').value)
+    $('dirBias').onchange = () => dirSet('bias', +$('dirBias').value)
+    $('dirTrans').onchange = () => dirSet('trans', $('dirTrans').value)
     const SEQ_MOVES = { random: 'Random', cut: "Director's cut" }
     $('camMove').value = MOVES[params.get('move')] || SEQ_MOVES[params.get('move')] ? params.get('move') : 'cut'
     $('camMove').onchange = () => { moveT = 0; userCam = false; lastShot = null; $('shotName').textContent = '' }
     $('shotLbl').checked = params.has('shotnames')
     $('camFollow').checked = params.get('follow') === '1'
     director.set('follow', $('camFollow').checked)
-    $('camFollow').onchange = () => director.set('follow', $('camFollow').checked)
+    $('camFollow').onchange = () => { director.set('follow', $('camFollow').checked); director2?.set('follow', $('camFollow').checked) }
     const applyShotLbl = () => document.body.classList.toggle('shotlbl', $('shotLbl').checked)
     $('shotLbl').onchange = applyShotLbl; applyShotLbl()
     let moveT = 0, lastShot = null, camTouched = 0
@@ -1544,10 +1557,12 @@
       fingerWorker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })), { type: 'module' })
       fingerWorker.onmessage = e => {
         if (job !== fingerJob) return
+        lesson.setNotes(notes, e.data)
         const out = notes.map((n, i) => { const [h, f, rel] = e.data[i]; return { pitch: n.midi, on: n.time, off: n.time + n.duration, release: rel, hand: h, finger: f, velocity: n.velocity } })
         fingerWorker.terminate(); fingerWorker = null
         rig.setNotes(out)
-        director.setSong({ duration: out.reduce((m, n) => Math.max(m, n.off), 0), ...rig.form(), energyAt: rig.music.energyAt })
+        dirSource = { duration: out.reduce((m, n) => Math.max(m, n.off), 0), ...rig.form(), energyAt: rig.music.energyAt }
+        director.setSong(dirSource); director2?.setSong(dirSource)
         fingered = true
       }
       fingerWorker.postMessage({ chopin: $('fingering')?.value === 'chopin', notes: notes.map(n => ({ pitch: n.midi, on: n.time, off: n.time + n.duration, velocity: n.velocity, ...(n.hand ? { hand: n.hand } : {}) })) })
@@ -1663,7 +1678,7 @@
       ['sf', 'sf'], ['avsync', 'avsync'],
       ['dofamt', 'dofAmt'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
       ['vol', 'vol'], ['room', 'room'], ['seat', 'seat'], ['rv', 'rvAmt'], ['decay', 'rvDecay'], ['tone', 'rvTone'], ['boost', 'boost'], ['amb', 'amb'], ['applause', 'applause'],
-      ['exformat', 'exFormat'], ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exsub', 'exSub'], ['excard', 'exCard'], ['excaps', 'exCaps'], ['exvtt', 'exVtt'], ['exlen', 'exLen'], ['exhold', 'exHold'],
+      ['exformat', 'exFormat'], ['exlayout', 'exLayout'], ['exsplit', 'exSplit'], ['exhands', 'exHandsHalf'], ['exlview', 'exLessonView'], ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exsub', 'exSub'], ['excard', 'exCard'], ['excaps', 'exCaps'], ['exvtt', 'exVtt'], ['exlen', 'exLen'], ['exhold', 'exHold'],
       ['notes', 'linerMode'], ['itstyle', 'itStyle'], ['itstylea', 'itStyleA'], ['itcol', 'itTheme'], ['itpos', 'itPos'], ['itheads', 'itHeads'], ['extitle', 'exTitle'],
     ].filter(([, id]) => $(id))
     const OUTFIT_KEYS = { dress: 'dress', slit: 'slit', fabric: 'fabric', dcol: 'color', shoes: 'shoes', hair: 'hair', hcol: 'hairColor' }
@@ -1825,18 +1840,103 @@
       if (!offline && scheduler?.playing && performance.now() - idleT > 2500) document.body.classList.add('idle')
       if (!offline) liner.update(songNow())
       // nothing to post-process on the light path: draw straight to the screen
-      if (LOWQ && !bokeh.enabled && !bloom.enabled && !$('filmGrain').checked) renderer.render(scene, camera)
+      if (stacked) drawStacked(t, dt, live)
+      else if (LOWQ && !bokeh.enabled && !bloom.enabled && !$('filmGrain').checked) renderer.render(scene, camera)
       else composer.render()
+    }
+    // ── Stacked Short: her above, the hands below ──
+    // The composer is sized to one half; each half is rendered into its own
+    // viewport (scissored) with its own camera, focus and depth of field: the
+    // top from the director as placed above, the bottom from director2 (the
+    // hands' plan). A thin black seam between them.
+    const stackGap = h => Math.max(2, Math.round(h * 0.003))
+    // [her, the hands] in pixels: Split (her / hands) shares the frame
+    const stackHs = h => { const a = Math.round((h - stackGap(h)) * (+$('exSplit').value || 50) / 100); return [a, h - stackGap(h) - a] }
+    const stackH = h => Math.max(...stackHs(h))   // (the composer: the taller half; the other is drawn into it, scaled)
+    const lessonCam = new THREE.Vector3(), lessonTgt = new THREE.Vector3(), lessonFit = { key: '' }
+    const _sz = new THREE.Vector2(), _topPos = new THREE.Vector3(), _topTgt = new THREE.Vector3(), _clear = new THREE.Color()
+    // each half's lens: the aspect of its own viewport (zoomed out a little when
+    // it's taller than 16:10, as the page does for a phone held upright)
+    const lens = (w, hh) => { camera.aspect = w / hh; camera.zoom = Math.max(0.55, Math.min(1, camera.aspect / 1.6)); camera.updateProjectionMatrix(); bokeh.uniforms.aspect.value = camera.aspect }
+    function drawStacked(t, dt, live) {
+      const { x: w, y: h } = renderer.getSize(_sz), [ht, hb] = stackHs(h)
+      const draw = () => LOWQ && !bokeh.enabled && !bloom.enabled && !$('filmGrain').checked ? renderer.render(scene, camera) : composer.render()
+      const aspect0 = camera.aspect, zoom0 = camera.zoom, bokehOn = bokeh.enabled
+      renderer.setScissorTest(true)
+      lens(w, ht)
+      renderer.setViewport(0, h - ht, w, ht); renderer.setScissor(0, h - ht, w, ht); draw()
+      _topPos.copy(camera.position); _topTgt.copy(controls.target)
+      const topFov = camera.fov, topFocus = bokeh.uniforms.focus.value, topAp = bokeh.uniforms.aperture.value
+      lens(w, hb)
+      if ($('exHandsHalf').value === 'lesson') {
+        // the lesson view (first person or from above): the whole keyboard across
+        // the half (moved back until 130 cm of keys fit its width), sharp throughout
+        const LV = LESSON_VIEWS[$('exLessonView').value] || LESSON_VIEWS.first
+        lessonTgt.fromArray(LV.target); lessonCam.fromArray(LV.pos)
+        camera.fov = LV.fov; camera.updateProjectionMatrix()
+        lesson.setTilt(LV.tilt)
+        if (LV.fit === 'fov') {
+          // (in front of her face: the lens widened until both ends of the keyboard
+          // fit, and tilted so its front edge sits near the bottom of the half and
+          // the lane rises above it; worked out once per half's shape)
+          const key = `${camera.aspect.toFixed(3)},${camera.zoom.toFixed(3)}`
+          if (lessonFit.key !== key) {
+            const P = new THREE.Vector3(), aim = new THREE.Vector3()
+            const ndc = (x, y, z) => P.set(x, y, z).project(camera)
+            let fov = LV.fov, ty = LV.target[1]
+            for (; fov <= 90; fov += 1) {
+              camera.fov = fov; camera.updateProjectionMatrix()
+              let lo = DIM.KEY_TOP - 60, hi = DIM.KEY_TOP + 160
+              for (let i = 0; i < 24; i++) {
+                ty = (lo + hi) / 2
+                camera.position.copy(lessonCam); camera.lookAt(aim.set(0, ty, LV.target[2])); camera.updateMatrixWorld()
+                if (ndc(0, DIM.KEY_TOP, 2).y < -0.84) hi = ty; else lo = ty
+              }
+              if (Math.abs(ndc(66, DIM.KEY_TOP, 2).x) < 0.96) break
+            }
+            lessonFit.key = key; lessonFit.fov = fov; lessonFit.ty = ty
+          }
+          camera.fov = lessonFit.fov; camera.updateProjectionMatrix()
+          lessonTgt.set(0, lessonFit.ty, LV.target[2])
+        } else {
+          const half = Math.tan(camera.fov * Math.PI / 360) / camera.zoom * camera.aspect, need = 66 / half
+          lessonCam.sub(lessonTgt).setLength(Math.max(need, lessonCam.length())).add(lessonTgt)
+        }
+        camera.position.copy(lessonCam); camera.lookAt(lessonTgt)
+        lesson.update(t, hb)
+        bokeh.enabled = false
+        lesson.begin()
+        renderer.setViewport(0, 0, w, hb); renderer.setScissor(0, 0, w, hb); draw()
+        lesson.end()
+        bokeh.enabled = bokehOn
+      } else {
+        // the hands (their own plan; it runs every frame so its operator keeps up)
+        const c = director2.update(t, dt, live)
+        camera.position.copy(c.pos); camera.lookAt(c.target)
+        if (camera.fov !== c.fov) { camera.fov = c.fov; camera.updateProjectionMatrix() }
+        bokeh.uniforms.focus.value = camera.position.distanceTo(c.focus === 'target' ? c.target : live.hands)
+        bokeh.uniforms.aperture.value = 0.0001 * +$('dofAmt').value
+        renderer.setViewport(0, 0, w, hb); renderer.setScissor(0, 0, w, hb); draw()
+      }
+      // the seam
+      renderer.getClearColor(_clear); const ca = renderer.getClearAlpha()
+      renderer.setScissor(0, hb, w, h - ht - hb); renderer.setClearColor(0x000000, 1); renderer.clear(true, false, false); renderer.setClearColor(_clear, ca)
+      renderer.setScissorTest(false); renderer.setViewport(0, 0, w, h)
+      camera.position.copy(_topPos); camera.lookAt(_topTgt)
+      camera.fov = topFov; camera.aspect = aspect0; camera.zoom = zoom0; camera.updateProjectionMatrix(); bokeh.uniforms.aspect.value = aspect0
+      bokeh.uniforms.focus.value = topFocus; bokeh.uniforms.aperture.value = topAp
     }
     renderer.setAnimationLoop(frame)
     function resize(w, h, style = true) {
       // taller than 16:10 (a phone held upright): widen the lens so the shots
       // keep about the same width of the scene
       // (a Short's spots are framed for 9:16 themselves)
-      camera.zoom = shortFrame ? 1 : Math.max(0.55, Math.min(1, (w / h) / 1.6))
-      camera.aspect = w / h; camera.updateProjectionMatrix()
-      renderer.setSize(w, h, style); composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(w, h)
-      dust.material.uniforms.uScale.value = h * renderer.getPixelRatio()
+      // (stacked: each half is its own picture, w × about h / 2, with landscape framings)
+      const ch = stacked ? stackH(h) : h, ca = stacked ? stackHs(h)[0] : h
+      camera.zoom = shortFrame && !stacked ? 1 : Math.max(0.55, Math.min(1, (w / ca) / 1.6))
+      camera.aspect = w / ca; camera.updateProjectionMatrix()
+      renderer.setSize(w, h, style); composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(w, ch)
+      dust.material.uniforms.uScale.value = ch * renderer.getPixelRatio()
     }
     addEventListener('resize', () => { if (!exporting) liveResize() })
     resize(innerWidth, innerHeight)
@@ -2046,7 +2146,7 @@
       $('clipV').textContent = $('exClipV').textContent = `${fmt(a)}.${Math.floor(a % 1 * 10)} – ${fmt(b)}.${Math.floor(b % 1 * 10)} · ${Math.round(b - a)} s`
       for (const c of $('clipLens').children) c.classList.toggle('sel', +c.value === short.len)
       for (const [i, c] of [...$('clipSug').children].entries()) c.classList.toggle('sel', Math.abs(short.sug[i]?.a - a) < 0.01 && Math.abs(short.sug[i]?.b - b) < 0.01)
-      if (shortFrame) director.set('window', [short.a, short.b])
+      if (shortFrame) applyShortPlan()
       drawClip()
     }
     function clipFresh() {
@@ -2112,13 +2212,34 @@
     function setShortFrame(on) {
       if (on === shortFrame) return
       shortFrame = on
-      applyFrameViews(on)
-      director.set('window', [short.a, short.b])
-      director.set('portrait', on)
+      applyShortPlan()
       if (on) { short.prevView = view; if (view !== 'auto') setView('auto') }
       else if (short.prevView && view !== short.prevView) setView(short.prevView)
       lastShot = null
     }
+    // the camera plans for the Short: one 9:16 picture (portrait framings), or
+    // stacked (director: her, director2: the hands, the top avoiding the bottom's cuts)
+    function applyShortPlan() {
+      const stack = shortFrame && $('exLayout').value === 'stack', changed = stack !== stacked
+      stacked = stack
+      if (stack) {
+        if (!director2) { director2 = createDirector({ ...director.opts, portrait: false, half: 'hands' }); if (dirSource) director2.setSong(dirSource) }
+        director2.set('window', [short.a, short.b])
+      }
+      director.set('window', [short.a, short.b])
+      director.set('half', stack ? 'her' : null)
+      // (with the lesson view below there are no cuts there to keep clear of)
+      director.set('avoid', stack && $('exHandsHalf').value !== 'lesson' ? director2.shots.slice(1).map(x => x.t0) : null)
+      director.set('portrait', shortFrame && !stack)
+      applyFrameViews(shortFrame && !stack)
+      if (changed) { const { x, y } = renderer.getSize(_sz); resize(x, y, !exporting) }
+      lastShot = null
+    }
+    const applyLayoutUi = () => { document.body.classList.toggle('layoutstack', $('exLayout').value === 'stack'); document.body.classList.toggle('handslesson', $('exHandsHalf').value === 'lesson') }
+    $('exLayout').onchange = () => { applyLayoutUi(); if (shortFrame) applyShortPlan() }
+    $('exHandsHalf').onchange = () => { applyLayoutUi(); if (shortFrame) applyShortPlan() }
+    $('exSplit').onchange = () => { if (stacked) { const { x, y } = renderer.getSize(_sz); resize(x, y, !exporting); applyShortPlan() } }
+    applyLayoutUi()
     function liveResize() {
       if (!short.on) { $('shortBox').style.cssText = ''; return resize(innerWidth, innerHeight) }
       const H = innerHeight, W = Math.round(H * 9 / 16)
@@ -2152,7 +2273,12 @@
     }
     const shortPlaced = new WeakMap()
     const shortPos = x => { if (x.title) return 'top-center'; if (!shortPlaced.has(x)) shortPlaced.set(x, subjectNdc.y < -0.2 ? 'top-center' : 'bottom-center'); return shortPlaced.get(x) }
-    const shortOverlay = tl => (g, w, h, t) => drawIntertitle(g, w, h, tl, t, { style: liner.style, analysisStyle: liner.analysisStyle, theme: liner.theme, kickers: liner.kickers, position: shortPos, safe: SHORT_SAFE })
+    // (stacked: the intertitles sit just above the seam, over her half, not on the hands)
+    const shortOverlay = tl => (g, w, h, t) => {
+      const x = stacked && tl.intertitles.find(x => t >= x.start - 0.05 && t < x.end)
+      const safe = x && !x.title ? { ...SHORT_SAFE, y1: stackHs(h)[0] / h - 0.012 } : SHORT_SAFE
+      drawIntertitle(g, w, h, tl, t, { style: liner.style, analysisStyle: liner.analysisStyle, theme: liner.theme, kickers: liner.kickers, position: x && !x.title ? 'bottom-center' : shortPos, safe })
+    }
     let shortTl = null, shortTlKey = ''
     function shortTick() {
       if (document.body.classList.contains('clipping') && (scheduler?.playing || shortTick.n++ % 10 === 0)) drawClip()
@@ -2220,8 +2346,11 @@
         if (params.get('short') === '1') {
           const m = /^([\d.]+)-([\d.]+)$/.exec(params.get('clip') || '') || [0, Math.max(0, T - 5), T + 30]
           short.a = +m[1]; short.b = +m[2]
-          shortFrame = true; applyFrameViews(true)
-          director.set('window', [short.a, short.b]); director.set('portrait', true)
+          if (params.get('exlayout') === 'stack') $('exLayout').value = 'stack'
+          if (params.get('exsplit')) $('exSplit').value = params.get('exsplit')
+          if (params.get('exhands')) $('exHandsHalf').value = params.get('exhands')
+          if (params.get('exlview')) $('exLessonView').value = params.get('exlview')
+          shortFrame = true; applyShortPlan()
           resize(innerWidth, innerHeight)
         }
         // settle hair and cloth: run the simulation up to T at 60 fps (2 s at most)
@@ -2263,7 +2392,8 @@
         bokeh.uniforms.aperture.value = wide ? 0.00003 : 0.0001
         bokeh.enabled = !params.has('nodof')
         renderer.toneMappingExposure = +$('exposure').value
-        composer.render()
+        if (stacked) { drawStacked(T, 1 / 60, { hands: handsAt, head: rig.pos('head') }); window.__shotInfo2 = director2.update(T, 0, { hands: handsAt, head: rig.pos('head') }).shot }
+        else composer.render()
         return true
       }
     }

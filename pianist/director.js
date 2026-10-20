@@ -496,14 +496,25 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
 // window: [a, b] song seconds. Shots before a and after b are padding for the
 // export's pre-roll and tail.
 const HOOK = [['keysUp', 1.4], ['hands', 1], ['treble', 1], ['keysTop', 0.8], ['keys', 0.7]]
+// Stacked Short (opts.half): two pictures of 9:8, one above the other: her in
+// the top half (from the front half or the side, so her face shows: no shots
+// from behind, nothing wide), her hands in the bottom one. Each half has its
+// own plan with landscape framings; the top cuts less often (6–11 s), and
+// never within 0.8 s of a cut below (opts.avoid), so the two never jump at once.
+export const HALVES = {
+  her: n => ['head', 'figure'].includes(SPOTS[n].subj) && SPOTS[n].size < 2 && SPOTS[n].dist < 300 && Math.abs(wrap(SPOTS[n].az)) >= 60 && !SPOTS[n].beside,
+  hands: n => SPOTS[n].subj === 'hands' || SPOTS[n].subj === 'hammers',
+}
+const HALF_HOOK = { her: [['profile', 1], ['bust', 1], ['lowRight', 1.2], ['front', 0.6]], hands: [['hands', 1], ['treble', 1], ['keysTop', 0.8], ['keys', 0.7]] }
 const SHORT_TARGETS = { keys: 0.55, her: 0.4, piano: 0.05 }
 export function planShort({ duration, phrases = [], glances = [], energyAt = () => 0.3 }, opts = {}) {
   const pace = opts.pace ?? 1, bias = clamp(opts.bias ?? 0, -1, 1)
   const [A, B] = opts.window ?? [0, duration]
-  const seed = songSeed({ duration, phrases }) + Math.round(A * 10) % 997, hs = (k, n) => hash(k + seed, n)
-  const names = spotsFor(true)
-  const P = n => spotFor(n, true)
-  const starts = phrases.map(p => p[0]).filter(t => t > A + 1.5 && t < B - 1.5)
+  const seed = songSeed({ duration, phrases }) + Math.round(A * 10) % 997 + (opts.half === 'her' ? 501 : 0), hs = (k, n) => hash(k + seed, n)
+  const half = HALVES[opts.half] ? opts.half : null, avoid = half && opts.avoid || []
+  const names = half ? spotsFor(false).filter(HALVES[half]) : spotsFor(true)
+  const P = n => spotFor(n, !half)
+  const starts = phrases.map(p => p[0]).filter(t => t > A + 1.5 && t < B - 1.5 && !avoid.some(c => Math.abs(c - t) < 0.8))
   const mean = (a, b) => { let s = 0, n = 0; for (let t = a; t < b; t += 0.25) { s += energyAt(t); n++ } return n ? s / n : 0 }
   const lookUp = (a, b) => glances.some(g => g.a < b - 0.8 && g.b > a + 0.5 && !g.quiet)
   const pick = (opts, r) => { const tot = opts.reduce((a, o) => a + o[1], 0); let q = r * tot; return opts.find(o => (q -= o[1]) <= 0)?.[0] ?? opts[0][0] }
@@ -515,18 +526,20 @@ export function planShort({ duration, phrases = [], glances = [], energyAt = () 
   let t = A
   for (let i = 0; t < B; i++) {
     const E = mean(t, t + 4), h = hs(i, 1)
-    const L = lerp(6, 2.8, clamp(E, 0, 1)) * (0.85 + 0.3 * h) / pace
+    const L = (half === 'her' ? lerp(11, 6, clamp(E, 0, 1)) : lerp(6, 2.8, clamp(E, 0, 1))) * (0.85 + 0.3 * h) / pace
     let end = t + L
     const cand = starts.filter(s => s > t + 0.6 * L && s < t + 1.5 * L)
     if (cand.length) end = cand.reduce((b, s) => Math.abs(s - t - L) < Math.abs(b - t - L) ? s : b)
     end = Math.max(end, t + 2.2)
+    // (not on a cut in the other half)
+    for (const c of avoid) if (Math.abs(c - end) < 0.8) end = c + (end < c && c - 0.9 > t + 2.2 ? -0.9 : 0.9)
     const last = B - end < Math.max(2.2, 0.5 * L)
     if (last) end = B
     const prev = shots[i - 1], prev2 = shots[i - 2], first = shots[0]
     let name, move
     if (i === 0) {
       // the hook: straight onto the hands
-      name = pick(HOOK.filter(([n]) => names.includes(n)), hs(i, 3))
+      name = pick((half ? HALF_HOOK[half] : HOOK).filter(([n]) => names.includes(n)), hs(i, 3))
       move = hs(i, 4) < 0.55 ? 'still' : 'orbit'
     } else if (last && prev.name === first.name) {
       // already back where it began: that shot runs to the end
@@ -600,8 +613,9 @@ export function createDirector(opts = {}) {
   const ta = new THREE.Vector3(), tb = new THREE.Vector3()
 
   // o.portrait: a Short (planShort over o.window, portrait framings)
-  const plan = src => o.portrait ? planShort(src, o) : planShots(src, o)
-  const spot = name => spotFor(name, o.portrait)
+  // o.half: one half of a stacked Short ('her' / 'hands'), landscape framings
+  const plan = src => o.portrait || o.half ? planShort(src, o) : planShots(src, o)
+  const spot = name => spotFor(name, o.portrait && !o.half)
   function replan() {
     shots = plan(source ?? { duration: 600 })
   }
@@ -699,7 +713,7 @@ export function createDirector(opts = {}) {
       out.shot = cur
       // the opening fades in from black over its first o.fadeIn seconds
       // (a Short starts on the music: no fade)
-      out.fade = idx === 0 && onSong && !o.portrait ? sstep(t, 0, o.fadeIn || 2.5) : 1
+      out.fade = idx === 0 && onSong && !o.portrait && !o.half ? sstep(t, 0, o.fadeIn || 2.5) : 1
       return out
     },
     /** a fixed view with a looping move: pos/target arrays, move name, wall time */
