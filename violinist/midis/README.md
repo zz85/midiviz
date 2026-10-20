@@ -29,12 +29,12 @@ What the sources have:
 | | Herrmann 1900 | Auer 1917 |
 |---|---|---|
 | Notes found | 91.5 % | 85.1 % |
-| Slurred note pairs (Mutopia's BGA source on the same notes) | 5,594 (4,161) | 5,491 (3,708) |
-| Mutopia's slurred pairs also slurred in the edition | 76.7 % (was 62.5) | 69.0 % (was 55.5) |
-| Slur agreement with Mutopia, all pairs | 84.8 % | 79.1 % |
+| Slurred note pairs (Mutopia's BGA source on the same notes) | 5,786 (4,161) | 5,900 (3,708) |
+| Mutopia's slurred pairs also slurred in the edition | 80.8 % (was 76.7, first 62.5) | 74.6 % (was 69.0, first 55.5) |
+| Slur agreement with Mutopia, all pairs | 85.5 % | 79.2 % |
 | Bow signs | 157 ⊓, 58 V | 275 ⊓, 226 V |
 
-These figures are after ScoreShift learned to read slurs merged into note ink and bowing marks above beams (checked by eye on a few systems, see its README: Auer 22 → 25 of 36 slurs, Herrmann 12 of 12 with 1 false where it had 4, bowing marks 9 → 12 of about 14 on an Auer page). A slur running over a page turn is joined: a slur still open at the end of a page continues into the notes before the next page's first slur end. OMR still misses some marks: steep slurs that join two voices, and bowing marks fused with a beam. Herrmann mostly keeps Bach's slurs and marks bow strokes in the fugues and chords. Auer re-slurs more freely and marks bows throughout. In #037, Bowing: Herrmann / Auer appears for these movements. The bow signs set the stroke direction (`strings/motion.js`), which until now ignored them, the Tchaikovsky score's included.
+These figures are after ScoreShift learned to read slurs merged into note ink and bowing marks above beams (checked by eye on a few systems, see its README: Auer 22 → 25 of 36 slurs, Herrmann 12 of 12 with 1 false where it had 4, bowing marks 9 → 12 of about 14 on an Auer page). A slur running over a page turn is joined: a slur still open at the end of a page continues into the notes before the next page's first slur end. Steep slurs that join two voices (a bass note up to the melody, or the top note down to the next voice) are now read too: 188 more slurs on the Herrmann pages, 310 on the Auer pages, which raised the share of Mutopia's slurs the editions also have from 76.7 to 80.8 % (Herrmann) and 69.0 to 74.6 % (Auer). OMR still misses bowing marks fused with a beam, and steep slurs whose ends merge into a stem. Herrmann mostly keeps Bach's slurs and marks bow strokes in the fugues and chords. Auer re-slurs more freely and marks bows throughout. In #037, Bowing: Herrmann / Auer appears for these movements. The bow signs set the stroke direction (`strings/motion.js`), which until now ignored them, the Tchaikovsky score's included.
 
 `node violinist/tools/build_scores.js` rebuilds `violinist/scores` and the `score` entries from the sources (`node strings/test/fetch_mutopia_ly.js` fetches them into the git-ignored `strings/data/MutopiaLy`).
 
