@@ -43,6 +43,7 @@ async function recognise(dir) {
   mkdirSync(dir + 'xml', { recursive: true })
   const pages = readdirSync(dir).filter(f => /^p\d+\.png$/.test(f)).sort()
   const out = []
+  let prevOpen = null
   for (const f of pages) {
     const x = dir + 'xml/' + f.replace('.png', '.musicxml')
     if (!existsSync(x)) {
@@ -52,9 +53,19 @@ async function recognise(dir) {
     }
     const xml = readFileSync(x, 'utf8')
     if (!xml) continue
-    // a page's notes in reading order; slur ids made unique per page
+    // a page's notes in reading order; slur ids made unique per page, and a slur still open at
+    // the end of a page is the one the next page continues (its notes before its first stop)
     const s = readMusicXML(xml)
-    for (const n of s.notes.slice().sort((a, b) => a.on - b.on || a.pitch - b.pitch)) out.push({ pitch: n.pitch, art: n.art, slur: n.art.slur != null ? f + ':' + n.art.slur : null })
+    const ns = s.notes.slice().sort((a, b) => a.on - b.on || a.pitch - b.pitch)
+    const openAtEnd = prevOpen
+    prevOpen = null
+    for (const n of ns) {
+      let id = n.art.slur != null ? f + ':' + n.art.slur : null
+      if (n.art.slurCont && openAtEnd) id = openAtEnd
+      if (n.art.slurOpen) prevOpen = id
+      out.push({ pitch: n.pitch, art: n.art, slur: id })
+    }
+    if (!ns.some((n) => n.art.slurOpen)) prevOpen = null
   }
   return out
 }

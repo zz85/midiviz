@@ -92,6 +92,7 @@ function readPartXML(P, tempoOnly = false) {
   const openTies = new Map()               // pitch → raw note
   const octShift = new Map()               // staff → semitones (an 8va line in force)
   let chordMarks = null, chordNotes = []   // the current chord's marks and notes
+  let slurSeen = false
   const slurOpen = new Map()               // slur number → id
   let slurSeq = 0
   for (const meas of kids(P, 'measure')) {
@@ -133,11 +134,17 @@ function readPartXML(P, tempoOnly = false) {
         const nots = kids(el, 'notations')
         const allN = nots.flatMap(n => n.children)
         // slurs: a note inside an open slur (or that opens / closes one) gets its id
-        let slur = null
+        let slur = null, orphan = false
         for (const s of allN.filter(c => c.tag === 'slur')) {
           const num = s.attrs.number || '1'
-          if (s.attrs.type === 'start') { const id = ++slurSeq; slurOpen.set(num, id); slur = id }
-          else if (s.attrs.type === 'stop') { slur = slur ?? slurOpen.get(num) ?? null; slurOpen.delete(num) }
+          if (s.attrs.type === 'start') { const id = ++slurSeq; slurOpen.set(num, id); slur = id; slurSeen = true }
+          else if (s.attrs.type === 'stop') {
+            // a stop with no start: the slur began before this file (a page of a longer score)
+            // (only before the part's first slur: later, a missing start is more likely a misread)
+            if (!slurOpen.has(num) && slur == null && !slurSeen) { slur = ++slurSeq; orphan = true }
+            else slur = slur ?? slurOpen.get(num) ?? null
+            slurOpen.delete(num); slurSeen = true
+          }
         }
         if (slur == null && slurOpen.size) slur = [...slurOpen.values()][slurOpen.size - 1]
         if (!p) continue                    // a rest
@@ -163,6 +170,11 @@ function readPartXML(P, tempoOnly = false) {
         const n = { pitch, start: on, end: on + dur, velocity: velocity * accentGain(arts), voice: +(txt(el, 'voice') || 1), measure: measureNo, mStart,
           art: { slur, stroke, bow, source: 'score', ...(port ? { port: true } : {}) } }
         if (accentGain(arts) > 1) n.accent = true
+        // the notes before it in this voice, back to the last one in a slur, are in that slur too
+        if (orphan) {
+          n.art.slurCont = true
+          for (let k = events.length - 1; k >= 0 && events[k].voice === n.voice && events[k].art.slur == null; k--) { events[k].art.slur = slur; events[k].art.slurCont = true }
+        }
         events.push(n)
         chordNotes.push(n)
         if (ties.includes('start')) openTies.set(pitch, n)
@@ -170,6 +182,9 @@ function readPartXML(P, tempoOnly = false) {
     }
     pos = Math.max(maxPos, pos)
   }
+  // slurs never stopped run on past the end (the next page of a longer score)
+  const open = new Set(slurOpen.values())
+  for (const e of events) if (open.has(e.art.slur)) e.art.slurOpen = true
   return { events, tempoMap, meterMap }
 }
 

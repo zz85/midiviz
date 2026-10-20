@@ -140,3 +140,18 @@ test('MusicXML: a part without tempo marks takes the top part\'s (MuseScore writ
   assert.equal(v.part, 1)
   assert.deepEqual(v.notes.map(n => [n.pitch, n.on, n.off]), [[60, 1.5, 3]], '120 bpm from the violin part, not the 100 default')
 })
+
+test('MusicXML of one page of a longer score: a slur stopped before any start began on the page before, one never stopped runs on', () => {
+  const page = `<?xml version="1.0"?><score-partwise><part-list><score-part id="P1"><part-name>V</part-name></score-part></part-list>
+<part id="P1"><measure number="1"><attributes><divisions>1</divisions></attributes>
+<note><pitch><step>C</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice></note>
+<note><pitch><step>D</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><notations><slur type="stop" number="2"/></notations></note>
+<note><pitch><step>E</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice></note>
+<note><pitch><step>F</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><notations><slur type="start" number="1"/></notations></note>
+<note><pitch><step>G</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice></note>
+</measure></part></score-partwise>`
+  const n = readMusicXML(page).notes
+  assert.ok(n[0].art.slur != null && n[0].art.slur === n[1].art.slur && n[0].art.slurCont && n[1].art.slurCont, 'C D continue a slur')
+  assert.equal(n[2].art.slur, null)
+  assert.ok(n[3].art.slur != null && n[3].art.slur === n[4].art.slur && n[4].art.slurOpen, 'F G run on')
+})
