@@ -38,7 +38,7 @@ export const INTERTITLE_POSITIONS = {
 	'bottom-left': 'Bottom left', 'bottom-right': 'Bottom right', 'bottom-center': 'Bottom centre',
 	'top-left': 'Top left', 'top-right': 'Top right',
 }
-const posClass = p => ({ 'bottom-left': 'bl', 'bottom-right': 'br', 'bottom-center': 'bc', 'top-left': 'tl', 'top-right': 'tr' })[p] || 'bl'
+const posClass = p => ({ 'bottom-left': 'bl', 'bottom-right': 'br', 'bottom-center': 'bc', 'top-left': 'tl', 'top-right': 'tr', 'top-center': 'tc' })[p] || 'bl'
 const fam = f => `'${f[0]}', Georgia, serif`
 const cssFont = (f, px) => `${f[2]} ${f[1]} ${px}px ${fam(f)}`
 /** wait for the styles' fonts (before drawing them into a canvas) */
@@ -461,17 +461,19 @@ export function drawLinerCaption(g, w, h, tl, t, { fade = 0.4, font = 'Inter, sy
  * intertitle and pass it in). `analysisStyle` styles the analysis voice ('same': as
  * the story). Call loadIntertitleFonts(style, analysisStyle) first.
  */
-export function drawIntertitle(g, w, h, tl, t, { style = 'serif', analysisStyle = 'sans', theme = 'mono', position = 'bottom-left', kickers = true } = {}) {
+export function drawIntertitle(g, w, h, tl, t, { style = 'serif', analysisStyle = 'sans', theme = 'mono', position = 'bottom-left', kickers = true, safe = null } = {}) {
 	const x = intertitleAt(tl, t)
 	if (!x) return
 	const a = itAlpha(x, t)
 	if (a <= 0) return
-	const st = styleOf(x, style, INTERTITLE_STYLES[analysisStyle] ? analysisStyle : null), th = INTERTITLE_THEMES[theme] || INTERTITLE_THEMES.mono, k = h / 1080
+	// safe: { x0, y0, x1, y1 } (fractions of the frame) — a tall frame (a Short)
+	// whose edges the player's buttons cover: centred in it, sized by the width
+	const st = styleOf(x, style, INTERTITLE_STYLES[analysisStyle] ? analysisStyle : null), th = INTERTITLE_THEMES[theme] || INTERTITLE_THEMES.mono, k = safe ? w / 1080 * 1.12 : h / 1080
 	const pc = posClass(typeof position === 'function' ? position(x) : position)
-	const side = pc[1] === 'l' ? 'left' : pc[1] === 'r' ? 'right' : 'center', top = pc[0] === 't'
+	const side = safe ? 'center' : pc[1] === 'l' ? 'left' : pc[1] === 'r' ? 'right' : 'center', top = pc[0] === 't'
 	const lineSize = st.size * k * (x.title ? 1.3 : 1), kickSize = st.size * (x.title ? KICKER.title : KICKER.line) * k, subSize = st.size * 0.52 * k
 	const track = (f, size, extra = 0) => { if ('letterSpacing' in g) g.letterSpacing = `${((f[3] + extra) * size).toFixed(2)}px` }
-	const maxW = Math.min(side === 'center' ? w * 0.8 : Math.min(w * 0.46, 820 * k), lineSize * 24)
+	const maxW = safe ? (safe.x1 - safe.x0) * w * 0.9 : Math.min(side === 'center' ? w * 0.8 : Math.min(w * 0.46, 820 * k), lineSize * 24)
 	g.save()
 	g.font = cssFont(st.line, lineSize); track(st.line, lineSize)
 	const text = plainText(x.text), lines = balanced(g, st.upper ? text.toUpperCase() : text, maxW)
@@ -482,8 +484,8 @@ export function drawIntertitle(g, w, h, tl, t, { style = 'serif', analysisStyle 
 	const lh = lineSize * 1.28, kickH = kick ? kickSize + kickSize * 0.9 * 2 + 1 : 0, subH = subLines.length ? subSize * 0.55 + subLines.length * subSize * 1.3 : 0
 	const blockH = kickH + lines.length * lh + subH
 	const textW = Math.max(lineW, subW)
-	const y0 = top ? h * 0.15 : h * (1 - 0.21) - blockH
-	const ax = side === 'left' ? w * 0.06 : side === 'right' ? w * 0.94 : w / 2
+	const y0 = safe ? (top ? safe.y0 * h + lineSize * 0.6 : safe.y1 * h - blockH - lineSize * 0.6) : top ? h * 0.15 : h * (1 - 0.21) - blockH
+	const ax = safe ? (safe.x0 + safe.x1) / 2 * w : side === 'left' ? w * 0.06 : side === 'right' ? w * 0.94 : w / 2
 	// the pool behind the words (as the page's ::before), out to the edge on a side
 	g.globalAlpha = a
 	g.save()

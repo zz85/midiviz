@@ -7,12 +7,33 @@
  * driven sample-accurately from the same note schedule — so A/V sync is exact.
  *
  * Encoding: WebCodecs (VideoEncoder / AudioEncoder) → mp4-muxer → MP4.
- * When the File System Access API is available the file streams straight to
- * disk (no RAM ceiling for long 4K exports); otherwise it is buffered in memory.
+ * When the caller passes a save-picker stream the file streams straight to
+ * disk. Without one it streams to a temp file in the origin-private file
+ * system (also on disk, returned as a File to download), and only when that
+ * is unavailable is it buffered in memory: mp4-muxer's ArrayBufferTarget grows
+ * one ArrayBuffer by doubling, so past ~1 GB (5 min of 4K) the next 2 GB
+ * allocation fails with "Array buffer allocation failed".
  */
 import { Muxer, ArrayBufferTarget, FileSystemWritableFileStreamTarget } from 'https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.3/build/mp4-muxer.mjs'
 
 const SAMPLE_RATE = 48000
+const TEMP_PREFIX = 'video-export-'
+
+/** A disk-backed temp file in the origin-private file system, or null when there is none. */
+async function openTempFile() {
+	try {
+		if (!navigator.storage?.getDirectory) return null
+		const dir = await navigator.storage.getDirectory()
+		// last export's file (kept until now so its download could finish)
+		for await (const [name] of dir.entries()) if (name.startsWith(TEMP_PREFIX)) await dir.removeEntry(name).catch(() => {})
+		const handle = await dir.getFileHandle(TEMP_PREFIX + Date.now() + '.mp4', { create: true })
+		if (!handle.createWritable) return null
+		return { handle, stream: await handle.createWritable() }
+	} catch (e) {
+		console.warn('[export] no temp file, buffering in memory:', e)
+		return null
+	}
+}
 
 const VIDEO_CODECS = [
 	{ codec: 'avc1.640034', mux: 'avc' }, // H.264 High @ 5.2 (4K60)
@@ -424,12 +445,14 @@ export async function exportVideo(o) {
 	const ac = o.audio ? await pickAudioCodec() : null
 	if (o.audio && !ac) console.warn('[export] no audio encoder available — exporting video only')
 
-	const target = o.fileStream ? new FileSystemWritableFileStreamTarget(o.fileStream) : new ArrayBufferTarget()
+	const temp = o.fileStream ? null : await openTempFile()
+	const fileStream = o.fileStream || temp?.stream
+	const target = fileStream ? new FileSystemWritableFileStreamTarget(fileStream) : new ArrayBufferTarget()
 	const muxer = new Muxer({
 		target,
 		video: { codec: vc.mux, width, height, frameRate: fps },
 		audio: ac ? { codec: ac.mux, numberOfChannels: 2, sampleRate: SAMPLE_RATE } : undefined,
-		fastStart: o.fileStream ? false : 'in-memory',
+		fastStart: fileStream ? false : 'in-memory',
 		firstTimestampBehavior: 'offset',
 	})
 
@@ -538,11 +561,16 @@ export async function exportVideo(o) {
 		if (encError) throw encError
 		muxer.finalize()
 		if (o.fileStream) { await o.fileStream.close(); return null }
+		if (temp) {
+			await temp.stream.close()
+			const f = await temp.handle.getFile()   // (a disk-backed File; removed by the next export)
+			return new Blob([f], { type: 'video/mp4' })
+		}
 		return new Blob([target.buffer], { type: 'video/mp4' })
 	} catch (e) {
 		try { venc.close() } catch { /* ignore */ }
 		try { aenc?.close() } catch { /* ignore */ }
-		if (o.fileStream) try { await o.fileStream.abort() } catch { /* ignore */ }
+		if (fileStream) try { await fileStream.abort() } catch { /* ignore */ }
 		throw e
 	} finally {
 		synth?.dispose()

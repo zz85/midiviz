@@ -90,7 +90,53 @@ export const SPOTS = {
   pedalsClose: { label: 'Pedals, close', subj: 'pedals', az: 90, el: 8, dist: 60, fov: 32, size: 0, moves: ['still', 'dollyOut'] },
   keysTop: { label: 'Keys, from above', subj: 'hands', az: 180, el: 80, dist: 78, fov: 36, size: 0, moves: ['orbit', 'still', 'dollyOut'], orbitMax: 20 },
   feet: { label: 'Pedals', subj: 'feet', az: 58, el: 8, dist: 180, fov: 30, size: 1, moves: ['still', 'dollyIn'] },
+  // made for a tall frame (Shorts): from straight above her left, the keyboard
+  // running up the picture (bass at the bottom), her arms coming in from the right
+  keysUp: { label: 'Keyboard up the frame', only: 'portrait', subj: 'hands', az: -90, el: 84, dist: 118, fov: 44, size: 0, moves: ['still', 'orbit', 'dollyIn'], orbitMax: 6 },
 }
+
+// ── Portrait (9:16, YouTube Shorts) ──
+// A landscape spot cut down to 9:16 keeps a third of its width, so each spot
+// is rated for a tall frame and gets its own framing there (fov is the
+// vertical one, at camera zoom 1). p: 2 = made for it, 1 = usable now and
+// then, absent = never (the wide hall shots: she'd be a speck in a sliver).
+// Anything not given is the landscape value with the lens opened by `k`
+// (tan of the half-angle) and the camera moved back by `d`.
+export const PORTRAIT = {
+  keysUp: { p: 2 },
+  keysTop: { p: 2, dist: 120, fov: 50, el: 78 },
+  keys: { p: 2, dist: 150, fov: 40, el: 9 },
+  bassKeys: { p: 2, dist: 155, fov: 40, el: 10 },
+  hands: { p: 2, dist: 118, fov: 50, el: 40 },
+  treble: { p: 2, dist: 125, fov: 50, el: 36 },
+  handsRight: { p: 1, dist: 230, fov: 46 },
+  shoulder: { p: 2, el: 48, dist: 165, fov: 56 },
+  profile: { p: 2, dist: 150, fov: 42, el: 2 },
+  headside: { p: 2, dist: 105, fov: 40 },
+  face: { p: 1, dist: 100, fov: 38 },
+  front: { p: 1, dist: 140, fov: 42 },
+  bust: { p: 1, dist: 165, fov: 46, aim: [0, -18, 0] },
+  profileMed: { p: 1, dist: 180, fov: 48, aim: [0, -22, 0] },
+  lowRight: { p: 2, dist: 185, fov: 54, el: -6, aim: [0, -24, 0] },
+  lowShoulder: { p: 2, dist: 150, fov: 52 },
+  lowLeft: { p: 1, dist: 230, fov: 54 },
+  lowRightBack: { p: 1, dist: 230, fov: 54 },
+  back: { p: 1, el: 22, dist: 175, fov: 52, aim: [0, -12, 0] },
+  hammers: { p: 1, dist: 62, fov: 44 },
+  pedalsClose: { p: 1, dist: 75, fov: 44 },
+}
+const PORTRAIT_K = 1.5, PORTRAIT_D = 1.15
+const _portrait = {}
+/** the spot as framed for a portrait frame (or the landscape spot) */
+export function spotFor(name, portrait) {
+  if (!portrait) return SPOTS[name]
+  if (_portrait[name]) return _portrait[name]
+  const s = SPOTS[name], o = PORTRAIT[name] || {}
+  const fov = o.fov ?? 2 * Math.atan(Math.tan(s.fov * D2R / 2) * PORTRAIT_K) / D2R
+  return (_portrait[name] = { ...s, dist: s.dist * PORTRAIT_D, ...o, fov })
+}
+/** spots usable in a frame: portrait ones by rating, landscape all but the portrait-only */
+export const spotsFor = portrait => Object.keys(SPOTS).filter(n => portrait ? (PORTRAIT[n]?.p ?? 0) > 0 : SPOTS[n].only !== 'portrait')
 const SUBJ_KIND = { hands: 'hands', feet: 'hands', head: 'pianist', figure: 'pianist', piano: 'piano', hammers: 'piano', pedals: 'piano' }
 // the menu's categories: by shot size, then what is in the frame
 export const SIZES = ['Close', 'Medium', 'Far']
@@ -303,7 +349,7 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
   const starts = phrases.map(p => p[0]).filter(t => t > 0.5)
   const mean = (a, b) => { let s = 0, n = 0; for (let t = a; t < b; t += 0.25) { s += energyAt(t); n++ } return n ? s / n : 0 }
   const lookUp = (a, b) => glances.some(g => g.a < b - 1 && g.b > a + 0.5 && !g.quiet)
-  const names = Object.keys(SPOTS)
+  const names = spotsFor(false)
   const shots = []
   // what the audience has been shown lately: when the last wide shot ended,
   // and when her face was last in view (from the front half, not from behind)
@@ -439,6 +485,103 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
   return shots
 }
 
+// ── A Short: one clip, framed for 9:16 ──
+// planShots is a film of the whole song: it opens wide, saves its close-ups
+// and pulls out at the end. A Short has seconds to hold a thumb, so it opens
+// on the hands on the first downbeat, cuts every 2.5–6 s (on phrase starts),
+// never goes wide, and ends on the spot and framing it opened with so the
+// loop back to the start looks like one more cut. Only spots rated for
+// portrait (PORTRAIT) are used. Deterministic like planShots, and seeded by
+// the window too, so two clips of one piece get different films.
+// window: [a, b] song seconds. Shots before a and after b are padding for the
+// export's pre-roll and tail.
+const HOOK = [['keysUp', 1.4], ['hands', 1], ['treble', 1], ['keysTop', 0.8], ['keys', 0.7]]
+const SHORT_TARGETS = { keys: 0.55, her: 0.4, piano: 0.05 }
+export function planShort({ duration, phrases = [], glances = [], energyAt = () => 0.3 }, opts = {}) {
+  const pace = opts.pace ?? 1, bias = clamp(opts.bias ?? 0, -1, 1)
+  const [A, B] = opts.window ?? [0, duration]
+  const seed = songSeed({ duration, phrases }) + Math.round(A * 10) % 997, hs = (k, n) => hash(k + seed, n)
+  const names = spotsFor(true)
+  const P = n => spotFor(n, true)
+  const starts = phrases.map(p => p[0]).filter(t => t > A + 1.5 && t < B - 1.5)
+  const mean = (a, b) => { let s = 0, n = 0; for (let t = a; t < b; t += 0.25) { s += energyAt(t); n++ } return n ? s / n : 0 }
+  const lookUp = (a, b) => glances.some(g => g.a < b - 0.8 && g.b > a + 0.5 && !g.quiet)
+  const pick = (opts, r) => { const tot = opts.reduce((a, o) => a + o[1], 0); let q = r * tot; return opts.find(o => (q -= o[1]) <= 0)?.[0] ?? opts[0][0] }
+  const shot = { keys: 0, her: 0, piano: 0 }
+  const what = s => SUBJ_KIND[s.subj] === 'hands' ? 'keys' : SUBJ_KIND[s.subj] === 'pianist' ? 'her' : 'piano'
+  const target = { keys: SHORT_TARGETS.keys - 0.15 * bias, her: SHORT_TARGETS.her + 0.15 * bias, piano: SHORT_TARGETS.piano }
+  const lastUsed = {}, shots = []
+  const closeMoves = ms => { const ok = ms.filter(m => m !== 'zoomIn' && m !== 'dollyIn' && m !== 'dollyZoom'); return ok.length ? ok : ['orbit', 'still'] }
+  let t = A
+  for (let i = 0; t < B; i++) {
+    const E = mean(t, t + 4), h = hs(i, 1)
+    const L = lerp(6, 2.8, clamp(E, 0, 1)) * (0.85 + 0.3 * h) / pace
+    let end = t + L
+    const cand = starts.filter(s => s > t + 0.6 * L && s < t + 1.5 * L)
+    if (cand.length) end = cand.reduce((b, s) => Math.abs(s - t - L) < Math.abs(b - t - L) ? s : b)
+    end = Math.max(end, t + 2.2)
+    const last = B - end < Math.max(2.2, 0.5 * L)
+    if (last) end = B
+    const prev = shots[i - 1], prev2 = shots[i - 2], first = shots[0]
+    let name, move
+    if (i === 0) {
+      // the hook: straight onto the hands
+      name = pick(HOOK.filter(([n]) => names.includes(n)), hs(i, 3))
+      move = hs(i, 4) < 0.55 ? 'still' : 'orbit'
+    } else if (last && prev.name === first.name) {
+      // already back where it began: that shot runs to the end
+      prev.t1 = B; break
+    } else if (last) {
+      // back where it began
+      name = first.name; move = first.move
+    } else {
+      const up = lookUp(t, end), tot = shot.keys + shot.her + shot.piano
+      const w = names.map(n => {
+        const s = P(n), kind = what(s)
+        if (prev && n === prev.name) return 0
+        // the one before the last can't be the first spot (the last one is)
+        if (first && n === first.name && B - end < 6) return 0
+        let x = kind === 'keys' ? 0.5 + 0.5 * E - 0.3 * bias : kind === 'her' ? 0.45 - 0.2 * E + 0.3 * bias : 0.15
+        x *= s.p === 2 ? 1.4 : 0.6
+        if (tot > 6) x *= Math.exp(6 * (target[kind] - shot[kind] / tot))
+        if (t - (lastUsed[n] ?? -1e9) < 18 / pace) x *= 0.2
+        if (prev2 && n === prev2.name) x *= 0.3
+        if (prev2 && what(P(prev.name)) === kind && what(P(prev2.name)) === kind) x *= 0.35
+        if (up) x *= s.subj === 'head' ? 2.5 : 0.4
+        if (prev) {
+          const ps = P(prev.name)
+          // alternate sizes, and no jump cuts
+          if (s.size !== ps.size) x *= 1.5
+          const dAz = Math.abs(wrap(s.az - ps.az)), dSize = Math.abs(Math.log(s.dist / ps.dist))
+          if (dAz < 30 && dSize < 0.4 && Math.abs(s.el - ps.el) < 25) x *= 0.1
+        }
+        return Math.max(0, x)
+      })
+      if (!w.some(x => x > 0)) names.forEach((n, j) => { w[j] = n !== prev?.name ? 1 : 0 })
+      let r = hs(i, 3) * w.reduce((a, b) => a + b, 0), k = 0
+      while (k < w.length - 1 && (r -= w[k]) > 0) k++
+      name = names[k]
+      let ms = P(name).moves
+      if (P(name).size === 0) ms = closeMoves(ms)
+      const mw = ms.map(m => m === 'still' ? 0.5 : m === 'crane' ? 0.4 : 1)
+      let q = hs(i, 4) * mw.reduce((a, b) => a + b, 0), j = 0
+      while (j < ms.length - 1 && (q -= mw[j]) > 0) j++
+      move = ms[j]
+    }
+    lastUsed[name] = end
+    const dur = Math.min(end, B) - t
+    shot[what(P(name))] += dur
+    shots.push({ i, name, move, t0: t, t1: end, glide: 0, amt: clamp(dur / 8, 0.4, 1) * (0.7 + 0.5 * E), dir: hs(i, 6) < 0.5 ? -1 : 1 })
+    t = end
+  }
+  // the last shot runs its first shot's move backwards, so it ends where the Short began
+  const f = shots[0], z = shots[shots.length - 1]
+  if (shots.length > 1 && z.name === f.name) { z.move = f.move; z.amt = f.amt; z.dir = -f.dir; z.reverse = true }
+  // padding: the export's pre-roll and tail stay on the first and last shots
+  f.t0 = Math.min(f.t0, A - 3); z.t1 = Math.max(z.t1, B + 6)
+  return shots
+}
+
 /**
  * The live director. update() gives the camera for song time t:
  *   { pos, target, fov, focus: 'hands' | 'head', wide: bool, shot }
@@ -449,16 +592,20 @@ export function createDirector(opts = {}) {
   // holds that framing (her rocking and sway move within a still frame)
   // fadeIn: seconds the opening shot takes to come up from black
   const o = { pace: 1, bias: 0, trans: 'mix', follow: false, fadeIn: 2.5, ...opts }
-  let shots = planShots({ duration: 600 }, o), source = null, idleT = 0
+  let shots = null, source = null, idleT = 0
   const anchor = { hands: new THREE.Vector3(0, 76, 0), head: new THREE.Vector3(0, 122, 32), figure: new THREE.Vector3(), piano: new THREE.Vector3(), feet: new THREE.Vector3(0, 12, 18), hammers: new THREE.Vector3(0, 85, -36.5), pedals: new THREE.Vector3(0, 7, -2) }
   let primed = false, swayT = 0
   const seqs = {}   // take lists for sequence(): random / the director's cut
   const A = {}, B = {}, out = { pos: new THREE.Vector3(), target: new THREE.Vector3(), fov: 34, focus: 'head', wide: false, shot: null }
   const ta = new THREE.Vector3(), tb = new THREE.Vector3()
 
+  // o.portrait: a Short (planShort over o.window, portrait framings)
+  const plan = src => o.portrait ? planShort(src, o) : planShots(src, o)
+  const spot = name => spotFor(name, o.portrait)
   function replan() {
-    shots = source ? planShots(source, o) : planShots({ duration: 600 }, o)
+    shots = plan(source ?? { duration: 600 })
   }
+  replan()
   function shotAt(t) {
     let lo = 0, hi = shots.length - 1
     while (lo < hi) { const m = (lo + hi + 1) >> 1; if (shots[m].t0 <= t) lo = m; else hi = m - 1 }
@@ -484,7 +631,7 @@ export function createDirector(opts = {}) {
   }
   let lockIdx = -1
   function shotParams(sh, t, P, target) {
-    const s = SPOTS[sh.name]
+    const s = spot(sh.name)
     applyMove(s, sh.move, clamp((t - sh.t0) / (sh.t1 - sh.t0), 0, 1), sh.amt, sh.dir, P)
     subjectPoint(s, target, sh)
     return P
@@ -546,12 +693,13 @@ export function createDirector(opts = {}) {
       out.pos.y = Math.max(out.pos.y, 8)
       out.fov = A.fov
       const cur = u < 0.5 && idx > 0 ? shots[idx - 1] : sh
-      const subj = SPOTS[cur.name].subj
+      const subj = spot(cur.name).subj
       out.focus = subj === 'hands' || subj === 'feet' ? 'hands' : subj === 'hammers' || subj === 'pedals' ? 'target' : 'head'
-      out.wide = SPOTS[cur.name].size === 2
+      out.wide = spot(cur.name).size === 2
       out.shot = cur
       // the opening fades in from black over its first o.fadeIn seconds
-      out.fade = idx === 0 && onSong ? sstep(t, 0, o.fadeIn || 2.5) : 1
+      // (a Short starts on the music: no fade)
+      out.fade = idx === 0 && onSong && !o.portrait ? sstep(t, 0, o.fadeIn || 2.5) : 1
       return out
     },
     /** a fixed view with a looping move: pos/target arrays, move name, wall time */

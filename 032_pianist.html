@@ -176,6 +176,30 @@
     #caption { position: absolute; left: 0; right: 0; top: 36%; text-align: center; font: 600 22px/1 Poppins, "Helvetica Neue", Arial, sans-serif; letter-spacing: 0.08em; color: #fff; pointer-events: none; opacity: 0; transition: opacity 1.2s; }
     #caption b { color: #f3a53a; font-weight: 600; }
     body.captioned #caption { opacity: 1; }
+    /* YouTube Shorts: the render panel's fields, the clip strip, the 9:16 preview */
+    #shortFields, body.fmtshort #renderPop .wideOnly { display: none; }
+    body.fmtshort #shortFields { display: block; }
+    #clipStrip { position: absolute; left: 12px; right: 12px; bottom: 112px; z-index: 24; display: none; padding: 8px 12px 10px; border-radius: 12px; background: rgba(22, 22, 22, 0.92); backdrop-filter: blur(8px); }
+    body.clipping #clipStrip { display: block; }
+    body.clipping.idle #clipStrip { opacity: 1; pointer-events: auto; }
+    #clipStrip .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; font-size: 12px; color: #ddd; }
+    #clipStrip .grow { flex: 1; }
+    #clipV { font: 600 11px/1 ui-monospace, Menlo, monospace; color: #bbb; }
+    #clipStrip .chips { display: flex; gap: 4px; flex-wrap: wrap; }
+    #clipStrip .chip { padding: 3px 8px; border-radius: 10px; border: 1px solid #555; background: #2a2a2a; color: #ddd; font: 600 11px/1.2 inherit; cursor: pointer; }
+    #clipStrip .chip.sel { background: #2fae4a; border-color: #2fae4a; color: #fff; }
+    #clipStrip .chip.sug { border-color: #b98a3c; }
+    #clipStrip .cbtn { padding: 5px 10px; border-radius: 8px; border: 0; background: #2fae4a; color: #fff; font: 600 12px inherit; cursor: pointer; }
+    #clipStrip .cbtn.sec { background: #3a3a3a; }
+    #clipCv { display: block; width: 100%; height: 64px; cursor: pointer; touch-action: none; border-radius: 6px; }
+    #shortBox { position: absolute; top: 0; left: 50%; display: none; overflow: hidden; pointer-events: none; z-index: 2; }
+    body.shortpreview #shortBox { display: block; }
+    body.shortpreview > canvas:first-of-type { position: absolute; top: 0; left: 50%; transform: translateX(-50%); }
+    body.shortpreview .ln-it { display: none !important; }
+    #shortOv { position: absolute; inset: 0; width: 100%; height: 100%; }
+    #safeBox { position: absolute; border: 1px dashed rgba(255, 255, 255, 0.45); box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.18); }
+    body.shortpreview.idle #safeBox { opacity: 0; }
+    #cameraPop .item.noportrait { opacity: 0.4; }
   </style>
 </head>
 <body>
@@ -332,14 +356,14 @@
     <div class="field"><label>Gaze</label><select id="gaze"><option value="hands">At the hands</option><option value="music">With the music (hands + horizon)</option><option value="horizon" selected>Mostly the horizon</option></select></div>
     <div class="field" title="Nods into accents and small head movements"><label>Head movement</label><input type="range" id="nod" min="0" max="2.5" step="0.1" value="1"><span id="nodV">1×</span></div>
     <div class="field" title="How often she looks up from the keys (on top of the Gaze mode)"><label>Glances</label><input type="range" id="glances" min="0" max="2" step="0.1" value="1"><span id="glancesV">1×</span></div>
+    <div class="sect">Fingers<small>Chopin: let each finger fall, in its own way</small></div>
+    <div class="field" title="Fall: each finger rises in the free time before its note (higher for louder notes) and falls onto the key, each in its own way: the thumb low from the base of the hand, the 2nd light and quick, the 3rd steady, the 4th rising a little with the 3rd, the 5th firm. Press: every finger the same, pushed down as in #029 / #030"><label>Finger touch</label><select id="touch"><option value="fall" selected>Fall (each its own way)</option><option value="press">Press (all alike)</option></select></div>
+    <div class="field" title="Chopin: the 4th finger is not avoided, the 5th takes the outer voice of a chord (the top in the right hand, the bass in the left), the 3rd sings long melody notes. Standard: the usual textbook rules"><label>Fingering</label><select id="fingering"><option value="standard" selected>Standard</option><option value="chopin">Chopin</option></select></div>
     <div class="sect">Hands and arms<small>wrist strokes: lifts, drops, bounces</small></div>
     <div class="field" title="How much loudness comes from the arm: before a loud note the hand lifts in the time it has and falls into the key (0 = fingers only, the hand stays on the keys)"><label>Arm weight</label><input type="range" id="armw" min="0" max="2" step="0.1" value="1"><span id="armwV">1×</span></div>
     <div class="field" title="How high the hands go above the keys: scales every lift (preparation, bounce and lift-off) after the time limits, so at 2× even fast passages come off the keys"><label>Lift height</label><input type="range" id="lifth" min="0" max="2.5" step="0.1" value="1"><span id="lifthV">1×</span></div>
     <div class="field" title="How much the wrist leads the hand up and down, gives on impact and dips under long notes"><label>Wrist flexibility</label><input type="range" id="wflex" min="0" max="2" step="0.1" value="1"><span id="wflexV">1×</span></div>
     <div class="field" title="How much the forearm turns in running notes and broken figures: the hand rolls toward the thumb or the little finger about to play (tremolos, broken octaves, Alberti bass rock it; chords stay level)"><label>Forearm rotation</label><input type="range" id="frot" min="0" max="2.5" step="0.1" value="1"><span id="frotV">1×</span></div>
-    <div class="sect">Fingers<small>Chopin: let each finger fall, in its own way</small></div>
-    <div class="field" title="Fall: each finger rises in the free time before its note (higher for louder notes) and falls onto the key, each in its own way: the thumb low from the base of the hand, the 2nd light and quick, the 3rd steady, the 4th rising a little with the 3rd, the 5th firm. Press: every finger the same, pushed down as in #029 / #030"><label>Finger touch</label><select id="touch"><option value="fall" selected>Fall (each its own way)</option><option value="press">Press (all alike)</option></select></div>
-    <div class="field" title="Chopin: the 4th finger is not avoided, the 5th takes the outer voice of a chord (the top in the right hand, the bass in the left), the 3rd sings long melody notes. Standard: the usual textbook rules"><label>Fingering</label><select id="fingering"><option value="standard" selected>Standard</option><option value="chopin">Chopin</option></select></div>
     <div class="field" title="How far ahead of the hand the elbow moves in a stroke: it rises before the hand lifts and drops before the hand falls (shoulder, elbow, then wrist, as experts play)"><label>Elbow lead</label><input type="range" id="elbowLead" min="0" max="2.5" step="0.1" value="1"><span id="elbowLeadV">1×</span></div>
     <div class="field" title="How high the hands float up after the last note before a rest, and after the final chord"><label>Lift-off at phrase ends</label><input type="range" id="liftoff" min="0" max="2" step="0.1" value="1"><span id="liftoffV">1×</span></div>
     <div class="sect">Bench</div>
@@ -362,16 +386,22 @@
   </div>
   <div id="renderPop" class="pop ui">
     <div class="sect">Export video (MP4)</div>
+    <div class="field" title="YouTube Short: 9:16 at 1080×1920, a clip of the piece (up to 3 minutes) with its own camera plan (hands first, quick cuts, framed for a tall screen) and the text kept clear of YouTube's buttons"><label>Format</label><select id="exFormat"><option value="wide" selected>Landscape video (16:9)</option><option value="short">YouTube Short (9:16)</option></select></div>
+    <div id="shortFields">
+      <div class="field"><label>Clip <span class="val" id="exClipV">–</span></label><div class="btnrow" style="padding:0"><button id="exClipBtn" class="sec">Choose the clip…</button></div></div>
+      <label class="chk" title="Composer and title in the top band for the first 3.5 s (the Short starts on the music: no title card)"><input type="checkbox" id="exShortTitle" checked>Title over the first seconds</label>
+      <div class="field" title="Goes into the description saved next to the video (name-short.txt)"><label>Link to the full video</label><input type="text" id="exFullUrl" placeholder="https://youtu.be/…" style="width:100%;box-sizing:border-box;background:#2b2b2b;color:#eee;border:1px solid #444;border-radius:6px;padding:4px 6px;font:inherit"></div>
+    </div>
     <div class="field"><label>Resolution</label><select id="exRes"><option value="426x240">240p (preview)</option><option value="854x480">480p (preview)</option><option value="1280x720">720p</option><option value="1920x1080" selected>1080p</option><option value="2560x1440">1440p</option><option value="3840x2160">4K</option></select></div>
     <div class="field"><label>Frame rate</label><select id="exFps"><option>5</option><option>15</option><option>25</option><option>30</option><option selected>60</option></select></div>
-    <div class="field" title="How much of the song to render: all of it, or a short test from the start or from where the song is now (the seek bar)"><label>Length</label><select id="exLen"><option value="all" selected>Whole song</option><option value="20">First 20 s (test)</option><option value="60">First minute</option><option value="here20">20 s from the current position</option><option value="here60">1 minute from the current position</option></select></div>
-    <div class="field"><label>Camera</label><select id="exCam"><option value="auto" selected>Director (auto)</option><option value="current">As on screen</option></select></div>
+    <div class="field wideOnly" title="How much of the song to render: all of it, or a short test from the start or from where the song is now (the seek bar)"><label>Length</label><select id="exLen"><option value="all" selected>Whole song</option><option value="20">First 20 s (test)</option><option value="60">First minute</option><option value="here20">20 s from the current position</option><option value="here60">1 minute from the current position</option></select></div>
+    <div class="field wideOnly"><label>Camera</label><select id="exCam"><option value="auto" selected>Director (auto)</option><option value="current">As on screen</option></select></div>
     <label class="chk"><input type="checkbox" id="exAudio" checked>Include audio (with the hall)</label>
-    <div class="field" title="Title card: the classic card, before the music. First intertitle: the title fades in over the opening bars like the other intertitles (composer, title and the notes' subtitle, in the intertitle style), and also when the song plays here"><label>Song title</label><select id="exTitle"><option value="none" selected>None (the intertitles open the video)</option><option value="intertitle">As the first intertitle</option><option value="card">Title card (fades out as the music starts)</option></select></div>
-    <div class="field" id="exHoldF" title="How long the song title stays as the first intertitle, fades included. Auto: 7–11 s by its words. The scene comes up from black more slowly under it (half the hold, 3–8 s)"><label>Title hold <span class="val" id="exHoldV"></span></label><input type="range" id="exHold" min="0" max="20" step="0.5" value="0"></div>
+    <div class="field wideOnly" title="Title card: the classic card, before the music. First intertitle: the title fades in over the opening bars like the other intertitles (composer, title and the notes' subtitle, in the intertitle style), and also when the song plays here"><label>Song title</label><select id="exTitle"><option value="none" selected>None (the intertitles open the video)</option><option value="intertitle">As the first intertitle</option><option value="card">Title card (fades out as the music starts)</option></select></div>
+    <div class="field wideOnly" id="exHoldF" title="How long the song title stays as the first intertitle, fades included. Auto: 7–11 s by its words. The scene comes up from black more slowly under it (half the hold, 3–8 s)"><label>Title hold <span class="val" id="exHoldV"></span></label><input type="range" id="exHold" min="0" max="20" step="0.5" value="0"></div>
     <label class="chk" title="Draw the liner notes into the picture as they show on screen (Visuals → Liner notes: intertitles, or every note as a caption)"><input type="checkbox" id="exCaps" checked>Liner notes in the picture (as on screen)</label>
     <label class="chk" title="Two WebVTT subtitle files, timed to this video, whatever is on screen: name.vtt with the intertitles and name.notes.vtt with every note's caption (upload each to YouTube as its own subtitle track), and the sections as YouTube chapters for the description"><input type="checkbox" id="exVtt" checked>Save subtitles (intertitles .vtt, all notes .notes.vtt) and YouTube chapters</label>
-    <div class="field"><label>Title font</label><select id="exFont">
+    <div class="field wideOnly"><label>Title font</label><select id="exFont">
       <option value="inter" selected>Inter (clean sans, like the page)</option>
       <option value="poppins">Poppins (rounder sans)</option>
       <option value="cormorant">Cormorant Garamond</option>
@@ -380,13 +410,24 @@
       <option value="vibes">Great Vibes (script)</option>
       <option value="georgia">Georgia (system)</option>
     </select></div>
-    <div class="field"><label>Card</label><select id="exCard"><option value="glass" selected>White on frosted glass</option><option value="glow">Warm glow</option></select></div>
-    <canvas id="exPreview" width="456" height="256" title="The title card as it will look (the picture behind it is the current view)"></canvas>
+    <div class="field wideOnly"><label>Card</label><select id="exCard"><option value="glass" selected>White on frosted glass</option><option value="glow">Warm glow</option></select></div>
+    <canvas id="exPreview" class="wideOnly" width="456" height="256" title="The title card as it will look (the picture behind it is the current view)"></canvas>
     <div class="field"><label>Subtitle</label><input type="text" id="exSub" value="Midiviz Pianist" style="width:100%;box-sizing:border-box;background:#2b2b2b;color:#eee;border:1px solid #444;border-radius:6px;padding:4px 6px;font:inherit"></div>
     <div id="exBar"><div></div></div>
     <div id="exStatus">Choose a song first. Rendering is offline, so every frame is smooth however fast the GPU is.</div>
     <div class="btnrow"><button id="exStart">Export</button><button id="exCancel" class="sec">Cancel</button></div>
   </div>
+  <div id="clipStrip" class="ui">
+    <div class="row">
+      <b>Short</b><span id="clipV"></span>
+      <span class="chips" id="clipLens"></span>
+      <span class="chips" id="clipSug" title="Suggested clips: they start on a phrase that is already going, hold the piece's most intense music and end on a breath, so the loop doesn't cut a note off"></span>
+      <span class="grow"></span>
+      <button id="clipPlay" class="cbtn">▶ Preview 9:16</button><button id="clipDone" class="cbtn sec">Done</button>
+    </div>
+    <canvas id="clipCv" height="64" title="Drag the edges to set the clip (they snap to phrase starts and ends; Shift: free), drag the middle to move it, click elsewhere to start it there"></canvas>
+  </div>
+  <div id="shortBox"><canvas id="shortOv"></canvas><div id="safeBox"></div></div>
   <div id="transport" class="ui">
     <div id="songTitle" title="Swipe left / right for the next / previous song"></div>
     <div id="times"><span id="tNow">0:00.000</span><span id="tLeft">-0:00</span></div>
@@ -431,8 +472,9 @@
     import { createLook } from './pianist/look.js'
     import { createCommunity, communityList } from './pianist/community.js'
     import { createSmoother } from './pianist/subdivide.js'
-    import { createDirector, SPOTS, MOVES, FRAME_LABELS, SIZES, spotKind } from './pianist/director.js'
+    import { createDirector, SPOTS, PORTRAIT, spotFor, MOVES, FRAME_LABELS, SIZES, spotKind } from './pianist/director.js'
     import { hideBody } from './pianist/shell.js'
+    import { suggestClips, snapStart, snapEnd, clipOf, shortDescription, SHORT_MAX, SHORT_LENGTHS, SHORT_DEFAULT } from './pianist/shorts.js'
     import { createLinerLibrary, clockOfMidi, buildTimeline, toVTT, toChapters, titleScreen, withTitle, titleSecs } from './liner/liner.js'
     import { createLinerOverlay, drawLinerCaption, drawIntertitle, loadIntertitleFonts, INTERTITLE_STYLES, INTERTITLE_THEMES, INTERTITLE_POSITIONS } from './liner/overlay.js'
 
@@ -860,6 +902,12 @@
     $('gaze').value = params.get('gaze') ?? 'horizon'
     rig.state.gazeMode = $('gaze').value
     $('gaze').onchange = () => { rig.state.gazeMode = $('gaze').value }
+    // finger touch and fingering style (fingering/motion.js TOUCH, fingering.js CHOPIN): both re-finger the song
+    $('touch').value = params.get('touch') === 'press' ? 'press' : 'fall'
+    $('fingering').value = params.get('fingering') === 'chopin' ? 'chopin' : 'standard'
+    rig.hands.touch = $('touch').value
+    $('touch').onchange = () => { rig.hands.touch = $('touch').value; if (song) fingerInWorker(song.notes) }
+    $('fingering').onchange = () => { if (song) fingerInWorker(song.notes) }
     $('hairColor').oninput = () => hair.setColor($('hairColor').value)
     $('dressColor').oninput = () => dress.setColor($('dressColor').value)
     $('hairDensity').onchange = () => hair.setDensity(+$('hairDensity').value)
@@ -867,12 +915,6 @@
     // ── Post ─────────────────────────────────────────────────────────────
     const rt = new THREE.WebGLRenderTarget(innerWidth * renderer.getPixelRatio(), innerHeight * renderer.getPixelRatio(), { type: THREE.HalfFloatType, samples: LOWQ ? 0 : 4 })
     const composer = new EffectComposer(renderer, rt)
-    // finger touch and fingering style (fingering/motion.js TOUCH, fingering.js CHOPIN): both re-finger the song
-    $('touch').value = params.get('touch') === 'press' ? 'press' : 'fall'
-    $('fingering').value = params.get('fingering') === 'chopin' ? 'chopin' : 'standard'
-    rig.hands.touch = $('touch').value
-    $('touch').onchange = () => { rig.hands.touch = $('touch').value; if (song) fingerInWorker(song.notes) }
-    $('fingering').onchange = () => { if (song) fingerInWorker(song.notes) }
     composer.addPass(new RenderPass(scene, camera))
     const bokeh = new BokehPass(scene, camera, { focus: 150, aperture: 0.00011, maxblur: 0.006 })
     composer.addPass(bokeh)
@@ -976,12 +1018,20 @@
     }
     // every director spot is a view too: the hand-placed ones above, the rest
     // placed from the spot's angle around its subject where it rests
+    let applyFrameViews = () => {}, shortFrame = false   // (shortFrame: the 9:16 camera plan of a Short, preview or export)
     {
       const REST = { hands: [0, 79, 10], head: [0, 124, 27], figure: [0, 101, 21], piano: [0, 90, -70], feet: [0, 12, 18], hammers: [0, 85, -36.5], pedals: [0, 7, -2] }
-      for (const [k, sp] of Object.entries(SPOTS)) {
-        if (VIEWS[k]) continue
-        const t = REST[sp.subj], az = sp.az * Math.PI / 180, el = sp.el * Math.PI / 180
-        VIEWS[k] = { pos: [t[0] + Math.sin(az) * Math.cos(el) * sp.dist, t[1] + Math.sin(el) * sp.dist, t[2] + Math.cos(az) * Math.cos(el) * sp.dist], target: [...t], fov: sp.fov, orbitMax: sp.orbitMax, minDist: sp.minDist }
+      const spotView = sp => {
+        const t = REST[sp.subj].map((v, i) => v + (sp.aim?.[i] ?? 0)), az = sp.az * Math.PI / 180, el = sp.el * Math.PI / 180
+        return { pos: [t[0] + Math.sin(az) * Math.cos(el) * sp.dist, t[1] + Math.sin(el) * sp.dist, t[2] + Math.cos(az) * Math.cos(el) * sp.dist], target: [...t], fov: sp.fov, orbitMax: sp.orbitMax, minDist: sp.minDist }
+      }
+      for (const [k, sp] of Object.entries(SPOTS)) if (!VIEWS[k]) VIEWS[k] = spotView(sp)
+      // a Short (9:16): the spots rated for portrait take their portrait framing
+      // (the hand-placed landscape views come back when it's off)
+      const LANDSCAPE = { ...VIEWS }
+      applyFrameViews = portrait => {
+        for (const k of Object.keys(SPOTS)) VIEWS[k] = portrait && PORTRAIT[k] ? spotView(spotFor(k, true)) : LANDSCAPE[k]
+        for (const it of document.querySelectorAll('#cameraPop .item[data-view]')) it.classList.toggle('noportrait', portrait && !PORTRAIT[it.dataset.view])
       }
       // the Camera menu: Far, Medium, Close, each grouped by what's in the frame
       const KIND_TAG = { hands: 'hands', pianist: 'her', piano: 'piano' }, list = $('viewList')
@@ -1613,7 +1663,7 @@
       ['sf', 'sf'], ['avsync', 'avsync'],
       ['dofamt', 'dofAmt'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
       ['vol', 'vol'], ['room', 'room'], ['seat', 'seat'], ['rv', 'rvAmt'], ['decay', 'rvDecay'], ['tone', 'rvTone'], ['boost', 'boost'], ['amb', 'amb'], ['applause', 'applause'],
-      ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exsub', 'exSub'], ['excard', 'exCard'], ['excaps', 'exCaps'], ['exvtt', 'exVtt'], ['exlen', 'exLen'], ['exhold', 'exHold'],
+      ['exformat', 'exFormat'], ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exsub', 'exSub'], ['excard', 'exCard'], ['excaps', 'exCaps'], ['exvtt', 'exVtt'], ['exlen', 'exLen'], ['exhold', 'exHold'],
       ['notes', 'linerMode'], ['itstyle', 'itStyle'], ['itstylea', 'itStyleA'], ['itcol', 'itTheme'], ['itpos', 'itPos'], ['itheads', 'itHeads'], ['extitle', 'exTitle'],
     ].filter(([, id]) => $(id))
     const OUTFIT_KEYS = { dress: 'dress', slit: 'slit', fabric: 'fabric', dcol: 'color', shoes: 'shoes', hair: 'hair', hcol: 'hairColor' }
@@ -1668,6 +1718,8 @@
       if (loop) q.set('loop', '1'); else q.delete('loop')
       if (liner.seed > 1) q.set('itseed', liner.seed); else q.delete('itseed')
       if (songFile) q.set('song', songFile); else q.delete('song')
+      if (isShort() && short.b > short.a) q.set('clip', `${short.a.toFixed(1)}-${short.b.toFixed(1)}`); else q.delete('clip')
+      q.delete('short')
       const t = song ? songNow() : sharedSong?.[1] || 0
       if ((withTime || sharedSong) && songFile && t > 0.5) q.set('at', t.toFixed(1)); else q.delete('at')   // (a shared position stays until it plays)
       return q.toString().replace(/%2F/g, '/').replace(/%2C/g, ',')
@@ -1702,6 +1754,7 @@
     function frame() {
       const dt = Math.min(clock.getDelta(), 1 / 20)
       step(dt, fixedT ?? pictureTime(dt), false)
+      shortTick()
     }
     // offline: the export drives song time and the keys itself (see stageAdapter)
     function step(dt, t, offline) {
@@ -1779,12 +1832,13 @@
     function resize(w, h, style = true) {
       // taller than 16:10 (a phone held upright): widen the lens so the shots
       // keep about the same width of the scene
-      camera.zoom = Math.max(0.55, Math.min(1, (w / h) / 1.6))
+      // (a Short's spots are framed for 9:16 themselves)
+      camera.zoom = shortFrame ? 1 : Math.max(0.55, Math.min(1, (w / h) / 1.6))
       camera.aspect = w / h; camera.updateProjectionMatrix()
       renderer.setSize(w, h, style); composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(w, h)
       dust.material.uniforms.uScale.value = h * renderer.getPixelRatio()
     }
-    addEventListener('resize', () => { if (!exporting) resize(innerWidth, innerHeight) })
+    addEventListener('resize', () => { if (!exporting) liveResize() })
     resize(innerWidth, innerHeight)
 
     // ── Video export (as #030) ───────────────────────────────────────────
@@ -1802,14 +1856,16 @@
         renderer.setAnimationLoop(null)
         renderer.setPixelRatio(1)
         resize(w, h, false)
-        if ($('exCam').value === 'auto' && view !== 'auto') setView('auto')
+        if (isShort()) setShortFrame(true)
+        else if ($('exCam').value === 'auto' && view !== 'auto') setView('auto')
         userCam = false; releaseKeys()
       },
       endOffline() {
         releaseKeys()
-        if (view !== prevView) setView(prevView)
+        if (shortFrame && !short.on) setShortFrame(false)
+        if (view !== prevView && !short.on) setView(prevView)
         renderer.setPixelRatio(prevPR)
-        resize(innerWidth, innerHeight)
+        liveResize()
         clock.getDelta()
         renderer.setAnimationLoop(frame)
       },
@@ -1871,9 +1927,12 @@
       const [width, height] = $('exRes').value.split('x').map(Number), fps = +$('exFps').value
       // the part of the song to render (Length): all of it, or a test clip
       const len = $('exLen').value, here = /^here/.test(len), secs = len === 'all' ? Infinity : +len.replace('here', '')
-      const clipA = here ? Math.max(0, Math.min(songNow(), song.duration - 1)) : 0, clipB = Math.min(song.duration, clipA + secs)
+      let clipA = here ? Math.max(0, Math.min(songNow(), song.duration - 1)) : 0, clipB = Math.min(song.duration, clipA + secs)
+      // a Short: the clip from the strip
+      const asShort = isShort()
+      if (asShort) { if (!(short.b > short.a)) clipFresh(); clipA = short.a; clipB = short.b }
       const clip = clipA > 0 || clipB < song.duration
-      const name = (song.title || 'pianist').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_') + (clip ? `_${Math.floor(clipA)}-${Math.ceil(clipB)}s` : '') + `_${height}p${fps}.mp4`
+      const name = (song.title || 'pianist').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_') + (asShort ? '_short' : '') + (clip ? `_${Math.floor(clipA)}-${Math.ceil(clipB)}s` : '') + `_${height}p${fps}.mp4`
       let fileStream = null
       if (window.showSaveFilePicker) {
         try {
@@ -1882,12 +1941,14 @@
         } catch (e) { if (e.name === 'AbortError') return; console.warn(e) }
       }
       if (scheduler?.playing) { scheduler.pause(); songTarget.allSoundOff(); setPlaying(false) }
-      const titleMode = $('exTitle').value
+      const titleMode = asShort ? 'none' : $('exTitle').value
       if (titleMode === 'card') await loadTitleFont($('exFont').value)
       // what is on screen: the intertitles (with the title, when it is one) or every note as a caption
       const linerMode = liner.mode, itOpts = { style: liner.style, analysisStyle: liner.analysisStyle, theme: liner.theme, kickers: liner.kickers }
       const linerTl = linerMode === 'notes' ? liner.timeline : liner.screenTimeline
       const burnCaps = $('exCaps').checked && linerTl && linerMode !== 'off'
+      const shortTlx = asShort ? shortTimeline(clipA, clipB) : null
+      if (asShort) await shortFonts()
       if (burnCaps) await (linerMode === 'notes' ? loadTitleFont('inter') : loadIntertitleFonts(itOpts.style, itOpts.analysisStyle))
       // automatic positions: decided for each intertitle on its first frame, as on the page
       const itPlaced = new WeakMap()
@@ -1901,17 +1962,19 @@
         const blob = await exportVideo({
           stage: stageAdapter,
           song: { schedule: { notes: song.notes, controlChanges: (song.controlChanges || []).filter(c => c.controller !== 7) }, programs, duration: song.duration, title: song.title },
-          width, height, fps, start: clipA, end: clipB,
+          width, height, fps, start: clipA,
+          // a Short: on the music from the first frame, the room rings 0.6 s past the out point while it fades
+          end: asShort ? Math.min(song.duration, clipB + 0.6) : clipB, ...(asShort ? { preroll: 0.1, tail: 0.6 } : {}),
           bitrate: defaultBitrate(width, height, fps),
           audio: $('exAudio').checked,
           audioOpts: { vendorPath, soundfonts: [$('sf').value], volume: 1, convertSF3: engine._backend?._convertSF3 ? d => engine._backend._convertSF3(d) : null },
-          audioFx: offlineHall($('room').value === 'dry' ? null : acousticParams(hallSettings()), 48000, { volume: +$('vol').value }),
+          audioFx: (fx => !asShort ? fx : shortFades(fx, clipA - 0.1, Math.min(song.duration + 0.6, clipB + 0.6)))(offlineHall($('room').value === 'dry' ? null : acousticParams(hallSettings()), 48000, { volume: +$('vol').value })),
           tour: null,
           // the card holds ~1 s, then the music starts and the card fades over
           // 3.5 s while the scene focuses in underneath it
           intro: titleMode === 'card' ? { seconds: 4.5, overlap: 3.5, fadeOut: 3.5, title: song.title, subtitle: $('exSub').value.trim(), style: '2d', ...titleCardOpts() } : null,
           outro: null,
-          overlay: !burnCaps ? null : linerMode === 'notes' ? (g, w, h, t) => drawLinerCaption(g, w, h, linerTl, t, { font: TITLE_FONTS.inter?.font || 'Inter, system-ui, sans-serif' })
+          overlay: asShort ? (shortTlx.intertitles.length && $('exCaps').checked ? shortOverlay(shortTlx) : null) : !burnCaps ? null : linerMode === 'notes' ? (g, w, h, t) => drawLinerCaption(g, w, h, linerTl, t, { font: TITLE_FONTS.inter?.font || 'Inter, system-ui, sans-serif' })
             : (g, w, h, t) => drawIntertitle(g, w, h, linerTl, t, { ...itOpts, position: itPos }),
           onTimeline: x => { songZero = x.songZero },
           fileStream, signal: exAbort.signal,
@@ -1929,7 +1992,12 @@
         // the liner notes as two YouTube subtitle tracks, timed to this video, whatever
         // is on screen: <name>.vtt the intertitles (the title too, when it is one, and the
         // floats as this take places them), <name>.notes.vtt every note's caption; and chapters
-        if ($('exVtt').checked) {
+        if (asShort) {
+          // the Short's text as a subtitle track, and a description to paste
+          if ($('exVtt').checked && shortTlx.intertitles.length) saveText(name.replace(/\.mp4$/, '.vtt'), toVTT(shortTlx, { offset: songZero, from: 'intertitles' }))
+          const ts = songTitleScreen()
+          saveText(name.replace(/\.mp4$/, '-short.txt'), shortDescription({ composer: ts?.kicker, title: ts?.text || song.title, bars: `${fmt(clipA)}–${fmt(clipB)} of the piece`, full: $('exFullUrl').value.trim() }) + '\n')
+        } else if ($('exVtt').checked) {
           const vtt = { offset: songZero, start: clipA, end: clipB }, its = liner.screenTimeline, notes = liner.timeline
           if (its?.intertitles.length) saveText(name.replace(/\.mp4$/, '.vtt'), toVTT(its, { ...vtt, from: 'intertitles' }))
           if (notes?.moments.length) saveText(name.replace(/\.mp4$/, '.notes.vtt'), toVTT(notes, { ...vtt, from: 'moments' }))
@@ -1949,6 +2017,191 @@
     window.__pianist.exportStage = stageAdapter
     window.__pianist.titleFonts = { TITLE_FONTS, loadTitleFont }
 
+    // ── YouTube Shorts: a clip of the piece, 9:16 ────────────────────────
+    // Render → Format → YouTube Short. The clip strip (above the transport)
+    // shows the piece's energy, sections and phrases; its edges snap to phrase
+    // starts and ends, the chips set a length, and pianist/shorts.js suggests
+    // three clips. Preview plays the clip on a loop in a 9:16 frame with the
+    // safe area drawn, through the same camera plan (planShort) and overlay as
+    // the export. ?short=1&clip=74.2-108.6 brings it back.
+    // the part of a 1080×1920 frame YouTube's buttons leave alone (the right
+    // rail, the title and channel bar at the bottom, the search bar at the top)
+    const SHORT_SAFE = { x0: 60 / 1080, y0: 230 / 1920, x1: 950 / 1080, y1: 1480 / 1920 }
+    const short = { a: 0, b: 0, len: SHORT_DEFAULT, sug: [], prevView: null, fonts: null }
+    const isShort = () => $('exFormat').value === 'short'
+    const shortSong = () => {
+      if (!song || !fingered) return null
+      const f = rig.form()
+      return { duration: song.duration, phrases: f.phrases, glances: f.glances, energyAt: rig.music.energyAt,
+        sections: liner.timeline?.sections || [], moments: liner.timeline?.moments || [], intertitles: liner.screenTimeline?.intertitles || [],
+        notes: song.notes.map(n => ({ on: n.time, off: n.time + n.duration })) }
+    }
+    function setClip(a, b, { snap = true } = {}) {
+      const s = shortSong(); if (!s) return
+      a = Math.max(0, Math.min(a, s.duration - 4))
+      if (snap) a = snapStart(a, s.phrases)
+      b = Math.max(a + 4, Math.min(b, s.duration, a + SHORT_MAX))
+      if (snap) b = snapEnd(b, s.phrases, a + 4)
+      short.a = a; short.b = b
+      $('clipV').textContent = $('exClipV').textContent = `${fmt(a)}.${Math.floor(a % 1 * 10)} – ${fmt(b)}.${Math.floor(b % 1 * 10)} · ${Math.round(b - a)} s`
+      for (const c of $('clipLens').children) c.classList.toggle('sel', +c.value === short.len)
+      for (const [i, c] of [...$('clipSug').children].entries()) c.classList.toggle('sel', Math.abs(short.sug[i]?.a - a) < 0.01 && Math.abs(short.sug[i]?.b - b) < 0.01)
+      if (shortFrame) director.set('window', [short.a, short.b])
+      drawClip()
+    }
+    function clipFresh() {
+      const s = shortSong()
+      if (!s) { $('clipV').textContent = song ? 'working out the phrasing…' : 'load a song first'; short.sug = []; $('clipSug').innerHTML = ''; return drawClip() }
+      short.sug = suggestClips(s, { lengths: [30, 45], count: 3 })
+      $('clipSug').innerHTML = ''
+      short.sug.forEach((c, i) => $('clipSug').append(Object.assign(document.createElement('button'), { className: 'chip sug', textContent: `★ ${i + 1} · ${fmt(c.a)}`, title: c.reason, onclick: () => { short.len = Math.round((c.b - c.a) / 15) * 15; setClip(c.a, c.b, { snap: false }); if (short.on) playClip() } })))
+      const fromUrl = /^([\d.]+)-([\d.]+)$/.exec(params.get('clip') || '')
+      if (fromUrl && !short.a && !short.b) setClip(+fromUrl[1], +fromUrl[2], { snap: false })
+      else if (!(short.b > short.a) || short.b > s.duration) short.sug[0] ? setClip(short.sug[0].a, short.sug[0].b, { snap: false }) : setClip(0, SHORT_DEFAULT)
+      else setClip(short.a, short.b, { snap: false })
+    }
+    for (const L of [...SHORT_LENGTHS, 'whole']) $('clipLens').append(Object.assign(document.createElement('button'), {
+      className: 'chip', textContent: L === 'whole' ? 'Whole' : L + ' s', value: L === 'whole' ? 0 : L,
+      title: L === 'whole' ? 'The whole piece (a Short can be up to 3 minutes)' : `About ${L} s from the in point, out on the nearest phrase end`,
+      onclick: () => { const s = shortSong(); if (!s) return; short.len = L === 'whole' ? 0 : L; L === 'whole' ? setClip(s.phrases[0][0], s.phrases.at(-1)[1]) : setClip(...clipOf(short.a, L, s.phrases, s.duration), { snap: false }) },
+    }))
+    // the strip: energy, sections, phrase starts, the clip, the suggestions, the playhead
+    function drawClip() {
+      const cv = $('clipCv'); if (!document.body.classList.contains('clipping')) return
+      const W = cv.clientWidth * devicePixelRatio, H = cv.clientHeight * devicePixelRatio
+      if (cv.width !== W) cv.width = W
+      if (cv.height !== H) cv.height = H
+      const g = cv.getContext('2d'), s = shortSong(), r = devicePixelRatio
+      g.clearRect(0, 0, W, H); g.fillStyle = '#151515'; g.fillRect(0, 0, W, H)
+      if (!s) return
+      const X = t => t / s.duration * W
+      g.beginPath(); g.moveTo(0, H)
+      for (let x = 0; x <= W; x += 2) g.lineTo(x, H - 4 * r - (H - 22 * r) * Math.min(1, s.energyAt(x / W * s.duration) / 0.9))
+      g.lineTo(W, H); g.fillStyle = 'rgba(160,160,160,0.35)'; g.fill()
+      g.fillStyle = 'rgba(255,255,255,0.35)'
+      for (const [p] of s.phrases) g.fillRect(X(p), H - 4 * r, Math.max(1, r), 4 * r)
+      g.font = `${10 * r}px system-ui, sans-serif`; g.textBaseline = 'top'
+      for (const sec of s.sections) { g.fillStyle = 'rgba(255,255,255,0.22)'; g.fillRect(X(sec.start), 0, Math.max(1, r), H); g.fillStyle = 'rgba(255,255,255,0.6)'; g.fillText(sec.title, X(sec.start) + 3 * r, 2 * r) }
+      for (const c of short.sug) { g.fillStyle = 'rgba(232,180,106,0.8)'; g.fillRect(X(c.a), 14 * r, X(c.b) - X(c.a), 2 * r) }
+      const a = X(short.a), b = X(short.b)
+      g.fillStyle = 'rgba(47,174,74,0.28)'; g.fillRect(a, 0, b - a, H)
+      g.fillStyle = '#2fae4a'; g.fillRect(a - r, 0, 3 * r, H); g.fillRect(b - 2 * r, 0, 3 * r, H)
+      g.fillStyle = '#fff'; g.fillRect(X(songNow()), 0, Math.max(1, r), H)
+    }
+    {
+      let drag = null
+      const cv = $('clipCv'), tOf = ev => { const rc = cv.getBoundingClientRect(); return Math.max(0, Math.min(1, (ev.clientX - rc.left) / rc.width)) * (song?.duration || 0) }
+      cv.addEventListener('pointerdown', ev => {
+        const s = shortSong(); if (!s) return
+        const t = tOf(ev), px = s.duration / cv.clientWidth * 8
+        drag = Math.abs(t - short.a) < px ? { k: 'a' } : Math.abs(t - short.b) < px ? { k: 'b' } : t > short.a && t < short.b ? { k: 'move', d: t - short.a, len: short.b - short.a } : null
+        if (!drag) { setClip(...clipOf(snapStart(t, s.phrases), short.len || 35, s.phrases, s.duration), { snap: false }); drag = { k: 'b' } }
+        cv.setPointerCapture(ev.pointerId)
+      })
+      cv.addEventListener('pointermove', ev => {
+        if (!drag) return
+        const t = tOf(ev), snap = !ev.shiftKey
+        if (drag.k === 'a') setClip(t, short.b, { snap })
+        else if (drag.k === 'b') setClip(short.a, t, { snap })
+        else { const a = snap ? snapStart(t - drag.d, rig.form().phrases) : t - drag.d; setClip(a, a + drag.len, { snap }) }
+      })
+      cv.addEventListener('pointerup', () => { if (drag && short.on) playClip(); drag = null })
+      cv.addEventListener('pointercancel', () => { drag = null })
+    }
+    // the 9:16 frame: the camera plan of a Short (portrait framings, planShort over the clip)
+    function setShortFrame(on) {
+      if (on === shortFrame) return
+      shortFrame = on
+      applyFrameViews(on)
+      director.set('window', [short.a, short.b])
+      director.set('portrait', on)
+      if (on) { short.prevView = view; if (view !== 'auto') setView('auto') }
+      else if (short.prevView && view !== short.prevView) setView(short.prevView)
+      lastShot = null
+    }
+    function liveResize() {
+      if (!short.on) { $('shortBox').style.cssText = ''; return resize(innerWidth, innerHeight) }
+      const H = innerHeight, W = Math.round(H * 9 / 16)
+      resize(W, H)
+      Object.assign($('shortBox').style, { width: W + 'px', height: H + 'px', marginLeft: -W / 2 + 'px' })
+      Object.assign($('safeBox').style, { left: SHORT_SAFE.x0 * W + 'px', top: SHORT_SAFE.y0 * H + 'px', width: (SHORT_SAFE.x1 - SHORT_SAFE.x0) * W + 'px', height: (SHORT_SAFE.y1 - SHORT_SAFE.y0) * H + 'px' })
+      const ov = $('shortOv'); ov.width = W * devicePixelRatio; ov.height = H * devicePixelRatio
+    }
+    async function setPreview(on) {
+      short.on = on
+      document.body.classList.toggle('shortpreview', on)
+      $('clipPlay').textContent = on ? '■ Stop preview' : '▶ Preview 9:16'
+      setShortFrame(on || isShort() && exporting)
+      liveResize()
+      if (on) { await shortFonts(); playClip() }
+    }
+    async function playClip() {
+      const sch = await ensureScheduler(); unlockAudio()
+      seekTo(short.a)
+      if (!sch.playing) { music.wall = performance.now(); sch.play(); setPlaying(true) }
+    }
+    const shortFonts = () => short.fonts ??= loadIntertitleFonts(liner.style, liner.analysisStyle)
+    // what a Short shows over the picture: the title in the top band for its
+    // first 3.5 s, then the intertitles that fit wholly inside the clip, in the
+    // safe area (top or bottom, away from her)
+    function shortTimeline(a, b) {
+      const its = liner.mode === 'intertitles' ? (liner.screenTimeline?.intertitles || []).filter(x => !x.title && x.start >= a + 4 && x.end <= b - 0.3) : []
+      const x = $('exShortTitle').checked ? songTitleScreen() : null
+      if (x) its.unshift({ ...x, title: true, start: a + 0.15, end: a + 3.6, fadeIn: 0.35, fadeOut: 0.7 })
+      return { intertitles: its, sections: [], moments: [] }
+    }
+    const shortPlaced = new WeakMap()
+    const shortPos = x => { if (x.title) return 'top-center'; if (!shortPlaced.has(x)) shortPlaced.set(x, subjectNdc.y < -0.2 ? 'top-center' : 'bottom-center'); return shortPlaced.get(x) }
+    const shortOverlay = tl => (g, w, h, t) => drawIntertitle(g, w, h, tl, t, { style: liner.style, analysisStyle: liner.analysisStyle, theme: liner.theme, kickers: liner.kickers, position: shortPos, safe: SHORT_SAFE })
+    let shortTl = null, shortTlKey = ''
+    function shortTick() {
+      if (document.body.classList.contains('clipping') && (scheduler?.playing || shortTick.n++ % 10 === 0)) drawClip()
+      if (!short.on) return
+      const t = songNow()
+      if (scheduler?.playing && (t >= short.b || t < short.a - 0.5)) seekTo(short.a)
+      const key = `${short.a},${short.b},${liner.mode},${$('exShortTitle').checked},${liner.screenTimeline?.intertitles?.length}`
+      if (key !== shortTlKey) { shortTl = shortTimeline(short.a, short.b); shortTlKey = key }
+      const ov = $('shortOv'), g = ov.getContext('2d')
+      g.clearRect(0, 0, ov.width, ov.height)
+      shortOverlay(shortTl)(g, ov.width, ov.height, t)
+    }
+    shortTick.n = 0
+    // a Short's sound: the hall as usual, a 15 ms fade-in where the clip starts
+    // (no click from a note already sounding) and a 1 s fade at the end (no cut
+    // when it loops). t0, t1: song time of the first and last sample
+    function shortFades(fx, t0, t1) {
+      let i = 0
+      const SR = 48000, inA = Math.round(0.1 * SR), inN = Math.round(0.015 * SR), end = Math.round((t1 - t0) * SR), outN = SR
+      return (data, n, sr) => {
+        fx?.(data, n, sr)
+        for (let j = 0; j < n; j++, i++) {
+          const gin = i < inA ? 0 : Math.min(1, (i - inA) / inN), x = (end - i) / outN
+          const gn = gin * (x >= 1 ? 1 : x <= 0 ? 0 : Math.sin(x * Math.PI / 2))
+          if (gn !== 1) { data[j] *= gn; data[n + j] *= gn }
+        }
+      }
+    }
+    function openClip(on = true) {
+      document.body.classList.toggle('clipping', on)
+      if (on) { closePops(); clipFresh() }
+      else if (short.on) setPreview(false)
+    }
+    $('exClipBtn').onclick = () => openClip(true)
+    $('clipDone').onclick = () => openClip(false)
+    $('clipPlay').onclick = () => setPreview(!short.on)
+    $('exFormat').onchange = () => {
+      const s = isShort()
+      document.body.classList.toggle('fmtshort', s)
+      const opts = s ? [['540x960', '540×960 (preview)'], ['720x1280', '720×1280'], ['1080x1920', '1080×1920 (YouTube Shorts)']] : [['426x240', '240p (preview)'], ['854x480', '480p (preview)'], ['1280x720', '720p'], ['1920x1080', '1080p'], ['2560x1440', '1440p'], ['3840x2160', '4K']]
+      const keep = params.get('exres'); $('exRes').innerHTML = ''
+      for (const [v, l] of opts) $('exRes').append(new Option(l, v, false, v === (opts.some(o => o[0] === keep) ? keep : s ? '1080x1920' : '1920x1080')))
+      if (s && !short.b) clipFresh()
+      if (!s) openClip(false)
+    }
+    if (params.get('short') === '1') $('exFormat').value = 'short'
+    if (isShort()) $('exFormat').onchange()
+    window.__pianist.short = { short, setClip, setPreview, openClip, clipFresh, suggest: () => short.sug, shortTimeline }
+
     // ── Headless stills: ?shot&song=…&t=12&view=profile ─────────────────
     if (params.has('shot')) {
       document.body.classList.add('hideui')
@@ -1963,6 +2216,14 @@
           for (let i = 0; i < 400 && !fingered; i++) await new Promise(r => setTimeout(r, 50))
         }
         const T = +(params.get('t') || 0)
+        // a Short's frame (?short=1&clip=a-b, at a 9:16 viewport): the portrait framings and its plan
+        if (params.get('short') === '1') {
+          const m = /^([\d.]+)-([\d.]+)$/.exec(params.get('clip') || '') || [0, Math.max(0, T - 5), T + 30]
+          short.a = +m[1]; short.b = +m[2]
+          shortFrame = true; applyFrameViews(true)
+          director.set('window', [short.a, short.b]); director.set('portrait', true)
+          resize(innerWidth, innerHeight)
+        }
         // settle hair and cloth: run the simulation up to T at 60 fps (2 s at most)
         renderer.setAnimationLoop(null)
         const steps = Math.round(Math.min(T, 2.5) * 60)

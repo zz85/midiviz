@@ -6,6 +6,11 @@ Midi Visualization Experiments
 
 20 Oct 2026
 
+YouTube Shorts for [#032 Pianist](032_pianist.html) ([notes](pianist/README.md#youtube-shorts))
+- Render → Format → YouTube Short: 1080×1920, a clip of up to 3 minutes with its own camera plan (only spots framed for a tall screen, the hands first, cuts every 3–6 s on phrase starts, ending on the opening framing so the loop is seamless), the title and intertitles inside YouTube's safe area, fades so the loop doesn't click, and a ready description (`-short.txt`)
+- A clip strip to choose it: energy, sections and phrases of the piece, edges that snap to phrase starts and ends, 15–90 s / whole-piece chips, three suggested clips with reasons ([pianist/shorts.js](pianist/shorts.js): a strong first 3 s, the loudest passage, a breath at the end), and a looped 9:16 preview with the safe area
+- Tests: `bun test pianist/test` (5 new); contact sheet `node pianist/test/shorts_sheet.mjs`
+
 [Experiment #040 - Rhythm](040_rhythm.html)
 - Beats, tempo, meter, downbeats, swing and a step grid of the rhythm from the microphone (or a demo drum loop, or an audio file), live, in an AudioWorklet
 - Engine [rhythm/](rhythm/README.md): SuperFlux onsets on a log filterbank, a comb-filtered autocorrelation tempogram as a tempo prior, and the bar-pointer beat HMM of Krebs, Böck & Widmer (madmom's DBN) run as a causal forward filter that predicts the next beat; a beat-level stage halves an eighth-note pulse when every other one is accented; meter (3 vs 4) from bar repetition, downbeats from the kick, onsets and harmonic change, duple / triple feel and the swing ratio from the onsets across the beat
