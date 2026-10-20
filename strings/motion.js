@@ -181,6 +181,9 @@ export function buildMotion(notes, { instrument = 'violin', lead = 0.04, vibrato
     } else {
       if (prevStroke && e.on - lastOff > 0.6 && !keepBow) dir = bowStart  // retake: new phrase on the starting bow
       else if (prevStroke) dir = -prevStroke.dir
+      // a bow sign in the score (⊓ down, V up) sets the stroke's direction
+      const sign = e.notes.find(n => n.art?.bow)?.art.bow
+      if (sign) dir = sign === 'down' ? 1 : -1
       strokes.push({ dir, t0: e.on, t1: e.off, events: [e] })
     }
     lastOff = e.off

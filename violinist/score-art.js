@@ -43,10 +43,43 @@ export async function loadScore(entry, base = 'violinist/scores/') {
   return cache.get(entry.file)
 }
 
+const STROKE = { '.': 'staccato', '-': 'tenuto', '>': 'accent', '^': 'marcato', '!': 'staccatissimo', '_': 'portato' }
+const editions = new Map()
+/** A printed edition's marks (violinist/editions/<key>.json, from IMSLP scans by OMR), fetched once. */
+export function loadEdition(key, base = 'violinist/editions/') {
+  if (!editions.has(key)) editions.set(key, fetch(base + key + '.json').then(r => r.json()).catch(e => { editions.delete(key); throw e }))
+  return editions.get(key)
+}
+/** Editions with marks for this piece: [{ key, title }] (for a menu). */
+export async function editionsFor(file, keys = ['herrmann', 'auer']) {
+  const out = []
+  for (const k of keys) { try { const ed = await loadEdition(k); if (ed.pieces[file]) out.push({ key: k, title: ed.edition.title, found: ed.pieces[file].found }) } catch { /* not built */ } }
+  return out
+}
+/**
+ * Put an edition's marks on the notes in place: they are stored per note in
+ * the order onset, then pitch (violinist/tools/build_editions.js), the order
+ * the pages read the MIDI in. Returns { matched, total } or null.
+ */
+export function applyEdition(piece, notes) {
+  if (!piece || piece.notes !== notes.length) return null
+  const order = notes.map((n, i) => i).sort((a, b) => (notes[a].q - notes[b].q) || (notes[a].pitch - notes[b].pitch))
+  let matched = 0
+  order.forEach((ni, k) => {
+    const st = piece.stroke[k]
+    if (st !== '?') matched++
+    const b = piece.bow[k]
+    notes[ni].art = { slur: piece.slur[k] > 0 ? piece.slur[k] : null, stroke: STROKE[st] ?? null, bow: b === 'u' ? 'up' : b === 'd' ? 'down' : null, source: 'score' }
+  })
+  return { matched, total: notes.length }
+}
+
 /**
  * The bowing for a piece's violin notes (each with q), planned in place:
  *   'score'   the Mutopia score's slurs and marks (the default; falls back to
  *             'infer' when the entry has no score or it cannot be read)
+ *   'edition:<key>'  a printed edition read from its IMSLP scan
+ *             (violinist/editions: herrmann, auer); falls back like 'score'
  *   'infer'   slurs inferred from the music (strings/articulation.js)
  *   'fixed'   no plan: motion.js's fixed rule
  * Returns { mode, matched, total, slurs } (what was used).
@@ -54,6 +87,14 @@ export async function loadScore(entry, base = 'violinist/scores/') {
 export async function bowingFor(entry, notes, mode = 'score', opts = {}) {
   for (const n of notes) delete n.art
   if (mode === 'fixed') return { mode, matched: 0, total: notes.length, slurs: 0 }
+  if (mode.startsWith('edition:')) {
+    try {
+      const ed = await loadEdition(mode.slice(8), opts.editionBase)
+      const m = applyEdition(ed.pieces[entry?.file], notes)
+      if (m) { planArticulation(notes, { mode: 'score' }); return { mode, edition: ed.edition, ...m, slurs: notes.filter(n => n.art?.slurPrev).length, bows: notes.filter(n => n.art?.bow).length } }
+    } catch (e) { console.warn('edition bowing unavailable:', e.message) }
+    mode = 'score'
+  }
   if (mode === 'score') {
     try {
       const s = await loadScore(entry, opts.base)

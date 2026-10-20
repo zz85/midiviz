@@ -24,6 +24,17 @@ What the sources have:
 - **Articulation marks** (staccato, tenuto, accents) in the sonatas, concertos and showpieces: 4,000 marked notes. The Bach solo movements (Bach-Gesellschaft edition) have none.
 - **Up- and down-bow signs: almost none.** Only the Tchaikovsky concerto has them (4 up, 68 down in the source). The other editions mark slurs and leave the bow direction to the player, as most do. The bow direction therefore still comes from alternating strokes, restarted on a down-bow after rests.
 
+**Printed editions with bowings (IMSLP).** For Bach's Sonatas and Partitas, two performing editions add the bowings the urtext leaves out: Eduard Herrmann (G. Schirmer, 1900, IMSLP #335779) and Leopold Auer (Carl Fischer, 1917, IMSLP #921334), both public domain. Their scans are read by optical music recognition with ScoreShift (`../random-sketches/vibes/scoreshift`). It reads the notes, slurs, staccato / tenuto / accent marks and ⊓ / V bow signs on each page. The pitches are then aligned onto the MIDI's violin notes (5-note fingerprints to find the movement, then an edit-distance alignment), and the marks are stored per note in `violinist/editions/<edition>.json` (`node violinist/tools/build_editions.js`; the scans stay in the git-ignored `strings/data/IMSLP`). The results per edition, over the 32 movements:
+
+| | Herrmann 1900 | Auer 1917 |
+|---|---|---|
+| Notes found | 91.4 % | 85.2 % |
+| Slurred note pairs (Mutopia's BGA source on the same notes) | 4,454 (4,150) | 4,877 (3,719) |
+| Slur agreement with Mutopia | 84.6 % | 77.2 % |
+| Bow signs | 175 ⊓, 53 V | 239 ⊓, 225 V |
+
+OMR misses some marks: on a checked Auer page it found 9 of about 14 bow signs and most slurs. Herrmann mostly keeps Bach's slurs and marks bow strokes in the fugues and chords. Auer re-slurs more freely and marks bows throughout. In #037, Bowing: Herrmann / Auer appears for these movements. The bow signs set the stroke direction (`strings/motion.js`), which until now ignored them, the Tchaikovsky score's included.
+
 `node violinist/tools/build_scores.js` rebuilds `violinist/scores` and the `score` entries from the sources (`node strings/test/fetch_mutopia_ly.js` fetches them into the git-ignored `strings/data/MutopiaLy`).
 
 ## Files

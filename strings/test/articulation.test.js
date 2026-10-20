@@ -158,3 +158,29 @@ test('repeats and marks under a slur: one bow with a louré / portato pulse (or 
   const slid = m.filter(n => n.art.port).map(n => n.on)
   assert.ok(slid.length >= 1 && slid.every((t, k) => k === 0 || t - slid[k - 1] >= 6), `slides at ${slid}`)
 })
+
+test('bow signs from a score set the stroke direction (⊓ down, V up), even against the alternation', async () => {
+  const notes = [69, 71, 73, 74].map((pitch, k) => ({ pitch, on: k * 0.5, off: (k + 1) * 0.5, velocity: 0.6, art: { source: 'score', slurPrev: false, bow: [null, null, 'up', 'up'][k] } }))
+  fingerLine(notes, { instrument: 'violin' })
+  assert.deepEqual(buildMotion(notes, { instrument: 'violin' }).strokes.map(s => s.dir), [1, -1, -1, -1], 'two up-bows in a row (a retake)')
+})
+
+test('printed editions (IMSLP scans read by OMR, violinist/editions) cover Bach\'s solo works and put their marks on the MIDI notes', async () => {
+  const { readFileSync, existsSync } = await import('node:fs')
+  const { applyEdition } = await import('../../violinist/score-art.js')
+  const { violinNotes } = await import('../../violinist/tools/build_editions.js')
+  const root = new URL('../../violinist/', import.meta.url).pathname
+  const index = JSON.parse(readFileSync(root + 'midis/index.json', 'utf8'))
+  for (const key of ['herrmann', 'auer']) {
+    const ed = JSON.parse(readFileSync(root + `editions/${key}.json`, 'utf8'))
+    const solo = index.filter(e => e.group === 'bach-solo')
+    assert.equal(Object.keys(ed.pieces).length, solo.length, `${key}: every movement`)
+    const all = Object.values(ed.pieces), found = all.reduce((a, p) => a + p.found * p.notes, 0) / all.reduce((a, p) => a + p.notes, 0)
+    assert.ok(found > 0.84, `${key}: ${(100 * found).toFixed(1)} % of the notes found`)
+    const e = solo.find(x => x.file === 'bach_1001_2_fuga.mid')
+    const notes = violinNotes(e, readFileSync(root + 'midis/' + e.file)).reverse()   // any order: applied by onset and pitch
+    const m = applyEdition(ed.pieces[e.file], notes)
+    assert.ok(m.matched > 0.7 * notes.length)
+    assert.ok(notes.filter(n => n.art.bow).length > 20, `${key}: the Fuga's bow signs`)
+  }
+})

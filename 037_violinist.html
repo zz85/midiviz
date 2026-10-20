@@ -77,7 +77,7 @@
       <option value="soundfonts/Creative(emu10k1)8MBGMSFX.sf2">Creative 8 MB GM</option>
     </select>
     <select id="room" title="Room"></select>
-    <select id="bowing" title="Which notes share a bow. Score: the slurs, marks and bowings of the Mutopia LilyPond source the MIDI was made from (violinist/scores). Inferred: slurs guessed from the music (strings/articulation.js). Fixed rule: up to 4 fast notes per bow"><option value="score">Bowing: score (Mutopia)</option><option value="infer">Bowing: inferred</option><option value="fixed">Bowing: fixed rule</option></select>
+    <select id="bowing" title="Which notes share a bow. Score: the slurs, marks and bowings of the Mutopia LilyPond source the MIDI was made from (violinist/scores). Herrmann / Auer (Bach's Sonatas and Partitas only): the slurs, marks and up- and down-bows of those printed editions, read from their IMSLP scans by optical music recognition (ScoreShift; violinist/editions), so with some misreadings. Inferred: slurs guessed from the music (strings/articulation.js). Fixed rule: up to 4 fast notes per bow"><option value="score">Bowing: score (Mutopia)</option><option value="edition:herrmann">Bowing: Herrmann ed., 1900 (IMSLP scan)</option><option value="edition:auer">Bowing: Auer ed., 1917 (IMSLP scan)</option><option value="infer">Bowing: inferred</option><option value="fixed">Bowing: fixed rule</option></select>
     <label title="Ink outlines"><input type="checkbox" id="outline" checked> Ink</label>
   </div>
   <div id="bottom" class="bar">
@@ -172,7 +172,7 @@
     for (const [k, r] of Object.entries(ROOMS)) $('room').add(new Option(r.label, k, k === 'hall', k === 'hall'))
 
     const song = { entry: null, notes: [], accomp: [], motion: null, duration: 1, drive: null, programs: [], bowing: null }
-    const bowingCredit = b => !b ? '' : b.mode === 'score' ? `<br>Bowing: the Mutopia score (${b.slurs} slurred notes)` : b.mode === 'infer' ? `<br>Bowing: inferred (${b.slurs} slurred notes)` : ''
+    const bowingCredit = b => !b ? '' : b.edition ? `<br>Bowing: ${b.edition.title}, IMSLP #${b.edition.imslp}, read by OMR (${b.slurs} slurred notes, ${b.bows} bow signs)` : b.mode === 'score' ? `<br>Bowing: the Mutopia score (${b.slurs} slurred notes)` : b.mode === 'infer' ? `<br>Bowing: inferred (${b.slurs} slurred notes)` : ''
     async function loadSong(file) {
       const e = index.find(x => x.file === file) || index[0]
       setStatus('Fingering…')
@@ -287,9 +287,12 @@
     $('play').onclick = () => (clock.playing ? pause() : play())
     $('speed').onchange = () => { clock.t = now(); clock.wall = performance.now(); clock.speed = +$('speed').value; if (scheduler) scheduler.speed = clock.speed }
     $('seek').oninput = () => { clock.t = +$('seek').value * song.duration; clock.wall = performance.now(); if (clock.playing) { target.allSoundOff(); scheduler.seek(clock.t) } }
-    $('bowing').value = ['infer', 'fixed'].includes(Q.get('bowing')) ? Q.get('bowing') : 'score'
+    $('bowing').value = ['infer', 'fixed', 'edition:herrmann', 'edition:auer'].includes(Q.get('bowing')) ? Q.get('bowing') : 'score'
+    // the editions cover Bach's solo works only
+    const showEditions = () => { const solo = index.find(x => x.file === $('song').value)?.group === 'bach-solo'; for (const o of $('bowing').options) if (o.value.startsWith('edition:')) o.hidden = o.disabled = !solo; if (!solo && $('bowing').value.startsWith('edition:')) $('bowing').value = 'score' }
+    showEditions()
     $('bowing').onchange = async () => { const was = clock.playing, t = clock.t; pause(); await loadSong($('song').value); clock.t = t; if (was) play(); saveUrl() }
-    $('song').onchange = async () => { const was = clock.playing; pause(); await loadSong($('song').value); director.reset(); if (was) play(); saveUrl() }
+    $('song').onchange = async () => { const was = clock.playing; pause(); showEditions(); await loadSong($('song').value); director.reset(); if (was) play(); saveUrl() }
     $('model').onchange = async () => { await loadModel($('model').value); saveUrl() }
     $('start').onclick = () => { $('start').classList.add('gone'); play() }
     addEventListener('keydown', e => { if (e.code === 'Space' && e.target === document.body) { e.preventDefault(); $('start').classList.add('gone'); clock.playing ? pause() : play() } })
