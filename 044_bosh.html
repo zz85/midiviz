@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>Experiment #044 - Bosh</title>
+  <!--
+    Experiment #044 - Line Rider tracks generated from a MIDI file: Bosh lands on the notes.
+
+    bosh/physics.js          Line Rider 6.2 physics after lr-core (the engine of
+                             linerider.com), bit for bit (bosh/test/oracle.mjs)
+    bosh/music.js            which notes to land on (metre, melody, loudness,
+                             length; dynamic programming for a rate)
+    bosh/planner.js          beam search over kickers, drops and pads, every
+                             candidate simulated; a pad under Bosh on the frame
+    bosh/render.js           lines, pads, Bosh, camera
+    bosh/track.js            .track.json for linerider.com / Line Rider Advanced
+    bosh/worker.js           plans off the main thread
+    bosh/test/               node --test bosh/test/bosh.test.js
+  -->
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #f6f3ec; font: 13px/1.35 "Helvetica Neue", Arial, sans-serif; color: #e8e2d6; }
+    canvas { display: block; }
+    #view { position: absolute; left: 0; top: 0; touch-action: none; }
+    #panel {
+      position: absolute; top: 10px; right: 10px; width: 300px; padding: 10px 12px; max-height: calc(100% - 40px); overflow: auto;
+      background: rgba(18, 16, 14, 0.9); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 10px;
+      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35); z-index: 2;
+    }
+    #panel h1 { margin: 0 0 2px; font: 300 17px/1.2 Georgia, serif; letter-spacing: 0.04em; color: #f3e6c4; }
+    #panel h1 a { color: inherit; text-decoration: none; }
+    #panel .sub { font-size: 11px; color: #9c958a; margin-bottom: 6px; }
+    #panel.collapsed .body { display: none; }
+    #toggle { float: right; background: none; border: 0; color: #d8b56a; font-size: 15px; cursor: pointer; }
+    hr { border: 0; border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 8px 0; }
+    .row { display: flex; align-items: center; gap: 6px; margin: 5px 0; }
+    .row > label:first-child { flex: 0 0 74px; color: #a9a196; }
+    select, input[type=range] { flex: 1; min-width: 0; }
+    select, input[type=number] { background: #1d1b19; color: #eee6d8; border: 1px solid #3d3933; border-radius: 4px; padding: 2px 4px; font: inherit; }
+    input[type=number] { width: 52px; }
+    input[type=checkbox], input[type=range] { accent-color: #c9a24a; }
+    .chk { display: flex; align-items: center; gap: 3px; color: #cfc6b8; margin-right: 6px; white-space: nowrap; }
+    .val { font: 11px monospace; color: #b9b0a2; min-width: 34px; text-align: right; }
+    button.b { background: #26231f; color: #eee6d8; border: 1px solid #4a443b; border-radius: 4px; padding: 3px 8px; cursor: pointer; font: inherit; font-size: 12px; }
+    button.b:hover { background: #35302a; }
+    button.b.on, button.b.go { background: #c9a24a; color: #111; border-color: #c9a24a; }
+    button.b:disabled { opacity: 0.5; cursor: default; }
+    #songTime { font: 11px monospace; color: #b9b0a2; min-width: 72px; text-align: right; }
+    #progress { height: 4px; background: #2b2824; border-radius: 2px; overflow: hidden; margin: 4px 0; display: none; }
+    #progress > div { height: 100%; width: 0; background: #c9a24a; }
+    #stats { font-size: 11.5px; color: #c9c0b2; }
+    #stats .k { color: #8f887d; }
+    #stats .ok { color: #8fd18f; }
+    #stats .bad { color: #f08a7a; }
+    #hint { color: #8f887d; font-size: 11px; margin-top: 6px; }
+    #status { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); padding: 6px 10px; border-radius: 6px; background: rgba(14, 13, 12, 0.85); border: 1px solid #3d3933; font-size: 12px; z-index: 3; }
+    #status.hidden { display: none; }
+    #status.error { border-color: #c44; color: #f99; }
+    #dropHint { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; font: 300 26px Georgia, serif; color: #f3e6c4; background: rgba(0, 0, 0, 0.55); pointer-events: none; z-index: 5; }
+    body.dragging #dropHint { display: flex; }
+  </style>
+</head>
+<body>
+  <canvas id="view"></canvas>
+  <div id="panel">
+    <button id="toggle" title="Collapse">–</button>
+    <h1><a href="README.md" title="Back to experiments">#044 · Bosh</a></h1>
+    <div class="sub">Line Rider tracks from a MIDI file: he lands on the notes, by real physics</div>
+    <div class="body">
+      <div class="row"><label>Song</label><select id="song"></select>
+        <button class="b" id="open" title="Open a .mid file or a .track.json (or drop one on the page)">Open…</button>
+        <input id="file" type="file" accept=".mid,.midi,audio/midi,.json" hidden></div>
+      <div class="row">
+        <button class="b" id="play" title="Play / pause (Space)">▶</button>
+        <button class="b" id="stop" title="Back to the start">■</button>
+        <input id="seek" type="range" min="0" max="1" step="0.0002" value="0">
+        <span id="songTime">0:00 / 0:00</span>
+      </div>
+      <div class="row"><label>Playback</label><select id="speed" style="flex:0 0 64px">
+        <option value="0.25">25%</option><option value="0.5">50%</option><option value="1" selected>100%</option>
+      </select>
+        <span class="chk"><input id="sound" type="checkbox" checked>Sound</span>
+        <span class="chk" title="Where he has been over the last 2 s"><input id="trail" type="checkbox" checked>Trail</span></div>
+      <hr>
+      <div class="row"><label title="How many notes a second he lands on, at most">Landings</label><input id="rate" type="range" min="0.6" max="4" step="0.1" value="1.8"><span class="val" id="rateV"></span></div>
+      <div class="row"><label title="The shortest time between two landings">Min gap</label><input id="gap" type="range" min="0.15" max="0.6" step="0.01" value="0.25"><span class="val" id="gapV"></span></div>
+      <div class="row"><label title="How much higher the pads are when the melody is higher">Pitch → height</label><input id="pitch" type="range" min="0" max="8" step="0.5" value="3"><span class="val" id="pitchV"></span></div>
+      <div class="row"><label title="How fast he rides, quiet music to busy, loud music">Speed</label><select id="pace">
+        <option value="slow">Slow (3–5.5 px/frame)</option><option value="normal" selected>Normal (4.5–8.5)</option><option value="fast">Fast (6–11)</option>
+      </select></div>
+      <div class="row"><label title="Other runs of the same song">Take</label><input id="seed" type="number" min="1" max="9999" value="1">
+        <label title="How many runs the search keeps at once" style="color:#a9a196">Beam</label><input id="beam" type="number" min="1" max="12" value="4"></div>
+      <div class="row"><label></label><button class="b go" id="generate" title="Plan a track for this song">Generate</button>
+        <button class="b" id="export" title="Save the track for linerider.com or Line Rider Advanced" disabled>Save .track.json</button></div>
+      <div id="progress"><div></div></div>
+      <hr>
+      <div class="row"><label>Zoom</label><input id="zoom" type="range" min="0.3" max="3" step="0.05" value="1.3"><span class="val" id="zoomV"></span></div>
+      <div class="row"><label>Look</label><select id="theme"><option value="paper" selected>Paper</option><option value="night">Night</option></select></div>
+      <hr>
+      <div id="stats"></div>
+      <div id="hint">Space plays, ← / → jump 5 s, + / − zoom, Esc hides the panel. A saved track opens in linerider.com and Line Rider Advanced and rides the same there; the music starts at the run-up time written in its description.</div>
+    </div>
+  </div>
+  <div id="status" class="hidden"></div>
+  <div id="dropHint">Drop a MIDI file or a .track.json</div>
+
+  <script src="tonejs-midi.js"></script>
+  <script type="module">
+    import { SoundFontEngine, MidiScheduler } from './soundfont-engine/src/index.js'
+    import { beatGrid } from './harmony/harmony.js'
+    import { midiToSchedule } from './notation3d/midi-score.js'
+    import { onsetsOf } from './bosh/music.js'
+    import { readTrack } from './bosh/track.js'
+    import { rideFrames, cameraPath, drawFrame, THEMES, pitchColour } from './bosh/render.js'
+    import { FPS } from './bosh/physics.js'
+
+    const $ = id => document.getElementById(id)
+    const params = new URLSearchParams(location.search)
+    const setStatus = (msg, error = false) => { const s = $('status'); s.textContent = msg; s.classList.toggle('hidden', !msg); s.classList.toggle('error', error) }
+    const PACE = { slow: [3, 5.5], normal: [4.5, 8.5], fast: [6, 11] }
+
+    // ── Sound ──────────────────────────────────────────────────────────────
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+    const engine = new SoundFontEngine({ backend: 'oxisynth', vendorPath: new URL('./vendor', import.meta.url).href, audioContext: audioCtx })
+    let soundReady = false
+    ;(async () => {
+      try {
+        await engine.loadSoundFontStack(['soundfonts/Creative(emu10k1)8MBGMSFX.sf2', 'soundfonts/Motif_ES6_Concert_Piano.sf2'])
+        soundReady = true
+        applyPrograms()
+      } catch (e) { console.warn('soundfont', e); setStatus('Sound failed to load: ' + e.message, true); setTimeout(() => setStatus(''), 3000) }
+    })()
+    const unlockAudio = () => { if (audioCtx.state !== 'running') audioCtx.resume().then(() => engine.resume?.()).catch(() => {}) }
+
+    // ── State ──────────────────────────────────────────────────────────────
+    const song = { title: '', url: null, midi: null, sched: null, groups: null }
+    const ride = { track: null, lines: [], frames: null, cam: null, pads: new Map(), padList: [], leadIn: 0, duration: 0, result: null }
+    const clock = { playing: false, t: 0, wall: 0, speed: 1 }
+    const now = () => clock.playing ? clock.t + (performance.now() - clock.wall) / 1000 * clock.speed : clock.t
+
+    // ── Songs ──────────────────────────────────────────────────────────────
+    const SONGS = [
+      ['midis/elise.mid', 'Beethoven – Für Elise'],
+      ['Toccata-and-Fugue-Dm.mid', 'Bach – Toccata and Fugue in D minor'],
+      ['midis/mz_331_3.mid', 'Mozart – Rondo alla Turca'],
+      ['midis/beethoven_sym5_1.mid', 'Beethoven – Symphony No. 5, I'],
+      ['midis/mozart_eine_kleine.mid', 'Mozart – Eine kleine Nachtmusik'],
+      ['midis/vivaldi_winter.mid', 'Vivaldi – Winter'],
+      ['midis/pachelbel_canon.mid', 'Pachelbel – Canon in D'],
+      ['minute_waltz.mid', 'Chopin – Minute Waltz'],
+      ['midis/mond_3.mid', 'Beethoven – Moonlight Sonata, III'],
+      ['midis/grieg_morning.mid', 'Grieg – Morning Mood'],
+      ['midis/bach_846.mid', 'Bach – Prelude in C, BWV 846'],
+      ['midis/deb_clai.mid', 'Debussy – Clair de lune'],
+      ['entertainer.mid', 'Joplin – The Entertainer'],
+      ['rush_e_real.mid', 'Rush E'],
+      ['midis/tetris.mid', 'Tetris'],
+      ['midis/mario_ground.mid', 'Kondo – Super Mario Bros.'],
+      ['hedwig_theme.mid', 'Williams – Hedwig’s Theme'],
+    ]
+    for (const [v, l] of SONGS) $('song').add(new Option(l, v))
+
+    async function loadMidiBuffer(buf, title, url = null) {
+      stopPlayback()
+      const midi = new Midi(buf)
+      const groups = onsetsOf(midi, { beats: beatGrid(midi).beats })
+      if (!groups.length) throw new Error('no pitched notes in the file')
+      Object.assign(song, { title, url, midi, sched: midiToSchedule(midi), groups })
+      applyPrograms()
+      await generate()
+    }
+    function applyPrograms() { if (soundReady && song.sched) for (const [ch, p] of song.sched.programs) engine.programChange(ch, p) }
+    async function loadSongUrl(url) {
+      if (!url) return
+      setStatus('Loading song…')
+      try {
+        const buf = await (await fetch(encodeURI(url))).arrayBuffer()
+        await loadMidiBuffer(buf, SONGS.find(s => s[0] === url)?.[1] || url.split('/').pop(), url)
+        saveUrl()
+      } catch (e) { console.error(e); setStatus('Could not load song: ' + e.message, true) }
+    }
+    async function loadFile(f) {
+      try {
+        if (/\.json$/i.test(f.name)) return showTrack(JSON.parse(await f.text()), { title: f.name.replace(/\.track\.json$|\.json$/i, '') })
+        $('song').value = ''
+        await loadMidiBuffer(await f.arrayBuffer(), f.name.replace(/\.midi?$/i, ''))
+        saveUrl()
+      } catch (e) { console.error(e); setStatus(`Could not read ${f.name}: ${e.message}`, true) }
+    }
+    $('song').onchange = () => loadSongUrl($('song').value)
+    $('open').onclick = () => $('file').click()
+    $('file').onchange = () => { const f = $('file').files[0]; if (f) loadFile(f); $('file').value = '' }
+    addEventListener('dragover', ev => { ev.preventDefault(); document.body.classList.add('dragging') })
+    addEventListener('dragleave', ev => { if (!ev.relatedTarget) document.body.classList.remove('dragging') })
+    addEventListener('drop', ev => { ev.preventDefault(); document.body.classList.remove('dragging'); const f = ev.dataTransfer.files[0]; if (f) loadFile(f) })
+
+    // ── Planning ───────────────────────────────────────────────────────────
+    const worker = new Worker(new URL('./bosh/worker.js', import.meta.url), { type: 'module' })
+    let jobId = 0
+    const jobs = new Map()
+    worker.onmessage = ({ data }) => {
+      const job = jobs.get(data.id)
+      if (!job) return
+      if (data.progress) return job.progress(data.progress)
+      jobs.delete(data.id)
+      data.error ? job.reject(new Error(data.error)) : job.resolve(data.result)
+    }
+    function options() {
+      const [speedLow, speedHigh] = PACE[$('pace').value]
+      return {
+        pick: { rate: +$('rate').value, minGap: +$('gap').value },
+        plan: { seed: +$('seed').value || 1, beam: +$('beam').value || 4, pitchScale: +$('pitch').value, speedLow, speedHigh },
+      }
+    }
+    async function generate() {
+      if (!song.groups) return
+      stopPlayback()
+      const id = ++jobId
+      for (const [k, j] of jobs) { j.reject(new Error('superseded')); jobs.delete(k) }
+      $('generate').disabled = true
+      $('progress').style.display = 'block'
+      $('progress').firstElementChild.style.width = '0'
+      setStatus(`Planning a track for ${song.title}…`)
+      const t0 = performance.now()
+      try {
+        const result = await new Promise((resolve, reject) => {
+          jobs.set(id, { resolve, reject, progress: p => { $('progress').firstElementChild.style.width = `${100 * p.done / p.total}%`; setStatus(`Planning ${song.title}: landing ${p.done} of ${p.total} · ${(p.frames / 1e6).toFixed(2)} M frames simulated`) } })
+          const { pick, plan } = options()
+          worker.postMessage({ id, groups: song.groups, pick, plan, label: song.title })
+        })
+        result.ms = performance.now() - t0
+        showTrack(result.track, { result, title: song.title })
+        setStatus('')
+        play()
+      } catch (e) { if (e.message !== 'superseded') { console.error(e); setStatus('Planning failed: ' + e.message, true) } }
+      finally { if (id === jobId) { $('generate').disabled = false; $('progress').style.display = 'none' } }
+    }
+    $('generate').onclick = () => { saveUrl(); generate() }
+
+    function showTrack(json, { result = null, title = '' } = {}) {
+      stopPlayback()
+      const t = readTrack(json)
+      const frames = Math.max(t.duration || 0, result ? 0 : 40 * 60)
+      const r = rideFrames(t.lines, { start: t.start, velocity: t.velocity, frames })
+      const pads = new Map()
+      for (const p of result?.pads || []) pads.set(p.lineId, { frame: p.frame, pitch: p.pitch, strength: p.strength })
+      Object.assign(ride, {
+        track: json, lines: t.lines, frames: r, cam: cameraPath(r), pads, padList: result?.pads || [],
+        leadIn: result?.leadIn ?? 0, duration: frames / FPS, result, title,
+      })
+      if (!result) Object.assign(song, { sched: null })
+      $('export').disabled = false
+      clock.t = 0
+      showStats()
+      showTime()
+    }
+    function showStats() {
+      const res = ride.result
+      if (!res) {
+        $('stats').innerHTML = `<div><span class="k">Track</span> ${ride.title} · ${ride.lines.length} lines · ${(ride.duration).toFixed(0)} s ${ride.frames.crash != null ? `<span class="bad">· crashes at ${(ride.frames.crash / FPS).toFixed(1)} s</span>` : ''}</div>`
+        return
+      }
+      const s = res.stats
+      const exact = ride.padList.filter(p => ride.frames.firstTouch.get(p.lineId) === p.frame).length
+      const kinds = {}
+      for (const p of ride.padList) kinds[p.kind] = (kinds[p.kind] || 0) + 1
+      $('stats').innerHTML = `
+        <div><span class="k">Landings</span> <b>${s.landed}</b> of ${s.hits} chosen notes${s.skipped ? ` <span class="bad">(${s.skipped} skipped)</span>` : ''}</div>
+        <div class="${exact === ride.padList.length ? 'ok' : 'bad'}">${exact === ride.padList.length ? '✓' : '✗'} ${exact} / ${ride.padList.length} touch their pad first on the note's frame (re-ridden from the start)</div>
+        <div class="${ride.frames.crash == null ? 'ok' : 'bad'}">${ride.frames.crash == null ? '✓ never comes off the sled' : '✗ crashes at ' + (ride.frames.crash / FPS).toFixed(1) + ' s'}</div>
+        <div><span class="k">Moves</span> ${kinds.kick || 0} kickers · ${kinds.drop || 0} drops · ${ride.padList.filter(p => p.pad !== 'solid').length} red pads</div>
+        <div><span class="k">Track</span> ${ride.lines.length} lines · ${(ride.duration).toFixed(0)} s · music from ${ride.leadIn.toFixed(2)} s</div>
+        <div><span class="k">Planned</span> in ${(res.ms / 1000).toFixed(1)} s, ${(s.frames / 1e6).toFixed(2)} M frames of physics</div>`
+    }
+
+    $('export').onclick = () => {
+      if (!ride.track) return
+      const blob = new Blob([JSON.stringify(ride.track)], { type: 'application/json' })
+      const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `${(ride.title || 'track').replace(/[^\w\- ]+/g, '')}.track.json` })
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+    }
+
+    // ── Playback ───────────────────────────────────────────────────────────
+    let scheduler = null
+    const songTarget = {
+      audioContext: audioCtx,
+      resume: () => audioCtx.resume(),
+      noteOn(m, v, ch) { if (soundReady && $('sound').checked) engine.noteOn(m, v, ch) },
+      noteOff(m, ch) { engine.noteOff(m, ch) },
+      controlChange(ch, cc, v) { engine.controlChange(ch, cc, v) },
+      allSoundOff() { for (let ch = 0; ch < 16; ch++) engine.controlChange(ch, 64, 0); engine.allNotesOff?.() },
+    }
+    async function ensureScheduler() {
+      if (scheduler) return scheduler
+      scheduler = new MidiScheduler(songTarget)
+      await scheduler.init()
+      scheduler.on('time', t => { if (clock.playing && Math.abs(t - now()) > 0.08) { clock.t = t; clock.wall = performance.now() } })
+      return scheduler
+    }
+    let loaded = null
+    async function play() {
+      if (!ride.frames) return
+      unlockAudio()
+      if (now() >= ride.duration) clock.t = 0
+      if (song.sched && ride.result) {
+        const sch = await ensureScheduler()
+        if (loaded !== ride.result) {
+          // the music, delayed by the run-up: scheduler time is the ride's time
+          const lead = ride.leadIn
+          sch.load({ notes: song.sched.notes.map(n => ({ ...n, time: n.time + lead })), controlChanges: song.sched.controlChanges.map(c => ({ ...c, time: c.time + lead })) })
+          loaded = ride.result
+        }
+        sch.speed = clock.speed
+        sch.seek(clock.t)
+        sch.play()
+      }
+      clock.wall = performance.now(); clock.playing = true
+      $('play').textContent = '❚❚'; $('play').classList.add('on')
+    }
+    function pause() {
+      clock.t = now(); clock.playing = false
+      scheduler?.pause(); songTarget.allSoundOff()
+      $('play').textContent = '▶'; $('play').classList.remove('on')
+    }
+    function stopPlayback() { pause(); clock.t = 0; scheduler?.stop() }
+    function seekTo(t) {
+      clock.t = Math.max(0, Math.min(ride.duration, t)); clock.wall = performance.now()
+      if (clock.playing && scheduler && ride.result) { songTarget.allSoundOff(); scheduler.seek(clock.t) }
+      showTime()
+    }
+    $('play').onclick = () => clock.playing ? pause() : play()
+    $('stop').onclick = () => { stopPlayback(); showTime() }
+    $('speed').onchange = () => { clock.t = now(); clock.wall = performance.now(); clock.speed = +$('speed').value; if (scheduler) scheduler.speed = clock.speed }
+    let seeking = false
+    $('seek').addEventListener('input', () => { seeking = true; clock.t = +$('seek').value * ride.duration; clock.wall = performance.now() })
+    $('seek').addEventListener('change', () => { seeking = false; seekTo(+$('seek').value * ride.duration) })
+    const fmt = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`
+    function showTime() {
+      const t = Math.min(now(), ride.duration)
+      $('songTime').textContent = `${fmt(t)} / ${fmt(ride.duration)}`
+      if (!seeking) $('seek').value = ride.duration ? t / ride.duration : 0
+    }
+
+    // ── Settings ───────────────────────────────────────────────────────────
+    const shows = { rate: v => `${v}/s`, gap: v => `${(+v).toFixed(2)} s`, pitch: v => `${v} px`, zoom: v => `${(+v).toFixed(2)}×` }
+    for (const [id, f] of Object.entries(shows)) { const show = () => { $(id + 'V').textContent = f($(id).value) }; $(id).addEventListener('input', show); show() }
+    for (const id of ['rate', 'gap', 'pitch', 'pace', 'seed', 'beam']) $(id).addEventListener('change', () => { saveUrl(); generate() })
+    for (const id of ['zoom', 'theme', 'trail']) $(id).addEventListener('change', saveUrl)
+    const KEYS = ['rate', 'gap', 'pitch', 'pace', 'seed', 'beam', 'zoom', 'theme']
+    function saveUrl() {
+      const q = new URLSearchParams()
+      if ($('song').value) q.set('song', $('song').value)
+      for (const k of KEYS) q.set(k, $(k).value)
+      history.replaceState(null, '', '?' + q)
+    }
+    for (const k of KEYS) if (params.has(k)) { $(k).value = params.get(k); $(k).dispatchEvent(new Event('input')) }
+
+    addEventListener('keydown', ev => {
+      if (ev.target.closest?.('select, input')) return
+      if (ev.code === 'Space') { ev.preventDefault(); $('play').click() }
+      if (ev.code === 'Escape') $('panel').style.display = $('panel').style.display === 'none' ? '' : 'none'
+      if (ev.code === 'ArrowRight') seekTo(now() + 5)
+      if (ev.code === 'ArrowLeft') seekTo(now() - 5)
+      if (ev.key === '+' || ev.key === '=') { $('zoom').value = Math.min(3, +$('zoom').value * 1.15); $('zoom').dispatchEvent(new Event('input')) }
+      if (ev.key === '-') { $('zoom').value = Math.max(0.3, +$('zoom').value / 1.15); $('zoom').dispatchEvent(new Event('input')) }
+    })
+    $('toggle').onclick = () => { const c = $('panel').classList.toggle('collapsed'); $('toggle').textContent = c ? '+' : '–' }
+
+    // ── Drawing ────────────────────────────────────────────────────────────
+    const canvas = $('view'), ctx = canvas.getContext('2d')
+    function resize() {
+      const dpr = devicePixelRatio || 1
+      canvas.width = innerWidth * dpr; canvas.height = innerHeight * dpr
+      canvas.style.width = innerWidth + 'px'; canvas.style.height = innerHeight + 'px'
+    }
+    addEventListener('resize', resize); resize()
+
+    function drawTimeline(f, theme) {
+      const w = canvas.width, h = canvas.height, dpr = devicePixelRatio || 1
+      const y = h - 22 * dpr, total = ride.frames.frames
+      ctx.fillStyle = theme === THEMES.night ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)'
+      ctx.fillRect(0, y - 8 * dpr, w, 30 * dpr)
+      for (const p of ride.padList) {
+        const x = p.frame / total * w
+        ctx.fillStyle = pitchColour(p.pitch, p.frame <= f ? 50 : 70, p.frame <= f ? 0.95 : 0.5)
+        ctx.fillRect(x - 0.75 * dpr, y - (3 + 9 * p.strength) * dpr, 1.5 * dpr, (6 + 18 * p.strength) * dpr)
+      }
+      ctx.fillStyle = theme.line
+      ctx.fillRect(f / total * w - 1 * dpr, y - 10 * dpr, 2 * dpr, 26 * dpr)
+    }
+
+    function frame() {
+      requestAnimationFrame(frame)
+      if (clock.playing && now() >= ride.duration) { pause(); clock.t = ride.duration }
+      showTime()
+      const theme = THEMES[$('theme').value] || THEMES.paper
+      if (!ride.frames) { ctx.fillStyle = theme.bg; ctx.fillRect(0, 0, canvas.width, canvas.height); return }
+      const f = Math.min(ride.frames.frames, now() * FPS)
+      const zoom = 3.4 * (canvas.height / 1000) * +$('zoom').value
+      drawFrame(ctx, { lines: ride.lines, ride: ride.frames, cam: ride.cam, pads: ride.pads, f, view: { w: canvas.width, h: canvas.height, zoom }, theme, trail: $('trail').checked })
+      drawTimeline(f, theme)
+    }
+    requestAnimationFrame(frame)
+
+    window.bosh = { ride, song, clock, seekTo, pause, play, generate } // for bosh/test/browser.mjs
+
+    // ── Start ──────────────────────────────────────────────────────────────
+    const first = params.get('song') ?? 'midis/elise.mid'
+    if ([...$('song').options].some(o => o.value === first)) $('song').value = first
+    loadSongUrl(first)
+  </script>
+</body>
+</html>

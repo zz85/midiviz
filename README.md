@@ -35,6 +35,10 @@ Browser experiments with MIDI, piano and violin rendering, synthesis and audio a
 - [#033 Violin & Viola Fingering](033_violin_fingering.html) - automatic fingering for violin, viola, cello and double bass ([details](CHANGELOG.md#16-oct-2026))
 - Research: [violin sound in the browser](strings/research/03_violin_sound.md), [commercial modelled violins](strings/research/05_commercial_violins.md), [audio → MIDI](transcription/research/01_audio_to_midi.md)
 
+## Line Rider
+
+- [#044 Bosh](044_bosh.html) - generate verified Line Rider tracks from MIDI, with note-synchronized landings and `.track.json` export ([notes](bosh/README.md))
+
 ## Synthesia-style players and synths
 
 - [#024 Minimal UI](024_minimal_ui.html) - the MidiViz player with a minimal interface
