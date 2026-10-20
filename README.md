@@ -14,6 +14,14 @@ Midi Visualization Experiments
 - [Research](rhythm/research/01_beat_tracking.md): onset detection, tempo, beat trackers (agents, DP, bar-pointer HMMs, particle filters, neural activations), meter and downbeats, swing, and what madmom, BeatNet, Aubio, librosa and Essentia do
 - Tests: `node --test rhythm/test/rhythm.test.js` (10); `node rhythm/test/eval.js` scores the corpus; `node rhythm/test/browser.mjs` runs the page in Chromium on the demo loop and a fake microphone
 
+[Experiment #039 - Tuner](039_tuner.html)
+- A chromatic and string tuner on the Web Audio input: the microphone (echo cancellation, noise suppression and auto gain off, device picker) or a built-in test tone (bowed, plucked or sine, detune in cents, vibrato)
+- Detector [tuner/pitch.js](tuner/pitch.js), in an AudioWorklet ([tuner/tuner-worklet.js](tuner/tuner-worklet.js)): McLeod's NSDF by FFT autocorrelation (peaks compared after interpolation, so high notes with a weak fundamental are not an octave low), refined on the peaks at 2, 4, 8 … periods, then by a joint least-squares fit of DC and the first 8 harmonics; the window is sized to the note and trimmed to the onset after silence, with a level gate, a clarity gate, a median of 3 and smoothing in cents that jumps on note changes
+- Accuracy on synthetic tones C1–C8: sine within 0.01 ¢, sawtooth within 0.15 ¢; first reading 5–10 ms after the onset above A3, 25 ms on E2, 50 ms on E1 (two periods); a reading every 5 ms (10 ms Precise); about 10 % of one core on low notes. Through Chromium's fake microphone a 110.255 Hz file read as A2 +4.0 ¢
+- Fast / Balanced / Precise response (8 / 16 / 32 periods, 20–100 ms windows), needle gauge with the in-tune band (±0.5–5 ¢), a three-row strobe (1st, 2nd, 4th harmonic) that stands still in tune, 10 s history of cents
+- Instruments: chromatic, guitar, bass (4 and 5), ukulele, violin, viola, cello, double bass, mandolin, with string buttons that keep the last offset measured on each string (+6.5 ¢ / −12 ¢, taken once the note has been steady for 200 ms, so you can check every string at a glance; C clears; click to lock one) and pure fifths from A for the bowed strings; A4 400–480 Hz, B♭ / E♭ / F transposition, sharps or flats, a reference tone at the target (R), hold (Space); settings in the address bar
+- Tests: `node --test tuner/test/pitch.test.js` (10)
+
 19 Oct 2026
 
 [Liner notes](liner/README.md) for [#032 Pianist](032_pianist.html)

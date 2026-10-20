@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Experiment #039 - Tuner</title>
+  <!--
+    Experiment #039 - a fast, accurate chromatic tuner on the Web Audio input.
+
+    tuner/pitch.js          PitchDetector: McLeod's NSDF by FFT autocorrelation,
+                            refined on period multiples and by a joint
+                            least-squares fit of the first 8 harmonics;
+                            PitchTracker: window sized to the note, onset-trimmed,
+                            level / clarity gates, median of 3, smoothing in cents
+    tuner/tuner-worklet.js  runs the tracker in an AudioWorklet, one reading per 5 ms (10 ms Precise)
+    node --test tuner/test/pitch.test.js
+  -->
+  <style>
+    @font-face { font-family: 'Cormorant Garamond'; font-weight: 600; src: url(fonts/cormorant-garamond-latin-600-normal.woff2) format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Montserrat'; font-weight: 300; src: url(fonts/montserrat-latin-300-normal.woff2) format('woff2'); font-display: swap; }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0b0c; font: 13px/1.35 "Helvetica Neue", Arial, sans-serif; color: #e8e2d6; }
+    [hidden] { display: none !important; }
+    #stage { position: absolute; inset: 0; display: grid; grid-template-rows: 1fr auto auto auto; justify-items: center; align-items: end; padding: 24px 24px 18px 360px; box-sizing: border-box; gap: 10px; }
+    body.collapsed #stage { padding-left: 24px; }
+    @media (max-width: 760px) { #stage { padding-left: 24px; padding-top: 70px; } }
+    #readout { text-align: center; user-select: none; align-self: center; }
+    #note { font: 600 min(30vh, 22vw)/0.9 'Cormorant Garamond', Georgia, serif; color: #f3e6c4; letter-spacing: 0.01em; transition: color 0.15s; }
+    #note sub { font-size: 0.32em; color: #9c958a; vertical-align: baseline; margin-left: 0.04em; }
+    #note.dim { color: #3a3631; }
+    #note.ok { color: #9be38f; }
+    #cents { font: 300 min(6vh, 6vw)/1 Montserrat, "Helvetica Neue", Arial, sans-serif; letter-spacing: 0.06em; color: #d8b56a; margin-top: 0.15em; min-height: 1em; font-variant-numeric: tabular-nums; }
+    #cents.ok { color: #9be38f; }
+    #freq { font: 13px monospace; color: #9c958a; margin-top: 0.6em; letter-spacing: 0.03em; min-height: 1.2em; }
+    #freq b { color: #e8e2d6; font-weight: normal; }
+    canvas { display: block; }
+    #gauge { width: min(760px, 92%); height: 150px; }
+    #strobe { width: min(760px, 92%); height: 34px; border-radius: 6px; }
+    #history { width: min(760px, 92%); height: 120px; }
+    #strings { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; min-height: 34px; }
+    #strings button { background: #1d1b19; color: #cfc6b8; border: 1px solid #3d3933; border-radius: 6px; padding: 5px 10px; font: 600 15px/1.1 'Cormorant Garamond', Georgia, serif; cursor: pointer; min-width: 52px; }
+    #strings button small { display: block; font: 10px monospace; color: #8f887d; margin-top: 2px; }
+    #strings button.near { border-color: #c9a24a; color: #f3e6c4; }
+    #strings button.ok { border-color: #6fbf63; color: #c9f5c1; }
+    #strings button.lock { background: #c9a24a; color: #111; border-color: #c9a24a; }
+    #strings button.lock small { color: #3a2f16; }
+    #strings button em { display: block; font: 11px monospace; font-style: normal; margin-top: 2px; min-height: 1.2em; color: #6b6357; font-variant-numeric: tabular-nums; }
+    #strings button em.sharp, #strings button em.flat { color: #d8b56a; }
+    #strings button em.ok { color: #9be38f; }
+    #strings button.lock em { color: #3a2f16; }
+    #panel {
+      position: absolute; top: 12px; left: 12px; width: 318px; padding: 10px 12px; max-height: calc(100% - 44px); overflow: auto;
+      background: rgba(14, 13, 12, 0.88); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 10px;
+      backdrop-filter: blur(8px); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5); z-index: 2; box-sizing: border-box;
+    }
+    #panel h1 { margin: 0 0 2px; font: 300 17px/1.2 Georgia, serif; letter-spacing: 0.04em; color: #f3e6c4; }
+    #panel h1 a { color: inherit; text-decoration: none; }
+    #panel .sub { font-size: 11px; color: #9c958a; margin-bottom: 6px; }
+    #panel a { color: #b9ad98; }
+    body.collapsed #panel .body { display: none; }
+    body.collapsed #panel { width: auto; }
+    #toggle { float: right; background: none; border: 0; color: #d8b56a; font-size: 15px; cursor: pointer; }
+    h2 { font: 600 10.5px/1 "Helvetica Neue", Arial, sans-serif; letter-spacing: 0.12em; text-transform: uppercase; color: #b9a57a; margin: 12px 0 4px; }
+    .row { display: flex; align-items: center; gap: 6px; margin: 5px 0; flex-wrap: wrap; }
+    .row > label:first-child { flex: 0 0 74px; color: #a9a196; }
+    select, input[type=range] { flex: 1; min-width: 0; }
+    select, input[type=number] { background: #1d1b19; color: #eee6d8; border: 1px solid #3d3933; border-radius: 4px; padding: 2px 4px; font: inherit; }
+    input[type=number] { width: 62px; }
+    input[type=range], input[type=checkbox] { accent-color: #c9a24a; }
+    .chk { display: flex; align-items: center; gap: 3px; color: #cfc6b8; margin-right: 6px; white-space: nowrap; }
+    .val { font: 11px monospace; color: #b9b0a2; min-width: 46px; text-align: right; }
+    button.b { background: #26231f; color: #eee6d8; border: 1px solid #4a443b; border-radius: 4px; padding: 3px 8px; cursor: pointer; font: inherit; font-size: 12px; }
+    button.b:hover { background: #35302a; }
+    button.b.on { background: #c9a24a; color: #111; border-color: #c9a24a; }
+    button.b:disabled { opacity: 0.45; cursor: default; }
+    .seg { display: flex; flex: 1; }
+    .seg button { flex: 1; border-radius: 0; margin-left: -1px; }
+    .seg button:first-child { border-radius: 4px 0 0 4px; margin-left: 0; }
+    .seg button:last-child { border-radius: 0 4px 4px 0; }
+    .stats { font: 11px/1.45 monospace; color: #c9c0b2; white-space: pre-wrap; background: rgba(0,0,0,0.25); border-radius: 4px; padding: 5px 6px; }
+    .stats b { color: #f3e6c4; font-weight: normal; }
+    #meter { flex: 1; height: 6px; background: #1d1b19; border-radius: 3px; position: relative; overflow: hidden; }
+    #meter i { position: absolute; left: 0; top: 0; bottom: 0; background: #8a7a52; width: 0; }
+    #meter u { position: absolute; top: 0; bottom: 0; width: 1px; background: #e8e2d6; opacity: 0.6; }
+    #hint { color: #8f887d; font-size: 11px; margin-top: 8px; }
+    #start { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 14px; background: rgba(11, 11, 12, 0.82); z-index: 4; }
+    #start button { font: 300 20px Montserrat, "Helvetica Neue", Arial, sans-serif; letter-spacing: 0.08em; padding: 12px 26px; border-radius: 30px; background: #c9a24a; color: #111; border: 0; cursor: pointer; }
+    #start button.alt { background: none; color: #d8b56a; border: 1px solid #6b5a36; font-size: 14px; padding: 8px 18px; }
+    #start p { color: #9c958a; max-width: 420px; text-align: center; margin: 0; }
+    #status { position: absolute; top: 12px; right: 12px; padding: 6px 10px; border-radius: 6px; background: rgba(14, 13, 12, 0.88); border: 1px solid #3d3933; font-size: 12px; z-index: 5; max-width: 440px; }
+    #status.error { border-color: #c44; color: #f99; }
+  </style>
+</head>
+<body>
+  <div id="stage">
+    <div id="readout">
+      <div id="note" class="dim">–</div>
+      <div id="cents"></div>
+      <div id="freq"></div>
+    </div>
+    <div id="strings"></div>
+    <canvas id="gauge"></canvas>
+    <canvas id="strobe"></canvas>
+    <canvas id="history"></canvas>
+  </div>
+
+  <div id="panel">
+    <button id="toggle" title="Collapse (H)">–</button>
+    <h1><a href="README.md">#039 Tuner</a></h1>
+    <div class="sub">Chromatic and string tuner on the Web Audio input, in an AudioWorklet</div>
+    <div class="body">
+      <h2>Input</h2>
+      <div class="row">
+        <label>Source</label>
+        <select id="source">
+          <option value="mic">Microphone</option>
+          <option value="test">Test tone</option>
+        </select>
+      </div>
+      <div class="row" id="deviceRow">
+        <label>Device</label>
+        <select id="device"><option value="">Default</option></select>
+      </div>
+      <div class="row" id="testRow" hidden>
+        <label>Test tone</label>
+        <select id="testNote"></select>
+        <input type="number" id="testCents" value="7" step="0.1" title="Detune, cents"><span class="val">¢</span>
+      </div>
+      <div class="row" id="testRow2" hidden>
+        <label>Timbre</label>
+        <select id="testWave">
+          <option value="string">Bowed string</option>
+          <option value="pluck">Plucked</option>
+          <option value="sine">Sine</option>
+        </select>
+        <label class="chk"><input type="checkbox" id="testVibrato">vibrato</label>
+        <label class="chk"><input type="checkbox" id="testHear" checked>hear</label>
+      </div>
+      <div class="row">
+        <label>Level</label>
+        <div id="meter"><i></i><u></u></div>
+        <span class="val" id="levelVal">–</span>
+      </div>
+      <div class="row">
+        <label>Gate</label>
+        <input type="range" id="gate" min="-90" max="-20" step="1" value="-60">
+        <span class="val" id="gateVal"></span>
+      </div>
+
+      <h2>Tuning</h2>
+      <div class="row">
+        <label>Instrument</label>
+        <select id="instrument"></select>
+      </div>
+      <div class="row" id="pureRow">
+        <label>Strings</label>
+        <label class="chk"><input type="checkbox" id="pure">pure fifths from A (3 : 2)</label>
+      </div>
+      <div class="row">
+        <label>A4</label>
+        <input type="range" id="a4" min="415" max="466" step="0.1" value="440">
+        <input type="number" id="a4n" min="400" max="480" step="0.1" value="440">
+      </div>
+      <div class="row">
+        <label>Transpose</label>
+        <select id="transpose">
+          <option value="0">Concert pitch (C)</option>
+          <option value="2">B♭ instrument</option>
+          <option value="9">E♭ instrument</option>
+          <option value="7">F instrument</option>
+          <option value="-12">Octave down (guitar notation)</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>Names</label>
+        <div class="seg" id="names">
+          <button class="b on" data-v="sharp">C♯</button><button class="b" data-v="flat">D♭</button>
+        </div>
+      </div>
+
+      <h2>Response</h2>
+      <div class="row">
+        <label>Speed</label>
+        <div class="seg" id="response">
+          <button class="b" data-v="fast">Fast</button><button class="b on" data-v="balanced">Balanced</button><button class="b" data-v="precise">Precise</button>
+        </div>
+      </div>
+      <div class="row">
+        <label>In tune</label>
+        <select id="tol">
+          <option value="0.5">± 0.5 ¢</option>
+          <option value="1">± 1 ¢</option>
+          <option value="2" selected>± 2 ¢</option>
+          <option value="3">± 3 ¢</option>
+          <option value="5">± 5 ¢</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>Display</label>
+        <label class="chk"><input type="checkbox" id="showStrobe" checked>strobe</label>
+        <label class="chk"><input type="checkbox" id="showHistory" checked>history</label>
+      </div>
+      <div class="row">
+        <label>Reference</label>
+        <button class="b" id="ref" title="Play the target note (R)">Play target</button>
+      </div>
+
+      <h2>Detector</h2>
+      <div class="stats" id="stats">–</div>
+      <div id="hint">Space: hold the reading · C: clear string offsets · R: reference tone · ←/→: test tone ±1 semitone · H: panel · click a string to lock it</div>
+    </div>
+  </div>
+
+  <div id="start">
+    <button id="startMic">Start microphone</button>
+    <button id="startTest" class="alt">Try with a test tone</button>
+    <p>The microphone is read with echo cancellation, noise suppression and automatic gain turned off. Nothing leaves this page.</p>
+  </div>
+  <div id="status" hidden></div>
+
+  <script type="module">
+    import { INSTRUMENTS, stringTargets, nearestString, noteInfo, noteName, midiFreq, RESPONSE } from './tuner/pitch.js'
+
+    const $ = (id) => document.getElementById(id)
+    const params = new URLSearchParams(location.search)
+
+    // ---------------------------------------------------------------- state
+    const S = {
+      instrument: params.get('inst') in INSTRUMENTS ? params.get('inst') : 'chromatic',
+      pure: params.get('pure') === '1',
+      a4: clamp(Number(params.get('a4')) || 440, 400, 480),
+      transpose: Number(params.get('tr')) || 0,
+      flats: params.get('names') === 'flat',
+      response: params.get('resp') in RESPONSE ? params.get('resp') : 'balanced',
+      tol: Number(params.get('tol')) || 2,
+      gate: Number(params.get('gate')) || -60,
+      strobe: params.get('strobe') !== '0',
+      history: params.get('hist') !== '0',
+      lock: -1,
+      hold: false,
+    }
+    function clamp(v, a, b) { return Math.min(b, Math.max(a, v)) }
+    function saveUrl() {
+      const p = new URLSearchParams()
+      if (S.instrument !== 'chromatic') p.set('inst', S.instrument)
+      if (S.pure) p.set('pure', '1')
+      if (S.a4 !== 440) p.set('a4', String(S.a4))
+      if (S.transpose) p.set('tr', String(S.transpose))
+      if (S.flats) p.set('names', 'flat')
+      if (S.response !== 'balanced') p.set('resp', S.response)
+      if (S.tol !== 2) p.set('tol', String(S.tol))
+      if (S.gate !== -60) p.set('gate', String(S.gate))
+      if (!S.strobe) p.set('strobe', '0')
+      if (!S.history) p.set('hist', '0')
+      const q = p.toString()
+      history.replaceState(null, '', q ? `?${q}` : location.pathname)
+    }
+
+    // ---------------------------------------------------------------- audio
+    let ctx = null, node = null, srcNode = null, stream = null, analyser = null
+    let test = null, refTone = null
+    let load = 0
+
+    function status(msg, error = false) {
+      const el = $('status')
+      el.hidden = !msg
+      el.textContent = msg || ''
+      el.classList.toggle('error', error)
+    }
+
+    async function ensureContext() {
+      if (ctx) { if (ctx.state !== 'running') await ctx.resume(); return }
+      ctx = new AudioContext({ latencyHint: 'interactive' })
+      await ctx.audioWorklet.addModule(new URL('./tuner/tuner-worklet.js', import.meta.url))
+      node = new AudioWorkletNode(ctx, 'tuner-processor', {
+        numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1], channelCount: 2, channelCountMode: 'explicit',
+        processorOptions: trackerOptions(),
+      })
+      node.port.onmessage = onWorklet
+      const mute = ctx.createGain()
+      mute.gain.value = 0
+      node.connect(mute).connect(ctx.destination)
+      analyser = ctx.createAnalyser()
+      analyser.fftSize = 2048
+    }
+
+    function trackerOptions() {
+      return { response: S.response, gateDb: S.gate, maxLen: 0.1 }
+    }
+    function configure() { node?.port.postMessage({ type: 'config', ...trackerOptions() }) }
+
+    function disconnectSource() {
+      if (srcNode) { try { srcNode.disconnect() } catch {} srcNode = null }
+      if (stream) { for (const t of stream.getTracks()) t.stop(); stream = null }
+      stopTest()
+    }
+
+    async function startMic() {
+      await ensureContext()
+      disconnectSource()
+      const deviceId = $('device').value
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            deviceId: deviceId ? { exact: deviceId } : undefined,
+            echoCancellation: false, noiseSuppression: false, autoGainControl: false,
+            channelCount: { ideal: 1 },
+          },
+        })
+      } catch (e) {
+        status(`Microphone: ${e.message || e.name}`, true)
+        return false
+      }
+      srcNode = ctx.createMediaStreamSource(stream)
+      srcNode.connect(node)
+      srcNode.connect(analyser)
+      node.port.postMessage({ type: 'reset' })
+      status('')
+      listDevices()
+      const tr = stream.getAudioTracks()[0]
+      deviceLabel = tr?.label || ''
+      return true
+    }
+    let deviceLabel = ''
+
+    async function listDevices() {
+      if (!navigator.mediaDevices?.enumerateDevices) return
+      const devs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput')
+      const sel = $('device'), cur = sel.value || stream?.getAudioTracks()[0]?.getSettings().deviceId || ''
+      sel.innerHTML = '<option value="">Default</option>' + devs.map((d, i) => `<option value="${d.deviceId}">${escapeHtml(d.label || `Input ${i + 1}`)}</option>`).join('')
+      if ([...sel.options].some((o) => o.value === cur)) sel.value = cur
+    }
+    function escapeHtml(s) { return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]) }
+
+    // test tone: a harmonic oscillator (PeriodicWave) at the chosen note and
+    // detune, optionally with 5.5 Hz vibrato or re-plucked every 2 s
+    function testWave(kind) {
+      const N = kind === 'sine' ? 1 : 24
+      const re = new Float32Array(N + 1), im = new Float32Array(N + 1)
+      for (let h = 1; h <= N; h++) {
+        // bowed: sawtooth-like with a body-ish bump; pluck: brighter odd bias
+        im[h] = kind === 'sine' ? 1 : kind === 'pluck' ? Math.sin(h * Math.PI * 0.18) / (h * h * 0.18) : (1 / h) * (1 + 0.6 * Math.exp(-((h - 4) ** 2) / 4))
+      }
+      return ctx.createPeriodicWave(re, im)
+    }
+
+    async function startTest() {
+      await ensureContext()
+      disconnectSource()
+      const osc = ctx.createOscillator(), amp = ctx.createGain(), out = ctx.createGain()
+      const lfo = ctx.createOscillator(), depth = ctx.createGain()
+      osc.setPeriodicWave(testWave($('testWave').value))
+      lfo.frequency.value = 5.5
+      depth.gain.value = 0
+      lfo.connect(depth).connect(osc.detune)
+      amp.gain.value = 0.25
+      out.gain.value = $('testHear').checked ? 0.5 : 0
+      osc.connect(amp)
+      amp.connect(node)
+      amp.connect(analyser)
+      amp.connect(out).connect(ctx.destination)
+      osc.start(); lfo.start()
+      test = { osc, amp, out, lfo, depth, timer: 0 }
+      srcNode = amp
+      updateTest()
+      node.port.postMessage({ type: 'reset' })
+      status('')
+    }
+    function stopTest() {
+      if (!test) return
+      clearInterval(test.timer)
+      try { test.osc.stop(); test.lfo.stop() } catch {}
+      test.amp.disconnect(); test.out.disconnect()
+      test = null
+    }
+    function updateTest() {
+      if (!test) return
+      const t = ctx.currentTime
+      const midi = Number($('testNote').value), detune = Number($('testCents').value) || 0
+      test.osc.frequency.setValueAtTime(midiFreq(midi, S.a4), t)
+      test.osc.detune.setValueAtTime(detune, t)
+      test.depth.gain.setValueAtTime($('testVibrato').checked ? 18 : 0, t)
+      test.out.gain.setTargetAtTime($('testHear').checked ? 0.5 : 0, t, 0.02)
+      clearInterval(test.timer)
+      const kind = $('testWave').value
+      test.osc.setPeriodicWave(testWave(kind))
+      const env = test.amp.gain
+      env.cancelScheduledValues(t)
+      if (kind === 'pluck') {
+        const pluck = () => {
+          const now = ctx.currentTime
+          env.cancelScheduledValues(now)
+          env.setValueAtTime(0.0001, now)
+          env.linearRampToValueAtTime(0.4, now + 0.004)
+          env.setTargetAtTime(0.0001, now + 0.004, 0.7)
+        }
+        pluck()
+        test.timer = setInterval(pluck, 2500)
+      } else env.setTargetAtTime(0.25, t, 0.01)
+    }
+
+    // reference tone: a soft sine-ish tone at the target
+    function toggleRef() {
+      if (!ctx) return
+      if (refTone) {
+        refTone.g.gain.setTargetAtTime(0, ctx.currentTime, 0.05)
+        const r = refTone; refTone = null
+        setTimeout(() => { try { r.o.stop() } catch {} }, 400)
+        $('ref').classList.remove('on')
+        return
+      }
+      const f = currentTarget()
+      if (!f) return
+      const o = ctx.createOscillator(), g = ctx.createGain()
+      const re = new Float32Array([0, 0, 0, 0]), im = new Float32Array([0, 1, 0.25, 0.08])
+      o.setPeriodicWave(ctx.createPeriodicWave(re, im))
+      o.frequency.value = f
+      g.gain.value = 0
+      g.gain.setTargetAtTime(0.18, ctx.currentTime, 0.03)
+      o.connect(g).connect(ctx.destination)
+      o.start()
+      refTone = { o, g }
+      $('ref').classList.add('on')
+    }
+    function currentTarget() {
+      const targets = stringTargets(S.instrument, S.a4, S.pure)
+      if (targets.length) {
+        if (S.lock >= 0) return targets[S.lock].freq
+        if (last.string) return last.string.freq
+        return targets[0].freq
+      }
+      if (last.note) return last.note.target
+      return S.a4
+    }
+
+    // ---------------------------------------------------------------- readings
+    const last = { freq: 0, note: null, string: null, cents: 0, time: 0, clarity: 0, rmsDb: -120, len: 0, raw: 0, seen: 0 }
+    const hist = []           // { t, c } cents vs the target, t in seconds (audio time)
+    let stringCents = []      // last cents measured on each string (NaN: not played yet)
+    const steady = []         // { t, idx, c } recent readings, for commitString
+
+    // A string keeps the reading from 100 ms ago, and only when every reading
+    // over the last 200 ms was on that string, within a semitone of it: the
+    // glide into and out of a note (the window still holds the old one) and
+    // passing notes never reach it.
+    function commitString(idx, c) {
+      const t = performance.now()
+      steady.push({ t, idx, c })
+      while (steady.length && steady[0].t < t - 200) steady.shift()
+      if (idx < 0 || Math.abs(c) >= 100 || steady[0].t > t - 180) return
+      if (!steady.every((r) => r.idx === idx && Math.abs(r.c) < 100)) return
+      let past = steady[0]
+      for (const r of steady) if (r.t <= t - 100) past = r
+      stringCents[idx] = past.c
+    }
+    let strobePhase = 0, strobeCents = 0, lastFrame = performance.now()
+
+    function onWorklet(e) {
+      const m = e.data
+      if (m.type === 'load') { load = m.ms; return }
+      if (m.type !== 'pitch') return
+      for (const r of m.readings) {
+        last.rmsDb = r.rmsDb
+        last.len = r.len
+        last.time = r.time
+        if (S.hold) continue
+        if (r.freq) {
+          last.freq = r.freq
+          last.raw = r.raw
+          last.clarity = r.clarity
+          last.seen = performance.now()
+          evaluate()
+          hist.push({ t: r.time, c: last.cents, ok: Math.abs(last.cents) <= S.tol })
+        } else {
+          steady.length = 0
+          hist.push({ t: r.time, c: NaN })
+        }
+      }
+      while (hist.length && hist[0].t < last.time - 12) hist.shift()
+    }
+
+    function evaluate() {
+      const f = last.freq
+      const targets = stringTargets(S.instrument, S.a4, S.pure)
+      // note names in the instrument's written pitch
+      const shift = S.transpose
+      const note = noteInfo(f, S.a4, S.flats)
+      last.note = note
+      if (targets.length) {
+        const s = S.lock >= 0 ? { ...targets[S.lock], cents: 1200 * Math.log2(f / targets[S.lock].freq) } : nearestString(f, targets)
+        last.string = s
+        last.cents = s.cents
+        last.target = s.freq
+        last.label = s.midi + shift
+        last.idx = targets.findIndex((t) => t.label === s.label)
+        commitString(last.idx, s.cents)
+      } else {
+        last.string = null
+        last.cents = note.cents
+        last.target = note.target
+        last.label = note.midi + shift
+        last.idx = -1
+      }
+    }
+
+    // ---------------------------------------------------------------- drawing
+    const gauge = $('gauge'), strobe = $('strobe'), histC = $('history')
+    function fit(c) {
+      const dpr = Math.min(2, devicePixelRatio || 1)
+      const w = Math.round(c.clientWidth * dpr), h = Math.round(c.clientHeight * dpr)
+      if (c.width !== w || c.height !== h) { c.width = w; c.height = h }
+      return dpr
+    }
+
+    function frame(now) {
+      requestAnimationFrame(frame)
+      const dt = Math.min(0.1, (now - lastFrame) / 1000)
+      lastFrame = now
+      const active = last.freq && (S.hold || now - last.seen < 350)
+      const c = active ? last.cents : NaN
+      const ok = active && Math.abs(c) <= S.tol
+
+      // readout
+      const noteEl = $('note'), centsEl = $('cents'), freqEl = $('freq')
+      if (last.note) {
+        const nn = noteName(last.label, S.flats)
+        noteEl.innerHTML = `${nn.name}<sub>${nn.octave}</sub>`
+      }
+      noteEl.classList.toggle('dim', !active)
+      noteEl.classList.toggle('ok', !!ok)
+      centsEl.classList.toggle('ok', !!ok)
+      if (active) {
+        const a = Math.abs(c)
+        centsEl.textContent = `${c >= 0 ? '+' : '−'}${a.toFixed(a < 10 ? 1 : 0)} ¢${S.hold ? '  ·  held' : ''}`
+        freqEl.innerHTML = `<b>${last.freq.toFixed(2)}</b> Hz  →  ${last.target.toFixed(2)} Hz${last.string ? `  ·  ${last.string.label}` : ''}`
+      } else {
+        centsEl.textContent = ''
+        freqEl.textContent = ctx ? 'Play a note' : ''
+      }
+
+      // strings
+      const btns = $('strings').children
+      for (let i = 0; i < btns.length; i++) {
+        btns[i].classList.toggle('lock', S.lock === i)
+        btns[i].classList.toggle('near', active && last.idx === i && !ok)
+        btns[i].classList.toggle('ok', active && last.idx === i && ok)
+        const em = btns[i].lastElementChild, sc = stringCents[i]
+        const txt = Number.isFinite(sc) ? `${sc >= 0 ? '+' : '−'}${Math.abs(sc).toFixed(Math.abs(sc) < 10 ? 1 : 0)} ¢` : '·'
+        if (em.textContent !== txt) em.textContent = txt
+        em.className = !Number.isFinite(sc) ? '' : Math.abs(sc) <= S.tol ? 'ok' : sc > 0 ? 'sharp' : 'flat'
+      }
+
+      drawGauge(c, ok)
+      if (S.strobe) drawStrobe(c, dt, ok)
+      if (S.history) drawHistory()
+
+      // level meter
+      const lv = clamp((last.rmsDb + 90) / 90, 0, 1)
+      $('meter').firstElementChild.style.width = `${lv * 100}%`
+      $('meter').lastElementChild.style.left = `${clamp((S.gate + 90) / 90, 0, 1) * 100}%`
+      $('levelVal').textContent = ctx ? `${last.rmsDb.toFixed(0)} dB` : '–'
+
+      if (now - statsAt > 250) { statsAt = now; drawStats(active) }
+    }
+    let statsAt = 0
+
+    // needle gauge: ±50 cents on an arc, ticks every 5, the tolerance band
+    let needle = 0
+    function drawGauge(c, ok) {
+      const dpr = fit(gauge), g = gauge.getContext('2d'), W = gauge.width, H = gauge.height
+      g.clearRect(0, 0, W, H)
+      const cx = W / 2, cy = H * 1.9, R = H * 1.75
+      const span = 0.62   // radians each side
+      const ang = (cents) => -Math.PI / 2 + (clamp(cents, -50, 50) / 50) * span
+      // tolerance band
+      g.lineWidth = 10 * dpr
+      g.strokeStyle = 'rgba(111, 191, 99, 0.25)'
+      g.beginPath(); g.arc(cx, cy, R - 8 * dpr, ang(-S.tol), ang(S.tol)); g.stroke()
+      for (let k = -50; k <= 50; k += 5) {
+        const a = ang(k), big = k % 25 === 0, mid = k % 10 === 0
+        const r0 = R - (big ? 26 : mid ? 18 : 12) * dpr
+        g.strokeStyle = k === 0 ? '#9be38f' : big ? '#b9a57a' : '#5a5348'
+        g.lineWidth = (k === 0 ? 2.5 : big ? 1.8 : 1) * dpr
+        g.beginPath(); g.moveTo(cx + r0 * Math.cos(a), cy + r0 * Math.sin(a)); g.lineTo(cx + R * Math.cos(a), cy + R * Math.sin(a)); g.stroke()
+        if (big) {
+          g.fillStyle = '#8f887d'
+          g.font = `${11 * dpr}px monospace`
+          g.textAlign = 'center'
+          const rl = R - 38 * dpr
+          g.fillText(k > 0 ? `+${k}` : String(k), cx + rl * Math.cos(a), cy + rl * Math.sin(a) + 4 * dpr)
+        }
+      }
+      // ♭ / ♯ marks
+      g.font = `${20 * dpr}px Georgia, serif`
+      g.fillStyle = '#6b6357'
+      g.textAlign = 'center'
+      g.fillText('♭', cx + (R + 0) * Math.cos(ang(-50)) - 22 * dpr, cy + R * Math.sin(ang(-50)) + 4 * dpr)
+      g.fillText('♯', cx + R * Math.cos(ang(50)) + 22 * dpr, cy + R * Math.sin(ang(50)) + 4 * dpr)
+      if (!Number.isFinite(c)) return
+      // the needle eases toward the reading a little so it reads as motion,
+      // not as jitter; the numbers above are the unsmoothed tracker output
+      needle += (c - needle) * 0.5
+      if (Math.abs(c - needle) > 25) needle = c
+      const a = ang(needle)
+      g.strokeStyle = ok ? '#9be38f' : Math.abs(c) > 50 ? '#d06a52' : '#f3e6c4'
+      g.lineWidth = 3 * dpr
+      g.lineCap = 'round'
+      g.beginPath(); g.moveTo(cx + (R - 70 * dpr) * Math.cos(a), cy + (R - 70 * dpr) * Math.sin(a)); g.lineTo(cx + (R + 6 * dpr) * Math.cos(a), cy + (R + 6 * dpr) * Math.sin(a)); g.stroke()
+      g.lineCap = 'butt'
+    }
+
+    // strobe: bands that drift at a speed proportional to the error (as on a
+    // Peterson strobe, where the disc turns at the target and the pattern
+    // stands still in tune); several rows show the 1st, 2nd and 4th harmonic
+    function drawStrobe(c, dt, ok) {
+      const dpr = fit(strobe), g = strobe.getContext('2d'), W = strobe.width, H = strobe.height
+      g.fillStyle = '#141311'
+      g.fillRect(0, 0, W, H)
+      if (Number.isFinite(c)) strobeCents += (c - strobeCents) * Math.min(1, dt * 20)
+      else strobeCents *= 0.9
+      // drift: at 1 cent the pattern moves about one band in 2.5 s
+      strobePhase += (Number.isFinite(c) ? strobeCents : 0) * dt * 0.4
+      const rows = 3
+      for (let r = 0; r < rows; r++) {
+        const mult = 1 << r, band = (W / 14) / mult, y0 = (r * H) / rows, h = H / rows - 1 * dpr
+        const off = ((strobePhase * mult * band) % (2 * band) + 2 * band) % (2 * band)
+        g.fillStyle = !Number.isFinite(c) ? '#2a2723' : ok ? '#6fbf63' : '#c9a24a'
+        g.globalAlpha = Number.isFinite(c) ? 0.85 - r * 0.2 : 0.6
+        for (let x = -2 * band + off; x < W; x += 2 * band) g.fillRect(x, y0, band, h)
+      }
+      g.globalAlpha = 1
+    }
+
+    // history: cents vs target over the last 10 s
+    function drawHistory() {
+      const dpr = fit(histC), g = histC.getContext('2d'), W = histC.width, H = histC.height
+      g.clearRect(0, 0, W, H)
+      const range = 25, secs = 10, t1 = last.time, t0 = t1 - secs
+      const y = (c) => H / 2 - (clamp(c, -range, range) / range) * (H / 2 - 4 * dpr)
+      g.fillStyle = 'rgba(111, 191, 99, 0.12)'
+      g.fillRect(0, y(S.tol), W, y(-S.tol) - y(S.tol))
+      g.strokeStyle = '#2d2a26'
+      g.lineWidth = 1
+      for (const k of [-20, -10, 10, 20]) { g.beginPath(); g.moveTo(0, y(k)); g.lineTo(W, y(k)); g.stroke() }
+      g.strokeStyle = '#4a6b44'
+      g.beginPath(); g.moveTo(0, y(0)); g.lineTo(W, y(0)); g.stroke()
+      g.fillStyle = '#6b6357'
+      g.font = `${10 * dpr}px monospace`
+      g.fillText('+20 ¢', 4 * dpr, y(20) + 10 * dpr)
+      g.fillText('−20 ¢', 4 * dpr, y(-20) - 3 * dpr)
+      g.lineWidth = 2 * dpr
+      g.lineJoin = 'round'
+      let open = false, prevOk = null
+      for (const p of hist) {
+        if (p.t < t0) continue
+        const x = ((p.t - t0) / secs) * W
+        if (!Number.isFinite(p.c)) { if (open) g.stroke(); open = false; continue }
+        if (!open || p.ok !== prevOk) {
+          if (open) { g.lineTo(x, y(p.c)); g.stroke() }
+          g.strokeStyle = p.ok ? '#9be38f' : '#d8b56a'
+          g.beginPath(); g.moveTo(x, y(p.c)); open = true; prevOk = p.ok
+        } else g.lineTo(x, y(p.c))
+      }
+      if (open) g.stroke()
+    }
+
+    function drawStats(active) {
+      const r = RESPONSE[S.response]
+      const sr = ctx?.sampleRate ?? 0
+      const lines = [
+        `sample rate  <b>${sr ? sr + ' Hz' : '–'}</b>`,
+        `window       <b>${last.len ? (1000 * last.len / (sr || 48000)).toFixed(1) + ' ms' : '–'}</b>  (${r.periods} T, ${1000 * r.minLen}–${1000 * r.maxLen} ms)`,
+        `hop          <b>${1000 * r.hop} ms</b>  smoothing <b>${1000 * r.smooth} ms</b>`,
+        `raw          <b>${active && last.raw ? last.raw.toFixed(3) + ' Hz' : '–'}</b>`,
+        `clarity      <b>${active ? last.clarity.toFixed(3) : '–'}</b>`,
+        `latency      <b>${ctx ? ((ctx.baseLatency || 0) * 1000 + (last.len / (sr || 48000)) * 500 + 500 * r.hop).toFixed(0) + ' ms' : '–'}</b>  in + ½ window + ½ hop`,
+        `worklet load <b>${ctx ? (load / 10).toFixed(1) + ' %' : '–'}</b>`,
+      ]
+      $('stats').innerHTML = lines.join('\n')
+    }
+
+    // ---------------------------------------------------------------- UI
+    function buildInstruments() {
+      $('instrument').innerHTML = Object.entries(INSTRUMENTS).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('')
+      $('instrument').value = S.instrument
+    }
+    function buildStrings() {
+      const targets = stringTargets(S.instrument, S.a4, S.pure)
+      if (S.lock >= targets.length) S.lock = -1
+      stringCents = targets.map(() => NaN)   // targets changed: old offsets mean nothing
+      $('strings').innerHTML = targets.map((t, i) => {
+        const n = noteName(t.midi + S.transpose, S.flats)
+        return `<button data-i="${i}" title="Click to lock this string">${n.name}<span style="font-size:0.7em">${n.octave}</span><small>${t.freq.toFixed(2)}</small><em title="Last offset measured on this string">·</em></button>`
+      }).join('')
+      $('pureRow').hidden = !INSTRUMENTS[S.instrument].pure
+    }
+    function buildTestNotes() {
+      const opts = []
+      for (let m = 24; m <= 96; m++) { const n = noteName(m); opts.push(`<option value="${m}">${n.name}${n.octave}</option>`) }
+      $('testNote').innerHTML = opts.join('')
+      $('testNote').value = '57'
+    }
+    function seg(id, value, cb) {
+      const el = $(id)
+      for (const b of el.children) b.classList.toggle('on', b.dataset.v === value)
+      el.onclick = (e) => {
+        const b = e.target.closest('button')
+        if (!b) return
+        for (const x of el.children) x.classList.toggle('on', x === b)
+        cb(b.dataset.v)
+      }
+    }
+
+    function syncUi() {
+      $('a4').value = S.a4; $('a4n').value = S.a4
+      $('transpose').value = String(S.transpose)
+      $('pure').checked = S.pure
+      $('tol').value = String(S.tol)
+      $('gate').value = S.gate; $('gateVal').textContent = `${S.gate} dB`
+      $('showStrobe').checked = S.strobe; $('strobe').hidden = !S.strobe
+      $('showHistory').checked = S.history; $('history').hidden = !S.history
+    }
+
+    buildInstruments()
+    buildTestNotes()
+    syncUi()
+    buildStrings()
+
+    $('instrument').onchange = (e) => { S.instrument = e.target.value; S.lock = -1; buildStrings(); saveUrl() }
+    $('pure').onchange = (e) => { S.pure = e.target.checked; buildStrings(); saveUrl() }
+    const setA4 = (v) => { S.a4 = Math.round(clamp(Number(v) || 440, 400, 480) * 10) / 10; $('a4').value = S.a4; $('a4n').value = S.a4; buildStrings(); updateTest(); if (refTone) refTone.o.frequency.value = currentTarget(); saveUrl() }
+    $('a4').oninput = (e) => setA4(e.target.value)
+    $('a4n').onchange = (e) => setA4(e.target.value)
+    $('transpose').onchange = (e) => { S.transpose = Number(e.target.value); buildStrings(); saveUrl() }
+    seg('names', S.flats ? 'flat' : 'sharp', (v) => { S.flats = v === 'flat'; buildStrings(); saveUrl() })
+    seg('response', S.response, (v) => { S.response = v; configure(); saveUrl() })
+    $('tol').onchange = (e) => { S.tol = Number(e.target.value); saveUrl() }
+    $('gate').oninput = (e) => { S.gate = Number(e.target.value); $('gateVal').textContent = `${S.gate} dB`; configure(); saveUrl() }
+    $('showStrobe').onchange = (e) => { S.strobe = e.target.checked; $('strobe').hidden = !S.strobe; saveUrl() }
+    $('showHistory').onchange = (e) => { S.history = e.target.checked; $('history').hidden = !S.history; saveUrl() }
+    $('strings').onclick = (e) => {
+      const b = e.target.closest('button')
+      if (!b) return
+      const i = Number(b.dataset.i)
+      S.lock = S.lock === i ? -1 : i
+      if (refTone) refTone.o.frequency.value = currentTarget()
+    }
+    $('ref').onclick = toggleRef
+    $('toggle').onclick = () => { document.body.classList.toggle('collapsed'); $('toggle').textContent = document.body.classList.contains('collapsed') ? '+' : '–' }
+
+    const showSource = (v) => {
+      $('deviceRow').hidden = v !== 'mic'
+      $('testRow').hidden = $('testRow2').hidden = v !== 'test'
+    }
+    $('source').onchange = async (e) => {
+      showSource(e.target.value)
+      if (e.target.value === 'mic') await startMic(); else await startTest()
+    }
+    $('device').onchange = () => { if ($('source').value === 'mic') startMic() }
+    for (const id of ['testNote', 'testCents', 'testWave', 'testVibrato', 'testHear']) $(id).addEventListener('change', updateTest)
+    $('testCents').addEventListener('input', updateTest)
+
+    $('startMic').onclick = async () => {
+      $('source').value = 'mic'; showSource('mic')
+      if (await startMic()) $('start').hidden = true
+    }
+    $('startTest').onclick = async () => {
+      $('source').value = 'test'; showSource('test')
+      await startTest()
+      $('start').hidden = true
+    }
+    if (!window.AudioWorkletNode) status('This browser has no AudioWorklet.', true)
+    navigator.mediaDevices?.addEventListener?.('devicechange', listDevices)
+
+    addEventListener('keydown', (e) => {
+      if (e.target.closest('input, select')) return
+      if (e.code === 'Space') { e.preventDefault(); S.hold = !S.hold }
+      else if (e.key === 'r' || e.key === 'R') toggleRef()
+      else if (e.key === 'c' || e.key === 'C') stringCents = stringCents.map(() => NaN)
+      else if (e.key === 'h' || e.key === 'H') $('toggle').click()
+      else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && test) {
+        const sel = $('testNote')
+        sel.value = String(clamp(Number(sel.value) + (e.key === 'ArrowRight' ? 1 : -1), 24, 96))
+        updateTest()
+      }
+    })
+
+    requestAnimationFrame(frame)
+  </script>
+</body>
+</html>
