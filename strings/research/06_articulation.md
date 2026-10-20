@@ -101,5 +101,6 @@ Since then:
 - **Repeats and marks under a slur:** a louré or portato pulse in one bow, or a re-bow as an option.
 - **Slides from the plan:** score marks, quiet overlaps (the SWAM rule above), and an inferred slow legato leap about once every 6 s.
 - **MuseScore input:** `.mscz` / `.mscx` read directly (3 and 4), checked against MuseScore's own MusicXML on the OpenScore string quartets.
+- **LilyPond input:** Mutopia's `.ly` sources read directly, checked against the MIDI files LilyPond made from them (99.5 % of notes).
 
 Details are in the strings README.

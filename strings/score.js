@@ -7,7 +7,7 @@
 //
 // readMusicXML(xmlText, opts) → { notes, meter, tempo, title, parts, part }
 //   (parts: [{ id, name }] of the score; part: the index of the one read)
-//   notes: { pitch, on, off (s), velocity, voice, measure, beat (in the bar,
+//   notes: { pitch, on, off (s), q (onset in quarter notes), velocity, voice, measure, beat (in the bar,
 //            0-based, in beats of the time signature), art } sorted by onset,
 //   art:   { slur: id | null, stroke: 'staccato' | 'staccatissimo' |
 //            'spiccato' | 'tenuto' | 'portato' (detached-legato) | 'accent' |
@@ -26,7 +26,7 @@
 // workers and the browser alike).
 
 const STEP = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }
-const DYN = { pppp: 0.15, ppp: 0.2, pp: 0.3, p: 0.42, mp: 0.55, mf: 0.68, f: 0.8, ff: 0.92, fff: 1, sf: 0.9, sfz: 0.92, fz: 0.9 }
+export const DYN = { pppp: 0.15, ppp: 0.2, pp: 0.3, p: 0.42, mp: 0.55, mf: 0.68, f: 0.8, ff: 0.92, fff: 1, sf: 0.9, sfz: 0.92, fz: 0.9 }
 
 /** Minimal XML walker: a tree of { tag, attrs, children, text }. */
 function parseXML(src) {
@@ -53,11 +53,11 @@ const txt = (el, tag) => kid(el, tag)?.text.trim()
 const find = (el, tag) => { if (!el) return null; if (el.tag === tag) return el; for (const c of el.children) { const r = find(c, tag); if (r) return r } return null }
 
 /** The stroke a note's marks (MusicXML articulation tag names) ask for, most specific first. */
-function strokeOf(arts) {
+export function strokeOf(arts) {
   const k = ['staccatissimo', 'spiccato', 'staccato', 'marcato', 'accent', 'strong-accent', 'tenuto', 'detached-legato'].find(a => arts.includes(a)) || null
   return k === 'strong-accent' ? 'marcato' : k === 'detached-legato' ? 'portato' : k
 }
-const accentGain = arts => arts.some(a => a === 'accent' || a === 'marcato' || a === 'strong-accent') ? 1.15 : 1
+export const accentGain = arts => arts.some(a => a === 'accent' || a === 'marcato' || a === 'strong-accent') ? 1.15 : 1
 
 /**
  * opts: { part: index or id (default: the first part with notes), tempo: bpm to
@@ -179,6 +179,7 @@ function readPartXML(P, tempoOnly = false) {
  * voice, measure, mStart, art }; tempoMap: [[quarter, bpm]]; meterMap:
  * [[quarter, beats, beatType, measure]].
  */
+export { finish as finishScore }
 function finish(events, tempoMap, meterMap, tempoDefault, title, names) {
   tempoMap = tempoMap.slice().sort((a, b) => a[0] - b[0])
   if (!tempoMap.length || tempoMap[0][0] > 0) tempoMap.unshift([0, tempoMap[0]?.[1] ?? tempoDefault])
@@ -201,7 +202,7 @@ function finish(events, tempoMap, meterMap, tempoDefault, title, names) {
     const k = e.art.slur != null && ['staccatissimo', 'staccato', 'spiccato'].includes(e.art.stroke) ? 0.85
       : e.art.stroke === 'staccatissimo' ? 0.25 : e.art.stroke === 'staccato' || e.art.stroke === 'spiccato' ? 0.5 : 1
     return {
-      pitch: e.pitch, on: tsec(e.start), off: tsec(e.start + Math.max(1 / 64, len * k)), velocity: Math.min(1, e.velocity), voice: e.voice,
+      pitch: e.pitch, on: tsec(e.start), off: tsec(e.start + Math.max(1 / 64, len * k)), q: e.start, velocity: Math.min(1, e.velocity), voice: e.voice,
       measure: e.measure, beat: (e.start - e.mStart) / beatQ, beatsPerBar: mb, art: e.art,
     }
   }).sort((a, b) => a.on - b.on || a.pitch - b.pitch)
@@ -431,11 +432,29 @@ export const readMSCZ = (buf, inflateRaw, opts) => readMSCX(readZip(buf, inflate
 /** A .mscz in the browser. */
 export const readMSCZBrowser = async (buf, opts) => readMSCX(await readZipBrowser(buf, MSCZ_RE, '.mscz'), opts)
 
-/** Any score file by its name: .musicxml / .xml, .mxl, .mscx, .mscz. In the browser unless inflateRaw is given. */
-export const SCORE_FILE = /\.(musicxml|xml|mxl|mscx|mscz)$/i
+/** Every entry of a zip as text (Map name → text), e.g. a Mutopia -lys.zip. */
+export async function zipTexts(buf, inflateRaw = null) {
+  const dec = new TextDecoder(), out = new Map()
+  const inflate = async raw => inflateRaw ? inflateRaw(raw) : new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer())
+  for (const f of zipEntries(buf)) if (!f.name.endsWith('/')) out.set(f.name, dec.decode(f.method === 0 ? f.raw : await inflate(f.raw)))
+  return out
+}
+
+/**
+ * Any score file by its name: .musicxml / .xml, .mxl, .mscx, .mscz, LilyPond
+ * .ly (one file; its \include files need opts.include) or a .zip of .ly files
+ * (Mutopia's -lys.zip). In the browser unless inflateRaw is given.
+ */
+export const SCORE_FILE = /\.(musicxml|xml|mxl|mscx|mscz|ly|ily|zip)$/i
 export async function readScoreFile(name, buf, { inflateRaw = null, ...opts } = {}) {
   const ext = name.toLowerCase().match(/\.(\w+)$/)?.[1]
   const text = () => new TextDecoder().decode(buf)
+  if (ext === 'ly' || ext === 'ily') { const { readLilyPond } = await import('./lilypond.js'); return readLilyPond(text(), { file: name, ...opts }) }
+  if (ext === 'zip') {
+    const files = await zipTexts(buf, inflateRaw)
+    if ([...files.keys()].some(n => /\.ly$/i.test(n))) { const { readLilyPondFiles } = await import('./lilypond.js'); return readLilyPondFiles(files, opts) }
+    throw new Error('no LilyPond (.ly) files in the zip')
+  }
   if (ext === 'mxl') return inflateRaw ? readMXL(buf, inflateRaw, opts) : readMXLBrowser(buf, opts)
   if (ext === 'mscz') return inflateRaw ? readMSCZ(buf, inflateRaw, opts) : readMSCZBrowser(buf, opts)
   if (ext === 'mscx') return readMSCX(text(), opts)

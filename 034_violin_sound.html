@@ -79,8 +79,8 @@
       <hr>
       <div class="row" title="Short test passages, each showing one thing (vibrato and shifts, double stops, tremolo…)"><label>Demo</label><select id="demo"></select></div>
       <div class="row" title="Pieces from MIDI files (Open… or drop your own .mid / MusicXML). The violin plays the track chosen below"><label>Song</label><select id="song"></select>
-        <button class="b" id="open" title="Open a MIDI file or a score (MuseScore .mscz / .mscx, or MusicXML / .mxl from MuseScore, Finale, Sibelius, Dorico…), or drop one on the page">Open…</button>
-        <input id="file" type="file" accept=".mid,.midi,audio/midi,.musicxml,.xml,.mxl,.mscz,.mscx" hidden></div>
+        <button class="b" id="open" title="Open a MIDI file or a score: MuseScore .mscz / .mscx, LilyPond .ly (Mutopia: the .ly, or its -lys.zip, or all its .ly files at once), or MusicXML / .mxl from MuseScore, Finale, Sibelius, Dorico… Or drop it on the page">Open…</button>
+        <input id="file" type="file" accept=".mid,.midi,audio/midi,.musicxml,.xml,.mxl,.mscz,.mscx,.ly,.ily,.zip" multiple hidden></div>
       <div class="row" id="trackRow" hidden title="Which track of the file the violin plays"><label>Track</label><select id="track"></select></div>
       <div class="row"><label>Type</label><input id="typed" type="text" spellcheck="false" title="Notes: A4 B4 C#5 · double stops D4+B4 · length E5:2 · rest r · string lock E5/A"
         value="G4 A4 B4 C5 D5:2 B4 G4:2 D4+B4:2"><button class="b" id="typedGo">Go</button></div>
@@ -124,6 +124,7 @@
     import { renderPerformance, scaleNotes, scaleExpression, expressionFromCC, STYLE } from './strings/sound/performance.js'
     import { planArticulation, clearArticulation } from './strings/articulation.js'
     import { readScoreFile, SCORE_FILE } from './strings/score.js'
+    import { readLilyPondFiles } from './strings/lilypond.js'
     import { attackError } from './strings/sound/humanize.js'
     import { NCH, midiHz, INSTRUMENTS as SYNTH, wgApply } from './strings/sound/bowed.js'
     import { Lab, ENGINES } from './strings/sound/engines.js'
@@ -592,17 +593,27 @@
     }
     $('song').onchange = () => { demoOptions(null); loadSong($('song').value).then(() => { saveUrl(); play() }) }
     $('open').onclick = () => $('file').click()
-    $('file').onchange = () => { const f = $('file').files[0]; if (f) openFile(f) }
+    $('file').onchange = () => { openFiles([...$('file').files]); $('file').value = '' }
     addEventListener('dragover', e => { e.preventDefault(); document.body.classList.add('dragging') })
     addEventListener('dragleave', e => { if (!e.relatedTarget) document.body.classList.remove('dragging') })
-    addEventListener('drop', e => { e.preventDefault(); document.body.classList.remove('dragging'); const f = e.dataTransfer.files[0]; if (f) openFile(f) })
+    addEventListener('drop', e => { e.preventDefault(); document.body.classList.remove('dragging'); openFiles([...e.dataTransfer.files]) })
+    // several LilyPond files at once (a piece split into \include files): read them as one set
+    async function openFiles(list) {
+      const ly = list.filter(f => /\.(ly|ily|lyi)$/i.test(f.name))
+      if (ly.length > 1) {
+        const files = new Map(await Promise.all(ly.map(async f => [f.webkitRelativePath || f.name, await f.text()])))
+        return loadScoreFile(files, ly[0].name).catch(e => setStatus(e.message, true, 6000))
+      }
+      if (list[0]) openFile(list[0])
+    }
     const reloadPiece = () => { if (state.raw.length) loadPiece(state.raw, { title: state.title, source: state.source, fit: state.fit, expr: state.expr, meter: state.meter, tempoMap: state.tempoMap }) }
     $('instrument').onchange = () => { reloadPiece(); saveUrl() }
     // a score (MusicXML / .mxl, MuseScore .mscz / .mscx): notes with their slurs and
     // articulation marks; the Track menu picks the part, and a viola or cello part
     // switches the instrument
     async function loadScoreFile(buf, name, part = null) {
-      const s = await readScoreFile(name, buf, part == null ? {} : { part })
+      // buf: one file's bytes, or a Map name → text of several .ly files dropped together
+      const s = buf instanceof Map ? readLilyPondFiles(buf, part == null ? {} : { part }) : await readScoreFile(name, buf, part == null ? {} : { part })
       if (!s.notes.length) throw new Error(`no notes in ${s.parts[s.part]?.name || 'that part'}`)
       $('demo').value = ''; $('song').value = ''
       midiTracks = []
@@ -616,7 +627,8 @@
       state.tempo = s.tempo[0]?.bpm || 100
       const title = [s.title || name, s.parts.length > 1 ? s.parts[s.part]?.name : ''].filter(Boolean).join(' — ')
       loadPiece(s.notes, { title, source: null, fit: true, meter: s.meter, tempoMap: s.tempo })
-      setStatus(`${s.notes.length} notes from the score, ${new Set(s.notes.map(n => n.art.slur).filter(x => x != null)).size} slurs`, false, 3000)
+      const miss = s.missing?.length ? ` · ${s.missing.length} included file${s.missing.length > 1 ? 's' : ''} not found (${s.missing.slice(0, 2).join(', ')}): drop all the .ly files together or open the -lys.zip` : ''
+      setStatus(`${s.notes.length} notes from the score, ${new Set(s.notes.map(n => n.art.slur).filter(x => x != null)).size} slurs${miss}`, !!miss, miss ? 8000 : 3000)
     }
     const openFile = f => f.arrayBuffer().then(b => SCORE_FILE.test(f.name) ? loadScoreFile(b, f.name) : (state.score = null, loadMidiBuffer(b, f.name, null), $('demo').value = '', $('song').value = '')).catch(e => setStatus(e.message, true, 4000))
     $('mode').onchange = $('instrument').onchange

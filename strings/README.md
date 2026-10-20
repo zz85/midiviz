@@ -389,7 +389,6 @@ Shift slides with no plan behind them are halved across a bow change, where a pl
 
 Not done yet:
 - JBV's speed and interval pitch instability;
-- reading LilyPond directly (Mutopia: convert with python-ly, `ly musicxml piece.ly`, untested).
 
 ## Articulation: fewer détaché notes
 
@@ -495,4 +494,34 @@ Two MusicXML reader fixes came out of the comparison:
 Most remaining differences come from the exporter rather than the score. Berg's Lyric Suite part 1 has 15 notes that differ by two octaves. A few slurs the exporter splits at system breaks. Gradual tempo changes (rit. / accel. lines) are ignored by both readers. Reading all 140 parts takes 29 s in Node, for 16 MB uncompressed per large score. Unit tests are in `strings/test/score.test.js`.
 
 **In #034.** Open… and drag-and-drop take `.mscz` and `.mscx`. For a score with several parts, the Track menu lists them (Violin 1, Violin 2, Viola, Violoncello). A viola or cello part switches the instrument.
+
+## LilyPond input
+
+`strings/lilypond.js` reads LilyPond `.ly` files directly, as Mutopia publishes them, without running LilyPond or converting to MusicXML. `readLilyPond(text, { include, part })` takes one file and resolves `\include` through a callback. `readLilyPondFiles(map)` takes a set of files and finds the main one (a `.ly` with a `\score` or `\book`, highest in the folders, a full score first). `readScoreFile('x.ly' | 'x.zip', buf)` opens a single file or a Mutopia `-lys.zip`. The result has the same shape as `readMusicXML`, with the parts of every score LilyPond would write as MIDI.
+
+It interprets the language engraved music uses, not Scheme:
+- **Note entry:** note names in nederlands, english (also the old `\include "english.ly"`), deutsch, italiano, français and español. Durations carry over and may sit apart from the pitch (`cis 2`), with dots and `*n/m`. Chords, `q`, rests, `R` and spacers are read.
+- **Octaves:** `\relative` (with or without a start pitch, octave checks, chords, and LilyPond's order through `<< >>`: each voice continues from the last pitch of the one before), `\absolute`, `\fixed` and `\transpose`.
+- **Time:** `\times`, `\tuplet`, `\scaleDurations`, `\partial`, `\time`, `\tempo`, and the `\midi` block's tempo (old `\tempo 4 = 72` or `tempoWholesPerMinute`, else 60, LilyPond's default).
+- **Repeats:** `\repeat` with `\alternative`. Unfold, percent and tremolo repeats are played every time; volta repeats once each, as printed, unless `\unfoldRepeats`. That matches LilyPond's MIDI.
+- **Structure:** variables, `\include` (as text), `\book` / `\bookpart` headers, `\new` / `\context` Staff, Voice and groups. A Voice outside a staff gets its own staff, as LilyPond does. `<< \\ >>` makes voices.
+- **Marks:** slurs (postfix, also after spaces or a bar check), ties, `-.` `--` `->` `-^` `-!` `-_` and their named forms, `\upbow` / `\downbow`, dynamics, and `\glissando` (a slide into the next note).
+- **Skipped:** grace notes (as in the other readers), markup, Scheme, `\override` / `\set` / `\tweak`, lyrics, chord names and figured bass.
+
+**Checked against LilyPond itself.** The 48 Mutopia MIDIs in `violinist/midis` were written by LilyPond from the `.ly` sources Mutopia publishes, so reading the sources should give the same violin notes. `node strings/test/fetch_mutopia_ly.js` fetches the sources into `strings/data/MutopiaLy` (git-ignored, 2.4 MB: the `.ly`, or the `-lys.zip` unpacked, from each piece's Mutopia page in `violinist/midis/index.json`). `node strings/test/lilypond.js` compares the two. Results on the 48 pieces (47,179 violin notes; Bach's Sonatas and Partitas, sonatas, three concertos with the orchestra in the same score, Paganini, Gounod):
+
+| | Agreement with LilyPond's MIDI |
+|---|---|
+| Notes (same pitch, onset within 1/64 of a quarter) | 99.5 % |
+| Onsets in seconds within 20 ms (tempo included) | 100 % |
+| Same length | 99.3 % |
+| Pieces with ≥ 97 % of notes | 46 of 48 |
+
+The two below 97 % are cases where LilyPond's MIDI departs from the score:
+- Paganini's Caprice 24 (91.8 %) is played through `articulate.ly`, which writes out ornaments, and LilyPond's MIDI leaves one variation silent.
+- Mozart K. 379 (96.8 %): grace notes there shift LilyPond's main notes by a few ticks.
+
+The scores carry their own articulation: 19.7 % of the note pairs are slurred, and 6.4 % of the notes are marked. Reading takes 2–50 ms for a Bach movement and 0.33 s for the whole Tchaikovsky concerto (3 movements, 41 staves). Unit tests are in `strings/test/lilypond.test.js`.
+
+**In #034.** Open… and drag-and-drop take a `.ly`, a Mutopia `-lys.zip`, or several `.ly` files at once, for a piece split into `\include` files. The Track menu lists the staves of every movement, with the solo violin chosen by default. When includes are missing, the status line names them.
 
