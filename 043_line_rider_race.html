@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>Experiment #043 — MIDI Line Rider Editor</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f6f3ec;
+      --panel: rgba(19, 17, 15, 0.93);
+      --panel-line: rgba(255, 255, 255, 0.12);
+      --text: #eee7dc;
+      --muted: #a49c90;
+      --gold: #d2aa55;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      width: 100%; height: 100%; margin: 0; overflow: hidden;
+      background: #f6f3ec; color: var(--text);
+      font: 13px/1.35 "Helvetica Neue", Arial, sans-serif;
+    }
+    button, input, select { font: inherit; }
+    #view {
+      position: fixed; inset: 0; display: block; width: 100%; height: 100%;
+      touch-action: none; cursor: crosshair;
+    }
+    #panel {
+      position: fixed; top: 10px; right: 10px; z-index: 4; width: 322px;
+      max-height: calc(100% - 20px); overflow: auto; padding: 10px 12px 12px;
+      border: 1px solid var(--panel-line); border-radius: 10px; background: var(--panel);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35); backdrop-filter: blur(14px);
+    }
+    #panel.collapsed .body { display: none; }
+    h1 {
+      margin: 0 0 2px; color: #f3e6c4; font: 300 17px/1.2 Georgia, serif;
+      letter-spacing: 0.035em;
+    }
+    .sub { margin-bottom: 8px; color: var(--muted); font-size: 11px; }
+    #toggle {
+      float: right; border: 0; background: none; color: var(--gold);
+      font-size: 16px; cursor: pointer;
+    }
+    hr { margin: 8px 0; border: 0; border-top: 1px solid rgba(255, 255, 255, 0.1); }
+    .row { display: flex; align-items: center; gap: 6px; margin: 5px 0; }
+    .row > label:first-child { flex: 0 0 70px; color: #aaa196; }
+    .row > input[type="range"], .row > select { flex: 1; min-width: 0; }
+    button, select, input[type="number"] {
+      min-height: 27px; border: 1px solid #4a443b; border-radius: 5px;
+      background: #26231f; color: var(--text);
+    }
+    button { padding: 3px 8px; cursor: pointer; }
+    button:hover { background: #37312b; }
+    button:disabled { opacity: 0.45; cursor: default; }
+    button.on, button.primary { border-color: var(--gold); background: var(--gold); color: #17130e; }
+    select { padding: 2px 4px; }
+    input[type="number"] { width: 52px; padding: 2px 4px; }
+    input[type="range"], input[type="checkbox"] { accent-color: var(--gold); }
+    #seek { min-width: 0; flex: 1; }
+    #time { min-width: 76px; color: #beb5a8; font: 11px monospace; text-align: right; }
+    .tools {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin: 6px 0;
+    }
+    .tools button { padding: 5px 3px; font-size: 11px; }
+    .checks {
+      display: flex; flex-wrap: wrap; gap: 5px 10px; margin: 5px 0;
+      color: #cec5b8; font-size: 11px;
+    }
+    .checks label { display: flex; align-items: center; gap: 3px; }
+    .value { min-width: 37px; color: #beb5a8; font: 11px monospace; text-align: right; }
+    #planning {
+      display: none; height: 4px; margin: 6px 0; overflow: hidden;
+      border-radius: 3px; background: #302c27;
+    }
+    #planning > div { width: 0; height: 100%; background: var(--gold); }
+    #stats { color: #cfc6b9; font-size: 11.5px; }
+    #stats .ok { color: #8fd18f; }
+    #stats .bad { color: #f08a7a; }
+    #stats .key { color: #8f877c; }
+    #selection { min-height: 16px; color: #cfc6b9; font-size: 11px; }
+    #hint { margin-top: 7px; color: #8f877c; font-size: 10.5px; }
+    #status {
+      position: fixed; top: 12px; left: 50%; z-index: 5;
+      max-width: min(620px, calc(100% - 40px)); padding: 6px 10px;
+      transform: translateX(-50%); border: 1px solid #4a443b; border-radius: 6px;
+      background: rgba(18, 16, 14, 0.9); color: #eee7dc; font-size: 12px;
+      pointer-events: none;
+    }
+    #status.hidden { display: none; }
+    #status.error { border-color: #ba4a42; color: #ffaaa2; }
+    #dropHint {
+      position: fixed; inset: 0; z-index: 8; display: none; place-items: center;
+      background: rgba(0, 0, 0, 0.55); color: #f3e6c4;
+      font: 300 25px Georgia, serif; pointer-events: none;
+    }
+    body.dragging #dropHint { display: grid; }
+    @media (max-width: 700px) {
+      #panel { width: min(322px, calc(100% - 20px)); }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="view"></canvas>
+  <aside id="panel">
+    <button id="toggle" title="Collapse panel">–</button>
+    <h1>#043 · Minute Waltz Track Editor</h1>
+    <div class="sub">Generated like #044, editable like Line Rider, simulated with real 6.2 physics</div>
+    <div class="body">
+      <div class="row">
+        <button id="play" class="primary" disabled>▶</button>
+        <button id="stop">■</button>
+        <input id="seek" type="range" min="0" max="1" step="0.0002" value="0" aria-label="Ride position">
+        <span id="time">0:00 / 0:00</span>
+      </div>
+      <div class="row">
+        <label>File</label>
+        <button id="open">Open…</button>
+        <button id="save" disabled>Save track</button>
+        <input id="file" type="file" accept=".mid,.midi,audio/midi,.json" hidden>
+      </div>
+      <hr>
+      <div class="row">
+        <label>Landings</label>
+        <input id="rate" type="range" min="0.6" max="2.6" step="0.05" value="1.35">
+        <span class="value" id="rateValue"></span>
+      </div>
+      <div class="row">
+        <label>Min gap</label>
+        <input id="gap" type="range" min="0.2" max="0.65" step="0.01" value="0.32">
+        <span class="value" id="gapValue"></span>
+      </div>
+      <div class="row">
+        <label>Pitch height</label>
+        <input id="pitch" type="range" min="0" max="7" step="0.5" value="3">
+        <span class="value" id="pitchValue"></span>
+      </div>
+      <div class="row">
+        <label>Pace</label>
+        <select id="pace">
+          <option value="slow">Slow</option>
+          <option value="normal" selected>Normal</option>
+          <option value="fast">Fast</option>
+        </select>
+        <label>Take</label>
+        <input id="seed" type="number" min="1" max="9999" value="43">
+      </div>
+      <div class="row">
+        <label></label>
+        <button id="generate" class="primary">Generate from MIDI</button>
+      </div>
+      <div id="planning"><div></div></div>
+      <hr>
+      <div class="row">
+        <label>Edit tool</label>
+        <span id="selection">No line selected</span>
+      </div>
+      <div class="tools" id="tools">
+        <button data-tool="select" class="on" title="Select and drag lines or endpoints (V)">Select</button>
+        <button data-tool="pencil" title="Draw a long freehand rail (P)">Pencil</button>
+        <button data-tool="line" title="Draw one straight segment (L)">Line</button>
+        <button data-tool="loop" title="Drag between two points to insert a smooth loop (O)">Loop</button>
+        <button data-tool="erase" title="Erase a line (E)">Erase</button>
+        <button data-tool="pan" title="Pan the camera (H)">Pan</button>
+      </div>
+      <div class="row">
+        <label>Line type</label>
+        <select id="lineType">
+          <option value="0">Solid</option>
+          <option value="1">Accelerating red</option>
+          <option value="2">Scenery</option>
+        </select>
+        <button id="flip" title="Reverse the rideable side">Flip</button>
+      </div>
+      <div class="checks">
+        <label><input id="leftExtended" type="checkbox"> Extend left</label>
+        <label><input id="rightExtended" type="checkbox"> Extend right</label>
+        <label><input id="snap" type="checkbox" checked> Snap 5 px</label>
+        <label><input id="autoSim" type="checkbox" checked> Simulate edits</label>
+      </div>
+      <div class="row">
+        <button id="undo" disabled>Undo</button>
+        <button id="redo" disabled>Redo</button>
+        <button id="deleteLine" disabled>Delete</button>
+        <button id="simulate">Re-run physics</button>
+      </div>
+      <hr>
+      <div class="row">
+        <label>Zoom</label>
+        <input id="zoom" type="range" min="0.5" max="5" step="0.05" value="1.35">
+        <span class="value" id="zoomValue"></span>
+      </div>
+      <div class="checks">
+        <label><input id="follow" type="checkbox" checked> Follow Bosh</label>
+        <label><input id="trail" type="checkbox" checked> Trail</label>
+        <label>Theme
+          <select id="theme">
+            <option value="paper" selected>Paper</option>
+            <option value="night">Night</option>
+          </select>
+        </label>
+      </div>
+      <hr>
+      <div id="stats">Loading Minute Waltz…</div>
+      <div id="hint">Pause to edit. Drag shared endpoint handles to keep joints connected. Wheel zooms; middle-drag or Space-drag pans. V/P/L/O/E/H choose tools. Delete removes a line. Ctrl/Cmd-Z undoes.</div>
+    </div>
+  </aside>
+  <div id="status" class="hidden"></div>
+  <div id="dropHint">Drop a MIDI file or .track.json</div>
+  <script src="tonejs-midi.js"></script>
+  <script type="module" src="line-rider/app.mjs"></script>
+</body>
+</html>
