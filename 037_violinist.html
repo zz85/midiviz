@@ -77,6 +77,7 @@
       <option value="soundfonts/Creative(emu10k1)8MBGMSFX.sf2">Creative 8 MB GM</option>
     </select>
     <select id="room" title="Room"></select>
+    <select id="bowing" title="Which notes share a bow. Score: the slurs, marks and bowings of the Mutopia LilyPond source the MIDI was made from (violinist/scores). Inferred: slurs guessed from the music (strings/articulation.js). Fixed rule: up to 4 fast notes per bow"><option value="score">Bowing: score (Mutopia)</option><option value="infer">Bowing: inferred</option><option value="fixed">Bowing: fixed rule</option></select>
     <label title="Ink outlines"><input type="checkbox" id="outline" checked> Ink</label>
   </div>
   <div id="bottom" class="bar">
@@ -97,6 +98,7 @@
     import { installAcoustics, acousticParams, ROOMS } from './concertstage/acoustics.js'
     import { INSTRUMENTS, fingerLine } from './strings/fingering.js'
     import { buildMotion } from './strings/motion.js'
+    import { bowingFor } from './violinist/score-art.js'
     import { buildViolin, buildBow } from './strings/violin3d.js'
     import { buildLeftHand, buildBowHand } from './strings/hand3d.js'
     import { createViolinistRig } from './violinist/rig.js'
@@ -169,7 +171,8 @@
     $('song').value = Q.get('song') || 'bach_1006_1_preludio.mid'
     for (const [k, r] of Object.entries(ROOMS)) $('room').add(new Option(r.label, k, k === 'hall', k === 'hall'))
 
-    const song = { entry: null, notes: [], accomp: [], motion: null, duration: 1, drive: null, programs: [] }
+    const song = { entry: null, notes: [], accomp: [], motion: null, duration: 1, drive: null, programs: [], bowing: null }
+    const bowingCredit = b => !b ? '' : b.mode === 'score' ? `<br>Bowing: the Mutopia score (${b.slurs} slurred notes)` : b.mode === 'infer' ? `<br>Bowing: inferred (${b.slurs} slurred notes)` : ''
     async function loadSong(file) {
       const e = index.find(x => x.file === file) || index[0]
       setStatus('Fingering…')
@@ -182,8 +185,10 @@
         const ch = [...new Set(midi.tracks.map(t => t.channel))].find(c => midi.tracks.filter(t => t.channel === c).reduce((a, t) => a + t.notes.length, 0) === e.violinNotes)
         solo = ch != null ? midi.tracks.filter(t => t.channel === ch) : [midi.tracks.reduce((b, t) => (t.notes.length > b.notes.length ? t : b))]
       }
-      const notes = solo.flatMap(t => t.notes).map(n => ({ pitch: n.midi, on: n.time * k, off: (n.time + Math.max(0.04, n.duration)) * k, velocity: n.velocity }))
+      const notes = solo.flatMap(t => t.notes).map(n => ({ pitch: n.midi, on: n.time * k, off: (n.time + Math.max(0.04, n.duration)) * k, velocity: n.velocity, q: n.ticks / midi.header.ppq }))
         .sort((a, b) => a.on - b.on || a.pitch - b.pitch)
+      // the bow: the Mutopia score's slurs and marks by default (violinist/score-art.js)
+      song.bowing = await bowingFor(e, notes, $('bowing').value)
       fingerLine(notes, { instrument: 'violin' })
       // accompaniment: every other track on its own channel and program
       const others = midi.tracks.filter(t => !solo.includes(t) && t.notes.length)
@@ -200,7 +205,7 @@
       Object.assign(song, { entry: e, notes, accomp, programs, motion: buildMotion(notes, { instrument: 'violin' }) })
       song.duration = Math.max(...notes.map(n => n.off), ...accomp.map(n => n.time + n.duration), 1)
       song.drive = drivers(notes)
-      $('credit').innerHTML = `${e.composer} – ${e.title}<br>MIDI: ${e.credit || 'Mutopia Project'}, ${e.licence}`
+      $('credit').innerHTML = `${e.composer} – ${e.title}<br>MIDI: ${e.credit || 'Mutopia Project'}, ${e.licence}${bowingCredit(song.bowing)}`
       $('startSong').textContent = `${e.composer} – ${e.title}`
       clock.t = 0
       setStatus('')
@@ -282,6 +287,8 @@
     $('play').onclick = () => (clock.playing ? pause() : play())
     $('speed').onchange = () => { clock.t = now(); clock.wall = performance.now(); clock.speed = +$('speed').value; if (scheduler) scheduler.speed = clock.speed }
     $('seek').oninput = () => { clock.t = +$('seek').value * song.duration; clock.wall = performance.now(); if (clock.playing) { target.allSoundOff(); scheduler.seek(clock.t) } }
+    $('bowing').value = ['infer', 'fixed'].includes(Q.get('bowing')) ? Q.get('bowing') : 'score'
+    $('bowing').onchange = async () => { const was = clock.playing, t = clock.t; pause(); await loadSong($('song').value); clock.t = t; if (was) play(); saveUrl() }
     $('song').onchange = async () => { const was = clock.playing; pause(); await loadSong($('song').value); director.reset(); if (was) play(); saveUrl() }
     $('model').onchange = async () => { await loadModel($('model').value); saveUrl() }
     $('start').onclick = () => { $('start').classList.add('gone'); play() }
@@ -340,6 +347,7 @@
       if ($('model').selectedIndex) p.set('model', $('model').value)
       if ($('cam').value !== 'auto') p.set('view', $('cam').value)
       if ($('outfit').value !== 'concert') p.set('outfit', $('outfit').value)
+      if ($('bowing').value !== 'score') p.set('bowing', $('bowing').value)
       history.replaceState(null, '', '?' + p.toString())
     }
     if (Q.get('model')) $('model').value = Q.get('model')

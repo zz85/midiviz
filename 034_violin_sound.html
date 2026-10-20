@@ -125,6 +125,7 @@
     import { planArticulation, clearArticulation } from './strings/articulation.js'
     import { readScoreFile, SCORE_FILE } from './strings/score.js'
     import { readLilyPondFiles } from './strings/lilypond.js'
+    import { loadScore, matchScore } from './violinist/score-art.js'
     import { attackError } from './strings/sound/humanize.js'
     import { NCH, midiHz, INSTRUMENTS as SYNTH, wgApply } from './strings/sound/bowed.js'
     import { Lab, ENGINES } from './strings/sound/engines.js'
@@ -558,14 +559,14 @@
     $('typed').addEventListener('keydown', e => { if (e.key === 'Enter') $('typedGo').click() })
 
     let midiTracks = null
-    function loadMidiBuffer(buf, title, source, trackIndex = null) {
+    function loadMidiBuffer(buf, title, source, trackIndex = null, score = null) {
       const midi = new Midi(buf)
       const hdr = midi.header
       const midiMeter = (hdr.timeSignatures || []).map(t => ({ t: hdr.ticksToSeconds(t.ticks), beats: t.timeSignature[0], beatType: t.timeSignature[1] }))
       const midiTempo = (hdr.tempos || []).map(t => ({ t: t.time ?? hdr.ticksToSeconds(t.ticks), bpm: t.bpm }))
       state.tempo = midi.header.tempos?.[0]?.bpm || 100
       midiTracks = midi.tracks.filter(t => t.notes.length && t.channel !== 9).map((t, i) => {
-        const notes = t.notes.map(n => ({ pitch: n.midi, on: n.time, off: n.time + Math.max(0.04, n.duration), velocity: n.velocity }))
+        const notes = t.notes.map(n => ({ pitch: n.midi, on: n.time, off: n.time + Math.max(0.04, n.duration), velocity: n.velocity, q: n.ticks / hdr.ppq }))
         const mean = notes.reduce((a, n) => a + n.pitch, 0) / notes.length
         let poly = 0
         for (let j = 1; j < notes.length; j++) if (notes[j].on - notes[j - 1].on < 0.03) poly++
@@ -574,9 +575,16 @@
         return { name: t.name || t.instrument?.name || `Track ${i + 1}`, notes, score, expr: expressionFromCC(t.controlChanges) }
       })
       if (!midiTracks.length) throw new Error('no notes')
+      // a violin piece from violinist/midis: its Mutopia score's slurs and marks on the matching track
+      // (Articulation Auto then follows the score; violinist/score-art.js)
+      if (score) {
+        const m = midiTracks.map(t => { const c = t.notes.map(n => ({ ...n })); return { c, r: matchScore(c, score.notes) } })
+        const k = m.reduce((b, x, i) => (x.r.matched > m[b].r.matched ? i : b), 0)
+        if (m[k].r.matched > 0.8 * midiTracks[k].notes.length) { midiTracks[k].notes = m[k].c; midiTracks[k].score0 = 1e3 }
+      }
       $('track').innerHTML = ''
       midiTracks.forEach((t, i) => $('track').add(new Option(`${t.name} (${t.notes.length})`, i)))
-      const best = trackIndex ?? midiTracks.reduce((b, t, i) => (t.score > midiTracks[b].score ? i : b), 0)
+      const best = trackIndex ?? midiTracks.reduce((b, t, i) => (t.score + (t.score0 || 0) > midiTracks[b].score + (midiTracks[b].score0 || 0) ? i : b), 0)
       $('track').value = best; $('trackRow').hidden = midiTracks.length < 2
       state.songTitle = title
       state.midiTime = { meter: midiMeter, tempoMap: midiTempo }
@@ -585,10 +593,20 @@
     $('track').onchange = () => {
       if (state.score && !midiTracks.length) { loadScoreFile(state.score.buf, state.score.name, +$('track').value).catch(e => setStatus(e.message, true, 4000)); return }
       const t = midiTracks[+$('track').value]; loadPiece(t.notes, { title: `${state.songTitle} — ${t.name}`, source: { ...state.source, track: +$('track').value }, expr: t.expr, ...state.midiTime }); saveUrl() }
+    let violinIndex = null
     async function loadSong(v, track = null) {
       if (!v) return
       setStatus('Loading…')
-      try { loadMidiBuffer(await (await fetch(encodeURI(v))).arrayBuffer(), SONGS.find(s => s[0] === v)?.[1] || v, { song: v }, track); $('demo').value = ''; setStatus('') }
+      try {
+        const buf = await (await fetch(encodeURI(v))).arrayBuffer()
+        // the violin pieces (violinist/midis) carry their Mutopia score: bowing from it
+        let score = null
+        if (v.startsWith('violinist/midis/')) {
+          violinIndex ??= await (await fetch('violinist/midis/index.json')).json()
+          score = await loadScore(violinIndex.find(e => e.file === v.split('/').pop())).catch(() => null)
+        }
+        loadMidiBuffer(buf, SONGS.find(s => s[0] === v)?.[1] || v, { song: v }, track, score); $('demo').value = ''; setStatus('')
+      }
       catch (e) { setStatus('Could not load: ' + e.message, true, 3000) }
     }
     $('song').onchange = () => { demoOptions(null); loadSong($('song').value).then(() => { saveUrl(); play() }) }

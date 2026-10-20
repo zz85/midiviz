@@ -78,3 +78,28 @@ test('LilyPond: staves and parts (violin chosen), \\include as text, \\include "
   const one = await readScoreFile('x.ly', new TextEncoder().encode(`{ c'4 d' }`))
   assert.deepEqual(pitches(one), [60, 62])
 })
+
+test('violin pieces: the Mutopia score\'s slurs on the MIDI LilyPond made from it (violinist/score-art.js, violinist/scores)', async () => {
+  const { readFileSync, existsSync } = await import('node:fs')
+  const { createRequire } = await import('node:module')
+  const { matchScore } = await import('../../violinist/score-art.js')
+  const { planArticulation } = await import('../articulation.js')
+  const root = new URL('../../violinist/', import.meta.url).pathname
+  const index = JSON.parse(readFileSync(root + 'midis/index.json', 'utf8'))
+  assert.equal(index.filter(e => e.score).length, index.length, 'every piece has its score')
+  assert.ok(index.every(e => e.score.matched > 0.95), 'and it matches the MIDI')
+  const e = index.find(x => x.file === 'bach_1001_1_adagio.mid')
+  if (!existsSync(root + 'scores/' + e.score.main)) return
+  const files = new Map(e.score.files.map(f => [f, readFileSync(root + 'scores/' + f, 'utf8')]))
+  const s = readLilyPondFiles(files, { main: e.score.main, part: e.score.part })
+  const { Midi } = createRequire(import.meta.url)('../../tonejs-midi.js')
+  const midi = new Midi(readFileSync(root + 'midis/' + e.file))
+  const tr = midi.tracks.find(t => t.notes.length === e.violinNotes)
+  const notes = tr.notes.map(n => ({ pitch: n.midi, on: n.time, off: n.time + n.duration, q: n.ticks / midi.header.ppq }))
+  const m = matchScore(notes, s.notes)
+  assert.ok(m.matched >= 0.99 * notes.length, `${m.matched} / ${notes.length}`)
+  planArticulation(notes, { mode: 'score' })
+  const slurred = notes.filter(n => n.art.slurPrev).length
+  assert.ok(slurred > 0.4 * notes.length, `the Adagio is mostly slurred: ${slurred} / ${notes.length}`)
+  assert.ok(notes.every(n => n.art.source === 'score'))
+})

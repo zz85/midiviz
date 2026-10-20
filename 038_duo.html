@@ -71,6 +71,7 @@
       <option value="free">Free</option>
     </select>
     <select id="room" title="Room"></select>
+    <select id="bowing" title="Which notes share a bow. Score: the slurs, marks and bowings of the Mutopia LilyPond source the MIDI was made from (violinist/scores). Inferred: slurs guessed from the music (strings/articulation.js). Fixed rule: up to 4 fast notes per bow"><option value="score">Bowing: score (Mutopia)</option><option value="infer">Bowing: inferred</option><option value="fixed">Bowing: fixed rule</option></select>
     <select id="vsound" title="Violin sound (#034's engines; the piano is the Full Grand Piano soundfont)"><option value="gm">Violin: GM soundfont</option><option value="hybrid">Violin: hybrid sampler (#034)</option><option value="waveguide">Violin: bowed waveguide (#034)</option><option value="source">Violin: Helmholtz source-filter (#034)</option></select>
     <label title="Ink outlines"><input type="checkbox" id="outline" checked> Ink</label>
     <label title="They bow to the hall, then he gives her a nod to start"><input type="checkbox" id="intro" checked> Bow</label>
@@ -96,6 +97,7 @@
     import { buildGrandPiano, LOW, HIGH } from './concertstage/concert-grand.js'
     import { fingerLine } from './strings/fingering.js'
     import { buildMotion } from './strings/motion.js'
+    import { bowingFor } from './violinist/score-art.js'
     import { expressionFromCC } from './strings/sound/performance.js'
     import { buildViolin, buildBow } from './strings/violin3d.js'
     import { buildLeftHand, buildBowHand } from './strings/hand3d.js'
@@ -259,8 +261,10 @@
         const ch = [...new Set(midi.tracks.map(t => t.channel))].find(c => midi.tracks.filter(t => t.channel === c).reduce((a, t) => a + t.notes.length, 0) === e.violinNotes)
         solo = ch != null ? midi.tracks.filter(t => t.channel === ch) : [midi.tracks[e.violinTrack]]
       }
-      const violin = solo.flatMap(t => t.notes).map(n => ({ pitch: n.midi, on: n.time * k, off: (n.time + Math.max(0.04, n.duration)) * k, velocity: n.velocity }))
+      const violin = solo.flatMap(t => t.notes).map(n => ({ pitch: n.midi, on: n.time * k, off: (n.time + Math.max(0.04, n.duration)) * k, velocity: n.velocity, q: n.ticks / midi.header.ppq }))
         .sort((a, b) => a.on - b.on || a.pitch - b.pitch)
+      // the bow: the Mutopia score's slurs and marks by default (violinist/score-art.js)
+      song.bowing = await bowingFor(e, violin, $('bowing').value)
       fingerLine(violin, { instrument: 'violin' })
       // the piano: every other track; two tracks are the hands (the higher one the right)
       const others = midi.tracks.filter(t => !solo.includes(t) && t.notes.length && t.channel !== 9)
@@ -287,7 +291,8 @@
       song.glances = soloGlances(violin, pianoNotes)
       pRig.clear(); pRig.setNotes(pianoNotes)
       keys.reset()
-      $('credit').innerHTML = `${e.composer} – ${e.title}<br>MIDI: ${e.credit || 'Mutopia Project'}, ${e.licence} · VRoid Project models (pixiv)`
+      const b = song.bowing
+      $('credit').innerHTML = `${e.composer} – ${e.title}<br>MIDI: ${e.credit || 'Mutopia Project'}, ${e.licence} · VRoid Project models (pixiv)${b && b.mode !== 'fixed' ? `<br>Bowing: ${b.mode === 'score' ? 'the Mutopia score' : 'inferred'} (${b.slurs} slurred notes)` : ''}`
       $('startSong').textContent = `${e.composer} – ${e.title}`
       clock.t = 0
       setStatus('')
@@ -578,6 +583,8 @@
     $('balance').ondblclick = () => { $('balance').value = 0; applyBalance(); saveUrl() }
     function seekTo(t) { clock.t = Math.max(0, Math.min(t, song.duration)); clock.wall = performance.now(); if (clock.playing) { target.allSoundOff(); scheduler.seek(clock.t); if (clock.pending) { clock.pending = false; scheduler.play() } if (hybrid.on) hybrid.start(clock.t) } }
     $('seek').oninput = () => seekTo(+$('seek').value * song.duration)
+    $('bowing').value = ['infer', 'fixed'].includes(Q.get('bowing')) ? Q.get('bowing') : 'score'
+    $('bowing').onchange = async () => { const was = clock.playing, t = clock.t; pause(); await loadSong($('song').value); clock.t = t; if (hybrid.on && hybrid.lab) hybrid.ensure(); if (was) play(); saveUrl() }
     $('song').onchange = async () => { const was = clock.playing; pause(); await loadSong($('song').value); director.reset(); if (hybrid.on && hybrid.lab) hybrid.ensure(); if (was) play(); saveUrl() }
     $('start').onclick = () => { $('start').classList.add('gone'); play() }
     addEventListener('keydown', e => { if (e.code === 'Space' && e.target === document.body) { e.preventDefault(); $('start').classList.add('gone'); clock.playing ? pause() : play() } })
@@ -673,6 +680,7 @@
       if ($('song').value !== 'beethoven_kreutzer_3_presto.mid') p.set('song', $('song').value)
       if ($('model').selectedIndex) p.set('model', $('model').value)
       if ($('outfit').value !== 'concert') p.set('outfit', $('outfit').value)
+      if ($('bowing').value !== 'score') p.set('bowing', $('bowing').value)
       if ($('vdress').value !== 'wine') p.set('vdress', $('vdress').value)
       if ($('room').value !== 'hall') p.set('room', $('room').value)
       if (hybrid.on) p.set('violin', hybrid.name)

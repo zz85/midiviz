@@ -72,6 +72,7 @@ Pedal and transport fixes
 [Experiment #037 - Violinist](037_violinist.html)
 - An anime-style violinist (VRoid CC0 VRMs, cel shaded, Nodame Cantabile-like stage lighting) plays the solo part of a violin MIDI; the rest plays as accompaniment
 - 48 Mutopia MIDIs: all of Bach's Sonatas & Partitas BWV 1001–1006, sonatas (Bach, Handel, Mozart, Beethoven Kreutzer), concertos (Bach, Vivaldi, Beethoven, Tchaikovsky), Paganini caprices ([list and credits](violinist/midis/README.md))
+- Bowing from the score: each MIDI's Mutopia LilyPond source is in [violinist/scores](violinist/midis/README.md#their-scores-bowing-from-the-source) (243 files, 1.2 MB), and #034 / #037 / #038 put its slurs and marks on the MIDI's notes (99.5 % of the violin notes found; 20 % of note pairs slurred, 0 in the MIDI files; the editions carry almost no up / down bow signs); Bowing: score (default) / inferred / fixed rule in #037 and #038
 - Rig [violinist/rig.js](violinist/rig.js): the #033 fingering, left hand and bow drive the body (violin hold from motion-capture angles, two-bone arm and leg IK, per-finger IK, sway, breath, head on the chin rest) ([notes](violinist/README.md))
 - Research: [biomechanics](violinist/research/01_violinist_biomechanics.md), [character and look](violinist/research/02_character_look.md)
 

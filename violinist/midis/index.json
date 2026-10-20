@@ -19,7 +19,19 @@
    82
   ],
   "tracks": 2,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m1429/bwv-1001_1.ly",
+   "files": [
+    "m1429/bwv-1001_1.ly"
+   ],
+   "part": 0,
+   "partName": "Violine",
+   "matched": 0.9981,
+   "slurred": 0.513,
+   "marked": 0,
+   "bowings": 0
+  }
  },
  {
   "file": "bach_1001_2_fuga.mid",
@@ -41,7 +53,19 @@
    89
   ],
   "tracks": 2,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m1438/bwv-1001_2.ly",
+   "files": [
+    "m1438/bwv-1001_2.ly"
+   ],
+   "part": 0,
+   "partName": "Violine",
+   "matched": 1,
+   "slurred": 0.083,
+   "marked": 0,
+   "bowings": 0
+  }
  },
  {
   "file": "bach_1001_3_siciliana.mid",
@@ -63,7 +87,19 @@
    86
   ],
   "tracks": 2,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m1448/bwv-1001_3.ly",
+   "files": [
+    "m1448/bwv-1001_3.ly"
+   ],
+   "part": 0,
+   "partName": "Violine",
+   "matched": 1,
+   "slurred": 0.228,
+   "marked": 0,
+   "bowings": 0
+  }
  },
  {
   "file": "bach_1001_4_presto.mid",
@@ -85,7 +121,19 @@
    86
   ],
   "tracks": 2,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m1439/bwv-1001_4.ly",
+   "files": [
+    "m1439/bwv-1001_4.ly"
+   ],
+   "part": 0,
+   "partName": "Violine",
+   "matched": 1,
+   "slurred": 0.296,
+   "marked": 0,
+   "bowings": 0
+  }
  },
  {
   "file": "bach_1002_1_allemanda.mid",
@@ -107,7 +155,20 @@
    86
   ],
   "tracks": 2,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m180/partita-1-lys/1-violin.ly",
+   "files": [
+    "m180/partita-1-lys/1-violin.ly",
+    "m180/partita-1-lys/1.ly"
+   ],
+   "part": 0,
+   "partName": "Staff 1",
+   "matched": 1,
+   "slurred": 0.271,
+   "marked": 0,
+   "bowings": 0
+  }
  },
  {
   "file": "bach_1002_2_double.mid",
@@ -129,7 +190,20 @@
    86
   ],
   "tracks": 2,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m180/partita-1-lys/2-violin.ly",
+   "files": [
+    "m180/partita-1-lys/2-violin.ly",
+    "m180/partita-1-lys/2.ly"
+   ],
+   "part": 0,
+   "partName": "Staff 1",
+   "matched": 1,
+   "slurred": 0.463,
+   "marked": 0,
+   "bowings": 0
+  }
  },
  {
   "file": "bach_1002_3_corrente.mid",
@@ -151,7 +225,20 @@
    86
   ],
   "tracks": 2,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m180/partita-1-lys/3-violin.ly",
+   "files": [
+    "m180/partita-1-lys/3-violin.ly",
+    "m180/partita-1-lys/3.ly"
+   ],
+   "part": 0,
+   "partName": "Staff 1",
+   "matched": 1,
+   "slurred": 0.193,
+   "marked": 0,
+   "bowings": 0
+  }
  },
  {
   "file": "bach_1002_4_double_presto.mid",
@@ -173,7 +260,20 @@
    88
   ],
   "tracks": 2,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m180/partita-1-lys/4-violin.ly",
+   "files": [
+    "m180/partita-1-lys/4-violin.ly",
+    "m180/partita-1-lys/4.ly"
+   ],
+   "part": 0,
+   "partName": "Staff 1",
+   "matched": 1,
+   "slurred": 0.019,
+   "marked": 0,
+   "bowings": 0
+  }
  },
  {
   "file": "bach_1002_5_sarabande.mid",
@@ -195,7 +295,20 @@
    84
   ],
   "tracks": 2,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m180/partita-1-lys/5-violin.ly",
+   "files": [
+    "m180/partita-1-lys/5-violin.ly",
+    "m180/partita-1-lys/5.ly"
+   ],
+   "part": 0,
+   "partName": "Staff 1",
+   "matched": 1,
+   "slurred": 0.056,
+   "marked": 0,
+   "bowings": 0
+  }
  },
  {
   "file": "bach_1002_6_double.mid",
@@ -217,7 +330,20 @@
    85
   ],
   "tracks": 2,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m180/partita-1-lys/6-violin.ly",
+   "files": [
+    "m180/partita-1-lys/6-violin.ly",
+    "m180/partita-1-lys/6.ly"
+   ],
+   "part": 0,
+   "partName": "Staff 1",
+   "matched": 1,
+   "slurred": 0,
+   "marked": 0,
+   "bowings": 0
+  }
  },
  {
   "file": "bach_1002_7_borea.mid",
@@ -239,7 +365,20 @@
    88
   ],
   "tracks": 2,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m180/partita-1-lys/7-violin.ly",
+   "files": [
+    "m180/partita-1-lys/7-violin.ly",
+    "m180/partita-1-lys/7.ly"
+   ],
+   "part": 0,
+   "partName": "Staff 1",
+   "matched": 1,
+   "slurred": 0.051,
+   "marked": 0,
+   "bowings": 0
+  }
  },
  {
   "file": "bach_1002_8_double.mid",
@@ -261,7 +400,20 @@
    88
   ],
   "tracks": 2,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m180/partita-1-lys/8-violin.ly",
+   "files": [
+    "m180/partita-1-lys/8-violin.ly",
+    "m180/partita-1-lys/8.ly"
+   ],
+   "part": 0,
+   "partName": "Staff 1",
+   "matched": 1,
+   "slurred": 0.114,
+   "marked": 0,
+   "bowings": 0
+  }
  },
  {
   "file": "bach_1003_1_grave.mid",
@@ -283,7 +435,19 @@
    86
   ],
   "tracks": 2,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m1449/bwv-1003_1.ly",
+   "files": [
+    "m1449/bwv-1003_1.ly"
+   ],
+   "part": 0,
+   "partName": "Violine",
+   "matched": 1,
+   "slurred": 0.532,
+   "marked": 0,
+   "bowings": 0
+  }
  },
  {
   "file": "bach_1003_2_fuga.mid",
@@ -305,7 +469,19 @@
    86
   ],
   "tracks": 2,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m1455/bwv-1003_2.ly",
+   "files": [
+    "m1455/bwv-1003_2.ly"
+   ],
+   "part": 0,
+   "partName": "Violine",
+   "matched": 1,
+   "slurred": 0.1,
+   "marked": 0,
+   "bowings": 0
+  }
  },
  {
   "file": "bach_1003_3_andante.mid",
@@ -327,7 +503,19 @@
    84
   ],
   "tracks": 2,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m1456/bwv-1003_3.ly",
+   "files": [
+    "m1456/bwv-1003_3.ly"
+   ],
+   "part": 0,
+   "partName": "Violine",
+   "matched": 1,
+   "slurred": 0.054,
+   "marked": 0,
+   "bowings": 0
+  }
  },
  {
   "file": "bach_1003_4_allegro.mid",
@@ -349,7 +537,19 @@
    88
   ],
   "tracks": 2,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m1457/bwv-1003_4.ly",
+   "files": [
+    "m1457/bwv-1003_4.ly"
+   ],
+   "part": 0,
+   "partName": "Violine",
+   "matched": 1,
+   "slurred": 0.188,
+   "marked": 0,
+   "bowings": 0
+  }
  },
  {
   "file": "bach_1004_1_allemanda.mid",
@@ -371,7 +571,19 @@
    86
   ],
   "tracks": 2,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m1423/bwv-1004_1.ly",
+   "files": [
+    "m1423/bwv-1004_1.ly"
+   ],
+   "part": 0,
+   "partName": "Violine",
+   "matched": 1,
+   "slurred": 0.386,
+   "marked": 0,
+   "bowings": 0
+  }
  },
  {
   "file": "bach_1004_2_corrente.mid",
@@ -393,7 +605,19 @@
    86
   ],
   "tracks": 2,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m1424/bwv-1004_2.ly",
+   "files": [
+    "m1424/bwv-1004_2.ly"
+   ],
+   "part": 0,
+   "partName": "Violine",
+   "matched": 1,
+   "slurred": 0.597,
+   "marked": 0,
+   "bowings": 0
+  }
  },
  {
   "file": "bach_1004_3_sarabanda.mid",
@@ -415,7 +639,19 @@
    82
   ],
   "tracks": 2,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m1427/bwv-1004_3_sarabanda.ly",
+   "files": [
+    "m1427/bwv-1004_3_sarabanda.ly"
+   ],
+   "part": 0,
+   "partName": "Staff 1",
+   "matched": 1,
+   "slurred": 0.384,
+   "marked": 0,
+   "bowings": 0
+  }
  },
  {
   "file": "bach_1004_4_giga.mid",
@@ -437,7 +673,19 @@
    86
   ],
   "tracks": 2,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m1428/bwv-1004_4_giga.ly",
+   "files": [
+    "m1428/bwv-1004_4_giga.ly"
+   ],
+   "part": 0,
+   "partName": "Staff 1",
+   "matched": 1,
+   "slurred": 0.241,
+   "marked": 0,
+   "bowings": 0
+  }
  },
  {
   "file": "bach_1004_5_ciaccona.mid",
@@ -459,7 +707,19 @@
    91
   ],
   "tracks": 2,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m1426/bwv-1004_5.ly",
+   "files": [
+    "m1426/bwv-1004_5.ly"
+   ],
+   "part": 0,
+   "partName": "Violine",
+   "matched": 1,
+   "slurred": 0.199,
+   "marked": 0,
+   "bowings": 0
+  }
  },
  {
   "file": "bach_1005_1_adagio.mid",
@@ -481,7 +741,19 @@
    84
   ],
   "tracks": 2,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m1458/bwv-1005_1.ly",
+   "files": [
+    "m1458/bwv-1005_1.ly"
+   ],
+   "part": 0,
+   "partName": "Violine",
+   "matched": 1,
+   "slurred": 0.138,
+   "marked": 0,
+   "bowings": 0
+  }
  },
  {
   "file": "bach_1005_2_fuga.mid",
@@ -503,7 +775,19 @@
    91
   ],
   "tracks": 2,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m1466/bwv-1005_2.ly",
+   "files": [
+    "m1466/bwv-1005_2.ly"
+   ],
+   "part": 0,
+   "partName": "Violine",
+   "matched": 1,
+   "slurred": 0.029,
+   "marked": 0,
+   "bowings": 0
+  }
  },
  {
   "file": "bach_1005_3_largo.mid",
@@ -525,7 +809,19 @@
    86
   ],
   "tracks": 2,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m1467/bwv-1005_3.ly",
+   "files": [
+    "m1467/bwv-1005_3.ly"
+   ],
+   "part": 0,
+   "partName": "Violine",
+   "matched": 1,
+   "slurred": 0.341,
+   "marked": 0,
+   "bowings": 0
+  }
  },
  {
   "file": "bach_1005_4_allegro_assai.mid",
@@ -547,7 +843,19 @@
    91
   ],
   "tracks": 2,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m1468/bwv-1005_4.ly",
+   "files": [
+    "m1468/bwv-1005_4.ly"
+   ],
+   "part": 0,
+   "partName": "Violine",
+   "matched": 1,
+   "slurred": 0.333,
+   "marked": 0,
+   "bowings": 0
+  }
  },
  {
   "file": "bach_1006_1_preludio.mid",
@@ -569,7 +877,19 @@
    88
   ],
   "tracks": 2,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m1469/bwv-1006_1.ly",
+   "files": [
+    "m1469/bwv-1006_1.ly"
+   ],
+   "part": 0,
+   "partName": "Violine",
+   "matched": 1,
+   "slurred": 0.056,
+   "marked": 0,
+   "bowings": 0
+  }
  },
  {
   "file": "bach_1006_2_loure.mid",
@@ -591,7 +911,19 @@
    85
   ],
   "tracks": 2,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m1470/bwv-1006_2.ly",
+   "files": [
+    "m1470/bwv-1006_2.ly"
+   ],
+   "part": 0,
+   "partName": "Violine",
+   "matched": 1,
+   "slurred": 0.163,
+   "marked": 0,
+   "bowings": 0
+  }
  },
  {
   "file": "bach_1006_3_gavotte.mid",
@@ -613,7 +945,19 @@
    86
   ],
   "tracks": 2,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m1471/bwv-1006_3.ly",
+   "files": [
+    "m1471/bwv-1006_3.ly"
+   ],
+   "part": 0,
+   "partName": "Violine",
+   "matched": 1,
+   "slurred": 0.256,
+   "marked": 0,
+   "bowings": 0
+  }
  },
  {
   "file": "bach_1006_4_menuet_1.mid",
@@ -635,7 +979,19 @@
    83
   ],
   "tracks": 2,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m1472/bwv-1006_4.ly",
+   "files": [
+    "m1472/bwv-1006_4.ly"
+   ],
+   "part": 0,
+   "partName": "Violine",
+   "matched": 0.9953,
+   "slurred": 0.235,
+   "marked": 0,
+   "bowings": 0
+  }
  },
  {
   "file": "bach_1006_5_menuet_2.mid",
@@ -657,7 +1013,19 @@
    83
   ],
   "tracks": 2,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m1473/bwv-1006_5.ly",
+   "files": [
+    "m1473/bwv-1006_5.ly"
+   ],
+   "part": 0,
+   "partName": "Violine",
+   "matched": 0.9889,
+   "slurred": 0.219,
+   "marked": 0,
+   "bowings": 0
+  }
  },
  {
   "file": "bach_1006_6_bourree.mid",
@@ -679,7 +1047,19 @@
    83
   ],
   "tracks": 2,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m1474/bwv-1006_6.ly",
+   "files": [
+    "m1474/bwv-1006_6.ly"
+   ],
+   "part": 0,
+   "partName": "Violine",
+   "matched": 1,
+   "slurred": 0.495,
+   "marked": 0,
+   "bowings": 0
+  }
  },
  {
   "file": "bach_1006_7_gigue.mid",
@@ -701,7 +1081,19 @@
    83
   ],
   "tracks": 2,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m1475/bwv-1006_7.ly",
+   "files": [
+    "m1475/bwv-1006_7.ly"
+   ],
+   "part": 0,
+   "partName": "Violine",
+   "matched": 1,
+   "slurred": 0.132,
+   "marked": 0,
+   "bowings": 0
+  }
  },
  {
   "file": "bach_1017_1_siciliano.mid",
@@ -723,7 +1115,19 @@
    85
   ],
   "tracks": 4,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m1733/bwv1017.ly",
+   "files": [
+    "m1733/bwv1017.ly"
+   ],
+   "part": 0,
+   "partName": "Movement 1: Violino.",
+   "matched": 0.9939,
+   "slurred": 0.147,
+   "marked": 0,
+   "bowings": 0
+  }
  },
  {
   "file": "handel_hwv361_1_andante.mid",
@@ -745,7 +1149,30 @@
    83
   ],
   "tracks": 4,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m652/HWV361-score.ly",
+   "files": [
+    "m652/HWV361-header.ly",
+    "m652/HWV361-piano-1.ly",
+    "m652/HWV361-piano-2.ly",
+    "m652/HWV361-piano-3.ly",
+    "m652/HWV361-piano-4.ly",
+    "m652/HWV361-piano-layout.ly",
+    "m652/HWV361-score.ly",
+    "m652/HWV361-violin-1.ly",
+    "m652/HWV361-violin-2.ly",
+    "m652/HWV361-violin-3.ly",
+    "m652/HWV361-violin-4.ly",
+    "m652/defs.ly"
+   ],
+   "part": 0,
+   "partName": "Movement 1: Violin",
+   "matched": 1,
+   "slurred": 0,
+   "marked": 0,
+   "bowings": 0
+  }
  },
  {
   "file": "mozart_k379_1_adagio.mid",
@@ -767,7 +1194,32 @@
    86
   ],
   "tracks": 5,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m571/k379-score.ly",
+   "files": [
+    "m571/defs.ly",
+    "m571/k379-defs-1.ly",
+    "m571/k379-defs-2.ly",
+    "m571/k379-defs-3.ly",
+    "m571/k379-header.ly",
+    "m571/k379-markings-3.ly",
+    "m571/k379-piano-1.ly",
+    "m571/k379-piano-2.ly",
+    "m571/k379-piano-3.ly",
+    "m571/k379-piano-layout.ly",
+    "m571/k379-score.ly",
+    "m571/k379-violin-1.ly",
+    "m571/k379-violin-2.ly",
+    "m571/k379-violin-3.ly"
+   ],
+   "part": 0,
+   "partName": "Adagio: Violin",
+   "matched": 0.9677,
+   "slurred": 0.413,
+   "marked": 9,
+   "bowings": 0
+  }
  },
  {
   "file": "beethoven_op30_2_1_allegro.mid",
@@ -789,7 +1241,22 @@
    91
   ],
   "tracks": 4,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m945/Violinsonata_No7_1.ly",
+   "files": [
+    "m945/Violinsonata_No7_1.ly",
+    "m945/pianoone.ly",
+    "m945/pianotwo.ly",
+    "m945/violin.ly"
+   ],
+   "part": 0,
+   "partName": "VIOLIN",
+   "matched": 0.9859,
+   "slurred": 0.349,
+   "marked": 427,
+   "bowings": 0
+  }
  },
  {
   "file": "beethoven_kreutzer_1.mid",
@@ -811,7 +1278,22 @@
    96
   ],
   "tracks": 4,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m922/Violinsonata_No9_1.ly",
+   "files": [
+    "m922/Violinsonata_No9_1.ly",
+    "m922/pianoone.ly",
+    "m922/pianotwo.ly",
+    "m922/violin.ly"
+   ],
+   "part": 0,
+   "partName": "VIOLIN",
+   "matched": 0.9959,
+   "slurred": 0.224,
+   "marked": 593,
+   "bowings": 0
+  }
  },
  {
   "file": "beethoven_kreutzer_3_presto.mid",
@@ -833,7 +1315,22 @@
    91
   ],
   "tracks": 4,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m923/Violinsonata_No9_3.ly",
+   "files": [
+    "m923/Violinsonata_No9_3.ly",
+    "m923/pianoone.ly",
+    "m923/pianotwo.ly",
+    "m923/violin.ly"
+   ],
+   "part": 0,
+   "partName": "VIOLIN",
+   "matched": 0.9964,
+   "slurred": 0.177,
+   "marked": 854,
+   "bowings": 0
+  }
  },
  {
   "file": "bach_1042_1_allegro.mid",
@@ -855,7 +1352,36 @@
    88
   ],
   "tracks": 6,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m29/concerto-in-e-major-lys/score.ly",
+   "files": [
+    "m29/concerto-in-e-major-lys/common-defs.ly",
+    "m29/concerto-in-e-major-lys/continuo_1.ly",
+    "m29/concerto-in-e-major-lys/continuo_2.ly",
+    "m29/concerto-in-e-major-lys/continuo_3.ly",
+    "m29/concerto-in-e-major-lys/header.ly",
+    "m29/concerto-in-e-major-lys/score.ly",
+    "m29/concerto-in-e-major-lys/solo_violin_1.ly",
+    "m29/concerto-in-e-major-lys/solo_violin_2.ly",
+    "m29/concerto-in-e-major-lys/solo_violin_3.ly",
+    "m29/concerto-in-e-major-lys/viola_1.ly",
+    "m29/concerto-in-e-major-lys/viola_2.ly",
+    "m29/concerto-in-e-major-lys/viola_3.ly",
+    "m29/concerto-in-e-major-lys/violin1_1.ly",
+    "m29/concerto-in-e-major-lys/violin1_2.ly",
+    "m29/concerto-in-e-major-lys/violin1_3.ly",
+    "m29/concerto-in-e-major-lys/violin2_1.ly",
+    "m29/concerto-in-e-major-lys/violin2_2.ly",
+    "m29/concerto-in-e-major-lys/violin2_3.ly"
+   ],
+   "part": 0,
+   "partName": "Allegro: Violin",
+   "matched": 1,
+   "slurred": 0.283,
+   "marked": 15,
+   "bowings": 0
+  }
  },
  {
   "file": "bach_1043_1_vivace.mid",
@@ -877,7 +1403,38 @@
    86
   ],
   "tracks": 7,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m3/concerto-in-d-minor-lys/score.ly",
+   "files": [
+    "m3/concerto-in-d-minor-lys/continuo_1.ly",
+    "m3/concerto-in-d-minor-lys/continuo_2.ly",
+    "m3/concerto-in-d-minor-lys/continuo_3.ly",
+    "m3/concerto-in-d-minor-lys/header.ly",
+    "m3/concerto-in-d-minor-lys/score.ly",
+    "m3/concerto-in-d-minor-lys/solo_violin1_1.ly",
+    "m3/concerto-in-d-minor-lys/solo_violin1_2.ly",
+    "m3/concerto-in-d-minor-lys/solo_violin1_3.ly",
+    "m3/concerto-in-d-minor-lys/solo_violin2_1.ly",
+    "m3/concerto-in-d-minor-lys/solo_violin2_2.ly",
+    "m3/concerto-in-d-minor-lys/solo_violin2_3.ly",
+    "m3/concerto-in-d-minor-lys/viola_1.ly",
+    "m3/concerto-in-d-minor-lys/viola_2.ly",
+    "m3/concerto-in-d-minor-lys/viola_3.ly",
+    "m3/concerto-in-d-minor-lys/violin1_1.ly",
+    "m3/concerto-in-d-minor-lys/violin1_2.ly",
+    "m3/concerto-in-d-minor-lys/violin1_3.ly",
+    "m3/concerto-in-d-minor-lys/violin2_1.ly",
+    "m3/concerto-in-d-minor-lys/violin2_2.ly",
+    "m3/concerto-in-d-minor-lys/violin2_3.ly"
+   ],
+   "part": 0,
+   "partName": "Vivace: Violin",
+   "matched": 1,
+   "slurred": 0.035,
+   "marked": 14,
+   "bowings": 0
+  }
  },
  {
   "file": "vivaldi_spring_1.mid",
@@ -899,7 +1456,38 @@
    92
   ],
   "tracks": 6,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m301/spring-lys/spring-score.ly",
+   "files": [
+    "m301/spring-lys/spring-header.ly",
+    "m301/spring-lys/spring-score.ly",
+    "m301/spring-lys/spring-sonnet.ly",
+    "m301/spring-lys/spring1.ly",
+    "m301/spring-lys/spring1a.ly",
+    "m301/spring-lys/spring1b.ly",
+    "m301/spring-lys/spring1c.ly",
+    "m301/spring-lys/spring1d.ly",
+    "m301/spring-lys/spring1f.ly",
+    "m301/spring-lys/spring2.ly",
+    "m301/spring-lys/spring2a.ly",
+    "m301/spring-lys/spring2b.ly",
+    "m301/spring-lys/spring2c.ly",
+    "m301/spring-lys/spring2d.ly",
+    "m301/spring-lys/spring3.ly",
+    "m301/spring-lys/spring3a.ly",
+    "m301/spring-lys/spring3b.ly",
+    "m301/spring-lys/spring3c.ly",
+    "m301/spring-lys/spring3d.ly",
+    "m301/spring-lys/spring3f.ly"
+   ],
+   "part": 0,
+   "partName": "Allegro: Violino Principale",
+   "matched": 1,
+   "slurred": 0.176,
+   "marked": 45,
+   "bowings": 0
+  }
  },
  {
   "file": "vivaldi_winter_1.mid",
@@ -921,7 +1509,39 @@
    91
   ],
   "tracks": 6,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m351/winter-lys/winter-score.ly",
+   "files": [
+    "m351/winter-lys/winter-header.ly",
+    "m351/winter-lys/winter-score.ly",
+    "m351/winter-lys/winter-sonnet.ly",
+    "m351/winter-lys/winter1.ly",
+    "m351/winter-lys/winter1a.ly",
+    "m351/winter-lys/winter1b.ly",
+    "m351/winter-lys/winter1c.ly",
+    "m351/winter-lys/winter1d.ly",
+    "m351/winter-lys/winter1f.ly",
+    "m351/winter-lys/winter2.ly",
+    "m351/winter-lys/winter2a.ly",
+    "m351/winter-lys/winter2b.ly",
+    "m351/winter-lys/winter2c.ly",
+    "m351/winter-lys/winter2d.ly",
+    "m351/winter-lys/winter2f.ly",
+    "m351/winter-lys/winter3.ly",
+    "m351/winter-lys/winter3a.ly",
+    "m351/winter-lys/winter3b.ly",
+    "m351/winter-lys/winter3c.ly",
+    "m351/winter-lys/winter3d.ly",
+    "m351/winter-lys/winter3f.ly"
+   ],
+   "part": 0,
+   "partName": "Allegro non Molto: Violino Principale",
+   "matched": 1,
+   "slurred": 0.059,
+   "marked": 155,
+   "bowings": 0
+  }
  },
  {
   "file": "beethoven_concerto_3.mid",
@@ -943,7 +1563,32 @@
    98
   ],
   "tracks": 14,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m1165/violin_concerto_3-lys/Violin_Concerto_3.ly",
+   "files": [
+    "m1165/violin_concerto_3-lys/Violin_Concerto_3.ly",
+    "m1165/violin_concerto_3-lys/basso.ly",
+    "m1165/violin_concerto_3-lys/clarinetti.ly",
+    "m1165/violin_concerto_3-lys/cornid.ly",
+    "m1165/violin_concerto_3-lys/fagotti.ly",
+    "m1165/violin_concerto_3-lys/flauto.ly",
+    "m1165/violin_concerto_3-lys/oboi.ly",
+    "m1165/violin_concerto_3-lys/timpani.ly",
+    "m1165/violin_concerto_3-lys/trombed.ly",
+    "m1165/violin_concerto_3-lys/viola.ly",
+    "m1165/violin_concerto_3-lys/violinoone.ly",
+    "m1165/violin_concerto_3-lys/violinoprincipale.ly",
+    "m1165/violin_concerto_3-lys/violinotwo.ly",
+    "m1165/violin_concerto_3-lys/violoncello.ly"
+   ],
+   "part": 7,
+   "partName": "Violino principale.",
+   "matched": 0.9975,
+   "slurred": 0.308,
+   "marked": 119,
+   "bowings": 0
+  }
  },
  {
   "file": "tchaikovsky_concerto_3.mid",
@@ -965,7 +1610,75 @@
    100
   ],
   "tracks": 16,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m466/tchai_op35-lys/tchai_op35.ly",
+   "files": [
+    "m466/tchai_op35-lys/defs.ily",
+    "m466/tchai_op35-lys/mvmt1/cadenza.ily",
+    "m466/tchai_op35-lys/mvmt1/clarinettiA.ily",
+    "m466/tchai_op35-lys/mvmt1/contrabasso.ily",
+    "m466/tchai_op35-lys/mvmt1/corniF.ily",
+    "m466/tchai_op35-lys/mvmt1/corniF2.ily",
+    "m466/tchai_op35-lys/mvmt1/fagotti.ily",
+    "m466/tchai_op35-lys/mvmt1/flauti.ily",
+    "m466/tchai_op35-lys/mvmt1/flauti2.ily",
+    "m466/tchai_op35-lys/mvmt1/global.ily",
+    "m466/tchai_op35-lys/mvmt1/header.ily",
+    "m466/tchai_op35-lys/mvmt1/includes.ily",
+    "m466/tchai_op35-lys/mvmt1/oboi.ily",
+    "m466/tchai_op35-lys/mvmt1/score.ily",
+    "m466/tchai_op35-lys/mvmt1/solo.ily",
+    "m466/tchai_op35-lys/mvmt1/timpani.ily",
+    "m466/tchai_op35-lys/mvmt1/trombeD.ily",
+    "m466/tchai_op35-lys/mvmt1/viola.ily",
+    "m466/tchai_op35-lys/mvmt1/violino1.ily",
+    "m466/tchai_op35-lys/mvmt1/violino2.ily",
+    "m466/tchai_op35-lys/mvmt1/violoncello.ily",
+    "m466/tchai_op35-lys/mvmt2/clarinettiB.ily",
+    "m466/tchai_op35-lys/mvmt2/contrabasso.ily",
+    "m466/tchai_op35-lys/mvmt2/corniF.ily",
+    "m466/tchai_op35-lys/mvmt2/fagotti.ily",
+    "m466/tchai_op35-lys/mvmt2/flauti.ily",
+    "m466/tchai_op35-lys/mvmt2/global.ily",
+    "m466/tchai_op35-lys/mvmt2/header.ily",
+    "m466/tchai_op35-lys/mvmt2/includes.ily",
+    "m466/tchai_op35-lys/mvmt2/oboi.ily",
+    "m466/tchai_op35-lys/mvmt2/score.ily",
+    "m466/tchai_op35-lys/mvmt2/solo.ily",
+    "m466/tchai_op35-lys/mvmt2/viola.ily",
+    "m466/tchai_op35-lys/mvmt2/violino1.ily",
+    "m466/tchai_op35-lys/mvmt2/violino2.ily",
+    "m466/tchai_op35-lys/mvmt2/violoncello.ily",
+    "m466/tchai_op35-lys/mvmt3/clarinettiA.ily",
+    "m466/tchai_op35-lys/mvmt3/contrabasso.ily",
+    "m466/tchai_op35-lys/mvmt3/corniF.ily",
+    "m466/tchai_op35-lys/mvmt3/corniF2.ily",
+    "m466/tchai_op35-lys/mvmt3/fagotti.ily",
+    "m466/tchai_op35-lys/mvmt3/flauti.ily",
+    "m466/tchai_op35-lys/mvmt3/flauti2.ily",
+    "m466/tchai_op35-lys/mvmt3/global.ily",
+    "m466/tchai_op35-lys/mvmt3/header.ily",
+    "m466/tchai_op35-lys/mvmt3/includes.ily",
+    "m466/tchai_op35-lys/mvmt3/oboi.ily",
+    "m466/tchai_op35-lys/mvmt3/score.ily",
+    "m466/tchai_op35-lys/mvmt3/solo.ily",
+    "m466/tchai_op35-lys/mvmt3/timpani.ily",
+    "m466/tchai_op35-lys/mvmt3/trombeD.ily",
+    "m466/tchai_op35-lys/mvmt3/viola.ily",
+    "m466/tchai_op35-lys/mvmt3/violino1.ily",
+    "m466/tchai_op35-lys/mvmt3/violino2.ily",
+    "m466/tchai_op35-lys/mvmt3/violoncello.ily",
+    "m466/tchai_op35-lys/paper.ily",
+    "m466/tchai_op35-lys/tchai_op35.ly"
+   ],
+   "part": 35,
+   "partName": "III. Finale: Violino Solo",
+   "matched": 0.9777,
+   "slurred": 0.128,
+   "marked": 316,
+   "bowings": 62
+  }
  },
  {
   "file": "paganini_caprice_24.mid",
@@ -987,7 +1700,19 @@
    101
   ],
   "tracks": 2,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m2000/Caprice_24.ly",
+   "files": [
+    "m2000/Caprice_24.ly"
+   ],
+   "part": 0,
+   "partName": "TEMA",
+   "matched": 0.9529,
+   "slurred": 0.293,
+   "marked": 78,
+   "bowings": 0
+  }
  },
  {
   "file": "paganini_caprice_1.mid",
@@ -1009,7 +1734,20 @@
    103
   ],
   "tracks": 2,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m995/Caprice_1-lys/Caprice_1.ly",
+   "files": [
+    "m995/Caprice_1-lys/Caprice_1.ly",
+    "m995/Caprice_1-lys/Caprice_1_notes.ly"
+   ],
+   "part": 0,
+   "partName": "Staff 1",
+   "matched": 1,
+   "slurred": 0.109,
+   "marked": 209,
+   "bowings": 0
+  }
  },
  {
   "file": "gounod_ave_maria.mid",
@@ -1031,7 +1769,19 @@
    88
   ],
   "tracks": 4,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m2167/AveMaria-PianoViolin.ly",
+   "files": [
+    "m2167/AveMaria-PianoViolin.ly"
+   ],
+   "part": 0,
+   "partName": "Violin",
+   "matched": 1,
+   "slurred": 0.585,
+   "marked": 28,
+   "bowings": 0
+  }
  },
  {
   "file": "beethoven_romance_2.mid",
@@ -1053,6 +1803,27 @@
    96
   ],
   "tracks": 10,
-  "mechanical": true
+  "mechanical": true,
+  "score": {
+   "main": "m911/Romanze_Opus50.ly",
+   "files": [
+    "m911/Romanze_Opus50.ly",
+    "m911/cornif.ly",
+    "m911/fagotti.ly",
+    "m911/flauto.ly",
+    "m911/oboi.ly",
+    "m911/viola.ly",
+    "m911/violinoone.ly",
+    "m911/violinoprincipale.ly",
+    "m911/violinotwo.ly",
+    "m911/violoncello.ly"
+   ],
+   "part": 4,
+   "partName": "Violino principale.",
+   "matched": 0.9823,
+   "slurred": 0.337,
+   "marked": 178,
+   "bowings": 0
+  }
  }
 ]

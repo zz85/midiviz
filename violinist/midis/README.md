@@ -15,6 +15,17 @@ All files come from the [Mutopia Project](https://www.mutopiaproject.org/), whos
 - **No merged parts.** In every file the solo violin has its own track and channel; no file mixes the violin with other parts. Double stops and chords in the Bach and Paganini pieces are written as simultaneous notes on the one violin track (up to 4).
 - **Range.** Four files have a single note below the violin's open G (G3, MIDI 55), all engraving slips (see notes); the fingering engine should clamp or skip them. The Paganini caprices and the Beethoven / Tchaikovsky concertos go above C7 (to G7 = 103 in Caprice 1).
 
+## Their scores: bowing from the source
+
+The MIDI files carry no articulation: every note touches the next, and nothing says which notes share a bow. Mutopia's LilyPond sources do, so `violinist/scores/` holds the source of every piece, only the files each score reads (243 files, 1.2 MB; the same licences as the MIDI files). `index.json` gives each entry a `score`: its `main` file, the `files` it reads, the staff (`part`, `partName`) that is the MIDI's violin, and how well they agree (`matched`: the share of the MIDI's violin notes found in the score at the same pitch and place, 95.3–100 %, 99.5 % overall). #034, #037 and #038 read it with `strings/lilypond.js` and put its slurs, marks and bowings on the MIDI's notes (`violinist/score-art.js`), so the MIDI keeps its timing and the bow follows the score.
+
+What the sources have:
+- **Slurs: in every piece but one.** Of the note pairs, 0–60 % are slurred (20 % overall). Bach's Corrente BWV 1004 has 60 %, the Adagio BWV 1001 51 %, the C major Fuga 3 %. Handel's HWV 361 Andante has none: that edition left them out.
+- **Articulation marks** (staccato, tenuto, accents) in the sonatas, concertos and showpieces: 4,000 marked notes. The Bach solo movements (Bach-Gesellschaft edition) have none.
+- **Up- and down-bow signs: almost none.** Only the Tchaikovsky concerto has them (4 up, 68 down in the source). The other editions mark slurs and leave the bow direction to the player, as most do. The bow direction therefore still comes from alternating strokes, restarted on a down-bow after rests.
+
+`node violinist/tools/build_scores.js` rebuilds `violinist/scores` and the `score` entries from the sources (`node strings/test/fetch_mutopia_ly.js` fetches them into the git-ignored `strings/data/MutopiaLy`).
+
 ## Files
 
 Duration is as stored (at the file's tempo). Violin track: index, track name, 0-based channel, GM program.
