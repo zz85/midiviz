@@ -171,6 +171,23 @@
         <span class="value" id="angleValue"></span>
       </div>
       <div class="row">
+        <label title="Each racer gets an independently planned parallel course">Racers</label>
+        <input id="racerCount" type="range" min="1" max="8" step="1" value="2">
+        <span class="value" id="racerValue"></span>
+      </div>
+      <div class="row">
+        <label title="How strongly the racers exchange faster and slower passages">Race variance</label>
+        <input id="raceVariance" type="range" min="0" max="1" step="0.05" value="0.7">
+        <span class="value" id="raceVarianceValue"></span>
+      </div>
+      <div class="row">
+        <label title="Use the complete arrangement for every racer, or distribute MIDI parts between racers">Racer music</label>
+        <select id="racerMusic">
+          <option value="full">Full mix</option>
+          <option value="tracks">Different MIDI tracks</option>
+        </select>
+      </div>
+      <div class="row">
         <label>Take</label>
         <input id="seed" type="number" min="1" max="9999" value="43">
         <button id="generate" class="primary">Generate from MIDI</button>

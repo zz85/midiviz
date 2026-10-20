@@ -186,19 +186,26 @@ export function planTrack(hits, options = {}) {
 	const why = {}
 	const no = k => { why[k] = (why[k] || 0) + 1 }
 
-	// the start: Bosh at (0, 0) above a slope that passes just under the tail of his sled
+	// the start: Bosh above a slope that passes just under the tail of his sled.
+	// `start` and `idOffset` let independent racers be planned directly in their
+	// final collision-grid lanes, without translating or renumbering a verified ride.
+	const start = {
+		x: +(o.start?.x ?? 0),
+		y: +(o.start?.y ?? 0),
+	}
+	const firstId = Math.max(1, Math.round(o.idOffset || 0) + 1)
 	const th0 = o.startAngle, L0 = 30
-	const sx = 0 - Math.cos(th0) * 6, sy = 5.25 - Math.sin(th0) * 6
+	const sx = start.x - Math.cos(th0) * 6, sy = start.y + 5.25 - Math.sin(th0) * 6
 	const ex = sx + Math.cos(th0) * L0, ey = sy + Math.sin(th0) * L0
 	const root = {
 		parent: null, depth: 0, cost: 0, frame: 0, hit: -1,
-		rider: new Rider({ x: 0, y: 0 }, undefined, { scarf: false }),
-		lines: [solid(1, sx, sy, ex, ey, false, true)], nextId: 2,
-		pad: { ex, ey, theta: th0, id: 1 }, hist: newHistory(1, 0), histH: newHistory(0, 1), info: { start: true },
+		rider: new Rider(start, undefined, { scarf: false }),
+		lines: [solid(firstId, sx, sy, ex, ey, false, true)], nextId: firstId + 1,
+		pad: { ex, ey, theta: th0, id: firstId }, hist: newHistory(1, 0), histH: newHistory(0, 1), info: { start: true },
 	}
 	record(root.histH, root.rider)
 
-	const ring = Array.from({ length: RING }, () => new Rider({ x: 0, y: 0 }, undefined, { scarf: false }))
+	const ring = Array.from({ length: RING }, () => new Rider(start, undefined, { scarf: false }))
 	const touched = []
 	const addAll = lines => { for (const l of lines) world.track.add(l) }
 	const removeAll = lines => { for (const l of lines) world.track.remove(l.id) }
@@ -342,7 +349,8 @@ export function planTrack(hits, options = {}) {
 		const th = node.pad.theta
 		const dE = Math.cos(th) * (node.pad.ex - r0.x(P.TAIL)) + Math.sin(th) * (node.pad.ey - r0.y(P.TAIL))
 		const acc = GRAVITY * Math.sin(th)
-		let vWant = (o.speedLow + (o.speedHigh - o.speedLow) * (hit.energy ?? 0.5)) * (1 + 0.2 * exc)
+		const paceFactor = clamp(hit.paceFactor ?? 1, 0.65, 1.4)
+		let vWant = (o.speedLow + (o.speedHigh - o.speedLow) * (hit.energy ?? 0.5)) * (1 + 0.2 * exc) * paceFactor
 		if (hit.move === 'loop') vWant = Math.max(vWant, 6.5)
 		const tfWant = node.depth === 0 ? Math.min(22, D * 0.35) : D <= 16 ? D * 0.6 : D < 60 ? D * (0.72 + 0.1 * exc) : 43 + (D - 60) * (0.45 + 0.15 * exc)
 		// the melody's contour from the last landing: higher notes, higher pads (relative, so a loop or a big drop is not paid for forever)
@@ -435,7 +443,9 @@ export function planTrack(hits, options = {}) {
 			if (climbing) for (const dk of [8, 14, 20]) variants.push({ angle: av - dk * DEG, type: 'solid', entry: true })
 			// (without red pads, the pad's angle is how the landing speeds him up or slows him down: steeper is
 			// less of a bump and downhill after, flatter takes more of his speed off)
-			const exitWant = (o.speedLow + (o.speedHigh - o.speedLow) * (hits[hit.index + 1]?.energy ?? hit.energy ?? 0.5)) * (1 + 0.2 * exc)
+			const nextHit = hits[hit.index + 1]
+			const exitPaceFactor = clamp(nextHit?.paceFactor ?? paceFactor, 0.65, 1.4)
+			const exitWant = (o.speedLow + (o.speedHigh - o.speedLow) * (nextHit?.energy ?? hit.energy ?? 0.5)) * (1 + 0.2 * exc) * exitPaceFactor
 			const dks = wide ? [-8, -3, 0, 5, 10, 16] : [-4, 0, 6]
 			if (!o.red && speedLand < exitWant * 0.9) dks.push(-9, -13)
 			if (!o.red && speedLand > exitWant * 1.1) dks.push(11, 16)
@@ -597,7 +607,7 @@ export function planTrack(hits, options = {}) {
 	const pads = path.slice(1).map(n => ({ hit: n.hit, frame: n.frame, lineId: n.pad.id, ...n.info }))
 	const lastFrame = end.node.frame + 4 * FPS
 	return {
-		lines, start: { x: 0, y: 0 }, duration: lastFrame, pads, skipped,
+		lines, start, duration: lastFrame, pads, skipped,
 		why,
 		stats: {
 			hits: hits.length, landed: pads.length, skipped: skipped.length, frames: simulated, ms: Date.now() - t0, lines: lines.length,

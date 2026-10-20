@@ -34,6 +34,30 @@ Then open `http://127.0.0.1:8000/043_line_rider_race.html`.
 The status panel reports whether Bosh crashes and how many generated
 music-synchronized landing pads remain exact after human edits.
 
+## Racers
+
+The **Racers** control generates one to eight independently planned parallel
+courses. Each course keeps its own verified Line Rider physics world, with a
+separate line-ID range, while the editor displays their starts only 112 px
+apart. Courses may cross or fork visually without a rider accidentally
+colliding with another racer's rails.
+
+**Race variance** gives the racers different physical pace targets over each
+musical phrase. The advantage changes hands over the piece: one rider can be
+faster through a descent while another gets the faster route later. They are
+not delayed copies of one animation.
+
+**Racer music** can give every racer the full arrangement or distribute the
+MIDI's non-percussion tracks/parts between them. If there are fewer parts than
+racers they repeat cyclically; sparse or single-track files fall back to the
+full mix.
+
+The follow camera widens to keep the field visible. Saved `.track.json` files
+preserve rider starts, course durations, line ownership, and display offsets
+as optional editor metadata; other Line Rider tools can still open the
+ordinary 6.2 lines, but the isolated close-lane collision worlds are a #043
+editor feature and are not understood by standard Line Rider players.
+
 ## Adaptive generation controls
 
 Landings, gap floor, physical pace, and phrase span are ranges rather than
@@ -84,6 +108,9 @@ uses the melodic pitch contour, shaped into the multi-bar gestures above.
   alternating uphill/downhill targets from the hill-angle control.
 - `structure-lines.mjs` derives each landing's segment length from musical
   structure before the physical planner builds and tests that section.
+- `race-tracks.mjs` varies phrase pace and combines independently planned
+  courses into the close visual layout; the editor simulates each owned line
+  range separately.
 - `../bosh/physics.js`, `../bosh/planner.js`, and `../bosh/render.js` provide
   the verified physics, automatic planning, and rider model from #044.
 - `track-generator.mjs` and `physics.mjs` preserve the earlier #043 prototype

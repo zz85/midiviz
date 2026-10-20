@@ -1,5 +1,5 @@
 import { beatGrid } from '../harmony/harmony.js'
-import { onsetsOf } from '../bosh/music.js'
+import { onsetsOf, onsetsOfNotes } from '../bosh/music.js'
 import {
   ACCEL,
   FPS,
@@ -36,6 +36,7 @@ const song = {
   title: 'Chopin – Minute Waltz',
   midi: null,
   groups: null,
+  trackGroups: [],
   notes: [],
   duration: 0,
 }
@@ -45,8 +46,16 @@ const ride = {
   start: { x: 0, y: 0 },
   velocity: { x: 0.4, y: 0 },
   duration: 0,
+  courseFrames: 0,
+  raceFrames: 0,
   frames: null,
   camera: null,
+  racerSpecs: [{ start: { x: 0, y: 0 }, velocity: { x: 0.4, y: 0 } }],
+  racerDurations: [],
+  racerLineRanges: null,
+  racerDisplayOffsets: [],
+  racerLineOwners: {},
+  racers: [],
   pads: [],
   padsByLine: new Map(),
   leadIn: 0,
@@ -81,6 +90,21 @@ const view = {
   y: 0,
   ready: false,
   dpr: 1,
+}
+
+const RACER_HUES = [0, 205, 42, 290, 155, 330, 72, 248]
+
+function racerTheme(theme, racerIndex) {
+  if (racerIndex === 0) return theme
+  const hue = RACER_HUES[racerIndex % RACER_HUES.length]
+  return {
+    ...theme,
+    rider: `hsl(${hue} 78% 48%)`,
+    scarfA: `hsl(${hue} 88% 52%)`,
+    scarfB: theme.skin,
+    sled: `hsl(${hue} 52% 36%)`,
+    trail: `hsla(${hue}, 78%, 48%, 0.18)`,
+  }
 }
 
 let syncingProperties = false
@@ -130,13 +154,72 @@ function riderCamera(frame) {
 }
 
 function activeCamera(frame) {
+  let followZoom = 1
   if ($('follow').checked && ride.camera && !editor.gesture?.kind?.startsWith('pan')) {
     const target = riderCamera(frame)
     view.x = target.x
     view.y = target.y
     view.ready = true
+    followZoom = target.zoom ?? 1
   }
-  return { x: view.x, y: view.y, zoom: zoomAmount() }
+  return { x: view.x, y: view.y, zoom: zoomAmount() * followZoom }
+}
+
+function raceCameraPath(racers, frames) {
+  if (racers.length <= 1) return racers[0]?.camera ?? null
+  const x = new Float32Array(frames + 1)
+  const y = new Float32Array(frames + 1)
+  const zoom = new Float32Array(frames + 1)
+  for (let frame = 0; frame <= frames; frame++) {
+    const points = racers.map(racer => {
+      const index = Math.min(frame, racer.frames.frames)
+      return { x: racer.camera.bodyX[index], y: racer.camera.bodyY[index] }
+    })
+    const xs = points.map(point => point.x)
+    const ys = points.map(point => point.y)
+    const x0 = Math.min(...xs)
+    const x1 = Math.max(...xs)
+    const y0 = Math.min(...ys)
+    const y1 = Math.max(...ys)
+    x[frame] = (x0 + x1) / 2
+    y[frame] = (y0 + y1) / 2
+    zoom[frame] = clamp(520 / Math.max(520, x1 - x0 + 240, (y1 - y0 + 180) * 1.5), 0.025, 1)
+  }
+  return { x, y, zoom }
+}
+
+function linesForRacer(racerIndex) {
+  if (!ride.racerLineRanges) return ride.lines
+  return ride.lines.filter(line => racerIndexForLine(line.id) === racerIndex)
+}
+
+function racerIndexForLine(lineId) {
+  if (ride.racerLineOwners[lineId] != null) return ride.racerLineOwners[lineId]
+  const owner = ride.racerLineRanges?.findIndex(range => (
+    lineId >= range.first && lineId <= range.last
+  ))
+  return owner >= 0 ? owner : 0
+}
+
+function displayLine(line) {
+  const offset = ride.racerDisplayOffsets[racerIndexForLine(line.id)] || 0
+  return offset ? { ...line, y1: line.y1 + offset, y2: line.y2 + offset } : line
+}
+
+function displayedLines() {
+  return ride.lines.map(displayLine)
+}
+
+function closestRacer(point) {
+  const hit = hitTestLine(displayedLines(), point, Infinity)
+  return hit ? racerIndexForLine(ride.lines[hit.index].id) : 0
+}
+
+function displayFrames(frames, offset) {
+  if (!offset) return frames
+  const pts = new Float32Array(frames.pts)
+  for (let index = 1; index < pts.length; index += 2) pts[index] += offset
+  return { ...frames, pts }
 }
 
 function worldToScreen(point, camera) {
@@ -303,6 +386,9 @@ function generationOptions() {
       phraseHigh,
       upAngle,
       downAngle,
+      racerCount: Number($('racerCount').value),
+      raceVariance: Number($('raceVariance').value),
+      musicMode: $('racerMusic').value,
       excitement: clamp((Math.max(upAngle, downAngle) - 20) / 55, 0, 1),
       red: upAngle >= 45,
       // A phrase is the visible macro-line. Real Line Rider physics still
@@ -335,12 +421,20 @@ async function generate() {
         progress(progress) {
           $('planning').firstElementChild.style.width = `${100 * progress.done / progress.total}%`
           setStatus(
-            `Planning landing ${progress.done}/${progress.total} · ` +
+            `${progress.racers ? `Planning racer ${progress.racer}/${progress.racers} · ` : ''}` +
+            `landing ${progress.landingDone ?? progress.done}/${progress.landingTotal ?? progress.total} · ` +
             `${(progress.frames / 1e6).toFixed(2)}M physics frames tested`,
           )
         },
       })
-      worker.postMessage({ id, groups: song.groups, pick, plan, label: song.title })
+      worker.postMessage({
+        id,
+        groups: song.groups,
+        trackGroups: song.trackGroups,
+        pick,
+        plan,
+        label: song.title,
+      })
     })
     if (id !== activeJob) return
     await applyTrack(result.track, {
@@ -367,8 +461,27 @@ async function generate() {
 async function loadMidiBuffer(buffer, title) {
   if (typeof globalThis.Midi !== 'function') throw new Error('The MIDI parser did not load.')
   const midi = new globalThis.Midi(buffer)
-  const groups = onsetsOf(midi, { beats: beatGrid(midi).beats })
+  const beats = beatGrid(midi).beats
+  const groups = onsetsOf(midi, { beats })
   if (!groups.length) throw new Error('No pitched notes were found.')
+  const trackGroups = midi.tracks.flatMap((track, trackIndex) => {
+    if (track.channel === 9 || track.instrument?.percussion || track.notes.length < 4) return []
+    const partGroups = onsetsOfNotes(track.notes.map(note => ({
+      pitch: note.midi,
+      time: note.time,
+      duration: Math.max(0.02, note.duration),
+      velocity: note.velocity,
+      track: trackIndex,
+      channel: track.channel,
+    })), { beats })
+    if (partGroups.length < 4) return []
+    const instrument = track.instrument?.name || track.instrument?.family
+    return [{
+      trackIndex,
+      label: track.name || instrument || `Track ${trackIndex + 1}`,
+      groups: partGroups,
+    }]
+  })
   const notes = midi.tracks
     .filter(track => track.channel !== 9 && !track.instrument?.percussion)
     .flatMap(track => track.notes.map(note => ({
@@ -378,7 +491,7 @@ async function loadMidiBuffer(buffer, title) {
       time: note.time,
     })))
     .sort((a, b) => a.time - b.time || b.midi - a.midi)
-  Object.assign(song, { title, midi, groups, notes, duration: midi.duration })
+  Object.assign(song, { title, midi, groups, trackGroups, notes, duration: midi.duration })
   await generate()
 }
 
@@ -428,7 +541,31 @@ async function applyTrack(json, {
   ride.lines = copyLines(parsed.lines)
   ride.start = parsed.start
   ride.velocity = parsed.velocity
-  ride.duration = Math.max(parsed.duration / FPS, song.duration ? song.duration + leadIn + 0.5 : 0, 1)
+  ride.racerSpecs = parsed.riders?.length
+    ? parsed.riders.map(racer => ({ start: { ...racer.start }, velocity: { ...racer.velocity } }))
+    : [{ start: { ...parsed.start }, velocity: { ...parsed.velocity } }]
+  ride.racerDurations = parsed.racerDurations?.length
+    ? ride.racerSpecs.map((_, index) => parsed.racerDurations[index] || parsed.duration)
+    : ride.racerSpecs.map(() => parsed.duration)
+  ride.racerLineRanges = parsed.racerLineRanges
+  ride.racerDisplayOffsets = parsed.racerDisplayOffsets?.length
+    ? ride.racerSpecs.map((_, index) => parsed.racerDisplayOffsets[index] || 0)
+    : ride.racerSpecs.map(() => 0)
+  ride.racerLineOwners = { ...(parsed.racerLineOwners || {}) }
+  ride.courseFrames = Math.ceil(Math.max(
+    parsed.duration,
+    song.duration ? (song.duration + leadIn + 0.5) * FPS : 0,
+    FPS,
+  ))
+  ride.raceFrames = ride.courseFrames
+  ride.duration = ride.raceFrames / FPS
+  $('racerCount').value = String(ride.racerSpecs.length)
+  $('racerCount').dispatchEvent(new Event('input'))
+  if (flow?.raceVariance != null) {
+    $('raceVariance').value = String(flow.raceVariance)
+    $('raceVariance').dispatchEvent(new Event('input'))
+  }
+  if (flow?.musicMode) $('racerMusic').value = flow.musicMode
   ride.pads = pads.map(pad => ({ ...pad }))
   ride.padsByLine = new Map(ride.pads.map(pad => [pad.lineId, pad]))
   ride.leadIn = leadIn
@@ -453,15 +590,28 @@ async function resimulate({ recenter = false, quiet = false } = {}) {
   if (!quiet) setStatus('Re-running Line Rider 6.2 physics…')
   await new Promise(resolve => setTimeout(resolve, 0))
   try {
-    const frames = Math.ceil(ride.duration * FPS)
-    ride.frames = rideFrames(ride.lines, {
-      start: ride.start,
-      velocity: ride.velocity,
-      frames,
+    ride.racers = ride.racerSpecs.map((spec, racerIndex) => {
+      const frames = ride.racerDurations[racerIndex] || ride.courseFrames
+      const offset = ride.racerDisplayOffsets[racerIndex] || 0
+      const logicalFrames = rideFrames(linesForRacer(racerIndex), {
+        start: spec.start,
+        velocity: spec.velocity,
+        frames,
+      })
+      const racerFrames = displayFrames(logicalFrames, offset)
+      return {
+        ...spec,
+        racerIndex,
+        frames: racerFrames,
+        camera: cameraPath(racerFrames),
+      }
     })
-    ride.camera = cameraPath(ride.frames)
+    ride.frames = ride.racers[0].frames
+    ride.raceFrames = ride.courseFrames
+    ride.duration = ride.raceFrames / FPS
+    ride.camera = raceCameraPath(ride.racers, ride.raceFrames)
     if (recenter || !view.ready) {
-      const start = cameraAt(ride.camera, clamp(clock.time * FPS, 0, ride.frames.frames))
+      const start = cameraAt(ride.camera, clamp(clock.time * FPS, 0, ride.raceFrames))
       view.x = start.x
       view.y = start.y
       view.ready = true
@@ -485,13 +635,19 @@ function scheduleSimulation() {
 
 function updateStats() {
   if (!ride.frames) return
-  const crash = ride.frames.crash
-  const exact = ride.pads.filter(pad => ride.frames.firstTouch.get(pad.lineId) === pad.frame).length
+  const crashes = ride.racers
+    .map(racer => racer.frames.crash)
+    .filter(crash => crash != null)
+  const exact = ride.pads.filter(pad => {
+    const racer = ride.racers[pad.racerIndex ?? 0]
+    return racer?.frames.firstTouch.get(pad.lineId) === pad.frame
+  }).length
+  const primaryPads = ride.pads.filter(pad => (pad.racerIndex ?? 0) === 0)
   const editDelta = ride.lines.length - ride.originalLineCount
   const lineChange = editDelta ? ` · ${editDelta > 0 ? '+' : ''}${editDelta} lines` : ''
-  const speeds = ride.pads.map(pad => pad.speed).filter(Number.isFinite).sort((a, b) => a - b)
-  const gaps = ride.pads.slice(1)
-    .map((pad, index) => (pad.frame - ride.pads[index].frame) / FPS)
+  const speeds = primaryPads.map(pad => pad.speed).filter(Number.isFinite).sort((a, b) => a - b)
+  const gaps = primaryPads.slice(1)
+    .map((pad, index) => (pad.frame - primaryPads[index].frame) / FPS)
     .filter(Number.isFinite)
     .sort((a, b) => a - b)
   const percentile = (values, amount) => values.length
@@ -502,12 +658,12 @@ function updateStats() {
   const gapLow = percentile(gaps, 0.1)
   const gapHigh = percentile(gaps, 0.9)
   const gestures = new Map()
-  for (const pad of ride.pads) {
+  for (const pad of primaryPads) {
     if (pad.gestureIndex == null || gestures.has(pad.gestureIndex)) continue
     gestures.set(pad.gestureIndex, pad.gestureBars)
   }
   const gestureBars = [...gestures.values()].filter(Number.isFinite)
-  const heights = ride.pads.map(pad => pad.courseHeight).filter(Number.isFinite).sort((a, b) => a - b)
+  const heights = primaryPads.map(pad => pad.courseHeight).filter(Number.isFinite).sort((a, b) => a - b)
   const heightLow = percentile(heights, 0.1)
   const heightHigh = percentile(heights, 0.9)
   const loops = ride.pads.filter(pad => pad.kind === 'loop').length
@@ -517,15 +673,18 @@ function updateStats() {
   const flowStats = speedLow == null || gapLow == null
     ? ''
     : `<div><span class="key">Actual flow</span> pace ${speedLow.toFixed(1)}–${speedHigh.toFixed(1)} px/f · gaps ${gapLow.toFixed(2)}–${gapHigh.toFixed(2)} s <span class="key">(10–90%)</span></div>`
+  const parts = ride.flow?.racerParts?.length
+    ? `<div><span class="key">Parts</span> ${ride.flow.racerParts.join(' · ')}</div>`
+    : ''
   $('stats').innerHTML = `
-    <div><span class="key">Track</span> ${ride.lines.length} editable segments${lineChange} · ${FPS} fps</div>
-    <div class="${crash == null ? 'ok' : 'bad'}">${crash == null
-      ? '✓ Bosh stays mounted for the whole ride'
-      : `✗ Bosh crashes at ${(crash / FPS).toFixed(2)} s`}</div>
+    <div><span class="key">Track</span> ${ride.racers.length} independent parallel courses · ${ride.lines.length} editable segments${lineChange} · ${FPS} fps</div>
+    <div class="${crashes.length ? 'bad' : 'ok'}">${crashes.length
+      ? `✗ ${crashes.length} racer${crashes.length === 1 ? '' : 's'} crash; first at ${(Math.min(...crashes) / FPS).toFixed(2)} s`
+      : `✓ all ${ride.racers.length} racers stay mounted for the whole ride`}</div>
     ${ride.pads.length
       ? `<div class="${exact === ride.pads.length ? 'ok' : 'bad'}">${exact}/${ride.pads.length} note landings still exact after edits</div>`
       : '<div><span class="key">Loaded track</span> edit it, then re-run physics</div>'}
-    ${gestureSummary}${flowStats}`
+    ${parts}${gestureSummary}${flowStats}`
 }
 
 function pushUndo(snapshot = copyLines(ride.lines)) {
@@ -676,13 +835,14 @@ function drawLines(camera, theme, frame) {
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
   for (let index = 0; index < ride.lines.length; index++) {
-    const line = ride.lines[index]
+    const source = ride.lines[index]
+    const line = displayLine(source)
     if (
       Math.max(line.x1, line.x2) < x0 || Math.min(line.x1, line.x2) > x1 ||
       Math.max(line.y1, line.y2) < y0 || Math.min(line.y1, line.y2) > y1
     ) continue
     const selected = index === editor.selected
-    const pad = ride.padsByLine.get(line.id)
+    const pad = ride.padsByLine.get(source.id)
     if (selected) {
       ctx.strokeStyle = 'rgba(210,170,85,0.34)'
       ctx.lineWidth = 9 / camera.zoom
@@ -722,19 +882,21 @@ function drawLines(camera, theme, frame) {
 }
 
 function drawTrail(camera, theme, frame) {
-  if (!$('trail').checked || !ride.camera) return
-  const from = Math.max(0, Math.floor(frame) - 2 * FPS)
-  const to = Math.min(ride.frames.frames, Math.floor(frame))
-  ctx.strokeStyle = theme.trail
+  if (!$('trail').checked || !ride.racers.length) return
   ctx.lineWidth = 2.2 / camera.zoom
   ctx.lineCap = 'round'
-  ctx.beginPath()
-  for (let index = from; index <= to; index++) {
-    const x = ride.camera.bodyX[index]
-    const y = ride.camera.bodyY[index]
-    index === from ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
+  for (const racer of ride.racers) {
+    const to = Math.min(racer.frames.frames, Math.floor(frame))
+    const from = Math.max(0, to - 2 * FPS)
+    ctx.strokeStyle = racerTheme(theme, racer.racerIndex).trail
+    ctx.beginPath()
+    for (let index = from; index <= to; index++) {
+      const x = racer.camera.bodyX[index]
+      const y = racer.camera.bodyY[index]
+      index === from ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
+    }
+    ctx.stroke()
   }
-  ctx.stroke()
 }
 
 function previewLines() {
@@ -779,8 +941,9 @@ function drawPreview(camera) {
 }
 
 function drawHandles(camera) {
-  const line = selectedLine()
-  if (!line || clock.playing) return
+  const selected = selectedLine()
+  if (!selected || clock.playing) return
+  const line = displayLine(selected)
   const radius = 5.2 / camera.zoom
   for (const point of [{ x: line.x1, y: line.y1 }, { x: line.x2, y: line.y2 }]) {
     ctx.fillStyle = '#f6f3ec'
@@ -795,16 +958,18 @@ function drawHandles(camera) {
 
 function drawTimeline(frame, theme) {
   if (!ride.frames) return
+  const frames = Math.max(1, ride.raceFrames)
   const y = innerHeight - 17
   ctx.fillStyle = theme === THEMES.night ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.055)'
   ctx.fillRect(0, y - 9, innerWidth, 26)
   for (const pad of ride.pads) {
-    const x = pad.frame / ride.frames.frames * innerWidth
+    if ((pad.racerIndex ?? 0) !== 0) continue
+    const x = pad.frame / frames * innerWidth
     ctx.fillStyle = pitchColour(pad.pitch, 52, pad.frame <= frame ? 0.95 : 0.42)
     ctx.fillRect(x - 0.75, y - 4 - pad.strength * 7, 1.5, 8 + pad.strength * 14)
   }
   ctx.fillStyle = theme.line
-  ctx.fillRect(frame / ride.frames.frames * innerWidth - 1, y - 10, 2, 24)
+  ctx.fillRect(frame / frames * innerWidth - 1, y - 10, 2, 24)
 }
 
 function render() {
@@ -817,7 +982,7 @@ function render() {
     pause()
   }
   if (clock.playing) synth.tick(time, clock.speed)
-  const frame = ride.frames ? clamp(time * FPS, 0, ride.frames.frames) : 0
+  const frame = ride.frames ? clamp(time * FPS, 0, ride.raceFrames) : 0
   const theme = THEMES[$('theme').value] || THEMES.paper
   const camera = activeCamera(frame)
   ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0)
@@ -831,7 +996,14 @@ function render() {
   if (ride.frames) drawTrail(camera, theme, frame)
   drawLines(camera, theme, frame)
   drawPreview(camera)
-  if (ride.frames) drawBosh(ctx, ride.frames, frame, theme)
+  for (const racer of ride.racers) {
+    drawBosh(
+      ctx,
+      racer.frames,
+      Math.min(frame, racer.frames.frames),
+      racerTheme(theme, racer.racerIndex),
+    )
+  }
   drawHandles(camera)
   ctx.restore()
   drawTimeline(frame, theme)
@@ -845,7 +1017,7 @@ function updateTransport(time = currentTime()) {
 }
 
 function updateFlowIndicator(time) {
-  const pads = ride.pads
+  const pads = ride.pads.filter(pad => (pad.racerIndex ?? 0) === 0)
   if (!ride.flow || !pads.length || pads[0].targetRate == null) {
     $('flowNow').innerHTML = '<span class="key">Adaptive flow</span> follows the score after generation'
     return
@@ -860,7 +1032,8 @@ function updateFlowIndicator(time) {
   }
   const pad = pads[low]
   const targetSpeed =
-    ride.flow.speedLow + (ride.flow.speedHigh - ride.flow.speedLow) * (pad.energy ?? pad.activity ?? 0.5)
+    (ride.flow.speedLow + (ride.flow.speedHigh - ride.flow.speedLow) * (pad.energy ?? pad.activity ?? 0.5))
+    * (pad.paceFactor ?? 1)
   const actual = Number.isFinite(pad.speed) ? ` · actual ${pad.speed.toFixed(1)}` : ''
   const slope = pad.loopRequested
     ? `loop from ${Math.abs(pad.targetSlopeAngle).toFixed(0)}° climb`
@@ -912,10 +1085,16 @@ function saveTrack() {
     label: ride.title,
     creator: 'midiviz #043 editor',
     description:
-      `Editable MIDI Line Rider track using 6.2 physics. Music starts at ${ride.leadIn.toFixed(2)} s.`,
-    duration: Math.round(ride.duration * FPS),
+      `Editable MIDI Line Rider race with ${ride.racerSpecs.length} independent parallel courses using 6.2 physics. Music starts at ${ride.leadIn.toFixed(2)} s.`,
+    duration: ride.courseFrames,
     start: ride.start,
     velocity: ride.velocity,
+    riders: ride.racerSpecs,
+    racerDurations: ride.racerDurations,
+    racerLineRanges: ride.racerLineRanges,
+    racerDisplayOffsets: ride.racerDisplayOffsets,
+    racerLineOwners: ride.racerLineOwners,
+    racerStaggerFrames: 0,
     lines: ride.lines,
   })
   const blob = new Blob([JSON.stringify(json)], { type: 'application/json' })
@@ -933,7 +1112,7 @@ canvas.addEventListener('pointerdown', event => {
   if (clock.playing) pause()
   canvas.setPointerCapture(event.pointerId)
   const screen = pointerPosition(event)
-  const frame = ride.frames ? clamp(clock.time * FPS, 0, ride.frames.frames) : 0
+  const frame = ride.frames ? clamp(clock.time * FPS, 0, ride.raceFrames) : 0
   const camera = activeCamera(frame)
   const rawWorld = screenToWorld(screen, camera)
   const world = snapPoint(rawWorld, 5, $('snap').checked)
@@ -951,8 +1130,9 @@ canvas.addEventListener('pointerdown', event => {
     event.preventDefault()
     return
   }
+  const visualLines = displayedLines()
   if (editor.tool === 'erase') {
-    const hit = hitTestLine(ride.lines, rawWorld, 9 / camera.zoom)
+    const hit = hitTestLine(visualLines, rawWorld, 9 / camera.zoom)
     if (hit) {
       const before = copyLines(ride.lines)
       ride.lines.splice(hit.index, 1)
@@ -962,47 +1142,56 @@ canvas.addEventListener('pointerdown', event => {
     return
   }
   if (editor.tool === 'select') {
-    const hit = hitTestLine(ride.lines, rawWorld, 9 / camera.zoom)
+    const hit = hitTestLine(visualLines, rawWorld, 9 / camera.zoom)
     if (!hit) {
       setSelected(null)
       return
     }
     setSelected(hit.index)
-    const endpoint = endpointAt(hit.line, rawWorld, 10 / camera.zoom)
+    const line = ride.lines[hit.index]
+    const racerIndex = racerIndexForLine(line.id)
+    const displayOffset = ride.racerDisplayOffsets[racerIndex] || 0
+    const logicalRaw = { x: rawWorld.x, y: rawWorld.y - displayOffset }
+    const logicalWorld = snapPoint(logicalRaw, 5, $('snap').checked)
+    const endpoint = endpointAt(line, logicalRaw, 10 / camera.zoom)
     const before = copyLines(ride.lines)
     if (endpoint) {
-      const line = ride.lines[hit.index]
       editor.gesture = {
         kind: 'move-endpoint',
         before,
-        handles: connectedEndpoints(ride.lines, hit.index, endpoint),
+        handles: connectedEndpoints(ride.lines, hit.index, endpoint)
+          .filter(handle => racerIndexForLine(ride.lines[handle.index].id) === racerIndex),
         start: endpoint === 'start'
           ? { x: line.x1, y: line.y1 }
           : { x: line.x2, y: line.y2 },
+        displayOffset,
         moved: false,
       }
     } else {
       editor.gesture = {
         kind: 'move-line',
         before,
-        start: world,
-        original: { ...hit.line },
+        start: logicalWorld,
+        original: { ...line },
         index: hit.index,
+        displayOffset,
         moved: false,
       }
     }
     return
   }
+  const racerIndex = closestRacer(rawWorld)
+  const displayOffset = ride.racerDisplayOffsets[racerIndex] || 0
   if (editor.tool === 'pencil') {
-    editor.gesture = { kind: 'draw-pencil', points: [rawWorld] }
+    editor.gesture = { kind: 'draw-pencil', points: [rawWorld], racerIndex, displayOffset }
     return
   }
   if (editor.tool === 'line') {
-    editor.gesture = { kind: 'draw-line', start: world, current: world }
+    editor.gesture = { kind: 'draw-line', start: world, current: world, racerIndex, displayOffset }
     return
   }
   if (editor.tool === 'loop') {
-    editor.gesture = { kind: 'draw-loop', start: world, current: world }
+    editor.gesture = { kind: 'draw-loop', start: world, current: world, racerIndex, displayOffset }
   }
 })
 
@@ -1015,10 +1204,14 @@ canvas.addEventListener('pointermove', event => {
     view.y = gesture.camera.y - (screen.y - gesture.screen.y) / gesture.zoom
     return
   }
-  const frame = ride.frames ? clamp(clock.time * FPS, 0, ride.frames.frames) : 0
+  const frame = ride.frames ? clamp(clock.time * FPS, 0, ride.raceFrames) : 0
   const camera = activeCamera(frame)
   const rawWorld = screenToWorld(screen, camera)
-  const world = snapPoint(rawWorld, 5, $('snap').checked)
+  const existingEdit = gesture.kind === 'move-endpoint' || gesture.kind === 'move-line'
+  const logicalRaw = existingEdit
+    ? { x: rawWorld.x, y: rawWorld.y - (gesture.displayOffset || 0) }
+    : rawWorld
+  const world = snapPoint(logicalRaw, 5, $('snap').checked)
   if (gesture.kind === 'move-endpoint') {
     gesture.moved ||= Math.hypot(world.x - gesture.start.x, world.y - gesture.start.y) > 1e-6
     moveEndpoints(ride.lines, gesture.handles, world)
@@ -1080,8 +1273,17 @@ function finishPointer(event) {
     additions = loopToLines(gesture.start, gesture.current, options)
   }
   if (!additions.length) return
+  const displayOffset = gesture.displayOffset || 0
+  if (displayOffset) {
+    additions = additions.map(line => ({
+      ...line,
+      y1: line.y1 - displayOffset,
+      y2: line.y2 - displayOffset,
+    }))
+  }
   const before = copyLines(ride.lines)
   ride.lines.push(...additions)
+  for (const line of additions) ride.racerLineOwners[line.id] = gesture.racerIndex || 0
   setSelected(ride.lines.length - additions.length)
   finishEdit(before)
 }
@@ -1092,7 +1294,7 @@ canvas.addEventListener('contextmenu', event => event.preventDefault())
 canvas.addEventListener('wheel', event => {
   event.preventDefault()
   const oldZoom = zoomAmount()
-  const frame = ride.frames ? clamp(clock.time * FPS, 0, ride.frames.frames) : 0
+  const frame = ride.frames ? clamp(clock.time * FPS, 0, ride.raceFrames) : 0
   const camera = activeCamera(frame)
   const screen = pointerPosition(event)
   const anchor = screenToWorld(screen, camera)
@@ -1184,7 +1386,16 @@ const updateAngles = () => {
 }
 $('upAngle').addEventListener('input', updateAngles)
 $('downAngle').addEventListener('input', updateAngles)
-for (const id of ['zoom', 'pitch']) $(id).dispatchEvent(new Event('input'))
+$('racerCount').addEventListener('input', () => {
+  const count = Number($('racerCount').value)
+  $('racerValue').textContent = `${count} racer${count === 1 ? '' : 's'}`
+})
+$('raceVariance').addEventListener('input', () => {
+  $('raceVarianceValue').textContent = `${Math.round(Number($('raceVariance').value) * 100)}%`
+})
+for (const id of ['zoom', 'pitch', 'racerCount', 'raceVariance']) {
+  $(id).dispatchEvent(new Event('input'))
+}
 updateAngles()
 
 addEventListener('dragover', event => {
