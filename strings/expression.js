@@ -114,20 +114,21 @@ export function encodeRecording(an, notes) {
     on: notes.map(n => Math.round(n.on * 1000)), off: notes.map(n => Math.round(n.off * 1000)),
     loud: [...an.loud].map(v => enc1((v + 33) / 0.75)).join(''),
     cents: an.cents.map(c => c ? [c.i0, [...c.c].map(v => enc2(v * 10 + 2048)).join('')] : 0),
-    ...(an.dyn ? { dyn: [...an.dyn].map(v => enc1((v - 0.08) / 0.92 * 63)).join('') } : {}),
+    // lanes corrected by listening, per engine (correctLane): { source, waveguide }
+    ...(an.lanes ? { lanes: Object.fromEntries(Object.entries(an.lanes).map(([k, d]) => [k, [...d].map(v => enc1((v - 0.08) / 0.92 * 63)).join('')])) } : {}),
   }
 }
 export function decodeRecording(r) {
   return {
     rate: r.rate, tuning: r.tuning, on: r.on.map(v => v / 1000), off: r.off.map(v => v / 1000),
-    loud: Float32Array.from(r.loud, ch => IDX[ch] * 0.75 - 33),
-    cents: r.cents.map(c => {
+    loud: Float32Array.from(r.loud || '', ch => IDX[ch] * 0.75 - 33),
+    cents: (r.cents || []).map(c => {
       if (!c) return null
       const s = c[1], out = new Float32Array(s.length / 2)
       for (let k = 0; k < out.length; k++) out[k] = ((IDX[s[2 * k]] << 6 | IDX[s[2 * k + 1]]) - 2048) / 10
       return { i0: c[0], c: out }
     }),
-    dyn: r.dyn ? Float32Array.from(r.dyn, ch => 0.08 + IDX[ch] / 63 * 0.92) : null,
+    lanes: Object.fromEntries(Object.entries(r.lanes || (r.dyn ? { source: r.dyn } : {})).map(([k, d]) => [k, Float32Array.from(d, ch => 0.08 + IDX[ch] / 63 * 0.92)])),
   }
 }
 
@@ -158,11 +159,12 @@ function widen(c0, rate, g) {
  * notes were stored in. Each note takes the recorded on / off and its pitch
  * curve n.rec = { t0 (s), rate, c (cents) }. Returns the expression lane for
  * renderPerformance ({ recorded, rate, t0, dyn: Float32Array }) or null when
- * the note count differs. The lane is the one stored with the recording
- * (corrected by listening, correctLane), else the recorded level inside the
- * notes (laneFromLevel).
+ * the note count differs. The lane is the one stored with the recording for
+ * `engine` (corrected by listening on that engine, correctLane; engines without
+ * their own take the Source model's), else the recorded level inside the notes
+ * (laneFromLevel).
  */
-export function applyRecording(rec, notes, { dbPerDyn = DB_PER_DYN, vibGain = VIB_GAIN } = {}) {
+export function applyRecording(rec, notes, { dbPerDyn = DB_PER_DYN, vibGain = VIB_GAIN, engine = 'source' } = {}) {
   const r = rec.loud instanceof Float32Array ? rec : decodeRecording(rec)
   if (r.on.length !== notes.length) return null
   const order = notes.map((n, i) => i).sort((a, b) => (notes[a].q - notes[b].q) || (notes[a].pitch - notes[b].pitch))
@@ -172,7 +174,40 @@ export function applyRecording(rec, notes, { dbPerDyn = DB_PER_DYN, vibGain = VI
     if (r.cents[k]) n.rec = { t0: r.cents[k].i0 / r.rate, rate: r.rate, c: widen(r.cents[k].c, r.rate, vibGain) }
     else delete n.rec
   })
-  return { recorded: true, rate: r.rate, t0: 0, dyn: r.dyn ? Float32Array.from(r.dyn) : laneFromLevel(r.loud, r.rate, notes, dbPerDyn) }
+  // the lane corrected for this engine; the physical models share theirs (waveguide ↔ source),
+  // the other engines take the Source model's
+  // a recording of an ensemble carries the timing only (the violin's level and
+  // pitch cannot be measured under the orchestra): no lane, our rules play the rest
+  if (!r.loud.length) return { recorded: false, timing: true, rate: r.rate, t0: 0, engine: null, dyn: null }
+  const lane = r.lanes?.[engine] ?? r.lanes?.[engine === 'waveguide' ? 'source' : engine === 'source' ? 'waveguide' : 'source'] ?? r.lanes?.source
+  return { recorded: true, timing: true, rate: r.rate, t0: 0, engine: r.lanes?.[engine] ? engine : lane ? 'source' : null, dyn: lane ? Float32Array.from(lane) : laneFromLevel(r.loud, r.rate, notes, dbPerDyn) }
+}
+
+/**
+ * Performance time of score position q (quarters) in a recording: from its
+ * tempo map (rec.tmap, stored for ensemble recordings: every part's onsets)
+ * or from the violin notes' recorded onsets (notes with q and on, after
+ * applyRecording). Linear between known points, at the nearest local tempo
+ * beyond them. Returns t(q).
+ */
+export function tempoMapOf(rec, notes = null) {
+  let Q, T
+  if (rec?.tmap) { Q = rec.tmap.q.map(v => v / 480); T = rec.tmap.t.map(v => v / 1000) }
+  else {
+    const by = new Map()
+    for (const n of notes || []) if (n.q != null && !by.has(n.q)) by.set(n.q, n.on)
+    const k = [...by.keys()].sort((a, b) => a - b); Q = k; T = k.map(q => by.get(q))
+  }
+  // keep it increasing
+  for (let i = 1; i < T.length; i++) if (T[i] < T[i - 1] + 1e-3) T[i] = T[i - 1] + 1e-3
+  return q => {
+    if (!Q.length) return q * 0.5
+    let lo = 0, hi = Q.length - 1
+    if (q <= Q[0]) { const s = Q.length > 1 ? (T[1] - T[0]) / (Q[1] - Q[0]) : 0.5; return T[0] + (q - Q[0]) * s }
+    if (q >= Q[hi]) { const s = hi > 0 ? (T[hi] - T[hi - 1]) / (Q[hi] - Q[hi - 1]) : 0.5; return T[hi] + (q - Q[hi]) * s }
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (Q[m] <= q) lo = m; else hi = m }
+    return T[lo] + (T[hi] - T[lo]) * (q - Q[lo]) / (Q[hi] - Q[lo])
+  }
 }
 
 /**

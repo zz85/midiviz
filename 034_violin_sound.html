@@ -184,6 +184,10 @@
       state.engine = n
       showEngine()
       await lab.use(n)
+      // a recorded performance: the dynamics lane corrected for this engine
+      if (!$('perfRow').hidden && $('performer').value && midiTracks?.length && state.expr?.recorded && state.expr.engine && state.expr.engine !== (n === 'waveguide' ? 'waveguide' : 'source')) {
+        const was = lab.playing, t = lab.time(); await playTrack(+$('track').value, state.source); lab.pausedAt = t; if (was) lab.play(t)
+      }
       saveUrl()
     }
 
@@ -561,7 +565,7 @@
       const ex = state.useExpr ? state.expr : null
       style.tempo = (state.tempo || 100) * state.speed
       state.perf = renderPerformance(scaleNotes(state.notes, state.speed), { instrument: $('instrument').value, style, seed: 7 + 1000 * (take - 1), expression: scaleExpression(ex, state.speed) })
-      $('exprV').textContent = state.expr?.recorded ? 'recording' : state.expr ? `CC${state.expr.cc}` : 'none in file'
+      $('exprV').textContent = state.expr?.recorded ? 'recording' : state.expr?.cc ? `CC${state.expr.cc}` : 'none in file'
       $('exprV').title = state.expr?.recorded ? 'The dynamics of the chosen performer’s recording (Performer)' : state.expr ? `${state.expr.points.length} controller events in this track` : 'This piece has no moving CC11 / CC7 / CC2: the dynamics come from the note velocities'
       lab.setPerformance(state.perf)
       lab.pausedAt = songT / state.speed
@@ -637,7 +641,7 @@
         try {
           if (!recordings.has(id)) recordings.set(id, fetch(`violinist/performances/${id}.json`).then(r => r.json()))
           const rec = await recordings.get(id), c = t.notes.map(n => ({ ...n }))
-          const ex = applyRecording(rec, c)
+          const ex = applyRecording(rec, c, { engine: state.engine })
           if (ex) { notes = c; expr = ex; info = `${Math.floor(rec.seconds / 60)}:${String(Math.floor(rec.seconds % 60)).padStart(2, '0')}, ${rec.licence}` }
           $('perfRow').title = $('perfRow').title.split('\n\n')[0] + `\n\n${rec.violinist}: ${rec.title}. Recording ${rec.licence}, ${rec.url}; ${Math.round(100 * rec.found)} % of the notes found in it, pitch measured on ${rec.pitched}. ${rec.dataset}`
         } catch (e) { setStatus('Could not load the performance: ' + e.message, true, 3000) }

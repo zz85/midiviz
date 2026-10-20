@@ -5,7 +5,7 @@
 // in both. The renders go through the #030 hall and are measured with the same
 // analysis as the recording.
 //
-//   node strings/test/expression_ab.js [--recs=ko-donghwi_bwv1001_mov1,…] [--model=source] [--body=phil] [--secs=90] [--fit] [--loop=N] [--wav]
+//   node strings/test/expression_ab.js [--recs=ko-donghwi_bwv1001_mov1,…] [--model=source] [--body=phil] [--lane=<model>] [--secs=90] [--fit] [--loop=N] [--wav]
 //
 // Per recording, for "rules" (recorded timing only) and "recorded" (timing,
 // loudness lane and pitch curves):
@@ -16,6 +16,7 @@
 //   vib width   median vibrato width (cents) on single notes of 0.5 s or more, ours / the recording's
 //   pitch err   RMS difference of the pitch curves (cents), median over the single notes
 //               (nothing else sounding) pitched in both
+// --lane plays the lane corrected for another model (default: the one rendering).
 // --fit plays the lane made from the recorded level alone at several scales
 // (DB_PER_DYN); --loop=N makes it so and corrects it N times here.
 import { readFileSync, mkdirSync } from 'node:fs'
@@ -27,7 +28,7 @@ import { writeWav } from './audio-util.js'
 const here = fileURLToPath(new URL('.', import.meta.url))
 const arg = (k, d) => { const a = process.argv.find(x => x.startsWith(`--${k}=`)); return a ? a.slice(k.length + 3) : d }
 const RECS = arg('recs', 'ko-donghwi_bwv1001_mov1,ko-donghwi_bwv1001_mov3,john-garner_bwv1002_mov1,minji-kim_bwv1003_mov3,emil-telmanyi_bwv1004_mov3').split(',')
-const MODEL = arg('model', 'source'), BODY = arg('body', 'phil'), SECS = +arg('secs', 90)
+const MODEL = arg('model', 'source'), BODY = arg('body', 'phil'), LANE = arg('lane', MODEL), SECS = +arg('secs', 90)
 const LOOP = +arg('loop', 0), FIT = process.argv.includes('--fit'), WAV = process.argv.includes('--wav')
 const SR = 22050, PERF = here + '../../violinist/performances/', DATA = here + '../data/BachViolin/'
 const index = JSON.parse(readFileSync(here + '../../violinist/midis/index.json', 'utf8'))
@@ -90,8 +91,8 @@ for (const id of RECS) {
   // --fit / --loop from the recorded level alone at a given scale
   const fresh = FIT || LOOP > 0
   for (const mode of FIT ? ['recorded'] : ['rules', 'recorded']) for (const k of FIT ? [6, 9, 12, 16] : [DB_PER_DYN]) {
-    const src = fresh ? { ...rec, dyn: undefined } : rec
-    const { notes, expression } = playedNotes(src, e, { mode, secs: SECS, dbPerDyn: k })
+    const src = fresh ? { ...rec, dyn: undefined, lanes: undefined } : rec
+    const { notes, expression } = playedNotes(src, e, { mode, secs: SECS, dbPerDyn: k, engine: LANE })
     let y = renderNotes(notes, expression, { sr: SR, model: MODEL, body: BODY })
     let ourAn = analyseRecording(y, SR, notes)
     for (let it = 0; mode === 'recorded' && it < LOOP; it++) {

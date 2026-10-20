@@ -78,6 +78,7 @@
     </select>
     <select id="room" title="Room"></select>
     <select id="bowing" title="Which notes share a bow. Score: the slurs, marks and bowings of the Mutopia LilyPond source the MIDI was made from (violinist/scores). Herrmann / Auer (Bach's Sonatas and Partitas only): the slurs, marks and up- and down-bows of those printed editions, read from their IMSLP scans by optical music recognition (ScoreShift; violinist/editions), so with some misreadings. Inferred: slurs guessed from the music (strings/articulation.js). Fixed rule: up to 4 fast notes per bow"><option value="score">Bowing: score (Mutopia)</option><option value="edition:herrmann">Bowing: Herrmann ed., 1900 (IMSLP scan)</option><option value="edition:auer">Bowing: Auer ed., 1917 (IMSLP scan)</option><option value="infer">Bowing: inferred</option><option value="fixed">Bowing: fixed rule</option></select>
+    <select id="performer" hidden title="Play it as a real violinist did: the timing and dynamics of their recording (violinist/performances: the Bach Violin Dataset, and public-domain and CC recordings aligned to the score). As written: the MIDI file's own timing. With a recording of a concerto or the double concerto only the timing is taken, and the accompaniment follows it"></select>
     <label title="Ink outlines"><input type="checkbox" id="outline" checked> Ink</label>
   </div>
   <div id="bottom" class="bar">
@@ -99,6 +100,7 @@
     import { INSTRUMENTS, fingerLine } from './strings/fingering.js'
     import { buildMotion } from './strings/motion.js'
     import { bowingFor } from './violinist/score-art.js'
+    import { performersFor, applyPerformer, performerCredit } from './violinist/performer.js'
     import { buildViolin, buildBow } from './strings/violin3d.js'
     import { buildLeftHand, buildBowHand } from './strings/hand3d.js'
     import { createViolinistRig } from './violinist/rig.js'
@@ -185,13 +187,22 @@
         const ch = [...new Set(midi.tracks.map(t => t.channel))].find(c => midi.tracks.filter(t => t.channel === c).reduce((a, t) => a + t.notes.length, 0) === e.violinNotes)
         solo = ch != null ? midi.tracks.filter(t => t.channel === ch) : [midi.tracks.reduce((b, t) => (t.notes.length > b.notes.length ? t : b))]
       }
-      const notes = solo.flatMap(t => t.notes).map(n => ({ pitch: n.midi, on: n.time * k, off: (n.time + Math.max(0.04, n.duration)) * k, velocity: n.velocity, q: n.ticks / midi.header.ppq }))
+      const ppq = midi.header.ppq
+      const notes = solo.flatMap(t => t.notes).map(n => ({ pitch: n.midi, on: n.time * k, off: (n.time + Math.max(0.04, n.duration)) * k, velocity: n.velocity, q: n.ticks / ppq, dq: n.durationTicks / ppq }))
         .sort((a, b) => a.on - b.on || a.pitch - b.pitch)
+      // a recorded performer (violinist/performer.js): their timing and dynamics; the rest follows below
+      await showPerformers(e.file)
+      const others = midi.tracks.filter(t => !solo.includes(t) && t.notes.length)
+      const accNotes = others.flatMap(t => t.notes.map(n => ({ t, n, q: n.ticks / ppq, dq: n.durationTicks / ppq, on: n.time * k, off: (n.time + Math.max(0.04, n.duration)) * k })))
+      song.performer = null
+      if ($('performer').value) {
+        try { song.performer = await applyPerformer($('performer').value, notes, accNotes, { engine: 'gm' }) } catch (err) { console.warn('performer:', err.message) }
+        if (song.performer) notes.sort((a, b) => a.on - b.on || a.pitch - b.pitch)
+      }
       // the bow: the Mutopia score's slurs and marks by default (violinist/score-art.js)
       song.bowing = await bowingFor(e, notes, $('bowing').value)
       fingerLine(notes, { instrument: 'violin' })
       // accompaniment: every other track on its own channel and program
-      const others = midi.tracks.filter(t => !solo.includes(t) && t.notes.length)
       const programs = [[0, 40]]
       const accomp = []
       let ch = 1
@@ -200,12 +211,12 @@
         const key = t.channel === 9 ? 'drums' : `${t.channel}:${t.instrument.number}`
         if (!chOf.has(key)) { const c = t.channel === 9 ? 9 : (ch === 9 ? ++ch : ch); chOf.set(key, c); if (c !== 9) { programs.push([c, accompProgram(t.instrument.number)]); ch = Math.min(15, c + 1) } }
         const c = chOf.get(key)
-        for (const n of t.notes) accomp.push({ midi: n.midi, time: n.time * k, duration: Math.max(0.04, n.duration) * k, velocity: n.velocity * 0.8, channel: c })
+        for (const a of accNotes) if (a.t === t) accomp.push({ midi: a.n.midi, time: a.on, duration: Math.max(0.04, a.off - a.on), velocity: a.n.velocity * 0.8, channel: c })
       }
       Object.assign(song, { entry: e, notes, accomp, programs, motion: buildMotion(notes, { instrument: 'violin' }) })
       song.duration = Math.max(...notes.map(n => n.off), ...accomp.map(n => n.time + n.duration), 1)
       song.drive = drivers(notes)
-      $('credit').innerHTML = `${e.composer} – ${e.title}<br>MIDI: ${e.credit || 'Mutopia Project'}, ${e.licence}${bowingCredit(song.bowing)}`
+      $('credit').innerHTML = `${e.composer} – ${e.title}<br>MIDI: ${e.credit || 'Mutopia Project'}, ${e.licence}${bowingCredit(song.bowing)}${song.performer ? '<br>Played as ' + performerCredit(song.performer.rec, { pitch: false }) : ''}`
       $('startSong').textContent = `${e.composer} – ${e.title}`
       clock.t = 0
       setStatus('')
@@ -291,6 +302,17 @@
     // the editions cover Bach's solo works only
     const showEditions = () => { const solo = index.find(x => x.file === $('song').value)?.group === 'bach-solo'; for (const o of $('bowing').options) if (o.value.startsWith('edition:')) o.hidden = o.disabled = !solo; if (!solo && $('bowing').value.startsWith('edition:')) $('bowing').value = 'score' }
     showEditions()
+    /** The Performer menu: the recordings of this piece (violinist/performances). */
+    async function showPerformers(file) {
+      const list = await performersFor(file)
+      const want = $('performer').dataset.want ?? $('performer').value
+      $('performer').innerHTML = '<option value="">Performer: as written</option>' + list.map(p => `<option value="${p.rec}">Performer: ${p.violinist}${p.year ? ` (${p.year})` : ''}${p.ensemble ? ' – timing' : ''}</option>`).join('')
+      $('performer').value = list.some(p => p.rec === want) ? want : ''
+      delete $('performer').dataset.want
+      $('performer').hidden = !list.length
+    }
+    $('performer').dataset.want = Q.get('performer') || ''
+    $('performer').onchange = async () => { const was = clock.playing; pause(); await loadSong($('song').value); director.reset(); clock.t = 0; if (was) play(); saveUrl() }
     $('bowing').onchange = async () => { const was = clock.playing, t = clock.t; pause(); await loadSong($('song').value); clock.t = t; if (was) play(); saveUrl() }
     $('song').onchange = async () => { const was = clock.playing; pause(); showEditions(); await loadSong($('song').value); director.reset(); if (was) play(); saveUrl() }
     $('model').onchange = async () => { await loadModel($('model').value); saveUrl() }
@@ -351,6 +373,7 @@
       if ($('cam').value !== 'auto') p.set('view', $('cam').value)
       if ($('outfit').value !== 'concert') p.set('outfit', $('outfit').value)
       if ($('bowing').value !== 'score') p.set('bowing', $('bowing').value)
+      if (!$('performer').hidden && $('performer').value) p.set('performer', $('performer').value)
       history.replaceState(null, '', '?' + p.toString())
     }
     if (Q.get('model')) $('model').value = Q.get('model')

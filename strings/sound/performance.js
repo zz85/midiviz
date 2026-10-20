@@ -195,8 +195,9 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
   // a recorded performance (strings/expression.js) brings its own timing,
   // intonation, dynamics and phrasing: no humanized timing or attack pitch,
   // no rule-made phrase arches and swells
+  // (a recording of an ensemble brings only its timing: expression.timing)
   const REC = !!expression?.recorded
-  const notes = planHarmonics(humanize(playable, REC ? { ...S, timing: 0, intonation: 0 } : S, seed + 101), inst.open, S.harmonics)
+  const notes = planHarmonics(humanize(playable, REC ? { ...S, timing: 0, intonation: 0 } : expression?.timing ? { ...S, timing: 0 } : S, seed + 101), inst.open, S.harmonics)
   const PH = REC ? 0 : S.phrasing
   // one note at a time on a string: a note held into the next one on its string
   // ends there (a held voice the fingering put on the same string as the moving one)

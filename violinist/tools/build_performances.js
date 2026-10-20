@@ -25,24 +25,39 @@ import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { alignPitches } from './build_editions.js'
-import { analyseRecording, encodeRecording, applyRecording, correctLane, RATE } from '../../strings/expression.js'
+import { alignScore } from '../../strings/align.js'
+import { analyseRecording, encodeRecording, applyRecording, correctLane, f0At, RATE } from '../../strings/expression.js'
 import { readLilyPondFiles } from '../../strings/lilypond.js'
 import { planArticulation } from '../../strings/articulation.js'
 import { fingerLine } from '../../strings/fingering.js'
 import { renderPerformance } from '../../strings/sound/performance.js'
-import { renderCurves } from '../../strings/sound/bowed.js'
+import { renderCurves, midiHz } from '../../strings/sound/bowed.js'
 import { acousticParams, offlineHall } from '../../concertstage/acoustics.js'
 import { matchScore } from '../score-art.js'
 
 const require = createRequire(import.meta.url)
 const { Midi } = require('../../tonejs-midi.js')
 const here = fileURLToPath(new URL('.', import.meta.url))
-const DATA = here + '../../strings/data/BachViolin/', OUT = here + '../performances/'
+const DATA = here + '../../strings/data/BachViolin/', OUT = process.env.OUT || here + '../performances/'
+const RECS = here + '../../strings/data/recordings/'
 const COLLECTIONS = ['ko-donghwi', 'john-garner', 'minji-kim', 'emil-telmanyi']
-const SR = 22050, PASSES = +(process.env.PASSES ?? 3)
+const SR = 22050, PASSES = +(process.env.PASSES ?? 3), MODELS = ['source', 'waveguide']
 
 const csv = f => readFileSync(f, 'utf8').trim().split(/\r?\n/).map(l => l.split(','))
 const hms = s => s.split(':').reduce((a, v) => a * 60 + +v, 0)
+
+/**
+ * Every note of the MIDI file (all tracks but drums) with score positions,
+ * ordered onset, then pitch; `violin` marks the solo part's (midiViolin's order
+ * is the order of the marked notes).
+ */
+export function midiAll(e, buf) {
+  const midi = new Midi(buf)
+  let solo = midi.tracks.filter(t => t.notes.length === e.violinNotes)
+  if (solo.length !== 1) solo = [midi.tracks[e.violinTrack]]
+  return midi.tracks.filter(t => t.channel !== 9).flatMap(t => t.notes.map(n => ({ pitch: n.midi, q: n.ticks / midi.header.ppq, dq: n.durationTicks / midi.header.ppq, violin: solo.includes(t) })))
+    .sort((a, b) => a.q - b.q || a.pitch - b.pitch || (b.violin - a.violin))
+}
 
 /** The MIDI file's violin notes with score positions (quarters), ordered onset, then pitch. */
 export function midiViolin(e, buf) {
@@ -65,9 +80,9 @@ export function scoreFor(e) {
  * score, the first `secs` seconds, chords thinned to two notes as #034 does,
  * fingered. Returns { notes, expression }.
  */
-export function playedNotes(rec, e, { mode = 'recorded', secs = Infinity, dbPerDyn, vibGain } = {}) {
+export function playedNotes(rec, e, { mode = 'recorded', secs = Infinity, dbPerDyn, vibGain, engine } = {}) {
   const notes = midiViolin(e, readFileSync(here + '../midis/' + e.file)).map(n => ({ ...n, velocity: 0.7 }))
-  const expression = applyRecording(rec, notes, { dbPerDyn, vibGain })
+  const expression = applyRecording(rec, notes, { dbPerDyn, vibGain, engine })
   if (mode === 'rules') for (const n of notes) delete n.rec
   if (e.score) { matchScore(notes, scoreFor(e).notes); planArticulation(notes, { mode: 'score' }) }
   const play = notes.filter(n => n.on < secs).map(n => ({ ...n, off: Math.min(n.off, secs + 0.5) })).sort((a, b) => a.on - b.on || b.pitch - a.pitch)
@@ -163,55 +178,162 @@ export function warp(loud, rate, outOn, srcOn, duration) {
   return out
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-  if (!existsSync(DATA + 'info.csv')) { console.error('no dataset: run node strings/test/ab_recording.js first'); process.exit(1) }
-  const info = csv(DATA + 'info.csv'), H = info[0]
-  const audioCsv = csv(DATA + 'audio.csv'), AH = audioCsv[0]
-  const index = JSON.parse(readFileSync(here + '../midis/index.json', 'utf8')).filter(e => e.group === 'bach-solo')
-  const want = process.argv.slice(2)
-  mkdirSync(OUT, { recursive: true })
-  const list = existsSync(OUT + 'index.json') ? JSON.parse(readFileSync(OUT + 'index.json', 'utf8')) : []
-  for (const row of info.slice(1)) {
-    const I = Object.fromEntries(H.map((k, i) => [k, row[i]]))
-    if (!COLLECTIONS.includes(I.collection) || (want.length && !want.includes(I.filename))) continue
-    const e = index.find(x => x.file.startsWith(`bach_${I.work.slice(3)}_${I.mov}_`))
-    if (!e) continue
-    const t0 = performance.now()
-    const A = midiViolin(e, readFileSync(here + '../midis/' + e.file))
-    const notes = csv(DATA + `notes/${I.collection}/${I.filename}.csv`).slice(1), al = csv(DATA + `alignments/${I.collection}/${I.filename}.csv`).slice(1)
-    const B = notes.map((n, i) => ({ q: +n[0] / 24, pitch: +n[2], on: +al[i][0], off: +al[i][1] })).sort((a, b) => a.q - b.q || a.pitch - b.pitch)
-    const pair = alignPitches(A.map(n => n.pitch), B.map(n => n.pitch))
-    const T = performedTimes(A, B, pair)
-    // the movement's audio (alignment times are from its start)
-    const start = hms(I.start), dur = hms(I.end) - start
-    const buf = execFileSync('ffmpeg', ['-v', 'error', '-ss', String(start), '-t', String(dur + 1), '-i', DATA + `audio/${I.collection}/${I.source_filename}`, '-f', 'f32le', '-ac', '1', '-ar', String(SR), '-'], { maxBuffer: 1 << 30 })
-    const x = new Float32Array(buf.buffer, buf.byteOffset, buf.length >> 2)
+/**
+ * Measure a recording on the MIDI notes A (violin, ordered) played at times T
+ * (performedTimes) in audio x, correct the lanes by listening, and write it.
+ * opts.ensemble: timing only (opts.tmap: the tempo map of all the parts).
+ */
+function write(e, A, T, x, meta, { tune = 0, ensemble = false, tmap = null, list, check = false }) {
+  const duration = Math.max(...T.off) + 1
+  const out = A.map((n, i) => ({ on: T.on[i], off: T.off[i] }))
+  let rec, pitched = 0, tuning = 0
+  if (ensemble) rec = { rate: RATE, tuning: 0, on: out.map(n => Math.round(n.on * 1000)), off: out.map(n => Math.round(n.off * 1000)), loud: '', cents: [], tmap }
+  else {
     // measured in recording time: each MIDI note at its recorded place
     const recNotes = A.map((n, i) => ({ pitch: n.pitch, on: T.src[i], off: T.src[i] + (T.off[i] - T.on[i]) }))
-    const an = analyseRecording(x, SR, recNotes, { tune: I.baroque_tuning === '1' ? -1 : 0 })
+    const an = analyseRecording(x, SR, recNotes, { tune })
+    pitched = an.cents.filter(Boolean).length; tuning = an.tuning
+    // the violin's pitch where it was placed (at the recording's tuning), against chance
+    if (check) meta = { ...meta, check: +pitchCheck(A, T, x, tune + tuning / 100).toFixed(3), chance: +pitchCheck(A, T, x, tune + tuning / 100, 1.5).toFixed(3) }
     // into performance time: pitch curves move with their note, loudness through the map
-    const duration = Math.max(...T.off) + 1
-    const out = A.map((n, i) => ({ on: T.on[i], off: T.off[i] }))
     const moved = { ...an, loud: warp(an.loud, RATE, T.on, T.src, duration), cents: an.cents.map((c, i) => c && { i0: c.i0 + Math.round((T.on[i] - T.src[i]) * RATE), c: c.c }) }
-    // listen and correct (strings/expression.js correctLane): play it on the
-    // Source model, compare the level with the recording's, move the lane; three times
-    let rec = encodeRecording(moved, out)
-    const { notes: played, expression } = playedNotes(rec, e)
-    for (let pass = 0; pass < PASSES; pass++) {
-      const y = renderNotes(played, expression)
-      correctLane(expression.dyn, moved.loud, analyseRecording(y, SR, played).loud, played)
+    // listen and correct (strings/expression.js correctLane), once per physical
+    // model: play it, compare the level with the recording's, move the lane; three times
+    rec = encodeRecording(moved, out)
+    const lanes = {}
+    for (const model of MODELS) {
+      const { notes: played, expression } = playedNotes(rec, e)
+      for (let pass = 0; pass < PASSES; pass++) {
+        const y = renderNotes(played, expression, { model })
+        correctLane(expression.dyn, moved.loud, analyseRecording(y, SR, played).loud, played)
+      }
+      lanes[model] = expression.dyn
     }
-    rec = encodeRecording({ ...moved, dyn: expression.dyn }, out)
-    const a = audioCsv.find(r => r[0] === I.source_filename), Aud = a ? Object.fromEntries(AH.map((k, i) => [k, a[i]])) : {}
-    const meta = {
-      rec: I.filename, violinist: I.violinist_name, file: e.file, title: `${I.title}, ${I.movement}`,
-      licence: Aud.license || '', url: Aud.url || '', dataset: 'Bach Violin Dataset (Dong, Wu, Chen & McAuley, ICASSP 2022), https://github.com/salu133445/bach-violin-dataset',
-      notes: A.length, found: +(T.found / A.length).toFixed(3), pitched: an.cents.filter(Boolean).length, seconds: +(Math.max(...T.off)).toFixed(1),
-    }
-    writeFileSync(OUT + I.filename + '.json', JSON.stringify({ ...meta, ...rec }) + '\n')
-    const k = list.findIndex(r => r.rec === meta.rec); if (k >= 0) list[k] = meta; else list.push(meta)
-    console.log(I.filename.padEnd(32), `${(100 * meta.found).toFixed(1)} % found, pitch on ${meta.pitched} of ${A.length} notes, tuning ${an.tuning.toFixed(1)} c, ${meta.seconds} s (recorded ${dur} s), ${((performance.now() - t0) / 1000).toFixed(1)} s`)
+    rec = encodeRecording({ ...moved, lanes }, out)
   }
-  list.sort((a, b) => a.file.localeCompare(b.file) || a.violinist.localeCompare(b.violinist))
-  writeFileSync(OUT + 'index.json', JSON.stringify(list, null, 1) + '\n')
+  meta = { ...meta, file: e.file, notes: A.length, pitched, seconds: +(Math.max(...T.off)).toFixed(1), ...(ensemble ? { ensemble: true } : {}) }
+  writeFileSync(OUT + meta.rec + '.json', JSON.stringify({ ...meta, ...rec }) + '\n')
+  // the index as it is now (another build may have written to it meanwhile)
+  const now = existsSync(OUT + 'index.json') ? JSON.parse(readFileSync(OUT + 'index.json', 'utf8')) : list
+  const k = now.findIndex(r => r.rec === meta.rec); if (k >= 0) now[k] = meta; else now.push(meta)
+  now.sort((a, b) => a.file.localeCompare(b.file) || a.violinist.localeCompare(b.violinist))
+  writeFileSync(OUT + 'index.json', JSON.stringify(now, null, 1) + '\n')
+  return { meta, tuning }
+}
+
+// Recordings with no alignment, aligned here (strings/align.js) to the MIDI
+// file's notes and its Mutopia score's repeats. Fetched from Wikimedia Commons
+// and the Library of Congress National Jukebox (via the Internet Archive) by
+// `node violinist/tools/fetch_recordings.js` into strings/data/recordings
+// (sources.json there holds each file's page, licence and credit).
+// ensemble: the violin plays with others (orchestra, string quartet, voice):
+// the alignment uses every part's notes, and only the timing is kept, with a
+// tempo map for the accompaniment.
+export const RECORDINGS = [
+  { id: 'heifetz_bwv1004_mov5', midi: 'bach_1004_5_ciaccona.mid', violinist: 'Jascha Heifetz', year: 1952 },
+  { id: 'menuhin_bwv1006_mov1', midi: 'bach_1006_1_preludio.mid', violinist: 'Yehudi Menuhin', year: 1948 },
+  { id: 'goodenough_bwv1001_mov1', midi: 'bach_1001_1_adagio.mid', violinist: 'A violinist at Goodenough College', year: 2014 },
+  { id: 'qmul_allemanda', midi: ['bach_1002_1_allemanda.mid', 'bach_1004_1_allemanda.mid'], violinist: 'A violinist at Queen Mary University of London', year: 2013 },
+  { id: 'vicond_bwv1001_mov1', midi: 'bach_1001_1_adagio.mid', violinist: 'Vicond' },
+  { id: 'vicond_bwv1004_mov1', midi: 'bach_1004_1_allemanda.mid', violinist: 'Vicond', year: 2012 },
+  { id: 'vicond_bwv1004_mov2', midi: 'bach_1004_2_corrente.mid', violinist: 'Vicond' },
+  { id: 'vicond_bwv1004_mov4', midi: 'bach_1004_4_giga.mid', violinist: 'Vicond' },
+  { id: 'vicond_bwv1006_mov4', midi: 'bach_1006_4_menuet_1.mid', violinist: 'Vicond' },
+  { id: 'kreisler-zimbalist_bwv1043_mov1', midi: 'bach_1043_1_vivace.mid', violinist: 'Fritz Kreisler and Efrem Zimbalist', year: 1915, ensemble: true },
+  { id: 'commons_beethoven_op61_mov3', midi: 'beethoven_concerto_3.mid', violinist: 'Unnamed soloist (IMSLP #77611)', ensemble: true },
+  // not used: Albert Spalding's obbligato to Marie Rappold's Ave Maria (Edison cylinder,
+  // 1911; Commons) does not align: another arrangement, and the cylinder's speed is unknown
+]
+
+/** Share of single notes (0.15 s or more) whose pitch sounds in the middle of where they were placed: a check needing no reference. */
+export function pitchCheck(A, T, x, tune = 0, shift = 0) {
+  let hit = 0, n = 0
+  for (let i = 0; i < A.length; i++) {
+    const a = T.src[i] + shift, j = A.findIndex((m, jj) => jj > i && m.q > A[i].q + 1e-6); if (j < 0) continue
+    if (A.some((m, jj) => jj !== i && Math.abs(m.q - A[i].q) < 1e-6)) continue
+    const b = T.src[j] + shift; if (b - a < 0.15 || b - a > 3) continue
+    const f = midiHz(A[i].pitch + tune)
+    for (const w of [0.3, 0.5, 0.7]) { const p = f0At(x, SR, Math.round((a + w * (b - a)) * SR), f); n++; if (p && Math.abs(1200 * Math.log2(p / f)) < 60) hit++ }
+  }
+  return n ? hit / n : NaN
+}
+
+const decode = f => { const b = execFileSync('ffmpeg', ['-v', 'error', '-i', f, '-f', 'f32le', '-ac', '1', '-ar', String(SR), '-'], { maxBuffer: 1 << 30 }); return new Float32Array(b.buffer, b.byteOffset, b.length >> 2) }
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const want = process.argv.slice(2).filter(a => !a.startsWith('--'))
+  const only = process.argv.includes('--aligned') ? 'aligned' : process.argv.includes('--dataset') ? 'dataset' : null
+  const index = JSON.parse(readFileSync(here + '../midis/index.json', 'utf8'))
+  mkdirSync(OUT, { recursive: true })
+  const list = existsSync(OUT + 'index.json') ? JSON.parse(readFileSync(OUT + 'index.json', 'utf8')) : []
+  // ── the Bach Violin Dataset: its own alignments ──
+  if (only !== 'aligned' && existsSync(DATA + 'info.csv')) {
+    const info = csv(DATA + 'info.csv'), H = info[0]
+    const audioCsv = csv(DATA + 'audio.csv'), AH = audioCsv[0]
+    for (const row of info.slice(1)) {
+      const I = Object.fromEntries(H.map((k, i) => [k, row[i]]))
+      if (!COLLECTIONS.includes(I.collection) || (want.length && !want.includes(I.filename))) continue
+      const e = index.find(x => x.group === 'bach-solo' && x.file.startsWith(`bach_${I.work.slice(3)}_${I.mov}_`))
+      if (!e) continue
+      const t0 = performance.now()
+      const A = midiViolin(e, readFileSync(here + '../midis/' + e.file))
+      const notes = csv(DATA + `notes/${I.collection}/${I.filename}.csv`).slice(1), al = csv(DATA + `alignments/${I.collection}/${I.filename}.csv`).slice(1)
+      const B = notes.map((n, i) => ({ q: +n[0] / 24, pitch: +n[2], on: +al[i][0], off: +al[i][1] })).sort((a, b) => a.q - b.q || a.pitch - b.pitch)
+      const pair = alignPitches(A.map(n => n.pitch), B.map(n => n.pitch))
+      const T = performedTimes(A, B, pair)
+      // the movement's audio (alignment times are from its start)
+      const start = hms(I.start), dur = hms(I.end) - start
+      const buf = execFileSync('ffmpeg', ['-v', 'error', '-ss', String(start), '-t', String(dur + 1), '-i', DATA + `audio/${I.collection}/${I.source_filename}`, '-f', 'f32le', '-ac', '1', '-ar', String(SR), '-'], { maxBuffer: 1 << 30 })
+      const x = new Float32Array(buf.buffer, buf.byteOffset, buf.length >> 2)
+      const a = audioCsv.find(r => r[0] === I.source_filename), Aud = a ? Object.fromEntries(AH.map((k, i) => [k, a[i]])) : {}
+      const { meta, tuning } = write(e, A, T, x, {
+        rec: I.filename, violinist: I.violinist_name, title: `${I.title}, ${I.movement}`,
+        licence: Aud.license || '', url: Aud.url || '', dataset: 'Bach Violin Dataset (Dong, Wu, Chen & McAuley, ICASSP 2022), https://github.com/salu133445/bach-violin-dataset',
+        found: +(T.found / A.length).toFixed(3),
+      }, { tune: I.baroque_tuning === '1' ? -1 : 0, list })
+      console.log(I.filename.padEnd(32), `${(100 * meta.found).toFixed(1)} % found, pitch on ${meta.pitched} of ${A.length} notes, tuning ${tuning.toFixed(1)} c, ${meta.seconds} s (recorded ${dur} s), ${((performance.now() - t0) / 1000).toFixed(1)} s`)
+    }
+  }
+  // ── other recordings: aligned here ──
+  if (only !== 'dataset' && existsSync(RECS + 'sources.json')) {
+    const src = JSON.parse(readFileSync(RECS + 'sources.json', 'utf8'))
+    for (const R of RECORDINGS) {
+      if (want.length && !want.includes(R.id)) continue
+      const S = src[R.id]
+      if (!S || !existsSync(RECS + S.file)) { console.warn(R.id, ': not fetched'); continue }
+      const t0 = performance.now()
+      const x = decode(RECS + S.file)
+      // the piece: the one given, or the best fitting of several
+      let best = null
+      for (const file of [R.midi].flat()) {
+        const e = index.find(y => y.file === file)
+        const all = midiAll(e, readFileSync(here + '../midis/' + file))
+        const notes = R.ensemble ? all : all.filter(n => n.violin)
+        const r = alignScore(notes, x, SR, { repeats: e.score ? scoreFor(e).repeats : [], transpose: R.ensemble || R.year < 1930 ? [-2, -1, 0, 1, 2] : [-1, 0, 1] })
+        if (!best || r.cost < best.r.cost) best = { e, notes, r }
+      }
+      const { e, notes, r } = best
+      // every note at its first performance: performedTimes keeps one pass of a repeat
+      const T0 = performedTimes(notes, r.played, Array.from(r.first))
+      const vi = notes.map((n, i) => n.violin ? i : -1).filter(i => i >= 0)
+      const A = vi.map(i => notes[i])
+      const pick = a => Float64Array.from(vi, i => a[i])
+      const T = { on: pick(T0.on), off: pick(T0.off), src: pick(T0.src), found: A.length }
+      let tmap = null
+      if (R.ensemble) {
+        const q = [], t = []
+        notes.forEach((n, i) => { const k = Math.round(n.q * 480); if (q[q.length - 1] !== k) { q.push(k); t.push(Math.round(T0.on[i] * 1000)) } })
+        tmap = { q, t }
+      }
+      // the violin's pitch where it was placed, against the same with every note 1.5 s late (chance);
+      // for a solo recording measured again at its own tuning (write)
+      const check = pitchCheck(A, T, x, r.transpose), chance = pitchCheck(A, T, x, r.transpose, 1.5)
+      const { meta, tuning } = write(e, A, T, x, {
+        rec: R.id, violinist: R.violinist, title: e.title, year: R.year,
+        licence: S.licence, url: S.page, source: S.credit, aligned: 'strings/align.js', repeats: r.plan.taken, transpose: r.transpose,
+        found: 1, check: +check.toFixed(3), chance: +chance.toFixed(3),
+      }, { tune: r.transpose, ensemble: !!R.ensemble, tmap, list, check: !R.ensemble })
+      console.log(R.id.padEnd(34), e.file.padEnd(30), `repeats ${JSON.stringify(r.plan.taken)}, ${r.transpose ? `${r.transpose > 0 ? '+' : ''}${r.transpose} st, ` : ''}cost ${r.cost.toFixed(3)}, pitch where placed ${(100 * (meta.check ?? check)).toFixed(0)} % (chance ${(100 * (meta.chance ?? chance)).toFixed(0)} %)${R.ensemble ? ', timing only' : `, pitch on ${meta.pitched} notes, tuning ${tuning.toFixed(0)} c`}, ${meta.seconds} s, ${((performance.now() - t0) / 1000).toFixed(1)} s`)
+    }
+  }
 }

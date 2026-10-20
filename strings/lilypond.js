@@ -531,7 +531,7 @@ class Parser {
       case 'tuplet': { const [n, d] = this.fraction(); this.ws(); if (/\d/.test(this.peek() || '')) { const keep = this.dur; this.duration(); this.dur = keep } return { t: 'scale', k: d / n, music: this.music() } }
       case 'scaleDurations': { const [n, d] = this.fraction(); return { t: 'scale', k: n / d, music: this.music() } }
       case 'repeat': {
-        this.ws(); const kind = this.word(); this.ws(); const n = this.number() || 2
+        this.ws(); const kind = this.peek() === '"' ? this.string() : this.word(); this.ws(); const n = this.number() || 2
         const body = this.music()
         this.ws()
         let alts = []
@@ -761,6 +761,7 @@ function toRelative(n, mode, ref) {
 function perform(score) {
   const staves = [], tempo = [], meter = []
   let partial = null, voiceSeq = 0
+  const repeats = []
   const staffById = new Map(), voiceStaff = new Map()
   const newStaff = (id, mods = {}, group = null) => {
     const s = { id, name: mods.instrumentName || null, midi: mods.midiInstrument || null, group, events: [], dyn: [] }
@@ -839,8 +840,12 @@ function perform(score) {
         let t = cx.t
         if (!all) {
           // as printed: the body once, then each alternative once (LilyPond's MIDI without \unfoldRepeats)
+          // where it repeats is kept (repeats), so a performance that takes the repeat can be aligned
+          const t0 = t
           t = run(n.body, { ...cx, t })
-          for (const a of n.alts) t = run(a, { ...cx, t })
+          const body = t, alts = []
+          for (const a of n.alts) { const a0 = t; t = run(a, { ...cx, t }); alts.push([a0, t]) }
+          if (!repeats.some(r => Math.abs(r.from - t0) < 1e-6)) repeats.push({ from: t0, to: body, alts, times: Math.max(2, Math.round(n.n)) })
           return t
         }
         const N = Math.max(1, Math.round(n.n)), A = n.alts.length
@@ -885,7 +890,7 @@ function perform(score) {
   const top = {}
   const end = run(score.music, { t: 0, scale: 1, staff: null, voice: 'v0', voiceNo: 1, transpose: 0, unfold: false, group: null, top, mute: false })
   if (top.implicit && top.pendingName && !top.implicit.name) top.implicit.name = top.pendingName
-  return { staves, tempo, meter, partial, end }
+  return { staves, tempo, meter, partial, end, repeats: repeats.sort((a, b) => a.from - b.from) }
 }
 
 // bars from the time signatures and an upbeat → measure numbers and starts
@@ -968,7 +973,8 @@ export function readLilyPond(text, { part = null, include = null, file = '', tem
   const hd = pk.header
   const piece = hd.piece || (subs.size > 1 ? hd.subtitle : '')
   const title = [hd.title || hd.mutopiatitle || (subs.size > 1 ? '' : hd.subtitle) || '', piece && piece !== hd.title ? piece : ''].filter(Boolean).join(': ').replace(/\s+/g, ' ').trim()
-  return { ...finishScore(events, tempoMap, meterMap, tempoDefault, title, parts.map(p => ({ id: p.id, name: p.name }))), part: pi, missing }
+  // repeats as printed (quarters): { from, to (end of the body), alts: [[q0, q1]…], times }
+  return { ...finishScore(events, tempoMap, meterMap, tempoDefault, title, parts.map(p => ({ id: p.id, name: p.name }))), part: pi, missing, repeats: r.repeats }
 }
 
 /**

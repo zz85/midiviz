@@ -1,5 +1,24 @@
 [
  {
+  "rec": "goodenough_bwv1001_mov1",
+  "violinist": "A violinist at Goodenough College",
+  "title": "Sonata No. 1 in G minor, BWV 1001: I. Adagio",
+  "year": 2014,
+  "licence": "CC0",
+  "url": "https://commons.wikimedia.org/wiki/File:J._S._Bach_%E2%80%93_Violin_Sonata_No.1_in_G_minor,_BWV_1001,_I._Adagio.ogg",
+  "source": "https://ia801209.us.archive.org/15/items/Bach1stViolinSonata_092014/Mixes/Bach1.ogg",
+  "aligned": "strings/align.js",
+  "repeats": [],
+  "transpose": 0,
+  "found": 1,
+  "check": 0.916,
+  "chance": 0.094,
+  "file": "bach_1001_1_adagio.mid",
+  "notes": 518,
+  "pitched": 330,
+  "seconds": 263.5
+ },
+ {
   "rec": "emil-telmanyi_bwv1001_mov1",
   "violinist": "Emil Telmányi",
   "file": "bach_1001_1_adagio.mid",
@@ -24,6 +43,24 @@
   "found": 0.988,
   "pitched": 263,
   "seconds": 254.2
+ },
+ {
+  "rec": "vicond_bwv1001_mov1",
+  "violinist": "Vicond",
+  "title": "Sonata No. 1 in G minor, BWV 1001: I. Adagio",
+  "licence": "CC BY 3.0",
+  "url": "https://commons.wikimedia.org/wiki/File:Sonata_in_in_G_m_J.S.Bach_(1_mov_prelude).ogg",
+  "source": "Own work",
+  "aligned": "strings/align.js",
+  "repeats": [],
+  "transpose": 0,
+  "found": 1,
+  "check": 0.864,
+  "chance": 0.106,
+  "file": "bach_1001_1_adagio.mid",
+  "notes": 518,
+  "pitched": 312,
+  "seconds": 171.5
  },
  {
   "rec": "emil-telmanyi_bwv1001_mov2",
@@ -416,6 +453,28 @@
   "seconds": 194
  },
  {
+  "rec": "qmul_allemanda",
+  "violinist": "A violinist at Queen Mary University of London",
+  "title": "Partita No. 2 in D minor, BWV 1004: I. Allemanda",
+  "year": 2013,
+  "licence": "CC0",
+  "url": "https://commons.wikimedia.org/wiki/File:Bach_Partita_2_-_Allemanda_-_18-04-2013.ogg",
+  "source": "https://archive.org/details/BachAllemanda_18042013/",
+  "aligned": "strings/align.js",
+  "repeats": [
+   false,
+   false
+  ],
+  "transpose": 0,
+  "found": 1,
+  "check": 0.988,
+  "chance": 0.104,
+  "file": "bach_1004_1_allemanda.mid",
+  "notes": 545,
+  "pitched": 496,
+  "seconds": 180.4
+ },
+ {
   "rec": "emil-telmanyi_bwv1004_mov1",
   "violinist": "Emil Telmányi",
   "file": "bach_1004_1_allemanda.mid",
@@ -429,6 +488,28 @@
   "seconds": 136.5
  },
  {
+  "rec": "vicond_bwv1004_mov1",
+  "violinist": "Vicond",
+  "title": "Partita No. 2 in D minor, BWV 1004: I. Allemanda",
+  "year": 2012,
+  "licence": "CC BY 3.0",
+  "url": "https://commons.wikimedia.org/wiki/File:Partita_No.2_J.S.Bach_(Allemanda).ogg",
+  "source": "Own work",
+  "aligned": "strings/align.js",
+  "repeats": [
+   false,
+   false
+  ],
+  "transpose": 0,
+  "found": 1,
+  "check": 0.988,
+  "chance": 0.2,
+  "file": "bach_1004_1_allemanda.mid",
+  "notes": 545,
+  "pitched": 487,
+  "seconds": 129.3
+ },
+ {
   "rec": "emil-telmanyi_bwv1004_mov2",
   "violinist": "Emil Telmányi",
   "file": "bach_1004_2_corrente.mid",
@@ -440,6 +521,27 @@
   "found": 0.998,
   "pitched": 340,
   "seconds": 101
+ },
+ {
+  "rec": "vicond_bwv1004_mov2",
+  "violinist": "Vicond",
+  "title": "Partita No. 2 in D minor, BWV 1004: II. Corrente",
+  "licence": "CC BY 3.0",
+  "url": "https://commons.wikimedia.org/wiki/File:Partita_No.2_J.S.Bach_(corrente).ogg",
+  "source": "Own work",
+  "aligned": "strings/align.js",
+  "repeats": [
+   false,
+   false
+  ],
+  "transpose": 0,
+  "found": 1,
+  "check": 0.818,
+  "chance": 0.094,
+  "file": "bach_1004_2_corrente.mid",
+  "notes": 429,
+  "pitched": 190,
+  "seconds": 65.8
  },
  {
   "rec": "emil-telmanyi_bwv1004_mov3",
@@ -466,6 +568,43 @@
   "found": 0.997,
   "pitched": 373,
   "seconds": 144
+ },
+ {
+  "rec": "vicond_bwv1004_mov4",
+  "violinist": "Vicond",
+  "title": "Partita No. 2 in D minor, BWV 1004: IV. Giga",
+  "licence": "CC BY 3.0",
+  "url": "https://commons.wikimedia.org/wiki/File:Partita_2_(Gigue)_J.S.Bach.ogg",
+  "source": "Own work",
+  "aligned": "strings/align.js",
+  "repeats": [],
+  "transpose": 0,
+  "found": 1,
+  "check": 0.751,
+  "chance": 0.101,
+  "file": "bach_1004_4_giga.mid",
+  "notes": 908,
+  "pitched": 416,
+  "seconds": 130.1
+ },
+ {
+  "rec": "heifetz_bwv1004_mov5",
+  "violinist": "Jascha Heifetz",
+  "title": "Partita No. 2 in D minor, BWV 1004: V. Ciaccona (Chaconne)",
+  "year": 1952,
+  "licence": "Public domain",
+  "url": "https://commons.wikimedia.org/wiki/File:Bach;_Chaconne_d-moll_Heifetz.flac",
+  "source": "https://archive.org/details/chaconne-d-moll-heifetz",
+  "aligned": "strings/align.js",
+  "repeats": [],
+  "transpose": 0,
+  "found": 1,
+  "check": 0.886,
+  "chance": 0.1,
+  "file": "bach_1004_5_ciaccona.mid",
+  "notes": 3085,
+  "pitched": 1465,
+  "seconds": 773.1
  },
  {
   "rec": "emil-telmanyi_bwv1005_mov1",
@@ -533,6 +672,25 @@
   "seconds": 223.1
  },
  {
+  "rec": "menuhin_bwv1006_mov1",
+  "violinist": "Yehudi Menuhin",
+  "title": "Partita No. 3 in E major, BWV 1006: I. Preludio",
+  "year": 1948,
+  "licence": "Public domain",
+  "url": "https://commons.wikimedia.org/wiki/File:Bach_-_Partita_for_Violin_No._3_in_E_major,_BWV_1006_-_Prelude_(Menuhin).flac",
+  "source": "Concert Films Corporation",
+  "aligned": "strings/align.js",
+  "repeats": [],
+  "transpose": 0,
+  "found": 1,
+  "check": 0.929,
+  "chance": 0.23,
+  "file": "bach_1006_1_preludio.mid",
+  "notes": 1635,
+  "pitched": 275,
+  "seconds": 188.4
+ },
+ {
   "rec": "emil-telmanyi_bwv1006_mov2",
   "violinist": "Emil Telmányi",
   "file": "bach_1006_2_loure.mid",
@@ -572,6 +730,27 @@
   "seconds": 75.5
  },
  {
+  "rec": "vicond_bwv1006_mov4",
+  "violinist": "Vicond",
+  "title": "Partita No. 3 in E major, BWV 1006: IV. Menuet I",
+  "licence": "CC BY 3.0",
+  "url": "https://commons.wikimedia.org/wiki/File:Partita_No.3_J.S.Bach_(Minuet_1).ogg",
+  "source": "Own work",
+  "aligned": "strings/align.js",
+  "repeats": [
+   true,
+   false
+  ],
+  "transpose": 0,
+  "found": 1,
+  "check": 0.983,
+  "chance": 0.208,
+  "file": "bach_1006_4_menuet_1.mid",
+  "notes": 214,
+  "pitched": 151,
+  "seconds": 54.7
+ },
+ {
   "rec": "emil-telmanyi_bwv1006_mov5",
   "violinist": "Emil Telmányi",
   "file": "bach_1006_5_menuet_2.mid",
@@ -609,5 +788,44 @@
   "found": 1,
   "pitched": 169,
   "seconds": 87.8
+ },
+ {
+  "rec": "kreisler-zimbalist_bwv1043_mov1",
+  "violinist": "Fritz Kreisler and Efrem Zimbalist",
+  "title": "Concerto for Two Violins in D minor, BWV 1043: I. Vivace",
+  "year": 1915,
+  "licence": "Public domain",
+  "url": "https://commons.wikimedia.org/wiki/File:Concerto_for_two_violins_Part_1_(1915_recording).mp3",
+  "source": "Library of Congress",
+  "aligned": "strings/align.js",
+  "repeats": [],
+  "transpose": 1,
+  "found": 1,
+  "check": 0.267,
+  "chance": 0.039,
+  "file": "bach_1043_1_vivace.mid",
+  "notes": 860,
+  "pitched": 0,
+  "seconds": 211.1,
+  "ensemble": true
+ },
+ {
+  "rec": "commons_beethoven_op61_mov3",
+  "violinist": "Unnamed soloist (IMSLP #77611)",
+  "title": "Violin Concerto in D major, Op. 61: III. Rondo (Allegro)",
+  "licence": "Public domain",
+  "url": "https://commons.wikimedia.org/wiki/File:Beethoven,_Ludwig_van_%E2%80%94_Violin_Concerto_in_D_major,_Op._61,_3rd_movement.ogg",
+  "source": "http://imslp.nl/imglnks/usimg/8/81/IMSLP77611-PMLP01796-Beethoven-Op61m1mbco.mp3 (converted)",
+  "aligned": "strings/align.js",
+  "repeats": [],
+  "transpose": 0,
+  "found": 1,
+  "check": 0.377,
+  "chance": 0.085,
+  "file": "beethoven_concerto_3.mid",
+  "notes": 2018,
+  "pitched": 0,
+  "seconds": 471.2,
+  "ensemble": true
  }
 ]

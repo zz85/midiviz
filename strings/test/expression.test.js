@@ -51,6 +51,12 @@ test('stored and read back compactly; played back in onset, then pitch, order', 
   assert.ok(piece[0].rec && Math.abs(piece[0].rec.t0 - 1.04) < 0.011)
   assert.ok(ex.recorded && ex.dyn.length === r.loud.length)
   assert.equal(applyRecording(r, [{ pitch: 60, q: 0 }]), null, 'another note count: not this piece')
+  // lanes corrected per engine: each physical model gets its own, the others the Source model's
+  const lanes = { source: new Float32Array(r.loud.length).fill(0.3), waveguide: new Float32Array(r.loud.length).fill(0.7) }
+  const r2 = decodeRecording(JSON.parse(JSON.stringify(encodeRecording({ ...an, lanes }, notes))))
+  const lane = engine => applyRecording(r2, [{ pitch: 67, q: 1 }, { pitch: 64, q: 0 }], { engine })
+  assert.ok(Math.abs(lane('waveguide').dyn[5] - 0.7) < 0.02 && lane('waveguide').engine === 'waveguide')
+  assert.ok(Math.abs(lane('source').dyn[5] - 0.3) < 0.02 && Math.abs(lane('hybrid').dyn[5] - 0.3) < 0.02 && lane('hybrid').engine === 'source')
 })
 
 test('the renderer plays a recorded pitch curve and a lane of dynamics', () => {
