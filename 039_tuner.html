@@ -37,7 +37,7 @@
     #strobe { width: min(760px, 92%); height: 34px; border-radius: 6px; }
     #history { width: min(760px, 92%); height: 120px; }
     #strings { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; min-height: 34px; }
-    #strings button { background: #1d1b19; color: #cfc6b8; border: 1px solid #3d3933; border-radius: 6px; padding: 5px 10px; font: 600 15px/1.1 'Cormorant Garamond', Georgia, serif; cursor: pointer; min-width: 52px; }
+    #strings button { background: #1d1b19; color: #cfc6b8; border: 1px solid #3d3933; border-radius: 6px; padding: 5px 10px; font: 600 15px/1.1 'Cormorant Garamond', Georgia, serif; cursor: pointer; min-width: 76px; }
     #strings button small { display: block; font: 10px monospace; color: #8f887d; margin-top: 2px; }
     #strings button.near { border-color: #c9a24a; color: #f3e6c4; }
     #strings button.ok { border-color: #6fbf63; color: #c9f5c1; }
@@ -47,6 +47,7 @@
     #strings button em.sharp, #strings button em.flat { color: #d8b56a; }
     #strings button em.ok { color: #9be38f; }
     #strings button.lock em { color: #3a2f16; }
+    #strings button canvas { display: block; width: 64px; height: 22px; margin: 4px auto 0; }
     #panel {
       position: absolute; top: 12px; left: 12px; width: 318px; padding: 10px 12px; max-height: calc(100% - 44px); overflow: auto;
       background: rgba(14, 13, 12, 0.88); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 10px;
@@ -206,7 +207,7 @@
 
       <h2>Detector</h2>
       <div class="stats" id="stats">–</div>
-      <div id="hint">Space: hold the reading · C: clear string offsets · R: reference tone · ←/→: test tone ±1 semitone · H: panel · click a string to lock it</div>
+      <div id="hint">Space: hold the reading · C: clear string offsets and sparklines · R: reference tone · ←/→: test tone ±1 semitone · H: panel · click a string to lock it</div>
     </div>
   </div>
 
@@ -437,11 +438,22 @@
     const hist = []           // { t, c } cents vs the target, t in seconds (audio time)
     let stringCents = []      // last cents measured on each string (NaN: not played yet)
     const steady = []         // { t, idx, c } recent readings, for commitString
+    // per-string sparkline: the steady readings on that string, one every
+    // 50 ms, the last 8 s spent on it (a break where you left the string)
+    const SPARK_POINTS = 160, SPARK_STEP = 50, SPARK_RANGE = 20
+    let stringHist = []       // per string: [{ t, c } | null (break)]
+    let sparkKey = []         // per string: what was last drawn
 
     // A string keeps the reading from 100 ms ago, and only when every reading
     // over the last 200 ms was on that string, within a semitone of it: the
     // glide into and out of a note (the window still holds the old one) and
     // passing notes never reach it.
+    function clearStrings(n) {
+      stringCents = Array.from({ length: n }, () => NaN)
+      stringHist = Array.from({ length: n }, () => [])
+      sparkKey = []
+    }
+
     function commitString(idx, c) {
       const t = performance.now()
       steady.push({ t, idx, c })
@@ -451,6 +463,46 @@
       let past = steady[0]
       for (const r of steady) if (r.t <= t - 100) past = r
       stringCents[idx] = past.c
+      const h = stringHist[idx]
+      if (!h) return
+      const prev = h.length ? h[h.length - 1] : null
+      if (prev && t - prev.t < SPARK_STEP) return
+      if (prev && t - prev.t > 300) h.push(null)
+      h.push({ t, c: past.c })
+      while (h.length > SPARK_POINTS || h[0] === null) h.shift()
+    }
+
+    // cents vs playing time on one string, ±20 ¢ (clipped readings drawn as a cap on
+    // the edge), the in-tune band and the zero line; the newest point is a dot
+    function drawSpark(cv, h) {
+      const dpr = fit(cv), g = cv.getContext('2d'), W = cv.width, H = cv.height
+      g.clearRect(0, 0, W, H)
+      const pad = 2 * dpr, y = (c) => H / 2 - (clamp(c, -SPARK_RANGE, SPARK_RANGE) / SPARK_RANGE) * (H / 2 - pad)
+      g.fillStyle = 'rgba(111, 191, 99, 0.16)'
+      g.fillRect(0, y(S.tol), W, Math.max(1, y(-S.tol) - y(S.tol)))
+      g.fillStyle = 'rgba(155, 227, 143, 0.35)'
+      g.fillRect(0, Math.round(y(0)), W, 1)
+      if (!h.length) return
+      // the points fill the width (a short take is not a speck in the corner);
+      // under 2 s they keep 2 s spacing, from the right
+      const n = h.length, span = Math.max(n, 40) - 1, x = (i) => W - 3 * dpr - (n - 1 - i) * ((W - 4 * dpr) / span)
+      g.lineWidth = 1.25 * dpr
+      g.lineJoin = 'round'
+      let open = false
+      for (let i = 0; i < n; i++) {
+        const p = h[i]
+        if (!p) { if (open) g.stroke(); open = false; continue }
+        const ok = Math.abs(p.c) <= S.tol
+        if (!open) { g.beginPath(); g.strokeStyle = ok ? '#9be38f' : '#d8b56a'; g.moveTo(x(i), y(p.c)); open = true }
+        else g.lineTo(x(i), y(p.c))
+        if (Math.abs(p.c) > SPARK_RANGE) { g.fillStyle = '#d06a52'; g.fillRect(x(i) - dpr, y(p.c) - (p.c > 0 ? 0 : dpr), 2 * dpr, dpr) }
+      }
+      if (open) g.stroke()
+      const lastP = h[n - 1]
+      if (lastP) {
+        g.fillStyle = Math.abs(lastP.c) <= S.tol ? '#9be38f' : '#f3e6c4'
+        g.beginPath(); g.arc(x(n - 1) - 1.5 * dpr, y(lastP.c), 1.8 * dpr, 0, 2 * Math.PI); g.fill()
+      }
     }
     let strobePhase = 0, strobeCents = 0, lastFrame = performance.now()
 
@@ -543,7 +595,10 @@
         btns[i].classList.toggle('lock', S.lock === i)
         btns[i].classList.toggle('near', active && last.idx === i && !ok)
         btns[i].classList.toggle('ok', active && last.idx === i && ok)
-        const em = btns[i].lastElementChild, sc = stringCents[i]
+        const cv = btns[i].querySelector('canvas'), h = stringHist[i] || []
+        const key = `${h.length}:${h.length && h[h.length - 1]?.t}:${S.tol}:${cv.clientWidth}`
+        if (sparkKey[i] !== key) { sparkKey[i] = key; drawSpark(cv, h) }
+        const em = btns[i].querySelector('em'), sc = stringCents[i]
         const txt = Number.isFinite(sc) ? `${sc >= 0 ? '+' : '−'}${Math.abs(sc).toFixed(Math.abs(sc) < 10 ? 1 : 0)} ¢` : '·'
         if (em.textContent !== txt) em.textContent = txt
         em.className = !Number.isFinite(sc) ? '' : Math.abs(sc) <= S.tol ? 'ok' : sc > 0 ? 'sharp' : 'flat'
@@ -686,10 +741,10 @@
     function buildStrings() {
       const targets = stringTargets(S.instrument, S.a4, S.pure)
       if (S.lock >= targets.length) S.lock = -1
-      stringCents = targets.map(() => NaN)   // targets changed: old offsets mean nothing
+      clearStrings(targets.length)   // targets changed: old offsets mean nothing
       $('strings').innerHTML = targets.map((t, i) => {
         const n = noteName(t.midi + S.transpose, S.flats)
-        return `<button data-i="${i}" title="Click to lock this string">${n.name}<span style="font-size:0.7em">${n.octave}</span><small>${t.freq.toFixed(2)}</small><em title="Last offset measured on this string">·</em></button>`
+        return `<button data-i="${i}" title="Click to lock this string">${n.name}<span style="font-size:0.7em">${n.octave}</span><small>${t.freq.toFixed(2)}</small><em title="Last offset measured on this string">·</em><canvas title="This string over the last 8 s you played it (±20 ¢)"></canvas></button>`
       }).join('')
       $('pureRow').hidden = !INSTRUMENTS[S.instrument].pure
     }
@@ -775,7 +830,7 @@
       if (e.target.closest('input, select')) return
       if (e.code === 'Space') { e.preventDefault(); S.hold = !S.hold }
       else if (e.key === 'r' || e.key === 'R') toggleRef()
-      else if (e.key === 'c' || e.key === 'C') stringCents = stringCents.map(() => NaN)
+      else if (e.key === 'c' || e.key === 'C') clearStrings(stringCents.length)
       else if (e.key === 'h' || e.key === 'H') $('toggle').click()
       else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && test) {
         const sel = $('testNote')
