@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Experiment #040 - Rhythm</title>
+  <!--
+    Experiment #040 - real-time beat, tempo, meter and rhythm detection on the
+    Web Audio input (microphone), in an AudioWorklet. See rhythm/README.md.
+
+    rhythm/onset.js           SuperFlux onset strength, band fluxes, chroma (100 frames / s)
+    rhythm/tempo.js           comb-filtered autocorrelation tempogram (tempo prior)
+    rhythm/beat.js            forward-filtered bar-pointer HMM (Krebs, Böck & Widmer 2015), predicted beats
+    rhythm/level.js           halves an eighth-note pulse when every other one is accented
+    rhythm/meter.js           beats per bar, downbeat, subdivision, swing, step grid
+    rhythm/analyzer.js        the pipeline; rhythm/rhythm-worklet.js runs it in the audio thread
+    rhythm/demo.js            the synthesised drum loops of the Demo source
+    node --test rhythm/test/rhythm.test.js · node rhythm/test/eval.js
+  -->
+  <style>
+    @font-face { font-family: 'Cormorant Garamond'; font-weight: 600; src: url(fonts/cormorant-garamond-latin-600-normal.woff2) format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Montserrat'; font-weight: 300; src: url(fonts/montserrat-latin-300-normal.woff2) format('woff2'); font-display: swap; }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0b0c; font: 13px/1.35 "Helvetica Neue", Arial, sans-serif; color: #e8e2d6; }
+    [hidden] { display: none !important; }
+    #stage { position: absolute; inset: 0; display: grid; grid-template-rows: 1fr auto auto auto; justify-items: center; align-items: end; padding: 20px 24px 16px 360px; box-sizing: border-box; gap: 10px; }
+    body.collapsed #stage { padding-left: 24px; }
+    @media (max-width: 760px) { #stage { padding-left: 24px; padding-top: 70px; } }
+    #readout { text-align: center; user-select: none; align-self: center; }
+    #bpm { font: 600 min(26vh, 20vw)/0.9 'Cormorant Garamond', Georgia, serif; color: #f3e6c4; font-variant-numeric: tabular-nums; transition: color 0.2s; }
+    #bpm small { font: 300 0.16em Montserrat, "Helvetica Neue", Arial, sans-serif; letter-spacing: 0.2em; color: #9c958a; margin-left: 0.3em; }
+    #bpm.dim { color: #3a3631; }
+    #feel { font: 300 min(4.2vh, 4.4vw)/1.2 Montserrat, "Helvetica Neue", Arial, sans-serif; letter-spacing: 0.08em; color: #d8b56a; min-height: 1.2em; margin-top: 0.2em; }
+    #feel span { margin: 0 0.5em; }
+    #feel .muted { color: #6b645a; }
+    #lamps { display: flex; gap: 14px; justify-content: center; margin-top: 18px; min-height: 46px; align-items: center; }
+    #lamps i { display: block; width: 30px; height: 30px; border-radius: 50%; background: #1d1b19; border: 1px solid #3d3933; transition: background 0.08s, box-shadow 0.08s, transform 0.08s; }
+    #lamps i.down { width: 40px; height: 40px; }
+    #lamps i.on { background: #f3e6c4; box-shadow: 0 0 22px rgba(243, 230, 196, 0.7); transform: scale(1.08); }
+    #lamps i.down.on { background: #e0a73a; box-shadow: 0 0 30px rgba(224, 167, 58, 0.85); }
+    #conf { width: 220px; height: 4px; background: #1d1b19; border-radius: 2px; margin: 14px auto 0; overflow: hidden; }
+    #conf i { display: block; height: 100%; width: 0; background: #8a7a52; transition: width 0.3s; }
+    canvas { display: block; }
+    #timeline { width: min(900px, 96%); height: 150px; }
+    #lower { display: flex; gap: 14px; width: min(900px, 96%); }
+    #tempogram { flex: 1.2; min-width: 0; height: 120px; }
+    #grid { flex: 1; min-width: 0; height: 120px; }
+    #panel {
+      position: absolute; top: 12px; left: 12px; width: 318px; padding: 10px 12px; max-height: calc(100% - 44px); overflow: auto;
+      background: rgba(14, 13, 12, 0.88); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 10px;
+      backdrop-filter: blur(8px); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5); z-index: 2; box-sizing: border-box;
+    }
+    #panel h1 { margin: 0 0 2px; font: 300 17px/1.2 Georgia, serif; letter-spacing: 0.04em; color: #f3e6c4; }
+    #panel h1 a { color: inherit; text-decoration: none; }
+    #panel .sub { font-size: 11px; color: #9c958a; margin-bottom: 6px; }
+    #panel a { color: #b9ad98; }
+    body.collapsed #panel .body { display: none; }
+    body.collapsed #panel { width: auto; }
+    #toggle { float: right; background: none; border: 0; color: #d8b56a; font-size: 15px; cursor: pointer; }
+    h2 { font: 600 10.5px/1 "Helvetica Neue", Arial, sans-serif; letter-spacing: 0.12em; text-transform: uppercase; color: #b9a57a; margin: 12px 0 4px; }
+    .row { display: flex; align-items: center; gap: 6px; margin: 5px 0; flex-wrap: wrap; }
+    .row > label:first-child { flex: 0 0 74px; color: #a9a196; }
+    select, input[type=range] { flex: 1; min-width: 0; }
+    select, input[type=number] { background: #1d1b19; color: #eee6d8; border: 1px solid #3d3933; border-radius: 4px; padding: 2px 4px; font: inherit; }
+    input[type=number] { width: 58px; }
+    input[type=range], input[type=checkbox] { accent-color: #c9a24a; }
+    .chk { display: flex; align-items: center; gap: 3px; color: #cfc6b8; margin-right: 6px; white-space: nowrap; }
+    .val { font: 11px monospace; color: #b9b0a2; min-width: 46px; text-align: right; }
+    button.b { background: #26231f; color: #eee6d8; border: 1px solid #4a443b; border-radius: 4px; padding: 3px 8px; cursor: pointer; font: inherit; font-size: 12px; }
+    button.b:hover { background: #35302a; }
+    button.b.on { background: #c9a24a; color: #111; border-color: #c9a24a; }
+    button.b.flash { background: #f3e6c4; color: #111; }
+    .seg { display: flex; flex: 1; }
+    .seg button { flex: 1; border-radius: 0; margin-left: -1px; }
+    .seg button:first-child { border-radius: 4px 0 0 4px; margin-left: 0; }
+    .seg button:last-child { border-radius: 0 4px 4px 0; }
+    .stats { font: 11px/1.45 monospace; color: #c9c0b2; white-space: pre-wrap; background: rgba(0,0,0,0.25); border-radius: 4px; padding: 5px 6px; }
+    .stats b { color: #f3e6c4; font-weight: normal; }
+    #meter { flex: 1; height: 6px; background: #1d1b19; border-radius: 3px; position: relative; overflow: hidden; }
+    #meter i { position: absolute; left: 0; top: 0; bottom: 0; background: #8a7a52; width: 0; }
+    #hint { color: #8f887d; font-size: 11px; margin-top: 8px; }
+    #start { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 14px; background: rgba(11, 11, 12, 0.82); z-index: 4; }
+    #start button { font: 300 20px Montserrat, "Helvetica Neue", Arial, sans-serif; letter-spacing: 0.08em; padding: 12px 26px; border-radius: 30px; background: #c9a24a; color: #111; border: 0; cursor: pointer; }
+    #start button.alt { background: none; color: #d8b56a; border: 1px solid #6b5a36; font-size: 14px; padding: 8px 18px; }
+    #start p { color: #9c958a; max-width: 440px; text-align: center; margin: 0; }
+    #status { position: absolute; top: 12px; right: 12px; padding: 6px 10px; border-radius: 6px; background: rgba(14, 13, 12, 0.88); border: 1px solid #3d3933; font-size: 12px; z-index: 5; max-width: 440px; }
+    #status.error { border-color: #c44; color: #f99; }
+  </style>
+</head>
+<body>
+  <div id="stage">
+    <div id="readout">
+      <div id="bpm" class="dim">–<small>BPM</small></div>
+      <div id="feel"></div>
+      <div id="lamps"></div>
+      <div id="conf" title="Beat confidence: how much stronger the onsets are on the beats than between them"><i></i></div>
+    </div>
+    <canvas id="timeline"></canvas>
+    <div id="lower">
+      <canvas id="tempogram"></canvas>
+      <canvas id="grid"></canvas>
+    </div>
+  </div>
+
+  <div id="panel">
+    <button id="toggle" title="Collapse (H)">–</button>
+    <h1><a href="rhythm/README.md">#040 Rhythm</a></h1>
+    <div class="sub">Beats, tempo, meter and rhythm from the microphone, in an AudioWorklet</div>
+    <div class="body">
+      <h2>Input</h2>
+      <div class="row">
+        <label>Source</label>
+        <select id="source">
+          <option value="mic">Microphone</option>
+          <option value="demo">Demo loop</option>
+          <option value="file">Audio file</option>
+        </select>
+      </div>
+      <div class="row" id="deviceRow">
+        <label>Device</label>
+        <select id="device"><option value="">Default</option></select>
+      </div>
+      <div class="row" id="demoRow" hidden>
+        <label>Demo</label>
+        <select id="demoStyle">
+          <option value="rock">Rock</option>
+          <option value="house">House</option>
+          <option value="funk">Funk</option>
+          <option value="shuffle">Shuffle (swing)</option>
+          <option value="waltz">Waltz (3/4)</option>
+          <option value="sixeight">6/8</option>
+          <option value="bossa">Bossa nova</option>
+        </select>
+        <input type="number" id="demoBpm" min="50" max="200" step="1" value="120" title="Tempo of the loop (BPM)">
+      </div>
+      <div class="row" id="fileRow" hidden>
+        <label>File</label>
+        <button class="b" id="open">Open…</button>
+        <span class="val" id="fileName" style="text-align:left;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">none</span>
+        <input type="file" id="fileInput" accept="audio/*" hidden>
+      </div>
+      <div class="row" id="hearRow" hidden>
+        <label>Hear</label>
+        <input type="range" id="hear" min="0" max="1" step="0.01" value="0.6">
+      </div>
+      <div class="row">
+        <label>Level</label>
+        <div id="meter"><i></i></div>
+        <span class="val" id="levelVal">–</span>
+      </div>
+
+      <h2>Tracking</h2>
+      <div class="row">
+        <label>Tempo range</label>
+        <select id="range">
+          <option value="55-200">55 – 200 BPM</option>
+          <option value="40-120">40 – 120 (slow)</option>
+          <option value="70-140">70 – 140 (one octave)</option>
+          <option value="90-200">90 – 200 (fast)</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>Beat level</label>
+        <div class="seg" id="level">
+          <button class="b on" data-v="auto" title="Halve an eighth-note pulse when every other one is accented">Auto</button><button class="b" data-v="1" title="The fastest regular pulse">Pulse</button><button class="b" data-v="2" title="Every other pulse">Half</button>
+        </div>
+      </div>
+      <div class="row">
+        <label>Tap</label>
+        <button class="b" id="tap" title="Tap the beat (T); three taps set the tempo and level">Tap tempo</button>
+        <span class="val" id="tapVal">–</span>
+        <button class="b" id="reset" title="Forget tempo and meter (R)">Reset</button>
+      </div>
+
+      <h2>Metronome</h2>
+      <div class="row">
+        <label>Click</label>
+        <label class="chk"><input type="checkbox" id="metro">on the detected beat (M)</label>
+      </div>
+      <div class="row">
+        <label>Volume</label>
+        <input type="range" id="metroVol" min="0" max="1" step="0.01" value="0.5">
+      </div>
+      <div class="row">
+        <label>Offset</label>
+        <input type="range" id="offset" min="-100" max="100" step="1" value="0">
+        <span class="val" id="offsetVal">0 ms</span>
+      </div>
+
+      <h2>Stats</h2>
+      <div class="stats" id="stats">–</div>
+      <div id="hint">T tap · M metronome · R reset · H hide panel. With the microphone, use headphones for the metronome or it will hear its own clicks. The lamps and clicks are scheduled from the predicted next beat, so they land on the beat rather than after it.</div>
+    </div>
+  </div>
+
+  <div id="start">
+    <button id="startMic">Listen</button>
+    <button class="alt" id="startDemo">Play a demo loop</button>
+    <p>Play music near the microphone, or play an instrument. The page finds the beat in a few seconds, then follows tempo changes. Nothing leaves the browser.</p>
+  </div>
+  <div id="status" hidden></div>
+
+  <script type="module">
+    import { renderLoop } from './rhythm/demo.js'
+
+    const $ = (id) => document.getElementById(id)
+    const S = { source: 'mic', style: 'rock', demoBpm: 120, range: '55-200', level: 'auto', metro: false, vol: 0.5, offset: 0 }
+
+    // ---------------------------------------------------------------- settings in the address bar
+    const params = new URLSearchParams(location.search)
+    if (params.has('source')) S.source = params.get('source')
+    if (params.has('style')) S.style = params.get('style')
+    if (params.has('bpm')) S.demoBpm = Math.max(50, Math.min(200, Number(params.get('bpm')) || 120))
+    if (params.has('range')) S.range = params.get('range')
+    if (params.has('level')) S.level = params.get('level')
+    if (params.has('metro')) S.metro = params.get('metro') === '1'
+    if (params.has('offset')) S.offset = Number(params.get('offset')) || 0
+    function saveUrl() {
+      const p = new URLSearchParams()
+      if (S.source !== 'mic') p.set('source', S.source)
+      if (S.source === 'demo') { p.set('style', S.style); p.set('bpm', S.demoBpm) }
+      if (S.range !== '55-200') p.set('range', S.range)
+      if (S.level !== 'auto') p.set('level', S.level)
+      if (S.metro) p.set('metro', '1')
+      if (S.offset) p.set('offset', S.offset)
+      const q = p.toString()
+      history.replaceState(null, '', q ? `?${q}` : location.pathname)
+    }
+
+    function status(msg, error = false) {
+      const el = $('status')
+      el.hidden = !msg
+      el.textContent = msg || ''
+      el.classList.toggle('error', error)
+    }
+
+    // ---------------------------------------------------------------- audio graph
+    let ctx = null, node = null, srcNode = null, stream = null, analyser = null, hearGain = null, bufSrc = null
+    let contextTime = 0          // context time of the worklet's input sample 0
+    let inputLatency = 0         // seconds, from the track settings (mic only)
+    let demo = null              // { start, loop } ground truth for the demo source
+    let fileBuffer = null, fileName = ''
+
+    async function ensureContext() {
+      if (ctx) { if (ctx.state !== 'running') await ctx.resume(); return }
+      ctx = new AudioContext({ latencyHint: 'interactive' })
+      await ctx.audioWorklet.addModule(new URL('./rhythm/rhythm-worklet.js', import.meta.url))
+      analyser = ctx.createAnalyser()
+      analyser.fftSize = 2048
+      hearGain = ctx.createGain()
+      hearGain.connect(ctx.destination)
+      createNode()
+    }
+
+    function createNode() {
+      if (node) { node.port.onmessage = null; try { node.disconnect() } catch {} }
+      const [minBpm, maxBpm] = S.range.split('-').map(Number)
+      node = new AudioWorkletNode(ctx, 'rhythm-processor', {
+        numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1], channelCount: 2, channelCountMode: 'explicit',
+        processorOptions: { minBpm, maxBpm },
+      })
+      node.port.onmessage = onWorklet
+      const mute = ctx.createGain()
+      mute.gain.value = 0
+      node.connect(mute).connect(ctx.destination)
+      if (srcNode) srcNode.connect(node)
+      clearState()
+      if (S.level !== 'auto') node.port.postMessage({ type: 'level', value: Number(S.level) })
+    }
+
+    function disconnectSource() {
+      if (bufSrc) { try { bufSrc.stop() } catch {} bufSrc.disconnect(); bufSrc = null }
+      if (srcNode) { try { srcNode.disconnect() } catch {} srcNode = null }
+      if (stream) { for (const t of stream.getTracks()) t.stop(); stream = null }
+      demo = null
+      inputLatency = 0
+    }
+
+    async function startMic() {
+      await ensureContext()
+      disconnectSource()
+      const deviceId = $('device').value
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            deviceId: deviceId ? { exact: deviceId } : undefined,
+            echoCancellation: false, noiseSuppression: false, autoGainControl: false,
+            channelCount: { ideal: 1 },
+          },
+        })
+      } catch (e) {
+        status(`Microphone: ${e.message || e.name}`, true)
+        return false
+      }
+      srcNode = ctx.createMediaStreamSource(stream)
+      srcNode.connect(node)
+      srcNode.connect(analyser)
+      inputLatency = stream.getAudioTracks()[0]?.getSettings().latency || 0
+      resetTracker()
+      status('')
+      listDevices()
+      return true
+    }
+
+    async function listDevices() {
+      if (!navigator.mediaDevices?.enumerateDevices) return
+      const devs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput')
+      const sel = $('device'), cur = sel.value || stream?.getAudioTracks()[0]?.getSettings().deviceId || ''
+      sel.innerHTML = '<option value="">Default</option>' + devs.map((d, i) => `<option value="${escapeHtml(d.deviceId)}">${escapeHtml(d.label || `Input ${i + 1}`)}</option>`).join('')
+      if ([...sel.options].some((o) => o.value === cur)) sel.value = cur
+    }
+    function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]) }
+
+    // a looped buffer (demo loop or audio file) into the analyser and the speakers
+    function playBuffer(buffer, loop = true) {
+      bufSrc = ctx.createBufferSource()
+      bufSrc.buffer = buffer
+      bufSrc.loop = loop
+      const g = ctx.createGain()
+      bufSrc.connect(g)
+      g.connect(node); g.connect(analyser); g.connect(hearGain)
+      hearGain.gain.value = Number($('hear').value)
+      srcNode = g
+      const start = ctx.currentTime + 0.05
+      bufSrc.start(start)
+      return start
+    }
+
+    async function startDemo() {
+      await ensureContext()
+      disconnectSource()
+      const L = renderLoop(S.style, S.demoBpm, ctx.sampleRate, 4)
+      const buffer = ctx.createBuffer(1, L.samples.length, ctx.sampleRate)
+      buffer.copyToChannel(L.samples, 0)
+      const start = playBuffer(buffer)
+      demo = { start, loop: L, hits: 0, beats: 0, matched: new Set() }
+      resetTracker()
+      status('')
+    }
+
+    async function startFile() {
+      await ensureContext()
+      disconnectSource()
+      if (!fileBuffer) { status('Open an audio file'); return }
+      playBuffer(fileBuffer)
+      resetTracker()
+      status('')
+    }
+
+    async function startSource() {
+      $('start').hidden = true
+      if (S.source === 'mic') await startMic()
+      else if (S.source === 'demo') await startDemo()
+      else await startFile()
+      updateRows()
+    }
+
+    function resetTracker() {
+      node?.port.postMessage({ type: 'reset' })
+      clearState()
+    }
+
+    // ---------------------------------------------------------------- state from the worklet
+    const FIELDS = 9
+    const R = { frames: [], beats: [], bpm: 0, active: false, nextBeat: NaN, meter: null, confidence: 0, load: 0, tg: null, lastBeat: null, rms: 0, emitLag: [], clicks: [] }
+    function clearState() {
+      R.frames.length = 0; R.beats.length = 0; R.bpm = 0; R.active = false; R.nextBeat = NaN; R.meter = null; R.confidence = 0; R.tg = null; R.lastBeat = null; R.emitLag.length = 0
+      R.lampBeat = -1; R.scheduled = -Infinity
+      taps.length = 0; $('tapVal').textContent = '–'
+      if (demo) { demo.matched = new Set(); demo.hits = 0; demo.beats = 0 }
+    }
+
+    function onWorklet(e) {
+      const m = e.data
+      if (m.type === 'start') { contextTime = m.contextTime; return }
+      if (m.type === 'load') { R.load = m.percent; return }
+      if (m.type === 'reset') { const keep = contextTime; clearState(); contextTime = keep; return }
+      if (m.type === 'tempogram') { R.tg = m; return }
+      if (m.type === 'frames') {
+        contextTime = m.contextTime
+        const d = m.data
+        for (let o = 0; o < d.length; o += FIELDS) {
+          R.frames.push({ t: d[o], obs: d[o + 1], low: d[o + 2], mid: d[o + 3], high: d[o + 4], rms: d[o + 5] })
+          R.nextBeat = d[o + 6]; R.bpm = d[o + 7]; R.active = d[o + 8] > 0; R.rms = d[o + 5]
+        }
+        const now = R.frames.length ? R.frames[R.frames.length - 1].t : 0
+        while (R.frames.length && R.frames[0].t < now - 10) R.frames.shift()
+        scheduleClick()
+        return
+      }
+      if (m.type === 'beat') {
+        R.beats.push({ t: m.time, down: m.downbeat, barBeat: m.barBeat })
+        while (R.beats.length > 64) R.beats.shift()
+        R.meter = m.meter; R.confidence = m.confidence; R.lastBeat = m
+        // emit lag: how late the event reached the page relative to the beat it reports
+        R.emitLag.push(ctx.currentTime - (contextTime + m.time)); if (R.emitLag.length > 32) R.emitLag.shift()
+        if (demo) scoreDemo(m.time)
+      }
+    }
+
+    // demo source: score the detected beats against the loop's own beats (±70 ms)
+    function scoreDemo(t) {
+      const L = demo.loop, rel = contextTime + t - demo.start
+      if (rel < 0) return
+      const r = Math.floor(rel / L.seconds), x = rel - r * L.seconds
+      let best = Infinity
+      for (const b of L.beats) for (const y of [b, b + L.seconds]) if (Math.abs(x - y) < Math.abs(best)) best = x - y
+      demo.beats++
+      if (Math.abs(best) <= 0.07) { demo.hits++; demo.lastErr = best }
+    }
+
+    // ---------------------------------------------------------------- metronome
+    function click(time, accent) {
+      const o = ctx.createOscillator(), g = ctx.createGain()
+      o.frequency.value = accent ? 1760 : 1175
+      g.gain.setValueAtTime(0, time)
+      g.gain.linearRampToValueAtTime(S.vol * (accent ? 0.9 : 0.6), time + 0.001)
+      g.gain.exponentialRampToValueAtTime(0.0001, time + 0.05)
+      o.connect(g).connect(ctx.destination)
+      o.start(time); o.stop(time + 0.06)
+    }
+    // schedule the predicted beat once it is less than 120 ms away; a beat
+    // already scheduled is not scheduled again (the prediction is fixed then)
+    function scheduleClick() {
+      if (!S.metro || !R.active || !(R.bpm > 0) || !isFinite(R.nextBeat)) return
+      const period = 60 / R.bpm
+      // the beat on the input timeline happened inputLatency earlier; the click is heard outputLatency later
+      const comp = S.source === 'mic' ? inputLatency + (ctx.outputLatency || ctx.baseLatency || 0) : 0
+      const at = contextTime + R.nextBeat - comp + S.offset / 1000
+      if (at - ctx.currentTime > 0.12 || at < ctx.currentTime) return
+      if (at - R.scheduled < 0.6 * period) return
+      R.scheduled = at
+      const bpb = R.meter?.beatsPerBar || 4
+      const nextBar = R.lastBeat ? (R.lastBeat.barBeat + Math.max(1, Math.round((R.nextBeat - R.lastBeat.time) / period))) % bpb : 1
+      click(at, nextBar === 0)
+      R.clicks.push(at); if (R.clicks.length > 32) R.clicks.shift()
+    }
+
+    // ---------------------------------------------------------------- tap tempo
+    const taps = []
+    function tap() {
+      const t = performance.now() / 1000
+      if (taps.length && t - taps[taps.length - 1] > 2) taps.length = 0
+      taps.push(t)
+      $('tap').classList.add('flash'); setTimeout(() => $('tap').classList.remove('flash'), 90)
+      if (taps.length < 3) { $('tapVal').textContent = `${taps.length}…`; return }
+      const d = []; for (let i = 1; i < taps.length; i++) d.push(taps[i] - taps[i - 1])
+      d.sort((a, b) => a - b)
+      const bpm = 60 / d[d.length >> 1]
+      $('tapVal').textContent = bpm.toFixed(1)
+      node?.port.postMessage({ type: 'tap', bpm })
+      R.tapBpm = bpm
+    }
+
+    // ---------------------------------------------------------------- drawing
+    function fit(c) {
+      const r = c.getBoundingClientRect(), d = devicePixelRatio || 1
+      const w = Math.max(1, Math.round(r.width * d)), h = Math.max(1, Math.round(r.height * d))
+      if (c.width !== w || c.height !== h) { c.width = w; c.height = h }
+      return { g: c.getContext('2d'), w, h, d }
+    }
+
+    const SPAN = 6, AHEAD = 1.2      // seconds shown before and after now
+    function inputNow() { return ctx ? ctx.currentTime - contextTime : 0 }
+
+    function drawTimeline() {
+      const { g, w, h, d } = fit($('timeline'))
+      g.clearRect(0, 0, w, h)
+      g.fillStyle = 'rgba(255,255,255,0.03)'; g.fillRect(0, 0, w, h)
+      const now = inputNow()
+      const x = (t) => w * (t - (now - SPAN)) / (SPAN + AHEAD)
+      const xNow = x(now)
+      // lanes: onset strength on top, then low / mid / high
+      const lanes = [['obs', '#e8d9b0', 0.40], ['low', '#d2763d', 0.20], ['mid', '#c9a24a', 0.20], ['high', '#7fa6b8', 0.20]]
+      let y0 = 0
+      const peaks = { low: 1e-3, mid: 1e-3, high: 1e-3, obs: 1 }
+      for (const f of R.frames) for (const k of ['low', 'mid', 'high']) peaks[k] = Math.max(peaks[k], f[k])
+      for (const [key, col, frac] of lanes) {
+        const lh = h * frac
+        g.fillStyle = col; g.globalAlpha = key === 'obs' ? 0.85 : 0.6
+        g.beginPath(); g.moveTo(0, y0 + lh)
+        for (const f of R.frames) g.lineTo(x(f.t), y0 + lh - lh * 0.92 * Math.min(1, f[key] / peaks[key]))
+        g.lineTo(x(R.frames.length ? R.frames[R.frames.length - 1].t : now), y0 + lh); g.closePath(); g.fill()
+        g.globalAlpha = 1
+        g.fillStyle = '#6b645a'; g.font = `${10 * d}px Helvetica Neue, Arial`
+        g.fillText(key === 'obs' ? 'onsets' : key === 'low' ? 'low (kick, bass)' : key === 'mid' ? 'mid (snare, chords)' : 'high (hats)', 6 * d, y0 + 12 * d)
+        y0 += lh
+      }
+      // detected beats
+      for (const b of R.beats) {
+        const bx = x(b.t); if (bx < -2 || bx > w + 2) continue
+        g.strokeStyle = b.down ? 'rgba(224,167,58,0.95)' : 'rgba(243,230,196,0.55)'
+        g.lineWidth = (b.down ? 2.5 : 1.5) * d
+        g.beginPath(); g.moveTo(bx, 0); g.lineTo(bx, h); g.stroke()
+      }
+      // demo ground truth: small ticks at the bottom
+      if (demo) {
+        const L = demo.loop
+        g.fillStyle = 'rgba(120,200,120,0.8)'
+        const t0 = now - SPAN, t1 = now + AHEAD
+        const base = demo.start - contextTime
+        for (let r = Math.floor((t0 - base) / L.seconds); r <= Math.ceil((t1 - base) / L.seconds); r++) {
+          for (let i = 0; i < L.beats.length; i++) {
+            const t = base + r * L.seconds + L.beats[i]; if (t < base) continue
+            g.fillRect(x(t) - 1.5 * d, h - 8 * d, 3 * d, 8 * d)
+          }
+        }
+      }
+      // predicted beats ahead of now
+      if (R.active && R.bpm > 0 && isFinite(R.nextBeat)) {
+        const p = 60 / R.bpm
+        g.setLineDash([4 * d, 4 * d]); g.strokeStyle = 'rgba(243,230,196,0.45)'; g.lineWidth = 1.2 * d
+        for (let t = R.nextBeat; t < now + AHEAD; t += p) { if (t < now) continue; g.beginPath(); g.moveTo(x(t), 0); g.lineTo(x(t), h); g.stroke() }
+        g.setLineDash([])
+      }
+      // metronome clicks
+      g.fillStyle = '#9be38f'
+      for (const c of R.clicks) { const cx = x(c - contextTime); if (cx > 0 && cx < w) g.fillRect(cx - 2 * d, 0, 4 * d, 6 * d) }
+      // now
+      g.fillStyle = 'rgba(11,11,12,0.55)'; g.fillRect(xNow, 0, w - xNow, h)
+      g.strokeStyle = '#d8b56a'; g.lineWidth = 1 * d; g.beginPath(); g.moveTo(xNow, 0); g.lineTo(xNow, h); g.stroke()
+      g.fillStyle = '#9c958a'; g.fillText('now', xNow + 4 * d, h - 4 * d)
+    }
+
+    function drawTempogram() {
+      const { g, w, h, d } = fit($('tempogram'))
+      g.clearRect(0, 0, w, h)
+      g.fillStyle = 'rgba(255,255,255,0.03)'; g.fillRect(0, 0, w, h)
+      const [lo, hi] = S.range.split('-').map(Number)
+      const bx = (b) => 8 * d + (w - 16 * d) * Math.log(b / lo) / Math.log(hi / lo)
+      const top = 14 * d, bot = h - 16 * d
+      g.font = `${10 * d}px Helvetica Neue, Arial`; g.fillStyle = '#6b645a'; g.textAlign = 'center'
+      for (const b of [40, 50, 60, 70, 80, 100, 120, 140, 160, 180, 200]) if (b >= lo && b <= hi) {
+        g.fillRect(bx(b), bot, 1, 3 * d); g.fillText(b, bx(b), h - 3 * d)
+      }
+      g.textAlign = 'left'; g.fillText('tempo', 6 * d, 11 * d)
+      if (R.tg) {
+        const { bpm, strength, tracker } = R.tg
+        let tm = 0; for (const v of tracker) tm = Math.max(tm, v)
+        g.fillStyle = 'rgba(127,166,184,0.35)'
+        g.beginPath(); g.moveTo(bx(bpm[bpm.length - 1]), bot)
+        for (let k = bpm.length - 1; k >= 0; k--) g.lineTo(bx(bpm[k]), bot - (bot - top) * (tm ? tracker[k] / tm : 0))
+        g.lineTo(bx(bpm[0]), bot); g.closePath(); g.fill()
+        g.strokeStyle = '#c9a24a'; g.lineWidth = 1.5 * d; g.beginPath()
+        for (let k = bpm.length - 1; k >= 0; k--) { const X = bx(bpm[k]), Y = bot - (bot - top) * strength[k]; k === bpm.length - 1 ? g.moveTo(X, Y) : g.lineTo(X, Y) }
+        g.stroke()
+      }
+      if (R.bpm > 0 && R.active) {
+        const X = bx(Math.max(lo, Math.min(hi, R.bpm)))
+        g.strokeStyle = '#f3e6c4'; g.lineWidth = 2 * d; g.beginPath(); g.moveTo(X, top - 4 * d); g.lineTo(X, bot); g.stroke()
+      }
+      if (R.tapBpm) { const X = bx(Math.max(lo, Math.min(hi, R.tapBpm))); g.fillStyle = '#9be38f'; g.beginPath(); g.moveTo(X, top - 6 * d); g.lineTo(X - 4 * d, top - 12 * d); g.lineTo(X + 4 * d, top - 12 * d); g.fill() }
+      g.fillStyle = '#6b645a'; g.textAlign = 'right'
+      g.fillText('comb ACF', w - 6 * d, 11 * d); g.fillStyle = 'rgba(127,166,184,0.8)'; g.fillText('tracker', w - 66 * d, 11 * d)
+      g.textAlign = 'left'
+    }
+
+    function drawGrid() {
+      const { g, w, h, d } = fit($('grid'))
+      g.clearRect(0, 0, w, h)
+      g.fillStyle = 'rgba(255,255,255,0.03)'; g.fillRect(0, 0, w, h)
+      g.font = `${10 * d}px Helvetica Neue, Arial`; g.fillStyle = '#6b645a'; g.fillText('rhythm (last bars)', 6 * d, 11 * d)
+      const grid = R.meter?.grid
+      if (!grid) return
+      const { steps, beatsPerBar: m, cells } = grid
+      const n = m * steps, left = 34 * d, top = 18 * d, cw = (w - left - 6 * d) / n, ch = (h - top - 16 * d) / 3
+      const names = ['low', 'mid', 'high'], cols = [[210, 118, 61], [201, 162, 74], [127, 166, 184]]
+      // the playhead: where in the bar the music is now
+      let pos = -1
+      if (R.lastBeat && R.bpm > 0 && R.active) {
+        const p = 60 / R.bpm, since = inputNow() - R.lastBeat.time
+        const beatPos = (R.lastBeat.barBeat + since / p)
+        pos = Math.floor((((beatPos % m) + m) % m) * steps)
+      }
+      for (let q = 0; q < 3; q++) {
+        g.fillStyle = '#8f887d'; g.fillText(names[q], 4 * d, top + ch * q + ch * 0.62)
+        let mx = 1e-6; for (const v of cells[q]) mx = Math.max(mx, v)
+        for (let i = 0; i < n; i++) {
+          const v = Math.min(1, cells[q][i] / mx), [r, gg, b] = cols[q]
+          g.fillStyle = `rgba(${r},${gg},${b},${0.08 + 0.92 * v * v})`
+          g.fillRect(left + i * cw + 1.5 * d, top + q * ch + 1.5 * d, cw - 3 * d, ch - 3 * d)
+          if (i === pos) { g.strokeStyle = '#f3e6c4'; g.lineWidth = 1.5 * d; g.strokeRect(left + i * cw + 1.5 * d, top + q * ch + 1.5 * d, cw - 3 * d, ch - 3 * d) }
+        }
+      }
+      const lab = steps === 4 ? ['', 'e', '&', 'a'] : ['', '&', 'a']
+      g.textAlign = 'center'
+      for (let i = 0; i < n; i++) {
+        const s = i % steps
+        g.fillStyle = s ? '#6b645a' : '#cfc6b8'
+        g.fillText(s ? lab[s] : String(i / steps + 1), left + (i + 0.5) * cw, h - 4 * d)
+      }
+      g.textAlign = 'left'
+    }
+
+    function updateReadout() {
+      const el = $('bpm')
+      if (R.active && R.bpm > 0 && R.beats.length >= 2) { el.firstChild.textContent = R.bpm.toFixed(1); el.classList.remove('dim') }
+      else { el.firstChild.textContent = '–'; el.classList.add('dim') }
+      const m = R.meter
+      if (m && R.active && R.beats.length >= 4) {
+        const feel = m.sub === 3 ? 'triplet feel' : m.swing > 1.25 ? `swing ${m.swing.toFixed(2)} : 1` : 'straight'
+        $('feel').innerHTML = `<span>${m.timeSignature}</span><span class="muted">·</span><span>${feel}</span>${m.level === 2 ? '<span class="muted">· half of the pulse</span>' : ''}`
+      } else $('feel').textContent = ''
+      $('conf').firstChild.style.width = `${Math.round(100 * (R.active ? R.confidence : 0))}%`
+      // lamps
+      const bpb = m?.beatsPerBar || 4, lamps = $('lamps')
+      if (lamps.children.length !== bpb) lamps.innerHTML = Array.from({ length: bpb }, (_, i) => `<i class="${i ? '' : 'down'}"></i>`).join('')
+      // light the lamp of the beat whose predicted time has passed in the last 120 ms
+      let lit = -1
+      if (R.active && R.lastBeat && R.bpm > 0) {
+        const p = 60 / R.bpm, now = inputNow()
+        // the beat closest before now: from the prediction, or the last emitted beat
+        let t = R.nextBeat; while (t > now) t -= p
+        if (now - t < Math.min(0.12, 0.4 * p)) {
+          const k = Math.round((t - R.lastBeat.time) / p)
+          lit = (((R.lastBeat.barBeat + k) % bpb) + bpb) % bpb
+        }
+      }
+      for (let i = 0; i < lamps.children.length; i++) lamps.children[i].classList.toggle('on', i === lit)
+    }
+
+    let lastStats = 0
+    function updateStats() {
+      const t = performance.now()
+      if (t - lastStats < 250) return
+      lastStats = t
+      // input level from the analyser
+      let db = -Infinity
+      if (analyser) {
+        const buf = new Float32Array(analyser.fftSize); analyser.getFloatTimeDomainData(buf)
+        let s = 0; for (const v of buf) s += v * v
+        db = 10 * Math.log10(s / buf.length + 1e-12)
+      }
+      $('meter').firstChild.style.width = `${Math.max(0, Math.min(100, (db + 70) / 70 * 100))}%`
+      $('levelVal').textContent = isFinite(db) ? `${db.toFixed(0)} dB` : '–'
+      const lines = []
+      if (ctx) lines.push(`sample rate  <b>${ctx.sampleRate} Hz</b>   load <b>${R.load.toFixed(1)} %</b>`)
+      lines.push(`beats        <b>${R.beats.length >= 64 ? '64+' : R.beats.length}</b>${R.active ? '' : '   (silent)'}`)
+      if (R.emitLag.length) {
+        const lag = R.emitLag.reduce((a, b) => a + b, 0) / R.emitLag.length
+        lines.push(`event lag    <b>${(1000 * lag).toFixed(0)} ms</b> after the beat (lamps and clicks use the prediction)`)
+      }
+      if (S.source === 'mic' && ctx) lines.push(`latency      in <b>${(1000 * inputLatency).toFixed(0)}</b> · out <b>${(1000 * (ctx.outputLatency || ctx.baseLatency || 0)).toFixed(0)} ms</b>`)
+      if (demo) {
+        lines.push(`demo         <b>${S.demoBpm} BPM ${demo.loop.meter === 2 ? '6/8' : demo.loop.meter + '/4'}</b>`)
+        if (demo.beats) lines.push(`             <b>${demo.hits}/${demo.beats}</b> beats within 70 ms${demo.lastErr != null ? `, last ${(1000 * demo.lastErr).toFixed(0)} ms` : ''}`)
+      }
+      $('stats').innerHTML = lines.join('\n')
+    }
+
+    function frame() {
+      requestAnimationFrame(frame)
+      if (!ctx) return
+      updateReadout()
+      drawTimeline()
+      drawTempogram()
+      drawGrid()
+      updateStats()
+      scheduleClick()
+    }
+    requestAnimationFrame(frame)
+
+    // ---------------------------------------------------------------- UI
+    function updateRows() {
+      $('deviceRow').hidden = S.source !== 'mic'
+      $('demoRow').hidden = S.source !== 'demo'
+      $('fileRow').hidden = S.source !== 'file'
+      $('hearRow').hidden = S.source === 'mic'
+    }
+    $('source').value = S.source
+    $('demoStyle').value = S.style
+    $('demoBpm').value = S.demoBpm
+    $('range').value = S.range
+    $('metro').checked = S.metro
+    $('offset').value = S.offset; $('offsetVal').textContent = `${S.offset} ms`
+    for (const b of $('level').children) b.classList.toggle('on', b.dataset.v === S.level)
+    updateRows()
+
+    $('source').onchange = async () => { S.source = $('source').value; updateRows(); saveUrl(); if (ctx) await startSource() }
+    $('device').onchange = () => { if (S.source === 'mic' && ctx) startMic() }
+    $('demoStyle').onchange = () => { S.style = $('demoStyle').value; saveUrl(); if (ctx && S.source === 'demo') startDemo() }
+    $('demoBpm').onchange = () => { S.demoBpm = Math.max(50, Math.min(200, Number($('demoBpm').value) || 120)); $('demoBpm').value = S.demoBpm; saveUrl(); if (ctx && S.source === 'demo') startDemo() }
+    $('hear').oninput = () => { if (hearGain) hearGain.gain.value = Number($('hear').value) }
+    $('open').onclick = () => $('fileInput').click()
+    $('fileInput').onchange = async () => {
+      const f = $('fileInput').files[0]; if (!f) return
+      await ensureContext()
+      try { fileBuffer = await ctx.decodeAudioData(await f.arrayBuffer()); fileName = f.name; $('fileName').textContent = f.name; $('start').hidden = true; await startFile() }
+      catch (e) { status(`${f.name}: ${e.message || 'cannot decode'}`, true) }
+    }
+    $('range').onchange = () => { S.range = $('range').value; saveUrl(); if (ctx) createNode() }
+    for (const b of $('level').children) b.onclick = () => {
+      S.level = b.dataset.v
+      for (const c of $('level').children) c.classList.toggle('on', c === b)
+      node?.port.postMessage({ type: 'level', value: S.level === 'auto' ? 'auto' : Number(S.level) })
+      saveUrl()
+    }
+    $('tap').onclick = tap
+    $('reset').onclick = () => { resetTracker(); R.tapBpm = null }
+    $('metro').onchange = () => { S.metro = $('metro').checked; saveUrl() }
+    $('metroVol').oninput = () => { S.vol = Number($('metroVol').value) }
+    $('offset').oninput = () => { S.offset = Number($('offset').value); $('offsetVal').textContent = `${S.offset} ms`; saveUrl() }
+    $('toggle').onclick = () => document.body.classList.toggle('collapsed')
+    $('startMic').onclick = () => { if (S.source !== 'mic' && S.source !== 'file') { S.source = 'mic'; $('source').value = 'mic'; saveUrl() } startSource() }
+    $('startDemo').onclick = () => { S.source = 'demo'; $('source').value = 'demo'; saveUrl(); startSource() }
+    if (S.source === 'demo') { $('startMic').textContent = 'Start'; $('startMic').onclick = () => startSource() }
+
+    addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT' && e.target.type !== 'checkbox' && e.target.type !== 'range') return
+      if (e.target.tagName === 'SELECT') return
+      const k = e.key.toLowerCase()
+      if (k === 't') tap()
+      else if (k === 'm') { $('metro').checked = !$('metro').checked; $('metro').onchange() }
+      else if (k === 'r') $('reset').onclick()
+      else if (k === 'h') document.body.classList.toggle('collapsed')
+    })
+
+    // for the browser test
+    window.__rhythm = { R, S, get demo() { return demo }, get ctx() { return ctx }, get contextTime() { return contextTime }, startSource, tap }
+  </script>
+</body>
+</html>

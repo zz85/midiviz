@@ -4,6 +4,16 @@ Midi Visualization Experiments
 
 [WebMscore](webmscore.html) - MuseScore reference renderer (libmscore via WebAssembly)
 
+20 Oct 2026
+
+[Experiment #040 - Rhythm](040_rhythm.html)
+- Beats, tempo, meter, downbeats, swing and a step grid of the rhythm from the microphone (or a demo drum loop, or an audio file), live, in an AudioWorklet
+- Engine [rhythm/](rhythm/README.md): SuperFlux onsets on a log filterbank, a comb-filtered autocorrelation tempogram as a tempo prior, and the bar-pointer beat HMM of Krebs, Böck & Widmer (madmom's DBN) run as a causal forward filter that predicts the next beat; a beat-level stage halves an eighth-note pulse when every other one is accented; meter (3 vs 4) from bar repetition, downbeats from the kick, onsets and harmonic change, duple / triple feel and the swing ratio from the onsets across the beat
+- Scored live (128-sample blocks) on 34 songs (18 drum styles and 16 repo MIDIs, OxiSynth), clean and through a laptop-microphone model: beat F 88.3, AMLt 87.9, tempo right 78 % of the time (98 % allowing double / half), meter 33/34, 0.4–1.4 s to lock on drums; beats are reported 4–6 ms before they happen, at 1.5–3 % of a core
+- Readout to 0.1 BPM, beat lamps with the downbeat, a timeline of onsets in three bands with detected and predicted beats, the tempogram, the rhythm grid; tap tempo (T), beat level Auto / Pulse / Half, tempo range, a metronome on the detected beat (M) compensated for input and output latency; settings in the address bar
+- [Research](rhythm/research/01_beat_tracking.md): onset detection, tempo, beat trackers (agents, DP, bar-pointer HMMs, particle filters, neural activations), meter and downbeats, swing, and what madmom, BeatNet, Aubio, librosa and Essentia do
+- Tests: `node --test rhythm/test/rhythm.test.js` (10); `node rhythm/test/eval.js` scores the corpus; `node rhythm/test/browser.mjs` runs the page in Chromium on the demo loop and a fake microphone
+
 19 Oct 2026
 
 [Liner notes](liner/README.md) for [#032 Pianist](032_pianist.html)
