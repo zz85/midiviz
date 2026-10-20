@@ -244,6 +244,23 @@ test('Moonlight Sonata finale: notes fit mond_3.mid (repeat and cadenza mapped)'
 	assert.ok(t.intertitles.every(x => !x.moved))
 })
 
+test('Gounod Ave Maria (#038): notes fit violinist/midis/gounod_ave_maria.mid', () => {
+	const midi = new Midi(readFileSync(new URL('violinist/midis/gounod_ave_maria.mid', root)))
+	const liner = parseLiner(read('liner/pieces/gounod-ave-maria.md'))
+	const tl = buildTimeline(liner, clockOfMidi(midi), 266.4)
+	assert.deepEqual(tl.warnings, [])
+	// the extra bar (27): the piano's G-E flat over G, the melody's high C; its line shows as bar 28 begins
+	const bar = b => (b - 1) * 4 * 60 / 66
+	const piano = midi.tracks.slice(1).flatMap(t => t.notes)
+	const in27 = new Set(piano.filter(n => n.time >= bar(27) - 0.01 && n.time < bar(28) - 0.01).map(n => n.midi))
+	assert.ok(in27.has(43) && in27.has(51))    // G2 and E flat 3
+	assert.ok(midi.tracks[0].notes.some(n => Math.abs(n.time - bar(27)) < 0.01 && n.midi === 84))    // C6
+	assert.ok(Math.abs(tl.intertitles.find(x => x.kicker === 'The extra bar').start - bar(28)) < 1e-3)
+	// the violin's last note is its open G
+	assert.equal(midi.tracks[0].notes.at(-1).midi, 55)
+	assert.equal(new Set(tl.intertitles.map(x => x.voice)).size, 2)
+})
+
 test('every piece: captions fit a subtitle, intertitles are short and spaced', () => {
 	for (const f of readdirSync(new URL('liner/pieces/', root))) {
 		const l = parseLiner(read('liner/pieces/' + f))

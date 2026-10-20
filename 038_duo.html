@@ -32,7 +32,9 @@
     select, button, input { font: inherit; color: #eee; background: rgba(30,30,36,0.8); border: 1px solid rgba(255,255,255,0.18); border-radius: 6px; padding: 4px 8px; }
     button { cursor: pointer; }
     button.on { background: rgba(255, 190, 110, 0.25); }
-    #seek { flex: 1; min-width: 160px; padding: 0; }
+    #seekBox { flex: 1; min-width: 160px; }
+    #seek { width: 100%; padding: 0; display: block; }
+    #bottom .ln-sub { margin: 0; min-height: 0; }
     a { color: #fc9; }
     #title { font-weight: 600; letter-spacing: 0.02em; }
     #status { position: fixed; left: 50%; top: 52px; transform: translateX(-50%); padding: 6px 12px; border-radius: 6px; background: rgba(0,0,0,0.6); z-index: 6; display: none; }
@@ -72,11 +74,13 @@
     <select id="vsound" title="Violin sound (#034's engines; the piano is the Full Grand Piano soundfont)"><option value="gm">Violin: GM soundfont</option><option value="hybrid">Violin: hybrid sampler (#034)</option><option value="waveguide">Violin: bowed waveguide (#034)</option><option value="source">Violin: Helmholtz source-filter (#034)</option></select>
     <label title="Ink outlines"><input type="checkbox" id="outline" checked> Ink</label>
     <label title="They bow to the hall, then he gives her a nod to start"><input type="checkbox" id="intro" checked> Bow</label>
+    <select id="notes" title="Liner notes on screen while it plays, for pieces that have them (ⓘ in the list). Press I for all the notes"><option value="intertitles">Notes: intertitles</option><option value="notes">Notes: every note</option><option value="off">Notes: none on screen</option></select>
   </div>
   <div id="bottom" class="bar">
     <button id="play">▶</button>
-    <input type="range" id="seek" min="0" max="1" step="0.0001" value="0">
+    <div id="seekBox"><input type="range" id="seek" min="0" max="1" step="0.0001" value="0"></div>
     <span id="time">0:00 / 0:00</span>
+    <span id="notesAt"></span>
     <label id="balanceBox" title="Balance between the violin and the piano (the other one is turned down, up to 12 dB). Double-click to centre">Piano <input type="range" id="balance" min="-12" max="12" step="0.5" value="0"> Violin</label>
     <select id="speed" title="Speed"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option></select>
   </div>
@@ -100,6 +104,8 @@
     import { loadViolinist, disposeVRM, setOutline, MODELS as VIOLINISTS, OUTFITS } from './violinist/character.js'
     import { loadAltCharacter } from './pianist/alt-model.js'
     import { createRig as createPianistRig } from './pianist/rig.js'
+    import { createLinerLibrary, clockOfMidi, buildTimeline } from './liner/liner.js'
+    import { createLinerOverlay } from './liner/overlay.js'
 
     const $ = id => document.getElementById(id)
     const Q = new URLSearchParams(location.search)
@@ -286,6 +292,20 @@
       clock.t = 0
       setStatus('')
       if (scheduler) loadSchedule()
+      attachLiner(midi, 'violinist/midis/' + e.file, k)
+    }
+
+    // ── Liner notes (liner/): intertitles, the notes panel (I), sections on the seek bar ──
+    // (placed by the MIDI's own bars and tempo, times the page's tempo factor k)
+    const linerLib = createLinerLibrary()
+    let liner = null, linerSeq = 0
+    async function attachLiner(midi, file, k = 1) {
+      const seq = ++linerSeq
+      liner?.set(null)
+      const l = await linerLib.forFile(file)
+      if (seq !== linerSeq || !l || !liner) return
+      const c = clockOfMidi(midi), clk = k === 1 ? c : { ...c, seconds: a => c.seconds(a) * k }
+      liner.set(l, buildTimeline(l, clk, song.duration), song.duration)
     }
 
     /** The violinist's expression from his notes (as #037): energy, a breath before each phrase. */
@@ -556,7 +576,8 @@
     $('balance').oninput = () => applyBalance()
     $('balance').onchange = () => saveUrl()
     $('balance').ondblclick = () => { $('balance').value = 0; applyBalance(); saveUrl() }
-    $('seek').oninput = () => { clock.t = +$('seek').value * song.duration; clock.wall = performance.now(); if (clock.playing) { target.allSoundOff(); scheduler.seek(clock.t); if (clock.pending) { clock.pending = false; scheduler.play() } if (hybrid.on) hybrid.start(clock.t) } }
+    function seekTo(t) { clock.t = Math.max(0, Math.min(t, song.duration)); clock.wall = performance.now(); if (clock.playing) { target.allSoundOff(); scheduler.seek(clock.t); if (clock.pending) { clock.pending = false; scheduler.play() } if (hybrid.on) hybrid.start(clock.t) } }
+    $('seek').oninput = () => seekTo(+$('seek').value * song.duration)
     $('song').onchange = async () => { const was = clock.playing; pause(); await loadSong($('song').value); director.reset(); if (hybrid.on && hybrid.lab) hybrid.ensure(); if (was) play(); saveUrl() }
     $('start').onclick = () => { $('start').classList.add('gone'); play() }
     addEventListener('keydown', e => { if (e.code === 'Space' && e.target === document.body) { e.preventDefault(); $('start').classList.add('gone'); clock.playing ? pause() : play() } })
@@ -658,7 +679,35 @@
       if (+$('balance').value) p.set('bal', $('balance').value)
       if ($('cam').value !== 'auto') p.set('view', $('cam').value)
       if (!$('intro').checked) p.set('intro', '0')
+      if ($('notes').value !== 'intertitles') p.set('notes', $('notes').value)
+      for (const k of ['itstyle', 'itstylea', 'itcol', 'itpos', 'itheads', 'itseed']) if (Q.has(k)) p.set(k, Q.get(k))
       history.replaceState(null, '', '?' + p.toString())
+    }
+
+    // the overlay. Intertitles placed automatically go to the side of the frame
+    // with more room: past whichever of the two is nearer an edge
+    {
+      const p = v3()
+      const ndcX = v => p.copy(v).project(camera).x
+      const autoPosition = () => {
+        if (!him) return 'bottom-left'
+        subjects()
+        const xs = [S.hisHead, S.herHead, S.violin, S.hands].map(ndcX).filter(Number.isFinite)
+        return 1 + Math.min(...xs) >= 1 - Math.max(...xs) ? 'bottom-left' : 'bottom-right'
+      }
+      liner = createLinerOverlay({ seek: $('seek'), title: $('notesAt'), onSeek: t => seekTo(t), download: (name, text) => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' })); a.download = name; a.click() }, autoPosition })
+      // (the look, from the address bar as #032 writes it: itstyle, itstylea, itcol, itpos, itheads, itseed)
+      if (Q.get('itstyle')) liner.style = Q.get('itstyle')
+      if (Q.get('itstylea')) liner.analysisStyle = Q.get('itstylea')
+      if (Q.get('itcol')) liner.theme = Q.get('itcol')
+      if (Q.get('itpos')) liner.position = Q.get('itpos')
+      if (Q.get('itheads') === '0') liner.kickers = false
+      if (+Q.get('itseed') > 1) liner.seed = +Q.get('itseed')
+      if ([...$('notes').options].some(o => o.value === Q.get('notes'))) $('notes').value = Q.get('notes')
+      liner.mode = $('notes').value
+      $('notes').onchange = () => { liner.mode = $('notes').value; saveUrl() }
+      // the pieces with notes get an ⓘ in the list
+      linerLib.ready.then(() => { for (const o of $('song').options) if (linerLib.idOf('violinist/midis/' + o.value)) o.text += '  ⓘ' })
     }
 
     // ── Load ───────────────────────────────────────────────────────────────
@@ -734,6 +783,7 @@
         frame(t, dt)
         controls.update()
         renderer.render(scene, camera)
+        liner.update(t)
         if (document.activeElement !== $('seek')) $('seek').value = Math.max(0, Math.min(1, t / song.duration))
         $('time').textContent = `${fmt(Math.max(0, Math.min(t, song.duration)))} / ${fmt(song.duration)}`
         if (clock.playing && performance.now() - idleT > 3500) document.body.classList.add('idle')

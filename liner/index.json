@@ -1,6 +1,7 @@
 {
   "files": {
     "Prelude1.mid": "bach-wtc1-prelude-c",
-    "midis/mond_3.mid": "beethoven-op27-2-iii"
+    "midis/mond_3.mid": "beethoven-op27-2-iii",
+    "violinist/midis/gounod_ave_maria.mid": "gounod-ave-maria"
   }
 }

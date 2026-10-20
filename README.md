@@ -14,7 +14,8 @@ Midi Visualization Experiments
 - Second piece: Beethoven's Moonlight Sonata, III. Presto agitato (`midis/mond_3.mid`), 8 sections, 24 notes, 11 intertitles (7 stories, 4 about the music), 6 new cards; `play:` maps score bars to a file that writes out the exposition repeat (`m21'` is the second time) and spreads the cadenza over four bars
 - Video export: the same burned into the picture, and saved next to the MP4 as two YouTube subtitle tracks (the intertitles, and every note) and chapters, timed to the video
 - Stories and analysis apart: history and trivia float (`aside:` / `## ~`), placed by a seeded generator, one every 20–30 s through the opening, then spread out; lines about the music are pinned and come when the passage they describe ends (`m188-m190`), in their own style (spaced Montserrat); the song title is off by default
-- Tests: `node --test liner/test/liner.test.js` (14)
+- #038 Duo too: the same intertitles, panel and seek-bar sections (Notes menu), with notes for Gounod's Ave Maria (`violinist/midis/gounod_ave_maria.mid`): 6 sections, 19 notes, 10 intertitles (6 stories, the extra bar, 3 about the music), and a Gounod card
+- Tests: `node --test liner/test/liner.test.js` (15)
 
 Pedal and transport fixes
 - OxiSynth itself sustains correctly (CC64 ≥ 64, per channel); the players lost pedal changes. Late CCs are now always sent (a skipped one left the pedal stuck), a seek restores each channel's pedals, modulation and expression as the song has them there, and unloading a song lifts its pedals. In `playback_controls.js` / `midi_clock_worklet.js` (#014–#024) and soundfont-engine's `MidiScheduler` (#025–#038)

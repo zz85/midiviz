@@ -14,6 +14,8 @@ them in two layers:
   with its source, and cards for the people and terms.
 
 Plus sections on the seek bar and a card when you hover a song in the menu.
+#038 Duo shows the same intertitles, panel and seek-bar sections (its Notes
+menu picks what is on screen); it has no video export.
 Visuals → Liner notes picks what shows on screen (intertitles, every note as a
 caption, or nothing), the story and analysis styles, colours (black and
 white by default), position (automatic, or a corner), whether the small
