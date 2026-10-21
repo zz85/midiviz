@@ -189,6 +189,7 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
   function update(pose, drive, dt = 1 / 60) {
     const t = drive.t
     const k = Math.min(1, dt * 4)
+    blinks(dt, !drive.rest && !!pose?.bow?.playing)
     // ── hips: weight on the left, sway, a dip with the energy ──
     const sway = opts.sway * (2.2 * Math.sin(2 * Math.PI * t / 4.3) + 0.8 * Math.sin(2 * Math.PI * t / 2.1 + 1))
     st.sway += (sway - st.sway) * k
@@ -322,6 +323,7 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
     // eyes on the left hand (or on the bow when it travels)
     if (vrm.lookAt) {
       const goal = toWorld(V.bowContact(bw.s ?? 1.5), V.group.matrixWorld).lerp(toWorld(leftHand.joints.knuckle, V.group.matrixWorld), 0.55)
+      gazeShift(drive.look || goal)
       st.lookT.lerp(drive.look || goal, Math.min(1, dt * (drive.look ? 6 : 3)))
       lookObj.position.copy(st.lookT)
     }
@@ -361,7 +363,9 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
     bow.group.position.copy(V.group.worldToLocal(gR))
     bow.group.updateMatrixWorld(true)
     if (vrm.lookAt) {
-      st.lookT.lerp(drive.look || wp(B.head).addScaledVector(fwd0, 400).add(v3(0, -60 - 200 * bend, 0)), 0.1)
+      const goal = drive.look || wp(B.head).addScaledVector(fwd0, 400).add(v3(0, -60 - 200 * bend, 0))
+      gazeShift(goal)
+      st.lookT.lerp(goal, 0.1)
       lookObj.position.copy(st.lookT)
     }
   }
@@ -489,6 +493,41 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
       setWorldQ(m.foot, _qq.setFromAxisAngle(Y, s * 0.12).multiply(rest.get(m.foot).q))
     }
   }
+  // ── blinks: the VRM's 'blink' expression (pianist/rig.js's model) ──
+  // ~every 5.5 s while bowing (concentration lowers the rate), ~3.4 s otherwise,
+  // never closer than 1.8 s apart except a rare (5%) double blink, which is
+  // never followed by another. A big gaze shift can bring the next blink
+  // forward, but only once 2.5 s have passed since the last one. The lids
+  // close to 80–95% (the anime eye fully shut reads as heavy), shutting in
+  // ~60 ms and opening over ~140 ms, eased at both ends. Runs on its own clock
+  // (the sum of dt), so he keeps blinking while paused; the first blink is
+  // 1.5 s in, which keeps the headless shots (one settled second) open-eyed.
+  let seed = 9371
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647
+  const blk = { now: 0, t0: -9, next: 1.5, amp: 0.9, dbl: false }
+  function blinkSoon(p) { if (blk.now - blk.t0 > 2.5 && rnd() < p) blk.next = Math.min(blk.next, blk.now + 0.05 + 0.1 * rnd()) }
+  function gazeShift(goal) {
+    const h = wp(B.head)
+    if (!st.looked) { st.looked = true; st.lookT.copy(goal); return }     // the first frame: no jump to blink at
+    if (_d1.subVectors(st.lookT, h).angleTo(_d2.subVectors(goal, h)) > 0.45) blinkSoon(0.3)
+  }
+  const ease = x => x * x * (3 - 2 * x)
+  function blinks(dt, playing) {
+    const t = (blk.now += dt)
+    if (t >= blk.next) {
+      blk.t0 = t
+      blk.amp = 0.8 + 0.15 * rnd()
+      const mean = playing ? 5.5 : 3.4
+      blk.next = t + 1.8 + mean * 0.7 * -Math.log(1 - 0.97 * rnd())
+      if (!blk.dbl && rnd() < 0.05) { blk.next = t + 0.38; blk.dbl = true } else blk.dbl = false
+    }
+    const d = t - blk.t0
+    const b = blk.amp * (d < 0.06 ? ease(d / 0.06) : d < 0.08 ? 1 : d < 0.22 ? ease(1 - (d - 0.08) / 0.14) : 0)
+    st.blink = b
+    vrm.expressionManager?.setValue('blink', b)
+  }
+  const _d1 = v3(), _d2 = v3()
+
   const lookObj = new THREE.Object3D()
   if (vrm.lookAt) { vrm.lookAt.target = lookObj; vrm.lookAt.autoUpdate = true }
   root.parent?.add(lookObj)
