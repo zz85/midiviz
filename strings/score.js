@@ -95,8 +95,15 @@ function readPartXML(P, tempoOnly = false) {
   let slurSeen = false
   const slurOpen = new Map()               // slur number → id
   let slurSeq = 0
+  // A slur between two voices of one bar can stop before it starts in the file: voice 1 is
+  // written first, so a slur from a bass note (voice 2) up to the melody has its stop on a
+  // voice-1 note. Such a stop waits for a start of its number at or before its time in the
+  // same bar, in another voice (a stop after a grace note's start, which is skipped, is not
+  // one); the slur then covers every note sounding from its start to its stop.
+  let pendingStops = new Map(), timed = []
   for (const meas of kids(P, 'measure')) {
     measureNo++
+    pendingStops = new Map(); timed = []
     const mStart = pos
     let maxPos = pos, lastOn = pos
     for (const el of meas.children) {
@@ -124,7 +131,13 @@ function readPartXML(P, tempoOnly = false) {
       } else if (el.tag === 'backup') { pos -= +txt(el, 'duration') / div }
       else if (el.tag === 'forward') { pos += +txt(el, 'duration') / div; maxPos = Math.max(maxPos, pos) }
       else if (el.tag === 'note') {
-        if (kid(el, 'grace') || kid(el, 'cue')) continue
+        if (kid(el, 'cue')) continue
+        // grace notes are not played, but a slur may stop on one (a run slurred into an
+        // ornament): it ends there, so the notes after it are not left inside it
+        if (kid(el, 'grace')) {
+          for (const n of kids(el, 'notations').flatMap(n => n.children)) if (n.tag === 'slur' && n.attrs.type === 'stop') slurOpen.delete(n.attrs.number || '1')
+          continue
+        }
         if (tempoOnly) { if (!kid(el, 'chord')) { const d = +(txt(el, 'duration') || 0) / div; pos += d; maxPos = Math.max(maxPos, pos) } continue }
         const dur = +(txt(el, 'duration') || 0) / div
         const chord = !!kid(el, 'chord')
@@ -135,17 +148,24 @@ function readPartXML(P, tempoOnly = false) {
         const allN = nots.flatMap(n => n.children)
         // slurs: a note inside an open slur (or that opens / closes one) gets its id
         let slur = null, orphan = false
+        const voice = +(txt(el, 'voice') || 1)
         for (const s of allN.filter(c => c.tag === 'slur')) {
           const num = s.attrs.number || '1'
-          if (s.attrs.type === 'start') { const id = ++slurSeq; slurOpen.set(num, id); slur = id; slurSeen = true }
+          if (s.attrs.type === 'start' && pendingStops.get(num)?.voice !== voice && pendingStops.get(num)?.on >= on) {
+            const id = ++slurSeq, t1 = pendingStops.get(num).on; pendingStops.delete(num)
+            slur = id; slurSeen = true; timed.push({ id, t0: on, t1 })
+            for (const e of events) if (e.measure === measureNo && e.start >= on - 1e-6 && e.start <= t1 + 1e-6 && e.art.slur == null) e.art.slur = id
+          } else if (s.attrs.type === 'start') { const id = ++slurSeq; slurOpen.set(num, id); slur = id; slurSeen = true }
           else if (s.attrs.type === 'stop') {
             // a stop with no start: the slur began before this file (a page of a longer score)
             // (only before the part's first slur: later, a missing start is more likely a misread)
             if (!slurOpen.has(num) && slur == null && !slurSeen) { slur = ++slurSeq; orphan = true }
+            else if (!slurOpen.has(num)) { pendingStops.set(num, { on, voice }); continue }
             else slur = slur ?? slurOpen.get(num) ?? null
             slurOpen.delete(num); slurSeen = true
           }
         }
+        if (slur == null) slur = timed.find(t => on >= t.t0 - 1e-6 && on <= t.t1 + 1e-6)?.id ?? null
         if (slur == null && slurOpen.size) slur = [...slurOpen.values()][slurOpen.size - 1]
         if (!p) continue                    // a rest
         const pitch = STEP[txt(p, 'step')] + +(txt(p, 'alter') || 0) + 12 * (+txt(p, 'octave') + 1) + (octShift.get(txt(el, 'staff') || '1') ?? 0)

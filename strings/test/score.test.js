@@ -155,3 +155,27 @@ test('MusicXML of one page of a longer score: a slur stopped before any start be
   assert.equal(n[2].art.slur, null)
   assert.ok(n[3].art.slur != null && n[3].art.slur === n[4].art.slur && n[4].art.slurOpen, 'F G run on')
 })
+
+test('MusicXML: a slur ending on a grace note ends there; a slur from voice 2 up to voice 1 stops before it starts in the file', () => {
+  const N = (s, o, v, sl = '', extra = '') => `<note>${extra}<pitch><step>${s}</step><octave>${o}</octave></pitch>${extra.includes('grace') ? '' : '<duration>1</duration>'}<voice>${v}</voice>${sl ? `<notations>${sl}</notations>` : ''}</note>`
+  const st = (t, k = 1) => `<slur type="${t}" number="${k}"/>`
+  const xml = `<?xml version="1.0"?><score-partwise><part-list><score-part id="P1"><part-name>V</part-name></score-part></part-list>
+<part id="P1"><measure number="1"><attributes><divisions>1</divisions></attributes>
+${N('C', 5, 1, st('start'))}${N('D', 5, 1)}${N('E', 5, 1, st('stop'), '<grace/>')}${N('E', 5, 1)}${N('F', 5, 1)}
+</measure><measure number="2">
+${N('A', 5, 1)}${N('B', 5, 1, st('stop'))}${N('C', 6, 1)}
+<backup><duration>3</duration></backup>
+${N('G', 3, 2, st('start'))}${N('A', 3, 2)}${N('B', 3, 2)}
+</measure></part></score-partwise>`
+  const n = readMusicXML(xml).notes, by = (p, m) => n.find(q => q.pitch === p && q.measure === m)
+  // measure 1: C D in one slur (it ends on the grace note), the E and F after it are not
+  assert.ok(by(72, 1).art.slur != null && by(72, 1).art.slur === by(74, 1).art.slur)
+  assert.equal(by(76, 1).art.slur, null, 'E after the grace note')
+  assert.equal(by(77, 1).art.slur, null, 'F')
+  // measure 2: G3 (voice 2, beat 1) up to B5 (voice 1, beat 2): both voices up to beat 2 in it, then out
+  const sl = by(55, 2).art.slur
+  assert.ok(sl != null, 'G3 starts it')
+  for (const p of [81, 83, 57]) assert.equal(by(p, 2).art.slur, sl, `note ${p} in it`)
+  assert.equal(by(84, 2).art.slur, null, 'C6 after it')
+  assert.equal(by(59, 2).art.slur, null, 'B3 after it')
+})

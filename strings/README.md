@@ -486,10 +486,12 @@ Two MusicXML reader fixes came out of the comparison:
 |---|---|
 | Notes found by both (pitch, bar, beat) | 99.4 % |
 | Same length | 98.7 % |
-| Slur pairs (consecutive notes in one slur or not) | 99.5 % of 258,388 |
+| Slur pairs (consecutive notes in one slur or not) | 99.8 % of 258,388 (99.5 % before the two fixes below) |
 | Stroke marks | 99.9 % of 51,809 |
 | Bowings | 99.7 % of 1,595 |
 | Slides (glissandi) | 100 % of 26 |
+
+Two MusicXML reader fixes came from reading OMR output (ScoreShift) and raised slur agreement here from 99.5 to 99.8 % (Franck 96.8 → 100 %, Gossec 93.9 → 99.4 %): a slur that stops on a grace note now ends there (grace notes were skipped with their slur marks, so the slur stayed open and took in everything after it), and a slur from a lower voice up to voice 1 in the same bar, whose stop comes before its start in the file because voice 1 is written first, now covers the notes of both voices from its start to its stop (test in `score.test.js`).
 
 Most remaining differences come from the exporter rather than the score. Berg's Lyric Suite part 1 has 15 notes that differ by two octaves. A few slurs the exporter splits at system breaks. Gradual tempo changes (rit. / accel. lines) are ignored by both readers. Reading all 140 parts takes 29 s in Node, for 16 MB uncompressed per large score. Unit tests are in `strings/test/score.test.js`.
 
