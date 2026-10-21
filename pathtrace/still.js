@@ -139,5 +139,5 @@ export function createPathTraceStills(stage) {
   }, true)
   addEventListener('resize', () => { if (view.classList.contains('open')) draw() })
 
-  return { run, state, openViewer }
+  return { run, state, openViewer, stage }
 }

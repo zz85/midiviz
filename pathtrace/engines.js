@@ -129,7 +129,7 @@ async function mutracer({ scene, camera, width, height, samples, bounces, exposu
     let t = performance.now()
     const info = await engine.init()
     times.init = Math.round(performance.now() - t); t = performance.now()
-    const muScene = MU.fromTHREEScene(scene)
+    const muScene = MU.fromTHREEScene(scene, { convertLight: l => l.isSpotLight ? muSpot(MU, l) : undefined })
     // the BVH, built in workers, ahead of the first update
     await engine.prepare(muScene)
     engine.scene = muScene
@@ -159,4 +159,23 @@ async function mutracer({ scene, camera, width, height, samples, bounces, exposu
     if (denoise) times.denoise = Math.round(performance.now() - (tracedAt || performance.now()))
     return { canvas: out, samples: render.samples, backend: info.backend, times }
   } finally { engine.dispose() }
+}
+
+// MuTracer 0.1.3 fades a spot as smoothstep(cos(outer), cos(outer) + (1 − inner/outer), cos θ)
+// (lightsUtil.js packs 1 − inner/outer, rayTraceCore's spot falloff adds it to the cosine),
+// three.js as smoothstep(cos(outer), cos(inner), cos θ). Its own conversion sets
+// inner = outer·(1 − penumbra), so a soft spot never reaches full strength: the stage's key
+// light (angle 0.3, penumbra 0.8) peaks at about 1 %. Choosing inner so that 1 − inner/outer
+// = cos(inner₃) − cos(outer) gives three's curve exactly.
+function muSpot(MU, l) {
+  const cosOuter = Math.cos(l.angle), cosInner = Math.cos(l.angle * (1 - l.penumbra))
+  const outer = l.angle * 180 / Math.PI
+  const light = new MU.SpotLight({
+    color: l.color.toArray(), intensity: l.intensity, radius: l.userData.mutracerRadius ?? 0.01,
+    outerAngle: outer, innerAngle: outer * (1 - Math.min(1, cosInner - cosOuter)),
+  })
+  light.transform = Array.from(light.transform)
+  light.position = l.getWorldPosition(new THREE.Vector3()).toArray()
+  light.lookAt(l.target.getWorldPosition(new THREE.Vector3()).toArray())
+  return light
 }
