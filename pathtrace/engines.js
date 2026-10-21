@@ -129,7 +129,14 @@ async function mutracer({ scene, camera, width, height, samples, bounces, exposu
     let t = performance.now()
     const info = await engine.init()
     times.init = Math.round(performance.now() - t); t = performance.now()
-    const muScene = MU.fromTHREEScene(scene, { convertLight: l => l.isSpotLight ? muSpot(MU, l) : undefined })
+    // MuTracer reads an equirect's first row as the zenith (theta = acos(y)), three.js
+    // a DataTexture's first row as the nadir (v = asin(y) / pi + 0.5): hand it the rows
+    // upside down, or the stage is lit from the floor
+    const env = scene.environment
+    if (env?.isDataTexture && !env.flipY) scene.environment = flipRows(env)
+    let muScene
+    try { muScene = MU.fromTHREEScene(scene, { convertLight: l => l.isSpotLight ? muSpot(MU, l) : undefined }) }
+    finally { if (scene.environment !== env) { scene.environment.dispose(); scene.environment = env } }
     // the BVH, built in workers, ahead of the first update
     await engine.prepare(muScene)
     engine.scene = muScene
@@ -178,4 +185,16 @@ function muSpot(MU, l) {
   light.position = l.getWorldPosition(new THREE.Vector3()).toArray()
   light.lookAt(l.target.getWorldPosition(new THREE.Vector3()).toArray())
   return light
+}
+
+const flipped = new WeakMap()
+function flipRows(tex) {
+  if (flipped.has(tex)) return flipped.get(tex).clone()
+  const { data, width: w, height: h } = tex.image, c = data.length / (w * h), out = new data.constructor(data.length)
+  for (let j = 0; j < h; j++) out.set(data.subarray(j * w * c, (j + 1) * w * c), (h - 1 - j) * w * c)
+  const t = new THREE.DataTexture(out, w, h, tex.format, tex.type)
+  Object.assign(t, { mapping: tex.mapping, colorSpace: tex.colorSpace, minFilter: tex.minFilter, magFilter: tex.magFilter, generateMipmaps: false })
+  t.needsUpdate = true
+  flipped.set(tex, t)
+  return t.clone()
 }

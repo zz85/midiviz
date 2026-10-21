@@ -47,6 +47,14 @@
   if (test === 'env') { spot.visible = false; const d = new Float32Array(64 * 32 * 4).fill(0.5); const t = new THREE.DataTexture(d, 64, 32, THREE.RGBAFormat, THREE.FloatType); t.mapping = THREE.EquirectangularReflectionMapping; t.needsUpdate = true; scene.environment = t; ball.material = floor.material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 }) }
   if (test === 'spot') { scene.environment = null; ball.material = floor.material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 }); spot.intensity = 0.3 * 250 * 250 }
   if (test === 'env') scene.remove(spot)
+  // orientation: an environment bright above the horizon only, dark below; the white floor
+  // (facing up) must come out lit, at 1/2 of a uniform sky
+  if (test === 'sky') {
+    scene.remove(spot); scene.remove(ball); floor.material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 })
+    const w = 64, h = 32, d = new Float32Array(w * h * 4)
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) { const k = (j * w + i) * 4, up = (j + 0.5) / h > 0.5; d[k] = d[k + 1] = d[k + 2] = up ? 0.5 : 0; d[k + 3] = 1 }
+    const t = new THREE.DataTexture(d, w, h, THREE.RGBAFormat, THREE.FloatType); t.mapping = THREE.EquirectangularReflectionMapping; t.needsUpdate = true; scene.environment = t
+  }
   if (test === 'point' || test === 'wide') { scene.environment = null; ball.material = floor.material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 }) }
   if (test === 'point') { scene.remove(spot); const pl = new THREE.PointLight(0xffffff, 18750, 0, 2); pl.position.copy(spot.position); pl.userData.mutracerRadius = 1; scene.add(pl) }
   // units: no ball, a white floor 2 m below a light aimed straight down; the floor at the
