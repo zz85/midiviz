@@ -131,12 +131,16 @@ export function salience(g, excitement = 0) {
  * `jumpGap` s after the one before gets a `takeoff`: the note to leave the ramp on, so the flight
  * starts on a note too. `excitement` (0–1) favours long notes, longer gaps and loops.
  */
-export function pickHits(groups, { rate = 2.5, minGap = 0.2, maxGap = 1.6, lead = 1.75, excitement = 0, loops = false, loopGap = 1.7, takeoffs = false, jumpGap = 0.7 } = {}) {
+export function pickHits(groups, { rate = 2.5, minGap = 0.2, maxGap = 1.6, lead = 1.75, excitement = 0, loops = false, loopGap = 1.7, takeoffs = false, jumpGap = 0.7, landings = true, detail = null, jump = 1 } = {}) {
+	// loops: false | true / 'music' (where it repeats or runs) | 'force' (all of those, with more room for each)
+	const force = loops === 'force'
+	if (force) loopGap = Math.max(loopGap, 2.2)
 	if (!groups.length) return []
 	const leadIn = Math.max(0, lead - groups[0].time)
-	const loopBonus = 0.35 + 0.5 * excitement
-	const ev = groups.map(g => ({ g, frame: Math.round((g.time + leadIn) * FPS), sal: salience(g, excitement), loop: loops && g.loopHint ? loopBonus : 0 }))
-	maxGap += 0.8 * excitement
+	const loopBonus = force ? 3 : 0.35 + 0.5 * excitement
+	// (big jumps need time in the air: a 270 px one about 2.8 s, so they leave some long gaps)
+	const ev = groups.map(g => ({ g, frame: Math.round((g.time + leadIn) * FPS), sal: salience(g, excitement) + Math.min(1, g.ioi / 1.5) * 0.3 * (jump - 1), loop: loops && g.loopHint ? loopBonus : 0 }))
+	maxGap += 0.8 * excitement + 0.8 * (jump - 1)
 	const loopF = Math.round(loopGap * FPS)
 	const minF = Math.max(1, Math.round(minGap * FPS)), maxF = maxGap * FPS
 	const span = (ev.at(-1).frame - ev[0].frame) / FPS + 1
@@ -238,6 +242,21 @@ export function pickHits(groups, { rate = 2.5, minGap = 0.2, maxGap = 1.6, lead 
 		while (lo < hi) { const m = (lo + hi) >> 1; if (ranked[m] < h.energy) lo = m + 1; else hi = m }
 		h.energyRaw = h.energy
 		h.energy = ranked.length > 1 ? lo / (ranked.length - 1) : 0.5
+	}
+	// line detail: the length of the short lines each move is cut into — finer in busy music, runs and loops
+	if (detail != null) for (const h of hits) {
+		let len = detail * (1.4 - 0.8 * h.energy)
+		if (h.hint === 'run' || h.move === 'loop') len = Math.min(len, detail * 0.6)
+		h.lineLength = Math.max(2, Math.min(24, len))
+	}
+	// landings free: every note a take-off instead — he leaves the lip on it and lands wherever the jump
+	// takes him (about 60 % of the way to the next note); notes too close to fly between are landed on
+	if (!landings) {
+		for (let k = 0; k < hits.length; k++) {
+			const h = hits[k], T = h.frame, next = hits[k + 1]?.frame ?? T + 80, gap = next - T
+			if (gap < 14) { delete h.takeoff; continue }
+			Object.assign(h, { takeoff: T, takeoffTime: h.time, takeoffPitch: h.pitch, frame: Math.round(T + Math.max(6, Math.min(gap - 7, 0.62 * gap))), freeLanding: true })
+		}
 	}
 	return hits
 }

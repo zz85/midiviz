@@ -4,7 +4,7 @@
 // search). A take-off note fixes the frame he leaves the lip on too: the run-up is solved for it.
 // Nothing is drawn by hand and nothing is faked: the exported track rides the same on linerider.com.
 import { Track, Rider, step, makeLine, SOLID, ACCEL, FPS, GRAVITY, P, N_CONTACT, STRIDE } from './physics.js'
-import { smoothPath, chainLines, DEG } from './geometry.js'
+import { smoothPath, chainLines, fallSize, DEG } from './geometry.js'
 
 const RING = 5
 const TWO_PI = 2 * Math.PI
@@ -19,6 +19,11 @@ export const DEFAULTS = {
 	descent: 0.3, // px / frame the track sinks on average
 	pitchScale: 3, // px a semitone higher the melody puts the pads
 	excitement: 0.5, // 0–1: bigger air, faster, more loops
+	jump: 1, // 1–4: how big the jumps over long gaps get (short gaps stay small hops)
+	steep: 52, // degrees: the steepest pad or run
+	maxSpeed: null, // px / frame he may reach (default 15 + 3 × excitement)
+	loopMode: 'music', // 'off' | 'music' (where it repeats or runs) | 'force' (every loop hint, inline loops anywhere they fit)
+	redLoops: true, // red lines on a loop's climbing half (a loop takes most of his speed): Line Rider builders' way
 	red: false, // acceleration lines: red pads to speed him up or slow him down, red-lined loops. Off, his
 	//            speed comes only from gravity: slopes and drops speed him up, climbs and hard landings slow him
 	ds: 6, // px: the longest line on a curve
@@ -68,14 +73,18 @@ const turnLen = (turn, v, G) => Math.max(10, 2 * Math.abs(turn) * v * v / (G * G
  * kick  — straight s, curve up to phi, straight exit e (so he leaves without spinning)
  * dive  — straight s, curve down to beta, straight d, curve up to phi, exit e: speed for a big jump
  * climb — straight s, curve up to phi, uphill for c, over a rounded crest and off: slows him down
+ * hoop  — a kick, a short hop onto the wall of a loop laid where he will be (any frame, not a note),
+ *         round it and out: a loop inside one move (built by buildHoop)
  * loop  — from a steep pad, most of a circle (radius R) up and over to heading `out`, straight s,
  *         then off the end or curved up to phi with exit e
  * `s` is the length a take-off note is solved on.
  */
 function piecesOf(c, th) {
 	if (c.kind === 'drop') return [{ len: c.s }]
-	if (c.kind === 'kick') return [{ len: c.s }, { len: c.L, turn: c.phi - th, ease: 0.5 }, { len: c.e }]
-	if (c.kind === 'dive') return [{ len: c.s }, { len: c.L1, turn: c.beta - th, ease: 0.5 }, { len: c.d }, { len: c.L2, turn: c.phi - c.beta, ease: 0.5 }, { len: c.e }]
+	if (c.kind === 'hoop' && c.beta != null) return [{ len: c.s }, { fall: c.vf, to: c.beta }, { len: c.d }, { len: c.L2, turn: c.phi - c.beta, ease: 0.5 }, { len: c.e }] // (a hoop's dive; buildHoop adds the loop)
+	if (c.kind === 'kick' || c.kind === 'hoop') return [{ len: c.s }, { len: c.L, turn: c.phi - th, ease: 0.5 }, { len: c.e }] // (a hoop's kick)
+	// (over the top of a dive he follows his own fall: a sharper bend downhill would throw him off it)
+	if (c.kind === 'dive') return [{ len: c.s }, { fall: c.vf, to: c.beta }, { len: c.d }, { len: c.L2, turn: c.phi - c.beta, ease: 0.5 }, { len: c.e }]
 	if (c.kind === 'climb') return [{ len: c.s }, { len: c.L1, turn: c.phi - th, ease: 0.5 }, { len: c.c }, { len: c.L2, turn: c.crest - c.phi, ease: 0.5 }]
 	const turn = c.out - th - TWO_PI
 	const p = [{ len: c.R * Math.abs(turn) / 0.8, turn, ease: 0.2 }, { len: c.s }]
@@ -178,7 +187,10 @@ function haunts(line, histories, before) {
 export function planTrack(hits, options = {}) {
 	const o = { ...DEFAULTS, ...options }
 	const exc = clamp(o.excitement, 0, 1)
-	const maxSpeed2 = (15 + 3 * exc) ** 2
+	const maxSpeed2 = (o.maxSpeed ?? 15 + 3 * exc) ** 2
+	const fastAt = (o.maxSpeed ?? 15 + 3 * exc) - 5 // above this a landing is too fast to look right (and hard to come back from)
+	const redLoops = o.red || o.redLoops !== false
+	const jump = clamp(o.jump ?? 1, 0.5, 4), steepMax = clamp(o.steep ?? 52, 30, 82) * DEG
 	const rand = mulberry32(o.seed * 7919 + 17)
 	const world = new World()
 	const t0 = Date.now()
@@ -214,6 +226,9 @@ export function planTrack(hits, options = {}) {
 	function ride(node, until, allowed, { hist = null, loopy = false } = {}) {
 		const r = node.rider.clone()
 		let lastContact = node.frame, stress = 0, fail = null
+		const v0 = speedOf(node.rider)
+		const grace = v0 < 1.5 ? 15 : 0 // starting slowly: time for a dip to get him going
+		const limit2 = Math.max(maxSpeed2, (v0 + 4) ** 2) // already fast: room for the move that slows him
 		for (let f = node.frame + 1; f < until; f++) {
 			touched.length = 0
 			step(world.track, r, touched)
@@ -226,8 +241,8 @@ export function planTrack(hits, options = {}) {
 			if (st > stress) stress = st
 			if (stress > o.maxStress) { fail = 'stress'; break }
 			const v = r.velocity(), v2 = v.x * v.x + v.y * v.y
-			if ((loopy ? v2 < 0.5 : v.x < 0.5) && (node.depth > 0 || f > 40)) { fail = 'stalled'; break }
-			if (v2 > maxSpeed2) { fail = 'too fast'; break } // squeezed between lines and shot out: real, but silly
+			if ((loopy ? v2 < 0.5 : v.x < 0.5) && (node.depth > 0 ? f - node.frame > grace : f > 40)) { fail = 'stalled'; break }
+			if (v2 > limit2) { fail = 'too fast'; break } // squeezed between lines and shot out: real, but silly
 			if (hist) { record(hist, r); ring[f % RING].copyFrom(r) }
 		}
 		return { r, lastContact, stress, fail }
@@ -245,7 +260,7 @@ export function planTrack(hits, options = {}) {
 
 	/** Solve the run-up `c.s` so he leaves the lip on frame `toff` (bisection: a longer run-up is a later take-off). */
 	function timeTakeoff(node, c, toff, allowed0, vLip) {
-		const probe = s => { c.s = s; return takeoffOf(node, c, toff + 3, allowed0) }
+		const probe = s => { c.s = s; return takeoffOf(node, c, toff + 6, allowed0) } // (6 frames clear: a dive's top is ridden hovering)
 		const first = probe(0)
 		if (!(first <= toff)) return false
 		if (first === toff) return true
@@ -255,6 +270,60 @@ export function planTrack(hits, options = {}) {
 		for (let k = 0; k < 9; k++) { const m = (lo + hi) / 2; if (probe(m) < toff) lo = m; else hi = m }
 		for (const f of [0.45, 0.25, 0.1, 0]) { const s = hi + f * vLip; if (probe(s) === toff) { c.s = s; return true } }
 		return false
+	}
+
+	/**
+	 * The lines of an inline loop: the kick, then — `c.hop` frames after he leaves its lip — a pad under
+	 * him while he still climbs, and a loop laid from it (as onto a loop's wall on a note, but on
+	 * whatever frame he gets there). Null if he is not climbing fast enough by then or the loop would
+	 * close on itself.
+	 */
+	function buildHoop(node, c, H) {
+		const ds = c.ds ?? o.ds
+		const kick = shapeLines(node.pad, c, node.nextId, ds)
+		addAll(kick)
+		const r = node.rider.clone()
+		const lip = new Set(kick.slice(-3).map(l => l.id)) // (a dive's top is ridden hovering: only off the lip counts)
+		let last = node.frame, F = null, onLip = false
+		for (let f = node.frame + 1; f < H - 32; f++) {
+			touched.length = 0
+			step(world.track, r, touched)
+			simulated++
+			if (r.crashed || r.sledBroken) break
+			if (touched.length) { last = f; if (touched.some(id => lip.has(id))) onLip = true; continue }
+			if (!onLip) continue
+			// c.hop frames in the air, or sooner if he is about to stop climbing (the loop's wall wants him rising)
+			const v = r.velocity()
+			if (f - last >= c.hop - 1 || f - last >= 2 && Math.atan2(v.y, v.x) > -24 * DEG) { F = f + 1; break }
+		}
+		const free = r.clone()
+		touched.length = 0
+		if (F != null) step(world.track, free, touched)
+		removeAll(kick)
+		if (F == null) { no((c.beta != null ? 'dive-hoop:' : 'hoop:') + 'no lip'); return null }
+		if (touched.length) { no((c.beta != null ? 'dive-hoop:' : 'hoop:') + 'touched'); return null }
+		const v = free.velocity(), av = Math.atan2(v.y, v.x)
+		if (!(av < (redLoops ? -3 : -8) * DEG)) { no((c.beta != null ? 'dive-hoop:' : 'hoop:') + 'not climbing'); return null }
+		if (!(Math.hypot(v.x, v.y) >= (redLoops ? 3 : 6))) { no((c.beta != null ? 'dive-hoop:' : 'hoop:') + 'too slow'); return null }
+		const theta = clamp(av - c.dk, -85 * DEG, -12 * DEG)
+		const nx = -Math.sin(theta), ny = Math.cos(theta), ux = Math.cos(theta), uy = Math.sin(theta)
+		let mPrev = -Infinity, mNow = -Infinity, aMin = Infinity, aMax = -Infinity
+		for (let i = 0; i < N_CONTACT; i++) {
+			const q = r.s[i * STRIDE] * nx + r.s[i * STRIDE + 1] * ny, w = free.s[i * STRIDE] * nx + free.s[i * STRIDE + 1] * ny
+			const a = free.s[i * STRIDE] * ux + free.s[i * STRIDE + 1] * uy
+			if (q > mPrev) mPrev = q
+			if (w > mNow) mNow = w
+			if (a < aMin) aMin = a
+			if (a > aMax) aMax = a
+		}
+		if (mNow - mPrev < 0.5) { no((c.beta != null ? 'dive-hoop:' : 'hoop:') + 'not into the pad'); return null }
+		const d = mPrev + 0.5 * (mNow - mPrev)
+		const p1 = { x: nx * d + ux * (aMin - 3), y: ny * d + uy * (aMin - 3) }, p2 = { x: nx * d + ux * (aMax + 3), y: ny * d + uy * (aMax + 3) }
+		const pad = solid(kick.length ? kick.at(-1).id + 1 : node.nextId, p1.x, p1.y, p2.x, p2.y, false, true)
+		const loop = shapeLines({ ex: p2.x, ey: p2.y, theta, id: pad.id }, { kind: 'loop', R: c.R, out: c.out, red: c.red, s: c.s2, ...(c.phi2 != null ? { phi: c.phi2, L: c.L2x, e: c.e2x } : {}) }, pad.id + 1, ds)
+		if (!loopClear({ lines: [pad], pad: { id: pad.id } }, loop)) { no((c.beta != null ? 'dive-hoop:' : 'hoop:') + 'closes on itself'); return null }
+		c.entryFrame = F
+		return [...kick, pad, ...loop]
 	}
 
 	/** Shapes to try from `node` towards a landing on frame H. */
@@ -271,10 +340,35 @@ export function planTrack(hits, options = {}) {
 			// the curve turns away): with red lines its climbing half is red, as Line Rider builders do;
 			// without, it is small and he needs the speed of a dive to get in. Out steeply, so the way out
 			// passes the pad he came in on: by R (1 − cos(out + φ)) − 20 sin(out + φ) px
-			for (const R of o.red ? [38, 48] : [22, 28, 34]) for (const outDeg of [62, 76, 88]) {
+			for (const R of redLoops ? [38, 48] : [22, 28, 34]) for (const outDeg of [62, 76, 88]) {
 				const outA = outDeg * DEG
 				for (const kick of [false, true]) for (const t of toff != null ? [toff, null] : [null]) {
-					out.push({ kind: 'loop', R, out: outA, red: o.red ? 0.55 : 0, s: 16, toff: t, untimed: toff != null && t == null, ...(kick ? { phi: -12 * DEG, L: turnLen(outA + 12 * DEG, 6, 4), e: 18 } : {}) })
+					out.push({ kind: 'loop', R, out: outA, red: redLoops ? 0.55 : 0, s: 16, toff: t, untimed: toff != null && t == null, ...(kick ? { phi: -12 * DEG, L: turnLen(outA + 12 * DEG, 6, 4), e: 18 } : {}) })
+				}
+			}
+		}
+		// inline loops: when this move should hold a loop, or loops are forced and there is time for one
+		const wantsLoop = o.loopMode !== 'off' && !node.loopEntry && !ascend && (hits[node.hit]?.move === 'loop' || o.loopMode === 'force' && D >= 80)
+		if (wantsLoop && D >= 64 && speed >= 2.5) {
+			// (the hop is long enough that the kicker is well away: the loop's steep way out must not land on it)
+			for (const deg of [-48, -60]) {
+				const phi = deg * DEG
+				if (phi > th - 3 * DEG) continue
+				const vt = Math.max(3, speed)
+				const L = turnLen(th - phi, vt, 6), e = clamp(vt * 1.5, 10, 24) // a tight kick: the loop needs the time
+				const s = Math.max(0, rideDist(D * 0.06) - dE - L - e)
+				for (const hop of [9, 14]) for (const R of redLoops ? [34, 44] : [22, 28]) for (const outDeg of [56, 70, 84]) for (const pull of [false, true]) {
+					// out of the loop steeply, then (pull) a curve back to a gentle slope, so he does not land fast and steep
+					const out2 = outDeg * DEG
+					out.push({ kind: 'hoop', phi, L, e, s, hop, dk: 12 * DEG, R, out: out2, red: redLoops ? 0.55 : 0, s2: 16, untimed: toff != null,
+						...(pull ? { phi2: 14 * DEG, L2x: turnLen(out2 - 14 * DEG, 8, 5), e2x: 20 } : {}) })
+				}
+				// or dive first for the speed
+				if (th < 40 * DEG) for (const d of [50, 110]) {
+					const beta = 50 * DEG, vf = Math.max(speed, 1.5), bend = fallSize(vf, th, beta), L1 = bend.len
+					const vd = Math.sqrt(speed * speed + 2 * GRAVITY * (d * Math.sin(beta) + bend.drop))
+					const L2 = turnLen(beta - phi, vd, 6), e2 = clamp(vd * 1.5, 10, 24)
+					for (const R of redLoops ? [38] : [24, 30]) out.push({ kind: 'hoop', beta, vf, d, L1, L2, phi, e: e2, s: 0, hop: 11, dk: 12 * DEG, R, out: 78 * DEG, red: redLoops ? 0.55 : 0, s2: 16, untimed: toff != null })
 				}
 			}
 		}
@@ -285,8 +379,10 @@ export function planTrack(hits, options = {}) {
 		// kicks: leave at phi and speed vt; left alone he is back at the take-off height after
 		// Tn = 2 vt sin(−phi) / g frames, so flights are chosen around that (before its middle onto a loop)
 		const phis = ascend ? [-40, -52, -62] : timedOnly ? [-8, -18, -30, -42] : wide ? [-4, -10, -17, -25, -33, -42, -52] : [-6, -14, -24, -36]
+		if (jump >= 1.5 && !ascend && D >= 30) phis.push(-50, -62) // launch steeply for the big ones
 		const Gs = timedOnly ? [4] : wide ? [2.5, 4, 6] : [3, 5]
 		const ks = toff != null ? [1] : ascend ? [0.25, 0.35, 0.45] : wide ? [0.7, 0.9, 1.15, 1.4] : [0.85, 1.2]
+		if (jump >= 2 && toff == null && !ascend) ks.push(1.6)
 		for (const deg of phis) {
 			const phi = deg * DEG * jit()
 			if (phi > th - 3 * DEG) continue
@@ -311,7 +407,8 @@ export function planTrack(hits, options = {}) {
 			for (const deg of fast || wide ? [-10, -20] : [-12]) for (const c of timedOnly ? [30] : fast || wide ? [40, 100] : [50]) {
 				const phi = deg * DEG
 				if (phi > th - 3 * DEG) continue
-				const L1 = turnLen(th - phi, speed, 3), crest = 14 * DEG, L2 = turnLen(crest - phi, Math.max(2, speed * 0.85), 2)
+				const G = speed > 10 ? 6 : 3 // a fast rider needs a tighter turn up to have time to slow
+				const L1 = turnLen(th - phi, speed, G), crest = 14 * DEG, L2 = turnLen(crest - phi, Math.max(2, speed * 0.85), G * 0.7)
 				const climbT = (dE + L1 + c + L2) / Math.max(1, speed * 0.9)
 				const Tf = toff != null ? H - toff : clamp(Math.round(Math.min(16, (D - climbT) * 0.6)), 3, D - 2)
 				if (toff == null && D - Tf < climbT) continue
@@ -321,18 +418,20 @@ export function planTrack(hits, options = {}) {
 		// dives: steeper first, for the speed of a big jump or a loop
 		if ((D >= 36 || ascend || speed < vWant - 1.2) && th < 40 * DEG) {
 			const betas = timedOnly ? [46] : [40, 54], ds = timedOnly ? [60] : wide ? [30, 80, 160] : [40, 100]
+			if (steepMax > 62 * DEG && !timedOnly) betas.push(Math.min(80, steepMax / DEG + 6)) // steep runs
+			if (jump >= 1.5 && D >= 50 && !timedOnly) ds.push(200 * Math.min(2, jump / 1.5))
 			const dphis = ascend ? [-36, -50] : timedOnly ? [-20, -36] : [-16, -30, -42]
 			for (const b of betas) for (const d of ds) for (const deg of dphis) {
 				const beta = b * DEG, phi = deg * DEG
-				const L1 = turnLen(beta - th, Math.max(speed, 2), 4)
-				const fall = d * Math.sin(beta) + L1 * 0.5 * (Math.sin(th) + Math.sin(beta))
+				const vf = Math.max(speed, 1.5), bend = fallSize(vf, th, beta), L1 = bend.len
+				const fall = d * Math.sin(beta) + bend.drop
 				const vd = Math.sqrt(speed * speed + 2 * GRAVITY * Math.max(0, fall))
 				const L2 = turnLen(beta - phi, vd, 4), e = clamp(vd * 2.4, 14, 40)
 				const vt = vd * 0.92
 				const Tf = toff != null ? H - toff : Math.round(2 * vt * Math.sin(-phi) / GRAVITY * (ascend ? 0.35 : 1))
 				const rideT = (dE + L1 + d + L2 + e) / Math.max(1, (speed + vd) / 2)
 				if (toff == null && D - Tf < rideT) continue
-				out.push({ kind: 'dive', beta, d, L1, L2, phi, e, s: 0, toff })
+				out.push({ kind: 'dive', beta, vf, d, L1, L2, phi, e, s: 0, toff })
 			}
 		}
 		return out
@@ -351,7 +450,7 @@ export function planTrack(hits, options = {}) {
 		const acc = GRAVITY * Math.sin(th)
 		const paceFactor = clamp(hit.paceFactor ?? 1, 0.65, 1.4)
 		let vWant = (o.speedLow + (o.speedHigh - o.speedLow) * (hit.energy ?? 0.5)) * (1 + 0.2 * exc) * paceFactor
-		if (hit.move === 'loop') vWant = Math.max(vWant, 6.5)
+		if (hit.move === 'loop') vWant = Math.max(vWant, o.loopMode === 'force' ? 8.5 : 6.5) // a loop next: come in fast
 		const tfWant = node.depth === 0 ? Math.min(22, D * 0.35) : D <= 16 ? D * 0.6 : D < 60 ? D * (0.72 + 0.1 * exc) : 43 + (D - 60) * (0.45 + 0.15 * exc)
 		// the melody's contour from the last landing: higher notes, higher pads (relative, so a loop or a big drop is not paid for forever)
 		// and lower when he should be faster, higher when slower: without red lines, height is the only
@@ -388,22 +487,31 @@ export function planTrack(hits, options = {}) {
 					continue
 				}
 			}
-			const key = `${c.kind}|${Math.round(c.s / 2)}|${Math.round((c.phi ?? 0) / DEG)}|${Math.round((c.L ?? c.R ?? 0) / 4)}|${c.beta ?? 0}|${c.d ?? 0}|${c.out ?? 0}|${c.c ?? 0}|${c.R ?? 0}`
+			const key = `${c.kind}|${Math.round(c.s / 2)}|${Math.round((c.phi ?? 0) / DEG)}|${Math.round((c.L ?? c.R ?? 0) / 4)}|${c.beta ?? 0}|${c.d ?? 0}|${c.out ?? 0}|${c.c ?? 0}|${c.R ?? 0}|${c.hop ?? 0}|${c.phi2 ?? 0}`
 			if (tried.has(key)) continue
 			tried.add(key)
-			const lines = shapeLines(node.pad, c, node.nextId, c.ds ?? o.ds)
+			const looping = c.kind === 'loop' || c.kind === 'hoop'
+			const lines = c.kind === 'hoop' ? buildHoop(node, c, H) : shapeLines(node.pad, c, node.nextId, c.ds ?? o.ds)
+			if (!lines) { no('hoop:no way in'); continue }
 			// (a loop passes over the flight that brought him, and over lines he no longer touches: the ride
 			// and pastIntact check it exactly instead)
-			if (c.kind !== 'loop' && lines.some(l => haunts(l, histories, node.frame + 1) || recentLines.some(m => segmentsCross(l, m)))) { no(c.kind + ':haunted run'); continue }
+			if (!looping && lines.some(l => haunts(l, histories, node.frame + 1) || recentLines.some(m => segmentsCross(l, m)))) { no(c.kind + ':haunted run'); continue }
 			if (c.kind === 'loop' && !loopClear(node, lines)) { no('loop:closes on itself'); continue }
 			addAll(lines)
 			const allowed = new Set([node.pad.id, ...lines.map(l => l.id)])
 			const hist = newHistory(node.frame + 1, D)
-			const res = ride(node, H, allowed, { hist, loopy: c.kind === 'loop' })
+			const res = ride(node, H, allowed, { hist, loopy: looping })
 			let fail = res.fail
 			if (!fail && H - (res.lastContact + 1) < 3) fail = 'no flight'
-			if (fail) { no(c.kind + ':' + fail); if (c.kind === 'loop') o.onLoopFail?.({ rider: node.rider.clone(), frame: node.frame, H, c: { ...c }, lines: [...world.track.lines.values()], fail }); removeAll(lines); continue }
+			if (!fail && looping) {
+				// round and over the top: somewhere he rode leftwards, upside down
+				let left = 0
+				for (let k = 0; k < hist.count; k++) { let vx = 0; for (let i = 0; i < N_CONTACT; i++) vx += hist.pts[(k * N_CONTACT + i) * 4 + 2]; left = Math.min(left, vx / N_CONTACT) }
+				if (left > -1) fail = 'not round'
+			}
+			if (fail) { no(c.kind + ':' + fail); if (looping) o.onLoopFail?.({ rider: node.rider.clone(), frame: node.frame, H, c: { ...c }, lines: [...world.track.lines.values()], fail }); removeAll(lines); continue }
 			const off = res.lastContact + 1
+			if (timed && off !== c.toff) { timed = false; no(c.kind + ':take-off slipped') } // touched again after the lip
 			// the flight: the height he took off at, and the apex
 			// his pace over the whole move (what you see as his speed: path length a frame)
 			let path = 0
@@ -437,7 +545,7 @@ export function planTrack(hits, options = {}) {
 			// Red loop entries can catch a rider near the crest, not only while
 			// already travelling steeply upward; the red wall supplies the
 			// remaining speed into the loop.
-			const climbing = hit.move === 'loop' && (o.red
+			const climbing = hit.move === 'loop' && (redLoops
 				? av < 12 * DEG && speedLand >= 2.5
 				: av < -8 * DEG && speedLand >= 6)
 			if (climbing) for (const dk of [8, 14, 20]) variants.push({ angle: av - dk * DEG, type: 'solid', entry: true })
@@ -456,7 +564,7 @@ export function planTrack(hits, options = {}) {
 			if (o.red && speedLand < vWant * 0.92) types.push('boost')
 			for (const [ai, angle] of angles.entries()) for (const type of types) if (type === 'solid' || ai <= 1 || ai === angles.length - 1) variants.push({ angle, type })
 			for (const { angle, type, entry = false } of variants) {
-				const theta = entry ? clamp(angle, -85 * DEG, -12 * DEG) : clamp(angle, -30 * DEG, 52 * DEG)
+				const theta = entry ? clamp(angle, -85 * DEG, -12 * DEG) : clamp(angle, -30 * DEG, steepMax)
 				const delta = av - theta
 				if (delta < 3 * DEG) { no('flat'); continue }
 				const nx = -Math.sin(theta), ny = Math.cos(theta), ux = Math.cos(theta), uy = Math.sin(theta)
@@ -507,27 +615,31 @@ export function planTrack(hits, options = {}) {
 				const landY = childRider.centre().y
 				const dropWant = 0.12 * Tf + 4
 				const worst = Math.max(res.stress, settle)
-				const apexWant = (0.45 + 0.55 * exc) * GRAVITY * Tf * Tf / 8
-				const spectacle = entry || c.kind === 'loop'
+				// big jumps over long gaps when asked (short hops stay small)
+				const apexWant = (0.45 + 0.55 * exc) * GRAVITY * Tf * Tf / 8 * (1 + (jump - 1) * clamp((D - 20) / 40, 0, 1))
+				const spectacle = entry || looping
 				const parts = {
 					air: 1.2 * hub((Tf - tfWant) / (3 + 0.25 * tfWant)) * (timed ? 0.3 : 1) * (spectacle ? 0.3 : 1),
 					drop: 0.6 * hub((landY - takeoffY - dropWant) / (6 + 0.25 * Tf)) * (o.pitchScale ? 0.3 : 1) * (spectacle ? 0.2 : 1),
 					contour: o.pitchScale ? 1.2 * (1 - 0.5 * exc) * hub((landY - yWant) / 16) * (spectacle ? 0.2 : 1) : 0,
 					speed: 2.5 * ((pace - vWant) / vWant) ** 2 + 1.5 * ((speedOf(childRider) - exitWant) / exitWant) ** 2,
-					air2: entry || c.kind === 'loop' ? 0 : 0.8 * exc * (Math.max(0, apexWant - apexH) / (6 + 0.4 * apexWant)) ** 2,
+					air2: entry || looping ? 0 : 0.8 * Math.max(exc, Math.min(1, jump - 1)) * (jump >= 2 ? 2 : 1) * (Math.max(0, apexWant - apexH) / (6 + 0.4 * apexWant)) ** 2,
 					stress: 8 * Math.max(0, worst - 0.35) ** 2,
 					orient: (orient / (28 * DEG)) ** 2,
 					delta: 0.5 * ((delta - deltaWant) / (10 * DEG)) ** 2,
-					steep: entry ? 0 : (Math.max(0, Math.abs(theta) - 38 * DEG) / (8 * DEG)) ** 2 * (c.kind === 'loop' ? 0.3 : 1),
-					fast: speedLand > 11 + 2 * exc ? (speedLand - 11 - 2 * exc) ** 2 : 0,
-					loop: (hit.move === 'loop' ? (entry ? -1.2 * (0.5 + exc) : 0.3) : 0) + (node.loopEntry ? (c.kind === 'loop' ? -2.5 * (0.5 + exc) : 0.6) : 0),
-					untimed: c.untimed ? 1.2 : 0,
+					steep: entry ? 0 : (Math.max(0, Math.abs(theta) - steepMax + 14 * DEG) / (8 * DEG)) ** 2 * (looping ? 0.3 : 1),
+					fast: (speedLand > fastAt ? 2 * (speedLand - fastAt) ** 2 : 0)
+						// fast onto a steep pad: he can only get faster from there
+						+ (theta > 28 * DEG && speedLand > 0.6 * (fastAt + 5) ? 3 * ((speedLand - 0.6 * (fastAt + 5)) / 3) ** 2 * (theta / (28 * DEG)) : 0),
+					loop: (hit.move === 'loop' ? (entry ? -1.2 * (0.5 + exc) : 0.3) : 0) + (node.loopEntry ? (c.kind === 'loop' ? -2.5 * (0.5 + exc) : 0.6) : 0)
+						+ (c.kind === 'hoop' ? -2.5 * (0.5 + exc) * (o.loopMode === 'force' ? 2 : 1) : !node.loopEntry && hits[node.hit]?.move === 'loop' ? 0.6 : 0),
+					untimed: c.untimed || c.toff != null && !timed ? 1.2 : 0,
 					echo: echo ? 0.5 * ((echo.kind !== c.kind ? 1 : 0) + Math.min(1, Math.abs(Tf - echo.Tf) / Math.max(4, echo.Tf)) + Math.min(1, Math.abs(apexH - echo.apex) / (4 + echo.apex))) : 0,
 				}
 				let cost = rand() * 0.05
 				for (const k in parts) cost += parts[k]
 				if (entry) no('entry child')
-				if (c.kind === 'loop') no('loop child')
+				if (looping) no(c.kind + ' child')
 				children.push({
 					parent: node, depth: node.depth + 1, frame: H, hit: hit.index, cost: node.cost + cost,
 					rider: childRider, lines: [...lines, pad], nextId: pad.id + 1, loopEntry: entry,
@@ -535,7 +647,7 @@ export function planTrack(hits, options = {}) {
 					info: {
 						kind: c.kind, pad: type, gap: D, Tf, takeoff: off, ...(timed ? { toff: c.toff } : {}), onNote: timed && c.toff === musical, wanted: musical != null, entry,
 						apex: apexH, drop: landY - takeoffY, speed: speedLand, pace, theta, delta, stress: worst, orient, step: cost,
-						...(c.kind === 'loop' ? { radius: c.R } : {}), ...(o.keepParts ? { parts } : {}),
+						...(looping ? { radius: c.R } : {}), ...(c.kind === 'hoop' ? { entryFrame: c.entryFrame } : {}), ...(o.keepParts ? { parts } : {}),
 					},
 				})
 			}
@@ -558,30 +670,68 @@ export function planTrack(hits, options = {}) {
 		return true
 	}
 
-	let beam = [root]
-	const skipped = []
-	for (let i = 0; i < hits.length; i++) {
-		const hit = { ...hits[i], index: i }
+	const expandAll = (nodes, hit) => {
 		let children = []
-		for (const node of beam) children.push(...expand(node, hit.frame, hit, false))
-		if (!children.length) for (const node of beam) children.push(...expand(node, hit.frame, hit, true))
+		for (const node of nodes) children.push(...expand(node, hit.frame, hit, false))
+		if (!children.length) for (const node of nodes) children.push(...expand(node, hit.frame, hit, true))
+		return children
+	}
+	/** The best few runs to carry on with (and the next few, held in reserve to back up to). */
+	function choose(children) {
 		children.sort((a, b) => a.cost - b.cost)
 		// keep a loop in the running when the music asked for one: the best loop entry or loop goes first
-		const special = children.find(c => c.loopEntry || c.info.kind === 'loop')
+		const special = children.find(c => c.loopEntry || c.info.kind === 'loop' || c.info.kind === 'hoop')
 		if (special) children.unshift(special)
-		const next = []
+		const next = [], rest = []
 		for (const c of children) {
-			if (next.includes(c)) continue
+			if (next.includes(c) || rest.includes(c)) continue
 			const p = c.rider.centre(), v = c.rider.velocity()
-			if (next.some(n => { const q = n.rider.centre(), u = n.rider.velocity(); return Math.hypot(p.x - q.x, p.y - q.y) < 2.5 && Math.hypot(v.x - u.x, v.y - u.y) < 0.25 })) continue
-			if (!pastIntact(c)) { no('past changed'); continue }
-			if (c.loopEntry) no('entry kept')
-			next.push(c)
-			if (next.length >= o.beam) break
+			if ([...next, ...rest].some(n => { const q = n.rider.centre(), u = n.rider.velocity(); return Math.hypot(p.x - q.x, p.y - q.y) < 2.5 && Math.hypot(v.x - u.x, v.y - u.y) < 0.25 })) continue
+			if (next.length < o.beam) {
+				if (!pastIntact(c)) { no('past changed'); continue }
+				if (!escapable(c)) { no('dead end'); continue }
+				if (c.loopEntry) no('entry kept')
+				next.push(c)
+			} else if (rest.length < 8) rest.push(c)
+			else break
 		}
-		if (!next.length) { skipped.push(i); continue }
+		return { next, rest }
+	}
+
+	/** Can he get out of where this child leaves him: flatten out and ride on for 1.5 s, unhurt and under the limit? */
+	function escapable(child) {
+		world.use(child)
+		const v = speedOf(child.rider), th = child.pad.theta
+		const lines = shapeLines(child.pad, { kind: 'kick', s: 0, phi: Math.min(th, -4 * DEG), L: turnLen(th + 4 * DEG, Math.max(v, 3), 8), e: 240 }, child.nextId, 8)
+		addAll(lines)
+		const r = child.rider.clone()
+		let ok = true
+		for (let f = 0; f < 60 && ok; f++) {
+			step(world.track, r)
+			simulated++
+			const u = r.velocity()
+			if (r.crashed || r.sledBroken || u.x * u.x + u.y * u.y > maxSpeed2 * 1.25) ok = false
+		}
+		removeAll(lines)
+		return ok
+	}
+
+	let beam = [root]
+	const skipped = []
+	let reserve = []
+	for (let i = 0; i < hits.length; i++) {
+		const hit = { ...hits[i], index: i }
+		let children = expandAll(beam, hit)
+		// nowhere to go from the runs kept: back up to the next-best runs of the note before
+		if (!children.length && reserve.length) {
+			children = expandAll(reserve.filter(n => pastIntact(n)), hit)
+			if (children.length) no('backed up')
+		}
+		const { next, rest } = choose(children)
+		if (!next.length) { skipped.push(i); o.onSkip?.(i, beam); continue }
 		o.onStep?.(i, children, next)
 		beam = next
+		reserve = rest
 		o.onProgress?.({ done: i + 1, total: hits.length, frames: simulated, ms: Date.now() - t0 })
 	}
 
@@ -611,7 +761,7 @@ export function planTrack(hits, options = {}) {
 		why,
 		stats: {
 			hits: hits.length, landed: pads.length, skipped: skipped.length, frames: simulated, ms: Date.now() - t0, lines: lines.length,
-			loops: pads.filter(p => p.kind === 'loop').length, onNote: pads.filter(p => p.onNote).length, takeoffNotes: pads.filter(p => p.wanted).length,
+			loops: pads.filter(p => p.kind === 'loop' || p.kind === 'hoop').length, onNote: pads.filter(p => p.onNote).length, takeoffNotes: pads.filter(p => p.wanted).length,
 		},
 	}
 }

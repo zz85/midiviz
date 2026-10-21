@@ -54,7 +54,9 @@ where a straight meets a bend, cut into lines of at most 6 px and 3°):
 - **kickers**: on straight, then a curve up (pulling 2–6 × gravity at his speed) to an exit angle,
   then a straight exit so he leaves without spinning; flights around the natural flight time
   `2 v sin(-φ) / g` of that angle
-- **dives**: down a steeper slope first, then up: the speed for a big jump or a loop
+- **dives**: down a steeper slope first, then up: the speed for a big jump or a loop. The bend over
+  the top follows his own fall (a parabola under 0.9 g, at his speed): any sharper bend downhill
+  throws him off the track, and he rides this one hovering within a pixel of it
 - **drops**: on, and off the end onto the next pad
 - **climbs**: uphill and over a rounded crest, his speed turned into height
 - **loops**: from a pad he lands on while still climbing, most of a circle up and over, and out
@@ -63,7 +65,13 @@ where a straight meets a bend, cut into lines of at most 6 px and 3°):
   away: entered at 7 px/frame he reaches the top of a 24 px loop at 2). Without red lines they are
   small (22–34 px) and need him at 6+ px/frame from a dive; with them, the climbing 55 % of a 38 or
   48 px loop is red, as Line Rider builders do (entered at 5 px/frame, a 45 px loop's top is passed
-  at 6.5–7.4), and there are about three times as many
+  at 6.5–7.4), and there are about three times as many. *Red loops* (on by default) is separate
+  from *Red pads*: red-lined loops do not touch his pace between notes
+- **inline loops** (`buildHoop`): within one move, off a steep kicker (or a dive and a kicker), a
+  pad under him 9–14 frames into the flight while he still climbs (sooner if he is about to stop),
+  and a loop laid from it: no note at the entry, so it fits anywhere there is time (about 2 s) and
+  speed. Out at 56–84°, then (or not) a curve back to a gentle slope so he does not land fast and
+  steep. A loop or inline loop counts only if he rode leftwards upside down somewhere in it
 
 With a take-off note, the shape's run-up length is solved by bisection (a longer run-up is a later
 take-off) so the last frame he touches the lip is the frame before the note. Each candidate is
@@ -71,7 +79,14 @@ simulated frame by frame up to the next note. On the note's frame, a pad goes wh
 be: across his lowest point, halfway between where it is on the frame before and where it would be
 on the frame, at an angle 9–22° under his direction (harder for stronger notes), flat under the
 sled, or onto a loop's wall if the next move is a loop. Then that is simulated too. It must be
-touched first on exactly that frame, and he must survive 5 frames on a run-out.
+touched first on exactly that frame, and he must survive 5 frames on a run-out. A take-off solved
+for a note must leave 6 clear frames after it, and is checked again on the full ride (a dive's top
+or a loop's way out can be brushed again a frame later).
+
+Getting stuck: a run kept in the beam must have a way out — flattening out and riding on for 1.5 s
+without crashing or passing 1.25 × the speed limit — or it is dropped (fast onto a steep pad, every
+move goes faster still); moves may go 4 px/frame over his current speed to slow him; and when no
+move reaches a note, the next-best runs of the note before are tried before the note is skipped.
 
 **Speed.** By default there are no red (acceleration) lines at all: his speed comes only from
 gravity and the track — on the ground it changes by g sin θ a frame (measured: 0.99 × downhill,
@@ -120,6 +135,28 @@ passages he skims over stepped pads, and only gaps of a second or more give real
 melodies need kickers and cost speed, falling ones are free. About a third of the loops asked for
 are made: a loop needs him climbing at 4.6+ px/frame onto its wall on the note, with 1.7 s free after.
 
+## Taking risks
+
+- **Landings on notes** (off): every note becomes a take-off instead — he leaves the lip on it and
+  lands about 60 % of the way to the next note, wherever the jump takes him; notes under 0.35 s apart
+  are landed on as before
+- **Loops: Force**: every repeat and run gets a loop window of 2.2 s with nothing landed in it, and
+  the planner tries inline loops anywhere there are 2 s to spare, asking the slopes for 8.5 px/frame
+  before each. In Rondo alla Turca: 13 of 22 loops in its first 2 minutes, 15 of 37 over the piece
+  (from 4 of 26 where it repeats or runs), all landings and take-offs on their frames. The rest fail
+  on physics: he cannot be got fast enough, climbing, in time
+- **Big jumps** (1–4×): the height wanted over gaps of a second or more (short gaps stay small hops),
+  steeper launch angles, longer dives, and long gaps left for them by the note picker (a 270 px jump
+  needs about 2.8 s in the air)
+- **Steepness** (40–80°): the steepest pad or run, and steeper dives
+- **Line detail** (2–16 px): the length of the short lines, finer in busy music, runs and loops (as
+  #043 does)
+- **Speed limit** (12–30 px/frame)
+- **Go crazy**: excitement 100 %, landings 2.2/s, 0.15 s gaps, forced loops, 3.5× jumps, 78°, 3 px
+  lines, 28 px/frame. Rondo, 2 minutes: 132 / 132 landings, 32 / 32 take-offs, 13 loops (of 22),
+  jumps up to 52 px; with landings off the notes 105 / 105 take-offs, 17 loops, a 432 px jump, up to
+  26.6 px/frame — and that track (11,894 lines) is identical to lr-core frame for frame
+
 ## Drawing ([render.js](render.js))
 
 Lines black on paper (or light on night); runs of joined lines drawn as one smooth stroke (quadratic
@@ -133,18 +170,20 @@ spread wide, for loops and big jumps); and a strip of the landings along the bot
 ## Page
 
 Song or MIDI file (or a `.track.json`, to watch any track ride), *Landings*, *Min gap*,
-*Pitch → height*, *Excitement*, *Loops*, *Take-offs on notes*, *Red lines*, *Speed*, *Take* (seed) and *Beam*,
+*Pitch → height*, *Excitement*, *Loops* (off / where it repeats or runs / force), *On notes*
+(landings, take-offs), *Red loops*, *Red pads*, *Big jumps*, *Steepness*, *Line detail*, *Speed limit*,
+*Go crazy* / *Defaults*, *Speed*, *Take* (seed) and *Beam*,
 then Generate (in a worker, about 1.3 s a minute of music); *Auto zoom*. Save .track.json for linerider.com / LRA: the music starts at the run-up time given in
 the track's description. Settings in the address bar.
 
 ## Tests
 
-- `node --test bosh/test/bosh.test.js` (10): every frame of four tracks against lr-core's hashes in
+- `node --test bosh/test/bosh.test.js` (12): every frame of four tracks against lr-core's hashes in
   [test/fixture.json](test/fixture.json) (a crash, red and flipped lines, two planned tracks, one
   with loops), lines and grid, `.track.json` round trip, landing choice, smooth curves, loop and
   take-off notes, every planned landing on its frame, gaps of 0.25–3 s, take-offs on their frames
   and a loop ridden over the top, and without red lines only plain lines, his change of speed
-  going with the slope (r > 0.6)
+  going with the slope (r > 0.6), forced inline loops, landings off the notes
 - `node bosh/test/oracle.mjs --lrcore <node_modules/lr-core> <track.json> …` against lr-core itself
   (`npm install --ignore-scripts lr-core@0.8.2` outside the repo); `make_fixture.mjs` remakes the fixture
 - `node bosh/test/browser.mjs song=midis/elise.mid` runs the page in Chromium and saves screenshots;

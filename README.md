@@ -37,7 +37,7 @@ Browser experiments with MIDI, piano and violin rendering, synthesis and audio a
 
 ## Line Rider
 
-- [#044 Bosh](044_bosh.html) - generate verified Line Rider tracks from MIDI, with note-synchronized landings and `.track.json` export ([notes](bosh/README.md))
+- [#044 Bosh](044_bosh.html) - generate verified Line Rider tracks from MIDI, with synchronized take-offs and landings, forced inline loops, wild-track controls and `.track.json` export ([notes](bosh/README.md))
 
 ## Synthesia-style players and synths
 

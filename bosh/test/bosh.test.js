@@ -178,7 +178,7 @@ test('planner: take-offs on their note frame, loops ridden, and the past never c
 
 test('planner without red lines: his speed comes from the slopes', () => {
 	const hits = pickHits(onsetsOf(elise, { beats: beatGrid(elise).beats }).filter(g => g.time < 40), { rate: 1.5, minGap: 0.25, excitement: 0.6, takeoffs: true })
-	const plan = planTrack(hits, { excitement: 0.6, red: false })
+	const plan = planTrack(hits, { excitement: 0.6, red: false, redLoops: false })
 	assert.ok(plan.lines.every(l => l.type === 0), 'only plain lines')
 	const check = verifyPlan(plan.lines, plan.pads, { frames: plan.duration })
 	assert.equal(check.crash, null)
@@ -203,4 +203,36 @@ test('planner without red lines: his speed comes from the slopes', () => {
 	const mx = m(xs), my = m(ys)
 	const corr = xs.reduce((s, x, i) => s + (x - mx) * (ys[i] - my), 0) / Math.sqrt(xs.reduce((s, x) => s + (x - mx) ** 2, 0) * ys.reduce((s, y) => s + (y - my) ** 2, 0))
 	assert.ok(corr > 0.6, `speed change against slope: r = ${corr.toFixed(2)} over ${xs.length} frames`)
+})
+
+test('forced loops: inline loops off a kicker, landings and take-offs still on their frames', () => {
+	const rondo = new Midi(readFileSync(new URL('../../midis/mz_331_3.mid', import.meta.url)))
+	const hits = pickHits(onsetsOf(rondo, { beats: beatGrid(rondo).beats }).filter(g => g.time < 30), { rate: 1.26, minGap: 0.25, excitement: 1, loops: 'force', takeoffs: true })
+	for (const [k, h] of hits.entries()) if (h.move === 'loop' && hits[k + 1]) assert.ok(hits[k + 1].frame - h.frame >= 2.2 * FPS - 1, 'room to go round')
+	const plan = planTrack(hits, { excitement: 1, loopMode: 'force' })
+	const check = verifyPlan(plan.lines, plan.pads, { frames: plan.duration })
+	assert.equal(check.crash, null)
+	assert.equal(check.exact, plan.pads.length)
+	assert.equal(check.takeoffs, plan.pads.filter(p => p.toff != null).length)
+	assert.ok(plan.pads.some(p => p.kind === 'hoop'), 'an inline loop')
+})
+
+test('landings off notes: every note a take-off, landed between', () => {
+	const rondo = new Midi(readFileSync(new URL('../../midis/mz_331_3.mid', import.meta.url)))
+	const groups = onsetsOf(rondo, { beats: beatGrid(rondo).beats }).filter(g => g.time < 30)
+	const on = pickHits(groups, { rate: 1.26, minGap: 0.25, excitement: 1, takeoffs: true })
+	const off = pickHits(groups, { rate: 1.26, minGap: 0.25, excitement: 1, takeoffs: true, landings: false })
+	assert.equal(off.length, on.length)
+	for (const [k, h] of off.entries()) {
+		if (!h.freeLanding) continue
+		assert.equal(h.takeoff, on[k].frame, 'leaves on the note')
+		assert.ok(h.frame > h.takeoff && (!off[k + 1] || h.frame < (off[k + 1].takeoff ?? off[k + 1].frame)), 'lands before the next note')
+	}
+	assert.ok(off.filter(h => h.freeLanding).length > off.length * 0.8)
+	const plan = planTrack(off, { excitement: 1 })
+	const check = verifyPlan(plan.lines, plan.pads, { frames: plan.duration })
+	assert.equal(check.crash, null)
+	assert.equal(check.exact, plan.pads.length)
+	assert.equal(check.takeoffs, plan.pads.filter(p => p.toff != null).length)
+	assert.ok(plan.pads.filter(p => p.onNote).length > plan.pads.length * 0.7, 'take-offs on the notes')
 })

@@ -89,11 +89,22 @@
       <div class="row"><label title="The shortest time between two landings">Min gap</label><input id="gap" type="range" min="0.15" max="0.6" step="0.01" value="0.25"><span class="val" id="gapV"></span></div>
       <div class="row"><label title="How much higher the pads are when the melody is higher">Pitch → height</label><input id="pitch" type="range" min="0" max="8" step="0.5" value="3"><span class="val" id="pitchV"></span></div>
       <div class="row"><label title="Bigger air, fewer and longer jumps, more loops, faster">Excitement</label><input id="exc" type="range" min="0" max="1" step="0.05" value="0.6"><span class="val" id="excV"></span></div>
+      <div class="row"><label title="Loop-the-loops: where a bar is played again or a fast run sweeps up or down; forced, at every one of those, with landings cleared around them">Loops</label><select id="loopMode">
+        <option value="off">Off</option><option value="music" selected>Where it repeats or runs</option><option value="force">Force: every repeat and run</option>
+      </select></div>
+      <div class="row"><label title="What happens on the chosen notes">On notes</label>
+        <span class="chk" title="Land on the chosen notes. Off: each note is a take-off instead, and he lands wherever the jump takes him"><input id="landings" type="checkbox" checked>Landings</span>
+        <span class="chk" title="Before a long gap, leave the ramp on a note too, not only land on one"><input id="takeoffs" type="checkbox" checked>Take-offs</span></div>
       <div class="row"><label></label>
-        <span class="chk" title="Loop-the-loops where a bar is played again or a fast run sweeps up or down"><input id="loops" type="checkbox" checked>Loops</span>
-        <span class="chk" title="Before a long gap, leave the ramp on a note too, not only land on one"><input id="takeoffs" type="checkbox" checked>Take-offs on notes</span></div>
-      <div class="row"><label></label>
-        <span class="chk" title="Red (acceleration) lines: pads that speed him up or slow him down, red-lined loops. Off: his speed comes only from gravity — downhill and drops speed him up, climbs and hard landings slow him down"><input id="red" type="checkbox">Red lines</span></div>
+        <span class="chk" title="Red lines on a loop's climbing half: a loop takes most of a rider's speed, and this is how Line Rider builders keep him going. Off: loops need the speed of a dive and are rare"><input id="redLoops" type="checkbox" checked>Red loops</span>
+        <span class="chk" title="Red pads that speed him up or slow him down. Off: his speed comes only from gravity — downhill and drops speed him up, climbs and hard landings slow him down"><input id="red" type="checkbox">Red pads</span></div>
+      <hr>
+      <div class="row"><label title="How big the jumps over long gaps get (short gaps stay small hops)">Big jumps</label><input id="jump" type="range" min="1" max="4" step="0.25" value="1"><span class="val" id="jumpV"></span></div>
+      <div class="row"><label title="The steepest pad or run">Steepness</label><input id="steep" type="range" min="40" max="80" step="2" value="52"><span class="val" id="steepV"></span></div>
+      <div class="row"><label title="How long the short lines of each curve are: fine in busy music, runs and loops, longer in open passages">Line detail</label><input id="detail" type="range" min="2" max="16" step="1" value="6"><span class="val" id="detailV"></span></div>
+      <div class="row"><label title="The fastest he may go">Speed limit</label><input id="maxSpeed" type="range" min="12" max="30" step="1" value="18"><span class="val" id="maxSpeedV"></span></div>
+      <div class="row"><label></label><button class="b" id="crazy" title="Everything to the edge: excitement 100 %, huge jumps, 78° runs, fine lines, forced loops, a speed limit of 28">Go crazy</button>
+        <button class="b" id="calm" title="Back to the defaults">Defaults</button></div>
       <div class="row"><label title="How fast he rides, quiet music to busy, loud music">Speed</label><select id="pace">
         <option value="slow">Slow (3–5.5 px/frame)</option><option value="normal" selected>Normal (4.5–8.5)</option><option value="fast">Fast (6–11)</option>
       </select></div>
@@ -218,8 +229,11 @@
     function options() {
       const [speedLow, speedHigh] = PACE[$('pace').value]
       return {
-        pick: { rate: +$('rate').value * (1 - 0.3 * +$('exc').value), minGap: +$('gap').value, excitement: +$('exc').value, loops: $('loops').checked, takeoffs: $('takeoffs').checked },
-        plan: { seed: +$('seed').value || 1, beam: +$('beam').value || 4, pitchScale: +$('pitch').value, speedLow, speedHigh, excitement: +$('exc').value, red: $('red').checked },
+        pick: { rate: +$('rate').value * (1 - 0.3 * +$('exc').value), minGap: +$('gap').value, excitement: +$('exc').value, loops: { off: false, music: true, force: 'force' }[$('loopMode').value], takeoffs: $('takeoffs').checked, landings: $('landings').checked, detail: +$('detail').value },
+        plan: {
+          seed: +$('seed').value || 1, beam: +$('beam').value || 4, pitchScale: +$('pitch').value, speedLow, speedHigh, excitement: +$('exc').value,
+          red: $('red').checked, redLoops: $('redLoops').checked, loopMode: $('loopMode').value, jump: +$('jump').value, steep: +$('steep').value, maxSpeed: +$('maxSpeed').value, ds: +$('detail').value,
+        },
       }
     }
     async function generate() {
@@ -286,11 +300,11 @@
       for (const p of ride.padList) kinds[p.kind] = (kinds[p.kind] || 0) + 1
       $('stats').innerHTML = `
         <div><span class="k">Landings</span> <b>${s.landed}</b> of ${s.hits} chosen notes${s.skipped ? ` <span class="bad">(${s.skipped} skipped)</span>` : ''}</div>
-        <div class="${exact === ride.padList.length ? 'ok' : 'bad'}">${exact === ride.padList.length ? '✓' : '✗'} ${exact} / ${ride.padList.length} touch their pad first on the note's frame (re-ridden from the start)</div>
+        <div class="${exact === ride.padList.length ? 'ok' : 'bad'}">${exact === ride.padList.length ? '✓' : '✗'} ${exact} / ${ride.padList.length} touch their pad first on ${res.hits.some(h => h.freeLanding) ? 'their planned' : "the note's"} frame (re-ridden from the start)</div>
         <div class="${ride.frames.crash == null ? 'ok' : 'bad'}">${ride.frames.crash == null ? '✓ never comes off the sled' : '✗ crashes at ' + (ride.frames.crash / FPS).toFixed(1) + ' s'}</div>
         ${s.takeoffNotes ? `<div class="${s.takeoffsExact === s.onNote ? 'ok' : 'bad'}">${s.takeoffsExact === s.onNote ? '✓' : '✗'} ${s.takeoffsExact} / ${s.onNote} take-offs leave the lip on their note's frame (${s.takeoffNotes} asked for)</div>` : ''}
         <div><span class="k">Speed</span> ${ride.lines.some(l => l.type === 1) ? `${ride.lines.filter(l => l.type === 1).length} red lines push him` : 'from gravity only: slopes, drops, climbs and landings'} · ${Math.min(...ride.padList.map(p => p.speed)).toFixed(1)}–${Math.max(...ride.padList.map(p => p.speed)).toFixed(1)} px/frame at landings</div>
-        <div><span class="k">Moves</span> ${kinds.kick || 0} kickers · ${kinds.dive || 0} dives · ${kinds.climb || 0} climbs · ${kinds.drop || 0} drops · <b>${kinds.loop || 0} loops</b>${s.loopsWanted ? ` (${s.loopsWanted} asked for)` : ''} · ${ride.padList.filter(p => p.pad !== 'solid').length} red pads · highest jump ${Math.round(Math.max(0, ...ride.padList.map(p => p.apex || 0)))} px</div>
+        <div><span class="k">Moves</span> ${kinds.kick || 0} kickers · ${kinds.dive || 0} dives · ${kinds.climb || 0} climbs · ${kinds.drop || 0} drops · <b>${(kinds.loop || 0) + (kinds.hoop || 0)} loops</b>${kinds.hoop ? ` (${kinds.hoop} inline)` : ''}${s.loopsWanted ? ` (${s.loopsWanted} asked for)` : ''} · ${ride.padList.filter(p => p.pad !== 'solid').length} red pads · highest jump ${Math.round(Math.max(0, ...ride.padList.map(p => p.apex || 0)))} px</div>
         <div><span class="k">Track</span> ${ride.lines.length} lines · ${(ride.duration).toFixed(0)} s · music from ${ride.leadIn.toFixed(2)} s</div>
         <div><span class="k">Planned</span> in ${(res.ms / 1000).toFixed(1)} s, ${(s.frames / 1e6).toFixed(2)} M frames of physics</div>`
     }
@@ -365,12 +379,22 @@
     }
 
     // ── Settings ───────────────────────────────────────────────────────────
-    const shows = { rate: v => `${v}/s`, gap: v => `${(+v).toFixed(2)} s`, pitch: v => `${v} px`, exc: v => `${Math.round(v * 100)} %`, zoom: v => `${(+v).toFixed(2)}×` }
+    const shows = { rate: v => `${v}/s`, gap: v => `${(+v).toFixed(2)} s`, pitch: v => `${v} px`, exc: v => `${Math.round(v * 100)} %`, jump: v => `${(+v).toFixed(2)}×`, steep: v => `${v}°`, detail: v => `${v} px`, maxSpeed: v => `${v}`, zoom: v => `${(+v).toFixed(2)}×` }
     for (const [id, f] of Object.entries(shows)) { const show = () => { $(id + 'V').textContent = f($(id).value) }; $(id).addEventListener('input', show); show() }
-    for (const id of ['rate', 'gap', 'pitch', 'exc', 'loops', 'takeoffs', 'red', 'pace', 'seed', 'beam']) $(id).addEventListener('change', () => { saveUrl(); generate() })
+    const PLANNED = ['rate', 'gap', 'pitch', 'exc', 'loopMode', 'landings', 'takeoffs', 'redLoops', 'red', 'jump', 'steep', 'detail', 'maxSpeed', 'pace', 'seed', 'beam']
+    for (const id of PLANNED) $(id).addEventListener('change', () => { saveUrl(); generate() })
+    // presets: the edge of everything, and back
+    const DEFAULTS = { rate: 1.8, gap: 0.25, exc: 0.6, loopMode: 'music', landings: true, takeoffs: true, redLoops: true, red: false, jump: 1, steep: 52, detail: 6, maxSpeed: 18 }
+    const CRAZY = { rate: 2.2, gap: 0.15, exc: 1, loopMode: 'force', landings: true, takeoffs: true, redLoops: true, red: false, jump: 3.5, steep: 78, detail: 3, maxSpeed: 28 }
+    function preset(p) {
+      for (const [k, v] of Object.entries(p)) { if (typeof v === 'boolean') $(k).checked = v; else { $(k).value = v; $(k).dispatchEvent(new Event('input')) } }
+      saveUrl(); generate()
+    }
+    $('crazy').onclick = () => preset(CRAZY)
+    $('calm').onclick = () => preset(DEFAULTS)
     for (const id of ['zoom', 'theme', 'trail', 'autoZoom']) $(id).addEventListener('change', saveUrl)
-    const KEYS = ['rate', 'gap', 'pitch', 'exc', 'pace', 'seed', 'beam', 'zoom', 'theme']
-    const CHECKS = ['loops', 'takeoffs', 'red', 'autoZoom']
+    const KEYS = ['rate', 'gap', 'pitch', 'exc', 'loopMode', 'jump', 'steep', 'detail', 'maxSpeed', 'pace', 'seed', 'beam', 'zoom', 'theme']
+    const CHECKS = ['landings', 'takeoffs', 'redLoops', 'red', 'autoZoom']
     function saveUrl() {
       const q = new URLSearchParams()
       if ($('song').value) q.set('song', $('song').value)
