@@ -19,6 +19,12 @@
 //   toward the bridge for a short-fingered model), the little knuckle no more
 //   than 2 cm above the fingerboard, the thumb's tip within 2 cm of its place
 //   under the neck, the elbow under the violin (≥ 8 cm below its top).
+// And the bow hand (research/05_bow_hand.md §4): each fingertip on its contact
+// (≤ 0.5 cm), the base joint −15…90°, no finger leaning > 30° out of its
+// plane, the middle joint ≥ 25°; the thumb's tip on the frog (≤ 1 cm) and
+// bent (≥ 15°); the back of the hand up (palm down onto the stick); the wrist
+// within 15° of the research's bend for that part of the bow (≤ 35° in all);
+// the elbow bent 60…165°.
 // A check fails when more than 2 % of its samples are outside its range, or
 // more than 0.5 % are far outside it (FAR); for a fingertip off its stop, 3 %
 // and 1.5 %: the fingerings ask for the odd chord, crossed double stop or shift
@@ -58,10 +64,10 @@ for (const run of runs) {
     const J = leftHand.joints, m = rig.M.L
     const inv = new THREE.Matrix4(), L = p => p.clone().applyMatrix4(inv)
     const NAMES = ['Index', 'Middle', 'Ring', 'Little']
-    const vals = { tip: [], flex: [], lean: [], pip: [], pip4: [], bend: [], contact: [], little: [], thumb: [], elbow: [] }
+    const vals = { tip: [], flex: [], lean: [], pip: [], pip4: [], bend: [], contact: [], little: [], thumb: [], elbow: [], bTip: [], bFlex: [], bLean: [], bPip: [], bThumb: [], bThumbBend: [], bPalm: [], bWrist: [], bElbow: [] }
     let stretches = 0, pressed = 0
     const LEN033 = [8.6, 9.7, 9.1, 7.3]           // #033's finger lengths (strings/hand3d.js LEFT), × its scale
-    const FAR = { tip: 1, flex: 30, lean: 8, pip: 20, pip4: 10, bend: 15, contact: 2, little: 1.5, thumb: 1.5, elbow: 4 }
+    const FAR = { tip: 1, flex: 30, lean: 8, pip: 20, pip4: 10, bend: 15, contact: 2, little: 1.5, thumb: 1.5, elbow: 4, bTip: 1, bFlex: 30, bLean: 10, bPip: 15, bThumb: 1, bThumbBend: 10, bPalm: 0.3, bWrist: 15, bElbow: 15 }
     const worst = {}, out = {}, far = {}
     const note = (k, v, t, bad) => {
       vals[k].push(v)
@@ -103,6 +109,27 @@ for (const run of runs) {
       note('thumb', th, t, th > 2 && th - 2)
       const ey = L(wp(H('leftLowerArm'))).y
       note('elbow', ey, t, ey > -8 && ey + 8)
+      // the bow hand
+      const R = rig.M.R, bh = rig.st.bh
+      if (bh) {
+        for (let i = 0; i < 4; i++) {
+          const q = R.fingers[i].q
+          if (!q) continue
+          note('bTip', q.miss, t, q.miss > 0.5 && q.miss - 0.5)
+          note('bFlex', q.flex, t, (q.flex > 90 && q.flex - 90) || (q.flex < -15 && -15 - q.flex))
+          note('bLean', Math.abs(q.lean), t, Math.abs(q.lean) > 30 && Math.abs(q.lean) - 30)
+          note('bPip', q.pip, t, q.pip < 25 && 25 - q.pip)
+        }
+        const td = R.thumb.tip && R.thumb.target ? R.thumb.tip.distanceTo(R.thumb.target) : 0
+        note('bThumb', td, t, td > 1 && td - 1)
+        note('bThumbBend', R.thumb.bend ?? 0, t, (R.thumb.bend ?? 0) < 15 && 15 - R.thumb.bend)
+        note('bPalm', bh.up, t, bh.up < 0.3 && 0.3 - bh.up)
+        const dw = Math.abs(bh.wrist - bh.want)
+        note('bWrist', bh.wrist, t, (dw > 15 && dw - 15) || (Math.abs(bh.wrist) > 35 && Math.abs(bh.wrist) - 35))
+        const S = wp(H('rightUpperArm')), E = wp(H('rightLowerArm')), Wr = wp(H('rightHand'))
+        const ea = S.clone().sub(E).angleTo(Wr.clone().sub(E)) * 180 / Math.PI
+        note('bElbow', ea, t, (ea > 165 && ea - 165) || (ea < 60 && 60 - ea))
+      }
     }
     const pct = (a, p) => { const s = a.slice().sort((x, y) => x - y); return s.length ? +s[Math.min(s.length - 1, Math.floor(p * s.length))].toFixed(1) : null }
     const stats = {}

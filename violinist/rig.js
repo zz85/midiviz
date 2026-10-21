@@ -148,7 +148,8 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
     // back of the hand (the basis' y: side × long axis)
     m.kRest = FINGERS.map(F => wp(H(s + F + 'Proximal')).sub(pH))
     m.thumbRest = wp(H(s + 'ThumbMetacarpal')).sub(pH)
-    m.dorsalRest = m.side.clone().cross(m.knuckleOff).normalize()
+    // (index − little × wrist → knuckles is the back of the left hand, the palm of the right)
+    m.dorsalRest = m.side.clone().cross(m.knuckleOff).normalize().multiplyScalar(S === 'L' ? 1 : -1)
     m.klineRest = m.kRest[3].clone().sub(m.kRest[0]).normalize()
     m.fingers = FINGERS.map(F => {
       const bs = ['Proximal', 'Intermediate', 'Distal'].map(k => H(s + F + k))
@@ -178,6 +179,7 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
     rest.set(m.foot, { q: wq(m.foot) })
     m.footRest = pF
   }
+  const bowReach = clamp((M.R.l1 + M.R.l2) / 58, 0.72, 1)
   const middleLen = M.L.fingers[1].len.reduce((a, b) => a + b, 0)
   const handScale = middleLen / 9.7          // vs the #033 left hand's middle finger
   const B = {
@@ -246,7 +248,10 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
     const energy = drive.energy ?? 0.5
     const leanT = opts.lean * (0.05 + 0.07 * energy - 0.08 * (drive.breath || 0))
     st.lean += (leanT - st.lean) * Math.min(1, dt * 3)
-    const bw = pose?.bow
+    // the VRoid arms are short (shoulder to wrist ~47 cm against ~60 for a
+    // 180 cm man, research/05_bow_hand.md §2): he uses the lower part of the
+    // bow in proportion, so the arm can still bend at the elbow
+    const bw = pose?.bow && { ...pose.bow, pos: (pose.bow.pos ?? 30) * bowReach }
     const turnT = bw ? 0.06 * ((bw.pos ?? 32) / 65 - 0.5) : 0
     st.turn += (turnT - st.turn) * Math.min(1, dt * 3)
     B.hips.position.copy(restPos.get(B.hips))
@@ -310,7 +315,7 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
       setArm(m, wp(m.upper), E, W, R)
       fingersTo(m, mat, J, R)
     }
-    // ── right arm and the bow hand ──
+    // ── right arm and the bow hand (research/05_bow_hand.md) ──
     {
       const m = M.R
       bow.group.updateMatrixWorld(true)
@@ -318,27 +323,8 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
       // which side of the stick the player is on (bow frame z)
       const bz = v3(0, 0, 1).applyQuaternion(wq(bow.group))
       const n = bz.dot(wp(chestBone).sub(wp(bow.group))) < 0 ? -1 : 1
-      const tip = clamp((bw.pos ?? 30) / 65, 0, 1)
-      const G = grip(n, tip, handScale)
-      const P = p => v3(p[0], p[1], p[2] * n).applyMatrix4(mat)
-      const D = d => v3(d[0], d[1], d[2] * n).transformDirection(mat)
-      const knuckle = P(G.knuckle), side = D(G.side)
-      const R = rotFor(m.hand, D(G.fwd), side, new THREE.Quaternion())
-      const W = knuckle.clone().sub(m.knuckleOff.clone().applyQuaternion(R))
-      // out of reach (toward the tip): bring the clavicle forward and in
-      let S = wp(m.upper)
-      const reach = m.l1 + m.l2
-      const need = clamp((S.distanceTo(W) - 0.96 * reach) / 8, 0, 1)
-      st.rClav += (need - st.rClav) * Math.min(1, dt * 10)
-      turn(m.shoulder, new THREE.Euler(0, 0.35 * st.rClav, -0.08 * st.rClav, 'YXZ'))
-      S = wp(m.upper)
-      const sb = bw.s ?? 1.5
-      const level = 1 - sb / Math.max(1, V.S - 1)                // 1 = G string: elbow high
-      // pole low enough that the elbow sits near the measured heights per string
-      // (research 01 §4.3: upper arm 30–40° from the body on E, 60–75° on G)
-      const pole = S.clone().add(v3(-30, -55 + 22 * level + 12 * tip, -12))
-      arm(m, S, W, pole, R, side)
-      gripTo(m, mat, G, n)
+      const tip = clamp((bw.pos ?? 30) / (65 * bowReach), 0, 1)
+      bowHandPose(m, mat, n, tip, bw, dt)
     }
     legs()
 
@@ -638,6 +624,175 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
     orient(T.bones[1], mid.clone().sub(wp(T.bones[1])), back)
     orient(T.bones[2], tip.clone().sub(mid), back)
   }
+  // ── the bow hand (research/05_bow_hand.md §3) ──
+  // Contacts in the bow frame (x along the stick toward the tip from the
+  // frog's front, y from the hair up past the stick at y ≈ 1.6, z toward the
+  // player when n = 1), for a Franco-Belgian hold: the bent thumb's tip in the
+  // corner of the frog and the stick on the player's side, the middle finger
+  // opposite it over the far side, the ring finger over the frog's eye, the
+  // index on the stick at its middle phalanx, the little finger's tip on top.
+  // The hand's pose around them is searched each frame like the left hand's:
+  // its position and orientation (6 numbers) are chosen so each fingertip
+  // reaches its contact with a natural finger shape, the thumb stays bent, the
+  // wrist bends as the research says for that part of the bow (flexed ~22° at
+  // the frog, straight in the middle, extended a little at the tip), the hand
+  // pronates toward the tip, and the elbow sits at the string's level.
+  const BH = { x: null, init: false }
+  const BOW_TIPS = [[3.0, 0.75, -1.15], [0.75, 0.85, -0.95], [-1.15, 0.7, -0.95], [-2.6, 2.3, -0.1]]
+  const BOW_THUMB = [0.55, 1.05, 0.55]
+  function bowFrame(G, x, n, mat) {
+    // nominal hand axes in the bow frame (grip()), turned by the rotation vector x[3..5]
+    const fwd = v3(G.fwd[0], G.fwd[1], G.fwd[2] * n), side = v3(G.side[0], G.side[1], G.side[2] * n)
+    const rv = v3(x[3], x[4], x[5] * n), ang = rv.length()
+    if (ang > 1e-6) { const q = new THREE.Quaternion().setFromAxisAngle(rv.multiplyScalar(1 / ang), ang); fwd.applyQuaternion(q); side.applyQuaternion(q) }
+    return rotFor(M.R.hand, fwd.transformDirection(mat), side.transformDirection(mat), new THREE.Quaternion())
+  }
+  function bowHandPose(m, mat, n, tip, bw, dt) {
+    toLocalM.copy(mat).invert()
+    const s = handScale
+    const G = grip(n, tip, s)
+    const L = p => v3(p[0], p[1], p[2] * n)
+    const tipsW = BOW_TIPS.map(p => L(p).applyMatrix4(mat)), thumbW = L(BOW_THUMB).applyMatrix4(mat)
+    const stickA = v3(-4, 1.6, 0).applyMatrix4(mat), stickB = v3(8, 1.62, 0).applyMatrix4(mat)
+    const thumbLen = m.thumb.len[0] + m.thumb.len[1]
+    // out of reach (toward the tip): bring the clavicle forward and in
+    const Wnom = L(G.knuckle).applyMatrix4(mat).sub(m.knuckleOff.clone().applyQuaternion(bowFrame(G, [0, 0, 0, 0, 0, 0], n, mat)))
+    turn(m.shoulder, null)
+    const reach = m.l1 + m.l2
+    const need = clamp((wp(m.upper).distanceTo(Wnom) - 0.9 * reach) / 8, 0, 1)
+    st.rClav += (need - st.rClav) * Math.min(1, dt * 10)
+    turn(m.shoulder, new THREE.Euler(0, 0.35 * st.rClav, -0.08 * st.rClav, 'YXZ'))
+    const S = wp(m.upper)
+    const sb = bw.s ?? 1.5
+    const level = 1 - sb / Math.max(1, V.S - 1)                // 1 = G string: elbow high
+    // pole low enough that the elbow sits near the measured heights per string
+    // (research 01 §4.3: upper arm 30–40° from the body on E, 60–75° on G)
+    const pole = S.clone().add(v3(-30, -55 + 22 * level + 12 * tip, -12))
+    const bendWant = 22 - 30 * tip                               // + flexed, − extended (degrees)
+    const proWant = THREE.MathUtils.degToRad(25) * tip           // extra pronation toward the tip
+    const stickDir = stickB.clone().sub(stickA).normalize()
+    // the torso (a capsule from the hips to the neck, r ≈ 13 cm) for the forearm to clear
+    const tA = wp(B.hips).add(v3(0, 8, 0)), tB = wp(B.neck), tD = tB.clone().sub(tA), tL2 = tD.lengthSq()
+    const toTorso = p => { const u = clamp(p.clone().sub(tA).dot(tD) / tL2, 0, 1); return p.distanceTo(tA.clone().addScaledVector(tD, u)) }
+    const CLEAR = 13 + 3.5 + 1.5 + 1.5
+    const elbowFor = W => {
+      // the pole's elbow, swung out from the body as far as the forearm needs
+      let E = twoBone(S.clone(), W.clone(), m.l1, m.l2, pole, v3()), gap = 99
+      for (let k = 0; k < 4; k++) {
+        gap = 99
+        for (let j = 0; j <= 4; j++) gap = Math.min(gap, toTorso(E.clone().lerp(W, j / 4)) - CLEAR)
+        if (gap >= 0) break
+        const out = E.clone().sub(tA).setY(0).normalize()
+        E = twoBone(S.clone(), W.clone(), m.l1, m.l2, E.clone().addScaledVector(out, 25 * (k + 1)), v3())
+      }
+      return { E, gap }
+    }
+    const evaluate = (x, why = null) => {
+      const add = (k, v) => { if (why) why[k] = (why[k] || 0) + v; return v }
+      const R = bowFrame(G, x, n, mat)
+      const K = L([G.knuckle[0] + x[0], G.knuckle[1] + x[1], G.knuckle[2] + x[2] * n]).applyMatrix4(mat)
+      const W = K.clone().sub(m.knuckleOff.clone().applyQuaternion(R))
+      const { E, gap } = elbowFor(W)
+      let c = add('reach', 40 * Math.max(0, S.distanceTo(W) - 0.985 * reach))
+      c += add('torso', 30 * Math.max(0, -gap))
+      // the wrist: flexion (+, toward the palm) and side bend against the forearm
+      const fa = W.clone().sub(E).normalize(), h = m.knuckleOff.clone().applyQuaternion(R).normalize()
+      const Nb = m.dorsalRest.clone().applyQuaternion(R)                 // the back of the hand
+      const bend = THREE.MathUtils.radToDeg(Math.acos(clamp(fa.dot(h), -1, 1)))
+      const sgn = h.clone().sub(fa.clone().multiplyScalar(h.dot(fa))).dot(Nb) < 0 ? 1 : -1   // + flexed
+      const wb = sgn * bend
+      c += add('wrist', 0.06 * (wb - bendWant) ** 2 + 3 * Math.max(0, Math.abs(wb - bendWant) - 12) + 4 * Math.max(0, bend - 35))
+      // fingers onto their contacts
+      for (let i = 0; i < 4; i++) {
+        const Kf = W.clone().add(_pp.copy(m.kRest[i]).applyQuaternion(R))
+        const q = handFinger(Kf, tipsW[i], m.fingers[i].len, i === 3 ? 0.5 : 0.75, h, Nb, _fp)
+        c += add('f' + (i + 1), 60 * Math.min(q.miss, 1) + 15 * Math.max(0, q.miss - 1))
+        c += add('f' + (i + 1) + 'shape', 3 * Math.max(0, q.flex - 85) + 3 * Math.max(0, -10 - q.flex) + 2 * Math.max(0, Math.abs(q.lean) - 25) + 0.6 * Math.max(0, (i === 3 ? 55 : 60) - q.pip))
+        if (why) why['f' + (i + 1) + 'q'] = [Math.round(q.flex), Math.round(q.lean), Math.round(q.pip), +q.miss.toFixed(2)]
+        // the index rests on the stick near its middle phalanx
+        if (i === 0) { const mid = _fp[1].clone().lerp(_fp[2], 0.6); const dS = mid.clone().sub(stickA); dS.addScaledVector(stickDir, -dS.dot(stickDir)); c += add('index', 20 * Math.max(0, dS.length() - 1.4)) }
+      }
+      // the thumb: its root within reach of the frog corner, and bent (not straight)
+      const Tb = W.clone().add(_pp.copy(m.thumbRest).applyQuaternion(R))
+      const dT = Tb.distanceTo(thumbW) / (thumbLen + m.thumbRest.distanceTo(m.kRest[0]) * 0.45)
+      c += add('thumb', 40 * Math.max(0, dT - 0.92) + 20 * Math.max(0, 0.55 - dT))
+      // palm down onto the stick: the back of the hand up (bow frame +y), the
+      // knuckles above the stick
+      const up = Nb.clone().transformDirection(toLocalM)
+      c += add('palm', 30 * Math.max(0, 0.6 - up.y))
+      const Kl = K.clone().applyMatrix4(toLocalM)
+      c += add('above', 15 * Math.max(0, 1.6 + 2.0 * s - Kl.y))
+      // pronation toward the tip, and the elbow at the string's level (from the pole)
+      const pro = x[3]
+      c += add('pref', 4 * Math.abs(pro - proWant) + 1.5 * (Math.abs(x[4]) + Math.abs(x[5])) + 0.3 * (Math.abs(x[0]) + Math.abs(x[1]) + Math.abs(x[2])) / s + 4 * Math.max(0, Math.abs(x[2]) / s - 1.5))
+      if (why) { why.wrist_deg = Math.round(wb); why.want = Math.round(bendWant); why.total = c }
+      return { c, x, R, W, E, wb, up: up.y }
+    }
+    const STEP = [0.8 * s, 0.8 * s, 0.8 * s, 0.18, 0.18, 0.18]
+    const descend = (from, rounds) => {
+      let best = evaluate(from)
+      for (let it = 0; it < rounds; it++) for (const k of [1, 0.5, 0.25]) for (let d = 0; d < 6; d++) for (const sg of [-1, 1]) {
+        const x = best.x.slice(); x[d] += sg * k * STEP[d]
+        const r = evaluate(x)
+        if (r.c < best.c) best = r
+      }
+      return best
+    }
+    // from the last pose; on the first frame, or when the bow has moved on far
+    // enough that it fits badly (a retake, a fast stroke), also from the
+    // nominal hold for this part of the bow, with more rounds
+    const nominal = [0, 0, 0, proWant, 0, 0]
+    if (!BH.init) BH.x = nominal
+    let best = descend(BH.init ? BH.x : nominal, BH.init ? 1 : 4)
+    if (BH.init && best.c > 40) { const r = descend(nominal, 3); if (r.c < best.c) best = r; if (best.c > 40) { const r2 = descend(best.x, 2); if (r2.c < best.c) best = r2 } }
+    const a = BH.init ? Math.min(1, dt * 16) : 1
+    BH.x = BH.x.map((v, i) => v + (best.x[i] - v) * a); BH.init = true
+    const out = evaluate(BH.x)
+    st.bh = { cost: out.c, x: BH.x, wrist: out.wb, want: bendWant, up: out.up, tip }
+    st.bhWhy = (x = BH.x) => { const w = {}; evaluate(x, w); for (const k in w) if (typeof w[k] === 'number') w[k] = +w[k].toFixed(1); return w }
+    // the arm, then the fingers and the thumb onto their contacts
+    setArm(m, S, out.E, out.W, out.R)
+    bowFingers(m, mat, n, out.R, tipsW, thumbW)
+  }
+  function bowFingers(m, mat, n, R, tipsW, thumbW) {
+    const h = m.knuckleOff.clone().applyQuaternion(R).normalize()
+    const Nb = m.dorsalRest.clone().applyQuaternion(R)
+    const side = m.side.clone().applyQuaternion(R)
+    for (let i = 0; i < 4; i++) {
+      const F = m.fingers[i]
+      F.q = handFinger(wp(F.bones[0]), tipsW[i], F.len, i === 3 ? 0.5 : 0.75, h, Nb, F.pts)
+      const Wp = F.pts
+      const hinge = Wp[1].clone().sub(Wp[0]).cross(Wp[2].clone().sub(Wp[1]))
+      const ref = hinge.lengthSq() > 1e-6 ? hinge.normalize() : side.clone()
+      if (ref.dot(side) < 0) ref.negate()
+      chain(F.bones, Wp, ref)
+    }
+    // thumb: bent, its tip in the corner of the frog and the stick
+    const T = m.thumb
+    setWorldQ(T.bones[0], _qq.copy(R).multiply(rest.get(T.bones[0]).q))
+    let J1 = wp(T.bones[1])
+    const reach = T.len[0] + T.len[1]
+    if (J1.distanceTo(thumbW) > 0.88 * reach) {
+      const C = wp(T.bones[0]), a = J1.clone().sub(C).normalize(), b = thumbW.clone().sub(C).normalize()
+      const full = Math.acos(clamp(a.dot(b), -1, 1))
+      if (full > 1e-3) {
+        let lo = 0, hi = Math.min(full, 0.87)
+        const axis = a.clone().cross(b).normalize(), Lc = J1.distanceTo(C)
+        for (let k = 0; k < 14; k++) { const mid = (lo + hi) / 2; const p = C.clone().addScaledVector(a.clone().applyAxisAngle(axis, mid), Lc); if (p.distanceTo(thumbW) > 0.88 * reach) lo = mid; else hi = mid }
+        setWorldQ(T.bones[0], new THREE.Quaternion().setFromAxisAngle(axis, hi).multiply(wq(T.bones[0])))
+        J1 = wp(T.bones[1])
+      }
+    }
+    // the thumb bends outward (convex toward the tip of the bow), away from the palm
+    const pole = J1.clone().lerp(thumbW, 0.5).addScaledVector(h, 3).addScaledVector(Nb, 2)
+    const mid = twoBone(J1.clone(), thumbW.clone(), T.len[0], T.len[1], pole, v3())
+    T.tip = mid.clone().addScaledVector(thumbW.clone().sub(mid).normalize(), T.len[1])
+    T.target = thumbW.clone()
+    T.bend = THREE.MathUtils.radToDeg(mid.clone().sub(J1).angleTo(thumbW.clone().sub(mid)))
+    const back = Nb.clone()
+    orient(T.bones[1], mid.clone().sub(J1), back)
+    orient(T.bones[2], thumbW.clone().sub(mid), back)
+  }
   /**
    * A Franco-Belgian bow hold in the bow frame (x along the stick toward the
    * tip, y from the hair up past the stick at y = 1.7, z toward the player
@@ -656,29 +811,6 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
       tips: [[3.3, 1.05, -0.95], [0.7, 0.95, -0.8], [-1.1, 1.05, -0.75], [-2.7, 2.35, 0.05]],
       thumb: [0.35, 1.15, 0.6], thumbPole: [1.8, 2.4, 3.0],
     }
-  }
-  /** Right fingers onto the bow grip. */
-  function gripTo(m, mat, G, n) {
-    toLocalM.copy(mat).invert()
-    const L = p => v3(p[0], p[1], p[2] * n)
-    const handR = wq(m.hand).multiply(_q.copy(rest.get(m.hand).q).invert())
-    const side = m.side.clone().applyQuaternion(handR)
-    for (let i = 0; i < 4; i++) {
-      const F = m.fingers[i]
-      const base = wp(F.bones[0]).applyMatrix4(toLocalM)
-      solveFinger(base, L(G.tips[i]), F.len, i === 3 ? 0.5 : 0.8, F.pts, null)
-      chain(F.bones, F.pts.map(p => p.clone().applyMatrix4(mat)), side)
-    }
-    const T = m.thumb
-    setWorldQ(T.bones[0], _qq.copy(handR).multiply(rest.get(T.bones[0]).q))
-    const J1 = wp(T.bones[1])
-    const tip = L(G.thumb).applyMatrix4(mat), pole = L(G.thumbPole).applyMatrix4(mat)
-    const mid = twoBone(J1.clone(), tip.clone(), T.len[0], T.len[1], pole, v3())
-    // (where the thumb's tip ends up, for the posture test)
-    T.tip = mid.clone().addScaledVector(tip.clone().sub(mid).normalize(), T.len[1])
-    const back = Y.clone().applyQuaternion(handR)
-    orient(T.bones[1], mid.clone().sub(J1), back)
-    orient(T.bones[2], tip.clone().sub(mid), back)
   }
   function chain(bones, pts, side) {
     for (let j = 0; j < 3; j++) orient(bones[j], pts[j + 1].clone().sub(pts[j]), side)
