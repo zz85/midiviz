@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>#045 path tracer smoke test</title>
+<!-- A sphere, a floor, a spot light and the env panels through each engine:
+     node pathtrace/test/stills.mjs --mini, or open it and call window.run() -->
+<script type="importmap">
+  { "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/",
+    "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/",
+    "three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.webgpu.js",
+    "three/tsl": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.tsl.js"
+  } }
+</script>
+<style>body { background: #111; color: #ccc; font: 12px system-ui } canvas { margin: 4px; }</style>
+</head><body>
+<div id="out"></div>
+<script type="module">
+  import * as THREE from 'three'
+  import { traceStill, ENGINES } from '../engines.js'
+  import { bakeEnvironment } from '../snapshot.js'
+  const scene = new THREE.Scene(); scene.background = new THREE.Color(0)
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(30, 48, 24), new THREE.MeshPhysicalMaterial({ color: 0x8e1d1b, roughness: 0.3, clearcoat: 1 }))
+  ball.position.set(0, 30, 0); scene.add(ball)
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshStandardMaterial({ color: 0x777777, roughness: 0.6 }))
+  floor.rotation.x = -Math.PI / 2; scene.add(floor)
+  const spot = new THREE.SpotLight(0xffd2a0, 4 * 300 * 300, 0, 0.4, 0.5, 2); spot.position.set(-100, 250, 120); spot.radius = 6; spot.userData.mutracerRadius = 6
+  scene.add(spot, spot.target)
+  const env = new THREE.Scene(); env.background = new THREE.Color(0x020202)
+  const p = new THREE.Mesh(new THREE.PlaneGeometry(400, 200), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffe2c0).multiplyScalar(2), side: THREE.DoubleSide })); p.position.set(0, 300, -500); p.lookAt(0, 0, 0); env.add(p)
+  scene.environment = bakeEnvironment(env, { intensity: 0.55 })
+  scene.updateMatrixWorld(true)
+  const camera = new THREE.PerspectiveCamera(40, 16 / 9, 1, 5000); camera.position.set(0, 80, 220); camera.lookAt(0, 30, 0); camera.updateMatrixWorld(true)
+  window.run = async (keys = Object.keys(ENGINES), o = {}) => {
+    const res = []
+    for (const k of keys) {
+      try {
+        const r = await traceStill(k, { scene, camera, width: 160, height: 90, samples: 8, bounces: 3, denoise: false, toneMapping: test ? 'linear' : 'agx', ...o })
+        document.getElementById('out').append(r.canvas)
+        const px = r.canvas.getContext('2d').getImageData(80, 80, 1, 1).data
+        res.push({ k, times: r.times, samples: r.samples, backend: r.backend, center: [...px], png: r.canvas.toDataURL() })
+      } catch (e) { res.push({ k, error: String(e.stack || e) }) }
+    }
+    return res
+  }
+  // furnace-style checks: ?test=env (uniform sky 0.5, no lights) or ?test=spot (the spot only, no sky)
+  const test = new URLSearchParams(location.search).get('test')
+  if (test === 'env') { spot.visible = false; const d = new Float32Array(64 * 32 * 4).fill(0.5); const t = new THREE.DataTexture(d, 64, 32, THREE.RGBAFormat, THREE.FloatType); t.mapping = THREE.EquirectangularReflectionMapping; t.needsUpdate = true; scene.environment = t; ball.material = floor.material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 }) }
+  if (test === 'spot') { scene.environment = null; ball.material = floor.material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 }); spot.intensity = 0.3 * 250 * 250 }
+  if (test === 'env') scene.remove(spot)
+  if (test === 'point' || test === 'wide') { scene.environment = null; ball.material = floor.material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 }) }
+  if (test === 'point') { scene.remove(spot); const pl = new THREE.PointLight(0xffffff, 18750, 0, 2); pl.position.copy(spot.position); pl.userData.mutracerRadius = 1; scene.add(pl) }
+  // units: no ball, a white floor 2 m below a light aimed straight down; the floor at the
+  // bottom-centre pixel should read 1/pi (sRGB 152) in linear output
+  if (test === 'down' || test === 'rect') { scene.remove(ball); scene.environment = null; floor.material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 }) }
+  if (test === 'down') { spot.color.set(0xffffff); spot.position.set(0, 200, 80); spot.target.position.set(0, 0, 80); spot.angle = 0.8; spot.penumbra = 0; spot.intensity = 40000 }
+  if (test === 'rect') { scene.remove(spot); const r = new THREE.RectAreaLight(0xffffff, 1, 400, 400); r.position.set(0, 200, 80); r.lookAt(0, 0, 80); scene.add(r) }
+  if (test === 'wide') { spot.color.set(0xffffff); spot.intensity = 18750; spot.angle = 1.2; spot.penumbra = 0 }
+  window.ready = true
+</script>
+</body></html>

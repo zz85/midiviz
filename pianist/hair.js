@@ -667,6 +667,85 @@ export function createHair(ch, rig, { density = 1, color = '#5a3e2a', style = 'h
       object.removeFromParent(); cap.removeFromParent()
       mesh.geometry.dispose(); material.dispose(); tex.dispose(); cap.geometry.dispose(); cap.material.dispose(); shadowGeo.dispose()
     },
+    /**
+     * The strands as plain triangles for a path tracer (#045): the vertex
+     * shader above run on the CPU for the current guides, each child a
+     * ribbon facing camPos (world), in world space, with the shader's base
+     * colour per vertex (dark roots, lighter lengths, highlights). fraction:
+     * keep this share of the children (hashed, so the same ones every time);
+     * segments along each; widthScale on top of the shader's width.
+     */
+    bakeStrands(camPos, { fraction = 1, segments = 12, widthScale = 1 } = {}) {
+      const g = mesh.geometry, AG = g.attributes.aG.array, AW = g.attributes.aW.array, AO = g.attributes.aO.array, AR = g.attributes.aR.array
+      const H = uniforms.uHeadRot.value.elements, Mw = mesh.matrixWorld, width = uniforms.uWidth.value * widthScale
+      const cRoot = uniforms.uRoot.value, cTip = uniforms.uTip.value, cHi = uniforms.uHi.value
+      const sstep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t) }
+      const gp = (gi, i, out) => { const j = (gi * NP + Math.min(NP - 1, Math.max(0, i))) * 3; return out.set(X[j], X[j + 1], X[j + 2]) }
+      const p0 = v3(), p1 = v3(), p2 = v3(), p3 = v3(), acc = v3(), o = v3()
+      function cr(gi, u, out) {
+        const i = Math.floor(u), f = u - i
+        gp(gi, i - 1, p0); gp(gi, i, p1); gp(gi, i + 1, p2); gp(gi, i + 2, p3)
+        if (i < 1) p0.copy(p1).multiplyScalar(2).sub(p2)
+        if (i + 2 > NP - 1) p3.copy(p2).multiplyScalar(2).sub(p1)
+        const f2 = f * f, f3 = f2 * f
+        for (const k of ['x', 'y', 'z']) out[k] = 0.5 * (2 * p1[k] + (-p0[k] + p2[k]) * f + (2 * p0[k] - 5 * p1[k] + 4 * p2[k] - p3[k]) * f2 + (-p0[k] + 3 * p1[k] - 3 * p2[k] + p3[k]) * f3)
+        return out
+      }
+      const tmp = v3()
+      function strand(c, t, out) {
+        const u = t * (NP - 1)
+        out.set(0, 0, 0)
+        for (let k = 0; k < 3; k++) if (AW[c * 3 + k]) out.addScaledVector(cr(AG[c * 3 + k], u, tmp), AW[c * 3 + k])
+        const kind = AR[c * 4 + 3]
+        const keep = kind < 0.5 ? 1 - 0.55 * Math.pow(t, 1.3) : kind < 1.5 ? 1 - 0.85 * t : 1
+        o.set(AO[c * 3] * keep, AO[c * 3 + 1] * keep, AO[c * 3 + 2] * keep)
+        if (kind < 0.5) {
+          const ph = AR[c * 4 + 2] * 40
+          o.x += Math.sin(t * 23 + ph) * 0.12 * t; o.y += Math.cos(t * 17 + ph * 1.3) * 0.12 * t; o.z += Math.sin(t * 29 + ph * 0.7) * 0.12 * t
+        }
+        // uHeadRot * o (column-major mat3)
+        return out.add(acc.set(H[0] * o.x + H[3] * o.y + H[6] * o.z, H[1] * o.x + H[4] * o.y + H[7] * o.z, H[2] * o.x + H[5] * o.y + H[8] * o.z))
+      }
+      const keepC = c => ((Math.imul(c + 1, 2654435761) >>> 0) / 4294967296) < fraction
+      let n = 0
+      for (let c = 0; c < g.instanceCount; c++) if (keepC(c)) n++
+      const S1 = segments + 1, pos = new Float32Array(n * S1 * 6), nor = new Float32Array(n * S1 * 6), col = new Float32Array(n * S1 * 6)
+      const idx = new Uint32Array(n * segments * 6)
+      const p = v3(), pn = v3(), pb = v3(), T = v3(), V = v3(), S = v3(), N = v3(), base = v3(), hiC = v3()
+      let v = 0, q = 0
+      for (let c = 0; c < g.instanceCount; c++) {
+        if (!keepC(c)) continue
+        const rx = AR[c * 4], ry = AR[c * 4 + 1], kind = AR[c * 4 + 3]
+        const len = kind < 0.5 ? 0.72 + 0.28 * Math.pow(rx, 0.6) : 1
+        const v0 = v
+        for (let k = 0; k <= segments; k++) {
+          const aT = k / segments, t = aT * len
+          strand(c, t, p); strand(c, Math.min(t + 0.02, 1), pn); strand(c, Math.max(t - 0.02, 0), pb)
+          p.applyMatrix4(Mw); pn.applyMatrix4(Mw); pb.applyMatrix4(Mw)
+          T.subVectors(pn, pb).normalize()
+          V.subVectors(camPos, p).normalize()
+          S.crossVectors(T, V).normalize()
+          N.crossVectors(S, T).normalize()
+          const w = width * (0.7 + 0.6 * rx) * (1 - 0.8 * Math.pow(aT, 1.6))
+          const hi = sstep(0.5, 1, ry) * sstep(0.1, 0.8, aT)
+          base.set(cRoot.r, cRoot.g, cRoot.b).lerp(hiC.set(cTip.r, cTip.g, cTip.b), sstep(0, 0.9, aT))
+          base.lerp(hiC.set(cHi.r, cHi.g, cHi.b), hi * 0.5).multiplyScalar(0.96 + 0.08 * rx)
+          for (const s of [-1, 1]) {
+            pos[v * 3] = p.x + S.x * s * w; pos[v * 3 + 1] = p.y + S.y * s * w; pos[v * 3 + 2] = p.z + S.z * s * w
+            nor[v * 3] = N.x; nor[v * 3 + 1] = N.y; nor[v * 3 + 2] = N.z
+            col[v * 3] = base.x; col[v * 3 + 1] = base.y; col[v * 3 + 2] = base.z
+            v++
+          }
+        }
+        for (let k = 0; k < segments; k++) { const a = v0 + k * 2; idx.set([a, a + 1, a + 2, a + 1, a + 3, a + 2], q); q += 6 }
+      }
+      const out = new THREE.BufferGeometry()
+      out.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+      out.setAttribute('normal', new THREE.BufferAttribute(nor, 3))
+      out.setAttribute('color', new THREE.BufferAttribute(col, 3))
+      out.setIndex(new THREE.BufferAttribute(idx, 1))
+      return { geometry: out, strands: n }
+    },
     /** run the simulation for a while without rendering (after a pose jump) */
     settle(seconds = 4) { for (let i = 0; i < seconds * 60; i++) step(1 / 60) },
     update(dt) {
