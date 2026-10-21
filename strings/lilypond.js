@@ -815,7 +815,7 @@ function perform(score, { graces = false } = {}) {
         return
       }
       const e = { pitch, start: cx.t, end: cx.t + dur, voice: cx.voiceNo, accent: accentGain(arts),
-        art: { slur, stroke: strokeOf(arts), bow, source: 'score', ...(port ? { port: true } : {}), ...(orns.length ? { orn: orns } : {}),
+        art: { slur, stroke: strokeOf(arts), bow, source: 'score', vk: vk, ...(port ? { port: true } : {}), ...(orns.length ? { orn: orns } : {}),
           ...(cx.grace ? { grace: cx.grace.kind, graceAt: cx.grace.at, graceDur: dur / GRACE_K } : {}) } }
       staff.events.push(e)
       if (tie) vs.ties.set(pitch, e); else vs.ties.delete(pitch)

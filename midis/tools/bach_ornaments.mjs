@@ -1,7 +1,7 @@
 // Realize the ornaments of the Mutopia Bach files (Well-Tempered Clavier and
 // Goldberg Variations) in midis/.
 //
-//   node midis/tools/bach_ornaments.mjs [--from <git rev>] [--only bach_wtc1_03] [--dry]
+//   node midis/tools/bach_ornaments.mjs [--from <git rev>] [--only bach_wtc1_03] [--dry] [--no-kern] [--no-subjects]
 //
 // Mutopia's MIDI is LilyPond's: it plays no trills, mordents or turns, and its
 // grace notes are 55 ms blips that steal time from the note before. This reads
@@ -26,6 +26,16 @@
 //   \grace, \acciaccatura  short notes (about 70 ms) on the beat, the main note after
 //   \afterGrace            at the end of the main note
 //
+// Two more sources of signs, for the Well-Tempered Clavier (--no-kern, --no-subjects
+// turn them off):
+//   the Bach-Gesellschaft edition as CCARH encoded it (humdrum-tools/bach-wtc, read
+//   by ./kern.mjs and lined up note by note): a sign it has and Mutopia lacks is
+//   added, and its interval (T a tone, t a semitone) replaces the guess below
+//   the fugue subject: a sign on one entry of the subject goes to every entry,
+//   as players do (fugueEntries: the subject is the first voice until the next
+//   voice brings in its first four notes; an entry is the same rhythm and, up to
+//   two of them, the same intervals within 2 semitones, octaves aside)
+//
 // Auxiliary notes are diatonic: of the two candidates a semitone or a tone away,
 // the one heard more nearby (the same bar counts most) wins. Loudness comes from
 // the note carrying the ornament, so the existing dynamics are kept. The input
@@ -38,12 +48,15 @@ import { fileURLToPath } from 'node:url'
 import { inflateRawSync } from 'node:zlib'
 import { readLilyPondFiles, mainLyFile } from '../../strings/lilypond.js'
 import { zipTexts } from '../../strings/score.js'
+import { readKern } from './kern.mjs'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const root = here + '../../'
 const { Midi } = createRequire(import.meta.url)(root + 'tonejs-midi.js')
 const CACHE = here + 'mutopia/'
 const FTP = 'https://www.mutopiaproject.org/ftp/BachJS/'
+// the second source: CCARH's encodings of the Bach-Gesellschaft edition (humdrum-tools/bach-wtc)
+const KERN = 'https://raw.githubusercontent.com/humdrum-tools/bach-wtc/0b4f4d84b90b254615e7ac09730ec473c9611cb6/kern/'
 
 // file → its parts in order, as Mutopia folders under BachJS/
 const P = (bwv, ...dirs) => dirs.map(d => `BWV${bwv}/${d}`)
@@ -68,6 +81,11 @@ export const PIECES = {
   bach_goldberg: GOLDBERG,
 }
 
+// the kern file of a WTC part: bach_wtc1_03, 0 → wtc1p03
+const kernName = (file, s) => { const m = /^bach_wtc(\d)_(\d\d)/.exec(file); return m ? `wtc${m[1]}${s ? 'f' : 'p'}${m[2]}` : null }
+// fugues: the second part of a WTC file
+const isFugue = (file, s, dirs) => /^bach_wtc/.test(file) && dirs.length === 2 && s === 1
+
 // ── sources ──────────────────────────────────────────────────────────────────
 async function fetchSource(dir) {
   const out = CACHE + dir + '/'
@@ -84,6 +102,108 @@ async function fetchSource(dir) {
   writeFileSync(out + '.done', names.join('\n'))
   return out
 }
+async function fetchKern(name) {
+  const f = CACHE + 'kern/' + name + '.krn'
+  if (!existsSync(f)) {
+    mkdirSync(CACHE + 'kern', { recursive: true })
+    const r = await fetch(KERN + name + '.krn')
+    if (!r.ok) throw new Error(`${KERN}${name}.krn: HTTP ${r.status}`)
+    writeFileSync(f, await r.text())
+  }
+  return readKern(readFileSync(f, 'utf8')).notes
+}
+// the kern edition's signs on the Mutopia notes: added where Mutopia has none, and the
+// interval each sign gives (T a tone, t a semitone …) kept as art.step
+function mergeKern(src, kern, log) {
+  const ly = src.notes.filter(n => !n.art.grace)
+  const n = ly.length, m = kern.length, W = m + 1
+  const L = new Uint16Array((n + 1) * W)
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--)
+    L[i * W + j] = ly[i].pitch === kern[j].pitch ? L[(i + 1) * W + j + 1] + 1 : Math.max(L[(i + 1) * W + j], L[i * W + j + 1])
+  let added = 0, agreed = 0, mOnly = 0
+  const seen = new Set()
+  for (let i = 0, j = 0; i < n && j < m;) {
+    if (ly[i].pitch === kern[j].pitch && L[i * W + j] === L[(i + 1) * W + j + 1] + 1) {
+      const a = ly[i], k = kern[j]
+      // (an expanded repeat in the kern file maps a written note twice: the first pass decides)
+      if (!seen.has(a)) {
+        seen.add(a)
+        if (k.orn && !a.art.orn) { a.art = { ...a.art, orn: k.orn, from: 'kern' }; added++ }
+        else if (k.orn && a.art.orn) agreed++
+        else if (a.art.orn) mOnly++
+        if (k.step && a.art.orn) a.art = { ...a.art, step: k.step }
+      }
+      i++; j++
+    } else if (L[(i + 1) * W + j] >= L[i * W + j + 1]) i++
+    else j++
+  }
+  log.push(` kern: ${L[0]} of ${n} notes matched; ornaments in both ${agreed}, added from kern ${added}, Mutopia only ${mOnly}`)
+  return { added }
+}
+
+// the fugue subject's ornaments on every entry: the subject is the first voice up to the
+// second voice's entry; an entry is the same rhythm with the same intervals (up to two
+// differing by at most 2 semitones, octaves aside, for tonal answers), through its last ornamented note.
+// A sign on any entry goes to every entry that lacks it
+// how far apart two intervals are, octaves aside (a tonal answer leaps a fourth for a fifth)
+const ivDiff = (a, b) => { const d = (((a - b) % 12) + 12) % 12; return Math.min(d, 12 - d) }
+function fugueEntries(src, log) {
+  const ly = src.notes.filter(n => !n.art.grace)
+  const streams = new Map()
+  for (const n of ly) { const k = n.staff + ':' + (n.art.vk ?? n.voice); if (!streams.has(k)) streams.set(k, []); streams.get(k).push(n) }
+  // one note per onset (the top one) in each stream
+  for (const [k, ns] of streams) { const by = new Map(); for (const n of ns) { const o = by.get(n.q.toFixed(4)); if (!o || n.pitch > o.pitch) by.set(n.q.toFixed(4), n) } streams.set(k, [...by.values()].sort((a, b) => a.q - b.q)) }
+  const all = [...streams.values()]
+  const first = all.reduce((a, b) => a[0].q <= b[0].q ? a : b)
+  // the second entry: the first place in another voice where the first four notes come
+  // again (by rhythm and intervals); else where another voice first comes in
+  let subj = first
+  const head4 = first.slice(0, 4)
+  let second = Infinity
+  for (const ns of all) for (let s = 0; s + 3 < ns.length; s++) {
+    if (ns === first || ns[s].q <= first[0].q + 1e-6 || ns[s].q >= second) continue
+    let ok = true, off = 0
+    for (let k = 1; k < 4 && ok; k++) {
+      if (Math.abs((ns[s + k].q - ns[s + k - 1].q) - (head4[k].q - head4[k - 1].q)) > 1e-4) ok = false
+      const d = ivDiff(ns[s + k].pitch - ns[s + k - 1].pitch, head4[k].pitch - head4[k - 1].pitch)
+      if (d > 2 || (d && ++off > 2)) ok = false
+    }
+    if (ok) second = ns[s].q
+  }
+  if (!isFinite(second)) second = Math.min(...all.filter(s => s !== first).map(s => s[0].q))
+  subj = first.filter(n => n.q < second - 1e-6)
+  if (subj.length < 4) { log.push(' fugue: no subject found'); return 0 }
+  const L = subj.length
+  const matches = (ns, s, len) => {
+    if (s + len > ns.length) return false
+    let off = 0
+    for (let k = 1; k < len; k++) {
+      if (Math.abs((ns[s + k].q - ns[s + k - 1].q) - (subj[k].q - subj[k - 1].q)) > 1e-4) return false
+      const d = ivDiff(ns[s + k].pitch - ns[s + k - 1].pitch, subj[k].pitch - subj[k - 1].pitch)
+      if (d > 2 || (d && ++off > 2)) return false
+    }
+    return true
+  }
+  // entries of the head (the first 6 notes, or all of a shorter subject), then how far each goes
+  const head = Math.min(L, 6), entries = []
+  for (const ns of all) for (let s = 0; s < ns.length; s++) if (matches(ns, s, head)) {
+    let len = head; while (len < L && matches(ns, s, len + 1)) len++
+    entries.push({ ns, s, len }); s += head - 1
+  }
+  // the signs: per subject index, from any entry
+  const signs = new Map()
+  for (const e of entries) for (let k = 0; k < e.len; k++) { const o = e.ns[e.s + k].art.orn; if (o && !signs.has(k)) signs.set(k, o) }
+  let added = 0
+  for (const e of entries) for (const [k, o] of signs) {
+    if (k >= e.len) continue
+    const n = e.ns[e.s + k]
+    if (!n.art.orn) { n.art = { ...n.art, orn: o, from: 'subject' }; added++ }
+  }
+  const nm = n => ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'G#', 'A', 'Bb', 'B'][n.pitch % 12]
+  log.push(` fugue: subject ${L} notes (${subj.slice(0, 8).map(nm).join(' ')}${L > 8 ? ' …' : ''}), ${entries.length} entries, signs at notes ${[...signs.keys()].map(k => k + 1).join(', ') || 'none'}; added ${added}`)
+  return added
+}
+
 function readSource(dir) {
   const files = new Map(readdirSync(dir).filter(n => /\.(ly|ily|lyi)$/i.test(n)).map(n => [n, readFileSync(dir + n, 'utf8')]))
   const main = mainLyFile(files)
@@ -131,9 +251,11 @@ function neighbour(p, dir, ctx) {
   return score(b) > score(a) ? b : a
 }
 // note list for one ornament: [[pitch, on, off, velocityScale]]
-function realize(kind, pitch, on, off, unit, ctx, tiedUpper) {
+function realize(kind, pitch, on, off, unit, ctx, tiedUpper, step = null) {
   const len = off - on
-  const up = neighbour(pitch, 1, ctx), lo = neighbour(pitch, -1, ctx)
+  // the sign's own interval (kern), else the key heard around it
+  const lowerSign = kind === 'mordent' || kind === 'upmordent' || kind === 'downmordent'
+  const up = step && !lowerSign ? pitch + step : neighbour(pitch, 1, ctx), lo = step && lowerSign ? pitch - step : neighbour(pitch, -1, ctx)
   const seq = (pitches, u, holdLast = true) => {
     const out = []; let t = on
     const k = Math.min(pitches.length, Math.max(1, Math.floor(len / u)))
@@ -325,10 +447,10 @@ function segment(src, fn, log) {
     const unit = unitFor(secPerQAt(n.q), off - on)
     const p = prevOf.get(i), prev = p != null ? ly[p] : null
     const ctx = ctxFor(n.measure, n.q)
-    const upper = neighbour(n.pitch, 1, ctx)
+    const upper = n.art.step && !/mordent$/.test(kind) ? n.pitch + n.art.step : neighbour(n.pitch, 1, ctx)
     // the upper note just sounded (the note before, or an appoggiatura): the trill starts on the main note
     const tiedUpper = (a?.last != null ? a.last === upper : prev && prev.pitch === upper && Math.abs(prev.q + prev.len - n.q) < 1e-4)
-    const notes = realize(kind, n.pitch, on, off, unit, ctx, tiedUpper)
+    const notes = realize(kind, n.pitch, on, off, unit, ctx, tiedUpper, n.art.step)
     if (!notes) { unknown.set(kind, (unknown.get(kind) || 0) + 1); continue }
     drop.add(j); nOrn++
     const vk = a?.lean ? 0.85 : 1
@@ -358,6 +480,7 @@ async function main() {
   const args = process.argv.slice(2)
   const opt = k => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : null }
   const from = opt('--from') ?? '04b619f', only = opt('--only'), dry = args.includes('--dry')
+  const useKern = !args.includes('--no-kern'), useSubjects = !args.includes('--no-subjects')
   const sources = new Map()
   for (const [file, dirs] of Object.entries(PIECES)) {
     if (only && only !== file) continue
@@ -369,8 +492,14 @@ async function main() {
     const all = []
     const total = { ly: 0, file: 0, matched: 0, extra: 0, ornaments: 0, graces: 0 }
     for (const [s, dir] of dirs.entries()) {
-      if (!sources.has(dir)) sources.set(dir, readSource(await fetchSource(dir)))
       const segLog = []
+      if (!sources.has(dir)) {
+        const src = readSource(await fetchSource(dir))
+        const kn = useKern && kernName(file, s)
+        if (kn) mergeKern(src, await fetchKern(kn), segLog)
+        if (useSubjects && isFugue(file, s, dirs)) fugueEntries(src, segLog)
+        sources.set(dir, src)
+      }
       const r = segment(sources.get(dir), segs[s], segLog)
       for (const l of segLog) log.push(`  ${dir.split('/')[1]}:${l.slice(1)}`)
       all.push(...r.notes)
