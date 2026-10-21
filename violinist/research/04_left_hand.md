@@ -59,6 +59,14 @@ Two facts about the model shape the fix. The VRoid arms are short for a full-siz
 - **Fingers** (`handFinger`). Each finger splays at its base joint about the back-of-hand axis, at most ±35°, to bring its stop into its own flexion plane. It then bends as a hinge in that plane: the base joint at −15…90°, the middle joint 0…112°, the end joint 0.72 × the middle one. A stop behind the knuckle is reached by curling under, never by turning the finger round. The phalanges roll about the finger's own hinge.
 - **The thumb** opposes at its base (CMC) joint, just enough to come within reach and at most 50°. It then bends toward the palm onto its place under the neck.
 
+- **Holding the frame** (added after a review of the live motion: the knuckles rolled from note to note, and lifted fingers straightened). A violinist's hand stays put within a position while the fingers fall and lift. So:
+  - a finger in the air counts for 5% of a pressed one in the search, and a finger #033 keeps held from an earlier note counts for 20%;
+  - the hand turns at most ~90°/s within a position. It turns faster only when holding still would leave a pressed finger off its stop (the held pose scores 15+ worse than the best), and at up to ~180°/s while it shifts;
+  - a lifted finger whose slot is out of easy reach keeps a relaxed curl (base 35°, middle 75°) instead of reaching out flat, and a held finger the hand cannot keep down is lifted the same way;
+  - the ring and little fingers may fan 38° and 43° at the base, the index and middle 32°.
+
+  Measured on 20 s of each piece at 60 frames a second, the share of frames where the knuckle line turns faster than 90°/s fell from 3.0% to 0.8% (Preludio) and from 16.2% to 6.4% (Paganini, mostly in shifts).
+
 Cost: about 1.4 ms per frame on top of the rest of the rig (Chromium, software rendering).
 
 ## 4. Checks (`violinist/test/posture.mjs`)
@@ -78,7 +86,7 @@ For the hand:
 - the thumb within 2 cm of its place;
 - the elbow ≥ 8 cm below the violin's top.
 
-A check fails if more than 2% of samples are out of range, or more than 0.5% are far out. For the fingertip the limits are 3% and 1.5%, because the fingerings ask for the odd chord, crossed double stop or shift that no hand makes cleanly. Stops that #033's own hand cannot reach are counted apart as stretches.
+Over 20 s at 60 frames a second, the hand may turn faster than 150°/s on at most 1% of the frames inside a position. A check fails if more than 2% of samples are out of range, or more than 0.5% are far out. For the fingertip the limits are 3% and 1.5%, because the fingerings ask for the odd chord, crossed double stop or shift that no hand makes cleanly. Stops that #033's own hand cannot reach are counted apart as stretches.
 
 Results after the fix (median / 95th percentile):
 

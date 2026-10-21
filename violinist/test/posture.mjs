@@ -12,13 +12,18 @@
 //   flatter, ≥ 10°). A stop that #033's own hand cannot reach from its frame
 //   (an extension), or one more than 1.5 cm behind its knuckle toward the nut
 //   (a finger #033 leaves held down behind a shift), is counted apart as
-//   a stretch: the finger reaches toward it, and it is not checked;
+//   a stretch: the finger reaches toward it, and it is not checked. A finger
+//   #033 keeps held down that this hand cannot keep there is lifted by the rig
+//   and not checked either;
 // and for the hand:
 //   the wrist bent ≤ 25° (≤ 15° on 90 % of the frames), the index knuckle
 //   within 4 cm of the nut-side contact the posture asks for (it may slide
 //   toward the bridge for a short-fingered model), the little knuckle no more
 //   than 2 cm above the fingerboard, the thumb's tip within 2 cm of its place
 //   under the neck, the elbow under the violin (≥ 8 cm below its top).
+// Then 20 s at 60 frames a second, as it plays live: the hand may not turn
+// (its knuckle line or its palm) faster than 150°/s on more than 1 % of the
+// frames inside a position (it holds its frame there; shifts are left out).
 // And the bow hand (research/05_bow_hand.md §4): each fingertip on its contact
 // (≤ 0.5 cm), the base joint −15…90°, no finger leaning > 30° out of its
 // plane, the middle joint ≥ 25°; the thumb's tip on the frog (≤ 1 cm) and
@@ -87,7 +92,7 @@ for (const run of runs) {
       frames++
       for (let i = 0; i < 4; i++) {
         const F = m.fingers[i], q = F.q, f = i + 1
-        if (!q || !(J.fingers[f].dot.material.opacity > 0)) continue     // pressing a string
+        if (!q || !(J.fingers[f].dot.material.opacity > 0) || F.held) continue     // pressing a string (a held finger the rig let go is lifted)
         pressed++
         const stretch = J.fingers[f].base.distanceTo(J.fingers[f].cur) > 0.98 * LEN033[i] * rig.handScale || J.fingers[f].cur.x < J.fingers[f].base.x - 1.5
         const tip = F.pts[3].distanceTo(J.fingers[f].cur)
@@ -131,6 +136,23 @@ for (const run of runs) {
         note('bElbow', ea, t, (ea > 165 && ea - 165) || (ea < 60 && 60 - ea))
       }
     }
+    // live rate: 20 s at 60 fps from 4 s
+    let lastK = null, lastP = null, prevT = null
+    const turn = []
+    for (let t = 4; t < Math.min(24, songDuration); t += 1 / 60) {
+      frame(t, prevT == null ? 1 / 60 : t - prevT); prevT = t
+      vrm.scene.updateMatrixWorld(true); V.group.updateMatrixWorld(true); inv.copy(V.group.matrixWorld).invert()
+      const k1 = L(wp(H('leftIndexProximal'))), k4 = L(wp(H('leftLittleProximal'))), w = L(wp(H('leftHand')))
+      const kl = k4.clone().sub(k1).normalize(), pal = kl.clone().cross(k1.clone().lerp(k4, 0.5).sub(w)).normalize()
+      // (only within a position: while the hand shifts it may turn faster)
+      const fx = J.fingers[1].base.x, still = window.__fx != null && Math.abs(fx - window.__fx) < 0.02 && Math.abs(fx - (window.__fx2 ?? fx)) < 0.02
+      window.__fx2 = window.__fx; window.__fx = fx
+      if (lastK && still) turn.push(Math.max(kl.angleTo(lastK), pal.angleTo(lastP)) * 180 / Math.PI * 60)
+      lastK = kl; lastP = pal
+    }
+    vals.turn = turn
+    const fast = turn.filter(x => x > 150).length / Math.max(1, turn.length)
+    if (fast > 0.01) { out.turn = turn.filter(x => x > 150).length; worst.turn = { v: Math.max(...turn), t: 0, by: 0 } }
     const pct = (a, p) => { const s = a.slice().sort((x, y) => x - y); return s.length ? +s[Math.min(s.length - 1, Math.floor(p * s.length))].toFixed(1) : null }
     const stats = {}
     for (const [k, a] of Object.entries(vals)) stats[k] = [pct(a, 0.05), pct(a, 0.5), pct(a, 0.95)]
@@ -139,7 +161,7 @@ for (const run of runs) {
     const farFrac = Object.fromEntries(Object.entries(far).map(([k, n]) => [k, +(100 * n / vals[k].length).toFixed(2)]))
     return { frames, stats, worst, frac, farFrac, bend90, stretch: +(100 * stretches / Math.max(1, pressed)).toFixed(1) }
   }, SECONDS)
-  const FRACMAX = { tip: 3 }, FARMAX = { tip: 1.5 }
+  const FRACMAX = { tip: 3, turn: 1 }, FARMAX = { tip: 1.5, turn: 100 }
   const over = k => r.frac[k] > (FRACMAX[k] ?? 2) || (r.farFrac[k] || 0) > (FARMAX[k] ?? 0.5)
   const bad = Object.entries(r.worst).filter(([k]) => over(k)).map(([k, w]) => `${k}: ${r.frac[k]} % of samples out of range (${r.farFrac[k] || 0} % far), worst ${w.v} at ${w.t} s`)
   const notes = Object.entries(r.worst).filter(([k]) => !over(k)).map(([k, w]) => `${k} ${r.frac[k]} %`)

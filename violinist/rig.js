@@ -66,12 +66,12 @@ const FINGERS = ['Index', 'Middle', 'Ring', 'Little']
  * the knuckle line (the hinge of an unsplayed finger).
  */
 const _fa = new THREE.Vector3(), _fd = new THREE.Vector3(), _fl = new THREE.Vector3(), _fu = new THREE.Vector3(), _fv = new THREE.Vector3()
-export function handFinger(B, T, L, k, d, N, out) {
+export function handFinger(B, T, L, k, d, N, out, spMax = 0.61) {
   _fa.subVectors(T, B)
   _fd.copy(d).addScaledVector(N, -d.dot(N)).normalize()
   _fl.crossVectors(_fd, N)
   const f = _fa.dot(_fd), l = _fa.dot(_fl)
-  const sp = Math.abs(f) < 1e-6 ? Math.sign(l) * 0.61 : Math.max(-0.61, Math.min(0.61, Math.atan(l / f)))
+  const sp = Math.abs(f) < 1e-6 ? Math.sign(l) * spMax : Math.max(-spMax, Math.min(spMax, Math.atan(l / f)))
   _fu.copy(_fd).multiplyScalar(Math.cos(sp)).addScaledVector(_fl, Math.sin(sp))      // in-plane forward
   _fv.copy(N).negate()                                                                // in-plane toward the palm
   const tu = _fa.dot(_fu), tv = _fa.dot(_fv), r = Math.hypot(tu, tv)
@@ -397,6 +397,9 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
   // neck, keeps the elbow under the violin and the wrist out of its body, and
   // does not jump from the last frame.
   const LH = { th: 0.35, ya: 0.5, ro: 0.15, sh: 1, init: false, n: 0 }
+  // how far each finger may fan at its base joint (index … little, radians):
+  // the little finger abducts furthest
+  const SPLAY = [0.55, 0.55, 0.66, 0.75]
   const _qf = new THREE.Quaternion(), _qi = new THREE.Quaternion(), _o = v3(), _fp = [v3(), v3(), v3(), v3()]
   const _l = v3(), _n = v3(), _bt = new THREE.Matrix4(), _br = new THREE.Matrix4(), _pp = v3()
   function handFrame(th, ya, ro, mat) {
@@ -441,7 +444,10 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
       turn(m.shoulder, new THREE.Euler(0, -st.lClav, 0, 'YXZ'))
     }
     const S = wp(m.upper)
-    const targets = [1, 2, 3, 4].map(f => ({ T: J.fingers[f].cur.clone().applyMatrix4(mat), on: pose.fingers[f].press > 0, len: m.fingers[f - 1].len.reduce((a, b) => a + b, 0) }))
+    // (a finger #033 keeps down from an earlier note, 'held', is let go when
+    // the hand needs to be elsewhere: it counts for much less than the note
+    // being played)
+    const targets = [1, 2, 3, 4].map(f => ({ T: J.fingers[f].cur.clone().applyMatrix4(mat), on: pose.fingers[f].press > 0, held: !!pose.fingers[f].held, len: m.fingers[f - 1].len.reduce((a, b) => a + b, 0) }))
     const thumbT = J.thumb.target.clone().applyMatrix4(mat)
     const thumbLen = (m.thumb.len[0] + m.thumb.len[1]) + m.thumbRest.distanceTo(m.kRest[0]) * 0.55
     const elbowRef = J.elbow.clone().applyMatrix4(mat)
@@ -487,15 +493,17 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
       const N = m.dorsalRest.clone().applyQuaternion(R)
       for (let i = 0; i < 4; i++) {
         const Kf = W.clone().add(_pp.copy(m.kRest[i]).applyQuaternion(R))
-        const tg = targets[i], w = tg.on ? 1 : 0.3
-        const q = handFinger(Kf, tg.T, m.fingers[i].len, 0.72, h, N, _fp)
+        // (a finger in the air barely moves the hand: a violinist's hand stays
+        // put as fingers lift and fall; it hovers where the hand leaves it)
+        const tg = targets[i], w = tg.on ? (tg.held ? 0.2 : 1) : 0.05
+        const q = handFinger(Kf, tg.T, m.fingers[i].len, 0.72, h, N, _fp, SPLAY[i])
         // (past a centimetre the stop is an extension the hand cannot make: reach
         // toward it, but not at the cost of the whole hand)
         c += add('f' + (i + 1) + 'reach', w * (150 * Math.min(q.miss, 0.6) + 25 * clamp(q.miss - 0.6, 0, 1.4) + 3 * Math.max(0, q.miss - 2)))
         // base joint flexion −10…85°, splay ≤ 22°, middle joint 30…100°
         c += add('f' + (i + 1) + 'shape', w * (3 * Math.max(0, q.flex - 80) + 6 * Math.max(0, q.flex - 88) + 3 * Math.max(0, -5 - q.flex) + 6 * Math.max(0, -12 - q.flex) + 3 * Math.max(0, Math.abs(q.lean) - 20) + 0.6 * Math.max(0, 30 - q.pip)))
         if (why) why['f' + (i + 1)] = [Math.round(q.flex), Math.round(q.splay), Math.round(q.pip), +q.miss.toFixed(2)]
-        if (i === 3) { const kl = Kf.applyMatrix4(toLocalM); c += add('little', 40 * Math.max(0, kl.y - (V.fbY(kl.x, 0) + 1.2 * s))) }
+        if (i === 3) { const kl = Kf.applyMatrix4(toLocalM); c += add('little', 70 * Math.max(0, kl.y - (V.fbY(kl.x, 0) + 1.0 * s))) }
       }
       // the thumb reaches under the neck
       const Tb = W.clone().add(_pp.copy(m.thumbRest).applyQuaternion(R))
@@ -529,8 +537,24 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
       tryP(v[0], v[1], v[2], Math.max(-1.5 * s, Math.min(3.5 * s, v[3])))
     }
     // smooth the chosen pose (a hand does not snap to a new shape)
-    const a = LH.init ? Math.min(1, dt * 14) : 1
-    for (const k of ['th', 'ya', 'ro', 'sh']) LH[k] += (best[k] - LH[k]) * a
+    // (a hand turns at most ~80°/s within a position, faster while it shifts;
+    // the fingers then reach for the stops from wherever the hand is)
+    const a = LH.init ? Math.min(1, dt * 10) : 1
+    const shifting = LH.u != null && Math.abs(pose.anchorU - LH.u) > 0.02
+    LH.u = pose.anchorU
+    // (faster when the hand left where it is would leave a pressed finger
+    // off its stop: last frame's fit, against a good one's ~20–40)
+    // How much worse would the hand be, held where it is, than the best pose?
+    // Little (a finger lifting, a neighbour landing): it turns slowly, at
+    // most ~90°/s. A lot (a pressed finger would miss its stop): it moves as
+    // fast as it needs, as a player's hand does to reach a note
+    const held = LH.init ? evaluate(LH.th, LH.ya, LH.ro, LH.sh, false).c : Infinity
+    const urge = 1 + clamp((held - best.c - 15) / 25, 0, 4)
+    const rate = (shifting ? 3.2 : 1.6 * urge) * dt, srate = (shifting ? 30 : 6 * urge) * dt
+    for (const k of ['th', 'ya', 'ro', 'sh']) {
+      const lim = LH.init ? (k === 'sh' ? srate : rate) : Infinity
+      LH[k] += clamp((best[k] - LH[k]) * a, -lim, lim)
+    }
     LH.init = true
     const out = evaluate(LH.th, LH.ya, LH.ro, LH.sh, false)
     LH.cost = out.c
@@ -576,6 +600,29 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
    * the hand (so it may splay at the base joint but never bends sideways at
    * the middle and end joints), with the end joint coupled to the middle one.
    */
+  // A finger that is not pressing hovers over its slot, curled, a little above
+  // the strings (#033's target). When that slot is out of comfortable reach of
+  // this hand (the finger would have to straighten, or fan past its range, to
+  // get there), it keeps a violinist's relaxed curl instead (base 35°, middle
+  // 75°, end 54°), fanned toward the slot as far as it goes, rather than
+  // reaching out flat across the neck
+  const _fq = [v3(), v3(), v3(), v3()]
+  const smoothstep = x => x * x * (3 - 2 * x)
+  function freeTarget(m, i, JF, base, d, N, on) {
+    const T = JF.cur
+    if (on) return T
+    const F = m.fingers[i]
+    const q = handFinger(base, T, F.len, 0.72, d, N, _fq, SPLAY[i])
+    const bad = clamp(Math.max((55 - q.pip) / 25, (Math.abs(q.splay) - THREE.MathUtils.radToDeg(SPLAY[i]) + 2) / 6, q.miss / 1.2), 0, 1)
+    if (bad <= 0) return T
+    const fd = d.clone().addScaledVector(N, -d.dot(N)).normalize(), fl = fd.clone().cross(N)
+    const sp = THREE.MathUtils.degToRad(q.splay)
+    const u = fd.clone().multiplyScalar(Math.cos(sp)).addScaledVector(fl, Math.sin(sp)), w = N.clone().negate()
+    const D = Math.PI / 180, a = [35 * D, 110 * D, 164 * D]
+    const tip = base.clone()
+    for (let j = 0; j < 3; j++) tip.addScaledVector(u, F.len[j] * Math.cos(a[j])).addScaledVector(w, F.len[j] * Math.sin(a[j]))
+    return T.clone().lerp(tip, smoothstep(bad))
+  }
   function fingersTo(m, mat, J, R) {
     toLocalM.copy(mat).invert()
     const handR = R || wq(m.hand).multiply(_q.copy(rest.get(m.hand).q).invert())
@@ -586,7 +633,12 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
     for (let i = 0; i < 4; i++) {
       const F = m.fingers[i], f = i + 1
       const base = wp(F.bones[0]).applyMatrix4(toLocalM)
-      F.q = handFinger(base, J.fingers[f].cur, F.len, 0.72, d, N, F.pts)
+      // a held finger out of this hand's easy reach is lifted (it curls, as a free one)
+      const JF = J.fingers[f], held = JF.dot.material.opacity > 0 && JF.dot.material.opacity < 0.9
+      let on = JF.dot.material.opacity > 0
+      if (held) { const q = handFinger(base, JF.cur, F.len, 0.72, d, N, _fq, SPLAY[i]); if (q.miss > 0.3 || q.pip < 30) on = false }
+      F.held = held && !on
+      F.q = handFinger(base, freeTarget(m, i, JF, base, d, N, on), F.len, 0.72, d, N, F.pts, SPLAY[i])
       // roll each phalanx about the finger's own hinge (its side, as the knuckle line's)
       const W = F.pts.map(p => p.clone().applyMatrix4(mat))
       const hinge = W[1].clone().sub(W[0]).cross(W[2].clone().sub(W[1]))
