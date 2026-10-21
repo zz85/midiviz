@@ -396,6 +396,7 @@
       <div class="field stackOnly" title="How the frame is shared: her picture's height against the hands' (60 / 40 gives her face more room; 40 / 60 more of the keyboard)"><label>Split (her / hands)</label><select id="exSplit"><option value="50" selected>50 / 50</option><option value="60">60 / 40</option><option value="40">40 / 60</option><option value="67">2/3 / 1/3</option></select></div>
       <div class="field stackOnly" title="Camera: her hands filmed, with their own camera plan. Lesson view: the keyboard from above her head with falling notes in each hand's colour (as #030's lesson mode), the finger numbers on them, lit keys and sparks"><label>Hands half</label><select id="exHandsHalf"><option value="camera" selected>Camera (her hands)</option><option value="lesson">Lesson view (falling notes)</option></select></div>
       <div class="field stackOnly lessonOnly" title="First person: from just behind her head, as she sees the keys, the notes falling down a lane that stands up behind them (as #030's First Person). From above: high over the keys, the lane lying flat on the piano"><label>Lesson view</label><select id="exLessonView"><option value="first" selected>First person (upright lane)</option><option value="top">From above (flat lane)</option></select></div>
+      <div class="field stackOnly lessonOnly" title="How far the falling-note lane rises behind the keys, about the line where the notes land: 0° lies flat on the piano (a piano roll seen from above), 62° stands nearly upright (the notes fall onto the keys like a wall of light, #030's First Person), 90° is a wall straight up. Picking a Lesson view sets its own angle"><label>Lane tilt <span class="val" id="exLaneTiltV"></span></label><input type="range" id="exLaneTilt" min="0" max="90" step="1" value="62"></div>
       <label class="chk" title="Composer and title in the top band for the first 3.5 s (the Short starts on the music: no title card)"><input type="checkbox" id="exShortTitle" checked>Title over the first seconds</label>
       <div class="field" title="Goes into the description saved next to the video (name-short.txt)"><label>Link to the full video</label><input type="text" id="exFullUrl" placeholder="https://youtu.be/…" style="width:100%;box-sizing:border-box;background:#2b2b2b;color:#eee;border:1px solid #444;border-radius:6px;padding:4px 6px;font:inherit"></div>
     </div>
@@ -1678,7 +1679,7 @@
       ['sf', 'sf'], ['avsync', 'avsync'],
       ['dofamt', 'dofAmt'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
       ['vol', 'vol'], ['room', 'room'], ['seat', 'seat'], ['rv', 'rvAmt'], ['decay', 'rvDecay'], ['tone', 'rvTone'], ['boost', 'boost'], ['amb', 'amb'], ['applause', 'applause'],
-      ['exformat', 'exFormat'], ['exlayout', 'exLayout'], ['exsplit', 'exSplit'], ['exhands', 'exHandsHalf'], ['exlview', 'exLessonView'], ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exsub', 'exSub'], ['excard', 'exCard'], ['excaps', 'exCaps'], ['exvtt', 'exVtt'], ['exlen', 'exLen'], ['exhold', 'exHold'],
+      ['exformat', 'exFormat'], ['exlayout', 'exLayout'], ['exsplit', 'exSplit'], ['exhands', 'exHandsHalf'], ['exlview', 'exLessonView'], ['exltilt', 'exLaneTilt'], ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exsub', 'exSub'], ['excard', 'exCard'], ['excaps', 'exCaps'], ['exvtt', 'exVtt'], ['exlen', 'exLen'], ['exhold', 'exHold'],
       ['notes', 'linerMode'], ['itstyle', 'itStyle'], ['itstylea', 'itStyleA'], ['itcol', 'itTheme'], ['itpos', 'itPos'], ['itheads', 'itHeads'], ['extitle', 'exTitle'],
     ].filter(([, id]) => $(id))
     const OUTFIT_KEYS = { dress: 'dress', slit: 'slit', fabric: 'fabric', dcol: 'color', shoes: 'shoes', hair: 'hair', hcol: 'hairColor' }
@@ -1874,7 +1875,7 @@
         const LV = LESSON_VIEWS[$('exLessonView').value] || LESSON_VIEWS.first
         lessonTgt.fromArray(LV.target); lessonCam.fromArray(LV.pos)
         camera.fov = LV.fov; camera.updateProjectionMatrix()
-        lesson.setTilt(LV.tilt)
+        lesson.setTilt(+$('exLaneTilt').value)
         if (LV.fit === 'fov') {
           // (in front of her face: the lens widened until both ends of the keyboard
           // fit, and tilted so its front edge sits near the bottom of the half and
@@ -2238,6 +2239,13 @@
     const applyLayoutUi = () => { document.body.classList.toggle('layoutstack', $('exLayout').value === 'stack'); document.body.classList.toggle('handslesson', $('exHandsHalf').value === 'lesson') }
     $('exLayout').onchange = () => { applyLayoutUi(); if (shortFrame) applyShortPlan() }
     $('exHandsHalf').onchange = () => { applyLayoutUi(); if (shortFrame) applyShortPlan() }
+    // Lane tilt: each lesson view brings its own angle (first person 62°, from above 0°); the slider changes it
+    const showTilt = () => { $('exLaneTiltV').textContent = $('exLaneTilt').value + '°' }
+    $('exLaneTilt').addEventListener('input', showTilt)
+    $('exLessonView').addEventListener('change', () => { $('exLaneTilt').value = (LESSON_VIEWS[$('exLessonView').value] || LESSON_VIEWS.first).tilt; showTilt() })
+    // (the address bar's controls were set before these handlers: a view without its own tilt takes the view's)
+    if (params.has('exlview') && !params.has('exltilt')) $('exLaneTilt').value = (LESSON_VIEWS[$('exLessonView').value] || LESSON_VIEWS.first).tilt
+    showTilt()
     $('exSplit').onchange = () => { if (stacked) { const { x, y } = renderer.getSize(_sz); resize(x, y, !exporting); applyShortPlan() } }
     applyLayoutUi()
     function liveResize() {
@@ -2349,7 +2357,8 @@
           if (params.get('exlayout') === 'stack') $('exLayout').value = 'stack'
           if (params.get('exsplit')) $('exSplit').value = params.get('exsplit')
           if (params.get('exhands')) $('exHandsHalf').value = params.get('exhands')
-          if (params.get('exlview')) $('exLessonView').value = params.get('exlview')
+          if (params.get('exlview')) { $('exLessonView').value = params.get('exlview'); $('exLaneTilt').value = (LESSON_VIEWS[params.get('exlview')] || LESSON_VIEWS.first).tilt }
+          if (params.has('exltilt')) $('exLaneTilt').value = params.get('exltilt')
           shortFrame = true; applyShortPlan()
           resize(innerWidth, innerHeight)
         }
