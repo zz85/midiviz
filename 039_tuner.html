@@ -33,7 +33,20 @@
     [hidden] { display: none !important; }
     #stage { position: absolute; inset: 0; display: grid; grid-template-rows: 1fr auto auto auto; justify-items: center; align-items: end; padding: 24px 24px 18px 360px; box-sizing: border-box; gap: 10px; }
     body.collapsed #stage { padding-left: 24px; }
-    #readout { text-align: center; user-select: none; align-self: center; }
+    #readout { text-align: center; user-select: none; align-self: center; position: relative; }
+    /* the smiley sits right of the note name, pops in when in tune */
+    #smile { position: absolute; left: 100%; top: 50%; width: min(13vh, 12vw); height: min(13vh, 12vw); margin: calc(-0.5 * min(13vh, 12vw)) 0 0 min(3vh, 2vw);
+      opacity: 0; transform: scale(0.6); transition: opacity 0.18s, transform 0.25s cubic-bezier(0.3, 1.6, 0.5, 1); pointer-events: none; filter: drop-shadow(0 0 18px rgba(111, 191, 99, 0.45)); }
+    #smile.on { opacity: 1; transform: scale(1); }
+    #noteRow { position: relative; display: inline-block; }
+    /* concert A, always on screen (also when the panel is minimised) */
+    #playA { position: absolute; top: calc(12px + env(safe-area-inset-top)); right: calc(12px + env(safe-area-inset-right)); z-index: 3;
+      background: rgba(29, 27, 25, 0.9); color: #e8e2d6; border: 1px solid #4a443b; border-radius: 22px; padding: 7px 14px 7px 12px; cursor: pointer;
+      font: 600 17px/1 'Cormorant Garamond', Georgia, serif; display: flex; align-items: center; gap: 7px; -webkit-tap-highlight-color: transparent; }
+    #playA small { font: 11px monospace; color: #9c958a; }
+    #playA svg { width: 14px; height: 14px; }
+    #playA.on { background: #c9a24a; color: #111; border-color: #c9a24a; box-shadow: 0 0 0 4px rgba(201, 162, 74, 0.25); }
+    #playA.on small { color: #3a2f16; }
     #note { font: 600 min(30vh, 22vw)/0.9 'Cormorant Garamond', Georgia, serif; color: #f3e6c4; letter-spacing: 0.01em; transition: color 0.15s; }
     #note sub { font-size: 0.32em; color: #9c958a; vertical-align: baseline; margin-left: 0.04em; }
     #note.dim { color: #3a3631; }
@@ -68,7 +81,11 @@
     #panel .sub { font-size: 11px; color: #9c958a; margin-bottom: 6px; }
     #panel a { color: #b9ad98; }
     body.collapsed #panel .body { display: none; }
-    body.collapsed #panel { width: auto; }
+    /* minimised: one small pill, top left */
+    body.collapsed #panel { width: auto; padding: 6px 10px; }
+    body.collapsed #panel .sub { display: none; }
+    body.collapsed #panel h1 { display: inline; font-size: 15px; }
+    body.collapsed #toggle { float: none; margin-left: 6px; }
     #toggle { float: right; background: none; border: 0; color: #d8b56a; font-size: 15px; cursor: pointer; }
     h2 { font: 600 10.5px/1 "Helvetica Neue", Arial, sans-serif; letter-spacing: 0.12em; text-transform: uppercase; color: #b9a57a; margin: 12px 0 4px; }
     .row { display: flex; align-items: center; gap: 6px; margin: 5px 0; flex-wrap: wrap; }
@@ -97,7 +114,7 @@
     #start button { font: 300 20px Montserrat, "Helvetica Neue", Arial, sans-serif; letter-spacing: 0.08em; padding: 12px 26px; border-radius: 30px; background: #c9a24a; color: #111; border: 0; cursor: pointer; }
     #start button.alt { background: none; color: #d8b56a; border: 1px solid #6b5a36; font-size: 14px; padding: 8px 18px; }
     #start p { color: #9c958a; max-width: 420px; text-align: center; margin: 0; }
-    #status { position: absolute; top: 12px; right: 12px; padding: 6px 10px; border-radius: 6px; background: rgba(14, 13, 12, 0.88); border: 1px solid #3d3933; font-size: 12px; z-index: 5; max-width: 440px; }
+    #status { position: absolute; top: 58px; right: 12px; padding: 6px 10px; border-radius: 6px; background: rgba(14, 13, 12, 0.88); border: 1px solid #3d3933; font-size: 12px; z-index: 5; max-width: 440px; }
     #status.error { border-color: #c44; color: #f99; }
     /* phones: the panel starts collapsed (a small button at the top left)
        and opens over the stage, full width; the stage keeps clear of
@@ -105,10 +122,9 @@
     @media (max-width: 760px) {
       #stage { padding: calc(52px + env(safe-area-inset-top)) 10px calc(10px + env(safe-area-inset-bottom)); gap: 8px; }
       #panel { top: calc(8px + env(safe-area-inset-top)); left: 8px; right: 8px; width: auto; max-height: calc(100% - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
-      body.collapsed #panel { right: auto; padding: 6px 10px; }
-      body.collapsed #panel .sub { display: none; }
-      body.collapsed #panel h1 { display: inline; font-size: 15px; }
-      body.collapsed #toggle { float: none; margin-left: 6px; }
+      body.collapsed #panel { right: auto; }
+      #playA { top: calc(8px + env(safe-area-inset-top)); right: calc(8px + env(safe-area-inset-right)); padding: 6px 12px 6px 10px; }
+      #smile { width: min(11vh, 17vw); height: min(11vh, 17vw); margin: calc(-0.5 * min(11vh, 17vw)) 0 0 1vw; }
       #note { font-size: min(22vh, 34vw); }
       #cents { font-size: min(5.5vh, 9vw); }
       #freq { font-size: 12px; }
@@ -119,6 +135,26 @@
       #strings button { min-width: 0; flex: 1 1 0; padding: 4px 2px; max-width: 80px; }
       #strings button small { display: none; }
       #strings button canvas { width: 100%; height: 18px; }
+    }
+    /* landscape phones: the note on the left, strings / gauge / strobe on the
+       right, no history */
+    @media (max-height: 520px) and (min-width: 561px) {
+      #stage { grid-template-columns: 1fr 1.25fr; grid-template-rows: 1fr auto auto 1fr; padding: calc(48px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left)); gap: 6px 16px; align-items: center; }
+      body.collapsed #stage { padding-left: calc(12px + env(safe-area-inset-left)); }
+      #readout { grid-column: 1; grid-row: 1 / 5; }
+      #strings { grid-column: 2; grid-row: 1; align-self: end; width: 100%; flex-wrap: nowrap; gap: 4px; }
+      #strings button { min-width: 0; flex: 1 1 0; padding: 4px 2px; }
+      #strings button small { display: none; }
+      #strings button canvas { width: 100%; height: 16px; }
+      #gauge { grid-column: 2; grid-row: 2; width: 100%; height: min(30vh, 120px); }
+      #strobe { grid-column: 2; grid-row: 3; width: 100%; height: 24px; }
+      #history { display: none; }
+      #note { font-size: min(34vh, 18vw); }
+      #cents { font-size: min(8vh, 4.5vw); }
+      #freq { font-size: 11px; }
+      #smile { width: min(16vh, 8vw); height: min(16vh, 8vw); margin: calc(-0.5 * min(16vh, 8vw)) 0 0 1vw; }
+      #playA { top: calc(8px + env(safe-area-inset-top)); }
+      #panel { top: calc(8px + env(safe-area-inset-top)); max-height: calc(100% - 16px); }
     }
     @media (max-width: 760px) and (max-height: 700px) {
       #note { font-size: min(18vh, 30vw); }
@@ -131,7 +167,16 @@
 <body>
   <div id="stage">
     <div id="readout">
-      <div id="note" class="dim">–</div>
+      <div id="noteRow">
+        <div id="note" class="dim">–</div>
+        <svg id="smile" viewBox="0 0 100 100" aria-label="In tune" role="img">
+          <circle cx="50" cy="50" r="45" fill="#6fbf63"/>
+          <circle cx="50" cy="50" r="45" fill="none" stroke="#9be38f" stroke-width="4"/>
+          <ellipse cx="35" cy="40" rx="6" ry="8.5" fill="#0f2a0c"/>
+          <ellipse cx="65" cy="40" rx="6" ry="8.5" fill="#0f2a0c"/>
+          <path d="M 27 58 Q 50 84 73 58" fill="none" stroke="#0f2a0c" stroke-width="7" stroke-linecap="round"/>
+        </svg>
+      </div>
       <div id="cents"></div>
       <div id="freq"></div>
     </div>
@@ -140,6 +185,8 @@
     <canvas id="strobe"></canvas>
     <canvas id="history"></canvas>
   </div>
+
+  <button id="playA" title="Play concert A (A)"><svg viewBox="0 0 16 16"><path d="M2 6h3l4-3.5v11L5 10H2z" fill="currentColor"/><path d="M11.5 5.2a4 4 0 0 1 0 5.6M13.2 3.5a6.4 6.4 0 0 1 0 9" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>A<small id="playAHz">440</small></button>
 
   <div id="panel">
     <button id="toggle" title="Collapse (H)">–</button>
@@ -236,15 +283,17 @@
         <label>Display</label>
         <label class="chk"><input type="checkbox" id="showStrobe" checked>strobe</label>
         <label class="chk"><input type="checkbox" id="showHistory" checked>history</label>
+        <label class="chk"><input type="checkbox" id="showSmile">smiley in tune</label>
       </div>
       <div class="row">
         <label>Reference</label>
         <button class="b" id="ref" title="Play the target note (R)">Play target</button>
+        <button class="b" id="refA" title="Play concert A at the A4 above (A)">Concert A</button>
       </div>
 
       <h2>Detector</h2>
       <div class="stats" id="stats">–</div>
-      <div id="hint">Space: hold the reading · C: clear string offsets and sparklines · R: reference tone · ←/→: test tone ±1 semitone · H: panel · click a string to lock it</div>
+      <div id="hint">Space: hold the reading · C: clear string offsets and sparklines · R: target tone · A: concert A · ←/→: test tone ±1 semitone · H: panel · click a string to lock it</div>
     </div>
   </div>
 
@@ -272,6 +321,7 @@
       tol: Number(params.get('tol')) || 2,
       gate: Number(params.get('gate')) || -60,
       strobe: params.get('strobe') !== '0',
+      smile: params.get('smile') === '1',
       history: params.get('hist') !== '0',
       lock: -1,
       hold: false,
@@ -289,6 +339,7 @@
       if (S.gate !== -60) p.set('gate', String(S.gate))
       if (!S.strobe) p.set('strobe', '0')
       if (!S.history) p.set('hist', '0')
+      if (S.smile) p.set('smile', '1')
       const q = p.toString()
       history.replaceState(null, '', q ? `?${q}` : location.pathname)
     }
@@ -437,16 +488,20 @@
     }
 
     // reference tone: a soft sine-ish tone at the target
-    function toggleRef() {
-      if (!ctx) return
+    // reference tones: 'target' (the note being tuned, R) or 'a4' (concert A
+    // at the A4 setting, A); one at a time, pressing the playing one stops it
+    async function toggleRef(kind = 'target') {
       if (refTone) {
+        const was = refTone.kind
         refTone.g.gain.setTargetAtTime(0, ctx.currentTime, 0.05)
         const r = refTone; refTone = null
         setTimeout(() => { try { r.o.stop() } catch {} }, 400)
-        $('ref').classList.remove('on')
-        return
+        refButtons()
+        if (was === kind) return
       }
-      const f = currentTarget()
+      if (!ctx) { try { await ensureContext() } catch (e) { status(`Audio: ${e.message || e}`, true); return } }
+      else if (ctx.state !== 'running') await ctx.resume()
+      const f = kind === 'a4' ? S.a4 : currentTarget()
       if (!f) return
       const o = ctx.createOscillator(), g = ctx.createGain()
       const re = new Float32Array([0, 0, 0, 0]), im = new Float32Array([0, 1, 0.25, 0.08])
@@ -456,9 +511,15 @@
       g.gain.setTargetAtTime(0.18, ctx.currentTime, 0.03)
       o.connect(g).connect(ctx.destination)
       o.start()
-      refTone = { o, g }
-      $('ref').classList.add('on')
+      refTone = { o, g, kind }
+      refButtons()
     }
+    function refButtons() {
+      $('ref').classList.toggle('on', refTone?.kind === 'target')
+      $('refA').classList.toggle('on', refTone?.kind === 'a4')
+      $('playA').classList.toggle('on', refTone?.kind === 'a4')
+    }
+    function retuneRef() { if (refTone) refTone.o.frequency.value = refTone.kind === 'a4' ? S.a4 : currentTarget() }
     function currentTarget() {
       const targets = stringTargets(S.instrument, S.a4, S.pure)
       if (targets.length) {
@@ -619,6 +680,11 @@
       }
       noteEl.classList.toggle('dim', !active)
       noteEl.classList.toggle('ok', !!ok)
+      if (ok) { okSince ||= now; offSince = 0 } else { offSince ||= now; okSince = 0 }
+      const smileEl = $('smile')
+      if (!S.smile) smileEl.classList.remove('on')
+      else if (ok && now - okSince >= 150) smileEl.classList.add('on')
+      else if (!ok && now - offSince >= 250) smileEl.classList.remove('on')
       centsEl.classList.toggle('ok', !!ok)
       if (active) {
         const a = Math.abs(c)
@@ -656,7 +722,7 @@
 
       if (now - statsAt > 250) { statsAt = now; drawStats(active) }
     }
-    let statsAt = 0
+    let statsAt = 0, okSince = 0, offSince = 0
 
     // needle gauge: ±50 cents on an arc, ticks every 5, the tolerance band
     let needle = 0
@@ -814,6 +880,7 @@
       $('gate').value = S.gate; $('gateVal').textContent = `${S.gate} dB`
       $('showStrobe').checked = S.strobe; $('strobe').hidden = !S.strobe
       $('showHistory').checked = S.history; $('history').hidden = !S.history
+      $('showSmile').checked = S.smile
     }
 
     buildInstruments()
@@ -823,7 +890,7 @@
 
     $('instrument').onchange = (e) => { S.instrument = e.target.value; S.lock = -1; buildStrings(); saveUrl() }
     $('pure').onchange = (e) => { S.pure = e.target.checked; buildStrings(); saveUrl() }
-    const setA4 = (v) => { S.a4 = Math.round(clamp(Number(v) || 440, 400, 480) * 10) / 10; $('a4').value = S.a4; $('a4n').value = S.a4; buildStrings(); updateTest(); if (refTone) refTone.o.frequency.value = currentTarget(); saveUrl() }
+    const setA4 = (v) => { S.a4 = Math.round(clamp(Number(v) || 440, 400, 480) * 10) / 10; $('a4').value = S.a4; $('a4n').value = S.a4; buildStrings(); updateTest(); retuneRef(); $('playAHz').textContent = String(S.a4); saveUrl() }
     $('a4').oninput = (e) => setA4(e.target.value)
     $('a4n').onchange = (e) => setA4(e.target.value)
     $('transpose').onchange = (e) => { S.transpose = Number(e.target.value); buildStrings(); saveUrl() }
@@ -838,9 +905,13 @@
       if (!b) return
       const i = Number(b.dataset.i)
       S.lock = S.lock === i ? -1 : i
-      if (refTone) refTone.o.frequency.value = currentTarget()
+      retuneRef()
     }
-    $('ref').onclick = toggleRef
+    $('ref').onclick = () => toggleRef('target')
+    $('refA').onclick = () => toggleRef('a4')
+    $('playA').onclick = () => toggleRef('a4')
+    $('playAHz').textContent = String(S.a4)
+    $('showSmile').onchange = (e) => { S.smile = e.target.checked; saveUrl() }
     $('toggle').onclick = () => { document.body.classList.toggle('collapsed'); $('toggle').textContent = document.body.classList.contains('collapsed') ? '+' : '–' }
 
     const showSource = (v) => {
@@ -865,7 +936,10 @@
       $('start').hidden = true
     }
     if (!window.AudioWorkletNode) status('This browser has no AudioWorklet.', true)
-    if (matchMedia('(max-width: 760px)').matches) { document.body.classList.add('collapsed'); $('toggle').textContent = '+' }
+    // the panel starts minimised on phones and tablets (narrow, short or
+    // touch-first screens); ?panel=1 / ?panel=0 force it open / minimised
+    const small = matchMedia('(max-width: 760px), (max-height: 520px), (pointer: coarse)').matches
+    if (params.get('panel') === '0' || (small && params.get('panel') !== '1')) { document.body.classList.add('collapsed'); $('toggle').textContent = '+' }
 
     // ---------------------------------------------------------------- offline
     // The shared service worker (sw.js) serves pages and code network-first
@@ -902,7 +976,8 @@
     addEventListener('keydown', (e) => {
       if (e.target.closest('input, select')) return
       if (e.code === 'Space') { e.preventDefault(); S.hold = !S.hold }
-      else if (e.key === 'r' || e.key === 'R') toggleRef()
+      else if (e.key === 'r' || e.key === 'R') toggleRef('target')
+      else if (e.key === 'a' || e.key === 'A') toggleRef('a4')
       else if (e.key === 'c' || e.key === 'C') clearStrings(stringCents.length)
       else if (e.key === 'h' || e.key === 'H') $('toggle').click()
       else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && test) {
