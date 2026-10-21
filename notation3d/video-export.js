@@ -408,6 +408,8 @@ export function drawOutroCard(g, w, h, k, secs, { title, subtitle, credits = [] 
  * @param {{seconds:number, title:string, subtitle?:string, credits:{role,name}[], music?:'ring'|'fade'}|null} [o.outro]
  *        - credits card; music 'ring' = after the end, 'fade' = overlaps the ending while the music fades out
  * @param {(g:CanvasRenderingContext2D, w:number, h:number, t:number)=>void} [o.overlay] - draws over each music frame (song time t), under the cards
+ * @param {(canvas:HTMLCanvasElement, t:number, frame:number)=>Promise<CanvasImageSource>} [o.frameSource] - replaces each frame's picture
+ *        (after stage.update; gets the stage's canvas, returns a width × height image)
  * @param {({songZero:number, fps:number, frames:number})=>void} [o.onTimeline] - told where song time 0 lands in the video (seconds)
  * @param {boolean} o.audio
  * @param {object} o.audioOpts - { vendorPath, soundfonts, convertSF3, volume }
@@ -497,6 +499,8 @@ export async function exportVideo(o) {
 			if (intro3D) stage.setIntroShot(introK)
 			stage.update(t, 1 / fps, i >= musicStart && !(inOutro && !outroFade), t)
 			let src = stage.renderer.domElement
+			// (a caller's own picture of this frame, e.g. path traced: may take a while)
+			if (o.frameSource) src = await o.frameSource(src, t, i)
 			if (inIntro || inOutro || o.overlay) {
 				const g = card.g
 				g.drawImage(src, 0, 0, width, height)

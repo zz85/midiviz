@@ -448,7 +448,7 @@
     </div>
     <div class="field"><label>Resolution</label><select id="exRes"><option value="426x240">240p (preview)</option><option value="854x480">480p (preview)</option><option value="1280x720">720p</option><option value="1920x1080" selected>1080p</option><option value="2560x1440">1440p</option><option value="3840x2160">4K</option></select></div>
     <div class="field"><label>Frame rate</label><select id="exFps"><option>5</option><option>15</option><option>25</option><option>30</option><option selected>60</option></select></div>
-    <div class="field wideOnly" title="How much of the song to render: all of it, or a short test from the start or from where the song is now (the seek bar)"><label>Length</label><select id="exLen"><option value="all" selected>Whole song</option><option value="20">First 20 s (test)</option><option value="60">First minute</option><option value="here20">20 s from the current position</option><option value="here60">1 minute from the current position</option></select></div>
+    <div class="field wideOnly" title="How much of the song to render: all of it, or a short test from the start or from where the song is now (the seek bar)"><label>Length</label><select id="exLen"><option value="all" selected>Whole song</option><option value="5">First 5 s (path-trace test)</option><option value="20">First 20 s (test)</option><option value="60">First minute</option><option value="here5">5 s from the current position</option><option value="here20">20 s from the current position</option><option value="here60">1 minute from the current position</option></select></div>
     <div class="field wideOnly"><label>Camera</label><select id="exCam"><option value="auto" selected>Director (auto)</option><option value="current">As on screen</option></select></div>
     <label class="chk"><input type="checkbox" id="exAudio" checked>Include audio (with the hall)</label>
     <div class="field wideOnly" title="Title card: the classic card, before the music. First intertitle: the title fades in over the opening bars like the other intertitles (composer, title and the notes' subtitle, in the intertitle style), and also when the song plays here"><label>Song title</label><select id="exTitle"><option value="none" selected>None (the intertitles open the video)</option><option value="intertitle">As the first intertitle</option><option value="card">Title card (fades out as the music starts)</option></select></div>
@@ -467,6 +467,14 @@
     <div class="field wideOnly"><label>Card</label><select id="exCard"><option value="glass" selected>White on frosted glass</option><option value="glow">Warm glow</option></select></div>
     <canvas id="exPreview" class="wideOnly" width="456" height="256" title="The title card as it will look (the picture behind it is the current view)"></canvas>
     <div class="field"><label>Subtitle</label><input type="text" id="exSub" value="Midiviz Pianist" style="width:100%;box-sizing:border-box;background:#2b2b2b;color:#eee;border:1px solid #444;border-radius:6px;padding:4px 6px;font:inherit"></div>
+    <div class="field" title="Raster: the page's own picture (fast). Path traced: every frame frozen and traced with this renderer, using the Path trace menu's bounces, hair, denoise and effects settings. Seconds to minutes per frame: try a 5 s clip (Length) first"><label>Renderer</label><select id="exPt">
+      <option value="raster" selected>Raster (the page, fast)</option>
+      <option value="gpt-webgpu">Path traced · three-gpu-pathtracer WebGPU</option>
+      <option value="gpt-webgl">Path traced · three-gpu-pathtracer WebGL</option>
+      <option value="mu-webgpu">Path traced · MuTracer WebGPU</option>
+      <option value="mu-webgl">Path traced · MuTracer WebGL 2</option>
+    </select></div>
+    <div class="field ptOnly" title="Per frame. Few samples plus the denoiser is the practical setting for video; the denoiser can shimmer from frame to frame at very low counts"><label>Samples per frame</label><select id="exPtSpp"><option>4</option><option selected>16</option><option>64</option><option>256</option></select></div>
     <div id="exBar"><div></div></div>
     <div id="exStatus">Choose a song first. Rendering is offline, so every frame is smooth however fast the GPU is.</div>
     <div class="btnrow"><button id="exStart">Export</button><button id="exCancel" class="sec">Cancel</button></div>
@@ -531,6 +539,7 @@
     import { hideBody } from './pianist/shell.js'
     import { suggestClips, snapStart, snapEnd, clipOf, shortDescription, SHORT_MAX, SHORT_LENGTHS, SHORT_DEFAULT } from './pianist/shorts.js'
     import { createPathTraceStills } from './pathtrace/still.js'
+    import { pathTracedFrames } from './pathtrace/video.js'
     import { createLinerLibrary, clockOfMidi, buildTimeline, toVTT, toChapters, titleScreen, withTitle, titleSecs } from './liner/liner.js'
     import { createLinerOverlay, drawLinerCaption, drawIntertitle, loadIntertitleFonts, INTERTITLE_STYLES, INTERTITLE_THEMES, INTERTITLE_POSITIONS } from './liner/overlay.js'
 
@@ -1728,7 +1737,7 @@
       ['dofamt', 'dofAmt'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
       ['vol', 'vol'], ['room', 'room'], ['seat', 'seat'], ['rv', 'rvAmt'], ['decay', 'rvDecay'], ['tone', 'rvTone'], ['boost', 'boost'], ['amb', 'amb'], ['applause', 'applause'],
       ['exformat', 'exFormat'], ['exlayout', 'exLayout'], ['exsplit', 'exSplit'], ['exhands', 'exHandsHalf'], ['exlview', 'exLessonView'], ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exsub', 'exSub'], ['excard', 'exCard'], ['excaps', 'exCaps'], ['exvtt', 'exVtt'], ['exlen', 'exLen'], ['exhold', 'exHold'],
-      ['notes', 'linerMode'], ['itstyle', 'itStyle'], ['itstylea', 'itStyleA'], ['itcol', 'itTheme'], ['itpos', 'itPos'], ['itheads', 'itHeads'], ['extitle', 'exTitle'],
+      ['notes', 'linerMode'], ['itstyle', 'itStyle'], ['itstylea', 'itStyleA'], ['itcol', 'itTheme'], ['itpos', 'itPos'], ['itheads', 'itHeads'], ['extitle', 'exTitle'], ['expt', 'exPt'], ['exptspp', 'exPtSpp'],
     ].filter(([, id]) => $(id))
     const OUTFIT_KEYS = { dress: 'dress', slit: 'slit', fabric: 'fabric', dcol: 'color', shoes: 'shoes', hair: 'hair', hcol: 'hairColor' }
     // (colours without their #, so links stay readable)
@@ -2074,6 +2083,9 @@
       if (!song || !fingered) return void ($('exStatus').textContent = song ? 'Still working out the fingering, try again in a moment.' : 'Load a song first (Songs, top left).')
       if (!exportSupported()) return void ($('exStatus').textContent = 'This browser has no WebCodecs video encoder; try Chrome or Edge.')
       const [width, height] = $('exRes').value.split('x').map(Number), fps = +$('exFps').value
+      // #045: path traced (pathtrace/video.js), one picture per frame
+      const ptKey = $('exPt').value === 'raster' ? null : $('exPt').value
+      if (ptKey && isShort() && $('exLayout').value === 'stack') return void ($('exStatus').textContent = 'Path tracing does one picture per frame: choose Layout → One picture, or the raster renderer.')
       // the part of the song to render (Length): all of it, or a test clip
       const len = $('exLen').value, here = /^here/.test(len), secs = len === 'all' ? Infinity : +len.replace('here', '')
       let clipA = here ? Math.max(0, Math.min(songNow(), song.duration - 1)) : 0, clipB = Math.min(song.duration, clipA + secs)
@@ -2081,7 +2093,7 @@
       const asShort = isShort()
       if (asShort) { if (!(short.b > short.a)) clipFresh(); clipA = short.a; clipB = short.b }
       const clip = clipA > 0 || clipB < song.duration
-      const name = (song.title || 'pianist').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_') + (asShort ? '_short' : '') + (clip ? `_${Math.floor(clipA)}-${Math.ceil(clipB)}s` : '') + `_${height}p${fps}.mp4`
+      const name = (song.title || 'pianist').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_') + (asShort ? '_short' : '') + (clip ? `_${Math.floor(clipA)}-${Math.ceil(clipB)}s` : '') + (ptKey ? '_' + ptKey : '') + `_${height}p${fps}.mp4`
       let fileStream = null
       if (window.showSaveFilePicker) {
         try {
@@ -2107,8 +2119,13 @@
       exporting = true
       $('exStart').disabled = true
       const programs = new Map(); for (let ch = 0; ch < 16; ch++) if (ch !== 9) programs.set(ch, 0)
+      const ptv = ptKey ? pathTracedFrames(ptStage, {
+        engine: ptKey, width: width & ~1, height: height & ~1, samples: +$('exPtSpp').value, bounces: +$('ptBounces').value,
+        denoise: $('ptDenoise').checked, hairFraction: +$('ptHair').value, fx: $('ptFx').checked, signal: exAbort.signal,
+      }) : null
       try {
         const blob = await exportVideo({
+          frameSource: ptv?.frame,
           stage: stageAdapter,
           song: { schedule: { notes: song.notes, controlChanges: (song.controlChanges || []).filter(c => c.controller !== 7) }, programs, duration: song.duration, title: song.title },
           width, height, fps, start: clipA,
@@ -2130,7 +2147,7 @@
           onProgress: p => {
             $('exBar').firstElementChild.style.width = (p.frame / p.frames * 100).toFixed(1) + '%'
             $('exStatus').textContent = p.phase === 'finalizing' ? 'Finalizing…'
-              : `${p.frame}/${p.frames} frames · ${(p.frame / p.elapsed).toFixed(1)} fps · ${fmt(p.eta)} left`
+              : `${p.frame}/${p.frames} frames · ${ptv?.stats.last ? `${(ptv.stats.last.ms / 1000).toFixed(1)} s a frame (trace ${(ptv.stats.last.trace / 1000).toFixed(1)} s, scene ${((ptv.stats.last.setup + ptv.stats.last.snapshot) / 1000).toFixed(1)} s)` : `${(p.frame / p.elapsed).toFixed(1)} fps`} · ${fmt(p.eta)} left`
           },
         })
         if (blob) {
@@ -2158,6 +2175,7 @@
         console.error(e)
         $('exStatus').textContent = e.name === 'AbortError' ? 'Cancelled' : 'Failed: ' + e.message
       } finally {
+        ptv?.dispose()
         exporting = false; exAbort = null
         $('exStart').disabled = false
       }
@@ -2172,7 +2190,7 @@
     const ptCopy = src => { const c = document.createElement('canvas'); c.width = src.width; c.height = src.height; c.getContext('2d', { willReadFrequently: true }).drawImage(src, 0, 0); return c }
     const ptStage = {
       scene, camera, envScene, envIntensity: scene.environmentIntensity,
-      hair: () => hair, exposure: () => +$('exposure').value,
+      hair: () => hair, exposure: () => +$('exposure').value, liveExposure: () => renderer.toneMappingExposure,
       fx: () => ({
         exposure: +$('exposure').value,
         bloom: bloom.enabled ? { strength: bloom.strength, radius: bloom.radius, threshold: bloom.threshold } : null,
@@ -2194,6 +2212,9 @@
       },
     }
     const ptStills = createPathTraceStills(ptStage)
+    // Render → Renderer: path traced shows its own settings
+    $('exPt').onchange = () => { for (const e of document.querySelectorAll('#renderPop .ptOnly')) e.style.display = $('exPt').value === 'raster' ? 'none' : '' }
+    $('exPt').onchange()
     window.__pianist.pt = ptStills
     window.__pianist.titleFonts = { TITLE_FONTS, loadTitleFont }
 

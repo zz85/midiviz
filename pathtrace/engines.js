@@ -3,6 +3,7 @@
 //   const r = await traceStill('mu-webgpu', { scene, camera, width, height, samples, bounces, exposure, denoise, onProgress, signal })
 //   r.canvas   a 2D canvas holding the finished picture (AgX, the page's exposure)
 //   r.times    { setup, firstSample, trace, denoise, total } in ms; r.samples; r.backend
+// and for video, createTraceSession(): the same tracer kept across frames.
 //
 // Each run makes its own canvas, renderer / engine and BVH and disposes of
 // them after, so the timings include building the acceleration structures
@@ -31,46 +32,77 @@ const copyCanvas = (src, w, h) => { const c = document.createElement('canvas'); 
 function aborted(signal) { if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError') }
 
 export async function traceStill(key, opts) {
-  if (!ENGINES[key]) throw new Error('unknown engine ' + key)
-  const run = { 'gpt-webgpu': gptWebGPU, 'gpt-webgl': gptWebGL, 'mu-webgpu': o => mutracer(o, 'webgpu'), 'mu-webgl': o => mutracer(o, 'webgl') }[key]
   const t0 = performance.now()
-  const r = await run({ samples: 256, bounces: 6, exposure: 1, denoise: false, toneMapping: 'agx', onProgress: () => {}, ...opts })
-  r.times.total = Math.round(performance.now() - t0)
-  r.engine = key
-  return r
+  const o = { samples: 256, bounces: 6, exposure: 1, denoise: false, toneMapping: 'agx', onProgress: () => {}, ...opts }
+  const session = await createTraceSession(key, o)
+  try {
+    const r = await session.frame(o)
+    if (session.times.init != null) r.times.init = session.times.init
+    r.times.setup += session.times.create
+    r.times.total = Math.round(performance.now() - t0)
+    r.engine = key
+    return r
+  } finally { session.dispose() }
 }
 
+/**
+ * One tracer kept for many frames (a video): its canvas, renderer / engine and
+ * denoiser are made once; each frame() takes a fresh snapshot scene and
+ * rebuilds the BVH for it.
+ *   const s = await createTraceSession(key, { width, height, bounces, toneMapping, denoise })
+ *   const r = await s.frame({ scene, camera, samples, exposure, onProgress, signal })   // r.canvas, r.times, r.samples
+ *   s.dispose()
+ */
+export async function createTraceSession(key, opts) {
+  if (!ENGINES[key]) throw new Error('unknown engine ' + key)
+  const o = { bounces: 6, denoise: false, toneMapping: 'agx', ...opts }
+  const t0 = performance.now()
+  const make = { 'gpt-webgpu': gptWebGPU, 'gpt-webgl': gptWebGL, 'mu-webgpu': x => mutracer(x, 'webgpu'), 'mu-webgl': x => mutracer(x, 'webgl') }[key]
+  const s = await make(o)
+  s.times = { ...s.times, create: Math.round(performance.now() - t0) }
+  s.engine = key
+  const frame = s.frame
+  s.frame = f => frame({ samples: 256, exposure: 1, onProgress: () => {}, ...f })
+  return s
+}
+
+const toneOf = m => m === 'linear' ? THREE.NoToneMapping : THREE.AgXToneMapping
+
 // ── three-gpu-pathtracer, WebGL ──────────────────────────────────────────
-async function gptWebGL({ scene, camera, width, height, samples, bounces, exposure, toneMapping, onProgress, signal }) {
+async function gptWebGL({ width, height, bounces, toneMapping }) {
   const { WebGLPathTracer } = await import(VENDOR + 'three-gpu-pathtracer/three-gpu-pathtracer.js')
   const canvas = document.createElement('canvas')
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, preserveDrawingBuffer: true, powerPreference: 'high-performance' })
   renderer.setPixelRatio(1); renderer.setSize(width, height, false)
-  renderer.toneMapping = toneMapping === 'linear' ? THREE.NoToneMapping : THREE.AgXToneMapping; renderer.toneMappingExposure = exposure
+  renderer.toneMapping = toneOf(toneMapping)
   const pt = new WebGLPathTracer(renderer)
   Object.assign(pt, { renderDelay: 0, fadeDuration: 0, minSamples: 0, dynamicLowRes: false, rasterizeScene: false, bounces, filterGlossyFactor: 0.5 })
   pt.tiles.set(2, 2)
-  const times = {}
-  try {
-    let t = performance.now()
-    pt.setScene(scene, camera)
-    times.setup = Math.round(performance.now() - t); t = performance.now()
-    while (pt.samples < samples) {
-      aborted(signal)
-      pt.renderSample()
-      if (times.firstSample == null && pt.samples >= 1) times.firstSample = Math.round(performance.now() - t)
-      onProgress({ samples: pt.samples, of: samples, status: pt.isCompiling ? 'compiling' : 'tracing' })
-      await frame()
-    }
-    // (reading the canvas back waits for the GPU to finish)
-    const out = copyCanvas(canvas, width, height)
-    times.trace = Math.round(performance.now() - t)
-    return { canvas: out, samples: pt.samples, backend: 'webgl', times }
-  } finally { pt.dispose?.(); renderer.dispose(); renderer.forceContextLoss?.() }
+  return {
+    async frame({ scene, camera, samples, exposure, onProgress, signal }) {
+      renderer.toneMappingExposure = exposure
+      const times = {}
+      let t = performance.now()
+      pt.setScene(scene, camera)
+      times.setup = Math.round(performance.now() - t); t = performance.now()
+      while (pt.samples < samples) {
+        aborted(signal)
+        pt.renderSample()
+        if (times.firstSample == null && pt.samples >= 1) times.firstSample = Math.round(performance.now() - t)
+        onProgress({ samples: pt.samples, of: samples, status: pt.isCompiling ? 'compiling' : 'tracing' })
+        await frame()
+      }
+      // (reading the canvas back waits for the GPU to finish)
+      const out = copyCanvas(canvas, width, height)
+      times.trace = Math.round(performance.now() - t)
+      return { canvas: out, samples: pt.samples, backend: 'webgl', times }
+    },
+    dispose() { pt.dispose?.(); renderer.dispose(); renderer.forceContextLoss?.() },
+  }
 }
 
 // ── three-gpu-pathtracer, WebGPU ─────────────────────────────────────────
-async function gptWebGPU({ scene, camera, width, height, samples, bounces, exposure, toneMapping, denoise, onProgress, signal }) {
+async function gptWebGPU({ width, height, bounces, toneMapping, denoise }) {
   const TG = await import('three/webgpu')
   const { WebGPUPathTracer, OIDNDenoiser } = await import(VENDOR + 'three-gpu-pathtracer/webgpu.js')
   const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height
@@ -78,94 +110,108 @@ async function gptWebGPU({ scene, camera, width, height, samples, bounces, expos
   await renderer.init()
   if (!renderer.backend?.isWebGPUBackend) { renderer.dispose(); throw new Error('no WebGPU here (three/webgpu fell back to WebGL 2)') }
   renderer.setPixelRatio(1); renderer.setSize(width, height, false)
-  renderer.toneMapping = toneMapping === 'linear' ? THREE.NoToneMapping : THREE.AgXToneMapping; renderer.toneMappingExposure = exposure
+  renderer.toneMapping = toneOf(toneMapping)
   const pt = new WebGPUPathTracer(renderer)
-  Object.assign(pt, { renderDelay: 0, fadeDuration: 0, minSamples: 0, dynamicLowRes: false, maxBounces: bounces, maxSamples: samples })
+  Object.assign(pt, { renderDelay: 0, fadeDuration: 0, minSamples: 0, dynamicLowRes: false, maxBounces: bounces })
   let den = null
   if (denoise) {
     const { initUNetFromURL } = await import(VENDOR + 'three-gpu-pathtracer/oidn-web.js')
     den = new OIDNDenoiser({ initUNetFromURL, auxWeightsUrl: VENDOR + 'mutracer/oidn/weights/rt_hdr_alb_nrm.tza' })
     pt.setDenoiser(den)
   }
-  const times = {}
-  try {
-    let t = performance.now()
-    pt.setScene(scene, camera)
-    times.setup = Math.round(performance.now() - t); t = performance.now()
-    let got = 0
-    for (let i = 0; ; i++) {
-      aborted(signal)
-      pt.renderSample()
-      // (the sample counts are a GPU readback: every few frames)
-      if (i % 8 === 7 || got >= samples) {
-        const c = await pt.getSampleCountsAsync()
-        got = c.min
-        if (times.firstSample == null && got >= 1) times.firstSample = Math.round(performance.now() - t)
-        onProgress({ samples: c.avg, of: samples, status: 'tracing' })
-        if (got >= samples) break
+  return {
+    async frame({ scene, camera, samples, exposure, onProgress, signal }) {
+      renderer.toneMappingExposure = exposure
+      pt.maxSamples = samples
+      const times = {}
+      let t = performance.now()
+      pt.setScene(scene, camera)
+      times.setup = Math.round(performance.now() - t); t = performance.now()
+      let got = 0
+      for (let i = 0; ; i++) {
+        aborted(signal)
+        pt.renderSample()
+        // (the sample counts are a GPU readback: every few frames)
+        if (i % 8 === 7 || got >= samples || samples <= 8) {
+          const c = await pt.getSampleCountsAsync()
+          got = c.min
+          if (times.firstSample == null && got >= 1) times.firstSample = Math.round(performance.now() - t)
+          onProgress({ samples: c.avg, of: samples, status: 'tracing' })
+          if (got >= samples) break
+        }
+        await frame()
       }
-      await frame()
-    }
-    times.trace = Math.round(performance.now() - t); t = performance.now()
-    if (den) {
-      while (!den.complete) { aborted(signal); pt.renderSample(); onProgress({ samples, of: samples, status: 'denoising' }); await frame() }
-      times.denoise = Math.round(performance.now() - t)
-    }
-    pt.renderSample()   // present, then copy in the same task
-    const out = copyCanvas(canvas, width, height)
-    return { canvas: out, samples: got, backend: 'webgpu', times }
-  } finally { pt.dispose(); renderer.dispose() }
+      times.trace = Math.round(performance.now() - t); t = performance.now()
+      if (den) {
+        while (!den.complete) { aborted(signal); pt.renderSample(); onProgress({ samples, of: samples, status: 'denoising' }); await frame() }
+        times.denoise = Math.round(performance.now() - t)
+      }
+      pt.renderSample()   // present, then copy in the same task
+      const out = copyCanvas(canvas, width, height)
+      return { canvas: out, samples: got, backend: 'webgpu', times }
+    },
+    dispose() { pt.dispose(); renderer.dispose() },
+  }
 }
 
 // ── MuTracer ─────────────────────────────────────────────────────────────
-async function mutracer({ scene, camera, width, height, samples, bounces, exposure, toneMapping, denoise, onProgress, signal }, backend) {
+async function mutracer({ width, height, bounces, toneMapping, denoise }, backend) {
   const MU = await import(VENDOR + 'mutracer/lib/mutracer.js')
   const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height
   const engine = new MU.Engine({ canvas, backend })
   const errors = []
   engine.on('error', e => errors.push(e))
-  const times = {}
+  let info, init, last = null
   try {
-    let t = performance.now()
-    const info = await engine.init()
-    times.init = Math.round(performance.now() - t); t = performance.now()
-    // MuTracer reads an equirect's first row as the zenith (theta = acos(y)), three.js
-    // a DataTexture's first row as the nadir (v = asin(y) / pi + 0.5): hand it the rows
-    // upside down, or the stage is lit from the floor
-    const env = scene.environment
-    if (env?.isDataTexture && !env.flipY) scene.environment = flipRows(env)
-    let muScene
-    try { muScene = MU.fromTHREEScene(scene, { convertLight: l => l.isSpotLight ? muSpot(MU, l) : undefined }) }
-    finally { if (scene.environment !== env) { scene.environment.dispose(); scene.environment = env } }
-    // the BVH, built in workers, ahead of the first update
-    await engine.prepare(muScene)
-    engine.scene = muScene
-    engine.camera = MU.fromTHREECamera(camera)
-    Object.assign(engine.display, { toneMapping, toneMappingExposure: exposure })
-    engine.display.setSize(width, height)
-    const render = new MU.Render(engine, { width, height, bounces, maxSamples: samples, allowMultipleSamplesPerFrame: true })
-    if (denoise) await render.setDenoiser(info.backend === 'webgpu' ? { type: 'oidn', model: 'standard' } : { type: 'jnlm' })
-    engine.update()
-    times.setup = Math.round(performance.now() - t); t = performance.now()
-    let tracedAt = 0, out = null
-    for (;;) {
-      aborted(signal)
-      if (errors.length) throw errors[0]
-      const st = render.refine()
-      engine.display.present(render)
-      if (times.firstSample == null && render.samples >= 1) times.firstSample = Math.round(performance.now() - t)
-      if (!tracedAt && render.samples >= samples) tracedAt = performance.now()
-      onProgress({ samples: render.samples, of: samples, status: st })
-      // the canvas copied in the same task as its last present (display.toBlob
-      // re-composes the picture: minutes on a software GPU)
-      if (st === 'finished') { out = copyCanvas(engine.display.canvas, width, height); if (errors.length) throw errors[0]; break }
-      if (st === 'error') throw errors[0] || new Error('MuTracer: render error')
-      await frame()
-    }
-    times.trace = Math.round((tracedAt || performance.now()) - t)
-    if (denoise) times.denoise = Math.round(performance.now() - (tracedAt || performance.now()))
-    return { canvas: out, samples: render.samples, backend: info.backend, times }
-  } finally { engine.dispose() }
+    const t = performance.now()
+    info = await engine.init()
+    init = Math.round(performance.now() - t)
+  } catch (e) { engine.dispose(); throw e }
+  engine.display.setSize(width, height)
+  return {
+    times: { init },
+    async frame({ scene, camera, samples, exposure, onProgress, signal }) {
+      const times = {}
+      let t = performance.now()
+      // MuTracer reads an equirect's first row as the zenith (theta = acos(y)), three.js
+      // a DataTexture's first row as the nadir (v = asin(y) / pi + 0.5): hand it the rows
+      // upside down, or the stage is lit from the floor
+      const env = scene.environment
+      if (env?.isDataTexture && !env.flipY) scene.environment = flipRows(env)
+      let muScene
+      try { muScene = MU.fromTHREEScene(scene, { convertLight: l => l.isSpotLight ? muSpot(MU, l) : undefined }) }
+      finally { if (scene.environment !== env) { scene.environment.dispose(); scene.environment = env } }
+      // the BVH, built in workers, ahead of the first update
+      await engine.prepare(muScene)
+      engine.scene = muScene
+      engine.camera = MU.fromTHREECamera(camera)
+      Object.assign(engine.display, { toneMapping, toneMappingExposure: exposure })
+      last?.dispose?.()
+      const render = last = new MU.Render(engine, { width, height, bounces, maxSamples: samples, allowMultipleSamplesPerFrame: true })
+      if (denoise) await render.setDenoiser(info.backend === 'webgpu' ? { type: 'oidn', model: 'standard' } : { type: 'jnlm' })
+      engine.update()
+      times.setup = Math.round(performance.now() - t); t = performance.now()
+      let tracedAt = 0, out = null
+      for (;;) {
+        aborted(signal)
+        if (errors.length) throw errors[0]
+        const st = render.refine()
+        engine.display.present(render)
+        if (times.firstSample == null && render.samples >= 1) times.firstSample = Math.round(performance.now() - t)
+        if (!tracedAt && render.samples >= samples) tracedAt = performance.now()
+        onProgress({ samples: render.samples, of: samples, status: st })
+        // the canvas copied in the same task as its last present (display.toBlob
+        // re-composes the picture: minutes on a software GPU)
+        if (st === 'finished') { out = copyCanvas(engine.display.canvas, width, height); if (errors.length) throw errors[0]; break }
+        if (st === 'error') throw errors[0] || new Error('MuTracer: render error')
+        await frame()
+      }
+      times.trace = Math.round((tracedAt || performance.now()) - t)
+      if (denoise) times.denoise = Math.round(performance.now() - (tracedAt || performance.now()))
+      return { canvas: out, samples: render.samples, backend: info.backend, times }
+    },
+    dispose() { try { last?.dispose?.() } catch { /* engine.dispose takes it */ } engine.dispose() },
+  }
 }
 
 // MuTracer 0.1.3 fades a spot as smoothstep(cos(outer), cos(outer) + (1 − inner/outer), cos θ)
