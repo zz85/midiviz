@@ -467,7 +467,7 @@
     <div class="field wideOnly"><label>Card</label><select id="exCard"><option value="glass" selected>White on frosted glass</option><option value="glow">Warm glow</option></select></div>
     <canvas id="exPreview" class="wideOnly" width="456" height="256" title="The title card as it will look (the picture behind it is the current view)"></canvas>
     <div class="field"><label>Subtitle</label><input type="text" id="exSub" value="Midiviz Pianist" style="width:100%;box-sizing:border-box;background:#2b2b2b;color:#eee;border:1px solid #444;border-radius:6px;padding:4px 6px;font:inherit"></div>
-    <div class="field" title="Raster: the page's own picture (fast). Path traced: every frame frozen and traced with this renderer, using the Path trace menu's bounces, hair, denoise and effects settings. Seconds to minutes per frame: try a 5 s clip (Length) first"><label>Renderer</label><select id="exPt">
+    <div class="field" title="Raster: the page's own picture (fast). Path traced: every frame frozen and traced with this renderer, using the Path trace menu's bounces, hair and effects settings. Seconds to minutes per frame: try a 5 s clip (Length) first"><label>Renderer</label><select id="exPt">
       <option value="raster" selected>Raster (the page, fast)</option>
       <option value="gpt-webgpu">Path traced · three-gpu-pathtracer WebGPU</option>
       <option value="gpt-webgl">Path traced · three-gpu-pathtracer WebGL</option>
@@ -475,6 +475,7 @@
       <option value="mu-webgl">Path traced · MuTracer WebGL 2</option>
     </select></div>
     <div class="field ptOnly" title="Per frame. Few samples plus the denoiser is the practical setting for video; the denoiser can shimmer from frame to frame at very low counts"><label>Samples per frame</label><select id="exPtSpp"><option>4</option><option selected>16</option><option>64</option><option>256</option></select></div>
+    <label class="chk ptOnly" title="OIDN on WebGPU (both tracers), MuTracer's JNLM filter on WebGL; three-gpu-pathtracer's WebGL tracer has none. Off: faster, and noisier at low sample counts"><input type="checkbox" id="exPtDenoise" checked>Denoise each frame</label>
     <div id="exBar"><div></div></div>
     <div id="exStatus">Choose a song first. Rendering is offline, so every frame is smooth however fast the GPU is.</div>
     <div class="btnrow"><button id="exStart">Export</button><button id="exCancel" class="sec">Cancel</button></div>
@@ -1737,7 +1738,7 @@
       ['dofamt', 'dofAmt'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
       ['vol', 'vol'], ['room', 'room'], ['seat', 'seat'], ['rv', 'rvAmt'], ['decay', 'rvDecay'], ['tone', 'rvTone'], ['boost', 'boost'], ['amb', 'amb'], ['applause', 'applause'],
       ['exformat', 'exFormat'], ['exlayout', 'exLayout'], ['exsplit', 'exSplit'], ['exhands', 'exHandsHalf'], ['exlview', 'exLessonView'], ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exsub', 'exSub'], ['excard', 'exCard'], ['excaps', 'exCaps'], ['exvtt', 'exVtt'], ['exlen', 'exLen'], ['exhold', 'exHold'],
-      ['notes', 'linerMode'], ['itstyle', 'itStyle'], ['itstylea', 'itStyleA'], ['itcol', 'itTheme'], ['itpos', 'itPos'], ['itheads', 'itHeads'], ['extitle', 'exTitle'], ['expt', 'exPt'], ['exptspp', 'exPtSpp'],
+      ['notes', 'linerMode'], ['itstyle', 'itStyle'], ['itstylea', 'itStyleA'], ['itcol', 'itTheme'], ['itpos', 'itPos'], ['itheads', 'itHeads'], ['extitle', 'exTitle'], ['expt', 'exPt'], ['exptspp', 'exPtSpp'], ['exptdn', 'exPtDenoise'],
     ].filter(([, id]) => $(id))
     const OUTFIT_KEYS = { dress: 'dress', slit: 'slit', fabric: 'fabric', dcol: 'color', shoes: 'shoes', hair: 'hair', hcol: 'hairColor' }
     // (colours without their #, so links stay readable)
@@ -2121,7 +2122,7 @@
       const programs = new Map(); for (let ch = 0; ch < 16; ch++) if (ch !== 9) programs.set(ch, 0)
       const ptv = ptKey ? pathTracedFrames(ptStage, {
         engine: ptKey, width: width & ~1, height: height & ~1, samples: +$('exPtSpp').value, bounces: +$('ptBounces').value,
-        denoise: $('ptDenoise').checked, hairFraction: +$('ptHair').value, fx: $('ptFx').checked, signal: exAbort.signal,
+        denoise: $('exPtDenoise').checked, hairFraction: +$('ptHair').value, fx: $('ptFx').checked, signal: exAbort.signal,
       }) : null
       try {
         const blob = await exportVideo({
