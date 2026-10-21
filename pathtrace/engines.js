@@ -66,6 +66,7 @@ export async function createTraceSession(key, opts) {
   return s
 }
 
+let ltcReady = false
 const toneOf = m => m === 'linear' ? THREE.NoToneMapping : THREE.AgXToneMapping
 
 // ── three-gpu-pathtracer, WebGL ──────────────────────────────────────────
@@ -105,6 +106,14 @@ async function gptWebGL({ width, height, bounces, toneMapping }) {
 async function gptWebGPU({ width, height, bounces, toneMapping, denoise }) {
   const TG = await import('three/webgpu')
   const { WebGPUPathTracer, OIDNDenoiser } = await import(VENDOR + 'three-gpu-pathtracer/webgpu.js')
+  // (the tracer rasterises the scene too, for the denoiser's albedo and normal
+  // buffers: three/webgpu draws the snapshot's area lights only with the LTC
+  // tables loaded, else every frame logs "reading 'LTC_FLOAT_1'")
+  if (!ltcReady) {
+    const { RectAreaLightTexturesLib } = await import('three/addons/lights/RectAreaLightTexturesLib.js')
+    TG.RectAreaLightNode.setLTC(RectAreaLightTexturesLib.init())
+    ltcReady = true
+  }
   const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height
   const renderer = new TG.WebGPURenderer({ canvas, antialias: false })
   await renderer.init()
