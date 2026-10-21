@@ -34,3 +34,27 @@ The two with an orchestra give only their timing, read from all the parts (the v
 Each recording's lane of dynamics is corrected by listening on both physical models (Source and Waveguide); the other engines use the Source model's.
 
 Built by `node violinist/tools/build_performances.js [recording …]` (needs the dataset in `strings/data/BachViolin`, which `node strings/test/ab_recording.js` downloads, the fetched recordings, and ffmpeg; about an hour for all 58; `--dataset` or `--aligned` builds one kind). Format and playback: [strings/expression.js](../../strings/expression.js); evaluation: `node strings/test/expression_ab.js`.
+
+## Adding a recording
+
+A recording can be added when a piece in [../midis](../midis/README.md) has the violin part it plays, and its licence lets us share measurements with credit: public domain, CC0 or CC BY. Leave out NC and ND licences.
+
+1. **Find the recording and check its licence.** Wikimedia Commons is the easiest source, because the fetch script reads each file's licence and credit from Commons. Check the file page yourself too: old recordings are sometimes uploaded with a wrong licence.
+2. **Add it to the fetch list.** In [`tools/fetch_recordings.js`](../tools/fetch_recordings.js), add a line to `FILES`, keyed by a new id (`<violinist>_<work>_<movement>`, for example `heifetz_bwv1004_mov5`):
+   ```js
+   heifetz_bwv1004_mov5: ['File:Bach; Chaconne d-moll Heifetz.flac'],
+   ```
+   A second entry gives a mirror URL for files that Commons won't serve in full (the 1915 double concerto uses the Internet Archive's copy).
+3. **Fetch it:** `node violinist/tools/fetch_recordings.js`. This writes the audio and its page, licence and credit (`sources.json`) into the git-ignored `strings/data/recordings`. The script skips files it already has and any file whose licence doesn't pass. It is slow on purpose, because Commons asks for few, spaced requests. For a recording that isn't on Commons, put the audio file in that folder and add its entry to `sources.json` by hand, with the same fields (`page`, `licence`, `credit`, `file`).
+4. **Add it to the build list.** In [`tools/build_performances.js`](../tools/build_performances.js), add an entry to `RECORDINGS` with the same id:
+   ```js
+   { id: 'heifetz_bwv1004_mov5', midi: 'bach_1004_5_ciaccona.mid', violinist: 'Jascha Heifetz', year: 1952 },
+   ```
+   - `midi` is the piece's file in `../midis`. Give a list when you aren't sure which movement it is; the build keeps the one that aligns best (`qmul_allemanda` does this).
+   - `year` matters for old recordings. Before 1930 the aligner also tries ±2 semitones, because 78s and cylinders often play back at the wrong speed.
+   - Set `ensemble: true` when the violin plays with an orchestra, a piano or other players. The alignment then uses every part's notes, and only the timing is kept.
+   - If the piece has a Mutopia score (`score` in `../midis/index.json`), the aligner tries each way of taking its repeats.
+5. **Build it:** `node violinist/tools/build_performances.js <id>`. This takes a few minutes per movement, most of it the correction by listening on both engines. It writes `<id>.json` and updates this folder's `index.json`, leaving the other entries alone. It needs ffmpeg.
+6. **Check the alignment.** The build prints *pitch where placed* and *chance*. The solo recordings so far score 75–99 % against 9–23 % by chance; the two with an orchestra score 27–38 %, which is enough for timing only. A score near chance means the recording didn't align: a different arrangement, cuts, or the wrong movement. Leave it out, as was done with Spalding's Ave Maria (a comment in `RECORDINGS` records why).
+7. **Listen.** The Performer menu in #034, #037 and #038 lists every entry in `index.json` for the song, so the new player appears without any page changes. For example: `038_duo.html?song=<midi>&performer=<id>&violin=source`.
+8. **Document and commit.** Add a row to the table in [Aligned here](#aligned-here), then commit `<id>.json`, `index.json` and the two scripts. The audio stays out of the repo.
