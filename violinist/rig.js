@@ -52,6 +52,51 @@ function basis(dir, ref, out = new THREE.Matrix4()) {
 
 const FINGERS = ['Index', 'Middle', 'Ring', 'Little']
 
+/**
+ * One finger in the hand's frame (research/04_left_hand.md §1): it splays at
+ * the base joint (about the back-of-hand axis N, at most ±35°) and then bends
+ * as a hinge in its own plane; the end joint follows the middle joint (DIP =
+ * k·PIP). The splay is chosen to put the target in that plane, so a stop
+ * behind the knuckle is reached by curling under, not by turning the finger
+ * round. B, T: knuckle and target; d: the hand's long axis (wrist → knuckles),
+ * N: the back of the hand; L: [proximal, middle, distal] lengths. Writes the
+ * four joint points to out; returns { flex, splay, pip, lean } in degrees and
+ * miss (cm short of the target). lean is what the eye reads as a finger bent
+ * sideways: the angle of the knuckle-to-tip chord out of the plane square to
+ * the knuckle line (the hinge of an unsplayed finger).
+ */
+const _fa = new THREE.Vector3(), _fd = new THREE.Vector3(), _fl = new THREE.Vector3(), _fu = new THREE.Vector3(), _fv = new THREE.Vector3()
+export function handFinger(B, T, L, k, d, N, out) {
+  _fa.subVectors(T, B)
+  _fd.copy(d).addScaledVector(N, -d.dot(N)).normalize()
+  _fl.crossVectors(_fd, N)
+  const f = _fa.dot(_fd), l = _fa.dot(_fl)
+  const sp = Math.abs(f) < 1e-6 ? Math.sign(l) * 0.61 : Math.max(-0.61, Math.min(0.61, Math.atan(l / f)))
+  _fu.copy(_fd).multiplyScalar(Math.cos(sp)).addScaledVector(_fl, Math.sin(sp))      // in-plane forward
+  _fv.copy(N).negate()                                                                // in-plane toward the palm
+  const tu = _fa.dot(_fu), tv = _fa.dot(_fv), r = Math.hypot(tu, tv)
+  const shape = p => {
+    const x = L[0] + L[1] * Math.cos(p) + L[2] * Math.cos((1 + k) * p), y = L[1] * Math.sin(p) + L[2] * Math.sin((1 + k) * p)
+    return [Math.hypot(x, y), Math.atan2(y, x)]
+  }
+  const PMAX = 1.95                    // 112°
+  const rMax = shape(0)[0], rMin = shape(PMAX)[0]
+  const rr = Math.max(rMin, Math.min(rMax, r))
+  let lo = 0, hi = PMAX
+  for (let i = 0; i < 20; i++) { const m = (lo + hi) / 2; if (shape(m)[0] > rr) lo = m; else hi = m }
+  const p = (lo + hi) / 2
+  // (the base joint stays within its range, −15…90°; a stop it cannot reach
+  // from there is missed rather than reached by turning the finger round)
+  const a = Math.max(-0.26, Math.min(1.57, Math.atan2(tv, tu) - shape(p)[1]))
+  const ang = [a, a + p, a + (1 + k) * p]
+  out[0].copy(B)
+  for (let i = 0; i < 3; i++) out[i + 1].copy(out[i]).addScaledVector(_fu, L[i] * Math.cos(ang[i])).addScaledVector(_fv, L[i] * Math.sin(ang[i]))
+  const R2D = 180 / Math.PI
+  _fa.subVectors(out[3], out[0])
+  const lean = Math.asin(Math.max(-1, Math.min(1, _fa.dot(_fl) / (_fa.length() || 1)))) * R2D
+  return { flex: a * R2D, splay: sp * R2D, pip: p * R2D, lean, miss: out[3].distanceTo(T) }
+}
+
 export const HOLD = {
   yaw: 40,        // violin long axis, degrees left of facing
   pitch: 4,       // scroll up
@@ -68,7 +113,6 @@ export const HOLD = {
  * leftHand: buildLeftHand(V) (hidden; used for its solution),
  * bowHand: buildBowHand(bow, V.group) (hidden; no longer used: the grip is grip() below).
  */
-const smooth01 = x => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x))
 
 export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
   const H = name => vrm.humanoid.getNormalizedBoneNode(name)
@@ -100,6 +144,12 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
     measure(m.hand, kMid.clone().sub(pH), m.side)
     m.knuckleOff = kMid.clone().sub(pH)            // rest wrist → knuckle midpoint (world)
     m.handB = rest.get(m.hand).B.clone()
+    // rest offsets from the wrist (world): each knuckle, the thumb's root; the
+    // back of the hand (the basis' y: side × long axis)
+    m.kRest = FINGERS.map(F => wp(H(s + F + 'Proximal')).sub(pH))
+    m.thumbRest = wp(H(s + 'ThumbMetacarpal')).sub(pH)
+    m.dorsalRest = m.side.clone().cross(m.knuckleOff).normalize()
+    m.klineRest = m.kRest[3].clone().sub(m.kRest[0]).normalize()
     m.fingers = FINGERS.map(F => {
       const bs = ['Proximal', 'Intermediate', 'Distal'].map(k => H(s + F + k))
       const P = bs.map(wp)
@@ -252,41 +302,13 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
     leftHand.update(pose, dt)
     placeBow(bw)
 
-    // ── left arm and hand ──
+    // ── left arm and hand (research/04_left_hand.md) ──
     {
       const m = M.L, J = leftHand.joints, mat = V.group.matrixWorld
-      const k1 = toWorld(J.fingers[1].base, mat), k4 = toWorld(J.fingers[4].base, mat)
-      const knuckle = k1.clone().add(k4).multiplyScalar(0.5)
-      const side = k1.clone().sub(k4)
-      const S = wp(m.upper)
-      const sMean = [1, 2, 3, 4].reduce((a, f) => a + pose.fingers[f].s, 0) / 4
-      const swing = 1 - sMean / Math.max(1, V.S - 1)          // 1 on the G string
       const high = clamp((pose.anchorU - V.x0 * 0.62) / (V.x0 * 0.5), 0, 1)
-      const pole = S.clone().add(v3(-14 - 10 * swing - 6 * high, -45, 18))
-      // a straight wrist: the forearm and the hand form one segment from the
-      // elbow to the knuckles, so solve the arm to the knuckles with the hand's
-      // length added to the forearm, then put the wrist on that line
-      const hl = m.knuckleOff.length()
-      const E = twoBone(S.clone(), knuckle.clone(), m.l1, m.l2 + hl, pole.clone(), v3())
-      // the hand's own orientation (which way the fingers point) comes from
-      // #033's knuckle line; only its direction follows the forearm
-      let R = rotFor(m.hand, knuckle.clone().sub(E), side, new THREE.Quaternion())
-      const W = knuckle.clone().sub(m.knuckleOff.clone().applyQuaternion(R))
-      // high positions: the knuckles are over the upper bout, and the straight
-      // line from the elbow would put the wrist inside the body. The wrist stays
-      // under the back instead (the heel of the hand against the shoulder of the
-      // violin) and bends just that much
-      toLocalM.copy(mat).invert()
-      const Wl = W.clone().applyMatrix4(toLocalM)
-      const over = smooth01((Wl.x - V.x0) / (3 * V.k))
-      const yMax = -2.2 * V.k
-      if (over > 0 && Wl.y > yMax) {
-        Wl.y += (yMax - Wl.y) * over
-        W.copy(Wl.applyMatrix4(mat))
-        R = rotFor(m.hand, knuckle.clone().sub(W), side, new THREE.Quaternion())
-      }
-      arm(m, S, W, pole, R, side)
-      fingersTo(m, mat, J)
+      const { W, E, R } = leftHandPose(m, J, pose, high, dt)
+      setArm(m, wp(m.upper), E, W, R)
+      fingersTo(m, mat, J, R)
     }
     // ── right arm and the bow hand ──
     {
@@ -340,6 +362,8 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
     }
     turn(B.neck, null); setWorldQ(B.neck, _qq.setFromAxisAngle(side0, 0.05 + bend * 0.15).multiply(wq(B.neck)))
     turn(B.head, null); setWorldQ(B.head, _qq.setFromAxisAngle(side0, 0.04 + bend * 0.2).multiply(wq(B.head)))
+    turn(M.L.shoulder, null)                 // (the clavicle back from its playing protraction)
+    st.lClav = 0
     relaxArms()
     legs()
     const down = v3(0, -1, 0)
@@ -370,6 +394,178 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
     }
   }
 
+  // ── the left hand's posture (research/04_left_hand.md §3) ──
+  // The index knuckle is pinned where the crease at the base of the index
+  // rests on the E side of the neck. The hand turns about it by three angles,
+  // searched every frame (violin frame):
+  //   th   the knuckle line's slant: the little knuckle higher and further
+  //        along the neck (the hand slants back, the wrist toward the bridge),
+  //   ya   the little knuckle out from the side of the neck (−z),
+  //   ro   the roll of the palm about the knuckle line (0: palm square to the
+  //        side of the neck; +: turned up toward the strings).
+  // The hand's own shape (its knuckle line against its long axis) comes from
+  // the model. For each, the wrist follows from the pinned knuckle and the
+  // elbow is the point on the two-bone circle (shoulder → wrist) nearest the
+  // straight line through the hand. The best one bends the wrist least, keeps
+  // every stop within easy reach of its finger, lets the thumb reach under the
+  // neck, keeps the elbow under the violin and the wrist out of its body, and
+  // does not jump from the last frame.
+  const LH = { th: 0.35, ya: 0.5, ro: 0.15, sh: 1, init: false, n: 0 }
+  const _qf = new THREE.Quaternion(), _qi = new THREE.Quaternion(), _o = v3(), _fp = [v3(), v3(), v3(), v3()]
+  const _l = v3(), _n = v3(), _bt = new THREE.Matrix4(), _br = new THREE.Matrix4(), _pp = v3()
+  function handFrame(th, ya, ro, mat) {
+    const m = M.L
+    // little − index knuckle, and the back of the hand, in the violin frame
+    _l.set(Math.cos(th) * Math.cos(ya), Math.sin(th), -Math.cos(th) * Math.sin(ya)).normalize()
+    _n.set(0, 0, -1).addScaledVector(_l, _l.z).normalize()             // back of the hand away from the neck
+    const up = v3().crossVectors(_l, _n)                                  // toward the strings, or away
+    if (up.y > 0) up.negate()
+    _n.multiplyScalar(Math.cos(ro)).addScaledVector(up, Math.sin(ro)).normalize()   // + turns the palm up
+    const l = _l.clone().transformDirection(mat), n = _n.clone().transformDirection(mat)
+    basis(l, n, _bt)
+    basis(m.klineRest, m.dorsalRest, _br)
+    _br.transpose()
+    return new THREE.Quaternion().setFromRotationMatrix(_bt.multiply(_br))
+  }
+  function leftHandPose(m, J, pose, high, dt) {
+    const mat = V.group.matrixWorld
+    toLocalM.copy(mat).invert()
+    const s = handScale, k = V.k
+    // the contact point: #033's index knuckle along the neck (near the nut in
+    // first position), beside the E edge; the search may slide it up to 3.5 cm
+    // toward the bridge for a hand whose fingers are short for the violin, or
+    // 1.5 cm toward the scroll for a stop close to the nut
+    const contact = sh => {
+      const x1 = J.fingers[1].base.x + sh
+      return v3(x1, V.fbY(x1, 0) - (1.0 - 0.4 * high) * s, -(V.fbHalf(x1) + (1.1 + 0.3 * high) * s)).applyMatrix4(mat)
+    }
+    const K1 = contact(0)
+    // the left shoulder comes forward (the clavicle protracts, up to 25°) until
+    // the elbow can bend to about 110°, as a violinist's does in first position:
+    // the model's arms are shorter than the violin is long
+    {
+      const W0 = K1.clone().addScaledVector(v3(0, -1, 0).transformDirection(mat), 8 * s)
+      const want = Math.sqrt(m.l1 ** 2 + m.l2 ** 2 + 2 * m.l1 * m.l2 * Math.cos(THREE.MathUtils.degToRad(70)))
+      let pr = 0
+      for (pr = 0; pr < 0.43; pr += 0.04) {
+        turn(m.shoulder, new THREE.Euler(0, -pr, 0, 'YXZ'))
+        if (wp(m.upper).distanceTo(W0) <= want) break
+      }
+      st.lClav = st.lClav == null || !LH.init ? pr : st.lClav + (pr - st.lClav) * Math.min(1, dt * 6)
+      turn(m.shoulder, new THREE.Euler(0, -st.lClav, 0, 'YXZ'))
+    }
+    const S = wp(m.upper)
+    const targets = [1, 2, 3, 4].map(f => ({ T: J.fingers[f].cur.clone().applyMatrix4(mat), on: pose.fingers[f].press > 0, len: m.fingers[f - 1].len.reduce((a, b) => a + b, 0) }))
+    const thumbT = J.thumb.target.clone().applyMatrix4(mat)
+    const thumbLen = (m.thumb.len[0] + m.thumb.len[1]) + m.thumbRest.distanceTo(m.kRest[0]) * 0.55
+    const elbowRef = J.elbow.clone().applyMatrix4(mat)
+    const l1 = m.l1, l2 = m.l2
+    const th0 = THREE.MathUtils.degToRad(24 - 14 * high)
+    const evaluate = (th, ya, ro, sh, keep, why = null) => {
+      const add = (k, v) => { if (why) why[k] = (why[k] || 0) + v; return v }
+      const R = handFrame(th, ya, ro, mat)
+      const W = contact(sh).sub(_pp.copy(m.kRest[0]).applyQuaternion(R))
+      const h = m.knuckleOff.clone().applyQuaternion(R).normalize()       // straight-wrist line
+      // the elbow: on the circle of the two-bone chain, nearest the line
+      const ax = W.clone().sub(S), dist = ax.length(); ax.normalize()
+      const dd = Math.min(dist, l1 + l2 - 1e-3)
+      const xC = (l1 * l1 - l2 * l2 + dd * dd) / (2 * dd), rC = Math.sqrt(Math.max(0, l1 * l1 - xC * xC))
+      const C = S.clone().addScaledVector(ax, xC)
+      const want = W.clone().addScaledVector(h, -l2)
+      const radial = want.clone().sub(C); radial.addScaledVector(ax, -radial.dot(ax))
+      if (radial.lengthSq() < 1e-8) radial.set(0, -1, 0).addScaledVector(ax, ax.y).normalize(); else radial.normalize()
+      // the line's best elbow, and one turned down under the violin; keep the better
+      const down = v3(0, -1, 0).transformDirection(mat).addScaledVector(ax, 0); down.addScaledVector(ax, -down.dot(ax)).normalize()
+      let best = null
+      const u2 = ax.clone().cross(radial).normalize()
+      const ring = [0, 0.5, -0.5, 1.1, -1.1, 1.8, -1.8, 2.6, -2.6].map(t => radial.clone().multiplyScalar(Math.cos(t)).addScaledVector(u2, Math.sin(t)))
+      for (const r of [...ring, down]) {
+        const Ec = C.clone().addScaledVector(r, rC)
+        const fa = W.clone().sub(Ec).normalize()
+        const bend = THREE.MathUtils.radToDeg(Math.acos(clamp(fa.dot(h), -1, 1)))
+        const El = Ec.clone().applyMatrix4(toLocalM)
+        let c = bend * (bend > 12 ? 3 : 1) + 10 * Math.max(0, bend - 25)
+        c += 4 * Math.max(0, El.y + 8 * k)                    // the elbow under the violin
+        // the forearm and the upper arm (with a sleeve) clear of the violin's body
+        const Wl = W.clone().applyMatrix4(toLocalM), Sl = S.clone().applyMatrix4(toLocalM)
+        for (let j = 1; j <= 9; j++) {
+          if (inBody(_pp.lerpVectors(El, Wl, j / 9), 4.6 * k)) c += 400          // (j = 9: the wrist itself)
+          if (inBody(_pp.lerpVectors(Sl, El, j / 9), 5.6 * k)) c += 400
+        }
+        c += 0.25 * Ec.distanceTo(elbowRef)
+        if (!best || c < best.c) best = { c, E: Ec, bend }
+      }
+      let c = add('arm', best.c) + add('reach', Math.max(0, dist - (l1 + l2)) * 20)
+      // each finger, solved as it will be drawn: its base joint within a hand's
+      // range (flexion −10…85°, splay ≤ 22°), its stop within reach
+      const N = m.dorsalRest.clone().applyQuaternion(R)
+      for (let i = 0; i < 4; i++) {
+        const Kf = W.clone().add(_pp.copy(m.kRest[i]).applyQuaternion(R))
+        const tg = targets[i], w = tg.on ? 1 : 0.3
+        const q = handFinger(Kf, tg.T, m.fingers[i].len, 0.72, h, N, _fp)
+        // (past a centimetre the stop is an extension the hand cannot make: reach
+        // toward it, but not at the cost of the whole hand)
+        c += add('f' + (i + 1) + 'reach', w * (150 * Math.min(q.miss, 0.6) + 25 * clamp(q.miss - 0.6, 0, 1.4) + 3 * Math.max(0, q.miss - 2)))
+        // base joint flexion −10…85°, splay ≤ 22°, middle joint 30…100°
+        c += add('f' + (i + 1) + 'shape', w * (3 * Math.max(0, q.flex - 80) + 6 * Math.max(0, q.flex - 88) + 3 * Math.max(0, -5 - q.flex) + 6 * Math.max(0, -12 - q.flex) + 3 * Math.max(0, Math.abs(q.lean) - 20) + 0.6 * Math.max(0, 30 - q.pip)))
+        if (why) why['f' + (i + 1)] = [Math.round(q.flex), Math.round(q.splay), Math.round(q.pip), +q.miss.toFixed(2)]
+        if (i === 3) { const kl = Kf.applyMatrix4(toLocalM); c += add('little', 40 * Math.max(0, kl.y - (V.fbY(kl.x, 0) + 1.2 * s))) }
+      }
+      // the thumb reaches under the neck
+      const Tb = W.clone().add(_pp.copy(m.thumbRest).applyQuaternion(R))
+      c += add('thumb', 6 * Math.max(0, Tb.distanceTo(thumbT) - thumbLen))
+      // the wrist stays out of the violin's body (high positions)
+      const Wl = W.clone().applyMatrix4(toLocalM)
+      if (Wl.x > V.x0 - 1 && Wl.x < V.x0 + V.bodyLen) c += add('body', 15 * Math.max(0, Wl.y + 2.2 * k))
+      // posture preferences, and no jumps
+      c += add('pref', 12 * Math.abs(th - th0) + 6 * Math.abs(ya - 0.5) + 6 * Math.abs(ro - 0.15) + 3 * Math.abs(sh) / s)
+      if (why) { why.bend = best.bend; why.total = c }
+      if (keep) c += 30 * (Math.abs(th - LH.th) + Math.abs(ya - LH.ya) + Math.abs(ro - LH.ro)) + 4 * Math.abs(sh - LH.sh)
+      return { c, th, ya, ro, sh, R, W, E: best.E, bend: best.bend }
+    }
+    // a coarse grid (the first frame, and every 20th), else a local search
+    // around the last pose; then a finer step around the best
+    const D = THREE.MathUtils.degToRad
+    let best = null
+    const tryP = (th, ya, ro, sh) => { const r = evaluate(th, ya, ro, sh, LH.init); if (!best || r.c < best.c) best = r }
+    const grid = () => { for (const th of [0, 12, 24, 36, 48]) for (const ya of [15, 35, 55]) for (const ro of [-10, 10, 30]) for (const sh of [-1, 0.8, 2.6]) tryP(D(th), D(ya), D(ro), sh * s) }
+    tryP(LH.th, LH.ya, LH.ro, LH.sh)
+    // the whole grid on the first frame, every 20th, and whenever the hand's
+    // last shape no longer suits the stops (a shift, a chord, a new string)
+    // (for a poor fit at most ten times a second: the grid costs ~135 evaluations)
+    LH.clock = (LH.clock ?? 0) + dt
+    if (!LH.init || LH.clock - (LH.gridAt ?? -9) >= 0.5 || ((best.c > (LH.cost ?? 0) * 1.4 + 12 || best.c > 60) && LH.clock - LH.gridAt >= 0.1)) { grid(); LH.gridAt = LH.clock }
+    // coordinate descent, halving the steps
+    const STEP = [D(6), D(8), D(8), 0.6 * s]
+    for (const step of [1, 0.5, 0.25]) for (let k = 0; k < 4; k++) for (const sg of [-1, 1]) {
+      const c0 = best, v = [c0.th, c0.ya, c0.ro, c0.sh]
+      v[k] += sg * step * STEP[k]
+      tryP(v[0], v[1], v[2], Math.max(-1.5 * s, Math.min(3.5 * s, v[3])))
+    }
+    // smooth the chosen pose (a hand does not snap to a new shape)
+    const a = LH.init ? Math.min(1, dt * 14) : 1
+    for (const k of ['th', 'ya', 'ro', 'sh']) LH[k] += (best[k] - LH[k]) * a
+    LH.init = true
+    const out = evaluate(LH.th, LH.ya, LH.ro, LH.sh, false)
+    LH.cost = out.c
+    st.lh = { th: LH.th, ya: LH.ya, ro: LH.ro, sh: LH.sh, cost: out.c, bend: out.bend }
+    st.lhWhy = (th, ya, ro, sh = LH.sh) => { const w = {}; evaluate(th, ya, ro, sh, false, w); for (const k in w) if (typeof w[k] === 'number') w[k] = +w[k].toFixed(1); return w }
+    return out
+  }
+  // a point (violin frame) inside the violin's body, grown by r
+  function inBody(q, r) {
+    if (q.x < V.x0 + r || q.x > V.x0 + V.bodyLen - r) return false
+    // (the body's outline is about 20 cm across; a sleeve may touch the back
+    // and the ribs, as a violinist's wrist does in the high positions)
+    return Math.abs(q.z) < 10 * V.k - r + 0.5 && q.y > -1 + r * 0.3 - 0.8 && q.y < V.rib + 1.6 * V.k - r * 0.3 + 0.5
+  }
+  function setArm(m, S, E, W, R) {
+    orient(m.upper, E.clone().sub(S), W.clone().sub(E))
+    const side = m.side.clone().applyQuaternion(R)
+    orient(m.lower, W.clone().sub(E), side)
+    setWorldQ(m.hand, _qq.copy(R).multiply(rest.get(m.hand).q))
+  }
+
   // ── pieces ──
   function arm(m, S, W, pole, R, side) {
     const E = twoBone(S.clone(), W.clone(), m.l1, m.l2, pole, v3())
@@ -388,35 +584,56 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
       setWorldQ(m.hand, rotFor(m.hand, W.clone().sub(E), v3(0, 0, 1)).multiply(rest.get(m.hand).q))
     }
   }
-  /** Fingers from the character's knuckles to the #033 fingertip targets. */
-  function fingersTo(m, mat, J) {
+  /**
+   * Fingers from the character's knuckles to the #033 fingertip targets, each
+   * bending in its own plane: through its knuckle, its target and the back of
+   * the hand (so it may splay at the base joint but never bends sideways at
+   * the middle and end joints), with the end joint coupled to the middle one.
+   */
+  function fingersTo(m, mat, J, R) {
     toLocalM.copy(mat).invert()
-    const handR = wq(m.hand).multiply(_q.copy(rest.get(m.hand).q).invert())
+    const handR = R || wq(m.hand).multiply(_q.copy(rest.get(m.hand).q).invert())
     const side = m.side.clone().applyQuaternion(handR)
+    // the hand's axes, in the violin frame
+    const N = m.dorsalRest.clone().applyQuaternion(handR).transformDirection(toLocalM).normalize()
+    const d = m.knuckleOff.clone().applyQuaternion(handR).transformDirection(toLocalM).normalize()
     for (let i = 0; i < 4; i++) {
       const F = m.fingers[i], f = i + 1
       const base = wp(F.bones[0]).applyMatrix4(toLocalM)
-      solveFinger(base, J.fingers[f].cur, F.len, 0.72, F.pts, null)
-      chain(F.bones, F.pts.map(p => p.clone().applyMatrix4(mat)), side)
+      F.q = handFinger(base, J.fingers[f].cur, F.len, 0.72, d, N, F.pts)
+      // roll each phalanx about the finger's own hinge (its side, as the knuckle line's)
+      const W = F.pts.map(p => p.clone().applyMatrix4(mat))
+      const hinge = W[1].clone().sub(W[0]).cross(W[2].clone().sub(W[1]))
+      const ref = hinge.lengthSq() > 1e-6 ? hinge.normalize() : side.clone()
+      if (ref.dot(side) < 0) ref.negate()
+      chain(F.bones, W, ref)
     }
-    // thumb: under the neck, two-bone onto its target
+    // thumb: under the neck. It opposes at its base (CMC) joint, up to 50°,
+    // toward the target, then its two joints bend toward the palm
     const T = m.thumb
     setWorldQ(T.bones[0], _qq.copy(handR).multiply(rest.get(T.bones[0]).q))
     const tip = toWorld(J.thumb.target, mat)
-    // out of reach: the metacarpal swings toward the target at the CMC joint
-    // (up to 35°), as a real thumb opposes under the neck
     let J1 = wp(T.bones[1])
-    if (J1.distanceTo(tip) > 0.97 * (T.len[0] + T.len[1])) {
+    const reach = T.len[0] + T.len[1]
+    if (J1.distanceTo(tip) > 0.9 * reach) {
       const C = wp(T.bones[0]), a = J1.clone().sub(C).normalize(), b = tip.clone().sub(C).normalize()
       const full = Math.acos(clamp(a.dot(b), -1, 1))
       if (full > 1e-3) {
-        const q = new THREE.Quaternion().setFromAxisAngle(a.clone().cross(b).normalize(), Math.min(full, 0.6))
+        // just enough to bring it within reach, no more than 50°
+        let lo = 0, hi = Math.min(full, 0.87)
+        const axis = a.clone().cross(b).normalize(), L = J1.distanceTo(C)
+        for (let k = 0; k < 14; k++) { const mid = (lo + hi) / 2; const p = C.clone().addScaledVector(a.clone().applyAxisAngle(axis, mid), L); if (p.distanceTo(tip) > 0.9 * reach) lo = mid; else hi = mid }
+        const q = new THREE.Quaternion().setFromAxisAngle(axis, hi)
         setWorldQ(T.bones[0], q.multiply(wq(T.bones[0])))
         J1 = wp(T.bones[1])
       }
     }
-    const pole = toWorld(J.thumb.base.clone().add(v3(-6, 0, 6)), mat)
+    // bend toward the palm (away from the back of the hand)
+    const Nw = m.dorsalRest.clone().applyQuaternion(handR)
+    const pole = J1.clone().lerp(tip, 0.5).addScaledVector(Nw, -6)
     const mid = twoBone(J1.clone(), tip.clone(), T.len[0], T.len[1], pole, v3())
+    // (where the thumb's tip ends up, for the posture test)
+    T.tip = mid.clone().addScaledVector(tip.clone().sub(mid).normalize(), T.len[1])
     const back = Y.clone().applyQuaternion(handR)
     orient(T.bones[1], mid.clone().sub(wp(T.bones[1])), back)
     orient(T.bones[2], tip.clone().sub(mid), back)
@@ -457,6 +674,8 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
     const J1 = wp(T.bones[1])
     const tip = L(G.thumb).applyMatrix4(mat), pole = L(G.thumbPole).applyMatrix4(mat)
     const mid = twoBone(J1.clone(), tip.clone(), T.len[0], T.len[1], pole, v3())
+    // (where the thumb's tip ends up, for the posture test)
+    T.tip = mid.clone().addScaledVector(tip.clone().sub(mid).normalize(), T.len[1])
     const back = Y.clone().applyQuaternion(handR)
     orient(T.bones[1], mid.clone().sub(J1), back)
     orient(T.bones[2], tip.clone().sub(mid), back)
@@ -532,5 +751,5 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
   if (vrm.lookAt) { vrm.lookAt.target = lookObj; vrm.lookAt.autoUpdate = true }
   root.parent?.add(lookObj)
 
-  return { update, opts, M, handScale, height, B, lookObj, hipsRestY }
+  return { update, opts, M, handScale, height, B, lookObj, hipsRestY, st }
 }

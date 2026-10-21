@@ -21,7 +21,7 @@ Drives the VRM's normalised humanoid bones every frame from the #033 models (`st
 - feet planted (left forward), two-bone leg IK; hips sway and dip with the energy of the passage;
 - spine lean and breath, a turn that follows the bow; the scroll lifts on the breath before a phrase;
 - violin on the chest frame: 40° left of facing, scroll up 4°, rolled 30° (E side down), defaults from Margulies 2023 (`research/01_violinist_biomechanics.md` §2); head turned 26°, tilted 14° onto the chin rest;
-- left hand: #033's hand model is solved in the violin frame; the character's hand goes on its knuckle line, the arm is two-bone IK with the elbow under the violin (toward the G string, further in high positions), each finger is solved to #033's fingertip targets with the character's own finger lengths, and the thumb sits under the neck; in high positions the wrist stays under the violin's back (the heel of the hand against the upper bout) and bends just that much;
+- left hand ([research/04_left_hand.md](research/04_left_hand.md)): #033's hand model gives the stops; the character's index knuckle rests where the crease at the base of the index touches the E side of the neck. The hand turns about it to the pose a search picks every frame: a straight wrist, every stop within its finger's reach, the thumb under the neck, the elbow under the violin and the arm clear of its body. The left clavicle comes forward so the short-armed model can bend its elbow. Each finger splays at its base joint and bends as a hinge in its own plane (the end joint 0.72 × the middle one), so it curls over the strings and never bends sideways; the thumb opposes at its base joint;
 - bow placed as in #033 (contact near the bridge, tilted to the string); the right hand takes a Franco-Belgian hold (`grip()` in rig.js: palm down over the stick, index, middle and ring draped over the far side, little finger curved on top, thumb bent under the stick at the frog; pronating toward the tip), the arm is two-bone IK with the elbow higher on the lower strings, the clavicle comes forward when the tip is out of reach;
 - eyes follow the left hand and the contact point.
 
@@ -29,10 +29,15 @@ Drives the VRM's normalised humanoid bones every frame from the #033 models (`st
 
 `node violinist/test/collisions.mjs [song.mid[@model.vrm][@outfit]] …` plays pieces headless (every 0.25 s, up to 240 s each) and checks the bow against the head and torso, the right forearm against the torso, the right elbow against the body's midline, the left elbow against the violin's back and both arms against the violin body, with the sleeve thickness added; exits 1 on a failure. It needs the parent folder served (`BASE`, default `http://127.0.0.1:8000/midiviz/`), playwright-core (`PLAYWRIGHT`) and a Chromium (`CHROME`). Current closest gaps on the four default runs: bow–head 8 cm, bow–torso 12.6, forearm–torso 2.4, elbow–midline 9.7, left elbow–violin 4.3.
 
+## Posture test
+
+`node violinist/test/posture.mjs [song.mid[@model.vrm]] …` (same environment as the collision sweep) plays pieces headless and checks the left hand every 0.25 s: each pressed fingertip on its stop, the base, middle and end joints within a hand's range, no finger leaning out of its plane, the wrist straight, the index at its contact, the little knuckle beside the board, the thumb under the neck, the elbow under the violin. It exits 1 on a failure. Current medians: base joints 50°, middle joints 93°, wrist bend 2–7°; all four default runs pass.
+
 ## Research
 
 - `research/01_violinist_biomechanics.md`: stance, sway, violin hold angles, left and right arm mechanics, bow angles per string, motion-capture datasets (MOSA, SPD, SyncViolinist…), a rig recipe.
 - `research/02_character_look.md`: Nodame Cantabile's concert look in three.js terms, model options (VRoid vs MakeHuman male with exact targets, community suits and hair), the recommendation.
+- `research/04_left_hand.md`: the violinist's left hand. The posture from teaching sources (contact points, thumb, knuckles, wrist, elbow, finger shape) and hand anatomy (joint ranges, DIP–PIP coupling); what the rig got wrong, measured; the recipe and the checks.
 - `research/03_pianist_pair.md`: a pianist who matches the violinist: the VRoid sample women (all eight checked, three CC0 candidates plus AvatarSample_A with previews in `assets/models/candidates/`; the VRMs there are git-ignored), the MakeHuman alternative, and Nodame / Chiaki fan models (none usable in the repo).
 
 ## #038 Duo (`../038_duo.html`)
