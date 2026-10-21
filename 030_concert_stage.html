@@ -149,7 +149,7 @@
   <div id="visualsPop" class="pop ui">
     <div class="sect">Mode</div>
     <div class="seg" id="modeSeg"><button data-mode="concert">Concert</button><button data-mode="lesson">Lesson</button></div>
-    <div class="field" title="Falling: notes travel toward the keys and land when they sound. Rising: notes grow out of the key as it is played and float away. Both: falling notes, and a faint copy rises from the key once played. Phased: the direction flips every few seconds of the song. Random: each note picks a direction"><label>Lesson Notes</label><select id="noteDir"><option value="fall">Falling (toward the keys)</option><option value="rise">Rising (out of the keys)</option><option value="both">Both: falling, with a dim rising trail</option><option value="phase">Phased: falls, then rises, every few bars</option><option value="random">Random: each note falls or rises</option></select></div>
+    <div class="field" title="Falling: notes travel toward the keys and land when they sound. Rising: notes grow out of the key as it is played and float away. Both: falling notes, and a faint copy rises from the key once played. Phased: the direction flips every few seconds of the song. Random: each note picks a direction. Fountain: a note rises from its key as it is played, slows, and falls back onto the same key"><label>Lesson Notes</label><select id="noteDir"><option value="fall">Falling (toward the keys)</option><option value="rise">Rising (out of the keys)</option><option value="both">Both: falling, with a dim rising trail</option><option value="phase">Phased: falls, then rises, every few bars</option><option value="random">Random: each note falls or rises</option><option value="fountain">Fountain: each note rises, then falls back onto its key</option></select></div>
     <div class="field"><label>Right Hand Color</label><input type="color" id="rhColor" value="#ffc93c"></div>
     <div class="field"><label>Left Hand Color</label><input type="color" id="lhColor" value="#2f8bff"></div>
     <label class="chk"><input type="checkbox" id="glowConcert">Colour the keys in Concert mode</label>
@@ -516,6 +516,7 @@
     const HIT_Z = DIM.KEY_BACK - 0.6, HIT_Y = DIM.KEY_TOP + DIM.BLACK_RISE + 0.35
     const LANE_LEN = 150, LOOKAHEAD = 2.6        // cm of lane, seconds it shows
     const PHASE = 6                              // seconds per direction in the phased lesson notes
+    const FOUNT_H = LANE_LEN / 3                  // cm a fountain note climbs after its key is released
     const handColor = { R: new THREE.Color(), L: new THREE.Color() }
     const readColors = () => { handColor.R.set($('rhColor').value); handColor.L.set($('lhColor').value) }
     readColors()
@@ -1370,7 +1371,7 @@
         }
         // binary search the first note that could still be visible (sorted by time)
         let lo = 0, hi = notes.length
-        const tMin = t - 8 - LOOKAHEAD
+        const tMin = t - 8 - (dir === 'fountain' ? 4 * FOUNT_H / speed + 1 : LOOKAHEAD)
         while (lo < hi) { const m = (lo + hi) >> 1; notes[m].time < tMin ? lo = m + 1 : hi = m }
         for (let i = lo; i < notes.length && n < MAX_NOTES; i++) {
           const nt = notes[i]
@@ -1383,7 +1384,24 @@
           // falling: travels toward the key and is swallowed by it while held
           const fallSpan = end >= t
             ? [Math.max(0, (nt.time - t) * speed), Math.min(LANE_LEN, (end - t) * speed)] : null
-          if (dir === 'both') {
+          if (dir === 'fountain') {
+            // grows out of the key while held, like Rising; on release it keeps the
+            // lane speed and decelerates under a constant g, so it peaks FOUNT_H up
+            // and falls back onto its own key (dimmed sparks where it lands)
+            if (nt.time > t) continue
+            if (t <= end) { put(nt, 0, Math.min(LANE_LEN, (t - nt.time) * speed), true, 1, true, on); continue }
+            const g = speed * speed / (2 * FOUNT_H), L = Math.min(LANE_LEN, (end - nt.time) * speed)
+            const y = tau => speed * tau - g * tau * tau / 2
+            const tau = t - end, h = y(tau)
+            if (h + L <= 0) {
+              if (dt > 0 && dt < 0.1 && y(tau - dt) + L > 0) sparks.emit(piano.keyX(nt.midi), handColor[nt.hand] || handColor.R, 0.1)
+              continue
+            }
+            // on the way down it dims to 35 % (over 0.3 s past the peak), so the
+            // notes rising from the keys stay readable through it
+            const past = tau - speed / g, up = past < 0
+            put(nt, Math.max(0, h), Math.min(LANE_LEN, h + L), up, up ? 1 : 1 - 0.65 * Math.min(1, past / 0.3), true, false)
+          } else if (dir === 'both') {
             if (riseSpan) put(nt, riseSpan[0], riseSpan[1], true, 0.3, false, false, 0.55)
             if (fallSpan) put(nt, fallSpan[0], fallSpan[1], false, 1, (nt.time - t) * speed >= 0.5, on)
           } else if (risesOf(nt, i)) { if (riseSpan) put(nt, riseSpan[0], riseSpan[1], true, 1, true, on) }
