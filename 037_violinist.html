@@ -72,7 +72,8 @@
       <option value="behind">Over his shoulder</option>
       <option value="free">Free</option>
     </select>
-    <select id="sf" title="Sound">
+    <select id="vsound" title="The violin's sound. GM: the soundfont below. #034's engines play the violin from the fingering, the bowing and the dynamics (and a recorded performer's pitch curves): the bowed waveguide and the Helmholtz source-filter are physical models running in real time; the hybrid sampler plays University of Iowa recordings along the same curves, rendered a few seconds ahead"><option value="gm">Violin: GM soundfont</option><option value="waveguide">Violin: bowed waveguide (#034)</option><option value="source">Violin: Helmholtz source-filter (#034)</option><option value="hybrid">Violin: hybrid sampler (#034)</option></select>
+    <select id="sf" title="Soundfont (the accompaniment, and the violin when it is GM)">
       <option value="soundfonts/FluidR3.sf3">FluidR3 GM</option>
       <option value="soundfonts/Creative(emu10k1)8MBGMSFX.sf2">Creative 8 MB GM</option>
     </select>
@@ -101,6 +102,8 @@
     import { buildMotion } from './strings/motion.js'
     import { bowingFor } from './violinist/score-art.js'
     import { performersFor, applyPerformer, performerCredit } from './violinist/performer.js'
+    import { expressionFromCC } from './strings/sound/performance.js'
+    import { tempoMapOf } from './strings/expression.js'
     import { buildViolin, buildBow } from './strings/violin3d.js'
     import { buildLeftHand, buildBowHand } from './strings/hand3d.js'
     import { createViolinistRig } from './violinist/rig.js'
@@ -196,7 +199,7 @@
       const accNotes = others.flatMap(t => t.notes.map(n => ({ t, n, q: n.ticks / ppq, dq: n.durationTicks / ppq, on: n.time * k, off: (n.time + Math.max(0.04, n.duration)) * k })))
       song.performer = null
       if ($('performer').value) {
-        try { song.performer = await applyPerformer($('performer').value, notes, accNotes, { engine: 'gm' }) } catch (err) { console.warn('performer:', err.message) }
+        try { song.performer = await applyPerformer($('performer').value, notes, accNotes, { engine: $('vsound').value }) } catch (err) { console.warn('performer:', err.message) }
         if (song.performer) notes.sort((a, b) => a.on - b.on || a.pitch - b.pitch)
       }
       // the bow: the Mutopia score's slurs and marks by default (violinist/score-art.js)
@@ -213,10 +216,18 @@
         const c = chOf.get(key)
         for (const a of accNotes) if (a.t === t) accomp.push({ midi: a.n.midi, time: a.on, duration: Math.max(0.04, a.off - a.on), velocity: a.n.velocity * 0.8, channel: c })
       }
-      Object.assign(song, { entry: e, notes, accomp, programs, motion: buildMotion(notes, { instrument: 'violin' }) })
+      // dynamics for #034's engines: the solo track's hairpins (CC11 / CC7 / CC2),
+      // or the recorded performer's lane (corrected for that engine)
+      // (file times to song times: × k, or along the recording's tempo map)
+      const tmap = song.performer ? tempoMapOf(song.performer.rec, notes) : null
+      const T = tmap ? sec => tmap(midi.header.secondsToTicks(sec) / ppq) : sec => sec * k
+      let ex = expressionFromCC(solo[0].controlChanges)
+      if (ex) ex.points = ex.points.map(([t, v]) => [T(t), v])
+      if (song.performer?.expression) ex = song.performer.expression.recorded || !ex ? song.performer.expression : { ...ex, timing: true }
+      Object.assign(song, { expr: ex, entry: e, notes, accomp, programs, motion: buildMotion(notes, { instrument: 'violin' }) })
       song.duration = Math.max(...notes.map(n => n.off), ...accomp.map(n => n.time + n.duration), 1)
       song.drive = drivers(notes)
-      $('credit').innerHTML = `${e.composer} – ${e.title}<br>MIDI: ${e.credit || 'Mutopia Project'}, ${e.licence}${bowingCredit(song.bowing)}${song.performer ? '<br>Played as ' + performerCredit(song.performer.rec, { pitch: false }) : ''}`
+      $('credit').innerHTML = `${e.composer} – ${e.title}<br>MIDI: ${e.credit || 'Mutopia Project'}, ${e.licence}${bowingCredit(song.bowing)}${song.performer ? '<br>Played as ' + performerCredit(song.performer.rec, { pitch: violin.on }) : ''}`
       $('startSong').textContent = `${e.composer} – ${e.title}`
       clock.t = 0
       setStatus('')
@@ -258,7 +269,43 @@
     const ensureSound = () => (soundLoading ??= loadSound($('sf').value))
     $('sf').onchange = () => { soundLoading = loadSound($('sf').value) }
     const setPrograms = () => { if (soundReady) for (const [c, p] of song.programs) engine.programChange(c, p) }
-    const applyHall = () => { hall.set(acousticParams({ room: $('room').value, seat: 'mid' })) }
+    const applyHall = () => { const p = acousticParams({ room: $('room').value, seat: 'mid' }); hall.set(p); violin.lab?.setHall(p) }
+    // #034's violin engines, in #034's Lab on its own audio context with the
+    // same hall, started with the clock and put back in step when they drift.
+    // Levels match the GM violin (as #038, measured on the Kreutzer finale)
+    const LAB_LEVEL = { hybrid: 2.1, waveguide: 1.6, source: 1.1 }
+    const violin = {
+      lab: null, P: null, perfFor: null, exFor: null, speed: 0, using: null, checked: 0,
+      get name() { return $('vsound').value },
+      get on() { return this.name in LAB_LEVEL },
+      async ensure() {
+        if (!this.lab) {
+          setStatus('Loading the violin engine…')
+          const [{ Lab }, P] = await Promise.all([import('./strings/sound/engines.js'), import('./strings/sound/performance.js')])
+          this.P = P
+          this.lab = new Lab()
+          this.lab.on(e => {
+            if (e.engine !== this.using) return
+            if (e.type === 'progress') setStatus(e.text)
+            else if (e.type === 'ready') setStatus('')
+            else if (e.type === 'error') setStatus('Violin: ' + e.message, 6000)
+          })
+          applyHall()
+        }
+        if (this.using !== this.name) { this.using = this.name; await this.lab.use(this.name) }
+        this.lab.setVolume(LAB_LEVEL[this.name])
+        if (this.perfFor !== song.notes || this.exFor !== song.expr || this.speed !== clock.speed) {
+          this.perfFor = song.notes; this.exFor = song.expr; this.speed = clock.speed
+          const P = this.P
+          this.lab.setPerformance(P.renderPerformance(P.scaleNotes(song.notes, clock.speed), { instrument: 'violin', expression: P.scaleExpression(song.expr, clock.speed) }))
+        }
+        setStatus('')
+      },
+      // song time t (the Lab runs in performance time: song time / speed)
+      start(t) { if (!this.lab) return; this.checked = performance.now(); if (this.lab.playing) this.lab.seek(t / clock.speed); else this.lab.play(t / clock.speed) },
+      stop() { this.lab?.pause() },
+      time() { return this.lab ? this.lab.time() * clock.speed : 0 },
+    }
     $('room').onchange = applyHall
     applyHall()
     let scheduler = null
@@ -272,13 +319,14 @@
     const clock = { playing: false, t: 0, wall: 0, speed: 1 }
     const now = () => clock.playing ? clock.t + (performance.now() - clock.wall) / 1000 * clock.speed : clock.t
     function loadSchedule() {
-      const solo = song.notes.filter(n => !n.unplayable || true).map(n => ({ midi: n.pitch, time: n.on, duration: n.off - n.on, velocity: n.velocity ?? 0.75, channel: 0 }))
+      const solo = (violin.on ? [] : song.notes).map(n => ({ midi: n.pitch, time: n.on, duration: n.off - n.on, velocity: n.velocity ?? 0.75, channel: 0 }))
       scheduler.load({ notes: [...solo, ...song.accomp].sort((a, b) => a.time - b.time), controlChanges: [] })
       setPrograms()
     }
     async function play() {
       if (audioCtx.state !== 'running') audioCtx.resume().catch(() => {})
       await ensureSound()
+      if (violin.on) await violin.ensure()
       if (!scheduler) {
         scheduler = new MidiScheduler(target); await scheduler.init()
         scheduler.on('time', t => { if (clock.playing && Math.abs(t - now()) > 0.08) { clock.t = t; clock.wall = performance.now() } })
@@ -287,17 +335,34 @@
       if (clock.t >= song.duration) clock.t = 0
       scheduler.speed = clock.speed
       scheduler.seek(clock.t); scheduler.play()
+      if (violin.on) violin.start(clock.t)
       clock.wall = performance.now(); clock.playing = true
       $('play').textContent = '❚❚'; $('play').classList.add('on')
     }
     function pause() {
       clock.t = now(); clock.playing = false
-      scheduler?.pause(); target.allSoundOff()
+      scheduler?.pause(); target.allSoundOff(); violin.stop()
       $('play').textContent = '▶'; $('play').classList.remove('on')
     }
     $('play').onclick = () => (clock.playing ? pause() : play())
-    $('speed').onchange = () => { clock.t = now(); clock.wall = performance.now(); clock.speed = +$('speed').value; if (scheduler) scheduler.speed = clock.speed }
-    $('seek').oninput = () => { clock.t = +$('seek').value * song.duration; clock.wall = performance.now(); if (clock.playing) { target.allSoundOff(); scheduler.seek(clock.t) } }
+    $('speed').onchange = () => {
+      const was = clock.playing && violin.on
+      if (was) pause()                                  // (#034's engines take new curves at the new speed)
+      clock.t = now(); clock.wall = performance.now(); clock.speed = +$('speed').value; if (scheduler) scheduler.speed = clock.speed
+      if (was) play()
+    }
+    $('seek').oninput = () => { clock.t = +$('seek').value * song.duration; clock.wall = performance.now(); if (clock.playing) { target.allSoundOff(); scheduler.seek(clock.t); if (violin.on) violin.start(clock.t) } }
+    $('vsound').onchange = async () => {
+      const was = clock.playing
+      if (was) pause()
+      // a recorded performer: the dynamics lane corrected for this engine (strings/expression.js)
+      if (song.performer && !song.performer.rec.ensemble) { const t = clock.t; await loadSong($('song').value); clock.t = t }
+      if (violin.on) await violin.ensure()
+      if (scheduler) loadSchedule()
+      if (was) play()
+      saveUrl()
+    }
+    if ([...$('vsound').options].some(o => o.value === Q.get('violin'))) $('vsound').value = Q.get('violin')
     $('bowing').value = ['infer', 'fixed', 'edition:herrmann', 'edition:auer'].includes(Q.get('bowing')) ? Q.get('bowing') : 'score'
     // the editions cover Bach's solo works only
     const showEditions = () => { const solo = index.find(x => x.file === $('song').value)?.group === 'bach-solo'; for (const o of $('bowing').options) if (o.value.startsWith('edition:')) o.hidden = o.disabled = !solo; if (!solo && $('bowing').value.startsWith('edition:')) $('bowing').value = 'score' }
@@ -374,6 +439,7 @@
       if ($('outfit').value !== 'concert') p.set('outfit', $('outfit').value)
       if ($('bowing').value !== 'score') p.set('bowing', $('bowing').value)
       if (!$('performer').hidden && $('performer').value) p.set('performer', $('performer').value)
+      if (violin.on) p.set('violin', violin.name)
       history.replaceState(null, '', '?' + p.toString())
     }
     if (Q.get('model')) $('model').value = Q.get('model')
@@ -420,6 +486,11 @@
         const dt = Math.min(0.05, clk.getDelta())
         let t = now()
         if (clock.playing && t > song.duration + 1) { pause(); clock.t = 0; t = 0 }
+        // #034's violin plays on its own audio context: put it back in step if it drifts
+        if (violin.on && clock.playing && violin.lab?.playing && performance.now() - violin.checked > 1000) {
+          violin.checked = performance.now()
+          if (Math.abs(violin.time() - t) > 0.06) violin.start(t)
+        }
         frame(t, dt)
         controls.update()
         renderer.render(scene, camera)

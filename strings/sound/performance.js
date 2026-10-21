@@ -654,4 +654,5 @@ export function channel(perf, s, ch) {
 /** Time-scale a note list (playback speed): notes at 1/speed. */
 export const scaleNotes = (notes, speed) => speed === 1 ? notes : notes.map(n => ({ ...n, on: n.on / speed, off: n.off / speed, ...(n.rec ? { rec: { ...n.rec, t0: n.rec.t0 / speed, rate: n.rec.rate * speed } } : {}) }))
 /** Time-scale an expression lane (expressionFromCC) the same way. */
-export const scaleExpression = (ex, speed) => !ex || speed === 1 ? ex : ex.dyn ? { ...ex, rate: ex.rate * speed, t0: (ex.t0 || 0) / speed } : { ...ex, points: ex.points.map(([t, v]) => [t / speed, v]) }
+// (a recording of an ensemble brings only its timing: no lane, no points)
+export const scaleExpression = (ex, speed) => !ex || speed === 1 ? ex : ex.dyn ? { ...ex, rate: ex.rate * speed, t0: (ex.t0 || 0) / speed } : ex.points ? { ...ex, points: ex.points.map(([t, v]) => [t / speed, v]) } : ex
