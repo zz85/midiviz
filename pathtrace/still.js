@@ -7,13 +7,14 @@
 //                      raster picture as a canvas
 //   stage.end()        back to the live loop at the window's size
 //   stage.scene, stage.camera, stage.hair(), stage.envScene, stage.envIntensity,
-//   stage.exposure()
+//   stage.exposure(), stage.fx() (the page's bloom / grain settings, for post.js)
 // and the menu (#ptPop) holds the settings. A still is: the raster frame,
 // snapshotScene() of that same moment, then each chosen tracer in turn.
 
 import * as THREE from 'three'
 import { snapshotScene, snapshotCamera, bakeEnvironment } from './snapshot.js'
 import { ENGINES, traceStill, hasWebGPU } from './engines.js'
+import { finishTrace, HDR_SCALE } from './post.js'
 
 const $ = id => document.getElementById(id)
 
@@ -33,7 +34,7 @@ export function createPathTraceStills(stage) {
     if (v === 'screen') { const pr = Math.min(devicePixelRatio, 2); return [Math.round(innerWidth * pr), Math.round(innerHeight * pr)] }
     return v.split('x').map(Number)
   }
-  const settings = () => ({ samples: +$('ptSpp').value, bounces: +$('ptBounces').value, denoise: $('ptDenoise').checked, hairFraction: +$('ptHair').value, size: size() })
+  const settings = () => ({ samples: +$('ptSpp').value, bounces: +$('ptBounces').value, denoise: $('ptDenoise').checked, hairFraction: +$('ptHair').value, fx: $('ptFx').checked, size: size() })
 
   /** the raster frame and one snapshot of it, then each engine in turn */
   async function run(keys, s = settings(), { headless = false } = {}) {
@@ -58,12 +59,18 @@ export function createPathTraceStills(stage) {
         const t0 = performance.now()
         try {
           const r = await traceStill(key, {
-            scene: snap.scene, camera: cam, width: w, height: h, samples: s.samples, bounces: s.bounces, exposure: stage.exposure(), denoise: s.denoise && !!E.denoiser, signal: ac.signal,
+            scene: snap.scene, camera: cam, width: w, height: h, samples: s.samples, bounces: s.bounces, denoise: s.denoise && !!E.denoiser, signal: ac.signal,
+            // (with the page's effects: linear light out, finished in post.js)
+            ...(s.fx ? { toneMapping: 'linear', exposure: 1 / HDR_SCALE } : { exposure: stage.exposure() }),
             onProgress: p => status(`${E.label}: ${p.status} ${Math.floor(p.samples)} / ${p.of} spp · ${((performance.now() - t0) / 1000).toFixed(1)} s`, (i + Math.min(1, p.samples / p.of)) / keys.length),
           })
+          if (s.fx) {
+            const t1 = performance.now(), f = finishTrace(r.canvas, stage.fx())
+            Object.assign(r, { canvas: f.fx, fxCanvas: f.fx, plainCanvas: f.plain, hdrStats: f.stats }); r.times.post = Math.round(performance.now() - t1)
+          }
           const T = r.times
           r.label = E.label
-          r.info = `${w}×${h}, ${Math.round(r.samples)} spp, ${s.bounces} bounces${s.denoise && E.denoiser ? ', ' + E.denoiser + ' denoised' : ''} · ${(T.total / 1000).toFixed(1)} s (scene ${(T.setup / 1000).toFixed(1)} s, first sample ${((T.firstSample ?? 0) / 1000).toFixed(1)} s, tracing ${(T.trace / 1000).toFixed(1)} s${T.denoise ? `, denoise ${(T.denoise / 1000).toFixed(1)} s` : ''}${T.init ? `, init ${(T.init / 1000).toFixed(1)} s` : ''}${T.readback ? `, readback ${(T.readback / 1000).toFixed(1)} s` : ''}) · ${sceneInfo}`
+          r.info = `${w}×${h}, ${Math.round(r.samples)} spp, ${s.bounces} bounces${s.denoise && E.denoiser ? ', ' + E.denoiser + ' denoised' : ''} · ${(T.total / 1000).toFixed(1)} s (scene ${(T.setup / 1000).toFixed(1)} s, first sample ${((T.firstSample ?? 0) / 1000).toFixed(1)} s, tracing ${(T.trace / 1000).toFixed(1)} s${T.denoise ? `, denoise ${(T.denoise / 1000).toFixed(1)} s` : ''}${T.init ? `, init ${(T.init / 1000).toFixed(1)} s` : ''}${T.readback ? `, readback ${(T.readback / 1000).toFixed(1)} s` : ''}${T.post != null ? `, effects ${(T.post / 1000).toFixed(1)} s` : ''})${r.hdrStats ? ` · the page's AgX and effects (linear light: mean ${r.hdrStats.mean.toFixed(2)}, ${(r.hdrStats.clipped * 100).toFixed(1)} % of pixels at the ${HDR_SCALE}× ceiling)` : ''} · ${sceneInfo}`
           results.push(r)
         } catch (e) {
           if (e.name === 'AbortError') throw e
@@ -81,6 +88,7 @@ export function createPathTraceStills(stage) {
       $('ptStart').disabled = $('ptAll').disabled = false
       for (const m of snap?.scene.children || []) if (m.isMesh) m.geometry.dispose()
     }
+    $('ptFxView').checked = true; $('ptFxView').parentElement.style.display = results.some(r => r.fxCanvas) ? '' : 'none'
     if (results.length > 1) { state.results = results; state.show = results.length > 2 ? 1 : 1; if (!headless) openViewer() }
     return results
   }
@@ -123,6 +131,8 @@ export function createPathTraceStills(stage) {
     $('ptInfo').textContent = `${r.label}: ${r.info}`
   }
   $('ptSplit').onchange = draw
+  // traced with the page's effects: show them, or the same trace with AgX only
+  $('ptFxView').onchange = () => { for (const r of state.results) if (r.fxCanvas) r.canvas = $('ptFxView').checked ? r.fxCanvas : r.plainCanvas; draw() }
   const drag = ev => { if (!(ev.buttons & 1)) return; const b = cv.getBoundingClientRect(); state.split = Math.min(1, Math.max(0, (ev.clientX - b.left) / b.width)); draw() }
   cv.addEventListener('pointerdown', drag); cv.addEventListener('pointermove', drag)
   $('ptClose').onclick = closeViewer

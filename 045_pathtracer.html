@@ -422,6 +422,7 @@
     <div class="field" title="How many times a path may scatter: 3 is enough for the lights on her and the keys, more for light inside the piano and under the lid"><label>Bounces</label><select id="ptBounces"><option>3</option><option selected>6</option><option>10</option></select></div>
     <div class="field"><label>Size</label><select id="ptSize"><option value="screen">As on screen</option><option value="640x360">640×360 (test)</option><option value="1280x720" selected>1280×720</option><option value="1920x1080">1920×1080</option><option value="3840x2160">3840×2160</option><option value="1080x1920">1080×1920 (Short)</option></select></div>
     <div class="field" title="The strand hair is baked into ribbons facing the camera; fewer, wider strands keep the BVH smaller"><label>Hair strands</label><select id="ptHair"><option value="0.25">25 %</option><option value="0.5" selected>50 %</option><option value="1">All</option></select></div>
+    <label class="chk" title="Bloom, film grain and vignette as set in the Look menu, run on the traced picture in the page's order (bloom on linear light, then the page's AgX, then grain), and the same AgX for every tracer. The tracer's picture is captured as linear light up to 8× white in 8 bits, so deep shadows can band a little. No depth of field or dust"><input type="checkbox" id="ptFx">The page's effects (bloom, grain, vignette)</label>
     <label class="chk" title="OIDN on WebGPU (both tracers), MuTracer's JNLM filter on WebGL; three-gpu-pathtracer's WebGL tracer has none"><input type="checkbox" id="ptDenoise" checked>Denoise the result</label>
     <div id="ptBar"><div></div></div>
     <div id="ptStatus">The song pauses; the picture is frozen at this moment, as the page draws it, then traced.</div>
@@ -430,7 +431,7 @@
   </div>
   <div id="ptView">
     <canvas id="ptCanvas" title="Drag to move the split: the page's raster picture on the left"></canvas>
-    <div id="ptViewBar"><span id="ptTabs"></span><label><input type="checkbox" id="ptSplit" checked> Split with raster</label><button id="ptSave">Save PNG</button><button id="ptClose">Close (Esc)</button></div>
+    <div id="ptViewBar"><span id="ptTabs"></span><label><input type="checkbox" id="ptSplit" checked> Split with raster</label><label><input type="checkbox" id="ptFxView" checked> Effects</label><button id="ptSave">Save PNG</button><button id="ptClose">Close (Esc)</button></div>
     <div id="ptInfo"></div>
   </div>
   <div id="renderPop" class="pop ui">
@@ -2172,6 +2173,12 @@
     const ptStage = {
       scene, camera, envScene, envIntensity: scene.environmentIntensity,
       hair: () => hair, exposure: () => +$('exposure').value,
+      fx: () => ({
+        exposure: +$('exposure').value,
+        bloom: bloom.enabled ? { strength: bloom.strength, radius: bloom.radius, threshold: bloom.threshold } : null,
+        grain: { amount: grain.uniforms.uAmount.value, vig: grain.uniforms.uVig.value, time: grain.uniforms.uTime.value },
+        grainShader: { vertexShader: grain.material.vertexShader, fragmentShader: grain.material.fragmentShader },
+      }),
       current: () => ptCopy(renderer.domElement),
       begin(w, h) {
         if (scheduler?.playing) { scheduler.pause(); songTarget.allSoundOff(); setPlaying(false) }

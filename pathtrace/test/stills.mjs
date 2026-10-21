@@ -1,6 +1,7 @@
 // #045: the same frame from the raster page and each path tracer, headless.
 //   node pathtrace/test/stills.mjs [song] [t] [view] [out dir]
 // env: ENGINES=gpt-webgl,mu-webgl (default: every one the browser can run)
+//      FX=1 (the page's bloom / grain on the traces, plus *_plain.png without)
 //      SPP=64 BOUNCES=4 W=640 H=360 DENOISE=1 HAIR=0.5 MODEL= (?model=…) EXTRA= (more query)
 // Needs the parent folder served (BASE, default http://127.0.0.1:8000/midiviz/),
 // playwright-core (PLAYWRIGHT) and a Chromium (CHROME), as pianist/test/shorts_sheet.mjs.
@@ -29,12 +30,13 @@ const keys = (process.env.ENGINES || (gpu ? 'gpt-webgpu,gpt-webgl,mu-webgpu,mu-w
 console.log('WebGPU:', gpu, '· engines:', keys.join(' '))
 const res = await page.evaluate(async ({ keys, s }) => {
   const r = await window.__pianist.pt.run(keys, s, { headless: true })
-  return (r || []).map(x => ({ engine: x.engine, info: x.info, png: x.canvas?.toDataURL('image/png') }))
-}, { keys, s: { samples: +(process.env.SPP || 64), bounces: +(process.env.BOUNCES || 4), denoise: process.env.DENOISE !== '0', hairFraction: +(process.env.HAIR || 0.5), size: [W, H] } })
+  return (r || []).map(x => ({ engine: x.engine, info: x.info, png: x.canvas?.toDataURL('image/png'), plain: x.plainCanvas?.toDataURL('image/png') }))
+}, { keys, s: { samples: +(process.env.SPP || 64), bounces: +(process.env.BOUNCES || 4), denoise: process.env.DENOISE !== '0', fx: process.env.FX === '1', hairFraction: +(process.env.HAIR || 0.5), size: [W, H] } })
 const tag = `${song.replace(/\W+/g, '_')}_${T}_${view}`
 const report = []
 for (const r of res) {
   if (r.png) fs.writeFileSync(`${out}/${tag}_${r.engine}.png`, Buffer.from(r.png.split(',')[1], 'base64'))
+  if (r.plain) fs.writeFileSync(`${out}/${tag}_${r.engine}_plain.png`, Buffer.from(r.plain.split(',')[1], 'base64'))
   console.log(r.engine.padEnd(11), r.info)
   report.push({ engine: r.engine, info: r.info })
 }
