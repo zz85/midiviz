@@ -22,7 +22,10 @@
 // percent and tremolo play every time; volta once, as LilyPond's MIDI does,
 // unless \unfoldRepeats), \alternative, \grace / \acciaccatura /
 // \appoggiatura / \afterGrace (skipped, as the other readers skip grace
-// notes), \partial, \time, \tempo, \midi tempos, variables, \include (as
+// notes, unless opts.graces: then kept, squeezed at the main note, with
+// art.grace = the command, art.graceAt = the main note's onset and
+// art.graceDur = the written length, both in quarters), ornaments
+// (\trill, \prall, \mordent, \turn … kept as art.orn, not played), \partial, \time, \tempo, \midi tempos, variables, \include (as
 // text), \new / \context Staff / Voice / groups, << \\ >> voices, \with,
 // \header. Scheme expressions, markup, \override / \set / \tweak and layout
 // blocks are skipped; lyrics, chord names and figured bass are ignored.
@@ -71,6 +74,8 @@ const POSTFIX = new Set(['espressivo', 'upbow', 'downbow', 'flageolet', 'open', 
   'melismaEnd', 'startStaff', 'stopStaff', 'startMeasureCount', 'stopMeasureCount', 'staccatissimo', 'staccato', 'tenuto', 'accent', 'marcato', 'portato',
   'p', 'pp', 'ppp', 'pppp', 'ppppp', 'f', 'ff', 'fff', 'ffff', 'fffff', 'mp', 'mf', 'fp', 'sf', 'sff', 'sp', 'spp', 'sfz', 'rfz', 'fz', 'n', 'sfp', 'sfpp',
   'cr', 'decr', 'mordent', 'tweak', 'markup', 'bendAfter', 'finger', 'rightHandFinger', 'footnote', 'parenthesize', 'breve', 'longa', 'maxima'])
+// ornaments, kept on the note as art.orn (for realizing them: midis/tools/bach_ornaments.mjs)
+const ORN = new Set(['trill', 'prall', 'mordent', 'turn', 'reverseturn', 'prallprall', 'prallmordent', 'upprall', 'downprall', 'upmordent', 'downmordent', 'lineprall', 'pralldown', 'prallup', 'startTrillSpan'])
 const DYNS = { pppp: 0.15, ppppp: 0.12, ffff: 1, fffff: 1, fp: 0.8, sfp: 0.9, sfpp: 0.9, sp: 0.42, spp: 0.3, rfz: 0.9, sff: 0.95, ...DYN }
 const LYRIC = new Set(['Lyrics', 'ChordNames', 'FiguredBass', 'NoteNames', 'FretBoards', 'DrumStaff', 'DrumVoice', 'RhythmicStaff', 'Dynamics', 'Devnull', 'NullVoice', 'CueVoice'])
 const STAFF = new Set(['Staff', 'TabStaff', 'VaticanaStaff', 'MensuralStaff', 'PetrucciStaff', 'KievanStaff', 'GregorianTranscriptionStaff'])
@@ -342,12 +347,13 @@ class Parser {
     this.ws()
     const m = /^(\d+)\s*\/\s*(\d+)/.exec(this.s.slice(this.i, this.i + 16))
     if (m) { this.i += m[0].length; return [+m[1], +m[2]] }
-    if (this.peek() === '#') { const v = this.scheme(); const k = /(\d+)\s+(\d+)/.exec(v?.sexpr || ''); return k ? [+k[1], +k[2]] : [1, 1] }
+    // #(ly:make-moment 2 3), #'(2 . 3) (a pair, as \scaleDurations takes it)
+    if (this.peek() === '#') { const st = this.i; this.scheme(); const k = /(\d+)\s*(?:\.\s*|\/\s*|\s+)(\d+)/.exec(this.s.slice(st, this.i)); return k ? [+k[1], +k[2]] : [1, 1] }
     return [1, 1]
   }
 
   // ── events ──
-  newArt() { return { arts: [], techs: [], slurStart: 0, slurEnd: 0, tie: false, dyn: null, gliss: false } }
+  newArt() { return { arts: [], techs: [], orns: [], slurStart: 0, slurEnd: 0, tie: false, dyn: null, gliss: false } }
   // postfix events after a note, chord or rest
   postfix(ev, art) {
     for (;;) {
@@ -395,6 +401,7 @@ class Parser {
     else if (name === 'upbow') art.techs.push('up-bow')
     else if (name === 'downbow') art.techs.push('down-bow')
     else if (name === 'glissando') art.gliss = true
+    else if (ORN.has(name)) art.orns.push(name === 'startTrillSpan' ? 'trill' : name)
     else if (name === 'rest') { if (ev) ev.kind = 'rest' }
     else if (DYNS[name] != null) art.dyn = DYNS[name]
     else if (name === 'markup') this.markup()
@@ -405,7 +412,7 @@ class Parser {
     else if (directed && !POSTFIX.has(name)) {
       // -\name: a variable holding an articulation, or an unknown script
       const v = this.vars.get(name)
-      if (v?.t === 'post') { art.arts.push(...v.art.arts); art.techs.push(...v.art.techs) }
+      if (v?.t === 'post') { art.arts.push(...v.art.arts); art.techs.push(...v.art.techs); art.orns.push(...(v.art.orns || [])) }
     }
     return true
   }
@@ -539,11 +546,11 @@ class Parser {
         return { t: 'rep', kind, n, body, alts }
       }
       case 'alternative': { this.ws(); if (this.peek() === '{') { this.i++; return { t: 'seq', items: this.items('}') } } return null }
-      case 'grace': case 'acciaccatura': case 'appoggiatura': case 'slashedGrace': return { t: 'grace', music: this.music() }
+      case 'grace': case 'acciaccatura': case 'appoggiatura': case 'slashedGrace': return { t: 'grace', kind: name, music: this.music() }
       case 'afterGrace': {
         this.ws(); if (/\d/.test(this.peek() || '')) this.fraction()
         const main = this.music(), g = this.music()
-        return { t: 'seq', items: [main, { t: 'grace', music: g }] }
+        return { t: 'seq', items: [main, { t: 'grace', kind: 'afterGrace', music: g }] }
       }
       case 'new': case 'context': {
         this.ws(); const type = this.ident(); this.ws()
@@ -758,7 +765,8 @@ function toRelative(n, mode, ref) {
 }
 
 // ── timing: music → staves of events ─────────────────────────────────────────
-function perform(score) {
+const GRACE_K = 1e-4
+function perform(score, { graces = false } = {}) {
   const staves = [], tempo = [], meter = []
   let partial = null, voiceSeq = 0
   const repeats = []
@@ -798,6 +806,7 @@ function perform(score) {
       const pitch = Math.round(p.midi + cx.transpose)
       const own = (src === ev ? ev.perNote[k] : null)
       const arts = own ? [...art.arts, ...own.arts] : art.arts
+      const orns = own ? [...art.orns, ...(own.orns || [])] : art.orns
       const tie = art.tie || own?.tie
       const prev = vs.ties.get(pitch)
       if (prev && Math.abs(prev.end - cx.t) < EPS) {
@@ -806,7 +815,8 @@ function perform(score) {
         return
       }
       const e = { pitch, start: cx.t, end: cx.t + dur, voice: cx.voiceNo, accent: accentGain(arts),
-        art: { slur, stroke: strokeOf(arts), bow, source: 'score', ...(port ? { port: true } : {}) } }
+        art: { slur, stroke: strokeOf(arts), bow, source: 'score', ...(port ? { port: true } : {}), ...(orns.length ? { orn: orns } : {}),
+          ...(cx.grace ? { grace: cx.grace.kind, graceAt: cx.grace.at, graceDur: dur / GRACE_K } : {}) } }
       staff.events.push(e)
       if (tie) vs.ties.set(pitch, e); else vs.ties.delete(pitch)
     })
@@ -828,7 +838,8 @@ function perform(score) {
         return end
       }
       case 'scale': return run(n.music, { ...cx, scale: cx.scale * n.k })
-      case 'grace': return cx.t
+      // grace notes take no time; with { graces: true } they are kept, squeezed (GRACE_K) at the main note
+      case 'grace': if (graces && !cx.grace) run(n.music, { ...cx, scale: cx.scale * GRACE_K, grace: { kind: n.kind, at: cx.t } }); return cx.t
       case 'rel': case 'abs': case 'fixed': return run(n.music, cx)
       case 'tr': {
         const d = n.from && n.to && n.from.midi != null && n.to.midi != null ? n.to.midi - n.from.midi : 0
@@ -921,7 +932,7 @@ function bars(meter, partial, end) {
 }
 
 // ── the reader ───────────────────────────────────────────────────────────────
-export function readLilyPond(text, { part = null, include = null, file = '', tempo: tempoDefault = 60 } = {}) {
+export function readLilyPond(text, { part = null, include = null, file = '', tempo: tempoDefault = 60, graces = false } = {}) {
   const missing = []
   const src = expandIncludes(text, file, include, 0, missing)
   const P = new Parser(src)
@@ -942,7 +953,7 @@ export function readLilyPond(text, { part = null, include = null, file = '', tem
   const movement = (hd, si) => hd.piece || (subs.size > 1 && hd.subtitle) || `Movement ${si + 1}`
   scores.forEach((sc, si) => {
     toRelative(sc.music, 'abs', 0)
-    const r = perform(sc)
+    const r = perform(sc, { graces })
     runs.push(r)
     const hd = { ...P.header, ...sc.header }
     r.staves.forEach((st, k) => {

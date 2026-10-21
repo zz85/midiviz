@@ -44,6 +44,20 @@ A curated collection of classical, modern, and video game piano pieces in MIDI f
 | `bach_wtc2_01.mid` | J.S. Bach | WTC II No.1 in C major BWV 870 * |
 | `bach_wtc2_02.mid` | J.S. Bach | WTC II No.2 in C minor BWV 871 * |
 | `bach_wtc2_06p.mid` | J.S. Bach | WTC II No.6 in D minor BWV 875 (Prelude) * |
+| `maestro_bach_wtc1_03.mid` | J.S. Bach | WTC I No.3 in C-sharp major BWV 848, a 2011 performance ‡ |
+| `maestro_bach_wtc1_04.mid` | J.S. Bach | WTC I No.4 in C-sharp minor BWV 849, a 2014 performance ‡ |
+| `maestro_bach_850.mid` | J.S. Bach | Prelude & Fugue in D major BWV 850 (WTC I No.5), a 2017 performance ‡ |
+| `maestro_bach_wtc1_06.mid` | J.S. Bach | WTC I No.6 in D minor BWV 851, a 2011 performance ‡ |
+| `maestro_bach_wtc1_08.mid` | J.S. Bach | WTC I No.8 in E-flat minor BWV 853, a 2017 performance ‡ |
+| `maestro_bach_wtc1_10.mid` | J.S. Bach | WTC I No.10 in E minor BWV 855, a 2015 performance ‡ |
+| `maestro_bach_wtc1_11.mid` | J.S. Bach | WTC I No.11 in F major BWV 856, a 2015 performance ‡ |
+| `maestro_bach_wtc1_12.mid` | J.S. Bach | WTC I No.12 in F minor BWV 857, a 2017 performance ‡ |
+| `maestro_bach_wtc1_15.mid` | J.S. Bach | WTC I No.15 in G major BWV 860, a 2008 performance ‡ |
+| `maestro_bach_wtc1_17.mid` | J.S. Bach | WTC I No.17 in A-flat major BWV 862, a 2013 performance ‡ |
+| `maestro_bach_wtc1_20.mid` | J.S. Bach | WTC I No.20 in A minor BWV 865, a 2017 performance ‡ |
+| `maestro_bach_wtc2_01.mid` | J.S. Bach | WTC II No.1 in C major BWV 870, a 2015 performance ‡ |
+| `maestro_bach_wtc2_02.mid` | J.S. Bach | WTC II No.2 in C minor BWV 871, a 2011 performance ‡ |
+| `maestro_bach_wtc2_06.mid` | J.S. Bach | WTC II No.6 in D minor BWV 875, a 2013 performance ‡ |
 | `schuim-1.mid` | Schubert | Impromptu Op.90 No.1 (D.899) |
 | `schuim-2.mid` | Schubert | Impromptu Op.90 No.2 |
 | `schuim-4.mid` | Schubert | Impromptu Op.90 No.4 |
@@ -162,7 +176,9 @@ A curated collection of classical, modern, and video game piano pieces in MIDI f
 **Classical pieces:** [piano-midi.de](http://www.piano-midi.de) by Bernd Krueger  
 License: [CC BY-SA 3.0](http://creativecommons.org/licenses/by-sa/3.0/de/deed.en)
 
-**Bach: Goldberg Variations and the Well-Tempered Clavier (marked \*):** typeset by the [Mutopia Project](https://www.mutopiaproject.org) (Hajo Dezelski, Stelios Samelis, Davide Castellone, JD Erickson, Sven Reichard, Andrew Hawryluk and others), each piece CC BY-SA 3.0 / 4.0 or public domain. Joined here into one file per prelude and fugue (the Goldberg as the Aria, the 30 variations and the Aria again, 2.5 s apart). These are engraved scores, not performances, so they were given dynamics by rule (not by a pianist): each phrase swells and relaxes and the last one tapers, the music gets louder where it climbs and thickens, the top line leads and inner voices recede, long notes carry a little more weight, plus a small seeded variation. Timing is untouched.
+**Bach: Goldberg Variations and the Well-Tempered Clavier (marked \*):** typeset by the [Mutopia Project](https://www.mutopiaproject.org) (Hajo Dezelski, Stelios Samelis, Davide Castellone, JD Erickson, Sven Reichard, Andrew Hawryluk and others), each piece CC BY-SA 3.0 / 4.0 or public domain. Joined here into one file per prelude and fugue (the Goldberg as the Aria, the 30 variations and the Aria again, 2.5 s apart). These are engraved scores, not performances, so they were given dynamics by rule (not by a pianist): each phrase swells and relaxes and the last one tapers, the music gets louder where it climbs and thickens, the top line leads and inner voices recede, long notes carry a little more weight, plus a small seeded variation. Timing is untouched. Ornaments are played: Mutopia's MIDI comes from LilyPond, which leaves out trills, mordents and turns and plays grace notes as 55 ms blips before the beat, so [tools/bach_ornaments.mjs](tools/bach_ornaments.mjs) reads the LilyPond sources and writes them out after Bach's own table of ornaments (1720): trills from the upper note at about 12 notes a second, short trills, mordents, turns, trills with turns and mordent endings, appoggiaturas on the beat taking half the note, grace notes on the beat. The Well-Tempered files gain 121 ornaments and 18 groups of grace notes, the Goldberg 185 and 113 (its Aria counted twice); the dynamics stay as they were. How each is played, and how to rerun it, is at the top of the script.
+
+**Bach, MAESTRO performances (marked ‡):** for comparison with the engraved files above, the same preludes and fugues as played at the International Piano-e-Competition on a Yamaha Disklavier, from the [MAESTRO dataset](https://magenta.tensorflow.org/datasets/maestro) v3.0.0 (Google Magenta), one performance per piece (the year is in each title; MAESTRO doesn't name the pianists). Not in MAESTRO: WTC I No.16 (BWV 861) and No.24 (BWV 869), and the Goldberg Variations. License: [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/), non-commercial only, like the Pletnev file below.
 
 **Tchaikovsky / Pletnev, Andante maestoso (marked †):** from the [MAESTRO dataset](https://magenta.tensorflow.org/datasets/maestro) v3.0.0 (Google Magenta), a performance recorded on a Yamaha Disklavier at the 2008 International Piano-e-Competition (`2008/MIDI-Unprocessed_02_R2_2008_01-05_ORIG_MID--AUDIO_02_R2_2008_wav--5.midi`, 4:33). License: [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/), non-commercial only, unlike the rest of the collection. Pletnev's arrangement (1978) is itself still under copyright.
 

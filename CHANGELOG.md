@@ -2,6 +2,14 @@
 
 What each experiment does and how, newest first. The short list is in the [README](README.md).
 
+## 21 Oct 2026
+
+Songs: ornaments in the engraved Bach files ([notes](midis/README.md#sources--credits))
+- The 15 Well-Tempered Clavier files and the Goldberg Variations came from Mutopia's LilyPond MIDI, which plays no trills, mordents or turns and turns grace notes into 55 ms blips before the beat. [midis/tools/bach_ornaments.mjs](midis/tools/bach_ornaments.mjs) reads the LilyPond sources, lines them up with each file note by note (longest common subsequence on onset order and pitch: 99.6–100 % of score notes found, 92 % in BWV 857's prelude, whose doubled unisons LilyPond merges), and writes the ornaments out after Bach's 1720 table: trills from the upper note (from the main note when the upper note was just played), about 12 notes a second fitted to the beat, long trills starting slower; short trills, mordents, turns, trills with turn or mordent endings; appoggiaturas on the beat taking half the note (two thirds when dotted); grace notes on the beat; after-graces at the end of the note. Auxiliary notes are diatonic, chosen from the pitches heard in the same and neighbouring bars. Dynamics and timing of every other note are unchanged.
+- The Well-Tempered files gain 121 ornaments and 18 grace-note groups, the Goldberg 185 and 113 (Aria counted twice). Their note counts now come within 5 % of the pianists' in MAESTRO.
+- [strings/lilypond.js](strings/lilypond.js) keeps ornament signs on the note (`art.orn`), keeps grace notes with `{ graces: true }`, and reads `\scaleDurations #'(4 . 6)` (Goldberg Var. 26's 18/16 hand was too slow). Its tests and the 48-file Mutopia check are unchanged.
+- 14 MAESTRO v3.0.0 performances of the same preludes and fugues added beside them in the song list, for comparison (CC BY-NC-SA 4.0).
+
 ## 20 Oct 2026
 
 YouTube Shorts for [#032 Pianist](032_pianist.html) ([notes](pianist/README.md#youtube-shorts))
