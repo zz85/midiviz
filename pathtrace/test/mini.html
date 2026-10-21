@@ -47,6 +47,23 @@
   if (test === 'env') { spot.visible = false; const d = new Float32Array(64 * 32 * 4).fill(0.5); const t = new THREE.DataTexture(d, 64, 32, THREE.RGBAFormat, THREE.FloatType); t.mapping = THREE.EquirectangularReflectionMapping; t.needsUpdate = true; scene.environment = t; ball.material = floor.material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 }) }
   if (test === 'spot') { scene.environment = null; ball.material = floor.material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 }); spot.intensity = 0.3 * 250 * 250 }
   if (test === 'env') scene.remove(spot)
+  // the hair's colour map: a CanvasTexture (sRGB, flipY false) red across a white material
+  if (test === 'map') {
+    scene.remove(spot); scene.remove(ball)
+    const cv = document.createElement('canvas'); cv.width = 32; cv.height = 64; const g = cv.getContext('2d'); g.fillStyle = 'rgb(231,89,89)'; g.fillRect(0, 0, 32, 64)
+    const map = new THREE.CanvasTexture(cv); map.colorSpace = THREE.SRGBColorSpace; map.flipY = false; map.generateMipmaps = false; map.minFilter = map.magFilter = THREE.LinearFilter
+    floor.material = new THREE.MeshPhysicalMaterial({ color: 0xffffff, map, roughness: 1 })
+    const d = new Float32Array(64 * 32 * 4).fill(0.5); const t = new THREE.DataTexture(d, 64, 32, THREE.RGBAFormat, THREE.FloatType); t.mapping = THREE.EquirectangularReflectionMapping; t.needsUpdate = true; scene.environment = t
+  }
+  // vertex colours: a white-material floor coloured red per vertex, under a uniform sky
+  if (test === 'vcolor') {
+    scene.remove(spot); scene.remove(ball)
+    const g = floor.geometry, c = new Float32Array(g.attributes.position.count * 3)
+    for (let i = 0; i < c.length; i += 3) c[i] = 0.8, c[i + 1] = 0.1, c[i + 2] = 0.1
+    g.setAttribute('color', new THREE.BufferAttribute(c, 3))
+    floor.material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, vertexColors: true })
+    const d = new Float32Array(64 * 32 * 4).fill(0.5); const t = new THREE.DataTexture(d, 64, 32, THREE.RGBAFormat, THREE.FloatType); t.mapping = THREE.EquirectangularReflectionMapping; t.needsUpdate = true; scene.environment = t
+  }
   // orientation: an environment bright above the horizon only, dark below; the white floor
   // (facing up) must come out lit, at 1/2 of a uniform sky
   if (test === 'sky') {

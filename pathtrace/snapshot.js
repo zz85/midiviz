@@ -243,9 +243,10 @@ export function snapshotScene(live, { camera, hair = null, envScene = null, envI
 
   if (hairShader && hair.bakeStrands) {
     const cam = camera.getWorldPosition(new THREE.Vector3())
-    const { geometry, strands } = hair.bakeStrands(cam, { fraction: hairFraction, segments: hairSegments, widthScale: 0.8 / Math.sqrt(hairFraction) })
+    const { geometry, strands, map } = hair.bakeStrands(cam, { fraction: hairFraction, segments: hairSegments, widthScale: 0.8 / Math.sqrt(hairFraction) })
     stats.strands = strands
-    add(geometry, new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.42, metalness: 0, sheen: 0.4, sheenRoughness: 0.5, sheenColor: 0x806040, side: THREE.DoubleSide, specularIntensity: 0.6 }), null)
+    // (the colour from the map, not the vertex colours: MuTracer drops those)
+    add(geometry, new THREE.MeshPhysicalMaterial({ map, roughness: 0.42, metalness: 0, sheen: 0.4, sheenRoughness: 0.5, sheenColor: 0x806040, side: THREE.DoubleSide, specularIntensity: 0.6 }), null)
   }
 
   if (envMap) out.environment = envMap

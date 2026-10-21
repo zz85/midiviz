@@ -671,7 +671,9 @@ export function createHair(ch, rig, { density = 1, color = '#5a3e2a', style = 'h
      * The strands as plain triangles for a path tracer (#045): the vertex
      * shader above run on the CPU for the current guides, each child a
      * ribbon facing camPos (world), in world space, with the shader's base
-     * colour per vertex (dark roots, lighter lengths, highlights). fraction:
+     * colour (dark roots, lighter lengths, highlights) both per vertex and as
+     * a small texture (u along the strand, v one of 8 × 8 strand variants),
+     * for tracers that don't read vertex colours. fraction:
      * keep this share of the children (hashed, so the same ones every time);
      * segments along each; widthScale on top of the shader's width.
      */
@@ -709,15 +711,33 @@ export function createHair(ch, rig, { density = 1, color = '#5a3e2a', style = 'h
       const keepC = c => ((Math.imul(c + 1, 2654435761) >>> 0) / 4294967296) < fraction
       let n = 0
       for (let c = 0; c < g.instanceCount; c++) if (keepC(c)) n++
-      const S1 = segments + 1, pos = new Float32Array(n * S1 * 6), nor = new Float32Array(n * S1 * 6), col = new Float32Array(n * S1 * 6)
+      const S1 = segments + 1, pos = new Float32Array(n * S1 * 6), nor = new Float32Array(n * S1 * 6), col = new Float32Array(n * S1 * 6), uvs = new Float32Array(n * S1 * 4)
+      // the colour map: 32 steps along the strand × 64 variants (8 widths × 8 highlights), sRGB
+      const TW = 32, VQ = 8, cv = document.createElement('canvas'); cv.width = TW; cv.height = VQ * VQ
+      const cg = cv.getContext('2d'), img = cg.createImageData(TW, VQ * VQ), lin2s = x => Math.round(255 * Math.min(1, x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(x, 1 / 2.4) - 0.055))
+      const colorAt = (aT, rx, ry, out) => {
+        const hi = sstep(0.5, 1, ry) * sstep(0.1, 0.8, aT)
+        out.set(cRoot.r, cRoot.g, cRoot.b).lerp(_hc.set(cTip.r, cTip.g, cTip.b), sstep(0, 0.9, aT))
+        return out.lerp(_hc.set(cHi.r, cHi.g, cHi.b), hi * 0.5).multiplyScalar(0.96 + 0.08 * rx)
+      }
+      const _hc = v3(), _c = v3()
+      for (let vy = 0; vy < VQ * VQ; vy++) for (let x = 0; x < TW; x++) {
+        colorAt((x + 0.5) / TW, ((vy % VQ) + 0.5) / VQ, (Math.floor(vy / VQ) + 0.5) / VQ, _c)
+        const k = (vy * TW + x) * 4; img.data[k] = lin2s(_c.x); img.data[k + 1] = lin2s(_c.y); img.data[k + 2] = lin2s(_c.z); img.data[k + 3] = 255
+      }
+      cg.putImageData(img, 0, 0)
+      const map = new THREE.CanvasTexture(cv)
+      map.colorSpace = THREE.SRGBColorSpace; map.flipY = false; map.generateMipmaps = false
+      map.minFilter = map.magFilter = THREE.LinearFilter; map.wrapS = map.wrapT = THREE.ClampToEdgeWrapping
       const idx = new Uint32Array(n * segments * 6)
-      const p = v3(), pn = v3(), pb = v3(), T = v3(), V = v3(), S = v3(), N = v3(), base = v3(), hiC = v3()
+      const p = v3(), pn = v3(), pb = v3(), T = v3(), V = v3(), S = v3(), N = v3(), base = v3()
       let v = 0, q = 0
       for (let c = 0; c < g.instanceCount; c++) {
         if (!keepC(c)) continue
         const rx = AR[c * 4], ry = AR[c * 4 + 1], kind = AR[c * 4 + 3]
         const len = kind < 0.5 ? 0.72 + 0.28 * Math.pow(rx, 0.6) : 1
         const v0 = v
+        const variant = Math.min(VQ - 1, Math.floor(ry * VQ)) * VQ + Math.min(VQ - 1, Math.floor(rx * VQ)), vv = (variant + 0.5) / (VQ * VQ)
         for (let k = 0; k <= segments; k++) {
           const aT = k / segments, t = aT * len
           strand(c, t, p); strand(c, Math.min(t + 0.02, 1), pn); strand(c, Math.max(t - 0.02, 0), pb)
@@ -727,13 +747,12 @@ export function createHair(ch, rig, { density = 1, color = '#5a3e2a', style = 'h
           S.crossVectors(T, V).normalize()
           N.crossVectors(S, T).normalize()
           const w = width * (0.7 + 0.6 * rx) * (1 - 0.8 * Math.pow(aT, 1.6))
-          const hi = sstep(0.5, 1, ry) * sstep(0.1, 0.8, aT)
-          base.set(cRoot.r, cRoot.g, cRoot.b).lerp(hiC.set(cTip.r, cTip.g, cTip.b), sstep(0, 0.9, aT))
-          base.lerp(hiC.set(cHi.r, cHi.g, cHi.b), hi * 0.5).multiplyScalar(0.96 + 0.08 * rx)
+          colorAt(aT, rx, ry, base)
           for (const s of [-1, 1]) {
             pos[v * 3] = p.x + S.x * s * w; pos[v * 3 + 1] = p.y + S.y * s * w; pos[v * 3 + 2] = p.z + S.z * s * w
             nor[v * 3] = N.x; nor[v * 3 + 1] = N.y; nor[v * 3 + 2] = N.z
             col[v * 3] = base.x; col[v * 3 + 1] = base.y; col[v * 3 + 2] = base.z
+            uvs[v * 2] = aT; uvs[v * 2 + 1] = vv
             v++
           }
         }
@@ -743,8 +762,9 @@ export function createHair(ch, rig, { density = 1, color = '#5a3e2a', style = 'h
       out.setAttribute('position', new THREE.BufferAttribute(pos, 3))
       out.setAttribute('normal', new THREE.BufferAttribute(nor, 3))
       out.setAttribute('color', new THREE.BufferAttribute(col, 3))
+      out.setAttribute('uv', new THREE.BufferAttribute(uvs, 2))
       out.setIndex(new THREE.BufferAttribute(idx, 1))
-      return { geometry: out, strands: n }
+      return { geometry: out, strands: n, map }
     },
     /** run the simulation for a while without rendering (after a pose jump) */
     settle(seconds = 4) { for (let i = 0; i < seconds * 60; i++) step(1 / 60) },
