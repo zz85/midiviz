@@ -27,7 +27,7 @@ Browser experiments with MIDI, piano and violin rendering, synthesis and audio a
 
 ## Violin and strings
 
-- [#038 Duo](038_duo.html) - the violinist and the pianist on one stage ([details](CHANGELOG.md#18-oct-2026))
+- [#038 Duo](038_duo.html) - the violinist and the pianist on one stage, from the score, with expression modelled on recordings ([details](CHANGELOG.md#18-oct-2026), [score and expression](CHANGELOG.md#21-oct-2026))
 - [#037 Violinist](037_violinist.html) - an anime-style violinist playing the solo part of a violin piece, from its score ([details](CHANGELOG.md#18-oct-2026), [score input](CHANGELOG.md#21-oct-2026))
 - [#034 Violin Sound Lab](034_violin_sound.html) - six violin engines to compare by ear, from physical models to samples ([details](CHANGELOG.md#17-oct-2026))
 - [#033 Violin & Viola Fingering](033_violin_fingering.html) - automatic fingering for violin, viola, cello and double bass ([details](CHANGELOG.md#16-oct-2026))

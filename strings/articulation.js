@@ -155,8 +155,10 @@ function scoreMarks(n) {
   if (!a) return null
   if (a.orig) return a.orig
   if (a.source !== 'score') return null
-  return { slur: a.slur ?? null, stroke: a.stroke ?? null, bow: a.bow ?? null, ...(a.port ? { port: true } : {}) }
+  // (with what the score says about the note beyond its bowing: grace notes, ornaments, fermatas)
+  return { slur: a.slur ?? null, stroke: a.stroke ?? null, bow: a.bow ?? null, ...(a.port ? { port: true } : {}), ...keepMarks(a) }
 }
+const keepMarks = a => ({ ...(a.grace ? { grace: a.grace, graceAt: a.graceAt, graceDur: a.graceDur } : {}), ...(a.orn ? { orn: a.orn } : {}), ...(a.fermata ? { fermata: true } : {}) })
 
 /**
  * Remove a plan (the fixed rule in motion.js decides again) but keep a score's

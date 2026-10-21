@@ -406,6 +406,7 @@ class Parser {
     else if (name === 'downbow') art.techs.push('down-bow')
     else if (name === 'glissando') art.gliss = true
     else if (ORN.has(name)) art.orns.push(name === 'startTrillSpan' ? 'trill' : name)
+    else if (/fermata$/i.test(name)) art.fermata = true
     else if (name === 'rest') { if (ev) ev.kind = 'rest' }
     else if (DYNS[name] != null) art.dyn = DYNS[name]
     else if (HAIRPIN[name]) art.hp.push(HAIRPIN[name])
@@ -823,7 +824,7 @@ function perform(score, { graces = false } = {}) {
         return
       }
       const e = { pitch, start: cx.t, end: cx.t + dur, voice: cx.voiceNo, accent: accentGain(arts),
-        art: { slur, stroke: strokeOf(arts), bow, source: 'score', vk: vk, ...(port ? { port: true } : {}), ...(orns.length ? { orn: orns } : {}),
+        art: { slur, stroke: strokeOf(arts), bow, source: 'score', vk: vk, ...(port ? { port: true } : {}), ...(orns.length ? { orn: orns } : {}), ...(art.fermata || own?.fermata ? { fermata: true } : {}),
           ...(cx.grace ? { grace: cx.grace.kind, graceAt: cx.grace.at, graceDur: dur / GRACE_K } : {}) } }
       staff.events.push(e)
       if (tie) vs.ties.set(pitch, e); else vs.ties.delete(pitch)

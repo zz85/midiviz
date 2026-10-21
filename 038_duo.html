@@ -72,7 +72,8 @@
     </select>
     <select id="room" title="Room"></select>
     <select id="bowing" title="Which notes share a bow. Score: the slurs, marks and bowings of the Mutopia LilyPond source the MIDI was made from (violinist/scores). Inferred: slurs guessed from the music (strings/articulation.js). Fixed rule: up to 4 fast notes per bow"><option value="score">Bowing: score (Mutopia)</option><option value="infer">Bowing: inferred</option><option value="fixed">Bowing: fixed rule</option></select>
-    <select id="performer" hidden title="Play it as a real violinist did: the timing and dynamics of their recording and, on #034's engines, each note's pitch (vibrato, intonation) too (violinist/performances: the Bach Violin Dataset, and public-domain and CC recordings aligned to the score). The piano follows his tempo. As written: the MIDI file's own timing. With a recording of a concerto or the double concerto only the timing is taken"></select>
+    <select id="source" hidden title="What they play from. Score (the default): the Mutopia LilyPond source itself (violinist/scores, read by strings/lilypond.js): its notes, grace notes, slurs and marks, its dynamics and hairpins, and the piano or orchestral staves for her. MIDI file: the MIDI LilyPond made from that source (violinist/midis), as before; the bowing still comes from the score"><option value="score">Notes: score (Mutopia source)</option><option value="midi">Notes: MIDI file</option></select>
+    <select id="performer" hidden title="Play it as a real violinist did: the timing and dynamics of their recording and, on #034's engines, each note's pitch (vibrato, intonation) too (violinist/performances: the Bach Violin Dataset, and public-domain and CC recordings aligned to the score). The piano follows his tempo. Modelled (the default): the timing and dynamics a model predicts from the score, fitted on those recordings (strings/expression-model.js), for any piece. As written: the score's own timing. With a recording of a concerto or the double concerto only the timing is taken"></select>
     <select id="vsound" title="Violin sound (#034's engines; the piano is the Full Grand Piano soundfont)"><option value="gm">Violin: GM soundfont</option><option value="hybrid">Violin: hybrid sampler (#034)</option><option value="waveguide">Violin: bowed waveguide (#034)</option><option value="source">Violin: Helmholtz source-filter (#034)</option></select>
     <label title="Ink outlines"><input type="checkbox" id="outline" checked> Ink</label>
     <label title="They bow to the hall, then he gives her a nod to start"><input type="checkbox" id="intro" checked> Bow</label>
@@ -99,7 +100,8 @@
     import { fingerLine } from './strings/fingering.js'
     import { buildMotion } from './strings/motion.js'
     import { bowingFor } from './violinist/score-art.js'
-    import { performersFor, applyPerformer, performerCredit } from './violinist/performer.js'
+    import { performersFor, applyPerformer, performerCredit, applyModelled, modelledCredit, MODELLED } from './violinist/performer.js'
+    import { scorePiece, matchMidi, carryOver, enrichFromScore, bowScore } from './violinist/score-play.js'
     import { tempoMapOf } from './strings/expression.js'
     import { expressionFromCC } from './strings/sound/performance.js'
     import { buildViolin, buildBow } from './strings/violin3d.js'
@@ -268,29 +270,49 @@
         solo = ch != null ? midi.tracks.filter(t => t.channel === ch) : [midi.tracks[e.violinTrack]]
       }
       const ppq = midi.header.ppq
-      const violin = solo.flatMap(t => t.notes).map(n => ({ pitch: n.midi, on: n.time * k, off: (n.time + Math.max(0.04, n.duration)) * k, velocity: n.velocity, q: n.ticks / ppq, dq: n.durationTicks / ppq }))
+      const midiNotes = solo.flatMap(t => t.notes).map(n => ({ pitch: n.midi, on: n.time * k, off: (n.time + Math.max(0.04, n.duration)) * k, velocity: n.velocity, q: n.ticks / ppq, dq: n.durationTicks / ppq }))
         .sort((a, b) => a.on - b.on || a.pitch - b.pitch)
+      // the score itself (violinist/score-play.js) unless the MIDI file is asked for
+      $('source').hidden = !e.score
+      const piece = e.score && $('source').value !== 'midi' ? await scorePiece(e) : null
+      const scale = n => ({ ...n, on: n.on * k, off: n.off * k })
+      const violin = piece ? piece.violin.map(scale) : midiNotes
+      // the piano: every other track (or staff of the score); two of them are the hands (the higher one the right)
+      const others = midi.tracks.filter(t => !solo.includes(t) && t.notes.length && t.channel !== 9)
+      const mean = ns => ns.reduce((a, n) => a + n, 0) / ns.length
+      let parts = piece
+        ? piece.others.map(p => ({ name: p.name, notes: p.notes.map(n => ({ ...scale(n), pitch: n.pitch })) }))
+        : others.map(t => ({ name: t.name, notes: t.notes.map(n => ({ pitch: n.midi, q: n.ticks / ppq, dq: n.durationTicks / ppq, on: n.time * k, off: (n.time + Math.max(0.04, n.duration)) * k, velocity: n.velocity })) }))
+      parts = parts.filter(p => p.notes.length)
+      const accNotes = parts.flatMap(p => p.notes)
       // a recorded performer (violinist/performer.js): his timing, dynamics and pitch; the piano follows his tempo
       await showPerformers(e.file)
-      song.performer = null
-      if ($('performer').value) {
-        try { song.performer = await applyPerformer($('performer').value, violin, [], { engine: $('vsound').value }) } catch (err) { console.warn('performer:', err.message) }
+      song.performer = null; song.modelled = null
+      if ($('performer').value && $('performer').value !== MODELLED) {
+        // (recordings are aligned to the MIDI file's notes: played there, carried to the score's)
+        try { song.performer = await applyPerformer($('performer').value, midiNotes, accNotes, { engine: $('vsound').value }) } catch (err) { console.warn('performer:', err.message) }
+        if (song.performer && piece) carryOver(matchMidi(midiNotes, violin), violin, { timing: tempoMapOf(song.performer.rec, midiNotes) })
         if (song.performer) violin.sort((a, b) => a.on - b.on || a.pitch - b.pitch)
       }
-      // song time of a file time (s): the file's, × k, or along the recording's tempo map
-      const tmap = song.performer ? tempoMapOf(song.performer.rec, violin) : null
-      const T = tmap ? sec => tmap(midi.header.secondsToTicks(sec) / ppq) : sec => sec * k
-      // the bow: the Mutopia score's slurs and marks by default (violinist/score-art.js)
-      song.bowing = await bowingFor(e, violin, $('bowing').value)
+      // the bow: the score's slurs and marks by default (violinist/score-art.js)
+      song.bowing = piece ? await bowScore(e, violin, midiNotes, $('bowing').value) : await bowingFor(e, violin, $('bowing').value)
+      // the modelled performer (strings/expression-model.js): his timing and dynamics from the score, the piano along his tempo
+      if ($('performer').value === MODELLED) {
+        const sp = piece || (e.score ? await scorePiece(e) : null)
+        if (!piece && sp) enrichFromScore(violin, sp.violin)
+        try { song.modelled = await applyModelled(violin, accNotes, { sections: sp?.sections || [] }) } catch (err) { console.warn('expression model:', err.message) }
+      }
+      // song time of a file time (s): the file's, × k, or along the recording's (or the model's) tempo
+      const tmap = song.modelled?.tmap ?? (song.performer ? tempoMapOf(song.performer.rec, midiNotes) : null)
+      const T = tmap ? sec => tmap(midi.header.secondsToTicks(sec) / ppq, sec * k) : sec => sec * k
       fingerLine(violin, { instrument: 'violin' })
-      // the piano: every other track; two tracks are the hands (the higher one the right)
-      const others = midi.tracks.filter(t => !solo.includes(t) && t.notes.length && t.channel !== 9)
-      const mean = t => t.notes.reduce((a, n) => a + n.midi, 0) / t.notes.length
-      const hands = others.length === 2 ? new Map([[others[0], mean(others[0]) >= mean(others[1]) ? 'R' : 'L'], [others[1], mean(others[0]) >= mean(others[1]) ? 'L' : 'R']]) : null
-      let piano0 = others.flatMap(t => t.notes.map(n => ({ pitch: n.midi, on: T(n.time), off: Math.max(T(n.time) + 0.04, T(n.time + Math.max(0.04, n.duration))), velocity: Math.min(1, n.velocity * 0.9), ...(hands ? { hand: hands.get(t) } : {}) })))
+      const means = parts.map(p => mean(p.notes.map(n => n.pitch)))
+      const hands = parts.length === 2 ? new Map([[parts[0], means[0] >= means[1] ? 'R' : 'L'], [parts[1], means[0] >= means[1] ? 'L' : 'R']]) : null
+      // (a recorded or modelled performer retimed accNotes in place, along his tempo)
+      let piano0 = parts.flatMap(p => p.notes.map(n => ({ pitch: n.pitch, on: n.on, off: Math.max(n.on + 0.04, n.off), velocity: Math.min(1, (n.velocity ?? 0.7) * 0.9), ...(hands ? { hand: hands.get(p) } : {}) })))
         .filter(n => n.pitch >= LOW && n.pitch <= HIGH).sort((a, b) => a.on - b.on || a.pitch - b.pitch)
       // an orchestra on the piano: the same note in several parts is struck once
-      if (others.length > 2) {
+      if (parts.length > 2) {
         const seen = new Map(), out = []
         for (const n of piano0) { const key = n.pitch + ':' + Math.round(n.on * 50); const o = seen.get(key); if (o) { o.off = Math.max(o.off, n.off); continue } seen.set(key, n); out.push(n) }
         piano0 = out
@@ -299,19 +321,23 @@
       const pianoNotes = piano0.length ? await fingerPiano(piano0) : []
       // the solo track's hairpins (CC11 / CC7 / CC2) for the hybrid violin
       // (or the recorded performer's dynamics)
-      let ex = expressionFromCC(solo[0].controlChanges)
+      // (the score's own dynamics are in its notes' loudness already)
+      let ex = piece ? null : expressionFromCC(solo[0].controlChanges)
       if (ex) ex.points = ex.points.map(([t, v]) => [T(t), v])
       if (song.performer?.expression) ex = song.performer.expression.recorded || !ex ? song.performer.expression : { ...ex, timing: true }
+      if (song.modelled) ex = song.modelled.expression
       Object.assign(song, { expr: ex, entry: e, violin, piano: pianoNotes, pedal, motion: buildMotion(violin, { instrument: 'violin' }) })
       song.duration = Math.max(1, ...violin.map(n => n.off), ...pianoNotes.map(n => n.off))
       song.drive = drivers(violin)
+      window.__song = song
       song.density = densities()
       song.meanDensity = [song.violin.length / song.duration, song.piano.length / song.duration]
       song.glances = soloGlances(violin, pianoNotes)
       pRig.clear(); pRig.setNotes(pianoNotes)
       keys.reset()
       const b = song.bowing
-      $('credit').innerHTML = `${e.composer} – ${e.title}<br>MIDI: ${e.credit || 'Mutopia Project'}, ${e.licence} · VRoid Project models (pixiv)${b && b.mode !== 'fixed' ? `<br>Bowing: ${b.mode === 'score' ? 'the Mutopia score' : 'inferred'} (${b.slurs} slurred notes)` : ''}${song.performer ? '<br>Played as ' + performerCredit(song.performer.rec, { pitch: hybrid.on }) : ''}`
+      const src = piece ? `Notes: the Mutopia score, read from its LilyPond source (${e.credit?.replace(/^Mutopia Project,?\s*/, '') || 'Mutopia Project'}), ${e.licence}` : `MIDI: ${e.credit || 'Mutopia Project'}, ${e.licence}`
+      $('credit').innerHTML = `${e.composer} – ${e.title}<br>${src} · VRoid Project models (pixiv)${b && b.mode !== 'fixed' ? `<br>Bowing: ${b.mode === 'score' ? 'the Mutopia score' : 'inferred'} (${b.slurs} slurred notes)` : ''}${song.performer ? '<br>Played as ' + performerCredit(song.performer.rec, { pitch: hybrid.on }) : song.modelled ? '<br>Played as ' + modelledCredit(song.modelled.model) : ''}`
       $('startSong').textContent = `${e.composer} – ${e.title}`
       clock.t = 0
       setStatus('')
@@ -609,12 +635,15 @@
     async function showPerformers(file) {
       const list = await performersFor(file)
       const want = $('performer').dataset.want ?? $('performer').value
-      $('performer').innerHTML = '<option value="">Performer: as written</option>' + list.map(p => `<option value="${p.rec}">Performer: ${p.violinist}${p.year ? ` (${p.year})` : ''}${p.ensemble ? ' – timing' : ''}</option>`).join('')
-      $('performer').value = list.some(p => p.rec === want) ? want : ''
+      $('performer').innerHTML = '<option value="">Performer: as written</option><option value="model">Performer: modelled from recordings</option>' + list.map(p => `<option value="${p.rec}">Performer: ${p.violinist}${p.year ? ` (${p.year})` : ''}${p.ensemble ? ' – timing' : ''}</option>`).join('')
+      // (the modelled performer unless as written was asked for, or a recording of this piece)
+      $('performer').value = list.some(p => p.rec === want) ? want : want === '' ? '' : MODELLED
       delete $('performer').dataset.want
-      $('performer').hidden = !list.length
+      $('performer').hidden = false
     }
-    $('performer').dataset.want = Q.get('performer') || ''
+    $('performer').dataset.want = Q.get('performer') === 'none' ? '' : Q.get('performer') || MODELLED
+    $('source').value = Q.get('src') === 'midi' ? 'midi' : 'score'
+    $('source').onchange = async () => { const was = clock.playing; pause(); await loadSong($('song').value); director.reset(); clock.t = 0; if (hybrid.on && hybrid.lab) hybrid.ensure(); if (was) play(); saveUrl() }
     $('performer').onchange = async () => { const was = clock.playing; pause(); await loadSong($('song').value); director.reset(); clock.t = 0; if (hybrid.on && hybrid.lab) hybrid.ensure(); if (was) play(); saveUrl() }
     $('bowing').onchange = async () => { const was = clock.playing, t = clock.t; pause(); await loadSong($('song').value); clock.t = t; if (hybrid.on && hybrid.lab) hybrid.ensure(); if (was) play(); saveUrl() }
     $('song').onchange = async () => { const was = clock.playing; pause(); await loadSong($('song').value); director.reset(); if (hybrid.on && hybrid.lab) hybrid.ensure(); if (was) play(); saveUrl() }
@@ -713,7 +742,8 @@
       if ($('model').selectedIndex) p.set('model', $('model').value)
       if ($('outfit').value !== 'concert') p.set('outfit', $('outfit').value)
       if ($('bowing').value !== 'score') p.set('bowing', $('bowing').value)
-      if (!$('performer').hidden && $('performer').value) p.set('performer', $('performer').value)
+      if ($('performer').value !== MODELLED) p.set('performer', $('performer').value || 'none')
+      if ($('source').value === 'midi') p.set('src', 'midi')
       if ($('vdress').value !== 'wine') p.set('vdress', $('vdress').value)
       if ($('room').value !== 'hall') p.set('room', $('room').value)
       if (hybrid.on) p.set('violin', hybrid.name)

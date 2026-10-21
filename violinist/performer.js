@@ -46,3 +46,24 @@ export async function applyPerformer(id, violin, others = [], { engine = 'source
 
 /** One line of credit for a page (pitch: false for a page whose violin does not play the pitch curves, a GM soundfont). */
 export const performerCredit = (r, { pitch = true } = {}) => !r ? '' : `${r.violinist}${r.year ? ` (${r.year})` : ''}: ${r.ensemble ? 'timing' : pitch ? 'timing, dynamics and pitch' : 'timing and dynamics'} from the recording (${r.licence}${r.url ? `, <a href="${r.url}" target="_blank" rel="noopener">source</a>` : ''})`
+
+// ── The modelled performer (strings/expression-model.js) ───────────────────
+// For any piece, recorded or not: timing and dynamics predicted from the score
+// by the model fitted on the recordings above. Its menu value is MODELLED.
+export const MODELLED = 'model'
+/**
+ * Play the violin notes as the model would, in place, and retime the others
+ * (notes with q and dq) along the same tempo. violin: notes with q, dq, pitch,
+ * velocity (written), beat, beatsPerBar, measure, art (bowing planned).
+ * Returns { model, expression, tmap (q → seconds) } or null.
+ */
+export async function applyModelled(violin, others = [], { sections = [], base = 'violinist/' } = {}) {
+  const { loadExpressionModel, predictExpression } = await import('../strings/expression-model.js')
+  const model = await loadExpressionModel(base + 'expression-model.json')
+  const expression = predictExpression(violin, model, { sections })
+  if (!expression) return null
+  for (const n of others) { if (n.q == null) continue; const on = expression.tmap(n.q, n.on), off = expression.tmap(n.q + (n.dq ?? 0.25), n.off); n.on = on; n.off = Math.max(on + 0.03, off) }
+  return { model, expression, tmap: expression.tmap }
+}
+/** One line of credit for the modelled performer. */
+export const modelledCredit = m => `a modelled violinist: timing and dynamics predicted from the score, fitted on ${m.recordings} recordings of ${m.pieces} pieces (violinist/expression-model.json)`

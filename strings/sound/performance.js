@@ -198,7 +198,8 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
   // (a recording of an ensemble brings only its timing: expression.timing)
   const REC = !!expression?.recorded
   const notes = planHarmonics(humanize(playable, REC ? { ...S, timing: 0, intonation: 0 } : expression?.timing ? { ...S, timing: 0 } : S, seed + 101), inst.open, S.harmonics)
-  const PH = REC ? 0 : S.phrasing
+  // (a lane predicted from the score, strings/expression-model.js, brings its own phrasing too)
+  const PH = REC || expression?.phrased ? 0 : S.phrasing
   // one note at a time on a string: a note held into the next one on its string
   // ends there (a held voice the fingering put on the same string as the moving one)
   {

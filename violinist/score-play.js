@@ -14,6 +14,8 @@
 // an IMSLP edition's bowing) reach the score's notes through matchMidi: each
 // MIDI note pairs with the score note of the same pitch at the same place.
 import { readLilyPondFiles } from '../strings/lilypond.js'
+import { planArticulation } from '../strings/articulation.js'
+import { bowingFor } from './score-art.js'
 
 // General MIDI programs by the names LilyPond's midiInstrument uses
 const GM = ['acoustic grand', 'bright acoustic', 'electric grand', 'honky-tonk', 'electric piano 1', 'electric piano 2', 'harpsichord', 'clav', 'celesta', 'glockenspiel', 'music box', 'vibraphone', 'marimba', 'xylophone', 'tubular bells', 'dulcimer',
@@ -112,7 +114,9 @@ export async function scorePiece(entry, base = 'violinist/scores/') {
     const notes = realizeGraces(copy(p.notes), secPerQ).map(n => ({ ...n, program: n.instrument ? fixProgram(gmProgram(n.instrument, staffName) ?? def, staffName) : def }))
     return { name: staffName, program: def, notes }
   })
-  return { violin, others, title: s.title, tempo: s.tempo, meter: s.meter }
+  // section ends (repeats and their endings, quarters), for strings/expression-model.js
+  const sections = [...new Set((s.repeats || []).flatMap(r => [r.to, ...(r.alts || []).map(a => a[1])]))].sort((a, b) => a - b)
+  return { violin, others, title: s.title, tempo: s.tempo, meter: s.meter, sections }
 }
 
 /**
@@ -152,7 +156,7 @@ export function carryOver(pairs, scoreNotes, { timing = null, art = false } = {}
   for (const [m, s] of pairs) {
     has.add(s)
     if (timing) { s.on = m.on; s.off = m.off; s.velocity = m.velocity; if (m.rec) s.rec = m.rec; else delete s.rec }
-    if (art) s.art = m.art ? { ...m.art } : null
+    if (art) { const keep = s.art ? { ...(s.art.orn ? { orn: s.art.orn } : {}), ...(s.art.fermata ? { fermata: true } : {}) } : {}; s.art = m.art ? { ...m.art, ...keep } : (Object.keys(keep).length ? { slur: null, stroke: null, bow: null, source: 'score', ...keep } : null) }
   }
   if (timing) for (const s of scoreNotes) if (!has.has(s)) {
     // a note the MIDI does not have (a grace note, a note LilyPond's MIDI dropped): along the map
@@ -165,4 +169,42 @@ export function carryOver(pairs, scoreNotes, { timing = null, art = false } = {}
     for (const s of scoreNotes) if (!has.has(s) && s.art) { const keep = s.art.grace; s.art = keep ? { ...s.art } : { slur: null, stroke: null, bow: null, source: 'score' } }
   }
   scoreNotes.sort((a, b) => a.on - b.on || a.pitch - b.pitch)
+}
+
+/**
+ * What the expression model reads from the score, on MIDI notes (Notes: MIDI
+ * file): each paired note's place in the bar, ornaments, fermatas and written
+ * dynamic (as n.written; a MIDI file's velocities are often all 127). In place.
+ */
+export function enrichFromScore(midiNotes, scoreNotes) {
+  for (const [m, s] of matchMidi(midiNotes, scoreNotes)) {
+    m.beat = s.beat; m.beatsPerBar = s.beatsPerBar; m.measure = s.measure; m.written = s.velocity
+    if (s.art?.orn || s.art?.fermata) m.art = { ...(m.art || {}), ...(s.art.orn ? { orn: s.art.orn } : {}), ...(s.art.fermata ? { fermata: true } : {}) }
+  }
+}
+
+/**
+ * The bowing of the score's own notes (#037, #038): its slurs and marks
+ * (Bowing: score), a printed edition's (violinist/editions, aligned to the
+ * MIDI's notes: read there and carried over), inferred, or the fixed rule.
+ * notes: the score's violin notes; midiNotes: the MIDI file's ({ pitch, q }).
+ * Returns what score-art.js bowingFor returns.
+ */
+export async function bowScore(entry, notes, midiNotes, mode = 'score') {
+  if (mode === 'fixed') {
+    // no plan (motion.js's rule bows), but grace notes, ornaments and fermatas stay known
+    for (const n of notes) { const a = n.art; n.art = a && (a.grace || a.orn || a.fermata) ? { ...(a.grace ? { grace: a.grace, graceAt: a.graceAt, graceDur: a.graceDur } : {}), ...(a.orn ? { orn: a.orn } : {}), ...(a.fermata ? { fermata: true } : {}) } : undefined; if (!n.art) delete n.art }
+    return { mode, matched: 0, total: notes.length, slurs: 0 }
+  }
+  if (mode === 'infer') { planArticulation(notes, { mode: 'infer' }); return { mode, matched: 0, total: notes.length, slurs: notes.filter(n => n.art?.slurPrev).length } }
+  if (mode.startsWith('edition:')) {
+    const mn = midiNotes.map(n => ({ ...n })), b = await bowingFor(entry, mn, mode)
+    if (b.edition) {
+      carryOver(matchMidi(mn, notes), notes, { art: true })
+      planArticulation(notes, { mode: 'score' })
+      return { ...b, slurs: notes.filter(n => n.art?.slurPrev).length, bows: notes.filter(n => n.art?.bow).length }
+    }
+  }
+  planArticulation(notes, { mode: 'score' })
+  return { mode: 'score', matched: notes.length, total: notes.length, slurs: notes.filter(n => n.art?.slurPrev).length }
 }
