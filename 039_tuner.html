@@ -76,7 +76,8 @@
       background: rgba(14, 13, 12, 0.88); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 10px;
       backdrop-filter: blur(8px); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5); z-index: 4; box-sizing: border-box;   /* over the concert A button when open on a phone */
     }
-    #panel h1 { margin: 0 0 2px; font: 300 17px/1.2 Georgia, serif; letter-spacing: 0.04em; color: #f3e6c4; }
+    #panel h1 { display: inline; margin: 0; font: 300 17px/1.2 Georgia, serif; letter-spacing: 0.04em; color: #f3e6c4; vertical-align: middle; }
+    #panel .sub { margin-top: 2px; }
     #panel .sub { font-size: 11px; color: #9c958a; margin-bottom: 6px; }
     #panel a { color: #b9ad98; }
     body.collapsed #panel .body { display: none; }
@@ -84,8 +85,8 @@
     body.collapsed #panel { width: auto; padding: 6px 10px; }
     body.collapsed #panel .sub { display: none; }
     body.collapsed #panel h1 { display: inline; font-size: 15px; }
-    body.collapsed #toggle { float: none; margin-left: 6px; }
-    #toggle { float: right; background: none; border: 0; color: #d8b56a; font-size: 15px; cursor: pointer; }
+    /* the minimise button leads the title, top left, clear of the concert A button */
+    #toggle { background: none; border: 0; color: #d8b56a; font-size: 17px; line-height: 1; cursor: pointer; padding: 2px 8px 2px 0; margin: 0; vertical-align: middle; min-width: 22px; text-align: left; -webkit-tap-highlight-color: transparent; }
     h2 { font: 600 10.5px/1 "Helvetica Neue", Arial, sans-serif; letter-spacing: 0.12em; text-transform: uppercase; color: #b9a57a; margin: 12px 0 4px; }
     .row { display: flex; align-items: center; gap: 6px; margin: 5px 0; flex-wrap: wrap; }
     .row > label:first-child { flex: 0 0 74px; color: #a9a196; }
@@ -197,7 +198,7 @@
   <button id="playA" title="Play concert A (A)"><svg viewBox="0 0 16 16"><path d="M2 6h3l4-3.5v11L5 10H2z" fill="currentColor"/><path d="M11.5 5.2a4 4 0 0 1 0 5.6M13.2 3.5a6.4 6.4 0 0 1 0 9" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>A<small id="playAHz">440</small></button>
 
   <div id="panel">
-    <button id="toggle" title="Collapse (H)">–</button>
+    <button id="toggle" title="Minimise (H)">–</button>
     <h1>#039 Tuner</h1>
     <div class="sub">Chromatic and string tuner on the Web Audio input, in an AudioWorklet</div>
     <div class="body">
@@ -936,7 +937,7 @@
     $('playA').onclick = () => toggleRef('a4')
     $('playAHz').textContent = String(S.a4)
     $('showSmile').onchange = (e) => { S.smile = e.target.checked; saveUrl() }
-    $('toggle').onclick = () => { document.body.classList.toggle('collapsed'); $('toggle').textContent = document.body.classList.contains('collapsed') ? '+' : '–' }
+    $('toggle').onclick = () => { const c = document.body.classList.toggle('collapsed'); $('toggle').textContent = c ? '+' : '–'; $('toggle').title = c ? 'Open the menu (H)' : 'Minimise (H)' }
 
     const showSource = (v) => {
       $('deviceRow').hidden = v !== 'mic'
