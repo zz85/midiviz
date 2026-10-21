@@ -74,10 +74,9 @@
     #panel {
       position: absolute; top: 12px; left: 12px; width: 318px; padding: 10px 12px; max-height: calc(100% - 44px); overflow: auto;
       background: rgba(14, 13, 12, 0.88); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 10px;
-      backdrop-filter: blur(8px); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5); z-index: 2; box-sizing: border-box;
+      backdrop-filter: blur(8px); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5); z-index: 4; box-sizing: border-box;   /* over the concert A button when open on a phone */
     }
     #panel h1 { margin: 0 0 2px; font: 300 17px/1.2 Georgia, serif; letter-spacing: 0.04em; color: #f3e6c4; }
-    #panel h1 a { color: inherit; text-decoration: none; }
     #panel .sub { font-size: 11px; color: #9c958a; margin-bottom: 6px; }
     #panel a { color: #b9ad98; }
     body.collapsed #panel .body { display: none; }
@@ -110,9 +109,18 @@
     #meter i { position: absolute; left: 0; top: 0; bottom: 0; background: #8a7a52; width: 0; }
     #meter u { position: absolute; top: 0; bottom: 0; width: 1px; background: #e8e2d6; opacity: 0.6; }
     #hint { color: #8f887d; font-size: 11px; margin-top: 8px; }
-    #start { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 14px; background: rgba(11, 11, 12, 0.82); z-index: 4; }
+    #install .note, #install p { color: #b9b0a2; font-size: 12px; margin: 4px 0; }
+    #install .row .note { margin: 0; }
+    #install b { color: #f3e6c4; font-weight: 600; }
+    #install svg.share { width: 13px; height: 13px; vertical-align: -2px; color: #d8b56a; }
+    #install .ic { display: inline-block; min-width: 1.1em; text-align: center; color: #d8b56a; }
+    #install details { margin: 6px 0; font-size: 11.5px; color: #b9b0a2; }
+    #install summary { cursor: pointer; color: #d8b56a; }
+    #install ul { margin: 4px 0 0; padding-left: 16px; }
+    #install li { margin: 3px 0; }
+    #install.done #installHow b { color: #9be38f; }
+    #start { position: absolute; inset: 0; z-index: 6; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 14px; background: rgba(11, 11, 12, 0.82); }
     #start button { font: 300 20px Montserrat, "Helvetica Neue", Arial, sans-serif; letter-spacing: 0.08em; padding: 12px 26px; border-radius: 30px; background: #c9a24a; color: #111; border: 0; cursor: pointer; }
-    #start button.alt { background: none; color: #d8b56a; border: 1px solid #6b5a36; font-size: 14px; padding: 8px 18px; }
     #start p { color: #9c958a; max-width: 420px; text-align: center; margin: 0; }
     #status { position: absolute; top: 58px; right: 12px; padding: 6px 10px; border-radius: 6px; background: rgba(14, 13, 12, 0.88); border: 1px solid #3d3933; font-size: 12px; z-index: 5; max-width: 440px; }
     #status.error { border-color: #c44; color: #f99; }
@@ -190,7 +198,7 @@
 
   <div id="panel">
     <button id="toggle" title="Collapse (H)">–</button>
-    <h1><a href="README.md">#039 Tuner</a></h1>
+    <h1>#039 Tuner</h1>
     <div class="sub">Chromatic and string tuner on the Web Audio input, in an AudioWorklet</div>
     <div class="body">
       <h2>Input</h2>
@@ -291,6 +299,23 @@
         <button class="b" id="refA" title="Play concert A at the A4 above (A)">Concert A</button>
       </div>
 
+      <h2>Install</h2>
+      <div id="install">
+        <div class="row" id="installRow" hidden><button class="b on" id="installBtn">Install app</button><span class="note">adds Tuner to your apps</span></div>
+        <p id="installHow" class="note"></p>
+        <details id="installAll"><summary>Other browsers</summary>
+          <ul>
+            <li><b>iPhone / iPad</b> (Safari, or Chrome on iOS 16.4+): Share <svg class="share" viewBox="0 0 16 16" aria-label="Share"><path d="M8 1.5v8.5M5 4.3 8 1.5l3 2.8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M5.5 6.5H3.5v8h9v-8h-2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg> → <b>Add to Home Screen</b> → Add</li>
+            <li><b>Android</b> (Chrome): menu <span class="ic">⋮</span> → <b>Install app</b> (or Add to Home screen)</li>
+            <li><b>Samsung Internet</b>: menu <span class="ic">≡</span> → <b>Add page to</b> → Home screen</li>
+            <li><b>Firefox on Android</b>: menu <span class="ic">⋮</span> → <b>Install</b></li>
+            <li><b>Chrome / Edge on a computer</b>: the install icon at the right of the address bar, or menu → <b>Cast, save and share → Install page as app</b> (Edge: <b>Apps → Install this site as an app</b>)</li>
+            <li><b>Safari on a Mac</b> (macOS 14+): File → <b>Add to Dock</b></li>
+          </ul>
+        </details>
+        <p class="note" id="offlineNote">Open it once with a network connection; after that it opens and tunes offline.</p>
+      </div>
+
       <h2>Detector</h2>
       <div class="stats" id="stats">–</div>
       <div id="hint">Space: hold the reading · C: clear string offsets and sparklines · R: target tone · A: concert A · ←/→: test tone ±1 semitone · H: panel · click a string to lock it</div>
@@ -299,7 +324,6 @@
 
   <div id="start">
     <button id="startMic">Start microphone</button>
-    <button id="startTest" class="alt">Try with a test tone</button>
     <p>The microphone is read with echo cancellation, noise suppression and automatic gain turned off. Nothing leaves this page.</p>
   </div>
   <div id="status" hidden></div>
@@ -926,14 +950,12 @@
     for (const id of ['testNote', 'testCents', 'testWave', 'testVibrato', 'testHear']) $(id).addEventListener('change', updateTest)
     $('testCents').addEventListener('input', updateTest)
 
+    // the start screen starts the microphone; the test tone stays in Source
+    // (?source=test starts with it, for checking the page without a mic)
+    if (params.get('source') === 'test') { $('source').value = 'test'; showSource('test') }
     $('startMic').onclick = async () => {
-      $('source').value = 'mic'; showSource('mic')
-      if (await startMic()) $('start').hidden = true
-    }
-    $('startTest').onclick = async () => {
-      $('source').value = 'test'; showSource('test')
-      await startTest()
-      $('start').hidden = true
+      if ($('source').value === 'test') { await startTest(); $('start').hidden = true }
+      else if (await startMic()) $('start').hidden = true
     }
     if (!window.AudioWorkletNode) status('This browser has no AudioWorklet.', true)
     // the panel starts minimised on phones and tablets (narrow, short or
@@ -962,6 +984,7 @@
           const m = ev.data
           if (m?.type !== 'precache' || m.done < m.total) return
           offlineReady = m.failed === 0
+          if (offlineReady) $('offlineNote').textContent = 'Saved for offline use: it opens and tunes with no network.'
           if (!offlineReady) console.warn(`tuner: ${m.failed} of ${m.total} files not stored for offline use`)
         })
         reg.active?.postMessage({ type: 'precache', urls: OFFLINE })
@@ -969,6 +992,40 @@
     }
     let offlineReady = false
     setupOffline()
+
+    // ---------------------------------------------------------------- install
+    // Chrome / Edge / Samsung fire beforeinstallprompt: an Install button then
+    // opens the browser's own dialog. Elsewhere (Safari, Firefox) the page
+    // cannot install itself, so it says where the browser's menu item is.
+    let installPrompt = null
+    const ua = navigator.userAgent
+    const isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+    const isAndroid = /Android/.test(ua)
+    const standalone = () => matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches || navigator.standalone === true
+    function installText() {
+      const el = $('installHow')
+      $('install').classList.toggle('done', standalone())
+      $('installRow').hidden = !installPrompt || standalone()
+      if (standalone()) { el.innerHTML = '<b>Installed.</b> You are running the app.'; $('installAll').hidden = true; return }
+      if (installPrompt) { el.innerHTML = 'Or use the browser menu, as below.'; return }
+      if (isIOS) el.innerHTML = 'Tap Share <svg class="share" viewBox="0 0 16 16" aria-label="Share"><path d="M8 1.5v8.5M5 4.3 8 1.5l3 2.8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M5.5 6.5H3.5v8h9v-8h-2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg> (bottom bar in Safari, address bar in Chrome), then <b>Add to Home Screen</b> → Add.'
+      else if (/SamsungBrowser/.test(ua)) el.innerHTML = 'Menu <span class="ic">≡</span> → <b>Add page to</b> → Home screen.'
+      else if (isAndroid && /Firefox/.test(ua)) el.innerHTML = 'Menu <span class="ic">⋮</span> → <b>Install</b>.'
+      else if (isAndroid) el.innerHTML = 'Menu <span class="ic">⋮</span> → <b>Install app</b> (or Add to Home screen).'
+      else if (/Firefox/.test(ua)) el.innerHTML = 'Firefox on a computer cannot install web apps; open this page in Chrome, Edge or Safari, or on your phone.'
+      else if (/Safari/.test(ua) && !/Chrome|Chromium|Edg/.test(ua)) el.innerHTML = 'File → <b>Add to Dock</b> (macOS 14 or later).'
+      else el.innerHTML = 'Click the install icon at the right of the address bar, or the browser menu → <b>Install</b>.'
+    }
+    addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; installText() })
+    addEventListener('appinstalled', () => { installPrompt = null; installText() })
+    $('installBtn').onclick = async () => {
+      if (!installPrompt) return
+      installPrompt.prompt()
+      await installPrompt.userChoice.catch(() => null)
+      installPrompt = null
+      installText()
+    }
+    installText()
     addEventListener('online', () => drawStats(false))
     addEventListener('offline', () => drawStats(false))
     navigator.mediaDevices?.addEventListener?.('devicechange', listDevices)
