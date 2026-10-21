@@ -237,8 +237,8 @@ function finish(events, tempoMap, meterMap, tempoDefault, title, names) {
     const k = e.art.slur != null && ['staccatissimo', 'staccato', 'spiccato'].includes(e.art.stroke) ? 0.85
       : e.art.stroke === 'staccatissimo' ? 0.25 : e.art.stroke === 'staccato' || e.art.stroke === 'spiccato' ? 0.5 : 1
     return {
-      pitch: e.pitch, on: tsec(e.start), off: tsec(e.start + Math.max(1 / 64, len * k)), q: e.start, velocity: Math.min(1, e.velocity), voice: e.voice,
-      measure: e.measure, beat: (e.start - e.mStart) / beatQ, beatsPerBar: mb, art: e.art,
+      pitch: e.pitch, on: tsec(e.start), off: tsec(e.start + Math.max(1 / 64, len * k)), q: e.start, dq: Math.max(1 / 64, len * k), velocity: Math.min(1, e.velocity), voice: e.voice,
+      measure: e.measure, beat: (e.start - e.mStart) / beatQ, beatsPerBar: mb, art: e.art, ...(e.instrument ? { instrument: e.instrument } : {}),
     }
   }).sort((a, b) => a.on - b.on || a.pitch - b.pitch)
   return { notes, meter: meterMap.map(([q, b, t, m]) => ({ t: tsec(q), beats: b, beatType: t, measure: m })), tempo: tempoMap.map(([q, b]) => ({ t: tsec(q), bpm: b })), title, parts: names }

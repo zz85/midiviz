@@ -77,6 +77,8 @@ const POSTFIX = new Set(['espressivo', 'upbow', 'downbow', 'flageolet', 'open', 
 // ornaments, kept on the note as art.orn (for realizing them: midis/tools/bach_ornaments.mjs)
 const ORN = new Set(['trill', 'prall', 'mordent', 'turn', 'reverseturn', 'prallprall', 'prallmordent', 'upprall', 'downprall', 'upmordent', 'downmordent', 'lineprall', 'pralldown', 'prallup', 'startTrillSpan'])
 const DYNS = { pppp: 0.15, ppppp: 0.12, ffff: 1, fffff: 1, fp: 0.8, sfp: 0.9, sfpp: 0.9, sp: 0.42, spp: 0.3, rfz: 0.9, sff: 0.95, ...DYN }
+// hairpins and their text forms: crescendo, diminuendo, or the end of one (\! or a dynamic)
+const HAIRPIN = { '<': 'cresc', '>': 'dim', '!': 'end', cresc: 'cresc', cr: 'cresc', crescTextCresc: 'cresc', decresc: 'dim', decr: 'dim', dim: 'dim', endcresc: 'end', enddecresc: 'end', enddim: 'end' }
 const LYRIC = new Set(['Lyrics', 'ChordNames', 'FiguredBass', 'NoteNames', 'FretBoards', 'DrumStaff', 'DrumVoice', 'RhythmicStaff', 'Dynamics', 'Devnull', 'NullVoice', 'CueVoice'])
 const STAFF = new Set(['Staff', 'TabStaff', 'VaticanaStaff', 'MensuralStaff', 'PetrucciStaff', 'KievanStaff', 'GregorianTranscriptionStaff'])
 const VOICE = new Set(['Voice', 'TabVoice', 'VaticanaVoice', 'MensuralVoice', 'PetrucciVoice', 'KievanVoice'])
@@ -353,7 +355,7 @@ class Parser {
   }
 
   // ── events ──
-  newArt() { return { arts: [], techs: [], orns: [], slurStart: 0, slurEnd: 0, tie: false, dyn: null, gliss: false } }
+  newArt() { return { arts: [], techs: [], orns: [], slurStart: 0, slurEnd: 0, tie: false, dyn: null, gliss: false, hp: [] } }
   // postfix events after a note, chord or rest
   postfix(ev, art) {
     for (;;) {
@@ -374,7 +376,8 @@ class Parser {
         if (e === '#' || e === '$') { this.scheme(); continue }
         if (e === '\\') {
           const f = this.peek(1)
-          if (f === '<' || f === '>' || f === '!' || f === '(' || f === ')' || f === '[' || f === ']') { this.i += 2; continue }
+          if (f === '<' || f === '>' || f === '!') { this.i += 2; art.hp.push(HAIRPIN[f]); continue }
+          if (f === '(' || f === ')' || f === '[' || f === ']') { this.i += 2; continue }
           if (/\d/.test(f || '')) { this.i++; this.number(); continue }
           if (!this.postCommand(ev, art, true)) break
           continue
@@ -383,7 +386,8 @@ class Parser {
         continue
       }
       if (c === '\\') {
-        if (d === '(' || d === ')' || d === '[' || d === ']' || d === '<' || d === '>' || d === '!') { this.i += 2; continue }
+        if (d === '<' || d === '>' || d === '!') { this.i += 2; art.hp.push(HAIRPIN[d]); continue }
+        if (d === '(' || d === ')' || d === '[' || d === ']') { this.i += 2; continue }
         if (/\d/.test(d || '')) { this.i++; this.number(); continue }   // string number
         if (!this.postCommand(ev, art, false)) break
         continue
@@ -404,6 +408,7 @@ class Parser {
     else if (ORN.has(name)) art.orns.push(name === 'startTrillSpan' ? 'trill' : name)
     else if (name === 'rest') { if (ev) ev.kind = 'rest' }
     else if (DYNS[name] != null) art.dyn = DYNS[name]
+    else if (HAIRPIN[name]) art.hp.push(HAIRPIN[name])
     else if (name === 'markup') this.markup()
     else if (name === 'tweak') { this.ws(); if (this.peek() === '#') this.scheme(); else this.atom(); this.ws(); if (this.peek() === '#' || this.peek() === '$') this.scheme(); else if (this.peek() === '"') this.string(); else this.number() }
     else if (name === 'bendAfter') { this.ws(); if (this.peek() === '#') this.scheme(); else this.number() }
@@ -772,7 +777,7 @@ function perform(score, { graces = false } = {}) {
   const repeats = []
   const staffById = new Map(), voiceStaff = new Map()
   const newStaff = (id, mods = {}, group = null) => {
-    const s = { id, name: mods.instrumentName || null, midi: mods.midiInstrument || null, group, events: [], dyn: [] }
+    const s = { id, name: mods.instrumentName || null, midi: mods.midiInstrument || null, group, events: [], dyn: [], hp: [], progs: [] }
     staves.push(s); if (id != null) staffById.set(id, s)
     return s
   }
@@ -784,9 +789,13 @@ function perform(score, { graces = false } = {}) {
 
   function emit(ev, cx) {
     const dur = ev.dur * cx.scale
-    if (ev.kind === 'rest' || ev.kind === 'skip' || cx.mute) return cx.t + dur
+    if (cx.mute) return cx.t + dur
     let staff = cx.staff
     if (!staff) { staff = cx.top.implicit ??= newStaff(null, {}, cx.group); }
+    // dynamics and hairpins count on rests and spacers too (r\p, s1\<)
+    if (ev.art?.dyn != null) staff.dyn.push([cx.t, ev.art.dyn])
+    for (const h of ev.art?.hp || []) staff.hp.push([cx.t, h])
+    if (ev.kind === 'rest' || ev.kind === 'skip') return cx.t + dur
     const vk = (staves.indexOf(staff)) + ':' + cx.voice
     const vs = voiceState(vk)
     const art = ev.art
@@ -795,7 +804,6 @@ function perform(score, { graces = false } = {}) {
     if (art.slurEnd) { slur = vs.slur; vs.slur = null }
     if (art.slurStart) { slur = ++slurSeq; vs.slur = slur }
     if (slur == null) slur = vs.slur
-    if (art.dyn != null) staff.dyn.push([cx.t, art.dyn])
     const port = vs.gliss
     vs.gliss = art.gliss
     const src = ev.ref ?? ev
@@ -901,7 +909,7 @@ function perform(score, { graces = false } = {}) {
       case 'tempo': tempo.push([cx.t, n.bpm]); return cx.t
       // the first name a staff is given (later ones are changes along the way)
       case 'name': if (cx.staff) cx.staff.name ??= n.name; else cx.top.pendingName ??= n.name; return cx.t
-      case 'midi': if (cx.staff) cx.staff.midi = n.name; return cx.t
+      case 'midi': if (cx.staff) { cx.staff.progs.push([cx.t, n.name]); cx.staff.midi ??= n.name } return cx.t
       default: return cx.t
     }
   }
@@ -932,7 +940,7 @@ function bars(meter, partial, end) {
 }
 
 // ── the reader ───────────────────────────────────────────────────────────────
-export function readLilyPond(text, { part = null, include = null, file = '', tempo: tempoDefault = 60, graces = false } = {}) {
+export function readLilyPond(text, { part = null, include = null, file = '', tempo: tempoDefault = 60, graces = false, allParts = false } = {}) {
   const missing = []
   const src = expandIncludes(text, file, include, 0, missing)
   const P = new Parser(src)
@@ -980,21 +988,64 @@ export function readLilyPond(text, { part = null, include = null, file = '', tem
   const meterMap = []
   for (const [s, k, m] of B) { const last = meterMap[meterMap.length - 1]; if (!last || last[1] !== m[1] || last[2] !== m[2]) meterMap.push([Math.max(0, s), m[1], m[2], k]) }
   const barAt = t => { let lo = 0, hi = B.length - 1; while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (B[mid][0] <= t + 1e-6) lo = mid; else hi = mid - 1 } return B[lo] }
-  // dynamics on the staff: the latest at or before each note
-  const dyn = st.dyn.slice().sort((a, b) => a[0] - b[0])
-  const events = st.events.map(e => {
-    let v = 0.7; for (const [t, d] of dyn) { if (t > e.start + 1e-6) break; v = d }
-    const b = barAt(e.start)
-    const { accent, ...rest } = e
-    return { ...rest, velocity: Math.min(1, v * accent), measure: b[1], mStart: b[0] }
-  }).sort((a, b) => a.start - b.start || a.pitch - b.pitch)
+  const events = partEvents(st, barAt)
   const hd = pk.header
   const piece = hd.piece || (subs.size > 1 ? hd.subtitle : '')
   const title = [hd.title || hd.mutopiatitle || (subs.size > 1 ? '' : hd.subtitle) || '', piece && piece !== hd.title ? piece : ''].filter(Boolean).join(': ').replace(/\s+/g, ' ').trim()
   // repeats as printed (quarters): { from, to (end of the body), alts: [[q0, q1]…], times };
   // written out (unfolded: true): { from, to (end of the last pass), keep: [[q0, q1]…] (not taken), times }
-  return { ...finishScore(events, tempoMap, meterMap, tempoDefault, title, parts.map(p => ({ id: p.id, name: p.name }))), part: pi, missing, repeats: r.repeats }
+  const out = { ...finishScore(events, tempoMap, meterMap, tempoDefault, title, parts.map(p => ({ id: p.id, name: p.name }))), part: pi, missing, repeats: r.repeats }
+  // { allParts: true }: every other staff of the same movement too, on the same timing
+  // (an accompaniment), each { id, name, midi (LilyPond's midiInstrument), notes }
+  if (allParts) out.others = parts.filter(p => p.si === pk.si && p !== pk).map(p => ({ id: p.id, name: p.name, midi: p.midi, notes: finishScore(partEvents(r.staves[p.k], barAt), tempoMap, meterMap, tempoDefault, '', []).notes }))
+  return out
 }
+
+// A staff's events with their loudness: the latest dynamic at or before each note, moving
+// along a hairpin (\< \> \cresc …) to the dynamic that ends it, or a step (0.12) up or down
+// when it ends without one (\!); the level reached holds until the next dynamic, as
+// LilyPond's MIDI plays it.
+// A \set Staff.midiInstrument inside the music (pizzicato strings for a pizz. passage) is
+// kept on each note after it as e.instrument, as LilyPond's MIDI changes program there.
+function partEvents(st, barAt) {
+  const level = loudness(st.dyn, st.hp), progs = st.progs.slice().sort((a, b) => a[0] - b[0])
+  return st.events.map(e => {
+    const b = barAt(e.start)
+    const { accent, ...rest } = e
+    let instrument = st.midi; for (const [t, nm] of progs) { if (t > e.start + 1e-6) break; instrument = nm }
+    return { ...rest, velocity: Math.min(1, level(e.start) * accent), measure: b[1], mStart: b[0], ...(progs.length > 1 || (progs.length && instrument !== st.midi) ? { instrument } : {}) }
+  }).sort((a, b) => a.start - b.start || a.pitch - b.pitch)
+}
+const HP_STEP = 0.12
+export function loudness(dyn, hp = []) {
+  const D = dyn.slice().sort((a, b) => a[0] - b[0]), H = hp.slice().sort((a, b) => a[0] - b[0])
+  // segments [t0, t1, v0, v1] in time order: steps at dynamics, ramps along hairpins
+  const segs = []
+  let v = D.length && D[0][0] < 1e-6 ? D[0][1] : 0.7, t = 0
+  const ev = [...D.map(([t, d]) => ({ t, d })), ...H.map(([t, h]) => ({ t, h }))].sort((a, b) => a.t - b.t || (a.d != null ? -1 : 1))
+  for (let i = 0; i < ev.length; i++) {
+    const e = ev[i]
+    if (e.d != null) { segs.push([t, e.t, v, v]); v = e.d; t = e.t; continue }
+    if (e.h === 'end') continue
+    // a hairpin: it ends at the next \!, dynamic or hairpin after it
+    const end = ev.slice(i + 1).find(x => x.t > e.t + 1e-6) || null
+    if (!end) { segs.push([t, e.t, v, v]); const to = clamp01(v + (e.h === 'cresc' ? HP_STEP : -HP_STEP)); segs.push([e.t, e.t + 4, v, to]); v = to; t = e.t + 4; continue }
+    // the target: the dynamic that ends it, or one just after its \! (within a quarter)
+    const dyn = end.d != null ? end : end.h === 'end' ? ev.slice(i + 1).find(x => x.d != null && x.t >= end.t - 1e-6 && x.t <= end.t + 1 + 1e-6) : null
+    let to = dyn ? dyn.d : clamp01(v + (e.h === 'cresc' ? HP_STEP : -HP_STEP))
+    // (a "crescendo" to a softer dynamic is a misplaced mark: a step the written way)
+    if ((e.h === 'cresc') !== (to > v)) to = clamp01(v + (e.h === 'cresc' ? HP_STEP : -HP_STEP))
+    segs.push([t, e.t, v, v]); segs.push([e.t, end.t, v, to]); v = to; t = end.t
+  }
+  segs.push([t, Infinity, v, v])
+  return q => {
+    let lo = 0, hi = segs.length - 1
+    while (lo < hi) { const m = (lo + hi + 1) >> 1; if (segs[m][0] <= q + 1e-6) lo = m; else hi = m - 1 }
+    const [a, b, v0, v1] = segs[lo]
+    return b === Infinity || b <= a ? v0 : v0 + (v1 - v0) * Math.min(1, Math.max(0, (q - a) / (b - a)))
+  }
+}
+const clamp01 = x => Math.max(0.1, Math.min(1, x))
 
 /**
  * The main file of a set of .ly files (a Mutopia -lys.zip): one with a \score
