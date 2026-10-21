@@ -155,6 +155,7 @@ export function snapshotScene(live, { camera, hair = null, envScene = null, envI
   const out = new THREE.Scene()
   out.background = new THREE.Color(0x000000)
   const cache = new Map(), skipped = new Set(), stats = { meshes: 0, triangles: 0, lights: 0, strands: 0, skipped: [] }
+  const owned = []   // textures made here (disposeSnapshot frees them; the live scene's own are shared)
   const hairShader = hair?.kind === 'strands' ? hair.object : null
   const add = (geo, mat, matrix) => {
     const m = new THREE.Mesh(geo, mat)
@@ -245,18 +246,39 @@ export function snapshotScene(live, { camera, hair = null, envScene = null, envI
     const cam = camera.getWorldPosition(new THREE.Vector3())
     const { geometry, strands, map } = hair.bakeStrands(cam, { fraction: hairFraction, segments: hairSegments, widthScale: 0.8 / Math.sqrt(hairFraction) })
     stats.strands = strands
+    owned.push(map)
     // (the colour from the map, not the vertex colours: MuTracer drops those)
     add(geometry, new THREE.MeshPhysicalMaterial({ map, roughness: 0.42, metalness: 0, sheen: 0.4, sheenRoughness: 0.5, sheenColor: 0x806040, side: THREE.DoubleSide, specularIntensity: 0.6 }), null)
   }
 
   if (envMap) out.environment = envMap
-  else if (envScene) out.environment = bakeEnvironment(envScene, { intensity: envIntensity })
+  else if (envScene) owned.push(out.environment = bakeEnvironment(envScene, { intensity: envIntensity }))
   out.environmentIntensity = 1
   out.updateMatrixWorld(true)
   for (const c of out.children) if (!c.matrixAutoUpdate) c.matrixWorld.copy(c.matrix)
   stats.skipped = [...skipped]
   stats.ms = Math.round(performance.now() - t0)
-  return { scene: out, stats }
+  return { scene: out, stats, owned }
+}
+
+/**
+ * Frees a snapshot once traced: its geometries (and the BVH a tracer hung on
+ * them, geometry.boundsTree), its materials (copies; the textures they share
+ * with the live scene stay) and the textures it made. A video makes one per
+ * frame, so without this each frame's copy stays in memory (and in the
+ * tracer's renderer, which draws it for the denoiser's buffers).
+ */
+export function disposeSnapshot(snap) {
+  const mats = new Set()
+  snap.scene.traverse(o => {
+    if (!o.isMesh) return
+    o.geometry.boundsTree = null
+    o.geometry.dispose()
+    for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (m) mats.add(m)
+  })
+  for (const m of mats) m.dispose()
+  for (const t of snap.owned || []) t.dispose()
+  snap.scene.clear()
 }
 
 /** a camera for the tracer: the page camera's lens and place (with the zoom folded into the fov) */

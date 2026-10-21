@@ -12,7 +12,7 @@
 // snapshotScene() of that same moment, then each chosen tracer in turn.
 
 import * as THREE from 'three'
-import { snapshotScene, snapshotCamera, bakeEnvironment } from './snapshot.js'
+import { snapshotScene, snapshotCamera, bakeEnvironment, disposeSnapshot } from './snapshot.js'
 import { ENGINES, traceStill, hasWebGPU } from './engines.js'
 import { finishTrace, HDR_SCALE } from './post.js'
 
@@ -86,7 +86,7 @@ export function createPathTraceStills(stage) {
       if (!headless) stage.end()
       state.busy = null
       $('ptStart').disabled = $('ptAll').disabled = false
-      for (const m of snap?.scene.children || []) if (m.isMesh) m.geometry.dispose()
+      if (snap) disposeSnapshot(snap)
     }
     $('ptFxView').checked = true; $('ptFxView').parentElement.style.display = results.some(r => r.fxCanvas) ? '' : 'none'
     if (results.length > 1) { state.results = results; state.show = results.length > 2 ? 1 : 1; if (!headless) openViewer() }
