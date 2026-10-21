@@ -6,7 +6,7 @@ import { test, expect, mock } from 'bun:test'
 // the page gets three.js from a CDN; here a stand-in with the bits the director uses
 mock.module('three', () => import('./three-shim.mjs'))
 const { Vector3 } = await import('./three-shim.mjs')
-const { planShots, createDirector, SPOTS } = await import('../director.js')
+const { planShots, planShort, createDirector, SPOTS, stringsShare, STRINGS_LEVELS } = await import('../director.js')
 
 function song(k, duration = 600) {
   const phrases = []
@@ -78,5 +78,29 @@ test("Director's cut: orbit first, no two zooms or cranes in a row, a new framin
     expect(a.move.startsWith('zoom') && b.move.startsWith('zoom')).toBe(false)
     expect(a.move === 'crane' && b.move === 'crane').toBe(false)
     expect(b.frame).not.toBe(a.frame)
+  }
+})
+
+test('Inside the piano: avoided, every shot keeps the strings under its limit, and there is still a film', () => {
+  // (the estimate itself: the hammers close-up is mostly strings, along the keys none)
+  expect(stringsShare('hammers')).toBeGreaterThan(0.5)
+  expect(stringsShare('keys')).toBeLessThan(0.01)
+  expect(stringsShare('lowRight')).toBeLessThan(0.01)
+  for (const [level, max] of Object.entries(STRINGS_LEVELS)) {
+    for (let k = 1; k <= 4; k++) {
+      const s = song(k, 300)
+      const shots = planShots(s, { strings: max })
+      expect(shots.length).toBeGreaterThan(10)
+      for (const sh of shots) expect(stringsShare(sh.name)).toBeLessThanOrEqual(max)
+      // her face and the keys both still get screen time
+      expect(shots.some(sh => SPOTS[sh.name].subj === 'head')).toBe(true)
+      expect(shots.some(sh => SPOTS[sh.name].subj === 'hands')).toBe(true)
+      // a Short, one picture or each half of a stacked one
+      for (const o of [{}, { half: 'her' }, { half: 'hands' }]) {
+        const sh2 = planShort(s, { window: [60, 120], strings: max, ...o })
+        expect(sh2.length).toBeGreaterThan(3)   // (her half cuts every 6–11 s)
+        for (const x of sh2) expect(stringsShare(x.name, !o.half)).toBeLessThanOrEqual(max)
+      }
+    }
   }
 })

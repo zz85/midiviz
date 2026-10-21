@@ -182,6 +182,88 @@ function applyMove(s, move, u, amt, dir, out) {
   return out
 }
 
+// ── How much of a spot's frame is the inside of the piano ──
+// For "Avoid the strings" (path tracing: the strings, plate and dampers are
+// most of the scene's triangles and the slowest part to trace). A grid of rays
+// from the spot's camera (at the start, middle and end of each of its moves,
+// with her hands at the middle and either side of the keyboard) is followed
+// into the case: a ray counts when it drops through the open top (inside the
+// rim, behind the fallboard) and reaches the string plane without passing
+// through the lid, propped at 32° on its spine hinge. Geometry from
+// concertstage/concert-grand.js (DIM, caseOutline, the lid); she isn't in the
+// test, so a shot from behind her over-counts a little (it errs towards
+// leaving a spot out). Default anchors as in createDirector.
+const CASE = (() => {
+  const ctrl = [[-74, -186], [-73.2, -197], [-68, -205.5], [-58, -210.5], [-45, -211.2], [-31, -207], [-17, -197], [-4, -183], [8, -167], [20, -149], [32, -130], [44, -110], [55, -91], [64, -76], [70, -64], [73.3, -53], [74, -43]]
+  return [[-74, -17], ...ctrl, [74, -17]].map(([x, z]) => [x * 0.95, z > -30 ? z : z * 0.98])   // (inside the rim)
+})()
+const RIM_TOP = 97, STRING_Y = 88.5, STRINGS_FROM = -24, LID_FROM = -40, HINGE_X = -74.8, LID_A = 32 * D2R
+function inCase(x, z) {
+  if (z > STRINGS_FROM) return false
+  let c = false
+  for (let i = 0, j = CASE.length - 1; i < CASE.length; j = i++) {
+    const [xi, zi] = CASE[i], [xj, zj] = CASE[j]
+    if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) c = !c
+  }
+  return c
+}
+const SUBJ_AT = { hands: [0, 76, 0], head: [0, 122, 32], figure: [0, 98.4, 18.4], piano: [0, 90, -70], feet: [0, 12, 18], hammers: [0, 85, -36.5], pedals: [0, 7, -2] }
+const _sv = { P: {}, c: new THREE.Vector3(), t: new THREE.Vector3(), f: new THREE.Vector3(), r: new THREE.Vector3(), u: new THREE.Vector3(), d: new THREE.Vector3() }
+function insideFraction(s, P, hx, aspect, N = 36) {
+  const { c, t, f, r, u, d } = _sv
+  const a = SUBJ_AT[s.subj]
+  t.set(a[0] + (s.subj === 'pedals' || s.subj === 'feet' ? 0 : s.subj === 'piano' ? hx * 0.3 : hx), a[1], a[2])
+  if (s.aim) t.x += s.aim[0], t.y += s.aim[1], t.z += s.aim[2]
+  const az = P.az * D2R, el = P.el * D2R
+  c.set(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el)).multiplyScalar(P.dist).add(t)
+  f.subVectors(t, c).normalize()
+  r.crossVectors(f, u.set(0, 1, 0)); if (r.lengthSq() < 1e-6) r.set(1, 0, 0); r.normalize()
+  u.crossVectors(r, f)
+  const th = Math.tan(P.fov * D2R / 2), tw = th * aspect
+  const nx = Math.round(N * Math.sqrt(aspect)), ny = Math.round(N / Math.sqrt(aspect))
+  const sa = Math.sin(LID_A), ca = Math.cos(LID_A)
+  let hit = 0
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const sx = ((i + 0.5) / nx * 2 - 1) * tw, sy = ((j + 0.5) / ny * 2 - 1) * th
+    d.copy(f).addScaledVector(r, sx).addScaledVector(u, sy)
+    if (d.y >= 0) continue
+    // into the case through the open top (or the camera already inside it)
+    if (c.y > RIM_TOP) { const k = (RIM_TOP - c.y) / d.y; if (!inCase(c.x + d.x * k, c.z + d.z * k)) continue }
+    else if (!inCase(c.x, c.z) || c.y < STRING_Y) continue
+    const k = (STRING_Y - c.y) / d.y, px = c.x + d.x * k, pz = c.z + d.z * k
+    if (!inCase(px, pz)) continue
+    // through the lid? (its plane through the hinge line; the flap is folded
+    // back over it, so the front 23 cm are open)
+    const sc = -sa * (c.x - HINGE_X) + ca * (c.y - RIM_TOP)
+    if (sc > 0) {
+      const sp = -sa * (px - HINGE_X) + ca * (STRING_Y - RIM_TOP), q = sc / (sc - sp)
+      const lx = c.x + (px - c.x) * q, ly = c.y + (STRING_Y - c.y) * q, lz = c.z + (pz - c.z) * q
+      const along = Math.hypot(lx - HINGE_X, ly - RIM_TOP)
+      if (lz < LID_FROM && inCase(HINGE_X + along, lz)) continue
+    }
+    hit++
+  }
+  return hit / (nx * ny)
+}
+const _inside = {}
+/** the largest share of the frame the piano's inside takes, over the spot's moves (0..1) */
+export function stringsShare(name, portrait = false) {
+  const key = name + (portrait ? '|p' : '')
+  if (_inside[key] != null) return _inside[key]
+  const s = spotFor(name, portrait), aspect = portrait ? 9 / 16 : 16 / 9
+  let m = 0
+  for (const move of s.moves) for (const v of [0, 0.5, 1]) for (const dir of [-1, 1]) for (const hx of [-30, 0, 30]) {
+    applyMove(s, move, v, 1, dir, _sv.P)
+    m = Math.max(m, insideFraction(s, _sv.P, hx, aspect))
+  }
+  return (_inside[key] = m)
+}
+// opts.strings: null = any spot; a number = leave out the spots whose frame
+// the inside fills more of (0.1 'mostly', 0.04 'strictly': with 0.04 the hands
+// are filmed along the keys, from the side, and her face and figure from low)
+export const STRINGS_LEVELS = { mostly: 0.1, strict: 0.04 }
+const stringsOk = (name, portrait, max) => max == null || stringsShare(name, portrait) <= max
+
 // ── Takes on a fixed view (sequence) ──
 // The director's cut works from the chosen view's angle but changes the
 // framing take by take, weaving far and close: the whole scene, the piano,
@@ -349,7 +431,8 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
   const starts = phrases.map(p => p[0]).filter(t => t > 0.5)
   const mean = (a, b) => { let s = 0, n = 0; for (let t = a; t < b; t += 0.25) { s += energyAt(t); n++ } return n ? s / n : 0 }
   const lookUp = (a, b) => glances.some(g => g.a < b - 1 && g.b > a + 0.5 && !g.quiet)
-  const names = spotsFor(false)
+  const strMax = opts.strings ?? null
+  const names = spotsFor(false).filter(n => stringsOk(n, false, strMax))
   const shots = []
   // what the audience has been shown lately: when the last wide shot ended,
   // and when her face was last in view (from the front half, not from behind)
@@ -384,12 +467,13 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
     // open far (the page fades it in from black): side-on from the hall,
     // across the hall, or high from behind her; then medium, then close
     if (opening && i < 2) {
-      const pick = (opts, r) => { const tot = opts.reduce((a, o) => a + o[1], 0); let q = r * tot; return opts.find(o => (q -= o[1]) <= 0)?.[0] ?? opts[0][0] }
+      const pick = (opts, r) => { opts = opts.filter(([n]) => names.includes(n)); const tot = opts.reduce((a, o) => a + o[1], 0); let q = r * tot; return opts.find(o => (q -= o[1]) <= 0)?.[0] ?? opts[0][0] }
       name = i === 0 ? pick([['hallSide', 1.2], ['establish', 1], ['highBehind', 0.8]], hs(i, 3))
         : pick([['lowShoulder', 1.5], ['lowRight', 1], ['bust', 0.6]], hs(i, 3))
       move = i === 0 ? (name === 'hallSide' && hs(i, 4) < 0.4 ? 'still' : 'dollyIn') : name === 'lowRight' ? 'orbit' : 'dollyIn'
     }
-    else if (i === 0 && (!sizes || sizes.includes(1))) { name = 'back'; move = 'dollyIn' }
+    else if (i === 0 && (!sizes || sizes.includes(1)) && names.includes('back')) { name = 'back'; move = 'dollyIn' }
+    else if (i === 0 && !sizes) { name = 'lowShoulder'; move = 'dollyIn' }
     else if (i === 0) { name = names.find(n => sizes.includes(SPOTS[n].size) && n !== 'establish'); move = SPOTS[name].moves[0] }
     else {
       // score every spot for this stretch of music
@@ -512,7 +596,7 @@ export function planShort({ duration, phrases = [], glances = [], energyAt = () 
   const [A, B] = opts.window ?? [0, duration]
   const seed = songSeed({ duration, phrases }) + Math.round(A * 10) % 997 + (opts.half === 'her' ? 501 : 0), hs = (k, n) => hash(k + seed, n)
   const half = HALVES[opts.half] ? opts.half : null, avoid = half && opts.avoid || []
-  const names = half ? spotsFor(false).filter(HALVES[half]) : spotsFor(true)
+  const names = (half ? spotsFor(false).filter(HALVES[half]) : spotsFor(true)).filter(n => stringsOk(n, !half, opts.strings ?? null))
   const P = n => spotFor(n, !half)
   const starts = phrases.map(p => p[0]).filter(t => t > A + 1.5 && t < B - 1.5 && !avoid.some(c => Math.abs(c - t) < 0.8))
   const mean = (a, b) => { let s = 0, n = 0; for (let t = a; t < b; t += 0.25) { s += energyAt(t); n++ } return n ? s / n : 0 }
@@ -539,7 +623,8 @@ export function planShort({ duration, phrases = [], glances = [], energyAt = () 
     let name, move
     if (i === 0) {
       // the hook: straight onto the hands
-      name = pick((half ? HALF_HOOK[half] : HOOK).filter(([n]) => names.includes(n)), hs(i, 3))
+      const hook = (half ? HALF_HOOK[half] : HOOK).filter(([n]) => names.includes(n))
+      name = hook.length ? pick(hook, hs(i, 3)) : names[Math.floor(hs(i, 3) * names.length)]
       move = hs(i, 4) < 0.55 ? 'still' : 'orbit'
     } else if (last && prev.name === first.name) {
       // already back where it began: that shot runs to the end

@@ -272,6 +272,7 @@
     <div class="field"><label>Transitions (also Director's cut)</label><select id="dirTrans"><option value="mix">Cuts and glides</option><option value="cuts" selected>Cuts only</option><option value="glides">Glides where possible</option></select></div>
     <label class="chk" title="Off: each shot frames her as it starts and holds still while she moves. On: the camera operator follows her head"><input type="checkbox" id="camFollow"> Follow her movement</label>
     <div class="field" title="Which shot sizes the director may use"><label>Shots</label><div class="sizeChk"><label><input type="checkbox" id="dirFar" checked> Far</label><label><input type="checkbox" id="dirMed" checked> Medium</label><label><input type="checkbox" id="dirClose" checked> Close</label></div></div>
+    <div class="field" title="The strings, plate and dampers inside the case are the slowest part of the stage to path trace. Each shot is checked for how much of its frame they fill (pianist/director.js, stringsShare): Mostly avoid leaves out the shots where they fill over 10 % (from above, over the shoulder, the hammers); Avoid leaves out any over 4 % (then the hands are filmed along the keys and from the side, her face and figure from low or level)"><label>Inside the piano</label><select id="dirStrings"><option value="show" selected>Show it</option><option value="mostly">Mostly avoid (faster path tracing)</option><option value="strict">Avoid (fastest path tracing)</option></select></div>
     <label class="chk"><input type="checkbox" id="shotLbl"> Show shot names</label>
   </div>
   <div id="visualsPop" class="pop ui">
@@ -536,7 +537,7 @@
     import { createLook } from './pianist/look.js'
     import { createCommunity, communityList } from './pianist/community.js'
     import { createSmoother } from './pianist/subdivide.js'
-    import { createDirector, SPOTS, PORTRAIT, spotFor, MOVES, FRAME_LABELS, SIZES, spotKind } from './pianist/director.js'
+    import { createDirector, SPOTS, PORTRAIT, spotFor, MOVES, FRAME_LABELS, SIZES, spotKind, STRINGS_LEVELS } from './pianist/director.js'
     import { hideBody } from './pianist/shell.js'
     import { suggestClips, snapStart, snapEnd, clipOf, shortDescription, SHORT_MAX, SHORT_LENGTHS, SHORT_DEFAULT } from './pianist/shorts.js'
     import { createPathTraceStills } from './pathtrace/still.js'
@@ -1158,7 +1159,9 @@
     // the director: shots that move, cut or glide on the music (pianist/director.js)
     const dirSizes = () => [['dirClose', 0], ['dirMed', 1], ['dirFar', 2]].filter(([id]) => $(id).checked).map(([, n]) => n)
     for (const [id, k] of [['dirFar', 'dfar'], ['dirMed', 'dmed'], ['dirClose', 'dclose']]) if (params.get(k) === '0') $(id).checked = false
-    const director = createDirector({ pace: +(params.get('pace') ?? 1), bias: +(params.get('favour') ?? 0), trans: params.get('trans') || 'cuts', sizes: dirSizes() })
+    if (STRINGS_LEVELS[params.get('strings')]) $('dirStrings').value = params.get('strings')
+    const dirStrings = () => STRINGS_LEVELS[$('dirStrings').value] ?? null
+    const director = createDirector({ pace: +(params.get('pace') ?? 1), bias: +(params.get('favour') ?? 0), trans: params.get('trans') || 'cuts', sizes: dirSizes(), strings: dirStrings() })
     for (const id of ['dirFar', 'dirMed', 'dirClose']) $(id).onchange = () => {
       if (!dirSizes().length) $(id).checked = true   // (at least one)
       director.set('sizes', dirSizes())
@@ -1169,6 +1172,7 @@
     $('dirPace').onchange = () => dirSet('pace', +$('dirPace').value)
     $('dirBias').onchange = () => dirSet('bias', +$('dirBias').value)
     $('dirTrans').onchange = () => dirSet('trans', $('dirTrans').value)
+    $('dirStrings').onchange = () => dirSet('strings', dirStrings())
     const SEQ_MOVES = { random: 'Random', cut: "Director's cut" }
     $('camMove').value = MOVES[params.get('move')] || SEQ_MOVES[params.get('move')] ? params.get('move') : 'cut'
     $('camMove').onchange = () => { moveT = 0; userCam = false; lastShot = null; $('shotName').textContent = '' }
@@ -1733,7 +1737,7 @@
       ['gaze', 'gaze'], ['expr', 'expr'], ['hips', 'hips'], ['posture', 'posture'], ['reach', 'reach'], ['rock', 'rock'], ['sway', 'sway'], ['nod', 'nod'], ['glances', 'glances'], ['armw', 'armw'], ['lifth', 'lifth'], ['wflex', 'wflex'], ['frot', 'frot'], ['elbow', 'elbowLead'], ['liftoff', 'liftoff'], ['bench', 'benchDist'], ['benchh', 'benchH'],
       ['touch', 'touch'], ['fingering', 'fingering'],
       ['light', 'light'], ['exposure', 'exposure'], ['dof', 'dof'],
-      ['move', 'camMove'], ['pace', 'dirPace'], ['favour', 'dirBias'], ['trans', 'dirTrans'], ['shotnames', 'shotLbl'], ['follow', 'camFollow'], ['dfar', 'dirFar'], ['dmed', 'dirMed'], ['dclose', 'dirClose'],
+      ['move', 'camMove'], ['pace', 'dirPace'], ['favour', 'dirBias'], ['trans', 'dirTrans'], ['shotnames', 'shotLbl'], ['follow', 'camFollow'], ['dfar', 'dirFar'], ['dmed', 'dirMed'], ['dclose', 'dirClose'], ['strings', 'dirStrings'],
       ['sf', 'sf'], ['avsync', 'avsync'],
       ['dofamt', 'dofAmt'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
       ['vol', 'vol'], ['room', 'room'], ['seat', 'seat'], ['rv', 'rvAmt'], ['decay', 'rvDecay'], ['tone', 'rvTone'], ['boost', 'boost'], ['amb', 'amb'], ['applause', 'applause'],
