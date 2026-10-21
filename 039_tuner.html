@@ -2,8 +2,16 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Experiment #039 - Tuner</title>
+  <link rel="manifest" href="039_tuner.webmanifest">
+  <meta name="theme-color" content="#0b0b0c">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Tuner">
+  <link rel="apple-touch-icon" href="tuner/icon-180.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="tuner/icon-192.png">
   <!--
     Experiment #039 - a fast, accurate chromatic tuner on the Web Audio input.
 
@@ -13,6 +21,9 @@
                             PitchTracker: window sized to the note, onset-trimmed,
                             level / clarity gates, median of 3, smoothing in cents
     tuner/tuner-worklet.js  runs the tracker in an AudioWorklet, one reading per 5 ms (10 ms Precise)
+    PWA: 039_tuner.webmanifest, tuner/icon-*.png (tuner/tools/icons.mjs from
+    tuner/icon.svg); sw.js (shared) serves it offline, OFFLINE below is
+    stored on the first visit (?sw=0 to skip the service worker)
     node --test tuner/test/pitch.test.js
   -->
   <style>
@@ -22,7 +33,6 @@
     [hidden] { display: none !important; }
     #stage { position: absolute; inset: 0; display: grid; grid-template-rows: 1fr auto auto auto; justify-items: center; align-items: end; padding: 24px 24px 18px 360px; box-sizing: border-box; gap: 10px; }
     body.collapsed #stage { padding-left: 24px; }
-    @media (max-width: 760px) { #stage { padding-left: 24px; padding-top: 70px; } }
     #readout { text-align: center; user-select: none; align-self: center; }
     #note { font: 600 min(30vh, 22vw)/0.9 'Cormorant Garamond', Georgia, serif; color: #f3e6c4; letter-spacing: 0.01em; transition: color 0.15s; }
     #note sub { font-size: 0.32em; color: #9c958a; vertical-align: baseline; margin-left: 0.04em; }
@@ -89,6 +99,33 @@
     #start p { color: #9c958a; max-width: 420px; text-align: center; margin: 0; }
     #status { position: absolute; top: 12px; right: 12px; padding: 6px 10px; border-radius: 6px; background: rgba(14, 13, 12, 0.88); border: 1px solid #3d3933; font-size: 12px; z-index: 5; max-width: 440px; }
     #status.error { border-color: #c44; color: #f99; }
+    /* phones: the panel starts collapsed (a small button at the top left)
+       and opens over the stage, full width; the stage keeps clear of
+       notches and the home indicator when installed (viewport-fit=cover) */
+    @media (max-width: 760px) {
+      #stage { padding: calc(52px + env(safe-area-inset-top)) 10px calc(10px + env(safe-area-inset-bottom)); gap: 8px; }
+      #panel { top: calc(8px + env(safe-area-inset-top)); left: 8px; right: 8px; width: auto; max-height: calc(100% - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+      body.collapsed #panel { right: auto; padding: 6px 10px; }
+      body.collapsed #panel .sub { display: none; }
+      body.collapsed #panel h1 { display: inline; font-size: 15px; }
+      body.collapsed #toggle { float: none; margin-left: 6px; }
+      #note { font-size: min(22vh, 34vw); }
+      #cents { font-size: min(5.5vh, 9vw); }
+      #freq { font-size: 12px; }
+      #gauge { height: 104px; width: 100%; }
+      #strobe, #history { width: 100%; }
+      #history { height: 80px; }
+      #strings { width: 100%; gap: 4px; flex-wrap: nowrap; }
+      #strings button { min-width: 0; flex: 1 1 0; padding: 4px 2px; max-width: 80px; }
+      #strings button small { display: none; }
+      #strings button canvas { width: 100%; height: 18px; }
+    }
+    @media (max-width: 760px) and (max-height: 700px) {
+      #note { font-size: min(18vh, 30vw); }
+      #gauge { height: 84px; }
+      #strobe { height: 24px; }
+      #history { height: 56px; }
+    }
   </style>
 </head>
 <body>
@@ -537,7 +574,10 @@
       const shift = S.transpose
       const note = noteInfo(f, S.a4, S.flats)
       last.note = note
-      if (targets.length) {
+      // a string's name and offset only within a semitone of it (or when it is
+      // locked); between strings it reads as the chromatic note
+      const near = targets.length && S.lock < 0 ? nearestString(f, targets) : null
+      if (targets.length && (S.lock >= 0 || Math.abs(near.cents) < 100)) {
         const s = S.lock >= 0 ? { ...targets[S.lock], cents: 1200 * Math.log2(f / targets[S.lock].freq) } : nearestString(f, targets)
         last.string = s
         last.cents = s.cents
@@ -729,6 +769,7 @@
         `clarity      <b>${active ? last.clarity.toFixed(3) : '–'}</b>`,
         `latency      <b>${ctx ? ((ctx.baseLatency || 0) * 1000 + (last.len / (sr || 48000)) * 500 + 500 * r.hop).toFixed(0) + ' ms' : '–'}</b>  in + ½ window + ½ hop`,
         `worklet load <b>${ctx ? (load / 10).toFixed(1) + ' %' : '–'}</b>`,
+        `offline      <b>${offlineReady ? 'ready' : 'not yet'}</b>${navigator.onLine ? '' : '  (no network)'}`,
       ]
       $('stats').innerHTML = lines.join('\n')
     }
@@ -824,6 +865,38 @@
       $('start').hidden = true
     }
     if (!window.AudioWorkletNode) status('This browser has no AudioWorklet.', true)
+    if (matchMedia('(max-width: 760px)').matches) { document.body.classList.add('collapsed'); $('toggle').textContent = '+' }
+
+    // ---------------------------------------------------------------- offline
+    // The shared service worker (sw.js) serves pages and code network-first
+    // with the cache as the fallback, and fonts / images cache-first. It only
+    // sees what has been fetched under it, and the first visit is fetched
+    // before it controls the page, so everything the tuner needs is handed to
+    // it explicitly (its 'precache' message), ~120 KB.
+    const OFFLINE = [
+      '039_tuner.html', '039_tuner.webmanifest',
+      'tuner/pitch.js', 'tuner/tuner-worklet.js',
+      'tuner/icon-180.png', 'tuner/icon-192.png', 'tuner/icon-512.png',
+      'fonts/cormorant-garamond-latin-600-normal.woff2', 'fonts/montserrat-latin-300-normal.woff2',
+    ].map((u) => new URL(u, location.href).href)
+    async function setupOffline() {
+      if (!('serviceWorker' in navigator) || params.get('sw') === '0') return
+      try {
+        await navigator.serviceWorker.register('sw.js')
+        const reg = await navigator.serviceWorker.ready
+        navigator.serviceWorker.addEventListener('message', (ev) => {
+          const m = ev.data
+          if (m?.type !== 'precache' || m.done < m.total) return
+          offlineReady = m.failed === 0
+          if (!offlineReady) console.warn(`tuner: ${m.failed} of ${m.total} files not stored for offline use`)
+        })
+        reg.active?.postMessage({ type: 'precache', urls: OFFLINE })
+      } catch (e) { console.warn('service worker', e) }
+    }
+    let offlineReady = false
+    setupOffline()
+    addEventListener('online', () => drawStats(false))
+    addEventListener('offline', () => drawStats(false))
     navigator.mediaDevices?.addEventListener?.('devicechange', listDevices)
 
     addEventListener('keydown', (e) => {

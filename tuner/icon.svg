@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- #039 Tuner icon: the page's gauge arc, the needle in tune, an A.
+       Everything inside the central 80 % so it survives a maskable crop.
+       PNGs: node tuner/tools/icons.mjs -->
+  <rect width="512" height="512" fill="#0b0b0c"/>
+  <g fill="none" stroke-linecap="round">
+    <path d="M 88.7 224.2 A 250 250 0 0 1 423.3 224.2" stroke="#3a3631" stroke-width="10"/>
+    <path d="M 235.3 172.9 A 238 238 0 0 1 276.7 172.9" stroke="#6fbf63" stroke-width="24" stroke-linecap="butt" opacity="0.5"/>
+    <g stroke="#b9a57a" stroke-width="6"><path d="M 112.6 212.6 L 126.7 232.0"/><path d="M 180.6 177.9 L 188.0 200.8"/><path d="M 331.4 177.9 L 324.0 200.8"/><path d="M 399.4 212.6 L 385.3 232.0"/></g>
+    <path d="M 256.0 146.0 L 256.0 220.0" stroke="#9be38f" stroke-width="9"/>
+  </g>
+  <text x="256" y="420" text-anchor="middle" font-family="Cormorant Garamond, Georgia, serif" font-weight="600" font-size="210" fill="#f3e6c4">A</text>
+</svg>
