@@ -149,6 +149,7 @@
   <div id="visualsPop" class="pop ui">
     <div class="sect">Mode</div>
     <div class="seg" id="modeSeg"><button data-mode="concert">Concert</button><button data-mode="lesson">Lesson</button></div>
+    <div class="field" title="Falling: notes travel toward the keys and land when they sound. Rising: notes grow out of the key as it is played and float away. Both: falling notes, and a faint copy rises from the key once played. Phased: the direction flips every few seconds of the song. Random: each note picks a direction"><label>Lesson Notes</label><select id="noteDir"><option value="fall">Falling (toward the keys)</option><option value="rise">Rising (out of the keys)</option><option value="both">Both: falling, with a dim rising trail</option><option value="phase">Phased: falls, then rises, every few bars</option><option value="random">Random: each note falls or rises</option></select></div>
     <div class="field"><label>Right Hand Color</label><input type="color" id="rhColor" value="#ffc93c"></div>
     <div class="field"><label>Left Hand Color</label><input type="color" id="lhColor" value="#2f8bff"></div>
     <label class="chk"><input type="checkbox" id="glowConcert">Colour the keys in Concert mode</label>
@@ -514,6 +515,7 @@
     // ── Lesson mode: falling notes, glowing keys, sparks ───────────────────
     const HIT_Z = DIM.KEY_BACK - 0.6, HIT_Y = DIM.KEY_TOP + DIM.BLACK_RISE + 0.35
     const LANE_LEN = 150, LOOKAHEAD = 2.6        // cm of lane, seconds it shows
+    const PHASE = 6                              // seconds per direction in the phased lesson notes
     const handColor = { R: new THREE.Color(), L: new THREE.Color() }
     const readColors = () => { handColor.R.set($('rhColor').value); handColor.L.set($('lhColor').value) }
     readColors()
@@ -537,7 +539,7 @@
     }
     const aRect = new THREE.InstancedBufferAttribute(new Float32Array(MAX_NOTES * 4), 4)
     const aCol = new THREE.InstancedBufferAttribute(new Float32Array(MAX_NOTES * 3), 3)
-    const aInfo = new THREE.InstancedBufferAttribute(new Float32Array(MAX_NOTES * 2), 2)
+    const aInfo = new THREE.InstancedBufferAttribute(new Float32Array(MAX_NOTES * 4), 4)
     for (const a of [aRect, aCol, aInfo]) a.setUsage(THREE.DynamicDrawUsage)
     noteGeo.setAttribute('aRect', aRect); noteGeo.setAttribute('aCol', aCol); noteGeo.setAttribute('aInfo', aInfo)
     noteGeo.instanceCount = 0
@@ -547,9 +549,9 @@
         uLane: { value: LANE_LEN }, uAtlas: { value: atlas }, uGlyphs: { value: GLYPHS.length }, uLabels: { value: 1 }, uFade: { value: 1 },
       },
       vertexShader: /* glsl */`
-        attribute vec4 aRect; attribute vec3 aCol; attribute vec2 aInfo;
+        attribute vec4 aRect; attribute vec3 aCol; attribute vec4 aInfo;   // glyph, on, alpha, rising
         uniform vec3 uHit, uAlong;
-        varying vec2 vLocal; varying vec2 vSize; varying vec3 vCol; varying vec2 vInfo; varying float vAlong;
+        varying vec2 vLocal; varying vec2 vSize; varying vec3 vCol; varying vec4 vInfo; varying float vAlong;
         void main() {
           float u = position.x, v = position.y + 0.5;
           float along = mix(aRect.z, aRect.w, v);
@@ -561,7 +563,7 @@
         }`,
       fragmentShader: /* glsl */`
         uniform sampler2D uAtlas; uniform float uGlyphs, uLane, uLabels, uFade;
-        varying vec2 vLocal; varying vec2 vSize; varying vec3 vCol; varying vec2 vInfo; varying float vAlong;
+        varying vec2 vLocal; varying vec2 vSize; varying vec3 vCol; varying vec4 vInfo; varying float vAlong;
         float rbox(vec2 p, vec2 b, float r) { vec2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
         void main() {
           vec2 c = vec2(0.0, vSize.y * 0.5);
@@ -572,11 +574,14 @@
           if (a <= 0.0) discard;
           float edge = smoothstep(-0.35, 0.0, d);              // bright rim
           float isOn = vInfo.y;
-          vec3 col = vCol * (0.85 + 0.35 * (1.0 - vLocal.y / max(vSize.y, 1.0))) * (1.0 + isOn * 1.6);
+          // brighter toward the leading end: the key end when falling, the far end when rising
+          float uRise = vInfo.w;
+          float lead = mix(1.0 - vLocal.y / max(vSize.y, 1.0), vLocal.y / max(vSize.y, 1.0), uRise);
+          vec3 col = vCol * (0.85 + 0.35 * lead) * (1.0 + isOn * 1.6);
           col += vCol * edge * 0.9 + vec3(1.0) * edge * 0.15;
           // label in a dark disc at the leading end
           if (uLabels > 0.5 && vInfo.x >= 0.0 && vSize.y > vSize.x * 1.05) {
-            vec2 lc = vec2(0.0, vSize.x * 0.5);
+            vec2 lc = vec2(0.0, mix(vSize.x * 0.5, vSize.y - vSize.x * 0.5, uRise));
             float rr = vSize.x * 0.36;
             float dd = length(vLocal - lc) - rr;
             float disc = 1.0 - smoothstep(-aa, aa, dd);
@@ -586,7 +591,7 @@
             col = mix(col, vec3(1.0), glyph);
           }
           float fade = 1.0 - smoothstep(uLane * 0.8, uLane, vAlong);
-          gl_FragColor = vec4(col, a * fade * uFade);
+          gl_FragColor = vec4(col, a * fade * uFade * vInfo.z);
         }`,
       transparent: true, depthWrite: false, depthTest: false, side: THREE.DoubleSide,
       extensions: { derivatives: true },
@@ -1347,25 +1352,42 @@
       let n = 0
       if (song && lane.fade > 0.01) {
         const speed = LANE_LEN / LOOKAHEAD
+        const dir = $('noteDir').value
         const notes = song.notes
+        // which way a note travels: phased flips every PHASE seconds of the song,
+        // random hashes the note so it keeps its direction from frame to frame
+        const risesOf = (nt, i) => dir === 'rise' ? true : dir === 'phase' ? Math.floor(nt.time / PHASE) % 2 === 1
+          : dir === 'random' ? ((Math.imul(i ^ (nt.midi << 16), 2654435761) >>> 16) & 1) === 1 : false
+        const put = (nt, d0, d1, rising, alpha, glyphOk, on, width = 1) => {
+          if (d1 <= d0 + 0.05 || n >= MAX_NOTES) return
+          const black = (nt.midi % 12) in { 1: 1, 3: 1, 6: 1, 8: 1, 10: 1 }
+          aRect.setXYZW(n, piano.keyX(nt.midi), (black ? 1.35 : 2.1) * width, d0, d1)
+          const c = handColor[nt.hand] || handColor.R
+          aCol.setXYZ(n, c.r, c.g, c.b)
+          const glyph = nt.finger ? 1 + nt.finger : (nt.hand === 'L' ? 0 : 1)
+          aInfo.setXYZW(n, glyphOk ? glyph : -1, on ? 1 : 0, alpha, rising ? 1 : 0)
+          n++
+        }
         // binary search the first note that could still be visible (sorted by time)
         let lo = 0, hi = notes.length
-        const tMin = t - 8
+        const tMin = t - 8 - LOOKAHEAD
         while (lo < hi) { const m = (lo + hi) >> 1; notes[m].time < tMin ? lo = m + 1 : hi = m }
         for (let i = lo; i < notes.length && n < MAX_NOTES; i++) {
           const nt = notes[i]
           if (nt.time > t + LOOKAHEAD) break
           const end = nt.time + Math.max(nt.duration, 0.06)
-          if (end < t) continue
-          const d0 = Math.max(0, (nt.time - t) * speed), d1 = Math.min(LANE_LEN, (end - t) * speed)
-          if (d1 <= d0 + 0.05) continue
-          const black = (nt.midi % 12) in { 1: 1, 3: 1, 6: 1, 8: 1, 10: 1 }
-          aRect.setXYZW(n, piano.keyX(nt.midi), black ? 1.35 : 2.1, d0, d1)
-          const c = handColor[nt.hand] || handColor.R
-          aCol.setXYZ(n, c.r, c.g, c.b)
-          const glyph = nt.finger ? 1 + nt.finger : (nt.hand === 'L' ? 0 : 1)
-          aInfo.setXY(n, (nt.time - t) * speed < 0.5 ? -1 : glyph, nt.time <= t ? 1 : 0)
-          n++
+          const on = nt.time <= t && end > t
+          // rising: grows out of the key while held, then floats away
+          const riseSpan = nt.time <= t && end >= t - LOOKAHEAD
+            ? [Math.max(0, (t - end) * speed), Math.min(LANE_LEN, (t - nt.time) * speed)] : null
+          // falling: travels toward the key and is swallowed by it while held
+          const fallSpan = end >= t
+            ? [Math.max(0, (nt.time - t) * speed), Math.min(LANE_LEN, (end - t) * speed)] : null
+          if (dir === 'both') {
+            if (riseSpan) put(nt, riseSpan[0], riseSpan[1], true, 0.3, false, false, 0.55)
+            if (fallSpan) put(nt, fallSpan[0], fallSpan[1], false, 1, (nt.time - t) * speed >= 0.5, on)
+          } else if (risesOf(nt, i)) { if (riseSpan) put(nt, riseSpan[0], riseSpan[1], true, 1, true, on) }
+          else if (fallSpan) put(nt, fallSpan[0], fallSpan[1], false, 1, (nt.time - t) * speed >= 0.5, on)
         }
       }
       noteGeo.instanceCount = n
@@ -1663,7 +1685,7 @@
       // [param, element id, kind, default for selects]
       ['scene', 'scene', 'val', 'stage'], ['finish', 'finish', 'val', 'ebony'], ['lid', 'lid', 'val', 'full'],
       ['desk', 'desk', 'chk'], ['bench', 'bench', 'chk'], ['mirror', 'mirror', 'chk', !!piano.mirror], ['hands', 'hands', 'chk'], ['body', 'body', 'chk'],
-      ['rh', 'rhColor', 'color'], ['lh', 'lhColor', 'color'], ['glow', 'glowConcert', 'chk'], ['labels', 'labels', 'chk'],
+      ['rh', 'rhColor', 'color'], ['lh', 'lhColor', 'color'], ['glow', 'glowConcert', 'chk'], ['labels', 'labels', 'chk'], ['dir', 'noteDir', 'val', 'fall'],
       ['light', 'light', 'num'], ['ex', 'exposure', 'num'], ['sync', 'tourSync', 'chk'], ['glance', 'lookHands', 'chk'],
       ['ao', 'ao', 'chk', !LOWQ], ['dof', 'dof', 'chk', !LOWQ], ['focus', 'focusHands', 'chk'], ['bloom', 'bloom', 'chk'], ['grain', 'grain', 'chk'], ['drift', 'drift', 'chk'],
       ['sf', 'sf', 'val', 'stack'], ['vel', 'velocity', 'num'], ['avsync', 'avsync', 'num'],
