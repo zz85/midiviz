@@ -13,7 +13,7 @@ These are measurements of those recordings; credit the violinists and the datase
 
 ## Aligned here
 
-These recordings come with no alignment; [strings/align.js](../../strings/align.js) finds the MIDI file's notes in them (and which of the score's repeats the player took, and whether an old recording sounds higher or lower). Fetched by `node violinist/tools/fetch_recordings.js` into the git-ignored `strings/data/recordings` (Wikimedia Commons; the 1915 double concerto from the Library of Congress National Jukebox through the Internet Archive). *Pitch where placed* checks the alignment without a reference: how often the note's pitch sounds in the middle of where it was put, against the same check 1.5 s late (chance).
+These recordings come with no alignment; [strings/align.js](../../strings/align.js) finds the MIDI file's notes in them (and which of the score's repeats the player took, and whether an old recording sounds higher or lower). Fetched by `node violinist/tools/fetch_recordings.js` into the git-ignored `strings/data/recordings` (Wikimedia Commons; the 1915 double concerto from the Library of Congress National Jukebox through the Internet Archive; the QMUL Caprice from the Internet Archive). *Pitch where placed* checks the alignment without a reference: how often the note's pitch sounds in the middle of where it was put, against the same check 1.5 s late (chance).
 
 | Recording | Piece | Licence | Pitch where placed (chance) |
 |---|---|---|---|
@@ -28,8 +28,12 @@ These recordings come with no alignment; [strings/align.js](../../strings/align.
 | Vicond | Partita No. 3 in E major, BWV 1006: IV. Menuet I | CC BY 3.0 | 98 % (21 %) |
 | Fritz Kreisler and Efrem Zimbalist (1915) | Concerto for Two Violins in D minor, BWV 1043: I. Vivace | Public domain | 27 % (4 %) – timing only |
 | Unnamed soloist (IMSLP #77611) | Violin Concerto in D major, Op. 61: III. Rondo (Allegro) | Public domain | 38 % (8 %) – timing only |
+| A violinist at Queen Mary University of London (2014) | Paganini, Caprice No. 24 | Public domain | 71 % (13 %) |
+| Georg Kulenkampff, Berlin Philharmonic, Paul Kletzki (1932, two 78 sides) | Beethoven, Romance No. 2 in F major, Op. 50 | Public domain | 48 % (7 %) – timing only |
+| Soloist with Philip Milman's orchestra (2022) | Vivaldi, Winter, RV 297: I. Allegro non molto | CC BY 3.0 | 24 % (4 %) – timing only |
+| Jessica Dan, Air Force Strings (1999) | Vivaldi, Winter, RV 297: I. Allegro non molto | Public domain (US government work) | 10 % (3 %) – timing only, the least certain |
 
-The two with an orchestra give only their timing, read from all the parts (the violin's level and pitch cannot be measured under the orchestra; the accompaniment follows the tempo map stored with them). Albert Spalding's 1911 obbligato to the Bach–Gounod Ave Maria (Edison cylinder) did not align: another arrangement, at an unknown cylinder speed. On the Bach Violin Dataset (`node strings/test/align_eval.js`, 12 recordings, 8,974 notes) the aligner agrees with the dataset's own alignment within 32 ms (median; 87 % within 100 ms), finds the repeats every player took, and the note's pitch sounds where it places the note 91 % of the time against 83 % for the dataset's alignment.
+The ones with an orchestra give only their timing, read from all the parts (the violin's level and pitch cannot be measured under the orchestra; the accompaniment follows the tempo map stored with them). The QMUL Caprice is one of eight microphones of one take on the Internet Archive (`C414_L05`); the player takes every repeat but the first variation's, which the aligner found once it could try leaving out the repeats Mutopia's MIDI writes out. Menuhin's 1948 Caprice 24 with Adolph Baller (Commons) did not align (7 %, chance 2 %): it is an arrangement with piano. Albert Spalding's 1911 obbligato to the Bach–Gounod Ave Maria (Edison cylinder) did not align: another arrangement, at an unknown cylinder speed. On the Bach Violin Dataset (`node strings/test/align_eval.js`, 12 recordings, 8,974 notes) the aligner agrees with the dataset's own alignment within 32 ms (median; 87 % within 100 ms), finds the repeats every player took, and the note's pitch sounds where it places the note 91 % of the time against 83 % for the dataset's alignment.
 
 Each recording's lane of dynamics is corrected by listening on both physical models (Source and Waveguide); the other engines use the Source model's.
 
@@ -44,7 +48,9 @@ A recording can be added when a piece in [../midis](../midis/README.md) has the 
    ```js
    heifetz_bwv1004_mov5: ['File:Bach; Chaconne d-moll Heifetz.flac'],
    ```
-   A second entry gives a mirror URL for files that Commons won't serve in full (the 1915 double concerto uses the Internet Archive's copy).
+   A second entry gives a mirror URL for files that Commons won't serve in full (the 1915 double concerto uses the Internet Archive's copy). Two other forms:
+   - `{ parts: [title, …] }` for the sides of a 78 set: each side is fetched and checked, then they are joined into one FLAC. The aligner skips the break between sides like any silence (`kulenkampff_beethoven_romance2`).
+   - `{ ia: identifier, name: file }` for a file of an Internet Archive item, with the licence read from the item's `licenseurl` (`qmul_paganini_caprice24`).
 3. **Fetch it:** `node violinist/tools/fetch_recordings.js`. This writes the audio and its page, licence and credit (`sources.json`) into the git-ignored `strings/data/recordings`. The script skips files it already has and any file whose licence doesn't pass. It is slow on purpose, because Commons asks for few, spaced requests. For a recording that isn't on Commons, put the audio file in that folder and add its entry to `sources.json` by hand, with the same fields (`page`, `licence`, `credit`, `file`).
 4. **Add it to the build list.** In [`tools/build_performances.js`](../tools/build_performances.js), add an entry to `RECORDINGS` with the same id:
    ```js

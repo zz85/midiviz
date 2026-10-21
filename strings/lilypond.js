@@ -848,11 +848,18 @@ function perform(score) {
           if (!repeats.some(r => Math.abs(r.from - t0) < 1e-6)) repeats.push({ from: t0, to: body, alts, times: Math.max(2, Math.round(n.n)) })
           return t
         }
-        const N = Math.max(1, Math.round(n.n)), A = n.alts.length
+        const N = Math.max(1, Math.round(n.n)), A = n.alts.length, t0 = t, keep = []
         for (let i = 0; i < N; i++) {
+          const b0 = t
           t = run(n.body, { ...cx, t })
+          if (i === 0) keep.push([b0, t])
+          const a0 = t
           if (A) t = run(n.alts[Math.max(0, i - (N - A))], { ...cx, t })
+          if (i === N - 1 && A) keep.push([a0, t])
         }
+        // a volta written out (\unfoldRepeats, as Mutopia's MIDI is): kept too, with what
+        // is played when the repeat is not taken (the body once, then the last alternative)
+        if (n.kind === 'volta' && N > 1 && !repeats.some(r => Math.abs(r.from - t0) < 1e-6)) repeats.push({ from: t0, to: t, unfolded: true, keep, times: N })
         return t
       }
       case 'ctx': {
@@ -973,7 +980,8 @@ export function readLilyPond(text, { part = null, include = null, file = '', tem
   const hd = pk.header
   const piece = hd.piece || (subs.size > 1 ? hd.subtitle : '')
   const title = [hd.title || hd.mutopiatitle || (subs.size > 1 ? '' : hd.subtitle) || '', piece && piece !== hd.title ? piece : ''].filter(Boolean).join(': ').replace(/\s+/g, ' ').trim()
-  // repeats as printed (quarters): { from, to (end of the body), alts: [[q0, q1]…], times }
+  // repeats as printed (quarters): { from, to (end of the body), alts: [[q0, q1]…], times };
+  // written out (unfolded: true): { from, to (end of the last pass), keep: [[q0, q1]…] (not taken), times }
   return { ...finishScore(events, tempoMap, meterMap, tempoDefault, title, parts.map(p => ({ id: p.id, name: p.name }))), part: pi, missing, repeats: r.repeats }
 }
 

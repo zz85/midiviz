@@ -103,3 +103,10 @@ test('violin pieces: the Mutopia score\'s slurs on the MIDI LilyPond made from i
   assert.ok(slurred > 0.4 * notes.length, `the Adagio is mostly slurred: ${slurred} / ${notes.length}`)
   assert.ok(notes.every(n => n.art.source === 'score'))
 })
+
+test('a written-out volta (\\unfoldRepeats) keeps where it repeats', () => {
+  const sc = readLilyPond(`\\score { \\unfoldRepeats { \\relative c'' { \\time 4/4 \\repeat volta 2 { a4 b c d } e1 } } }`)
+  assert.equal(sc.notes.length, 9)
+  assert.deepEqual(sc.repeats.map(r => ({ from: r.from, to: r.to, keep: r.keep, unfolded: r.unfolded })), [{ from: 0, to: 8, keep: [[0, 4]], unfolded: true }])
+})
+

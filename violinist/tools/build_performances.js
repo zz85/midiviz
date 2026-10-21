@@ -47,14 +47,26 @@ const csv = f => readFileSync(f, 'utf8').trim().split(/\r?\n/).map(l => l.split(
 const hms = s => s.split(':').reduce((a, v) => a * 60 + +v, 0)
 
 /**
+ * The solo violin's tracks: the one with the index's violinNotes, else the
+ * tracks on violinTrack's channel when together they have that many (a part
+ * split where it changes instrument: Caprice 24's pizzicato variation, the
+ * Tchaikovsky finale), else violinTrack alone.
+ */
+function soloTracks(e, midi) {
+  const one = midi.tracks.filter(t => t.notes.length === e.violinNotes)
+  if (one.length === 1) return one
+  const ch = midi.tracks[e.violinTrack].channel, same = midi.tracks.filter(t => t.channel === ch && t.notes.length)
+  return same.reduce((a, t) => a + t.notes.length, 0) === e.violinNotes ? same : [midi.tracks[e.violinTrack]]
+}
+
+/**
  * Every note of the MIDI file (all tracks but drums) with score positions,
  * ordered onset, then pitch; `violin` marks the solo part's (midiViolin's order
  * is the order of the marked notes).
  */
 export function midiAll(e, buf) {
   const midi = new Midi(buf)
-  let solo = midi.tracks.filter(t => t.notes.length === e.violinNotes)
-  if (solo.length !== 1) solo = [midi.tracks[e.violinTrack]]
+  const solo = soloTracks(e, midi)
   return midi.tracks.filter(t => t.channel !== 9).flatMap(t => t.notes.map(n => ({ pitch: n.midi, q: n.ticks / midi.header.ppq, dq: n.durationTicks / midi.header.ppq, violin: solo.includes(t) })))
     .sort((a, b) => a.q - b.q || a.pitch - b.pitch || (b.violin - a.violin))
 }
@@ -62,8 +74,7 @@ export function midiAll(e, buf) {
 /** The MIDI file's violin notes with score positions (quarters), ordered onset, then pitch. */
 export function midiViolin(e, buf) {
   const midi = new Midi(buf)
-  let solo = midi.tracks.filter(t => t.notes.length === e.violinNotes)
-  if (solo.length !== 1) solo = [midi.tracks[e.violinTrack]]
+  const solo = soloTracks(e, midi)
   return solo.flatMap(t => t.notes).map(n => ({ pitch: n.midi, q: n.ticks / midi.header.ppq, dq: n.durationTicks / midi.header.ppq })).sort((a, b) => a.q - b.q || a.pitch - b.pitch)
 }
 
@@ -241,6 +252,13 @@ export const RECORDINGS = [
   { id: 'vicond_bwv1006_mov4', midi: 'bach_1006_4_menuet_1.mid', violinist: 'Vicond' },
   { id: 'kreisler-zimbalist_bwv1043_mov1', midi: 'bach_1043_1_vivace.mid', violinist: 'Fritz Kreisler and Efrem Zimbalist', year: 1915, ensemble: true },
   { id: 'commons_beethoven_op61_mov3', midi: 'beethoven_concerto_3.mid', violinist: 'Unnamed soloist (IMSLP #77611)', ensemble: true },
+  // beyond Bach
+  { id: 'qmul_paganini_caprice24', midi: 'paganini_caprice_24.mid', violinist: 'A violinist at Queen Mary University of London', year: 2014 },
+  { id: 'kulenkampff_beethoven_romance2', midi: 'beethoven_romance_2.mid', violinist: 'Georg Kulenkampff', year: 1932, ensemble: true },
+  { id: 'airforce_vivaldi_winter1', midi: 'vivaldi_winter_1.mid', violinist: 'Jessica Dan (Air Force Strings)', year: 1999, ensemble: true },
+  { id: 'milman_vivaldi_winter1', midi: 'vivaldi_winter_1.mid', violinist: 'Soloist with Philip Milman\'s orchestra', year: 2022, ensemble: true },
+  // not used: Menuhin's Caprice 24 with Adolph Baller (Concert Films, 1948; Commons) does not
+  // align (pitch where placed 7 %, chance 2 %): an arrangement with piano, not the solo caprice
   // not used: Albert Spalding's obbligato to Marie Rappold's Ave Maria (Edison cylinder,
   // 1911; Commons) does not align: another arrangement, and the cylinder's speed is unknown
 ]

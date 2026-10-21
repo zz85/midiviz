@@ -154,25 +154,39 @@ function dtw(S, A, lo = null, hi = null) {
 /**
  * The ways of playing a score's repeats: each a list of [q0, q1) segments in
  * performed order. repeats: [{ from, to, alts: [[q0, q1]…] }] (quarters);
- * end: the score's last quarter. Each repeat taken or not; 2^R plans (R ≤ 4).
+ * end: the score's last quarter. Each repeat taken or not: all 2^R plans for
+ * R ≤ 4; for more (a theme and variations: Caprice 24 has 12) every repeat
+ * taken, none, and each one alone flipped from those two (2R + 2 plans), since
+ * players mostly take all of them or none.
  */
 export function repeatPlans(repeats, end) {
-  const R = (repeats || []).filter(r => r.to > r.from + 1e-6).slice(0, 4)
+  const R = (repeats || []).filter(r => r.to > r.from + 1e-6)
+  const all = 2 ** R.length - 1
+  const masks = R.length <= 4 ? Array.from({ length: all + 1 }, (_, m) => m)
+    : [0, all, ...R.map((_, k) => 1 << k), ...R.map((_, k) => all ^ (1 << k))]
   const plans = []
-  for (let mask = 0; mask < 1 << R.length; mask++) {
+  for (const mask of masks) {
     const seg = []; let q = 0
     R.forEach((r, k) => {
+      const on = Math.floor(mask / 2 ** k) % 2
+      if (r.unfolded) {
+        // written out in the score: taken is as written, not taken keeps one pass
+        if (r.from > q) seg.push([q, r.from])
+        if (on) seg.push([r.from, Math.min(r.to, end)]); else for (const [a, b] of r.keep) if (Math.min(b, end) > a) seg.push([a, Math.min(b, end)])
+        q = Math.max(q, r.to)
+        return
+      }
       const to = Math.min(r.to, end), alts = r.alts.map(([a, b]) => [a, Math.min(b, end)]).filter(([a, b]) => b > a)
       const after = alts.length ? alts[alts.length - 1][1] : to
       if (r.from > q) seg.push([q, r.from])
-      if (mask >> k & 1) {
+      if (on) {
         seg.push([r.from, to]); if (alts[0]) seg.push(alts[0])
         seg.push([r.from, to]); if (alts.length > 1) seg.push(alts[alts.length - 1])
       } else { seg.push([r.from, to]); if (alts.length) seg.push(alts[alts.length - 1]) }
       q = Math.max(q, after)
     })
     if (end > q) seg.push([q, end + 1e-6])
-    plans.push({ taken: R.map((_, k) => !!(mask >> k & 1)), seg })
+    plans.push({ taken: R.map((_, k) => !!(Math.floor(mask / 2 ** k) % 2)), seg })
   }
   return plans
 }

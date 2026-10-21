@@ -223,13 +223,14 @@
 
     // ── Pieces: the violin part, and everything else on the piano ──────────
     const index = await (await fetch('violinist/midis/index.json')).json()
-    const REDUCED = ['bach_1042_1_allegro.mid', 'bach_1043_1_vivace.mid', 'vivaldi_spring_1.mid', 'vivaldi_winter_1.mid', 'beethoven_concerto_3.mid']
+    const REDUCED = ['bach_1042_1_allegro.mid', 'bach_1043_1_vivace.mid', 'vivaldi_spring_1.mid', 'vivaldi_winter_1.mid', 'beethoven_concerto_3.mid', 'beethoven_romance_2.mid']
     const groups = [
       ['Violin sonatas', index.filter(e => e.group === 'sonata')],
       ['With piano', index.filter(e => e.file === 'gounod_ave_maria.mid')],
       ['Concertos, the orchestra on the piano', index.filter(e => REDUCED.includes(e.file))],
       // the recorded performers are mostly of these (Performer): he plays alone, she listens
       ['Bach – Sonatas & Partitas (violin alone)', index.filter(e => e.group === 'bach-solo')],
+      ['Paganini – Caprices (violin alone)', index.filter(e => e.file.startsWith('paganini_caprice_'))],
     ]
     for (const [label, list] of groups) {
       const og = document.createElement('optgroup'); og.label = label

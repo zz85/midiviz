@@ -25,6 +25,18 @@ test('repeat plans: each repeat taken or not', () => {
   assert.deepEqual(plans.map(p => p.seg), [[[0, 8], [8, 16 + 1e-6]], [[0, 8], [0, 8], [8, 16 + 1e-6]]])
 })
 
+test('repeat plans: written-out repeats, and more than four', () => {
+  // as \\unfoldRepeats writes them: taken is as written, not taken keeps one pass
+  const un = [{ from: 0, to: 16, unfolded: true, keep: [[0, 8]], times: 2 }]
+  assert.deepEqual(repeatPlans(un, 20).map(p => p.seg), [[[0, 8], [16, 20 + 1e-6]], [[0, 16], [16, 20 + 1e-6]]])
+  // twelve repeats (a theme and variations): all, none, and each flipped alone from those
+  const many = Array.from({ length: 12 }, (_, k) => ({ from: 16 * k, to: 16 * k + 16, unfolded: true, keep: [[16 * k, 16 * k + 8]], times: 2 }))
+  const plans = repeatPlans(many, 192)
+  assert.equal(plans.length, 26)
+  assert.ok(plans.some(p => p.taken.every(Boolean)) && plans.some(p => p.taken.every(t => !t)))
+  assert.ok(plans.some(p => p.taken.filter(Boolean).length === 11 && !p.taken[3]))
+})
+
 test('finds the notes, the repeat and the tempo of a played performance', () => {
   // played with the repeat, slowing from 0.22 to 0.34 s per eighth, 2 s of silence first
   const order = [...score.slice(0, 16), ...score]
