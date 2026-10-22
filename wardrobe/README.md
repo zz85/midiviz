@@ -60,6 +60,28 @@ node pianist/build/build-character.mjs
 - After each change the files for the next and previous items on each rail are fetched during idle time, so the next click mostly hits the browser cache.
 - Shared module changes, all additive: `look.recolor()`, `dress.setTrim()`, the two arm poses in `rig.js`, and `still.js` re-bakes the tracers' environment map when the environment intensity changes.
 
+## Fabrics
+
+There are 14 fabrics, defined in [pianist/fabric.js](../pianist/fabric.js) and shared with #032 and #045. Each one is a set of physical-material values. Where the surface texture shows, it also gets a procedural tile generated in the page (no texture files), repeated in the garment's own UVs:
+
+| Fabric | How it is made |
+| --- | --- |
+| Plain, Knit | the garment's own material; knit is the diamond knit (our dresses only) |
+| Satin | low roughness, bright sheen |
+| Silk charmeuse | glossier than satin, with the highlight stretched along the threads (anisotropy) |
+| Chiffon | soft and matte, a sheen haze over a fine gauze. It is not see-through: the body under a garment is hidden, so real transparency would show holes |
+| Crepe | a pebbly grain (value noise), almost no shine |
+| Shot taffeta | fine ribs, and a change of colour with the viewing angle (iridescence) |
+| Velvet | rough, with a strong sheen at grazing angles |
+| Damask | tone on tone: glossy rosette medallions on a matte ground (a roughness map), lightly raised |
+| Lamé | metallic threads in a plain weave |
+| Sequins | tilted discs on a metallic base |
+| Glitter | tiny metallic facets, each tilted its own way, finer than sequins |
+| Beaded | a grid of domed glass beads, clear-coated |
+| Leather | a pebbled grain (Voronoi), satin clear coat |
+
+Several of the concert outfits now use them: chiffon on the Grecian gowns, silk on the sapphire column gown, crepe on the red high-neck gown, taffeta on the emerald skirt, lamé on the gold cocktail dress, glitter on the one-shoulder mini, beading on the champagne fishtail. Two outfits are new: an ivory damask halter gown and a black leather jumpsuit. Switching fabric takes ≤ 18 ms, or about 1 ms once that fabric's tile has been made. The path tracers take the normal and roughness maps as they are.
+
 ## Skins and face shapes
 
 - The textures are from the CC0 system assets the character is built from: `young_asian_female` and `young_african_female`, written by `build-character.mjs` as `skin_asian.jpg` and `skin_african.jpg` (about 0.25 MB each). `ch.setSkin(key)` in `pianist/character.js` loads them on demand.

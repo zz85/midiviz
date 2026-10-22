@@ -54,7 +54,7 @@ export const OUR_HAIR = [
 export const OUR_SHOES = [['flats', 'Flats'], ['none', 'Barefoot']]
 export const OUR_BOTTOMS = [['ours', 'Fitted skirt']]
 
-export const FABRICS = [['made', 'Plain'], ['knit', 'Knit'], ['satin', 'Satin'], ['velvet', 'Velvet'], ['sequin', 'Sequins']]
+export const FABRICS = [['made', 'Plain'], ['knit', 'Knit'], ['satin', 'Satin'], ['silk', 'Silk charmeuse'], ['chiffon', 'Chiffon'], ['crepe', 'Crepe'], ['taffeta', 'Shot taffeta'], ['velvet', 'Velvet'], ['damask', 'Damask'], ['lame', 'Lamé'], ['sequin', 'Sequins'], ['glitter', 'Glitter'], ['beaded', 'Beaded'], ['leather', 'Leather']]
 
 // gown slits (our dresses), cm about the knee joint, as #032's ?slit=
 export const SLITS = [['off', 'Closed'], ['ankle', 'From the ankle'], ['calf', 'From mid-calf'], ['knee', 'From the knee'], ['thigh', 'Above the knee'], ['hip', 'From the hip']]
@@ -68,17 +68,19 @@ export const SLIT_AT = { ankle: -30, calf: -14, knee: -3, thigh: 8, hip: 30 }
 // dress with heels, a white gown played barefoot; low closed shoes otherwise.
 export const OUTFITS = {
   'fishtail-black': { group: 'Concert', name: 'Black fishtail gown, chignon', dress: 'c1855', fabric: 'satin', color: '#121214', shoes: 'c1822', shoeColor: '#151214', hair: 'c2477', hairColor: '#2b1d14' },
-  'grecian-ivory': { group: 'Concert', name: 'Ivory Grecian gown, barefoot, long hair', dress: 'c2558', fabric: 'satin', color: '#efe6d6', shoes: 'none', hair: 'c1863', hairColor: '#d1b27a' },
-  'column-sapphire': { group: 'Concert', name: 'Sapphire column gown, long hair', dress: 'c2564', fabric: 'satin', color: '#1d4f86', shoes: 'c1822', shoeColor: '#b9b6b0', hair: 'c1861', hairColor: '#2b1d14' },
-  'grecian-emerald': { group: 'Concert', name: 'Emerald Grecian gown, braided bun', dress: 'c2562', fabric: 'satin', color: '#15563f', shoes: 'c1734', shoeColor: '#151214', hair: 'c2177', hairColor: '#4a3324' },
+  'grecian-ivory': { group: 'Concert', name: 'Ivory Grecian gown, barefoot, long hair', dress: 'c2558', fabric: 'chiffon', color: '#efe6d6', shoes: 'none', hair: 'c1863', hairColor: '#d1b27a' },
+  'column-sapphire': { group: 'Concert', name: 'Sapphire column gown, long hair', dress: 'c2564', fabric: 'silk', color: '#1d4f86', shoes: 'c1822', shoeColor: '#b9b6b0', hair: 'c1861', hairColor: '#2b1d14' },
+  'grecian-emerald': { group: 'Concert', name: 'Emerald Grecian gown, braided bun', dress: 'c2562', fabric: 'chiffon', color: '#15563f', shoes: 'c1734', shoeColor: '#151214', hair: 'c2177', hairColor: '#4a3324' },
   'halter-wine': { group: 'Concert', name: 'Wine velvet halter gown, updo', dress: 'c1923', fabric: 'velvet', color: '#5e1224', shoes: 'c1822', shoeColor: '#151214', hair: 'c2001', hairColor: '#0e0b09' },
-  'highneck-red': { group: 'Concert', name: 'Red high-neck gown, sleek bob', dress: 'c1516', fabric: 'satin', color: '#c8102e', shoes: 'c1822', shoeColor: '#151214', hair: 'c1474', hairColor: '#0e0b09' },
+  'highneck-red': { group: 'Concert', name: 'Red high-neck gown, sleek bob', dress: 'c1516', fabric: 'crepe', color: '#c8102e', shoes: 'c1822', shoeColor: '#151214', hair: 'c1474', hairColor: '#0e0b09' },
   'jumpsuit-black': { group: 'Concert', name: 'Black halter jumpsuit, sleek bob', dress: 'c1924', fabric: 'made', color: '#121214', shoes: 'c1734', shoeColor: '#151214', hair: 'c1474', hairColor: '#2b1d14' },
   'palazzo-black': { group: 'Concert', name: 'Black separates, palazzo trousers, long grey hair', dress: 'c1726', bottom: 'c2577', fabric: 'made', color: '#121214', skirtColor: '#121214', shoes: 'c1734', shoeColor: '#151214', hair: 'c482', hairColor: '#8a8580' },
-  'bodice-skirt': { group: 'Concert', name: 'Black bodice top, long emerald skirt', dress: 'c1667', bottom: 'c1727', fabric: 'satin', color: '#121214', skirtColor: '#15563f', shoes: 'c2801', shoeColor: '#151214', hair: 'c2477', hairColor: '#4a3324' },
-  'frill-sequin': { group: 'Concert', name: 'One-shoulder sequin mini, stilettos', dress: 'c1559', fabric: 'sequin', color: '#1d6f73', shoes: 'c1822', shoeColor: '#c9a24a', hair: 'c1677', hairColor: '#0e0b09' },
-  'strapless-gold': { group: 'Concert', name: 'Strapless gold cocktail dress, wavy bob', dress: 'c1705', fabric: 'sequin', color: '#c9a24a', shoes: 'c1694', shoeColor: '#151214', hair: 'c1551', hairColor: '#2b1d14' },
-  'fishtail-champagne': { group: 'Concert', name: 'Champagne fishtail gown, long curls', dress: 'c1855', fabric: 'sequin', color: '#e6d2ae', shoes: 'c1822', shoeColor: '#c9a24a', hair: 'c480', hairColor: '#6b4428' },
+  'bodice-skirt': { group: 'Concert', name: 'Black bodice, long emerald taffeta skirt', dress: 'c1667', bottom: 'c1727', fabric: 'taffeta', color: '#121214', skirtColor: '#15563f', shoes: 'c2801', shoeColor: '#151214', hair: 'c2477', hairColor: '#4a3324' },
+  'frill-sequin': { group: 'Concert', name: 'One-shoulder glitter mini, stilettos', dress: 'c1559', fabric: 'glitter', color: '#1d6f73', shoes: 'c1822', shoeColor: '#c9a24a', hair: 'c1677', hairColor: '#0e0b09' },
+  'strapless-gold': { group: 'Concert', name: 'Strapless gold lamé cocktail dress, wavy bob', dress: 'c1705', fabric: 'lame', color: '#c9a24a', shoes: 'c1694', shoeColor: '#151214', hair: 'c1551', hairColor: '#2b1d14' },
+  'damask-gown': { group: 'Concert', name: 'Ivory damask halter gown, braided bun', dress: 'c1923', fabric: 'damask', color: '#e6d2ae', shoes: 'c1734', shoeColor: '#c9a24a', hair: 'c2177', hairColor: '#2b1d14' },
+  'leather-jumpsuit': { group: 'Concert', name: 'Black leather jumpsuit, wavy bob', dress: 'c1924', fabric: 'leather', color: '#121214', shoes: 'c1822', shoeColor: '#151214', hair: 'c1551', hairColor: '#0e0b09' },
+  'fishtail-champagne': { group: 'Concert', name: 'Champagne beaded fishtail gown, long curls', dress: 'c1855', fabric: 'beaded', color: '#e6d2ae', shoes: 'c1822', shoeColor: '#c9a24a', hair: 'c480', hairColor: '#6b4428' },
   'bob-tee': { name: 'White tee and skirt, platinum bob', dress: 'c894', fabric: 'made', color: '#f2efe9', shoes: 'flats', hair: 'c3694', hairColor: '#d9c7a3' },
   'bob-turtleneck': { name: 'Black turtleneck, ash-grey bob', dress: 'c3471', fabric: 'made', color: '#1b1b1e', shoes: 'flats', hair: 'c3694', hairColor: '#514f4d' },
   'bob-cocktail': { name: 'Black satin cocktail, auburn updo', dress: 'c379', fabric: 'satin', color: '#121214', shoes: 'c1039', hair: 'c2001', hairColor: '#7a3b22' },
