@@ -1,11 +1,12 @@
 // node --test strings/test/fingering.test.js
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { solveFingering, suggestFingerings, fingerLine, fingerHeld, fingerTokens, lineStats, INSTRUMENTS, DEFAULTS, positionName, stopMM, parseNote, makeEvents, estimateKeys } from '../fingering.js'
+import fs from 'node:fs'
+import { solveFingering, suggestFingerings, fingerLine, fingerHeld, fingerTokens, lineStats, onePlayerNotes, INSTRUMENTS, DEFAULTS, positionName, stopMM, parseNote, makeEvents, estimateKeys } from '../fingering.js'
 import { exercises, bestMatch, line, melody } from '../exercises.js'
 import { findRuns } from '../templates.js'
 import { buildMotion } from '../motion.js'
-import { parseCSV, align, compare, scorePiece, tnuaPosition } from '../tnua.js'
+import { parseCSV, writeFingeringCSV, align, compare, scorePiece, tnuaPosition } from '../tnua.js'
 
 const EX = Object.fromEntries(exercises().map(e => [e.id, e]))
 function run(id, opts = {}) {
@@ -109,12 +110,33 @@ test('styles: beginner never leaves first position, fewest-shifts shifts least',
   assert.ok(lineStats(b).shifts <= lineStats(a).shifts)
 })
 
-test('out-of-range notes and oversize chords are flagged, not fingered', () => {
-  const notes = line([40, 55, 62, [55, 62, 69, 76, 83]], { dur: 0.5 })
-  fingerLine(notes)
-  assert.equal(notes[0].unplayable, 'range')
-  assert.ok(notes.filter(n => n.unplayable === 'chord').length >= 1)
-  assert.ok(notes.filter(n => !n.unplayable).every(n => n.string != null))
+test('out-of-range notes are rejected while oversized chord notes receive divisi fingerings', () => {
+  const notes = line([40, 55, 62, [55, 62, 69, 76, 83]], { dur:0.5 })
+  const result = solveFingering(notes)
+  assert.equal(result.assignments[0].reason, 'range')
+  const divisi = result.assignments.filter(assignment => assignment.divisi)
+  assert.ok(divisi.length >= 1)
+  assert.ok(divisi.every(assignment => assignment.playable && assignment.advisory === 'chord-capacity'))
+  assert.ok(divisi.every(assignment => Number.isInteger(assignment.string) && Number.isInteger(assignment.finger)))
+})
+
+test('hand-incompatible simultaneous notes retain independent divisi fingerings', () => {
+  const notes = line([[55, 56, 57]], { dur:1 })
+  const result = solveFingering(notes, { preserveHeldNotes:false, templates:false })
+  assert.ok(result.assignments.every(assignment => assignment.playable))
+  assert.equal(result.assignments.filter(assignment => assignment.divisi).length, 2)
+  assert.equal(result.diagnostics.filter(diagnostic => diagnostic.code === 'chord-capacity').length, 2)
+  const alternatives = suggestFingerings(notes, { preserveHeldNotes:false, templates:false, limit:3, candidatePool:24 })
+  assert.ok(alternatives.suggestions.length >= 2, 'fixed divisi fallbacks do not consume k-best diversity')
+  assert.ok(alternatives.suggestions.every(suggestion => suggestion.assignments.every(assignment => assignment.playable)))
+  assert.ok(alternatives.suggestions.every(suggestion => suggestion.assignments.filter(assignment => assignment.divisi).length === 2))
+  const publicNotes = notes.map((note, index) => ({ ...note, ...result.assignments[index] }))
+  assert.deepEqual(onePlayerNotes(publicNotes).map(note => note.pitch), [57], 'immutable divisi assignments stay out of one-player consumers')
+  const roundTrip = parseCSV(writeFingeringCSV(publicNotes, { secPerBeat:0.6 }), { secPerBeat:0.6 })
+  assert.deepEqual(roundTrip.map(note => note.pitch), notes.map(note => note.pitch))
+  assert.ok(roundTrip.every((note, index) => Math.abs(note.on - notes[index].on) < 0.001 && Math.abs(note.off - notes[index].off) < 0.001))
+  assert.deepEqual(roundTrip.map(note => note.truth?.finger), result.assignments.map(assignment => assignment.finger))
+  assert.equal(roundTrip.filter(note => note.divisi && note.advisory === 'chord-capacity').length, 2)
 })
 
 test('string locks are honoured (sul G)', () => {
@@ -172,6 +194,33 @@ test('TNUA format: bars glued, alignment, scoring', () => {
   assert.equal(scorePiece(est, [a, al]).soft, 1)
   assert.equal(tnuaPosition(0, 2), 1)
   assert.equal(tnuaPosition(2, 5), 3)
+})
+
+test('motion excludes independent divisi fallbacks from one-player animation', () => {
+  const notes = line([[55, 56, 57]], { dur:1 })
+  fingerLine(notes, { templates:false })
+  assert.equal(notes.filter(note => note.divisi && Number.isInteger(note.string)).length, 2)
+  const retained = onePlayerNotes(notes).map(note => note.pitch)
+  assert.deepEqual(fingerTokens(notes).length, retained.length)
+  const sounding = buildMotion(notes).poseAt(0.5).sounding.map(note => note.pitch)
+  assert.deepEqual(sounding, retained)
+})
+
+test('legacy pages share the one-player filter and CSV preserves divisi metadata', () => {
+  const transport = [{ pitch:57, on:0, off:1, string:0 }, { pitch:55, on:0, off:10, string:0, divisi:true }]
+  assert.equal(Math.max(...onePlayerNotes(transport).map(note => note.off)), 1, 'a divisi-only tail cannot extend one-player transport')
+  const source = file => fs.readFileSync(new URL(`../../${file}`, import.meta.url), 'utf8')
+  for (const file of ['033_violin_fingering.html', '037_violinist.html', '038_duo.html']) {
+    assert.match(source(file), /onePlayerNotes/, `${file} must exclude divisi-only notes from one-player output`)
+  }
+  const page33 = source('033_violin_fingering.html'), page37 = source('037_violinist.html'), page38 = source('038_duo.html')
+  assert.match(page33, /state\.duration = playerNotes\.reduce/)
+  assert.match(page37, /notes:playerNotes/)
+  assert.match(page38, /violin:playerViolin/)
+  assert.match(page33, /writeFingeringCSV/)
+  assert.match(page33, /divisi-only chord notes/)
+  const csvModule = fs.readFileSync(new URL('../tnua.js', import.meta.url), 'utf8')
+  assert.match(csvModule, /pitch,start,duration,beat_type,string,position,finger,divisi,advisory/)
 })
 
 test('whole pieces are fast', () => {
@@ -232,8 +281,11 @@ test('diagnostics distinguish range, chord capacity, constraints and skipped not
   assert.equal(byId.get('low').reason, 'range')
   assert.equal(byId.get('locked').reason, 'constraint')
   assert.equal(byId.get('skip').reason, 'skipped')
-  assert.ok([...byId.values()].some(a => a.reason === 'chord-capacity'))
-  assert.deepEqual(r.diagnostics.map(d => d.code), r.assignments.filter(a => !a.playable).map(a => a.reason))
+  const divisi = [...byId.values()].filter(assignment => assignment.divisi)
+  assert.ok(divisi.length >= 1)
+  assert.ok(divisi.every(assignment => assignment.playable && assignment.advisory === 'chord-capacity'))
+  assert.deepEqual(r.diagnostics.filter(d => d.code !== 'chord-capacity').map(d => d.code), r.assignments.filter(a => !a.playable).map(a => a.reason))
+  assert.equal(r.diagnostics.filter(d => d.code === 'chord-capacity').length, divisi.length)
 })
 
 test('validated inputs fail early with stable messages', () => {
@@ -273,6 +325,7 @@ test('event duration is recomputed after an oversize chord is thinned', () => {
   ]
   const r = fingerLine(notes)
   assert.equal(notes[0].unplayable, 'chord')
+  assert.ok(Number.isInteger(notes[0].string), 'pruned note keeps an independent divisi fingering')
   assert.equal(r.events[0].dur, 2)
 })
 

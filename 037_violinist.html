@@ -99,7 +99,7 @@
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
     import { SoundFontEngine, MidiScheduler } from './soundfont-engine/src/index.js'
     import { installAcoustics, acousticParams, ROOMS } from './concertstage/acoustics.js'
-    import { INSTRUMENTS, fingerLine } from './strings/fingering.js'
+    import { INSTRUMENTS, fingerLine, onePlayerNotes } from './strings/fingering.js'
     import { buildMotion } from './strings/motion.js'
     import { bowingFor } from './violinist/score-art.js'
     import { scorePiece, matchMidi, carryOver, enrichFromScore, bowScore } from './violinist/score-play.js'
@@ -251,9 +251,10 @@
       if (ex) ex.points = ex.points.map(([t, v]) => [T(t), v])
       if (song.performer?.expression) ex = song.performer.expression.recorded || !ex ? song.performer.expression : { ...ex, timing: true }
       if (song.modelled) ex = song.modelled.expression
-      Object.assign(song, { expr: ex, entry: e, piece, notes, accomp, programs, motion: buildMotion(notes, { instrument: 'violin' }) })
-      song.duration = Math.max(...notes.map(n => n.off), ...accomp.map(n => n.time + n.duration), 1)
-      song.drive = drivers(notes)
+      const playerNotes = onePlayerNotes(notes)
+      Object.assign(song, { expr: ex, entry: e, piece, notes:playerNotes, accomp, programs, motion:buildMotion(playerNotes, { instrument:'violin' }) })
+      song.duration = Math.max(...playerNotes.map(n => n.off), ...accomp.map(n => n.time + n.duration), 1)
+      song.drive = drivers(playerNotes)
       window.__song = song
       $('credit').innerHTML = `${e.composer} – ${e.title}<br>${notesCredit(e, song.piece)}${bowingCredit(song.bowing)}${song.performer ? '<br>Played as ' + performerCredit(song.performer.rec, { pitch: violin.on }) : song.modelled ? '<br>Played as ' + modelledCredit(song.modelled.model) : ''}`
       $('startSong').textContent = `${e.composer} – ${e.title}`
@@ -347,7 +348,7 @@
     const clock = { playing: false, t: 0, wall: 0, speed: 1 }
     const now = () => clock.playing ? clock.t + (performance.now() - clock.wall) / 1000 * clock.speed : clock.t
     function loadSchedule() {
-      const solo = (violin.on ? [] : song.notes).map(n => ({ midi: n.pitch, time: n.on, duration: n.off - n.on, velocity: n.velocity ?? 0.75, channel: 0 }))
+      const solo = onePlayerNotes(violin.on ? [] : song.notes).map(n => ({ midi: n.pitch, time: n.on, duration: n.off - n.on, velocity: n.velocity ?? 0.75, channel: 0 }))
       scheduler.load({ notes: [...solo, ...song.accomp].sort((a, b) => a.time - b.time), controlChanges: [] })
       setPrograms()
     }

@@ -86,16 +86,17 @@
   <h1><span>#046</span> Score fingering</h1>
   <label class="open">📷 Photo<input id="camera" type="file" accept="image/*" capture="environment"></label>
   <label class="open">🖼 Open image / PDF<input id="file" type="file" accept="image/*,application/pdf,.pdf"></label>
-  <button id="sample">Try sample</button>
+  <button id="sample">Try viola PDF</button>
   <button id="export" disabled>⬇ Annotated PNG</button>
   <button id="exportPdf" hidden>⬇ Annotated PDF</button>
 </header>
 <div id="controls">
-  <label>Instrument <select id="instrument"><option value="violin">Violin</option><option value="viola">Viola</option></select></label>
+  <label>Instrument <select id="instrument"><option value="auto" selected>Auto (violin/viola)</option><option value="violin">Violin</option><option value="viola">Viola</option></select></label>
   <label>Part <select id="part" disabled><option>—</option></select></label>
   <label>Style <select id="mode"><option value="standard">Standard</option><option value="beginner">Beginner</option><option value="expressive">Expressive</option><option value="nearest">Fewest shifts</option></select></label>
   <label>Tempo <input id="tempo" type="number" min="30" max="260" value="120"> ♩/min</label>
   <label><input id="recognition" type="checkbox"> recognition</label>
+  <label title="Show string changes and hand-position changes beside their noteheads"><input id="details" type="checkbox"> string / position details</label>
   <label>Zoom <input id="zoom" type="range" min="0.1" max="2" step="0.05" value="1"></label>
 </div>
 <nav id="pages" hidden aria-label="PDF pages"><button id="prevPage" aria-label="Previous page">◀</button><span id="pageNo" aria-live="polite"></span><button id="nextPage" aria-label="Next page">▶</button><div id="thumbs"></div></nav>
@@ -106,13 +107,13 @@
     <p>Ranked for the whole passage. Pick one, or tap a note to choose its string.</p>
     <div id="alternatives"></div>
     <details id="noteEditor"><summary>Edit recognized notes</summary><div id="noteList" role="list" aria-label="Recognized notes and fingerings"></div></details>
-    <div id="legend"><b>String</b><i style="background:#9f1239"></i>lowest <i style="background:#b45309"></i>2 <i style="background:#047857"></i>3 <i style="background:#1d4ed8"></i>highest<br>◆ marks a manual string choice.</div>
+    <div id="legend">Pencil numbers are left-hand fingers. Chord notes that exceed one hand are still numbered independently for divisi. <b>Optional details:</b> colored tags name the string; “pos” marks a hand-position change. ◆ marks a manual string choice.</div>
   </aside>
   <main id="wrap">
     <div id="empty">
       <h2>Photograph the music, then choose a fingering</h2>
       <p>The page is recognized locally. The violin or viola planner weighs shifts, string crossings, hand position, stretches, open strings and tone color across the whole passage. It draws finger numbers back onto the photographed page.</p>
-      <div class="actions"><label class="open">📷 Take a photo<input id="camera2" type="file" accept="image/*" capture="environment"></label><button id="sample2">Use the sample page</button></div>
+      <div class="actions"><label class="open">📷 Take a photo<input id="camera2" type="file" accept="image/*" capture="environment"></label><button id="sample2">Use the Sibelius viola PDF</button></div>
       <p>For the best reading: printed music, a flat page, the whole staff width in frame, and even light. Open a multi-page PDF to navigate thumbnails and export one annotated PDF. Tap any wrong pitch to correct or remove it.</p>
     </div>
     <div id="stage" hidden><canvas id="page"></canvas><canvas id="overlay" tabindex="0" role="application" aria-label="Annotated photographed score. Use the arrow keys to select a note and Enter to edit it, or use the Edit recognized notes list."></canvas></div>

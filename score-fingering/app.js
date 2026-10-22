@@ -1,7 +1,7 @@
 import { buildScore } from './scoreshift/score.js'
 import { Renderer } from './scoreshift/render.js'
 import { interpret, yOfP } from './scoreshift/omr.js'
-import { planFingering, annotationItems, hitAnnotation, sourceNoteId } from './adapter.js'
+import { planFingering, annotationItems, hitAnnotation, sourceNoteId, detectViolinViola } from './adapter.js'
 import { drawFingerings, drawRecognition } from './overlay.js'
 import { INSTRUMENTS, solveFingering } from '../strings/fingering.js'
 import { createScoreDocument, pageState, cachePage, pageFileStem, trimPageRecords } from './document.js'
@@ -51,6 +51,26 @@ function closeDocument() {
   $('pages').hidden = true; $('exportPdf').hidden = true
 }
 const pdfModule = () => import('./scoreshift/pdfsource.js')
+
+const STRONG_AUTO_REASONS = new Set(['name', 'alto-clef', 'low-clef', 'range'])
+function detectPageInstrument(state, score, part, { name = S.document?.name || S.name, fallback = null, remember = true } = {}) {
+  const documentEvidence = S.document?.autoInstruments?.get(part)
+  const pageEvidence = state?.autoInstruments?.get(part)
+  const prior = documentEvidence?.instrument || pageEvidence?.instrument || fallback || null
+  if (!score) return documentEvidence || pageEvidence || { instrument:prior || 'violin', reason:prior ? 'document' : 'default' }
+  const detected = detectViolinViola(score, part, { name, fallback:prior })
+  state?.autoInstruments?.set(part, detected)
+  if (remember && STRONG_AUTO_REASONS.has(detected.reason)) S.document?.autoInstruments?.set(part, detected)
+  return detected
+}
+
+function selectedInstrument(state = S.activePageState) {
+  const mode = $('instrument').value
+  if (mode !== 'auto') return { instrument:mode, reason:'manual' }
+  const active = state === S.activePageState, part = active ? S.part : state?.part ?? 0
+  const score = active ? S.score || state?.score : state?.score
+  return detectPageInstrument(state, score, part)
+}
 const MAX_PDF_BYTES = 100 * 1024 * 1024, MAX_PDF_PAGES = 100, MAX_CACHED_PAGES = 2, MAX_EXPORT_JPEG_BYTES = 64 * 1024 * 1024
 function resetPageGlobals() {
   S.activePageState = null; S.model = null; S.image = null; S.renderer = null; S.score = null; S.plan = null; S.items = []
@@ -351,13 +371,15 @@ async function load(blob, name='score') {
 
 async function loadSource(source, name) {
   const request = beginLoadRequest()
-  hidePopup(false); setBusy(true, 'Loading image…', request)
+  hidePopup(false); setBusy(true, 'Loading score…', request)
   try {
     const blob = await source
     if (request !== loadRequest) return false
-    return await loadWithRequest(blob, name, request)
+    const { isPdf } = await pdfModule()
+    if (request !== loadRequest) return false
+    return await isPdf(blob) ? loadPdfWithRequest(blob, name, request) : loadWithRequest(blob, name, request)
   } catch (error) {
-    if (request === loadRequest) setStatus(`<b>Could not load this image:</b> ${escapeHtml(error.message)}`)
+    if (request === loadRequest) setStatus(`<b>Could not load this score:</b> ${escapeHtml(error.message)}`)
     return false
   } finally { setBusy(false, '', request) }
 }
@@ -381,8 +403,9 @@ async function replan(showBusy=true) {
   if (S.activePageState !== activeState || S.model !== activeModel) { if (showBusy) setBusy(false, '', busyOwner); return false }
   try {
     S.score = buildScore(activeModel)
+    const instrument = selectedInstrument(activeState).instrument
     S.plan = planFingering(S.score, S.part, {
-      instrument:$('instrument').value,
+      instrument,
       mode:$('mode').value,
       quarterSeconds:60 / Math.max(30, Math.min(260, +$('tempo').value || 120)),
       locks:S.locks,
@@ -432,7 +455,7 @@ function renderNoteList() {
   S.items.forEach((item, index) => {
     const button = document.createElement('button')
     const name = item.source.name || `note ${index + 1}`
-    const choice = item.playable ? `${item.stringLabel} string, finger ${item.fingerLabel}${item.showPosition ? `, position ${item.positionLabel}` : ''}` : 'not playable'
+    const choice = item.playable ? `${item.stringLabel} string, finger ${item.fingerLabel}${item.showPosition ? `, position ${item.positionLabel}` : ''}${item.divisi ? ', independent divisi fingering; the full chord does not fit one player' : ''}` : 'not playable'
     button.textContent = `${name} · ${item.playable ? item.stringLabel + item.fingerLabel : '×'}`
     button.setAttribute('aria-label', `${name}, ${choice}${item.locked ? ', manually locked' : ''}`)
     button.onclick = event => {
@@ -464,20 +487,22 @@ function renderPage() {
   page.width = overlay.width = S.renderer.W; page.height = overlay.height = S.renderer.H
   pageCtx.drawImage(S.renderer.src, 0, 0)
   overlayCtx.clearRect(0, 0, overlay.width, overlay.height)
-  S.items = annotationItems(S.plan, S.suggestion, { instrument:$('instrument').value })
+  S.items = annotationItems(S.plan, S.suggestion, { instrument:S.plan.instrument })
   S.keyboardIndex = Math.max(0, Math.min(S.keyboardIndex, Math.max(0, S.items.length - 1)))
   if ($('recognition').checked) drawRecognition(overlayCtx, S.model, S.renderer.r, S.score, S.items.find(item => item.id === S.selectedId)?.source)
-  drawFingerings(overlayCtx, S.items, S.renderer.r, { selectedId:S.selectedId })
+  drawFingerings(overlayCtx, S.items, S.renderer.r, { selectedId:S.selectedId, showDetails:$('details').checked })
   layoutPage(); syncCurrentPage()
 }
 
 function updateStatus() {
   const badBars = S.score.measures.filter(measure => measure.status === 'under' || measure.status === 'over').length
-  const rejected = S.plan.diagnostics.filter(diagnostic => diagnostic.code !== 'held-conflict').length
+  const divisi = S.plan.diagnostics.filter(diagnostic => diagnostic.code === 'chord-capacity').length
+  const rejected = S.plan.diagnostics.filter(diagnostic => diagnostic.code !== 'held-conflict' && diagnostic.code !== 'chord-capacity').length
   const conflicts = S.plan.diagnostics.filter(diagnostic => diagnostic.code === 'held-conflict').length
   const chosen = S.plan.suggestions[S.suggestion]
   const pagePrefix = S.document?.kind === 'pdf' ? `Page ${S.document.page} of ${S.document.pageCount} · ` : ''
-  setStatus(`${pagePrefix}<b>${S.model.staves.length}</b> staves · <b>${S.model.notes.length}</b> recognized notes · part ${S.part + 1}: <b>${S.plan.notes.length}</b> notes · <b>${S.plan.suggestions.length}</b> fingering paths · ${escapeHtml(chosen.label)}${badBars ? ` · <b>${badBars}</b> bars need checking` : ''}${rejected ? ` · <b>${rejected}</b> notes not playable` : ''}${conflicts ? ` · <b>${conflicts}</b> incompatible string lock${conflicts > 1 ? 's' : ''}` : ''} · read in ${Math.round(S.model.ms)} ms`)
+  const auto = $('instrument').value === 'auto' ? ` · auto: <b>${escapeHtml(INSTRUMENTS[S.plan.instrument].name)}</b>` : ''
+  setStatus(`${pagePrefix}<b>${S.model.staves.length}</b> staves · <b>${S.model.notes.length}</b> recognized notes · part ${S.part + 1}: <b>${S.plan.notes.length}</b> notes${auto} · <b>${S.plan.suggestions.length}</b> fingering paths · ${escapeHtml(chosen.label)}${badBars ? ` · <b>${badBars}</b> bars need checking` : ''}${rejected ? ` · <b>${rejected}</b> notes not playable` : ''}${divisi ? ` · <b>${divisi}</b> chord note${divisi > 1 ? 's' : ''} fingered independently for divisi` : ''}${conflicts ? ` · <b>${conflicts}</b> incompatible string lock${conflicts > 1 ? 's' : ''}` : ''} · read in ${Math.round(S.model.ms)} ms`)
 }
 
 function hidePopup(restoreFocus=true) {
@@ -495,10 +520,11 @@ function focusAfterEdit(opener, id, fallbackIndex) {
   const target = $('noteList').querySelectorAll('button')[index]
   ;(target || overlay).focus()
 }
-  const profile = INSTRUMENTS[$('instrument').value], note = item.source, pop = $('pop')
+  const instrument = S.plan?.instrument || selectedInstrument().instrument
+  const profile = INSTRUMENTS[instrument], note = item.source, pop = $('pop')
   const lock = S.locks.get(item.id), input = S.plan.notes[item.index]
   const playableStrings = profile.strings.map((_, string) => solveFingering([{ pitch:input.pitch, on:0, off:0.5, lockString:string }], {
-    instrument:$('instrument').value, mode:$('mode').value, preserveHeldNotes:false, templates:false,
+    instrument, mode:$('mode').value, preserveHeldNotes:false, templates:false,
   }).assignments[0].playable)
   pop.innerHTML = `<h3 id="popTitle">${escapeHtml(note.name || item.id)} · finger ${item.fingerLabel}${item.stringLabel ? ` on ${item.stringLabel}` : ''}</h3>
     <p>${item.warnings.length ? `<b>${escapeHtml(item.warnings.map(warning => warning.message).join(' '))}</b><br>` : ''}Choose a string to re-plan the whole passage around this note, or correct the recognized pitch.</p>
@@ -579,16 +605,17 @@ $('mode').onchange = () => { hidePopup(false); resetDocumentAlternatives(); repl
 $('part').onchange = () => { S.part = +$('part').value; S.suggestion = 0; hidePopup(false); replan() }
 $('tempo').onchange = () => { resetDocumentAlternatives(); replan() }
 $('recognition').onchange = renderPage
+$('details').onchange = renderPage
 $('zoom').oninput = event => { S.zoom = +event.target.value; layoutPage() }
 window.addEventListener('resize', layoutPage)
 
 for (const id of ['camera','camera2','file']) $(id).onchange = event => {
   const file = event.target.files[0]; if (file) load(file, file.name); event.target.value = ''
 }
-const sample = () => loadSource(fetch(new URL('./scoreshift/sample.jpg', import.meta.url)).then(response => {
+const sample = () => loadSource(fetch(new URL('./sample-sibelius-symphony-2-viola.pdf', import.meta.url)).then(response => {
   if (!response.ok) throw new Error(`sample request failed (${response.status})`)
   return response.blob()
-}), 'sample-score.jpg')
+}), 'Sibelius Symphony No. 2 Viola.pdf')
 $('prevPage').onclick = () => S.document?.kind === 'pdf' && openPage(S.document.page - 1, { fit:true })
 $('nextPage').onclick = () => S.document?.kind === 'pdf' && openPage(S.document.page + 1, { fit:true })
 $('sample').onclick = sample; $('sample2').onclick = sample
@@ -600,22 +627,51 @@ document.addEventListener('drop', event => { event.preventDefault(); const file 
 const canvasBlob = (canvas, type, quality) => new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error(`Could not encode ${type}`)), type, quality))
 async function jpegPage(canvas) { return new Uint8Array(await (await canvasBlob(canvas, 'image/jpeg', 0.9)).arrayBuffer()) }
 
-const currentPlanningSettings = () => ({
-  instrument:$('instrument').value,
-  mode:$('mode').value,
-  quarterSeconds:60 / Math.max(30, Math.min(260, +$('tempo').value || 120)),
-})
+const currentPlanningSettings = () => {
+  const instrumentMode = $('instrument').value
+  return {
+    instrumentMode,
+    instrument:instrumentMode === 'auto' ? selectedInstrument().instrument : instrumentMode,
+    documentName:S.document?.name || S.name,
+    mode:$('mode').value,
+    quarterSeconds:60 / Math.max(30, Math.min(260, +$('tempo').value || 120)),
+    showDetails:$('details').checked,
+    autoInstruments:new Map(S.document?.autoInstruments || []),
+    resolvedInstruments:new Set(),
+  }
+}
+
+function resolvePlanningInstrument(state, settings) {
+  let instrument = settings.instrument
+  if (settings.instrumentMode === 'auto') {
+    const retained = settings.autoInstruments?.get(state.part)
+    const detected = detectViolinViola(state.score, state.part, { name:settings.documentName, fallback:retained?.instrument || null })
+    state.autoInstruments?.set(state.part, detected)
+    if (STRONG_AUTO_REASONS.has(detected.reason)) settings.autoInstruments?.set(state.part, detected)
+    instrument = detected.instrument
+  }
+  settings.resolvedInstruments?.add(instrument)
+  return instrument
+}
+
+function exportInstrumentLabel(settings) {
+  const instruments = [...settings.resolvedInstruments]
+  return instruments.length === 1 ? instruments[0] : instruments.length > 1 ? 'auto' : settings.instrument
+}
 
 function planPageState(state, settings = currentPlanningSettings()) {
   if (state.status !== 'ready') return state
   state.score = buildScore(state.model)
+  const instrument = resolvePlanningInstrument(state, settings)
   state.plan = planFingering(state.score, state.part, {
-    ...settings,
+    instrument,
+    mode:settings.mode,
+    quarterSeconds:settings.quarterSeconds,
     locks:state.locks,
     limit:4, minChanges:1, candidatePool:48,
   })
   state.suggestion = Math.min(state.suggestion, Math.max(0, state.plan.suggestions.length - 1))
-  state.items = annotationItems(state.plan, state.suggestion, { instrument:settings.instrument })
+  state.items = annotationItems(state.plan, state.suggestion, { instrument })
   return state
 }
 
@@ -624,7 +680,7 @@ function composePageState(state, settings) {
   planPageState(state, settings)
   const canvas = document.createElement('canvas'); canvas.width = state.renderer.W; canvas.height = state.renderer.H
   const context = canvas.getContext('2d'); context.drawImage(state.renderer.src, 0, 0)
-  drawFingerings(context, state.items, state.renderer.r)
+  drawFingerings(context, state.items, state.renderer.r, { showDetails:settings.showDetails })
   return canvas
 }
 
@@ -660,7 +716,7 @@ async function runAnnotatedPdfExport() {
   const doc = S.document
   if (!doc || doc.kind !== 'pdf') return null
   syncCurrentPage()
-  const revision = loadRequest, settings = currentPlanningSettings(), instrument = settings.instrument
+  const revision = loadRequest, settings = currentPlanningSettings()
   const owner = Symbol('pdf-export'); setBusy(true, 'Annotating PDF…', owner)
   try {
     const pages = []; let jpegBytes = 0
@@ -682,6 +738,7 @@ async function runAnnotatedPdfExport() {
     }
     if (S.document !== doc || loadRequest !== revision) throw new Error('Export stopped because the document changed')
     const { writePdf } = await pdfModule(), bytes = writePdf(pages)
+    const instrument = exportInstrumentLabel(settings)
     const filename = `${doc.name}-${instrument}-fingering.pdf`
     const anchor = document.createElement('a'); anchor.href = URL.createObjectURL(new Blob([bytes], { type:'application/pdf' })); anchor.download = filename; anchor.click()
     setTimeout(() => URL.revokeObjectURL(anchor.href), 10000)
@@ -713,7 +770,8 @@ $('export').onclick = async () => {
     output = document.createElement('canvas'); output.width = page.width; output.height = page.height
     output.getContext('2d').drawImage(page, 0, 0)
   }
-  const filename = `${S.name}-${$('instrument').value}-fingering.png`
+  const instrument = state?.plan?.instrument || selectedInstrument(state).instrument
+  const filename = `${S.name}-${instrument}-fingering.png`
   try {
     const blob = await canvasBlob(output, 'image/png')
     const anchor = document.createElement('a'); anchor.href = URL.createObjectURL(blob); anchor.download = filename; anchor.click()
@@ -723,4 +781,4 @@ $('export').onclick = async () => {
 }
 $('exportPdf').onclick = exportAnnotatedPdf
 
-window.__scoreFingering = { S, load, loadSource, recognize, replan, renderPage, openPage, exportAnnotatedPdf, sourceNoteId }
+window.__scoreFingering = { S, load, loadSource, recognize, replan, renderPage, openPage, exportAnnotatedPdf, sourceNoteId, resolvePlanningInstrument, exportInstrumentLabel }

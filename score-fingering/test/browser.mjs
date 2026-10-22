@@ -45,8 +45,12 @@ const checks = []
 const check = (condition, message) => { checks.push([condition, message]); console.log(`${condition ? 'ok  ' : 'FAIL'} ${message}`) }
 
 try {
+const loadImageSample = target => target.evaluate(async () => {
+  const blob = await (await fetch('score-fingering/scoreshift/sample.jpg')).blob()
+  return __scoreFingering.load(blob, 'sample-score.jpg')
+})
   await page.goto(`${base}/046_score_fingering.html`)
-  await page.click('#sample')
+  await loadImageSample(page)
   try { await page.waitForFunction(() => window.__scoreFingering?.S?.plan?.suggestions?.length >= 2, null, { timeout:30000 }) }
   catch (error) { console.error('initial state', await page.evaluate(() => ({ status:document.getElementById('status')?.textContent, busy:getComputedStyle(document.getElementById('busy')).display, hook:!!window.__scoreFingering })), errors); throw error }
   const loaded = await page.evaluate(() => {
@@ -60,6 +64,16 @@ try {
   check(loaded.annotations === loaded.partNotes, `one annotation per selected-part note (${loaded.annotations})`)
   check(loaded.canvas[0] > 500 && loaded.canvas[1] > 500, `page canvas rendered (${loaded.canvas.join('×')})`)
 
+
+  const detailToggle = await page.evaluate(() => {
+    const control = document.getElementById('details'), canvas = document.getElementById('overlay'), context = canvas.getContext('2d')
+    const ink = () => { const data = context.getImageData(0, 0, canvas.width, canvas.height).data; let count = 0; for (let i = 3; i < data.length; i += 4) if (data[i]) count++; return count }
+    const defaultHidden = !control.checked, before = ink()
+    control.checked = true; control.dispatchEvent(new Event('change')); const shown = ink()
+    control.checked = false; control.dispatchEvent(new Event('change')); const restored = ink()
+    return { defaultHidden, extra:shown - before, restored:restored === before }
+  })
+  check(detailToggle.defaultHidden && detailToggle.extra > 100 && detailToggle.restored, `string/position details are opt-in and redraw beside notes (${detailToggle.extra} added pixels)`)
   await page.locator('#alternatives button').nth(1).focus(); await page.keyboard.press('Enter')
   check(await page.evaluate(() => __scoreFingering.S.suggestion === 1), 'whole-path alternative can be selected')
   check(await page.evaluate(() => document.activeElement?.closest('#alternatives') != null), 'alternative selection preserves keyboard focus')
@@ -118,6 +132,54 @@ try {
   check(errors.length === 0, `no browser errors${errors.length ? ': ' + errors.join(' | ') : ''}`)
   await page.screenshot({ path:path.join(os.tmpdir(), 'score-fingering-smoke.png'), fullPage:true })
 
+
+  const sampleContext = await browser.newContext({ viewport:{ width:1000, height:700 } })
+  const samplePage = await sampleContext.newPage(), sampleErrors = []
+  samplePage.on('pageerror', error => sampleErrors.push(error.message))
+  await samplePage.goto(`${base}/046_score_fingering.html`)
+  check(await samplePage.locator('#instrument').inputValue() === 'auto', 'auto violin/viola selection is the default')
+  await samplePage.click('#sample')
+  await samplePage.waitForFunction(() => __scoreFingering.S.document?.pageCount === 17 && __scoreFingering.S.activePageState?.status === 'ready' && __scoreFingering.S.plan?.instrument === 'viola', null, { timeout:30000 })
+  const sampleAuto = await samplePage.evaluate(() => ({
+    pages:__scoreFingering.S.document.pageCount,
+    staves:__scoreFingering.S.model.staves.length,
+    notes:__scoreFingering.S.model.notes.length,
+    planNotes:__scoreFingering.S.plan.notes.length,
+    clefs:__scoreFingering.S.model.staves.map(staff => staff.clef?.type),
+    instrument:__scoreFingering.S.plan.instrument,
+    reason:__scoreFingering.S.activePageState.autoInstruments.get(0)?.reason,
+    rejected:__scoreFingering.S.plan.diagnostics.filter(diagnostic => !['chord-capacity', 'held-conflict'].includes(diagnostic.code)).length,
+    status:document.getElementById('status').textContent,
+  }))
+  check(sampleAuto.pages === 17 && sampleAuto.staves === 9 && sampleAuto.clefs.every(clef => clef === 'alto') && sampleAuto.notes === 174 && sampleAuto.planNotes === 172 && sampleAuto.instrument === 'viola' && sampleAuto.rejected === 0 && /auto:\s*Viola/i.test(sampleAuto.status), `built-in Sibelius sample opens 17 pages and auto-detects viola (${sampleAuto.staves} alto staves, ${sampleAuto.notes}/${sampleAuto.planNotes} raw/planned notes, ${sampleAuto.reason})`)
+  const manualRevision = await samplePage.evaluate(() => __scoreFingering.S.planRevision)
+  await samplePage.selectOption('#instrument', 'violin'); await samplePage.waitForFunction(revision => __scoreFingering.S.planRevision > revision && __scoreFingering.S.plan.instrument === 'violin', manualRevision)
+  const manualRejected = await samplePage.evaluate(() => __scoreFingering.S.plan.diagnostics.filter(diagnostic => !['chord-capacity', 'held-conflict'].includes(diagnostic.code)).length)
+  const autoRevision = await samplePage.evaluate(() => __scoreFingering.S.planRevision)
+  await samplePage.selectOption('#instrument', 'auto'); await samplePage.waitForFunction(revision => __scoreFingering.S.planRevision > revision && __scoreFingering.S.plan.instrument === 'viola', autoRevision)
+  check(manualRejected === 84 && sampleAuto.rejected === 0, `manual violin override remains available and auto restores viola (${manualRejected} vs ${sampleAuto.rejected} rejected notes)`)
+  const retainedEvidence = await samplePage.evaluate(async () => {
+    const S = __scoreFingering.S, originalName = S.document.name
+    S.document.name = 'untitled-score'
+    S.activePageState.autoInstruments.set(0, { instrument:'violin', reason:'treble' })
+    S.document.autoInstruments.set(0, { instrument:'viola', reason:'alto-clef' })
+    await __scoreFingering.replan(false)
+    const result = { plan:S.plan.instrument, retained:S.document.autoInstruments.get(0)?.instrument }
+    S.document.name = originalName
+    return result
+  })
+  check(retainedEvidence.plan === 'viola' && retainedEvidence.retained === 'viola', 'strong part evidence outranks a stale cached page detection')
+  const crossPartExport = await samplePage.evaluate(() => {
+    const part = clef => ({ measures:[{ clef, events:[], ticks:0 }], staves:[{ clef:{ type:clef } }] })
+    const score = { parts:[part('alto'), part('treble')] }
+    const settings = { instrumentMode:'auto', instrument:'viola', documentName:'untitled-score', autoInstruments:new Map(), resolvedInstruments:new Set() }
+    const viola = __scoreFingering.resolvePlanningInstrument({ score, part:0, autoInstruments:new Map() }, settings)
+    const violin = __scoreFingering.resolvePlanningInstrument({ score, part:1, autoInstruments:new Map() }, settings)
+    return { viola, violin, filenameInstrument:__scoreFingering.exportInstrumentLabel(settings), evidence:[...settings.autoInstruments.keys()] }
+  })
+  check(crossPartExport.viola === 'viola' && crossPartExport.violin === 'violin' && crossPartExport.filenameInstrument === 'auto' && crossPartExport.evidence.join() === '0', 'auto PDF export isolates part evidence and labels mixed instruments as auto')
+  check(sampleErrors.length === 0, `no built-in sample browser errors${sampleErrors.length ? ': ' + sampleErrors.join(' | ') : ''}`)
+  await sampleContext.close()
   // Loading a replacement closes old note closures, and a delayed older request cannot win.
   await page.focus('#overlay'); await page.keyboard.press('Enter'); await page.waitForSelector('#pop', { state:'visible' })
   const reloadRevision = await page.evaluate(() => __scoreFingering.S.planRevision)
@@ -251,14 +313,14 @@ try {
   check(stableItem.suggestedFilename() === 'parts-violin-fingering.pdf', 'whole-PDF export snapshots settings and filename before asynchronous page work')
   await page.waitForFunction(() => getComputedStyle(document.getElementById('busy')).display === 'none')
   const imageReturnRevision = await page.evaluate(() => { window.__oldPdfDocument = __scoreFingering.S.document; return __scoreFingering.S.planRevision })
-  await page.click('#sample')
+  await loadImageSample(page)
   await page.waitForFunction(revision => __scoreFingering.S.document?.kind === 'image' && __scoreFingering.S.planRevision > revision, imageReturnRevision, { timeout:30000 })
   check(await page.evaluate(() => window.__oldPdfDocument.pdfPool.readers.length === 0 && document.getElementById('pages').hidden && document.getElementById('exportPdf').hidden), 'switching back to an image destroys PDF readers and hides PDF controls')
 
   const mobileContext = await browser.newContext({ viewport:{ width:320, height:568 }, deviceScaleFactor:2 })
   const mobile = await mobileContext.newPage(), mobileErrors = []
   mobile.on('pageerror', error => mobileErrors.push(error.message))
-  await mobile.goto(`${base}/046_score_fingering.html`); await mobile.click('#sample')
+  await mobile.goto(`${base}/046_score_fingering.html`); await loadImageSample(mobile)
   await mobile.waitForFunction(() => __scoreFingering?.S?.plan?.suggestions?.length === 4, null, { timeout:30000 })
   await mobile.locator('#noteEditor summary').click(); await mobile.locator('#noteList button').first().click()
   const mobileLayout = await mobile.evaluate(() => {
@@ -281,7 +343,7 @@ try {
   await mobileContext.close()
 
   const preemptContext = await browser.newContext({ viewport:{ width:800, height:600 } })
-  const preempt = await preemptContext.newPage(); await preempt.goto(`${base}/046_score_fingering.html`); await preempt.click('#sample')
+  const preempt = await preemptContext.newPage(); await preempt.goto(`${base}/046_score_fingering.html`); await loadImageSample(preempt)
   await preempt.waitForFunction(() => __scoreFingering?.S?.planRevision > 0, null, { timeout:30000 })
   await preempt.evaluate(async () => { window.__preemptBlob = await (await fetch('score-fingering/scoreshift/sample.jpg')).blob() })
   let workerRequests = 0
@@ -317,7 +379,7 @@ try {
   const failureContext = await browser.newContext({ viewport:{ width:800, height:600 } })
   const failurePage = await failureContext.newPage()
   await failurePage.route('**/score-fingering/recognize-worker.js', route => route.fulfill({ status:200, contentType:'text/javascript', body:'throw new Error("worker-start-test")' }))
-  await failurePage.goto(`${base}/046_score_fingering.html`); await failurePage.click('#sample')
+  await failurePage.goto(`${base}/046_score_fingering.html`); await loadImageSample(failurePage)
   await failurePage.waitForFunction(() => /Could not read/.test(document.getElementById('status').textContent), null, { timeout:10000 })
   check(await failurePage.evaluate(() => getComputedStyle(document.getElementById('busy')).display === 'none'), 'worker startup failure surfaces and clears the busy state')
   await failurePage.evaluate(async () => {

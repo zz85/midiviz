@@ -24,7 +24,7 @@
 //
 // Units: centimetres along the string from the nut (u), string index (s).
 
-import { stopMM, INSTRUMENTS } from './fingering.js'
+import { stopMM, INSTRUMENTS, onePlayerNotes } from './fingering.js'
 
 const smooth5 = x => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * x * (x * (6 * x - 15) + 10))
 // natural offset of each finger above finger 1 (semitones): violin / viola
@@ -43,7 +43,7 @@ export function buildMotion(notes, { instrument = 'violin', lead = 0.04, vibrato
   const Lcm = inst.L / 10
   const slotOf = thumb => thumb ? SLOT_THUMB : inst.L > 900 ? SLOT_BASS : inst.L > 500 ? SLOT_CELLO : SLOT
   const uOf = semis => stopMM(semis, inst.L) / 10
-  const ns = notes.filter(n => n.string != null).sort((a, b) => a.on - b.on || a.pitch - b.pitch)
+  const ns = onePlayerNotes(notes).sort((a, b) => a.on - b.on || a.pitch - b.pitch)
 
   // events (onset groups)
   const events = []

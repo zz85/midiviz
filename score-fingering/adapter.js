@@ -18,6 +18,29 @@ export function sourceNoteId(note) {
   return id
 }
 
+/** Detect the selected part as violin or viola, retaining strong document evidence across pages. */
+export function detectViolinViola(score, partIndex = 0, { name = '', fallback = null } = {}) {
+  const part = score?.parts?.[partIndex]
+  if (!part) throw new RangeError(`score has no part ${partIndex}`)
+  const title = String(name)
+  const saysViola = /(^|[^a-z])(viola|va\.?)($|[^a-z])/i.test(title)
+  const saysViolin = /(^|[^a-z])(violin|violino|vn\.?)($|[^a-z])/i.test(title)
+  if (saysViola && !saysViolin) return { instrument:'viola', reason:'name' }
+  if (saysViolin && !saysViola) return { instrument:'violin', reason:'name' }
+
+  const clefs = new Set([
+    ...(part.measures || []).map(measure => measure.clef),
+    ...(part.staves || []).map(staff => staff.clef?.type),
+  ].filter(Boolean))
+  if (clefs.has('alto') || clefs.has('tenor') || clefs.has('bass')) return { instrument:'viola', reason:clefs.has('alto') ? 'alto-clef' : 'low-clef' }
+
+  const pitches = []
+  for (const { e } of timeline(part)) if (e.kind === 'note' && !e.removed) for (const note of e.notes || []) pitches.push(midiOf(note.pitch))
+  if (pitches.some(pitch => pitch >= INSTRUMENTS.viola.open[0] && pitch < INSTRUMENTS.violin.open[0])) return { instrument:'viola', reason:'range' }
+  if (fallback === 'violin' || fallback === 'viola') return { instrument:fallback, reason:'document' }
+  return { instrument:'violin', reason:clefs.has('treble') ? 'treble' : 'default' }
+}
+
 /**
  * Convert one ScoreShift part to solver notes while retaining each source symbol.
  * quarterSeconds controls the solver's tempo-sensitive costs (default 120 bpm).
@@ -108,16 +131,18 @@ export function annotationItems(plan, suggestionIndex = 0, { instrument = plan.i
   const profile = typeof instrument === 'object' ? instrument : INSTRUMENTS[instrument]
   if (!profile) throw new RangeError(`unknown instrument "${instrument}"`)
   let previous = null
-  return suggestion.assignments.map((assignment, index) => {
+  const items = suggestion.assignments.map((assignment, index) => {
     const source = plan.sources[index], input = plan.notes[index]
     if (!source) throw new RangeError(`missing source note ${index}`)
     const playable = assignment.playable
     const showString = playable && (!previous || previous.string !== assignment.string || Math.abs(input.on - previous.on) < 1e-9)
     const showPosition = playable && assignment.finger > 0 && (!previous || previous.finger === 0 || previous.base !== assignment.base || previous.thumb !== assignment.thumb)
-    const labelY = source.y + (source.stem && source.stem.dir < 0 ? 20 : -18)
+    const noteTop = source.box?.[1] ?? source.y
+    const stemTop = Number.isFinite(source.stem?.tip) ? source.stem.tip : noteTop
+    const labelY = Math.max(18, Math.min(noteTop, stemTop) - 14)
     const warnings = (plan.diagnostics || []).filter(diagnostic => diagnostic.index === index)
     const item = {
-      index, id: input.id, source, x: source.x, y: source.y, labelX:source.x, labelY, playable,
+      index, id: input.id, source, x: source.x, y: source.y, labelX:source.x, labelY, playable, divisi:!!assignment.divisi,
       fingerLabel: playable ? fingerLabel(assignment.finger) : '×',
       stringLabel: playable ? profile.strings[assignment.string] : '',
       positionLabel: playable && assignment.finger > 0 ? assignment.position : '',
@@ -127,6 +152,22 @@ export function annotationItems(plan, suggestionIndex = 0, { instrument = plan.i
     if (playable) previous = { ...assignment, on: input.on }
     return item
   })
+  const sharedStems = new Map()
+  for (const item of items) {
+    const input = plan.notes[item.index], source = item.source
+    const stemX = Number.isFinite(source.stem?.x) ? source.stem.x : source.x
+    const chord = source.chord != null ? `c${source.chord}` : `x${Math.round(stemX / 4)}`
+    const key = `${input.on.toFixed(6)}:${source.st?.index ?? ''}:${chord}`
+    sharedStems.set(key, [...(sharedStems.get(key) || []), item])
+  }
+  for (const group of sharedStems.values()) if (group.length > 1) {
+    group.sort((a, b) => a.source.y - b.source.y)
+    const x = group.reduce((sum, item) => sum + item.source.x, 0) / group.length
+    const nearest = Math.min(...group.map(item => item.labelY))
+    const top = Math.max(18, nearest - (group.length - 1) * 26)
+    group.forEach((item, index) => { item.labelX = x; item.labelY = top + index * 26 })
+  }
+  return items
 }
 
 /** Nearest annotation in normalized ScoreShift coordinates. */

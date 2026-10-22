@@ -1,8 +1,8 @@
 # Experiment #046 – fingering a photographed score
 
 [046_score_fingering.html](../046_score_fingering.html) takes or opens a photograph or multi-page PDF
-of printed music, recognizes each page locally, plans violin or viola fingering across the selected
-part, and draws the finger numbers back onto the normalized page.
+of printed music, recognizes each page locally, automatically chooses violin or viola for the selected
+part (with manual overrides), and draws the finger numbers back onto the normalized page.
 
 ## Pipeline
 
@@ -13,11 +13,17 @@ part, and draws the finger numbers back onto the normalized page.
    selected part into immutable fingering inputs while retaining the source notehead for every attack.
    Tied continuations become one duration-sensitive decision; grace ornaments are placed sequentially
    before their principal note and kept distinct from exact-onset chords through 260 bpm.
-3. `suggestFingerings()` from `strings/fingering.js` produces up to four ranked, distinct whole-passage
-   paths for violin or viola under the recommended held-safe constraints. Tempo changes the cost of
-   fast shifts; style selects standard, beginner, expressive or fewest-shifts weights.
-4. `overlay.js` places the finger at each notehead, a string name when the string changes, and a
-   position label when the hand moves. The colors run from the lowest to highest string.
+3. `detectViolinViola()` uses an unambiguous filename, alto/low clef, viola-only low pitch, or strong
+   evidence retained for that part across PDF pages; otherwise it defaults to violin. The instrument
+   menu can override auto detection. `suggestFingerings()` then produces up to four ranked, distinct
+   whole-passage paths under the recommended held-safe constraints. Tempo changes the cost of fast
+   shifts; style selects standard, beginner, expressive or fewest-shifts weights.
+4. `overlay.js` places a large uncircled handwritten graphite finger number above each complete
+   note—including an upward stem or beam—and stacks chord fingers vertically. String-change and
+   hand-position badges are hidden by default; the **string / position details** toggle shows them
+   beside their noteheads. Chord notes removed from
+   the one-player hand frame still receive independent divisi fingerings without a warning circle;
+   status and the note popup retain that explanation.
 5. `document.js` gives an image or PDF stable per-page records. PDF navigation lazily renders
    thumbnails and pages through pdf.js, and restores each page's model, correction locks, selected
    part, alternative and keyboard position without re-recognizing it. Changing instrument, style or
@@ -34,16 +40,23 @@ repository at commit `396f4619c531d978b49bbd81d15f5c766f6cf7a5`. See
 [scoreshift/README.md](scoreshift/README.md) for the included files and update procedure. The local
 copy lets MidiViz run from its own static-server root and keeps recognition on-device.
 
+## Built-in sample
+
+**Try viola PDF** opens `sample-sibelius-symphony-2-viola.pdf`, the supplied 17-page viola part of
+Sibelius's *Symphony No. 2*. Every page is 720×936 pt. Page 1 is a useful alto-clef OCR stress page:
+9 staves, 174 raw detected notes and 48 assembled measures in the current snapshot. Auto resolves it
+as viola from both its filename and clefs; forcing violin demonstrates why the choice matters.
+
 ## Tests
 
 ```sh
-node --test score-fingering/test/adapter.test.js score-fingering/test/document.test.js score-fingering/test/integration.test.js
+node --test score-fingering/test/adapter.test.js score-fingering/test/overlay.test.js score-fingering/test/document.test.js score-fingering/test/integration.test.js
 node score-fingering/test/browser.mjs
 ```
 
 The pure tests cover selected-part mapping, chords, voices, grace sequencing, source IDs that survive
-pitch correction and collocated-note deletion, locks, tied attacks, alternatives, sparse labels and
-marker/notehead hit testing. The integration tests run the local OMR snapshot on a 96-note, 24-bar
+pitch correction and collocated-note deletion, locks, tied attacks, alternatives, deterministic
+violin/viola auto detection, large conventional above-note pencil labels, opt-in notehead details, and marker/notehead hit testing. The integration tests run the local OMR snapshot on a 96-note, 24-bar
 engraved page and finger all 96 score notes. A second fixture consumes its 30-note / 8-grace oracle,
 pins the snapshot's known 29 raw detections / 7 recognized graces (28 tightly located, one true
 grace displaced by about 1.3 staff spaces, one omitted), and verifies at 260 bpm that the recognized
@@ -52,9 +65,11 @@ The document tests cover stable, isolated page records, ready/non-music caching,
 PDF page-size/order output. The browser smoke loads the generated photo, reads 4 staves and 97 raw
 detections, builds 24 bars and 96 score notes, produces four paths for that sample, selects an
 alternative, locks a playable string, corrects and deletes recognized notes, exercises keyboard note
-editing, stale/overlapping loads and worker failure, and checks a 320 px / DPR 2 layout. It then opens
+editing, stale/overlapping loads and worker failure, and checks a 320 px / DPR 2 layout. It also opens
+the built-in 17-page Sibelius sample, confirms 9 staves / 174 notes on page 1, auto-selects viola with
+zero range rejections, exercises the manual violin override, then restores auto. It then opens
 a three-page PDF, keeps its title page, renders all thumbnails, edits and caches page 2, recognizes
-unopened page 3 during whole-document export, reopens the 462,915-byte output as three 612×792 pages,
+unopened page 3 during whole-document export, reopens the output as three 612×792 pages,
 restores the page-2 correction/lock/alternative, and checks page-aware PNG naming.
 
 ## Limits
@@ -71,6 +86,9 @@ restores the page-2 correction/lock/alternative, and checks page-aware PNG namin
 - The planner proposes ergonomic paths from pitch, timing and limited articulation evidence. Tone,
   phrasing, teacher preferences and the player's technique can justify a different fingering; the
   ranked paths and manual locks are intended for that choice.
+- Auto distinguishes only violin and viola. Alto/tenor/bass clefs and pitches below violin G3 are
+  strong viola evidence; a treble-only part without a clear filename defaults to violin. Use the
+  instrument menu when the part is intentionally rewritten or otherwise ambiguous.
 - Annotations are a raster overlay. They do not create MusicXML technical notation yet.
 - PDF input is capped at 100 MB and 100 pages; whole-document export stops if retained JPEG pages
   exceed 64 MB. At most two visited page raster/model payloads stay resident (about 230 MB for two

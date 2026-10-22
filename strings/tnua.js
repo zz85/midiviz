@@ -11,7 +11,7 @@
 //
 // Pure ES module, no DOM.
 
-import { INSTRUMENTS } from './fingering.js'
+import { INSTRUMENTS, positionName } from './fingering.js'
 
 export const PIECES = ['bach1', 'bach2', 'beeth1', 'beeth2_1', 'beeth2_2', 'elgar', 'flower', 'mend1', 'mend2', 'mend3', 'mozart1', 'mozart2_1', 'mozart2_2', 'wind']
 export const TITLES = {
@@ -55,13 +55,22 @@ export function tnuaPosition(s, b) {
  * the previous note ended). secPerBeat: seconds per quarter note.
  */
 export function parseCSV(text, { secPerBeat = 0.5 } = {}) {
-  const rows = text.trim().split(/\r?\n/).slice(1).map(l => l.split(',').map(Number))
+  const lines = text.trim().split(/\r?\n/), header = lines.shift().replace(/^\uFEFF/, '').split(',').map(value => value.trim())
+  const column = name => header.indexOf(name)
+  const index = Object.fromEntries(['pitch', 'start', 'duration', 'beat_type', 'string', 'position', 'finger', 'divisi', 'advisory'].map(name => [name, column(name)]))
+  const value = (cells, name, fallback) => cells[index[name] >= 0 ? index[name] : fallback]
   const notes = []
   let barStart = 0, prev = null
-  for (const [pitch, start, duration, beatType, string, position, finger] of rows) {
+  for (const line of lines) {
+    const cells = line.split(',')
+    const pitch = +value(cells, 'pitch', 0), start = +value(cells, 'start', 1), duration = +value(cells, 'duration', 2)
+    const beatType = index.beat_type >= 0 ? +cells[index.beat_type] : 4
+    const string = +value(cells, 'string', 4), position = +value(cells, 'position', 5), finger = +value(cells, 'finger', 6)
     if (prev && start < prev.start - 1e-6) barStart = prev.abs + prev.duration - start
     const abs = barStart + start
-    const n = { pitch, on: abs * secPerBeat, off: (abs + duration) * secPerBeat, beats: duration, beatType, truth: string ? { string: string - 1, position, finger } : null }
+    const n = { pitch, on:abs * secPerBeat, off:(abs + duration) * secPerBeat, beats:duration, beatType, truth:string ? { string:string - 1, position, finger } : null }
+    const divisi = index.divisi >= 0 && +cells[index.divisi] !== 0
+    if (divisi) { n.divisi = true; n.advisory = index.advisory >= 0 ? cells[index.advisory] || 'chord-capacity' : 'chord-capacity' }
     notes.push(n)
     prev = { start, abs, duration }
   }
@@ -69,6 +78,19 @@ export function parseCSV(text, { secPerBeat = 0.5 } = {}) {
   const t0 = Math.min(0, ...notes.map(n => n.on))
   if (t0 < 0) for (const n of notes) { n.on -= t0; n.off -= t0 }
   return notes
+}
+
+/** A re-readable TNUA-shaped CSV; optional columns retain divisi advisory metadata. */
+export function writeFingeringCSV(notes, { secPerBeat = 0.6, instrument = 'violin' } = {}) {
+  if (!Number.isFinite(secPerBeat) || secPerBeat <= 0) throw new TypeError('secPerBeat must be positive')
+  const profile = typeof instrument === 'object' ? instrument : INSTRUMENTS[instrument]
+  if (!profile) throw new TypeError(`unknown instrument "${instrument}"`)
+  const rows = ['pitch,start,duration,beat_type,string,position,finger,divisi,advisory']
+  for (const note of notes.filter(note => note.string != null).sort((a, b) => a.on - b.on || a.pitch - b.pitch)) {
+    const position = note.finger ? (profile === INSTRUMENTS.violin ? tnuaPosition(note.string, note.base) : positionName(note.base, profile, note.thumb)) : 0
+    rows.push([note.pitch, (note.on / secPerBeat).toFixed(4), ((note.off - note.on) / secPerBeat).toFixed(4), 4, note.string + 1, position, note.finger, note.divisi ? 1 : 0, note.divisi ? 'chord-capacity' : ''].join(','))
+  }
+  return rows.join('\n') + '\n'
 }
 
 /**

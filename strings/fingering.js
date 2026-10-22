@@ -704,7 +704,7 @@ function kBestPaths(M, evs, limit) {
 }
 
 /** Fields written by the compatibility API. */
-const OUTPUT_FIELDS = ['unplayable', 'string', 'finger', 'offset', 'base', 'ext', 'thumb', 'position']
+const OUTPUT_FIELDS = ['unplayable', 'divisi', 'advisory', 'string', 'finger', 'offset', 'base', 'ext', 'thumb', 'position']
 function clearOutput(n) {
   // heldLock was written by older versions of fingerHeld. Treat it as an internal
   // marker and remove the lock it introduced before solving the note again.
@@ -718,6 +718,21 @@ const canPlayPitch = (M, n, lock = n.lockString) => {
   return strings.some(s => noteOptions(M, n.pitch, s, lock).length)
 }
 
+
+function fingerDivisiFallbacks(M, notes) {
+  for (const note of notes) {
+    if (note.unplayable !== 'chord') continue
+    const event = refreshEvent({ on:note.on, notes:[note] })
+    const states = eventStates(M, event, null, [hkey(2, false)])
+    if (!states.length) continue
+    let best = states[0]
+    for (let i = 1; i < states.length; i++) if (states[i].u < best.u) best = states[i]
+    const choice = best.n[0]
+    note.string = choice.s; note.finger = choice.f; note.offset = choice.o; note.base = best.b
+    note.ext = !!choice.ext; note.thumb = !!best.th; note.position = positionName(best.b, M.inst, best.th)
+    note.divisi = true
+  }
+}
 /** Mutating implementation shared by the legacy wrappers and immutable API. */
 function fingerMutable(notes, options = {}) {
   const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now()
@@ -776,6 +791,7 @@ function fingerMutable(notes, options = {}) {
     }
   }
   const total = solve(M, evs, true).cost
+  fingerDivisiFallbacks(M, notes)
   const t1 = typeof performance !== 'undefined' ? performance.now() : Date.now()
   return { notes, events: evs, cost: total, ms: t1 - t0, model: M }
 }
@@ -790,6 +806,11 @@ export function fingerLine(notes, options = {}) {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
+
+/** Notes that belong to the playable one-player path, excluding divisi-only advisory fallbacks. */
+export function onePlayerNotes(notes) {
+  return notes.filter(note => note.string != null && !note.unplayable && !note.divisi)
+}
 /** "G0 G1 D3 …" (string letter + finger, onset order, chords low → high). */
 
 /**
@@ -805,7 +826,7 @@ export function fingerLine(notes, options = {}) {
 function heldConflicts(notes, tolerance) {
   const eventOf = new Map()
   makeEvents(notes, tolerance).forEach((event, i) => event.notes.forEach(note => eventOf.set(note, i)))
-  const playable = notes.filter(n => n.string != null && !n.unplayable).sort((a, b) => a.on - b.on || a.pitch - b.pitch)
+  const playable = onePlayerNotes(notes).sort((a, b) => a.on - b.on || a.pitch - b.pitch)
   const out = []
   for (let i = 0; i < playable.length; i++) for (let j = 0; j < i; j++) {
     const n = playable[i], h = playable[j]
@@ -819,7 +840,7 @@ function fingerHeldMutable(notes, options = {}) {
   let result = fingerMutable(notes, options)
   const M = result.model
   const baselineStrings = notes.map(n => n.string)
-  const baselinePlayable = notes.map(n => n.string != null)
+  const baselinePlayable = notes.map(n => n.string != null && !n.unplayable)
   const userLocked = new Set(notes.flatMap((n, i) => n.lockString == null ? [] : [i]))
 
 function heldSafeFallback(notes, model, result, evaluate, maxNodes = 100000) {
@@ -873,7 +894,7 @@ function heldSafeFallback(notes, model, result, evaluate, maxNodes = 100000) {
     const work = notes.map(note => ({ ...note }))
     for (const [i, string] of constraints) work[i].lockString = string
     const trial = fingerMutable(work, options)
-    if (baselinePlayable.some((was, i) => was && work[i].string == null)) return null
+    if (baselinePlayable.some((was, i) => was && (work[i].string == null || work[i].unplayable))) return null
     return { constraints, work, result: trial, conflicts: heldConflicts(work, M.chordTolerance) }
   }
   const start = evaluate(new Map())
@@ -936,7 +957,7 @@ export function fingerHeld(notes, options = {}) {
 const REASON = { chord: 'chord-capacity', range: 'range', constraint: 'constraint', 'no-state': 'no-state' }
 const REASON_MESSAGE = {
   range: 'Pitch is outside the instrument model.',
-  'chord-capacity': 'The simultaneous notes cannot fit on the available strings and hand frame.',
+  'chord-capacity': 'Fingered independently for divisi: the simultaneous notes cannot fit one player’s strings and hand frame.',
   constraint: 'The note cannot be played with its requested string constraint.',
   'no-state': 'The instrument model has no playable state for this note.',
   'held-conflict': 'Overlapping notes remain assigned to the same string.',
@@ -952,14 +973,18 @@ function publicAssignments(work) {
     return {
       ...identity, playable: true, string: n.string, finger: n.finger, base: n.base,
       offset: n.offset, position: n.position, extension: !!n.ext, thumb: !!n.thumb,
+      ...(n.divisi ? { divisi:true, advisory:'chord-capacity' } : {}),
     }
   })
 }
 
 function publicDiagnostics(notes, work, assignments, conflicts) {
-  const diagnostics = assignments.filter(a => !a.playable).map(a => ({
-    index: a.index, ...(a.id === undefined ? {} : { id: a.id }), code: a.reason, message: REASON_MESSAGE[a.reason],
-  }))
+  const diagnostics = assignments.flatMap(assignment => {
+    const code = assignment.playable ? assignment.advisory : assignment.reason
+    return code ? [{
+      index:assignment.index, ...(assignment.id === undefined ? {} : { id:assignment.id }), code, message:REASON_MESSAGE[code],
+    }] : []
+  })
   const workIndex = new Map(work.map((note, index) => [note, index]))
   for (const { h, n } of conflicts) {
     const index = workIndex.get(n), relatedIndex = workIndex.get(h), id = notes[index].id
@@ -1005,6 +1030,11 @@ function assignmentsFromPath(work, events, states, inst) {
   return work.map((n, index) => {
     const identity = n.id === undefined ? { index } : { index, id: n.id }
     if (n.skip) return { ...identity, playable: false, reason: 'skipped' }
+    if (n.unplayable === 'chord' && n.divisi && n.string != null) return {
+      ...identity, playable:true, string:n.string, finger:n.finger, base:n.base,
+      offset:n.offset, position:n.position, extension:!!n.ext, thumb:!!n.thumb,
+      divisi:true, advisory:'chord-capacity',
+    }
     if (n.unplayable) return { ...identity, playable: false, reason: REASON[n.unplayable] || 'no-state' }
     const pick = chosen.get(n)
     if (!pick) return { ...identity, playable: false, reason: 'no-state' }
@@ -1022,7 +1052,7 @@ function assignmentChanges(base, candidate) {
     const a = base[i], b = candidate[i]
     const string = a.string !== b.string, finger = a.finger !== b.finger
     const position = a.base !== b.base || a.thumb !== b.thumb
-    if (a.playable !== b.playable || a.reason !== b.reason || string || finger || position) changes.notes++
+    if (a.playable !== b.playable || a.reason !== b.reason || a.advisory !== b.advisory || a.divisi !== b.divisi || string || finger || position) changes.notes++
     if (string) changes.strings++
     if (finger) changes.fingers++
     if (position) changes.positions++
@@ -1030,7 +1060,7 @@ function assignmentChanges(base, candidate) {
   return changes
 }
 
-const assignmentPathKey = assignments => assignments.map(a => a.playable ? `${a.string}/${a.finger}/${a.base}/${Number(a.thumb)}` : `x:${a.reason}`).join('|')
+const assignmentPathKey = assignments => assignments.map(a => a.playable ? `${a.string}/${a.finger}/${a.base}/${Number(a.thumb)}/${Number(a.divisi)}` : `x:${a.reason}`).join('|')
 const alternativeLabel = changes => {
   const parts = []
   if (changes.strings) parts.push(`${changes.strings} string`)
@@ -1077,7 +1107,7 @@ export function suggestFingerings(notes, options = {}) {
   } finally {
     for (const i of generated) delete work[i].lockString
   }
-  const minChanges = config.minChanges ?? Math.min(2, Math.max(1, baseAssignments.filter(a => a.playable).length))
+  const minChanges = config.minChanges ?? Math.min(2, Math.max(1, baseAssignments.filter(a => a.playable && !a.divisi).length))
   const selected = [{ assignments: baseAssignments, cost: held.result.cost, costDelta: 0, changes: { notes: 0, strings: 0, fingers: 0, positions: 0 } }]
   const keys = new Set([assignmentPathKey(baseAssignments)])
   for (const path of paths) {
@@ -1113,7 +1143,7 @@ export function suggestFingerings(notes, options = {}) {
 
 export function fingerTokens(notes, instrument = 'violin', { positions = false } = {}) {
   const inst = typeof instrument === 'object' ? instrument : INSTRUMENTS[instrument]
-  return notes.filter(n => n.string != null).sort((a, b) => a.on - b.on || a.pitch - b.pitch)
+  return onePlayerNotes(notes).sort((a, b) => a.on - b.on || a.pitch - b.pitch)
     .map(n => inst.strings[n.string] + fingerLabel(n.finger) + (positions && n.finger ? '@' + positionName(n.base, inst, n.thumb) : ''))
 }
 
@@ -1132,7 +1162,7 @@ export function matchTokens(got, want) {
 
 /** Shifts, crossings and open strings of a fingered line (for stats and tests). */
 export function lineStats(notes) {
-  const ns = notes.filter(n => n.string != null).sort((a, b) => a.on - b.on || a.pitch - b.pitch)
+  const ns = onePlayerNotes(notes).sort((a, b) => a.on - b.on || a.pitch - b.pitch)
   let shifts = 0, crossings = 0, open = 0, ext = 0, prev = null
   const fingers = [0, 0, 0, 0, 0, 0], positions = {}
   for (const n of ns) {

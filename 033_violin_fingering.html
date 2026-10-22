@@ -147,13 +147,13 @@
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
     import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
     import { SoundFontEngine, MidiScheduler } from './soundfont-engine/src/index.js'
-    import { fingerLine, fingerTokens, lineStats, INSTRUMENTS, parseNote, noteName, positionName, positionRoman, stopMM, fingerLabel } from './strings/fingering.js'
+    import { fingerLine, fingerTokens, lineStats, onePlayerNotes, INSTRUMENTS, parseNote, noteName, positionRoman, stopMM } from './strings/fingering.js'
     import { exercises, bestMatch } from './strings/exercises.js'
     import { buildMotion } from './strings/motion.js'
     import { buildViolin, buildBow } from './strings/violin3d.js'
     import { buildLeftHand, buildBowHand } from './strings/hand3d.js'
     import { createBoard } from './strings/board2d.js'
-    import { PIECES, TITLES, TEMPO, parseCSV, tnuaPosition } from './strings/tnua.js'
+    import { PIECES, TITLES, TEMPO, parseCSV, writeFingeringCSV } from './strings/tnua.js'
 
     const $ = id => document.getElementById(id)
     const params = new URLSearchParams(location.search)
@@ -355,13 +355,14 @@
       setStatus(`Fingering ${notes.length} notes…`)
       return new Promise(res => setTimeout(() => {
         const r = fingerLine(notes, fingerOptions())
-        Object.assign(state, { raw, notes, title, expect, source, result: r, shift, tnua, motion: buildMotion(notes, { instrument: $('instrument').value }) })
-        state.duration = notes.reduce((m, n) => Math.max(m, n.off), 0)
+        const playerNotes = onePlayerNotes(notes)
+        Object.assign(state, { raw, notes, title, expect, source, result: r, shift, tnua, motion: buildMotion(playerNotes, { instrument: $('instrument').value }) })
+        state.duration = playerNotes.reduce((m, n) => Math.max(m, n.off), 0)
         // expectation per note: token like "A3"
         let expectMap = null
         if (expect) {
           expectMap = new Map()
-          const fingered = notes.filter(n => n.string != null).sort((a, b) => a.on - b.on || a.pitch - b.pitch)
+          const fingered = onePlayerNotes(notes).sort((a, b) => a.on - b.on || a.pitch - b.pitch)
           const want = expect[0]
           fingered.forEach((n, i) => { if (want[i] && want[i] !== '*') expectMap.set(n, want[i].split('@')[0].split('|')[0]) })
           if (tnua) { expectMap = new Map(); notes.forEach(n => { if (n.truth) expectMap.set(n, I_NAME(n.truth.string) + n.truth.finger) }) }
@@ -382,17 +383,18 @@
     $('instrument').onchange = () => { buildInstrument(); setProgram(); setView($('cam').value === 'free' ? 'player' : $('cam').value, true); refinger(); saveUrl() }
 
     function showStats(r) {
-      const n = state.notes.filter(x => x.string != null)
+      const n = onePlayerNotes(state.notes)
+      const divisi = state.notes.filter(x => x.divisi).length
       const st = lineStats(state.notes)
       const I = inst()
       const strs = I.strings.map((_, s) => n.filter(x => x.string === s).length)
-      const unpl = state.notes.filter(x => x.unplayable).length
+      const unpl = state.notes.filter(x => x.unplayable && !x.divisi).length
       const pos = Object.entries(st.positions).sort((a, b) => (a[0] === '½' ? 0.5 : +a[0]) - (b[0] === '½' ? 0.5 : +b[0]))
       const maxF = Math.max(1, ...st.fingers)
       let html = `<div><b>${escapeHtml(state.title)}</b>${state.shift ? ` <span class="k">(transposed ${state.shift > 0 ? '+' : ''}${state.shift / 12} oct)</span>` : ''}</div>
         <div><span class="k">notes</span> ${n.length} <span class="k">· shifts</span> ${st.shifts} <span class="k">· crossings</span> ${st.crossings} <span class="k">· open</span> ${st.open}
         <span class="k">· extensions</span> ${st.ext}</div>
-        <div><span class="k">solved in</span> ${r.ms.toFixed(0)} ms <span class="k">· cost / note</span> ${(r.cost / Math.max(1, n.length)).toFixed(2)}${unpl ? ` <span class="k">· not playable</span> ${unpl}` : ''}</div>
+        <div><span class="k">solved in</span> ${r.ms.toFixed(0)} ms <span class="k">· cost / note</span> ${(r.cost / Math.max(1, n.length)).toFixed(2)}${unpl ? ` <span class="k">· not playable</span> ${unpl}` : ''}${divisi ? ` <span class="k">· divisi-only chord notes</span> ${divisi}` : ''}</div>
         <div><span class="k">strings</span> ${I.strings.map((s, i) => `${s} ${strs[i]}`).join(' · ')}</div>
         <div><span class="k">positions</span> ${pos.map(([p, c]) => `${p}: ${c}`).join(' · ')}</div>
         <div class="hist">${[0, 1, 2, 3, 4, ...(st.fingers[5] ? [5] : [])].map(f => `<div style="height:${(100 * st.fingers[f] / maxF).toFixed(0)}%;background:${['#d8d2c4', '#e2483d', '#f0a030', '#48b04c', '#3f8fe0', '#b464e0'][f]}"><span>${f === 5 ? 'T ' : ''}${st.fingers[f]}</span></div>`).join('')}</div><div style="height:12px"></div>`
@@ -554,12 +556,9 @@
 
     $('export').onclick = () => {
       if (!state.notes.length) return
-      const rows = ['pitch,start,duration,string,position,finger']
-      for (const n of state.notes.filter(x => x.string != null).sort((a, b) => a.on - b.on || a.pitch - b.pitch)) {
-        rows.push([n.pitch, n.on.toFixed(4), (n.off - n.on).toFixed(4), n.string + 1, n.finger ? (inst() === INSTRUMENTS.violin ? tnuaPosition(n.string, n.base) : positionName(n.base, inst(), n.thumb)) : 0, fingerLabel(n.finger)].join(','))
-      }
+      const csv = writeFingeringCSV(state.notes, { secPerBeat:0.6, instrument:inst() })
       const a = document.createElement('a')
-      a.href = URL.createObjectURL(new Blob([rows.join('\n') + '\n'], { type: 'text/csv' }))
+      a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
       a.download = (state.title || 'fingering').replace(/[^\w.-]+/g, '_') + '_fingering.csv'
       a.click()
       setTimeout(() => URL.revokeObjectURL(a.href), 1000)
@@ -587,7 +586,7 @@
       unlockAudio()
       if (now() >= state.duration) clock.t = 0
       const sch = await ensureScheduler()
-      sch.load({ notes: state.notes.filter(n => !n.unplayable).map(n => ({ midi: n.pitch, time: n.on, duration: n.off - n.on, velocity: n.velocity ?? 0.75, channel: 0 })), controlChanges: [] })
+      sch.load({ notes: onePlayerNotes(state.notes).map(n => ({ midi: n.pitch, time: n.on, duration: n.off - n.on, velocity: n.velocity ?? 0.75, channel: 0 })), controlChanges: [] })
       sch.speed = clock.speed
       sch.seek(clock.t)
       sch.play()

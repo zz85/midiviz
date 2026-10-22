@@ -11,9 +11,12 @@ test('document creates stable isolated page records', () => {
   assert.equal(a, again)
   assert.notEqual(a, b)
   assert.equal(doc.page, 1)
+  assert.ok(doc.autoInstruments instanceof Map)
+  assert.ok(a.autoInstruments instanceof Map)
   assert.deepEqual([a.index, a.status, a.part, a.suggestion, a.keyboardIndex], [1, 'empty', 0, 0, 0])
   a.locks.set('note-a', 2); a.corrections.set('note-a', { p:7 }); a.part = 1; a.suggestion = 3
-  assert.equal(b.locks.size, 0); assert.equal(b.corrections.size, 0); assert.equal(b.part, 0); assert.equal(b.suggestion, 0)
+  a.autoInstruments.set(0, { instrument:'violin', reason:'treble' }); a.autoInstruments.set(1, { instrument:'viola', reason:'alto-clef' })
+  assert.equal(b.locks.size, 0); assert.equal(b.corrections.size, 0); assert.equal(b.part, 0); assert.equal(b.suggestion, 0); assert.equal(b.autoInstruments.size, 0)
   assert.throws(() => pageState(doc, 0), /page 0/)
   assert.throws(() => pageState(doc, 4), /page 4/)
 })
@@ -64,11 +67,20 @@ test('page CSS uses the contrast-checked text and keyboard focus colors', () => 
   assert.ok(contrast(focus[2], '172033') >= 3)
 })
 
+test('string and position detail badges have an unchecked opt-in control', () => {
+  const html = fs.readFileSync(new URL('../../046_score_fingering.html', import.meta.url), 'utf8')
+  const control = html.match(/<input id="details" type="checkbox"([^>]*)>/i)
+  assert.ok(control, 'expected a string/position details checkbox')
+  assert.doesNotMatch(control[1], /\bchecked\b/i, 'details must be hidden by default')
+  assert.match(html, /string \/ position details/i)
+})
+
 test('bounded resident cache evicts old raster payloads but preserves compact page edits', () => {
   const doc = createScoreDocument({ kind:'pdf', name:'long.pdf', pageCount:10 })
   for (let index = 1; index <= 10; index++) {
     const state = cachePage(doc, index, { status:'ready', image:{ index }, model:{ index }, renderer:{ index }, lastUsed:index })
     state.locks.set(`n${index}`, index % 4); state.corrections.set(`n${index}`, { p:index }); state.suggestion = index % 3
+    state.autoInstruments.set(0, { instrument:index % 2 ? 'viola' : 'violin', reason:'test' })
   }
   const released = []
   const evicted = trimPageRecords(doc, 10, 2, state => released.push(state.index))
@@ -78,4 +90,5 @@ test('bounded resident cache evicts old raster payloads but preserves compact pa
   const old = pageState(doc, 1)
   assert.equal(old.model, null); assert.equal(old.image, null)
   assert.equal(old.locks.get('n1'), 1); assert.deepEqual(old.corrections.get('n1'), { p:1 }); assert.equal(old.suggestion, 1)
+  assert.deepEqual(old.autoInstruments.get(0), { instrument:'viola', reason:'test' })
 })

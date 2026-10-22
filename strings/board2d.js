@@ -12,7 +12,7 @@
 // sounding strings vibrating, and the bow crossing the strings with its
 // direction.
 
-import { stopMM, positionRoman, noteName, fingerLabel } from './fingering.js'
+import { stopMM, positionRoman, noteName, fingerLabel, onePlayerNotes } from './fingering.js'
 
 export const FINGER_COLORS = ['#d8d2c4', '#e2483d', '#f0a030', '#48b04c', '#3f8fe0', '#b464e0']
 
@@ -21,7 +21,7 @@ export function createBoard(canvas) {
   const opt = { labels: true, window: 4, lead: 0.28 }
   let notes = [], inst = null, expect = null
   function setNotes(list, { instrument, expectMap = null } = {}) {
-    notes = list.filter(n => n.string != null).sort((a, b) => a.on - b.on || a.pitch - b.pitch)
+    notes = onePlayerNotes(list).sort((a, b) => a.on - b.on || a.pitch - b.pitch)
     inst = instrument
     expect = expectMap
   }

@@ -39,7 +39,7 @@
 
 import { FRAME_RATE, NCH, midiHz, INSTRUMENTS as SYNTH } from './bowed.js'
 import { buildMotion } from '../motion.js'
-import { INSTRUMENTS } from '../fingering.js'
+import { INSTRUMENTS, onePlayerNotes } from '../fingering.js'
 import { humanize, HUMANIZE, rng as rngH } from './humanize.js'
 
 export const STYLE = {
@@ -191,7 +191,7 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
   const S = { ...STYLE, ...style }
   const inst = INSTRUMENTS[instrument] || INSTRUMENTS.violin
   const R = rng(seed)
-  const playable = notesIn.filter(n => n.string != null && !n.unplayable)
+  const playable = onePlayerNotes(notesIn)
   // a recorded performance (strings/expression.js) brings its own timing,
   // intonation, dynamics and phrasing: no humanized timing or attack pitch,
   // no rule-made phrase arches and swells

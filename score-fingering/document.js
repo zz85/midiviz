@@ -5,7 +5,7 @@ const cleanName = name => String(name || 'score').replace(/\.(pdf|png|jpe?g|webp
 export function createScoreDocument({ kind, name, pageCount = 1, pdfPool = null } = {}) {
   if (kind !== 'image' && kind !== 'pdf') throw new TypeError('document kind must be image or pdf')
   if (!Number.isInteger(pageCount) || pageCount < 1) throw new TypeError('pageCount must be a positive integer')
-  return { kind, name:cleanName(name), pageCount, page:1, pdfPool, pages:new Map(), thumbs:new Map() }
+  return { kind, name:cleanName(name), pageCount, page:1, pdfPool, pages:new Map(), thumbs:new Map(), autoInstruments:new Map() }
 }
 
 export function pageState(document, index = document.page) {
@@ -27,6 +27,7 @@ export function pageState(document, index = document.page) {
     suggestion:0,
     keyboardIndex:0,
     selectedId:null,
+    autoInstruments:new Map(),
     widthPt:null,
     lastUsed:0,
     heightPt:null,
