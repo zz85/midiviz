@@ -139,7 +139,7 @@ export const DEFAULTS = {
     shiftBack: 0,  // reserved
     // fingers
     slide: 3,  // same finger, different pitch, same string, no shift (×2: beyond a semitone)
-    slideSemi: 1.5,  // … by a semitone (Galamian allows it, e.g. 3–3 for D–D♯)
+    slideSemi: 1.6,  // … by a semitone; allowed, but a stable 1-2-3 frame is usually cleaner
     oblique: 1.746,  // same finger to the next string at another spot
     fifth: 0.13,  // same finger across a perfect fifth (finger lies over both strings)
     crossed: 3,  // fingers out of order inside one frame

@@ -46,6 +46,14 @@ test('first position patterns (research 01 §6.1–6.2)', () => {
   for (const id of ['g1-up', 'a1-up', 'c-1st', 'stay-a', 'fast-open', 'climax', 'chrom-g']) exact(id)
 })
 
+test('semitone figure keeps a stable 1-2-3 frame instead of sliding one finger', () => {
+  const notes = line('D#4 E4 F4 E4 D#4 F4 E4 F4 G4 F4 E4 G4'.split(' '), { dur:0.25 })
+    .map(note => ({ ...note, lockString:0 }))
+  const result = solveFingering(notes, { templates:false })
+  assert.deepEqual(result.assignments.slice(0, 7).map(assignment => assignment.finger), [1, 2, 3, 2, 1, 3, 2])
+  assert.equal(new Set(result.assignments.slice(0, 7).map(assignment => assignment.base)).size, 1)
+})
+
 test('beginner style: Twinkle in first position with open strings (Suzuki)', () => exact('twinkle'))
 
 test('double stops and chords (research 01 §7)', () => {

@@ -78,7 +78,7 @@ fewer than `limit` suggestions.
 
 ## Tests
 
-- `node --test strings/test/fingering.test.js` runs 44 tests: geometry, physical consistency, textbook patterns, double stops and chords, viola, cello and double bass, 3-octave scales, styles, string locks, motion, TNUA format, immutable results, exact range checks, repeated solves, diagnostics, validation, custom profiles, held voices and event timing.
+- `node --test strings/test/fingering.test.js` runs 45 tests: geometry, physical consistency, textbook patterns, stable semitone-pattern continuity, double stops and chords, viola, cello and double bass, 3-octave scales, styles, string locks, motion, TNUA format, immutable results, exact range checks, repeated solves, diagnostics, validation, custom profiles, held voices and event timing.
 - `node strings/test/bench.js` scores the textbook exercises. Core: 29/33 exact (96.2% of notes), including all 10 double-bass cases. Three-octave scales: 4/5 exact (96.4% of notes).
   - The core misses are cases where the violinists in TNUA disagree with the beginner books. They take open D or open A going down where Schroeder writes 4, and they play D♯ on the G string in 2nd position.
 
@@ -109,10 +109,10 @@ The dataset is 10 violinists × 14 excerpts, about 10,900 notes per violinist. I
 |---|---|---|---|
 | Hand-set starting weights | 79.3 | 59.7 | 57.1 |
 | Tuned, 2-fold cross-validation by piece (held out) | 81.0 | 65.2 | 62.5 |
-| Tuned on all pieces (the shipped defaults) | 81.5 | 67.2 | 64.5 |
+| Tuned on all pieces (the shipped defaults) | 81.5 | 67.3 | 64.6 |
 | One violinist vs the other nine | 96.2 | 90.0 | 89.8 |
 
-- The shipped defaults score 74.7% "soft", meaning the engine agrees with at least one of the 10 violinists on that note.
+- The shipped defaults score 74.9% "soft", meaning the engine agrees with at least one of the 10 violinists on that note.
 - The other styles on TNUA: beginner 51.8, expressive 59.4, fewest shifts 59.7.
 - Most errors are position choices. The violinists play in 2nd and 3rd position far more than the model does, especially in lyrical passages that they keep on one string.
 - A diatonic "finger by note letter" rule with a local key estimate made agreement slightly worse, so it is off by default (`weights.letter`, `weights.posOffKey`).
