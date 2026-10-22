@@ -1,7 +1,7 @@
 // node --test strings/test/fingering.test.js
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { fingerLine, fingerTokens, lineStats, INSTRUMENTS, positionName, stopMM, parseNote, makeEvents, estimateKeys } from '../fingering.js'
+import { solveFingering, suggestFingerings, fingerLine, fingerHeld, fingerTokens, lineStats, INSTRUMENTS, DEFAULTS, positionName, stopMM, parseNote, makeEvents, estimateKeys } from '../fingering.js'
 import { exercises, bestMatch, line, melody } from '../exercises.js'
 import { findRuns } from '../templates.js'
 import { buildMotion } from '../motion.js'
@@ -174,4 +174,292 @@ test('whole pieces are fast', () => {
   const r = fingerLine(notes)
   assert.ok(notes.every(n => n.string != null))
   assert.ok(r.ms < 2000, `${r.ms} ms`)
+})
+
+
+test('out-of-range notes do not evict playable notes from oversized chords', () => {
+  const notes = line([[55, 62, 69, 76, 120]], { dur:1 })
+  const result = solveFingering(notes)
+  assert.equal(result.assignments[4].reason, 'range')
+  assert.ok(result.assignments.slice(0, 4).every(assignment => assignment.playable))
+})
+
+test('solveFingering is immutable and returns input-aligned frozen assignments', () => {
+  const notes = [{ id: 'later', pitch: 71, on: 0.5, off: 1 }, { id: 'first', pitch: 69, on: 0, off: 0.45 }]
+  const before = structuredClone(notes)
+  const r = solveFingering(notes, { instrument: 'violin' })
+  assert.deepEqual(notes, before)
+  assert.deepEqual(r.assignments.map(a => a.id), ['later', 'first'])
+  assert.ok(r.assignments.every(a => a.playable && Number.isInteger(a.string) && Number.isInteger(a.finger)))
+  assert.ok(Object.isFrozen(r) && Object.isFrozen(r.assignments) && r.assignments.every(Object.isFrozen))
+  assert.throws(() => { r.assignments[0].finger = 9 }, TypeError)
+})
+
+test('the exact instrument model determines range, including extended fourth finger', () => {
+  const notes = [{ pitch: 105, on: 0, off: 1 }]
+  const r = solveFingering(notes, { instrument: 'violin', templates: false })
+  assert.equal(r.assignments[0].playable, true)
+  assert.equal(INSTRUMENTS.violin.open[r.assignments[0].string] + r.assignments[0].base + r.assignments[0].offset, 105)
+})
+
+test('legacy repeated solves clear every computed field', () => {
+  const notes = [{ pitch: 76, on: 0, off: 1 }]
+  fingerLine(notes)
+  assert.ok(notes[0].position != null)
+  notes[0].pitch = 20
+  fingerLine(notes)
+  assert.equal(notes[0].unplayable, 'range')
+  for (const key of ['string', 'finger', 'base', 'offset', 'position', 'ext', 'thumb', 'heldLock']) assert.equal(key in notes[0], false, key)
+})
+
+test('diagnostics distinguish range, chord capacity, constraints and skipped notes', () => {
+  const notes = [
+    { id: 'low', pitch: 20, on: 0, off: 1 },
+    { id: 'locked', pitch: 83, on: 1, off: 2, lockString: 0 },
+    ...[55, 62, 69, 76, 83].map((pitch, i) => ({ id: `chord-${i}`, pitch, on: 2, off: 3 })),
+    { id: 'skip', pitch: 69, on: 3, off: 4, skip: true },
+  ]
+  const r = solveFingering(notes)
+  const byId = new Map(r.assignments.map(a => [a.id, a]))
+  assert.equal(byId.get('low').reason, 'range')
+  assert.equal(byId.get('locked').reason, 'constraint')
+  assert.equal(byId.get('skip').reason, 'skipped')
+  assert.ok([...byId.values()].some(a => a.reason === 'chord-capacity'))
+  assert.deepEqual(r.diagnostics.map(d => d.code), r.assignments.filter(a => !a.playable).map(a => a.reason))
+})
+
+test('validated inputs fail early with stable messages', () => {
+  assert.throws(() => solveFingering(null), /notes must be an array/)
+  assert.throws(() => solveFingering([{ pitch: 69, on: 1, off: 0 }]), /off must be greater than on/)
+  assert.throws(() => solveFingering([{ pitch: NaN, on: 0, off: 1 }]), /pitch must be a finite number/)
+  assert.throws(() => solveFingering([{ pitch: 69, on: 0, off: 1 }], { instrument: 'kazoo' }), /unknown instrument/)
+  assert.throws(() => solveFingering([{ pitch: 69, on: 0, off: 1, lockString: 4 }]), /lockString/)
+})
+
+test('equivalent custom instruments keep preset behavior, including templates', () => {
+  const custom = structuredClone(INSTRUMENTS.viola)
+  const notes = EX['viola-a2'].notes
+  const named = solveFingering(notes, { instrument: 'viola' })
+  const supplied = solveFingering(notes, { instrument: custom })
+  assert.deepEqual(supplied.assignments, named.assignments)
+})
+
+test('held-note planning is immutable, works with custom instruments, and leaves no generated locks', () => {
+  const custom = structuredClone(INSTRUMENTS.violin)
+  const notes = [{ id: 'held', pitch: 55, on: 0, off: 2 }, { id: 'moving', pitch: 62, on: 0.5, off: 1 }]
+  const before = structuredClone(notes)
+  const r = solveFingering(notes, { instrument: custom })
+  assert.deepEqual(notes, before)
+  const held = r.assignments[0]
+  assert.ok(r.assignments.slice(1).every(a => a.string !== held.string))
+  const legacy = structuredClone(notes)
+  assert.ok(fingerHeld(legacy, { instrument: custom }) > 0)
+  assert.ok(legacy.every(n => !n.heldLock && n.lockString == null))
+})
+
+
+test('event duration is recomputed after an oversize chord is thinned', () => {
+  const notes = [
+    { pitch: 55, on: 0, off: 0.1 },
+    ...[62, 69, 76, 83].map(pitch => ({ pitch, on: 0, off: 2 })),
+  ]
+  const r = fingerLine(notes)
+  assert.equal(notes[0].unplayable, 'chord')
+  assert.equal(r.events[0].dur, 2)
+})
+
+
+test('held-note re-solving cannot move the held note onto the relocated voice', () => {
+  const notes = [{ pitch: 63, on: 0, off: 2 }, { pitch: 62, on: 0.5, off: 1 }]
+  const r = solveFingering(notes)
+  assert.equal(r.assignments.every(a => a.playable), true)
+  assert.notEqual(r.assignments[0].string, r.assignments[1].string)
+})
+
+test('held-note relocation preserves every otherwise-playable chord note', () => {
+  const notes = [{ pitch: 69, on: 0, off: 2 }, { pitch: 75, on: 0.5, off: 1 }, { pitch: 83, on: 0.5, off: 1 }]
+  const plain = solveFingering(notes, { preserveHeldNotes: false })
+  const held = solveFingering(notes)
+  assert.ok(plain.assignments.every(a => a.playable))
+  assert.ok(held.assignments.every(a => a.playable))
+  assert.notEqual(held.assignments[0].string, held.assignments[1].string)
+  assert.notEqual(held.assignments[0].string, held.assignments[2].string)
+})
+
+test('custom profile validation rejects incomplete frames and keeps costs finite', () => {
+  const note = [{ pitch: 57, on: 0, off: 1 }]
+  assert.throws(() => solveFingering(note, { instrument: { open: [55], strings: ['X'], L: 328, maxB: [14], frameList: [{ f: 1, o: 0 }] } }), /frameList.*cost/)
+  const wide = { ...structuredClone(INSTRUMENTS.violin), open: [40], strings: ['X'], maxB: [40] }
+  const r = solveFingering([{ pitch: 73, on: 0, off: 1 }], { instrument: wide })
+  assert.ok(r.assignments[0].playable && Number.isFinite(r.cost))
+})
+
+test('event onset is recomputed when its earliest note is removed', () => {
+  const notes = [{ pitch: 69, on: 0, off: 0.05 }, { pitch: 20, on: 0.08, off: 0.2 }, { pitch: 76, on: 0.105, off: 0.3 }]
+  const r = fingerLine(notes)
+  assert.equal(notes[1].unplayable, 'range')
+  assert.equal(r.events[1].on, 0.105)
+})
+
+test('held-note detection follows chordTolerance instead of a fixed onset threshold', () => {
+  const notes = [{ pitch: 55, on: 0, off: 1 }, { pitch: 62, on: 0.01, off: 0.5 }]
+  const r = solveFingering(notes, { chordTolerance: 0 })
+  assert.notEqual(r.assignments[0].string, r.assignments[1].string)
+  assert.equal(r.movedHeldNotes, 1)
+})
+
+test('mode validation rejects inherited object property names', () => {
+  const notes = [{ pitch: 69, on: 0, off: 1 }]
+  for (const mode of ['toString', 'constructor', '__proto__', '']) assert.throws(() => solveFingering(notes, { mode }), /unknown fingering mode/)
+})
+
+
+test('held conflicts use event membership for chained onset groups', () => {
+  const notes = [55, 62, 69].map((pitch, i) => ({ pitch, on: i * 0.02, off: 1 }))
+  const r = solveFingering(notes)
+  assert.equal(r.assignments.every(a => a.playable), true)
+  assert.notEqual(r.assignments[1].string, r.assignments[2].string)
+})
+
+test('held-note search backtracks across multiple conflicts', () => {
+  const notes = [
+    { pitch: 69, on: 0, off: 1.01 },
+    { pitch: 67, on: 0.2, off: 0.41 },
+    { pitch: 68, on: 0.4, off: 0.61 },
+    { pitch: 76, on: 0.6, off: 1.01 },
+  ]
+  const r = solveFingering(notes)
+  assert.equal(r.assignments.every(a => a.playable), true)
+  for (let i = 0; i < notes.length; i++) for (let j = 0; j < i; j++) {
+    if (notes[j].off > notes[i].on + 0.001) assert.notEqual(r.assignments[j].string, r.assignments[i].string)
+  }
+})
+
+
+test('weight and frame shapes that cannot produce finite states are rejected', () => {
+  const notes = [{ pitch: 55, on: 0, off: 1 }, { pitch: 76, on: 1, off: 2 }]
+  for (const cross of [1, [0]]) assert.throws(() => solveFingering(notes, { weights: { cross } }), /weight "cross"/)
+  const fractional = { open: [55], strings: ['X'], L: 328, maxB: [14], frameList: [{ f: 1, o: 0.5, c: 0 }] }
+  assert.throws(() => solveFingering([{ pitch: 57, on: 0, off: 1 }], { instrument: fractional }), /frameList\[0\]\.o must be an integer/)
+})
+
+
+test('unresolvable user-locked held conflicts are explicit diagnostics', () => {
+  const notes = [{ pitch: 55, on: 0, off: 1, lockString: 0 }, { pitch: 62, on: 0.5, off: 1, lockString: 0 }]
+  const r = solveFingering(notes)
+  assert.equal(r.unresolvedHeldConflicts, 1)
+  assert.deepEqual(r.diagnostics.map(d => d.code), ['held-conflict'])
+  assert.deepEqual({ index: r.diagnostics[0].index, relatedIndex: r.diagnostics[0].relatedIndex }, { index: 1, relatedIndex: 0 })
+})
+
+
+test('merged custom configuration either stays finite or fails explicitly', () => {
+  const note = [{ pitch: 69, on: 0, off: 2 }]
+  const badMode = { ...structuredClone(INSTRUMENTS.violin), modes: { broken: { maxB: 'bad' } } }
+  assert.throws(() => solveFingering(note, { instrument: badMode, mode: 'broken' }), /mode "broken".*maxB/)
+  const badBounds = { open: [55], strings: ['X'], L: 328, maxB: [14], frameList: [{ f: 1, o: 0, c: () => NaN, bMin: undefined }] }
+  assert.throws(() => solveFingering([{ pitch: 57, on: 0, off: 1 }], { instrument: badBounds }), /bMin must be from 1 to 127/)
+  assert.throws(() => solveFingering([{ pitch: 76, on: 0, off: 2 }], { weights: { openLong: Number.MAX_VALUE } }), /non-finite fingering cost/)
+  const frame = Object.fromEntries([1, 2, 3, 4].map(f => [f, { 0: [0, 0] }]))
+  const wide = { open: [0], strings: ['X'], L: 328, maxB: [127], frame }
+  const r = solveFingering([{ pitch: 100, on: 0, off: 1 }], { instrument: wide })
+  assert.ok(r.assignments[0].playable && Number.isFinite(r.cost))
+})
+
+
+test('suggestFingerings returns ranked, distinct, immutable alternatives', () => {
+  const notes = melody('G4 A4 B4 C5 D5 E5 F#5 G5 A5 B5', 0.3)
+  const before = structuredClone(notes)
+  const r = suggestFingerings(notes, { limit: 4, minChanges: 2, candidatePool: 80 })
+  assert.deepEqual(notes, before)
+  assert.ok(r.suggestions.length >= 2 && r.suggestions.length <= 4)
+  assert.equal(r.suggestions[0].label, 'Recommended')
+  assert.deepEqual(r.suggestions[0].assignments, solveFingering(notes).assignments)
+  for (let i = 0; i < r.suggestions.length; i++) {
+    const s = r.suggestions[i]
+    assert.equal(s.rank, i + 1)
+    assert.ok(Number.isFinite(s.cost) && s.costDelta >= 0)
+    if (i) assert.ok(s.cost >= r.suggestions[i - 1].cost && s.changes.notes >= 2)
+  }
+  const keys = r.suggestions.map(s => s.assignments.map(a => a.playable ? `${a.string}/${a.finger}/${a.base}` : `x:${a.reason}`).join('|'))
+  assert.equal(new Set(keys).size, keys.length)
+  for (let i = 0; i < r.suggestions.length; i++) for (let j = 0; j < i; j++) {
+    const changed = r.suggestions[i].assignments.filter((a, k) => {
+      const b = r.suggestions[j].assignments[k]
+      return a.playable !== b.playable || a.reason !== b.reason || a.string !== b.string || a.finger !== b.finger || a.base !== b.base || a.thumb !== b.thumb
+    }).length
+    assert.ok(changed >= 2, `suggestions ${j + 1} and ${i + 1}: ${changed} changes`)
+  }
+  assert.ok(Object.isFrozen(r) && Object.isFrozen(r.suggestions) && r.suggestions.every(s => Object.isFrozen(s) && Object.isFrozen(s.assignments) && Object.isFrozen(s.changes)))
+})
+
+test('suggestion limits and cost windows are enforced', () => {
+  const notes = melody('G4 B4 D5 G5 F#5 D5 B4 G4', 0.35)
+  const one = suggestFingerings(notes, { limit: 1 })
+  assert.equal(one.suggestions.length, 1)
+  const tight = suggestFingerings(notes, { limit: 8, maxCostDelta: 0 })
+  assert.ok(tight.suggestions.every(s => s.costDelta <= 1e-9))
+  assert.throws(() => suggestFingerings(notes, { limit: 0 }), /limit/)
+  assert.throws(() => suggestFingerings(notes, { minChanges: 0 }), /minChanges/)
+  assert.throws(() => suggestFingerings(notes, { candidatePool: 1 }), /candidatePool/)
+  assert.throws(() => suggestFingerings(notes, { maxCostDelta: -1 }), /maxCostDelta/)
+})
+
+test('suggestions preserve locks, diagnostics, held voices and input order', () => {
+  const notes = [
+    { id: 'late', pitch: 62, on: 0.5, off: 1, lockString: 1 },
+    { id: 'held', pitch: 55, on: 0, off: 2 },
+    { id: 'bad', pitch: 20, on: 2, off: 3 },
+    { id: 'tail', pitch: 67, on: 1, off: 1.5 },
+  ]
+  const r = suggestFingerings(notes, { limit: 4, minChanges: 1 })
+  assert.ok(r.diagnostics.some(d => d.id === 'bad' && d.code === 'range'))
+  for (const suggestion of r.suggestions) {
+    assert.deepEqual(suggestion.assignments.map(a => a.id), notes.map(n => n.id))
+    assert.equal(suggestion.assignments[0].string, 1)
+    const held = suggestion.assignments[1]
+    for (const i of [0, 3]) if (notes[i].on < notes[1].off && notes[i].off > notes[1].on) assert.notEqual(suggestion.assignments[i].string, held.string)
+  }
+})
+
+
+test('suggestion costs use the exact solve recurrence and never rank below recommended', () => {
+  const notes = [80, 59].map((pitch, i) => ({ pitch, on: i * 0.25, off: i * 0.25 + 0.2 }))
+  const r = suggestFingerings(notes, { limit: 10, minChanges: 1, candidatePool: 128, preserveHeldNotes: false, templates: false })
+  const best = solveFingering(notes, { preserveHeldNotes: false, templates: false })
+  assert.equal(r.suggestions[0].cost, best.cost)
+  for (let i = 0; i < r.suggestions.length; i++) {
+    assert.equal(r.suggestions[i].costDelta, r.suggestions[i].cost - best.cost)
+    assert.ok(r.suggestions[i].cost >= best.cost)
+    if (i) assert.ok(r.suggestions[i].cost >= r.suggestions[i - 1].cost)
+  }
+})
+
+test('maximum candidate pool reconstructs deterministic zero-cost ties', () => {
+  const weights = Object.fromEntries(Object.entries(DEFAULTS.weights).map(([key, value]) => [key, Array.isArray(value) ? value.map(() => 0) : 0]))
+  const notes = melody('G4 A4 B4 C5', 0.3)
+  const r = suggestFingerings(notes, { limit: 10, minChanges: 1, candidatePool: 128, weights, templates: false, preserveHeldNotes: false })
+  assert.equal(r.candidatePaths, 128)
+  assert.ok(r.suggestions.length > 1)
+  assert.ok(r.suggestions.every(s => s.cost === 0 && s.costDelta === 0))
+})
+
+
+test('finite path costs never expose an overflowing cost delta', () => {
+  const weights = Object.fromEntries(Object.entries(DEFAULTS.weights).map(([key, value]) => [key, Array.isArray(value) ? value.map(() => 0) : 0]))
+  weights.pos = Array(128).fill(9e307); weights.pos[5] = -9e307
+  const r = suggestFingerings([{ pitch: 75, on: 0, off: 1 }], { limit: 10, minChanges: 1, candidatePool: 128, weights, templates: false, preserveHeldNotes: false })
+  assert.ok(r.suggestions.length >= 1)
+  assert.ok(r.suggestions.every(s => Number.isFinite(s.cost) && Number.isFinite(s.costDelta)))
+})
+
+
+test('held-safe fallback resolves long overlapping passages beyond the cost-search cap', () => {
+  const notes = Array.from({ length:12 }, (_, i) => ({ pitch:76, on:i * 0.2, off:i * 0.2 + 0.79 }))
+  const result = solveFingering(notes)
+  assert.ok(result.assignments.every(assignment => assignment.playable))
+  assert.equal(result.unresolvedHeldConflicts, 0)
+  for (let i = 0; i < notes.length; i++) for (let j = 0; j < i; j++) {
+    if (notes[j].off > notes[i].on + 0.001) assert.notEqual(result.assignments[j].string, result.assignments[i].string)
+  }
 })

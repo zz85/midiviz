@@ -16,9 +16,69 @@
 | [board2d.js](board2d.js) | A scrolling string tablature above a fingerboard map. Click the map to play a note |
 | [tnua.js](tnua.js) | Loader, alignment and scoring for the TNUA violin fingering dataset |
 
+## Fingering library API
+
+New integrations should call `solveFingering(notes, options)`. It accepts notes shaped as
+`{ pitch, on, off, id?, lockString?, skip?, art? }`, validates the notes and instrument profile,
+and does not modify either. Held-note protection is on by default; pass
+`preserveHeldNotes: false` to solve onset groups without that second pass.
+
+The result is frozen and keeps one assignment per input note, in input order:
+
+```js
+import { solveFingering } from './strings/fingering.js'
+
+const result = solveFingering(notes, {
+  instrument: 'violin',       // violin | viola | cello | bass | custom profile
+  mode: 'standard',           // beginner | standard | expressive | nearest
+  handSize: 1,
+})
+
+// { assignments, cost, diagnostics, movedHeldNotes, unresolvedHeldConflicts, ms }
+// playable assignment: { index, id?, playable: true, string, finger,
+//   base, offset, position, extension, thumb }
+// rejected assignment: { index, id?, playable: false, reason }
+```
+
+Diagnostic codes are `range`, `chord-capacity`, `constraint`, `no-state`, `held-conflict`, and `skipped`.
+`fingerLine` and `fingerHeld` remain as mutating compatibility wrappers for experiments #033,
+#034, #037 and #038. They write the established `string`, `finger`, `base`, `offset`,
+`position`, `ext`, `thumb`, and `unplayable` fields. Repeated calls clear all previous solver
+output, and `fingerHeld` no longer leaves its generated `lockString` constraints on notes.
+
+Custom profiles use the same shape as entries in `INSTRUMENTS`. Set `template: 'violin'` to use
+the Galamian/Cooper scale patterns with an equivalent violin-family frame.
+
+### Alternative suggestions
+
+`suggestFingerings(notes, options)` returns the recommended solution followed by distinct
+alternatives from an exact k-best Viterbi search. Every candidate uses the same instrument,
+mode, weights, scale templates and held-note constraints, so `costDelta` is directly comparable
+to the recommended result.
+
+```js
+const result = suggestFingerings(notes, {
+  instrument: 'viola',
+  limit: 4,             // 1–10 returned suggestions; default 3
+  minChanges: 2,        // changed notes between any two suggestions
+  maxCostDelta: 8,      // omit higher-cost paths; default unlimited
+  candidatePool: 48,    // k-best paths examined, limit–128
+})
+
+// { suggestions, diagnostics, candidatePaths, exhausted, ms }
+// suggestion: { rank, label, assignments, cost, costDelta, changes }
+// changes: { notes, strings, fingers, positions }
+```
+
+The result, suggestion records, assignments, diagnostics and change summaries are frozen.
+Suggestions remain aligned with input order, honor `lockString`, retain base diagnostics, and
+never introduce more held-string conflicts than the recommended solution. `candidatePool`
+bounds work; `exhausted` is true when filtering by cost, diversity or held-note safety leaves
+fewer than `limit` suggestions.
+
 ## Tests
 
-- `node --test strings/test/fingering.test.js` runs 17 tests: geometry, physical consistency, textbook patterns, double stops and chords, viola, cello and double bass, 3-octave scales, styles, string locks, motion and the TNUA format.
+- `node --test strings/test/fingering.test.js` runs 44 tests: geometry, physical consistency, textbook patterns, double stops and chords, viola, cello and double bass, 3-octave scales, styles, string locks, motion, TNUA format, immutable results, exact range checks, repeated solves, diagnostics, validation, custom profiles, held voices and event timing.
 - `node strings/test/bench.js` scores the textbook exercises. Core: 29/33 exact (96.2% of notes), including all 10 double-bass cases. Three-octave scales: 4/5 exact (96.4% of notes).
   - The core misses are cases where the violinists in TNUA disagree with the beginner books. They take open D or open A going down where Schroeder writes 4, and they play D♯ on the G string in 2nd position.
 

@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Experiment #046 - Finger a photographed score</title>
+<style>
+  :root { --paper:#f3efe6; --ink:#172033; --muted:#525d70; --card:#fffdf8; --line:#d8d1c3; --accent:#8b3a3a; --gold:#b4873e; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; min-height:100%; background:var(--paper); color:var(--ink); font:14px/1.4 system-ui,-apple-system,Segoe UI,sans-serif; }
+  button,select,input,label.open { font:inherit; color:inherit; }
+  button,select,input[type=number],label.open { min-height:36px; border:1px solid var(--line); border-radius:8px; background:var(--card); padding:.4rem .65rem; }
+  button,label.open { cursor:pointer; }
+  button:focus-visible,select:focus-visible,input:focus-visible,label.open:focus-within,#overlay:focus-visible { outline:3px solid #111; outline-offset:1px; box-shadow:0 0 0 5px #f4c95d; }
+  button[aria-pressed=true],button.active { background:var(--ink); border-color:var(--ink); color:#fff; }
+  button:disabled { opacity:.45; cursor:default; }
+  input[type=file] { position:absolute; width:1px; height:1px; opacity:0; }
+  header { position:sticky; top:0; z-index:8; display:flex; flex-wrap:wrap; align-items:center; gap:.45rem; padding:.55rem .75rem; color:#fff; background:#172033f4; box-shadow:0 2px 12px #0002; }
+  header h1 { font:600 1.05rem/1.1 Georgia,serif; letter-spacing:.02em; margin:0 auto 0 0; }
+  header h1 span { color:#e4b65f; }
+  header button,header label.open { color:#fff; background:#263249; border-color:#44516a; }
+  #controls { display:flex; flex-wrap:wrap; align-items:center; gap:.45rem 1rem; padding:.55rem .75rem; background:#faf7f0; border-bottom:1px solid var(--line); }
+  #controls label { display:flex; align-items:center; gap:.35rem; color:var(--muted); font-size:.86rem; }
+  #controls select { max-width:14rem; }
+  #tempo { width:5rem; }
+  #zoom { width:8rem; accent-color:var(--accent); }
+  #status { min-height:2rem; padding:.35rem .8rem; color:var(--muted); border-bottom:1px solid #e5ded1; }
+  #pages { display:flex; align-items:center; gap:.45rem; padding:.35rem .75rem; border-bottom:1px solid var(--line); background:#faf7f0; }
+  #pages > span { min-width:4rem; text-align:center; font-variant-numeric:tabular-nums; }
+  #thumbs { display:flex; gap:.35rem; overflow-x:auto; min-width:0; flex:1; padding:2px; }
+  #thumbs button { position:relative; flex:0 0 54px; width:54px; height:70px; padding:0; overflow:hidden; background:#fff; }
+  #thumbs button canvas { width:100%; height:100%; object-fit:contain; display:block; }
+  #thumbs button span { position:absolute; right:2px; bottom:1px; padding:0 3px; border-radius:3px; background:#fffd; font-size:.7rem; }
+  #thumbs button[aria-current=page] { outline:3px solid var(--accent); outline-offset:-3px; }
+  #status b { color:var(--ink); }
+  #layout { display:grid; grid-template-columns:220px minmax(0,1fr); min-width:0; min-height:calc(100vh - 8rem); }
+  #choices { min-width:0; padding:.8rem; border-right:1px solid var(--line); background:#faf7f0; }
+  #wrap { min-width:0; }
+  #alternatives { min-width:0; }
+  #noteEditor { margin-top:.8rem; color:var(--muted); font-size:.78rem; }
+  #noteEditor summary { cursor:pointer; color:var(--ink); }
+  #noteList { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.25rem; max-height:18rem; overflow:auto; margin-top:.4rem; }
+  #noteList button { min-width:0; min-height:30px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:.25rem .35rem; font-size:.72rem; text-align:left; }
+  #choices h2 { margin:.1rem 0 .25rem; font:600 .95rem Georgia,serif; }
+  #choices p { margin:.2rem 0 .65rem; color:var(--muted); font-size:.78rem; }
+  #alternatives { display:grid; gap:.45rem; }
+  #alternatives button { text-align:left; padding:.55rem .65rem; }
+  #alternatives button b,#alternatives button small { display:block; }
+  #alternatives button small { margin-top:.2rem; color:var(--muted); font-size:.72rem; }
+  #alternatives button.active small { color:#dce3ef; }
+  #legend { margin-top:1rem; padding-top:.75rem; border-top:1px solid var(--line); color:var(--muted); font-size:.76rem; }
+  #legend i { display:inline-block; width:.7rem; height:.7rem; border-radius:50%; margin:0 .2rem 0 .45rem; vertical-align:-.05rem; }
+  #wrap { position:relative; overflow:auto; min-height:55vh; padding:1rem; touch-action:pan-x pan-y pinch-zoom; }
+  #empty { max-width:46rem; margin:7vh auto; text-align:center; padding:2rem; color:var(--muted); }
+  #empty h2 { margin:0 0 .7rem; color:var(--ink); font:600 1.7rem Georgia,serif; }
+  #empty .actions { display:flex; justify-content:center; gap:.75rem; flex-wrap:wrap; margin:1.25rem 0; }
+  #empty .actions button,#empty .actions label { padding:.7rem 1.05rem; font-size:1rem; }
+  #stage { position:relative; margin:0 auto; transform-origin:top left; box-shadow:0 8px 32px #2b211a26; background:white; }
+  #stage canvas { display:block; position:absolute; left:0; top:0; }
+  #overlay { cursor:pointer; }
+  #busy { position:fixed; inset:0; z-index:30; display:none; place-items:center; background:#f3efe6cc; backdrop-filter:blur(2px); }
+  #busy div { padding:.8rem 1.1rem; border:1px solid var(--line); border-radius:10px; background:var(--card); box-shadow:0 8px 30px #0002; }
+  #pop { position:fixed; z-index:20; display:none; max-width:min(26rem,calc(100vw - 16px)); max-height:calc(100vh - 16px); overflow:auto; padding:.7rem; border:1px solid var(--line); border-radius:12px; background:var(--card); box-shadow:0 12px 34px #0003; }
+  #pop h3 { margin:.05rem 0 .35rem; font:600 1rem Georgia,serif; }
+  #pop p { margin:.2rem 0 .55rem; color:var(--muted); font-size:.8rem; }
+  #pop .row { display:flex; align-items:center; gap:.35rem; flex-wrap:wrap; margin:.35rem 0; }
+  #pop .row span { min-width:4rem; color:var(--muted); font-size:.78rem; }
+  #pop button { min-width:2.3rem; }
+  #pop button.danger { color:#a51d2d; }
+  [hidden] { display:none !important; }
+  @media (max-width:760px) {
+    header h1 { flex-basis:100%; }
+    #layout { grid-template-columns:1fr; }
+    #choices { width:100%; overflow:hidden; border-right:0; border-bottom:1px solid var(--line); padding:.55rem .7rem; }
+    #choices h2,#choices p,#legend { display:none; }
+    #alternatives { width:100%; max-width:100%; display:flex; overflow-x:auto; }
+    #alternatives button { flex:0 0 10rem; }
+    #wrap { padding:.5rem; }
+    #controls label { flex:1 1 9rem; }
+    #controls select { flex:1; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1><span>#046</span> Score fingering</h1>
+  <label class="open">📷 Photo<input id="camera" type="file" accept="image/*" capture="environment"></label>
+  <label class="open">🖼 Open image / PDF<input id="file" type="file" accept="image/*,application/pdf,.pdf"></label>
+  <button id="sample">Try sample</button>
+  <button id="export" disabled>⬇ Annotated PNG</button>
+  <button id="exportPdf" hidden>⬇ Annotated PDF</button>
+</header>
+<div id="controls">
+  <label>Instrument <select id="instrument"><option value="violin">Violin</option><option value="viola">Viola</option></select></label>
+  <label>Part <select id="part" disabled><option>—</option></select></label>
+  <label>Style <select id="mode"><option value="standard">Standard</option><option value="beginner">Beginner</option><option value="expressive">Expressive</option><option value="nearest">Fewest shifts</option></select></label>
+  <label>Tempo <input id="tempo" type="number" min="30" max="260" value="120"> ♩/min</label>
+  <label><input id="recognition" type="checkbox"> recognition</label>
+  <label>Zoom <input id="zoom" type="range" min="0.1" max="2" step="0.05" value="1"></label>
+</div>
+<nav id="pages" hidden aria-label="PDF pages"><button id="prevPage" aria-label="Previous page">◀</button><span id="pageNo" aria-live="polite"></span><button id="nextPage" aria-label="Next page">▶</button><div id="thumbs"></div></nav>
+<div id="status" aria-live="polite">Choose a printed score photo. Recognition and fingering stay in this browser.</div>
+<div id="layout">
+  <aside id="choices">
+    <h2>Suggested fingerings</h2>
+    <p>Ranked for the whole passage. Pick one, or tap a note to choose its string.</p>
+    <div id="alternatives"></div>
+    <details id="noteEditor"><summary>Edit recognized notes</summary><div id="noteList" role="list" aria-label="Recognized notes and fingerings"></div></details>
+    <div id="legend"><b>String</b><i style="background:#9f1239"></i>lowest <i style="background:#b45309"></i>2 <i style="background:#047857"></i>3 <i style="background:#1d4ed8"></i>highest<br>◆ marks a manual string choice.</div>
+  </aside>
+  <main id="wrap">
+    <div id="empty">
+      <h2>Photograph the music, then choose a fingering</h2>
+      <p>The page is recognized locally. The violin or viola planner weighs shifts, string crossings, hand position, stretches, open strings and tone color across the whole passage. It draws finger numbers back onto the photographed page.</p>
+      <div class="actions"><label class="open">📷 Take a photo<input id="camera2" type="file" accept="image/*" capture="environment"></label><button id="sample2">Use the sample page</button></div>
+      <p>For the best reading: printed music, a flat page, the whole staff width in frame, and even light. Open a multi-page PDF to navigate thumbnails and export one annotated PDF. Tap any wrong pitch to correct or remove it.</p>
+    </div>
+    <div id="stage" hidden><canvas id="page"></canvas><canvas id="overlay" tabindex="0" role="application" aria-label="Annotated photographed score. Use the arrow keys to select a note and Enter to edit it, or use the Edit recognized notes list."></canvas></div>
+  </main>
+</div>
+<div id="pop" role="dialog" aria-modal="false" aria-labelledby="popTitle"></div>
+<div id="busy" role="status"><div>Reading the music…</div></div>
+<script type="module" src="score-fingering/app.js"></script>
+</body>
+</html>
