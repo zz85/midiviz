@@ -6,8 +6,12 @@
 // for the whole export (createTraceSession), and optionally runs the page's
 // effects on it (post.js). The scene and BVH are rebuilt every frame: simple,
 // and the cost is printed per frame so it can be judged before optimising.
-// Each frame's copy is freed after it is traced (disposeSnapshot), and the
-// tracer itself is replaced every RECYCLE frames.
+// The copied stage is kept from frame to frame (createSnapshotCache): what
+// has not changed keeps its copy and its BVH, what deforms is refreshed in
+// place; the frame's own parts (the hair ribbons) are freed after it is
+// traced (disposeSnapshot), and the tracer is replaced every RECYCLE frames
+// (the cache, and the BVHs on it, outlive that). Each frame logs its time,
+// split, and what the cache reused.
 //
 //   const pt = pathTracedFrames(stage, { engine, samples, bounces, denoise, hairFraction, fx, width, height, signal })
 //   exportVideo({ ..., frameSource: pt.frame })   then   pt.dispose()
@@ -16,7 +20,7 @@
 // envIntensity, fx()), plus liveExposure(): the exposure the page draws this
 // frame with (the director's fades included).
 
-import { snapshotScene, snapshotCamera, bakeEnvironment, disposeSnapshot } from './snapshot.js'
+import { snapshotScene, snapshotCamera, bakeEnvironment, disposeSnapshot, createSnapshotCache } from './snapshot.js'
 import { createTraceSession } from './engines.js'
 import { finishTrace, HDR_SCALE } from './post.js'
 
@@ -27,6 +31,7 @@ const RECYCLE = 24
 export function pathTracedFrames(stage, o) {
   const { engine, width, height, samples, bounces, denoise, hairFraction = 0.5, fx = false, signal } = o
   let session = null, env = null, used = 0
+  const cache = o.cache === false ? null : createSnapshotCache()
   const stats = { frames: 0, ms: 0, last: null }
 
   async function frame() {
@@ -36,22 +41,31 @@ export function pathTracedFrames(stage, o) {
     used++
     env ||= stage.envScene ? bakeEnvironment(stage.envScene, { intensity: stage.envIntensity }) : null
     const camera = snapshotCamera(stage.camera, width / height)
-    const snap = snapshotScene(stage.scene, { camera, hair: stage.hair(), envMap: env, hairFraction })
+    const snap = snapshotScene(stage.scene, { camera, hair: stage.hair(), envMap: env, hairFraction, cache })
     const exposure = stage.liveExposure()
     try {
       const r = await session.frame({ scene: snap.scene, camera, samples, exposure: fx ? 1 / HDR_SCALE : exposure, signal })
+      const tf = performance.now()
       const out = fx ? finishTrace(r.canvas, { ...stage.fx(), exposure }).fx : r.canvas
+      const fxMs = fx ? Math.round(performance.now() - tf) : 0
       const ms = performance.now() - t0
       stats.frames++; stats.ms += ms
-      stats.last = { ms: Math.round(ms), snapshot: snap.stats.ms, setup: r.times.setup, trace: r.times.trace, denoise: r.times.denoise }
+      const T = r.times
+      stats.last = { ms: Math.round(ms), snapshot: snap.stats.ms, setup: T.setup, trace: T.trace, denoise: T.denoise, fx: fxMs }
+      // the rest: starting a tracer (first frame, after a recycle), presenting and copying the picture
+      const rest = Math.round(ms - snap.stats.ms - T.setup - T.trace - (T.denoise || 0) - fxMs)
+      const C = snap.stats.cache
       // (Chrome: the JS heap, to see whether it still grows frame by frame)
       const mem = performance.memory
-      console.log(`[pt video] frame ${stats.frames}: ${(ms / 1000).toFixed(1)} s (snapshot ${snap.stats.ms} ms, scene ${r.times.setup} ms, trace ${r.times.trace} ms)` + (mem ? ` · JS heap ${(mem.usedJSHeapSize / 2 ** 20).toFixed(0)} MB of ${(mem.jsHeapSizeLimit / 2 ** 20).toFixed(0)} MB` : ''))
+      console.log(`[pt video] frame ${stats.frames}: ${(ms / 1000).toFixed(1)} s (snapshot ${snap.stats.ms} ms, scene ${T.setup} ms, trace ${T.trace} ms`
+        + (T.denoise != null ? `, denoise ${T.denoise} ms` : '') + (fx ? `, effects ${fxMs} ms` : '') + `, other ${rest} ms)`
+        + (C ? ` · cache: ${C.reused} kept, ${C.refreshed} refreshed, ${C.built} built (${(C.builtTriangles / 1e3).toFixed(0)} k triangles)` : '')
+        + (mem ? ` · JS heap ${(mem.usedJSHeapSize / 2 ** 20).toFixed(0)} MB of ${(mem.jsHeapSizeLimit / 2 ** 20).toFixed(0)} MB` : ''))
       o.onFrame?.(stats)
       return out
     } finally {
       disposeSnapshot(snap)
     }
   }
-  return { frame, stats, dispose() { session?.dispose(); session = null } }
+  return { frame, stats, dispose() { session?.dispose(); session = null; cache?.dispose() } }
 }

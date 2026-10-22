@@ -32,9 +32,10 @@ const _v = new THREE.Vector3(), _n = new THREE.Vector3(), _m = new THREE.Matrix4
 function visibleChain(o) { for (let x = o; x; x = x.parent) if (!x.visible) return false; return true }
 
 /** position (and normal) of a skinned / morphed mesh, in its local space, as the GPU computes them */
-function deform(mesh) {
+function deform(mesh, pos = null, nor = null) {
   const g = mesh.geometry, P = g.attributes.position, Nn = g.attributes.normal
-  const n = P.count, pos = new Float32Array(n * 3), nor = Nn ? new Float32Array(n * 3) : null
+  const n = P.count
+  pos ||= new Float32Array(n * 3); if (Nn) nor ||= new Float32Array(n * 3); else nor = null
   const morphP = g.morphAttributes.position, morphN = g.morphAttributes.normal, inf = mesh.morphTargetInfluences
   const rel = g.morphTargetsRelative
   const skinned = mesh.isSkinnedMesh && g.attributes.skinIndex
@@ -95,24 +96,99 @@ function plainGeometry(src, pos, nor, withColor, multi = false) {
   return g
 }
 
-function convertMaterial(m, cache, skipped) {
-  if (cache.has(m)) return cache.get(m)
+// keep: the cache's map (source material → its conversion), kept across frames
+// and refreshed from the source each frame (so a colour or texture change shows)
+function convertMaterial(m, seen, skipped, keep = null) {
+  if (seen.has(m)) return seen.get(m)
+  const prev = keep?.get(m) ?? null
   let out = null
   if (m.colorWrite === false || m.visible === false) out = null
   else if (m.isMeshStandardMaterial) {
-    out = m.clone()
+    out = prev?.type === m.type ? prev.copy(m) : m.clone()
     out.onBeforeCompile = () => {}; out.customProgramCacheKey = () => ''
     out.defines = {}
   } else if (m.isMeshBasicMaterial) {
-    out = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: m.color, emissiveMap: m.map, emissiveIntensity: 1, roughness: 1, metalness: 0,
+    out = prev?.isMeshStandardMaterial ? prev : new THREE.MeshStandardMaterial()
+    out.setValues({ color: 0x000000, emissive: m.color, emissiveMap: m.map, emissiveIntensity: 1, roughness: 1, metalness: 0,
       alphaMap: m.alphaMap, transparent: m.transparent, opacity: m.opacity, side: m.side, alphaTest: m.alphaTest, vertexColors: m.vertexColors })
-    if (m.map) out.map = m.map   // (its alpha)
+    out.map = m.map || null   // (its alpha)
   } else if (m.isMeshLambertMaterial || m.isMeshPhongMaterial || m.isMeshToonMaterial) {
-    out = new THREE.MeshStandardMaterial({ color: m.color, map: m.map, normalMap: m.normalMap, roughness: m.isMeshPhongMaterial ? Math.max(0.15, 1 - Math.sqrt(m.shininess / 200)) : 0.85, metalness: 0,
+    out = prev?.isMeshStandardMaterial ? prev : new THREE.MeshStandardMaterial()
+    out.setValues({ color: m.color, map: m.map, normalMap: m.normalMap, roughness: m.isMeshPhongMaterial ? Math.max(0.15, 1 - Math.sqrt(m.shininess / 200)) : 0.85, metalness: 0,
       emissive: m.emissive, emissiveMap: m.emissiveMap, alphaMap: m.alphaMap, transparent: m.transparent, opacity: m.opacity, side: m.side, alphaTest: m.alphaTest, vertexColors: m.vertexColors })
   } else skipped.add(m.type + (m.name ? ` (${m.name})` : ''))
-  cache.set(m, out)
+  if (prev && prev !== out) prev.dispose()
+  if (keep) { if (out) keep.set(m, out); else keep.delete(m) }
+  seen.set(m, out)
   return out
+}
+const HIDDEN = new THREE.MeshStandardMaterial({ visible: false })   // (an empty slot in a material array)
+const LACQUER = { color: 0x050505, roughness: 0.04, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.02 }
+
+/**
+ * Keeps the copied stage from one frame to the next (a video):
+ *  • a mesh whose geometry has not changed (the hall, the case, the strings,
+ *    the keys, hammers and lid, which only move) keeps its copy, so the BVH a
+ *    tracer hung on it (geometry.boundsTree) is reused and only its matrix is new;
+ *  • a mesh that deforms (her body and face, skinned or morphed; the cloth,
+ *    moved on the CPU) gets its new vertices written into the same copy and
+ *    its BVH refitted, rebuilt from scratch every `rebuildEvery` frames (a
+ *    refitted tree is correct but slowly gets looser as she moves);
+ *  • an instanced mesh (the strings, pins) is expanded once, again only when
+ *    its instances or its place change;
+ *  • materials are converted once and refreshed from the page's each frame.
+ * The hair ribbons (they face the camera) and the lights are made every frame.
+ *   const cache = createSnapshotCache()
+ *   snapshotScene(scene, { ..., cache })  ·  disposeSnapshot(snap) (the frame's own parts)  ·  cache.dispose()
+ */
+export function createSnapshotCache({ rebuildEvery = 30 } = {}) {
+  const meshes = new Map(), mats = new Map(), lacquer = new THREE.MeshPhysicalMaterial(LACQUER)
+  return {
+    meshes, mats, lacquer, rebuildEvery,
+    dispose() {
+      for (const e of meshes.values()) { e.mesh.geometry.boundsTree = null; e.mesh.geometry.dispose() }
+      for (const m of mats.values()) m.dispose()
+      lacquer.dispose()
+      meshes.clear(); mats.clear()
+    },
+  }
+}
+
+// a copy's vertices replaced in place (same counts): uploads, bounds and the BVH
+function refreshed(g, e, cache) {
+  for (const k of ['position', 'normal', 'color']) if (g.attributes[k]) g.attributes[k].needsUpdate = true
+  // (three-gpu-pathtracer computes tangents once, from the vertices: again)
+  if (g.attributes.tangent) g.deleteAttribute('tangent')
+  g.computeBoundingBox(); g.computeBoundingSphere()
+  if (g.boundsTree) {
+    if (++e.refits >= cache.rebuildEvery) { g.boundsTree = null; e.refits = 0 }
+    else g.boundsTree.refit()
+  }
+}
+
+/** an instanced mesh as one merged geometry in world space */
+function expandInstances(o) {
+  const src = o.geometry, n = o.count, P = src.attributes.position, Nn = src.attributes.normal, UV = src.attributes.uv
+  const vc = P.count, pos = new Float32Array(n * vc * 3), nor = new Float32Array(n * vc * 3), uv = UV ? new Float32Array(n * vc * 2) : null
+  const ix = src.index ? src.index.array : null, idx = new Uint32Array(n * (ix ? ix.length : vc))
+  const im = new THREE.Matrix4()
+  for (let k = 0; k < n; k++) {
+    o.getMatrixAt(k, im); _m.multiplyMatrices(o.matrixWorld, im); _m3.getNormalMatrix(_m)
+    for (let i = 0; i < vc; i++) {
+      _v.fromBufferAttribute(P, i).applyMatrix4(_m).toArray(pos, (k * vc + i) * 3)
+      if (Nn) _n.fromBufferAttribute(Nn, i).applyMatrix3(_m3).normalize().toArray(nor, (k * vc + i) * 3)
+      if (uv) { uv[(k * vc + i) * 2] = UV.getX(i); uv[(k * vc + i) * 2 + 1] = UV.getY(i) }
+    }
+    if (ix) for (let i = 0; i < ix.length; i++) idx[k * ix.length + i] = ix[i] + k * vc
+    else for (let i = 0; i < vc; i++) idx[k * vc + i] = k * vc + i
+  }
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+  g.setAttribute('normal', new THREE.BufferAttribute(nor, 3))
+  if (uv) g.setAttribute('uv', new THREE.BufferAttribute(uv, 2))
+  g.setIndex(new THREE.BufferAttribute(idx, 1))
+  if (!Nn) g.computeVertexNormals()
+  return g
 }
 
 /** the env panels (MeshBasic planes around the origin) ray cast into an equirect float map */
@@ -148,71 +224,91 @@ export function bakeEnvironment(envScene, { width = 512, height = 256, intensity
  * null; envScene / envIntensity: the panels behind scene.environment;
  * hairFraction: share of the strands kept; lightRadius (cm).
  */
-export function snapshotScene(live, { camera, hair = null, envScene = null, envIntensity = live.environmentIntensity ?? 1, envMap = null,
-  hairFraction = 0.5, hairSegments = 12, lightRadius = 6 } = {}) {
+export function snapshotScene(live, opts = {}) {
+  const { camera, hair = null, envScene = null, envIntensity = live.environmentIntensity ?? 1, envMap = null,
+    hairFraction = 0.5, hairSegments = 12, lightRadius = 6 } = opts
   const t0 = performance.now()
   live.updateMatrixWorld(true)
   const out = new THREE.Scene()
   out.background = new THREE.Color(0x000000)
-  const cache = new Map(), skipped = new Set(), stats = { meshes: 0, triangles: 0, lights: 0, strands: 0, skipped: [] }
+  const seen = new Map(), skipped = new Set(), stats = { meshes: 0, triangles: 0, lights: 0, strands: 0, skipped: [] }
+  const cache = opts.cache || null, keep = cache?.mats ?? null
+  if (cache) stats.cache = { reused: 0, refreshed: 0, built: 0, builtTriangles: 0 }
   const owned = []   // textures made here (disposeSnapshot frees them; the live scene's own are shared)
+  const transient = { geometries: [], materials: [] }   // with a cache: this frame's own parts
   const hairShader = hair?.kind === 'strands' ? hair.object : null
-  const add = (geo, mat, matrix) => {
-    const m = new THREE.Mesh(geo, mat)
+  const tris = g => (g.index ? g.index.count : g.attributes.position.count) / 3
+  const add = (geo, mat, matrix, mesh = null) => {
+    const m = mesh || new THREE.Mesh(geo, mat)
+    if (mesh) m.material = mat
     if (matrix) { m.matrixAutoUpdate = false; m.matrix.copy(matrix); m.matrixWorld.copy(matrix) }
     out.add(m); stats.meshes++
-    stats.triangles += (geo.index ? geo.index.count : geo.attributes.position.count) / 3
+    stats.triangles += tris(m.geometry)
+    return m
   }
+  // a live mesh's copy: reused as it is, refreshed in place, or (re)built
+  //   shape: what forces a rebuild; data: what a refresh brings up to date
+  //   (null: refresh every frame, e.g. skinned); build(): the new geometry;
+  //   fill(g): writes the current vertices into g
+  function copyOf(o, mat, matrix, shape, data, build, fill) {
+    let e = cache?.meshes.get(o)
+    if (e && e.shape === shape && e.mesh.geometry && (data != null && e.data === data)) { stats.cache.reused++; return add(null, mat, matrix, e.mesh) }
+    if (e && e.shape === shape && fill) {
+      fill(e.mesh.geometry); refreshed(e.mesh.geometry, e, cache); e.data = data
+      stats.cache.refreshed++
+      return add(null, mat, matrix, e.mesh)
+    }
+    const geo = build()
+    if (!cache) { transient.geometries.push(geo); return add(geo, mat, matrix) }
+    if (e) { e.mesh.geometry.boundsTree = null; e.mesh.geometry.dispose() }
+    const mesh = add(geo, mat, matrix)
+    cache.meshes.set(o, { mesh, shape, data, refits: 0 })
+    stats.cache.built++; stats.cache.builtTriangles += tris(geo)
+    return mesh
+  }
+  const ver = a => a ? a.version : -1
   live.traverse(o => {
     if (!visibleChain(o)) return
     if (o.isLight) return lightOf(o)
     if (!o.isMesh || o.isPoints || o.isLine || o.isSprite) return
     if (o.userData.outline) { skipped.add('ink outline'); return }
     if (hairShader && o.parent === hairShader) return   // (the ribbons below; the shadow proxy)
+    const G = o.geometry, A = G.attributes
     if (o.isReflector) {
       // the fallboard mirror: black lacquer
-      const geo = plainGeometry(o.geometry)
-      add(geo, new THREE.MeshPhysicalMaterial({ color: 0x050505, roughness: 0.04, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.02 }), o.matrixWorld)
+      const mat = cache ? cache.lacquer : new THREE.MeshPhysicalMaterial(LACQUER)
+      if (!cache) transient.materials.push(mat)
+      copyOf(o, mat, o.matrixWorld, `r|${G.id}`, `${ver(A.position)}`, () => plainGeometry(G))
       return
     }
     const srcMats = Array.isArray(o.material) ? o.material : [o.material]
-    const mats = srcMats.map(m => convertMaterial(m, cache, skipped))
+    const mats = srcMats.map(m => convertMaterial(m, seen, skipped, keep))
     if (mats.every(m => !m)) return
-    const mat = Array.isArray(o.material) ? mats.map(m => m || new THREE.MeshStandardMaterial({ visible: false })) : mats[0]
+    if (!cache) for (const m of mats) if (m && !transient.materials.includes(m)) transient.materials.push(m)
+    const multi = Array.isArray(o.material)
+    const mat = multi ? mats.map(m => m || HIDDEN) : mats[0]
     const withColor = mats.some(m => m?.vertexColors)
     if (o.isInstancedMesh) {
       // expanded: one merged geometry in world space
-      const src = o.geometry, n = o.count, P = src.attributes.position, Nn = src.attributes.normal, UV = src.attributes.uv
-      const vc = P.count, pos = new Float32Array(n * vc * 3), nor = new Float32Array(n * vc * 3), uv = UV ? new Float32Array(n * vc * 2) : null
-      const ix = src.index ? src.index.array : null, idx = new Uint32Array(n * (ix ? ix.length : vc))
-      const im = new THREE.Matrix4()
-      for (let k = 0; k < n; k++) {
-        o.getMatrixAt(k, im); _m.multiplyMatrices(o.matrixWorld, im); _m3.getNormalMatrix(_m)
-        for (let i = 0; i < vc; i++) {
-          _v.fromBufferAttribute(P, i).applyMatrix4(_m).toArray(pos, (k * vc + i) * 3)
-          if (Nn) _n.fromBufferAttribute(Nn, i).applyMatrix3(_m3).normalize().toArray(nor, (k * vc + i) * 3)
-          if (uv) { uv[(k * vc + i) * 2] = UV.getX(i); uv[(k * vc + i) * 2 + 1] = UV.getY(i) }
-        }
-        if (ix) for (let i = 0; i < ix.length; i++) idx[k * ix.length + i] = ix[i] + k * vc
-        else for (let i = 0; i < vc; i++) idx[k * vc + i] = k * vc + i
-      }
-      const g = new THREE.BufferGeometry()
-      g.setAttribute('position', new THREE.BufferAttribute(pos, 3))
-      g.setAttribute('normal', new THREE.BufferAttribute(nor, 3))
-      if (uv) g.setAttribute('uv', new THREE.BufferAttribute(uv, 2))
-      g.setIndex(new THREE.BufferAttribute(idx, 1))
-      if (!Nn) g.computeVertexNormals()
-      add(g, Array.isArray(mat) ? mat[0] : mat, null)
+      const where = `${o.count}|${ver(o.instanceMatrix)}|${o.matrixWorld.elements.join(',')}`
+      copyOf(o, multi ? mat[0] : mat, null, `i|${G.id}|${where}`, '', () => expandInstances(o))
       return
     }
-    const moving = (o.isSkinnedMesh && o.geometry.attributes.skinIndex) || (o.geometry.morphAttributes.position && o.morphTargetInfluences?.some(w => w))
+    const moving = (o.isSkinnedMesh && A.skinIndex) || (G.morphAttributes.position && o.morphTargetInfluences?.some(w => w))
+    const shape = `${moving ? 'd' : 's'}|${G.id}|${A.position.count}|${ver(G.index)}|${+multi}|${+withColor}`
     if (moving) {
-      const { pos, nor } = deform(o)
-      add(plainGeometry(o.geometry, pos, nor, withColor, Array.isArray(mat)), mat, o.matrixWorld)
+      copyOf(o, mat, o.matrixWorld, shape, null,
+        () => { const { pos, nor } = deform(o); return plainGeometry(G, pos, nor, withColor, multi) },
+        g => { deform(o, g.attributes.position.array, g.attributes.normal?.array); if (withColor && A.color && g.attributes.color) g.attributes.color.array.set(A.color.array) })
     } else {
-      // static (or moved on the CPU, as the cloth): a copy of its arrays now
-      const g = plainGeometry(o.geometry, o.geometry.attributes.position.array.slice(), o.geometry.attributes.normal?.array.slice(), withColor, Array.isArray(mat))
-      add(g, mat, o.matrixWorld)
+      // static (or moved on the CPU, as the cloth): a copy of its arrays
+      copyOf(o, mat, o.matrixWorld, shape, `${ver(A.position)}|${ver(A.normal)}|${ver(A.color)}`,
+        () => plainGeometry(G, A.position.array.slice(), A.normal?.array.slice(), withColor, multi),
+        g => {
+          g.attributes.position.array.set(A.position.array)
+          if (A.normal && g.attributes.normal) g.attributes.normal.array.set(A.normal.array)
+          if (withColor && A.color && g.attributes.color) g.attributes.color.array.set(A.color.array)
+        })
     }
   })
 
@@ -248,7 +344,9 @@ export function snapshotScene(live, { camera, hair = null, envScene = null, envI
     stats.strands = strands
     owned.push(map)
     // (the colour from the map, not the vertex colours: MuTracer drops those)
-    add(geometry, new THREE.MeshPhysicalMaterial({ map, roughness: 0.42, metalness: 0, sheen: 0.4, sheenRoughness: 0.5, sheenColor: 0x806040, side: THREE.DoubleSide, specularIntensity: 0.6 }), null)
+    const hm = new THREE.MeshPhysicalMaterial({ map, roughness: 0.42, metalness: 0, sheen: 0.4, sheenRoughness: 0.5, sheenColor: 0x806040, side: THREE.DoubleSide, specularIntensity: 0.6 })
+    transient.geometries.push(geometry); transient.materials.push(hm)
+    add(geometry, hm, null)
   }
 
   if (envMap) out.environment = envMap
@@ -258,25 +356,18 @@ export function snapshotScene(live, { camera, hair = null, envScene = null, envI
   for (const c of out.children) if (!c.matrixAutoUpdate) c.matrixWorld.copy(c.matrix)
   stats.skipped = [...skipped]
   stats.ms = Math.round(performance.now() - t0)
-  return { scene: out, stats, owned }
+  return { scene: out, stats, owned, transient }
 }
 
 /**
- * Frees a snapshot once traced: its geometries (and the BVH a tracer hung on
- * them, geometry.boundsTree), its materials (copies; the textures they share
- * with the live scene stay) and the textures it made. A video makes one per
- * frame, so without this each frame's copy stays in memory (and in the
- * tracer's renderer, which draws it for the denoiser's buffers).
+ * Frees a snapshot once traced: the geometries (and the BVH a tracer hung on
+ * them, geometry.boundsTree), materials (copies; the textures they share with
+ * the live scene stay) and textures it made for this frame alone. Without a
+ * cache that is all of it; with one, what the cache keeps stays (its dispose()).
  */
 export function disposeSnapshot(snap) {
-  const mats = new Set()
-  snap.scene.traverse(o => {
-    if (!o.isMesh) return
-    o.geometry.boundsTree = null
-    o.geometry.dispose()
-    for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (m) mats.add(m)
-  })
-  for (const m of mats) m.dispose()
+  for (const g of snap.transient.geometries) { g.boundsTree = null; g.dispose() }
+  for (const m of snap.transient.materials) m.dispose()
   for (const t of snap.owned || []) t.dispose()
   snap.scene.clear()
 }
