@@ -64,7 +64,7 @@ function readObj(file) {
 
 const base = readObj(path.join(SRC, 'base/base.obj'))
 const NV = base.v.length
-const pos = new Float64Array(NV * 3)
+const pos = new Float64Array(NV * 3), basePos = pos
 base.v.forEach((p, i) => { pos[i * 3] = p[0]; pos[i * 3 + 1] = p[1]; pos[i * 3 + 2] = p[2] })
 
 // ── Targets ────────────────────────────────────────────────────────────────
@@ -152,6 +152,7 @@ if (zeroWeight) console.log(`${zeroWeight} base verts without weights (helpers /
 
 // ── Parts ──────────────────────────────────────────────────────────────────
 // A part: corner-split vertices (position + uv), skin, triangles.
+let quiet = false
 function makePart(name, P, UV, skin, faces) {
   const map = new Map(), vp = [], vu = [], si = [], sw = [], src = [], tri = []
   for (const f of faces) {
@@ -172,18 +173,20 @@ function makePart(name, P, UV, skin, faces) {
     })
     for (let k = 1; k + 1 < ids.length; k++) tri.push(ids[0], ids[k], ids[k + 1])
   }
-  console.log(`part ${name}: ${vp.length / 3} verts, ${tri.length / 3} tris`)
+  if (!quiet) console.log(`part ${name}: ${vp.length / 3} verts, ${tri.length / 3} tris`)
   return { name, position: vp, uv: vu, skinIndex: si, skinWeight: sw, index: tri, source: src }
 }
 
 const parts = []
 const byGroup = g => base.faces.filter(f => f.group === g)
-parts.push(makePart('body', pos, base.vt, baseSkin, byGroup('body')))
-for (const g of ['helper-hair', 'helper-tights', 'helper-skirt'])
-  parts.push(makePart(g.replace('helper-', 'helper_'), pos, base.vt, baseSkin, byGroup(g)))
+// (refit(at): the same part built on other base positions, for the face morphs)
+for (const g of ['body', 'helper-hair', 'helper-tights', 'helper-skirt']) {
+  const make = at => makePart(g.replace('helper-', 'helper_'), at, base.vt, baseSkin, byGroup(g))
+  parts.push(Object.assign(make(pos), { refit: make }))
+}
 
 // ── Proxies ────────────────────────────────────────────────────────────────
-function fitProxy(name, mhcloFile) {
+function fitProxy(name, mhcloFile, pos = basePos) {
   const dir = path.dirname(mhcloFile)
   const lines = fs.readFileSync(mhcloFile, 'utf8').split(/\r?\n/)
   let objFile, scale = {}, refs = [], inVerts = false, inDelete = false
@@ -216,7 +219,9 @@ function fitProxy(name, mhcloFile) {
   const s = ['x', 'y', 'z'].map((ax, k) => {
     const sc = scale[ax]
     if (!sc) return 1
-    return Math.abs(pos[sc[0] * 3 + k] - pos[sc[1] * 3 + k]) / sc[2]
+    // (from the unmorphed body: a face morph must not rescale a whole garment
+    // whose scale references happen to lie on the head)
+    return Math.abs(basePos[sc[0] * 3 + k] - basePos[sc[1] * 3 + k]) / sc[2]
   })
   const obj = readObj(path.join(dir, objFile))
   const P = new Float64Array(refs.length * 3), skin = []
@@ -246,10 +251,11 @@ function fitProxy(name, mhcloFile) {
     }
     skin.push(top4(list))
   })
-  if (unweighted) console.log(`${name}: ${unweighted} verts without weights, assigned`)
+  if (unweighted && !quiet) console.log(`${name}: ${unweighted} verts without weights, assigned`)
   if (obj.v.length !== refs.length) console.warn(`${name}: obj ${obj.v.length} verts vs ${refs.length} refs`)
   const part = makePart(name, P, obj.vt, skin, obj.faces)
   part.deleteVerts = deleted
+  part.refit = at => { quiet = true; try { return fitProxy(name, mhcloFile, at) } finally { quiet = false } }
   return part
 }
 parts.push(fitProxy('eyes', path.join(SYS, 'eyes/high-poly/high-poly.mhclo')))
@@ -281,10 +287,68 @@ if (fs.existsSync(COMMUNITY_DIR)) for (const nid of fs.readdirSync(COMMUNITY_DIR
   }
   if (!mat.diffuseTexture && info.files?.diffuse) { const f = path.basename(info.files.diffuse); if (fs.existsSync(path.join(dir, f))) mat.diffuseTexture = f }
   if (!mat.diffuseTexture && info.files?.alpha) { const f = path.basename(info.files.alpha); if (fs.existsSync(path.join(dir, f))) mat.diffuseTexture = f }
+  // (a gown is a dress whatever its title says: "Strapless Ruffle Top Dress";
+  // trousers and skirts are 'bottom', worn under a top)
   const kind = info.category === 'Hair' || KINDS.hair.test(info.title) ? 'hair'
     : /^Shoes/.test(info.category) ? 'shoes'
+    : /^(Pants|Skirt)/.test(info.category) ? 'bottom'
+    : /^Gown/.test(info.category) ? 'dress'
     : /^Shirt/.test(info.category) || KINDS.top.test(info.title) ? 'top' : 'dress'
   community.push({ key, nid: +nid, kind, title: info.title.trim(), author: info.username, license: info.license, url: `http://www.makehumancommunity.org/node/${nid}`, dir, mat })
+}
+
+// ── Face morphs (the ethnicity sliders, face only) ─────────────────────────
+// MakeHuman's ethnic macro targets blend caucasian / asian / african to 1; our
+// recipe is caucasian 1.0, so "asian" is (asian − caucasian), and the same
+// for african. Only the head is taken: each vertex's share is its skin weight
+// on the head and the bones under it (jaw, eyes, face), which fades through
+// the neck, so the body, and every garment fitted to it, stays as it is. Every
+// part fitted to the body (eyes, brows, lashes, hair, community assets) is
+// refitted on the morphed body and stored as a sparse delta (cm) where it moves.
+const FACE_MORPHS = { asian: 'asian-female-young.target', african: 'african-female-young.target' }
+const readTarget = f => { const m = new Map(); for (const line of fs.readFileSync(f, 'utf8').split('\n')) { if (!line || line[0] === '#') continue; const p = line.trim().split(/\s+/); if (p.length >= 4) m.set(+p[0], [+p[1], +p[2], +p[3]]) } return m }
+const headBones = new Set()
+{ const kids = {}; for (const [n, b] of Object.entries(skel.bones)) (kids[b.parent] ||= []).push(n); const walk = n => { headBones.add(boneIndex[n]); for (const c of kids[n] || []) walk(c) }; walk('head') }
+const headShare = new Float64Array(NV)
+for (let v = 0; v < NV; v++) for (const [b, w] of vw[v]) if (headBones.has(b)) headShare[v] += w
+const caucasianT = TARGETS[0][0] === 'caucasian-female-young.target' && TARGETS[0][1] === 1 ? readTarget(path.join(SRC, 'base', TARGETS[0][0])) : null
+const morphs = {}
+for (const [key, file] of Object.entries(FACE_MORPHS)) {
+  const f = path.join(SRC, 'base', file)
+  if (!caucasianT || !fs.existsSync(f)) { console.warn(`face morph ${key}: needs ${file} and caucasian 1.0 in TARGETS`); continue }
+  // The macro target also moves and scales the whole head with the body's
+  // height (asian: 10 cm lower, 5 % smaller): that is taken out (the mean
+  // shift and the change of mean radius over the head proper), leaving the
+  // face's shape — ~1.6 cm at most
+  const T = readTarget(f), at = Float64Array.from(pos)
+  const D = v => { const a = T.get(v) || [0, 0, 0], c = caucasianT.get(v) || [0, 0, 0]; return [a[0] - c[0], a[1] - c[1], a[2] - c[2]] }
+  const core = [...Array(NV).keys()].filter(v => headShare[v] > 0.95)
+  const m = [0, 0, 0], cen = [0, 0, 0]
+  for (const v of core) { const d = D(v); for (let j = 0; j < 3; j++) { m[j] += d[j] / core.length; cen[j] += pos[v * 3 + j] / core.length } }
+  let r0 = 0, r1 = 0
+  for (const v of core) { const d = D(v); r0 += Math.hypot(pos[v * 3] - cen[0], pos[v * 3 + 1] - cen[1], pos[v * 3 + 2] - cen[2]); r1 += Math.hypot(pos[v * 3] + d[0] - m[0] - cen[0], pos[v * 3 + 1] + d[1] - m[1] - cen[1], pos[v * 3 + 2] + d[2] - m[2] - cen[2]) }
+  const sc = r1 / r0
+  for (let v = 0; v < NV; v++) {
+    const k = headShare[v]; if (!k) continue
+    const d = D(v)
+    for (let j = 0; j < 3; j++) { const p = pos[v * 3 + j]; at[v * 3 + j] += k * (cen[j] + (p + d[j] - m[j] - cen[j]) / sc - p) }
+  }
+  console.log(`face morph ${key}: head shift ${m.map(x => (x * SCALE).toFixed(1)).join(', ')} cm and scale ×${sc.toFixed(3)} taken out`)
+  let moved = 0, max = 0
+  for (const p of parts) {
+    if (!p.refit) continue
+    const q = p.refit(at), idx = [], d = []
+    for (let i = 0; i < p.position.length / 3; i++) {
+      const dx = q.position[i * 3] - p.position[i * 3], dy = q.position[i * 3 + 1] - p.position[i * 3 + 1], dz = q.position[i * 3 + 2] - p.position[i * 3 + 2]
+      const l = Math.hypot(dx, dy, dz)
+      if (l < 0.002) continue
+      idx.push(i); d.push(dx, dy, dz); max = Math.max(max, l)
+    }
+    if (idx.length) { (p.morphs ||= {})[key] = { index: idx, delta: d }; moved++; p.morphMax = Math.max(p.morphMax || 0, Math.max(...idx.map((_, j) => Math.hypot(d[j * 3], d[j * 3 + 1], d[j * 3 + 2])))) }
+  }
+  morphs[key] = true
+  if (process.env.MORPH_REPORT) console.log(parts.filter(p => p.morphs?.[key]).map(p => `${p.name} ${p.morphs[key].index.length}/${p.position.length / 3} ≤${p.morphMax.toFixed(2)}`).join(', '))
+  console.log(`face morph ${key}: ${moved} parts move, up to ${max.toFixed(2)} cm`)
 }
 
 // ── Write ──────────────────────────────────────────────────────────────────
@@ -305,6 +369,7 @@ const meta = {
   license: 'Mesh, skeleton, weights, targets and textures: MakeHuman, CC0 1.0',
   units: 'cm, y up, facing +z, feet on y = 0',
   targets: TARGETS,
+  faceMorphs: Object.keys(morphs),
   bones,
   joints: Object.fromEntries(Object.entries(joint).map(([k, v]) => [k, v.map(c => +(c * SCALE).toFixed(3))])),
   parts: {},
@@ -327,6 +392,7 @@ for (const p of [...parts.filter(p => !ownBin(p)), ...parts.filter(ownBin)]) {
     indexType: nv > 65535 ? 'u32' : 'u16',
     source: put(new Uint16Array(p.source)), // base-mesh vertex each came from (body / helpers)
     ...(p.deleteVerts?.length ? { deleteVerts: put(new Uint16Array(p.deleteVerts)) } : {}),
+    ...(p.morphs ? { morphs: Object.fromEntries(Object.entries(p.morphs).map(([k, m]) => [k, { index: put(new Uint32Array(m.index)), delta: put(new Float32Array(m.delta)) }])) } : {}),
   }
   if (own) { fs.mkdirSync(path.join(OUT, 'community'), { recursive: true }); fs.writeFileSync(path.join(OUT, meta.parts[p.name].bin), Buffer.concat(chunks)); const prev = communityBins.pop(); chunks = prev[1]; offset = prev[2] }
 }
@@ -337,6 +403,9 @@ console.log(`wrote character.bin (${(offset / 1e6).toFixed(2)} MB)`)
 // ── Textures ───────────────────────────────────────────────────────────────
 const ff = (args) => execFileSync('ffmpeg', ['-loglevel', 'error', '-y', ...args])
 ff(['-i', path.join(SYS, 'skins/young_caucasian_female/young_lightskinned_female_diffuse.png'), '-q:v', '3', path.join(OUT, 'skin.jpg')])
+// the other young women's skins (MakeHuman system assets, CC0), swapped in by #047
+for (const [k, f] of [['asian', 'young_asian_female/young_lightskinned_female_diffuse3.png'], ['african', 'young_african_female/young_darkskinned_female_diffuse.png']])
+  ff(['-i', path.join(SYS, 'skins', f), '-q:v', '3', path.join(OUT, `skin_${k}.jpg`)])
 // (the eye texture keeps its alpha: the cornea shell is mapped to a transparent corner)
 ff(['-i', path.join(SYS, 'eyes/materials/brownlight_eye.png'), '-vf', 'scale=512:512', path.join(OUT, 'eye.png')])
 fs.copyFileSync(path.join(SYS, 'eyebrows/eyebrow001/eyebrow001.png'), path.join(OUT, 'eyebrow.png'))

@@ -126,6 +126,19 @@ export async function loadCharacter(base = new URL('./assets/', import.meta.url)
 
   // ── Geometry ──
   const parts = {}
+  const morphed = new Set(), face = Object.fromEntries((meta.faceMorphs || []).map(k => [k, 0]))
+  function morphGeometry(g) {
+    const a = g.attributes.position.array
+    a.set(g.userData.rest)
+    for (const [k, w] of Object.entries(face)) {
+      const m = w && g.userData.morphs[k]; if (!m) continue
+      const { index: I, delta: D } = m
+      for (let j = 0; j < I.length; j++) { const i = I[j] * 3; a[i] += w * D[j * 3]; a[i + 1] += w * D[j * 3 + 1]; a[i + 2] += w * D[j * 3 + 2] }
+    }
+    g.attributes.position.needsUpdate = true
+    g.computeVertexNormals(); weldNormals(g)
+    g.computeBoundingSphere()
+  }
   function geometry(name) {
     const p = meta.parts[name]
     const g = new THREE.BufferGeometry()
@@ -139,6 +152,15 @@ export async function loadCharacter(base = new URL('./assets/', import.meta.url)
     g.computeVertexNormals()
     weldNormals(g)
     parts[name] = { geometry: g, source: arr(Uint16Array, p.source, name).slice() }
+    // face morphs (build-character.mjs: sparse deltas, cm, turned round like
+    // the positions): kept with the
+    // geometry, applied at the current weights now and on every setFace()
+    if (p.morphs) {
+      g.userData.rest = g.attributes.position.array.slice()
+      g.userData.morphs = Object.fromEntries(Object.entries(p.morphs).map(([k, m]) => [k, { index: arr(Uint32Array, m.index, name), delta: flip(arr(Float32Array, m.delta, name).slice()) }]))
+      morphed.add(g); g.addEventListener('dispose', () => morphed.delete(g))
+      if (Object.values(face).some(w => w)) morphGeometry(g)
+    }
     return g
   }
 
@@ -185,7 +207,28 @@ export async function loadCharacter(base = new URL('./assets/', import.meta.url)
     const f = meta.parts[name]?.bin
     if (f && !bins[name]) bins[name] = await fetch(base + f).then(r => { if (!r.ok) throw new Error(`${f}: ${r.status}`); return r.arrayBuffer() })
   }
+  /**
+   * Face shape: { asian, african } weights, 0–1 each (the rest caucasian; the
+   * sum is held to 1). Moves the vertices of every part made so far and of
+   * every part made after. Parts that captured their rest shape when built
+   * (simulated hair, a dress shell cut from the body) keep it until rebuilt.
+   */
+  function setFace(w) {
+    for (const k of Object.keys(face)) face[k] = Math.max(0, w[k] ?? face[k])
+    const sum = Object.values(face).reduce((a, b) => a + b, 0)
+    if (sum > 1) for (const k of Object.keys(face)) face[k] /= sum
+    for (const g of morphed) morphGeometry(g)
+  }
+  // Skin: MakeHuman's young women's skins (skin.jpg is caucasian; skin_<key>.jpg)
+  const skins = { caucasian: skinMap }
+  async function setSkin(key) {
+    if (!(key in skins)) { const t = await tex(`skin_${key}.jpg`); if (t) t.flipY = true; skins[key] = t }
+    if (!skins[key]) return false
+    skin.map = skins[key]; skin.needsUpdate = true
+    return true
+  }
   return { group, skeleton, bones, byName, restWorld, meshes, materials: { skin, eye, brow, lash }, meta, parts, joints, addPart, ensurePart, loadTexture: tex, baseUrl: base,
+    setFace, get face() { return { ...face } }, faceMorphs: Object.keys(face), setSkin,
     /** a raw array of a part (e.g. a garment's deleteVerts) */
     partArray: (name, field, T) => meta.parts[name]?.[field] ? arr(T, meta.parts[name][field], name).slice() : null }
 }

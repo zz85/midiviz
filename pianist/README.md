@@ -10,6 +10,7 @@ She is built from [MakeHuman](http://www.makehumancommunity.org/)'s CC0 assets b
 - Skeleton: MakeHuman's default 163-bone rig (full fingers and toes, jaw, tongue, face) with its own skin weights, top 4 per vertex. `rig.js` poses it every frame; `hand-driver.js` drives the fingers and arms from the #029 fingering and motion model.
 - From the system asset pack: the young light-skinned female skin, high-poly eyes, eyebrow001, eyelashes01 and five hair meshes (bob01, bob02, ponytail01, braid01, long01). They are fitted the way MakeHuman fits them: each vertex is a barycentric point on three body vertices plus an offset, and inherits their weights.
 - Helper shells: MakeHuman's base mesh has hidden fitting shells for the scalp, tights and skirt. They are kept as the hair roots and the base of our dress.
+- Face morphs and skins for #047: the `asian-female-young` and `african-female-young` macro targets (from the same repository's `targets/macrodetails/`, into `base/`) as head-only face morphs, and the young Asian and African women's skins (see [wardrobe/README.md](../wardrobe/README.md#skins-and-face-shapes)).
 - The strand hair (`hair.js`), our dress, the shoes, the looks (realistic, stylized, cel) and all the materials are written in this repo.
 
 Output: `assets/character.json` (bones, joints, part layout) + `assets/character.bin` (~2 MB) and re-encoded textures. Units are cm, y up, the figure facing +z with her feet on y = 0. Licence: MakeHuman, CC0 1.0. Community assets have their own licences, listed in `assets/community/CREDITS.md`.
@@ -92,7 +93,7 @@ node pianist/build/fetch-community.mjs /path/to/assets.json <nid>…   # → ~/t
 node pianist/build/build-character.mjs
 ```
 
-`assets.json` is the MakeHuman community catalogue. Only CC0 and CC-BY assets are fetched, and credits are written to `assets/community/CREDITS.md`.
+`assets.json` is the MakeHuman community catalogue. It has been offline since MakeHuman's community services shut down. Use the asset packs with `pianist/build/import-packs.mjs` instead (see [wardrobe/README.md](../wardrobe/README.md#new-assets-october-2026)). Only CC0 and CC-BY assets are fetched, and credits are written to `assets/community/CREDITS.md`.
 
 Each asset gets its own `assets/community/<key>.bin` plus WebP / JPEG textures, fetched only when chosen. `character.bin` stays ~2 MB.
 

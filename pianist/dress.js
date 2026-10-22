@@ -541,10 +541,14 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
   const api = {
     simulate: true, mode: skirtMode, object, bodice, hem, fitted, cloth, X,
     setColor(c) {
+      api.color = c
       for (const m of [bodiceMat, skirtMat]) { m.color.set(c); m.sheenColor.set(c).lerp(new THREE.Color(0xffd8c8), 0.25) }
       // the trim: its own colour, or a deep shade of the dress
       if (trimMat) { trimMat.color.set(trimColor || new THREE.Color(c).multiplyScalar(0.35)); trimMat.sheenColor.copy(trimMat.color).lerp(new THREE.Color(0xffffff), 0.3) }
     },
+    /** the qipao's contrast trim (null: a deep shade of the dress) */
+    setTrim(c) { trimColor = c; api.setColor(api.color) },
+    get hasTrim() { return !!trimMat },
     setFabric(kind) {
       applyFabric([bodiceMat, skirtMat].map(material => ({ material, scale: 0.5 })), kind === 'knit' ? 'made' : kind)
       // the diamond knit (the reference's texture)

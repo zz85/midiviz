@@ -360,14 +360,17 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
   const NECK = ['neck01', 'neck02', 'neck03'].map(B), HEAD = B('head')
   const EYES = [B('eye.L'), B('eye.R')]
   // the eyeballs turn about their centres (the eye bones sit at the cornea)
-  const eyeCenter = [v3(), v3()]
-  {
+  const eyeCenter = [v3(), v3()], eyeCenterLocal = [v3(), v3()]
+  // (re-read after a face morph moves the eyes: character.js setFace)
+  function measureEyes() {
     const p = ch.parts.eyes.geometry.attributes.position.array, n = [0, 0]
+    eyeCenter.forEach(c => c.set(0, 0, 0))
     for (let i = 0; i < p.length; i += 3) { const k = p[i] < 0 ? 0 : 1; eyeCenter[k].x += p[i]; eyeCenter[k].y += p[i + 1]; eyeCenter[k].z += p[i + 2]; n[k]++ }
     eyeCenter.forEach((c, k) => c.multiplyScalar(1 / n[k]))
+    // centre in the eye bone's own frame (rest)
+    EYES.forEach((i, k) => eyeCenterLocal[k].copy(eyeCenter[k]).sub(restHead[i]).applyQuaternion(restQ[i].clone().invert()))
   }
-  // centre in the eye bone's own frame (rest)
-  const eyeCenterLocal = EYES.map((i, k) => eyeCenter[k].clone().sub(restHead[i]).applyQuaternion(restQ[i].clone().invert()))
+  measureEyes()
   const eyeMoved = new Uint8Array(N)
   const ROOT = B('root')
   const rootRestP = restHead[ROOT].clone()
@@ -538,7 +541,10 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     // no song: hands in the lap
     const S = pos(bones[a.ua1].name)
     // (standing: hands together in front of her, following the bow down)
-    const lap = state.stand ? v3(a.s * 2.5, hipMid.y - 14 - 30 * state.lean, seat0.z - 13 - 32 * state.lean) : v3(a.s * 9, 62, 26)
+    // (#047's state.standArms: 'sides' arms hanging, the hands a little out from the thighs, as for a fitting; 'clasp' hands together, clear of the skirt)
+    const lap = state.stand && state.standArms === 'sides' ? v3(S.x + Math.sign(S.x) * 7, S.y - (a.UPPER + a.FORE) * 0.96, S.z - 2)
+      : state.stand && state.standArms === 'clasp' ? v3(a.s * 2.5, hipMid.y - 17, seat0.z - 22)   // (clasped clear of the skirt)
+      : state.stand ? v3(a.s * 2.5, hipMid.y - 14 - 30 * state.lean, seat0.z - 13 - 32 * state.lean) : v3(a.s * 9, 62, 26)
     const v = _v.subVectors(lap, S), L = Math.min(v.length(), a.UPPER + a.FORE - 1)
     const n = v.normalize().clone()
     const cosA = clamp((a.UPPER ** 2 + L * L - a.FORE ** 2) / (2 * a.UPPER * L), -1, 1), sinA = Math.sqrt(1 - cosA * cosA)
@@ -1106,5 +1112,6 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
       pose(dt)
     },
     pos, quat, bone: n => bones[idx[n]],
+    measureEyes,
   }
 }

@@ -15,6 +15,7 @@ Browser experiments with MIDI, piano and violin rendering, synthesis and audio a
 
 ## Pianist and piano
 
+- [#047 Wardrobe](047_wardrobe.html) - try hair, dresses, fabrics, shoes and colours on the pianist in one click each; realistic, stylized or cel-shaded, path-traced stills ([notes](wardrobe/README.md), [details](CHANGELOG.md#22-oct-2026))
 - [#045 Path-traced Pianist](045_pathtracer.html) - #032 path traced: three-gpu-pathtracer and MuTracer, stills and video, against the page's own picture ([notes](pathtrace/README.md), [details](CHANGELOG.md#21-oct-2026))
 - [#032 Pianist](032_pianist.html) - a pianist at a concert grand playing any MIDI file, filmed by an automatic director; [character notes](pianist/README.md), [liner notes](liner/README.md) ([details](CHANGELOG.md#19-oct-2026)) and [YouTube Shorts](pianist/README.md#youtube-shorts) ([details](CHANGELOG.md#20-oct-2026))
 - [#031 RoboPianist vs #029](031_robopianist.html) - MuJoCo Shadow Hands: their RL policy against our fingering ([details](CHANGELOG.md#15-oct-2026))

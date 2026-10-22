@@ -51,6 +51,22 @@ export function createLook(ch) {
     for (const o of list) if (o.userData.origMat) { o.material.dispose(); o.material = o.userData.origMat; delete o.userData.origMat }
   }
   const headBone = ch.byName.head
+  // a swapped material's colour, from its original (also run by recolor())
+  const STYLIZED_SKIN = new THREE.Color(1, 0.9 / 0.94, 0.84 / 0.9)   // (1, 0.9, 0.84) from the skin's own (1, 0.94, 0.9)
+  function tint(o, src, look) {
+    if (look === 'cel') {
+      // flat colour, as painted. Toon shading has no falloff to darken it,
+      // so the clothes would read pastel (a magenta gown as candy pink):
+      // deepen them (AgX also pales a bright saturated colour)
+      if (src === ch.materials.skin) return src.color.clone().multiplyScalar(0.78)
+      if (/hair|eye|brow|lash|teeth|tongue/.test(o.name)) return src.color.clone().multiplyScalar(1.1)
+      // the clothes, by how saturated they are: whites and greys stay as they are
+      const hsl = {}; src.color.getHSL(hsl)
+      return src.color.clone().multiplyScalar(1 - 0.82 * hsl.s)
+    }
+    if (src === ch.materials.skin) return src.color.clone().multiply(STYLIZED_SKIN)
+    return src.color.clone()
+  }
   function apply(look, extra = []) {
     const list = meshes(extra)
     restore(list); clearOutlines()
@@ -68,21 +84,12 @@ export function createLook(ch) {
           side: src.side, alphaToCoverage: src.alphaToCoverage,
           polygonOffset: src.polygonOffset, polygonOffsetFactor: src.polygonOffsetFactor, polygonOffsetUnits: src.polygonOffsetUnits,
         })
-        // flat colour, as painted. Toon shading has no falloff to darken it,
-        // so the clothes would read pastel (a magenta gown as candy pink):
-        // deepen them (AgX also pales a bright saturated colour)
-        if (src === ch.materials.skin) m.color = src.color.clone().multiplyScalar(0.78)
-        else if (/hair|eye|brow|lash|teeth|tongue/.test(o.name)) m.color = src.color.clone().multiplyScalar(1.1)
-        else {
-          // the clothes, by how saturated they are: whites and greys stay as they are
-          const hsl = {}; src.color.getHSL(hsl)
-          m.color = src.color.clone().multiplyScalar(1 - 0.82 * hsl.s)
-        }
+        m.color = tint(o, src, look)
       } else {
         m = src.clone()
         if (src === ch.materials.skin) {
           m.normalScale = new THREE.Vector2(0, 0); m.roughness = 0.62; m.sheen = 0.6
-          m.color = new THREE.Color(1.0, 0.9, 0.84)
+          m.color = tint(o, src, look)
           if (src.onBeforeCompile) { m.onBeforeCompile = src.onBeforeCompile; m.customProgramCacheKey = src.customProgramCacheKey }
         } else if (o.parent?.name === 'dress' || /dress/.test(o.name) || src.normalMap) {
           if (m.normalScale) m.normalScale = new THREE.Vector2(0.25, 0.25)
@@ -105,6 +112,19 @@ export function createLook(ch) {
   return {
     get look() { return state.look },
     apply,
+    /** after a colour (or a tinted map) changed on the original materials: carry it to the swapped ones, no rebuild */
+    recolor(extra = []) {
+      if (state.look === 'realistic') return
+      const list = []
+      ch.group.traverse(o => { if (o.isMesh && o.userData.origMat) list.push(o) })
+      for (const x of extra) x?.traverse?.(c => { if (c.isMesh && c.userData.origMat && !list.includes(c)) list.push(c) })
+      for (const o of list) {
+        const src = o.userData.origMat, m = o.material
+        m.color.copy(tint(o, src, state.look))
+        if (m.map !== src.map) { m.map = src.map; m.needsUpdate = true }
+        if (state.look !== 'cel' && m.sheenColor && src.sheenColor) m.sheenColor.copy(src.sheenColor)
+      }
+    },
     update() { for (const o of state.outlines) o.visible = o.userData.src.visible && o.userData.src.parent?.visible !== false },
   }
 }

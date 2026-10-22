@@ -50,7 +50,8 @@ export function createPathTraceStills(stage) {
       const raster = headless ? stage.current() : stage.begin(w, h)
       const cam = snapshotCamera(stage.camera, w / h)
       results.push({ engine: 'raster', label: 'Raster (the page, WebGL)', canvas: raster, info: 'three.js r' + THREE.REVISION + ', AgX' })
-      envCache ||= stage.envScene ? bakeEnvironment(stage.envScene, { intensity: stage.envIntensity }) : null
+      // (re-baked when the page's environment intensity changed: #047's light presets)
+      if (stage.envScene && envCache?.userData.intensity !== stage.envIntensity) { envCache?.dispose(); envCache = bakeEnvironment(stage.envScene, { intensity: stage.envIntensity }); envCache.userData.intensity = stage.envIntensity }
       snap = snapshotScene(stage.scene, { camera: cam, hair: stage.hair(), envMap: envCache, hairFraction: s.hairFraction })
       const st = snap.stats
       const sceneInfo = `${(st.triangles / 1e6).toFixed(2)} M triangles in ${st.meshes} meshes, ${st.lights} lights${st.strands ? `, ${st.strands.toLocaleString()} hair strands` : ''}; baked in ${st.ms} ms` + (st.skipped.length ? `; left out: ${st.skipped.join(', ')}` : '')

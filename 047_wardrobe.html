@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#141414">
+  <title>Experiment #047 - Wardrobe</title>
+  <!--
+    Experiment #047 - Wardrobe: the #032 pianist in a photo studio, to try
+    hair, dresses, fabrics, shoes and colours together quickly. Every rail is
+    one click (‹ ›, or the arrow keys); a colour swatch or the picker applies
+    as it moves. Realistic, stylized and cel-shaded looks, and #045's path
+    tracers for a still. See wardrobe/README.md.
+  -->
+  <script type="importmap">
+    { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/",
+      "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/",
+      "three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.webgpu.js",
+      "three/tsl": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.tsl.js"
+    } }
+  </script>
+  <style>
+    :root { --panel: 340px; --ink: #e9e5dd; --dim: #9a958d; --line: #34312d; --bg: #161514; --acc: #e3b768; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 13px/1.35 system-ui, -apple-system, 'Segoe UI', sans-serif; overflow: hidden; }
+    #app { display: flex; height: 100%; }
+    #stage { position: relative; flex: 1; min-width: 0; overflow: hidden; }
+    #stage canvas.main { display: block; width: 100%; height: 100%; touch-action: none; }
+    #panel { width: var(--panel); flex: none; height: 100%; overflow-y: auto; background: #1c1b19; border-left: 1px solid var(--line); padding: 10px 12px 16px; scrollbar-width: thin; }
+    h1 { font-size: 13px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); margin: 2px 0 10px; display: flex; justify-content: space-between; align-items: baseline; }
+    h1 a { color: var(--dim); font-weight: 400; text-transform: none; letter-spacing: 0; text-decoration: none; font-size: 12px; }
+    h1 a:hover { color: var(--ink); }
+    .row { border: 1px solid transparent; border-radius: 10px; padding: 6px 8px 7px; margin: 0 -8px 2px; }
+    .row.active { border-color: #4a4640; background: #22211e; }
+    .row[hidden] { display: none; }
+    .rowHead { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+    .rowHead .count { margin-left: auto; text-transform: none; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+    .spin { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--acc); border-right-color: transparent; animation: spin 0.7s linear infinite; visibility: hidden; }
+    .row.busy .spin { visibility: visible; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .cycler { display: flex; align-items: stretch; gap: 4px; }
+    .cycler button { flex: none; width: 38px; height: 34px; border-radius: 8px; border: 1px solid var(--line); background: #2a2825; color: var(--ink); font-size: 20px; line-height: 1; cursor: pointer; }
+    .cycler button:hover { background: #36332f; }
+    .cycler button:active { background: #45413b; }
+    .cycler select { flex: 1; min-width: 0; height: 34px; border-radius: 8px; border: 1px solid var(--line); background: #232220; color: var(--ink); font: inherit; padding: 0 8px; text-overflow: ellipsis; cursor: pointer; }
+    .colors { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; align-items: center; }
+    .colors input[type=color] { width: 30px; height: 24px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; cursor: pointer; }
+    .colors input[type=color]::-webkit-color-swatch-wrapper { padding: 2px; }
+    .colors input[type=color]::-webkit-color-swatch { border: 0; border-radius: 4px; }
+    .sw { width: 20px; height: 20px; border-radius: 50%; background: var(--c); border: 1px solid rgba(255, 255, 255, 0.18); cursor: pointer; padding: 0; }
+    .sw:hover { transform: scale(1.15); }
+    .sw.on { outline: 2px solid var(--acc); outline-offset: 1px; }
+    .sw.auto { background: conic-gradient(from 45deg, #888 0 25%, #555 0 50%, #888 0 75%, #555 0); font-size: 9px; color: #fff; }
+    .seg { display: flex; flex-wrap: wrap; gap: 3px; margin: 3px 0 8px; }
+    .seg button { flex: 1; min-width: 0; padding: 6px 4px; border-radius: 7px; border: 1px solid var(--line); background: #232220; color: #cfcac1; font: 12px system-ui, sans-serif; cursor: pointer; white-space: nowrap; }
+    .seg button.on { background: var(--ink); color: #161514; border-color: var(--ink); }
+    .face { display: grid; gap: 2px; margin-top: 6px; }
+    .face label { display: grid; grid-template-columns: 112px 1fr 38px; align-items: center; gap: 6px; color: #cfcac1; font-size: 12px; }
+    .face input { width: 100%; accent-color: var(--acc); }
+    .face span { color: var(--dim); font-variant-numeric: tabular-nums; text-align: right; }
+    .lbl2 { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 8px; }
+    .sep { height: 1px; background: var(--line); margin: 10px 0; }
+    .chk { display: flex; align-items: center; gap: 6px; color: #cfcac1; margin: 4px 0; cursor: pointer; }
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 6px; }
+    .actions button, .btn { padding: 8px 6px; border-radius: 8px; border: 1px solid var(--line); background: #2a2825; color: var(--ink); font: 12.5px system-ui, sans-serif; cursor: pointer; }
+    .actions button:hover, .btn:hover { background: #36332f; }
+    .actions button.primary { background: var(--acc); border-color: var(--acc); color: #1b1408; font-weight: 600; }
+    .keys { color: var(--dim); font-size: 11px; margin-top: 10px; line-height: 1.5; }
+    kbd { font: 10.5px ui-monospace, Menlo, monospace; border: 1px solid #4a4640; border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; color: #cfcac1; }
+    /* the picture's overlays */
+    #status { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); padding: 7px 14px; border-radius: 16px; background: rgba(0, 0, 0, 0.6); color: #eee; font-size: 12.5px; pointer-events: none; z-index: 5; }
+    #status.hidden { display: none; }
+    #status.error { background: rgba(140, 30, 30, 0.85); }
+    #caption { position: absolute; left: 14px; top: 12px; font-size: 12px; color: rgba(255, 255, 255, 0.75); text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8); pointer-events: none; max-width: 60%; }
+    #caption b { display: block; font-size: 15px; color: #fff; font-weight: 600; }
+    #lookbook { position: absolute; left: 0; right: 0; bottom: 0; display: flex; gap: 6px; padding: 8px 10px; overflow-x: auto; background: linear-gradient(transparent, rgba(0, 0, 0, 0.55)); z-index: 4; }
+    #lookbook:empty { display: none; }
+    .lk { position: relative; flex: none; width: 66px; height: 88px; border-radius: 8px; overflow: hidden; border: 2px solid rgba(255, 255, 255, 0.25); cursor: pointer; background: #000 center / cover; }
+    .lk:hover { border-color: #fff; }
+    .lk.on { border-color: var(--acc); }
+    .lk button { position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; border-radius: 50%; border: 0; background: rgba(0, 0, 0, 0.65); color: #fff; font-size: 12px; line-height: 18px; padding: 0; cursor: pointer; display: none; }
+    .lk:hover button { display: block; }
+    #viewBar { position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; gap: 4px; z-index: 4; }
+    #viewBar button { width: 64px; padding: 5px 0; border-radius: 7px; border: 1px solid rgba(255, 255, 255, 0.15); background: rgba(20, 20, 20, 0.55); color: #ddd; font: 11.5px system-ui, sans-serif; cursor: pointer; backdrop-filter: blur(4px); }
+    #viewBar button.on { background: rgba(233, 229, 221, 0.92); color: #111; }
+    #viewBar .gap { height: 6px; }
+    /* #045's path-trace menu and viewer (pathtrace/still.js) */
+    #ptPop { position: fixed; right: calc(var(--panel) + 10px); bottom: 10px; width: 300px; background: rgba(24, 23, 21, 0.97); border: 1px solid #45413b; border-radius: 12px; padding: 8px 0 10px; z-index: 30; display: none; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5); }
+    #ptPop.open { display: block; }
+    #ptPop .sect { padding: 2px 14px 6px; font-weight: 600; }
+    #ptPop .field { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 3px 14px; }
+    #ptPop .field label { color: #bbb; }
+    #ptPop select { max-width: 170px; background: #232220; color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 3px; }
+    #ptPop .chk { padding: 0 14px; }
+    #ptPop .btnrow { display: flex; gap: 6px; padding: 4px 14px 0; }
+    #ptPop .btnrow button { flex: 1; }
+    #ptBar { height: 4px; margin: 6px 14px; border-radius: 2px; background: #333; overflow: hidden; }
+    #ptBar div { height: 100%; width: 0; background: var(--acc); }
+    #ptStatus { padding: 0 14px 4px; font-size: 11px; color: #aaa; }
+    #ptView { position: fixed; inset: 0; z-index: 40; background: #050505; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
+    #ptView.open { display: flex; }
+    #ptCanvas { cursor: ew-resize; touch-action: none; }
+    #ptViewBar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: center; max-width: 96vw; }
+    #ptViewBar button { padding: 5px 10px; border-radius: 7px; border: 1px solid #444; background: #222; color: #ddd; font: 12px system-ui, sans-serif; cursor: pointer; }
+    #ptViewBar button.on { background: #e8e2d6; color: #111; border-color: #e8e2d6; }
+    #ptViewBar button:disabled { opacity: 0.35; }
+    #ptViewBar label { font: 12px system-ui, sans-serif; color: #bbb; }
+    #ptInfo { max-width: 94vw; font: 11.5px/1.4 system-ui, sans-serif; color: #999; text-align: center; }
+    /* narrow screens: the picture above, the rails below */
+    @media (max-width: 760px) {
+      #app { flex-direction: column; }
+      #stage { flex: none; height: 56vh; }
+      #panel { width: 100%; height: auto; flex: 1; border-left: 0; border-top: 1px solid var(--line); }
+      #ptPop { right: 8px; left: 8px; width: auto; bottom: 8px; }
+      #viewBar button { width: 52px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="stage">
+      <div id="caption"></div>
+      <div id="viewBar">
+        <button data-frame="full" title="Head to toe (F)">Full</button>
+        <button data-frame="half" title="Waist up">Half</button>
+        <button data-frame="face" title="Face and hair">Face</button>
+        <button data-frame="feet" title="Hem and shoes">Shoes</button>
+        <div class="gap"></div>
+        <button data-angle="0" title="From the front">Front</button>
+        <button data-angle="40" title="Three-quarter">¾</button>
+        <button data-angle="90" title="From the side">Side</button>
+        <button data-angle="180" title="From behind">Back</button>
+        <div class="gap"></div>
+        <button id="spinBtn" title="Turntable: the camera circles her (T)">⟳ Spin</button>
+      </div>
+      <div id="lookbook"></div>
+      <div id="status" class="hidden"></div>
+    </div>
+    <div id="panel">
+      <h1>#047 Wardrobe <a href="README.md">all experiments</a></h1>
+      <div id="rails"></div>
+      <div class="sep"></div>
+      <div class="lbl2">Look</div>
+      <div class="seg" id="lookSeg"><button data-v="realistic">Realistic</button><button data-v="stylized">Stylized</button><button data-v="cel">Cel shaded</button></div>
+      <div class="lbl2">Pose</div>
+      <div class="seg" id="poseSeg"><button data-v="sides">Arms down</button><button data-v="stand">Hands clasped</button><button data-v="seated">At the piano</button></div>
+      <div class="lbl2">Light</div>
+      <div class="seg" id="lightSeg"><button data-v="studio">Studio</button><button data-v="stage">Stage</button><button data-v="day">Daylight</button></div>
+      <label class="chk"><input type="checkbox" id="eyeContact" checked> She looks at the camera</label>
+      <div class="actions">
+        <button id="shuffleAll" title="A random dress, hair, shoes, fabric and colours (R)">🎲 Shuffle all</button>
+        <button id="shuffleCol" title="New colours for what she has on, instantly (C)">🎨 Shuffle colours</button>
+        <button id="saveLook" title="Keep this combination in the strip under the picture (S)">★ Save look</button>
+        <button id="ptOpen" class="primary" title="A path-traced still of this moment (#045's tracers)">Path trace…</button>
+      </div>
+      <div class="keys"><kbd>←</kbd> <kbd>→</kbd> cycle the highlighted rail · <kbd>↑</kbd> <kbd>↓</kbd> pick a rail · <kbd>1</kbd>–<kbd>3</kbd> look · <kbd>R</kbd> shuffle · <kbd>C</kbd> colours · <kbd>S</kbd> save · <kbd>T</kbd> spin · drag to orbit, scroll to zoom</div>
+    </div>
+  </div>
+
+  <div id="ptPop">
+    <div class="sect">Path-traced still</div>
+    <div class="field" title="three-gpu-pathtracer (Garrett Johnson): WebGPU compute, or its older WebGL tracer. MuTracer (Yi Shen): WebGPU, or its WebGL 2 fallback"><label>Renderer</label><select id="ptEngine">
+      <option value="gpt-webgpu">three-gpu-pathtracer · WebGPU</option>
+      <option value="gpt-webgl">three-gpu-pathtracer · WebGL</option>
+      <option value="mu-webgpu" selected>MuTracer · WebGPU</option>
+      <option value="mu-webgl">MuTracer · WebGL 2</option>
+    </select></div>
+    <div class="field"><label>Samples per pixel</label><select id="ptSpp"><option>16</option><option>64</option><option selected>256</option><option>1024</option><option>4096</option></select></div>
+    <div class="field"><label>Bounces</label><select id="ptBounces"><option>3</option><option selected>6</option><option>10</option></select></div>
+    <div class="field"><label>Size</label><select id="ptSize"><option value="screen">As on screen</option><option value="640x800">640×800 (test)</option><option value="1080x1350" selected>1080×1350 (portrait)</option><option value="1920x1080">1920×1080</option><option value="2160x2700">2160×2700</option></select></div>
+    <div class="field" title="The strand hair (half-up and bun styles) is baked into ribbons facing the camera"><label>Hair strands</label><select id="ptHair"><option value="0.25">25 %</option><option value="0.5" selected>50 %</option><option value="1">All</option></select></div>
+    <label class="chk"><input type="checkbox" id="ptDenoise" checked> Denoise (OIDN on WebGPU, JNLM on WebGL)</label>
+    <label class="chk" style="display:none"><input type="checkbox" id="ptFx"> Effects</label>
+    <div id="ptBar"><div></div></div>
+    <div id="ptStatus">Traced in the realistic look (the toon shading and ink outlines are raster effects); the page's own picture is beside it in the viewer.</div>
+    <div class="btnrow"><button id="ptStart" class="btn">Render still</button><button id="ptAll" class="btn" title="Every renderer this browser can run, one after the other">Compare all</button></div>
+    <div class="btnrow"><button id="ptOpenLast" class="btn">Last stills</button><button id="ptCancel" class="btn">Cancel</button><button id="ptHide" class="btn">Close</button></div>
+  </div>
+  <div id="ptView">
+    <canvas id="ptCanvas" title="Drag to move the split: the page's raster picture on the left"></canvas>
+    <div id="ptViewBar"><span id="ptTabs"></span><label><input type="checkbox" id="ptSplit" checked> Split with raster</label><label style="display:none"><input type="checkbox" id="ptFxView" checked> Effects</label><button id="ptSave">Save PNG</button><button id="ptClose">Close (Esc)</button></div>
+    <div id="ptInfo"></div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three'
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+    import { buildGrandPiano } from './concertstage/concert-grand.js'
+    import { loadCharacter } from './pianist/character.js'
+    import { createRig } from './pianist/rig.js'
+    import { createHair } from './pianist/hair.js'
+    import { createDress } from './pianist/dress.js'
+    import { createMeshHair } from './pianist/hair-mesh.js'
+    import { createShoes } from './pianist/shoes.js'
+    import { createLook } from './pianist/look.js'
+    import { createCommunity, communityList } from './pianist/community.js'
+    import { createPathTraceStills } from './pathtrace/still.js'
+    import { OUR_DRESSES, OUR_HAIR, OUR_SHOES, OUR_BOTTOMS, COMMUNITY, FABRICS, SLITS, SLIT_AT, OUTFITS, PALETTES } from './wardrobe/catalog.js'
+
+    const $ = id => document.getElementById(id)
+    const v3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z)
+    const params = new URLSearchParams(location.search)
+    const LOWQ = params.get('q') === 'low' || (params.get('q') !== 'high' && matchMedia('(pointer: coarse)').matches)
+    let statusTimer = 0
+    function setStatus(msg, isError = false, ms = 0) {
+      const el = $('status'); el.textContent = msg || ''
+      el.classList.toggle('hidden', !msg); el.classList.toggle('error', isError)
+      clearTimeout(statusTimer); if (ms) statusTimer = setTimeout(() => setStatus(''), ms)
+    }
+
+    // ── Renderer ─────────────────────────────────────────────────────────
+    const stageEl = $('stage')
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: params.has('shot') })
+    renderer.domElement.className = 'main'
+    renderer.setPixelRatio(Math.min(devicePixelRatio, LOWQ ? 1.5 : 2))
+    renderer.toneMapping = THREE.AgXToneMapping
+    renderer.shadowMap.enabled = true
+    renderer.shadowMap.type = THREE.VSMShadowMap
+    stageEl.prepend(renderer.domElement)
+    const scene = new THREE.Scene()
+    scene.background = new THREE.Color(0x0b0b0c)
+    const camera = new THREE.PerspectiveCamera(30, 1, 5, 4000)
+    const controls = new OrbitControls(camera, renderer.domElement)
+    controls.enableDamping = true; controls.dampingFactor = 0.09
+    controls.minDistance = 25; controls.maxDistance = 370   // (inside the cyclorama, radius 390)
+    controls.maxPolarAngle = Math.PI * 0.62
+    controls.autoRotateSpeed = 1.6
+
+    // ── The studio: a round cyclorama (floor coving up into the wall) ────
+    // Her place is the #032 bench (x 0, z 44): standing she is there too,
+    // facing -z, and the grand (for "At the piano") sits in front of her.
+    const HOME = v3(0, 0, 40)
+    const cycMat = new THREE.MeshStandardMaterial({ color: '#8d8a86', roughness: 0.92, side: THREE.DoubleSide })
+    {
+      const R0 = 300, cove = 90, top = 560, pts = [new THREE.Vector2(0.01, 0), new THREE.Vector2(R0, 0)]
+      for (let i = 1; i <= 10; i++) { const a = i / 10 * Math.PI / 2; pts.push(new THREE.Vector2(R0 + cove * Math.sin(a), cove - cove * Math.cos(a))) }
+      pts.push(new THREE.Vector2(R0 + cove, top))
+      const cyc = new THREE.Mesh(new THREE.LatheGeometry(pts, 128), cycMat)
+      cyc.name = 'cyclorama'
+      cyc.position.copy(HOME); cyc.receiveShadow = true
+      scene.add(cyc)
+    }
+    // Lights: a key (shadows), a fill, two rims, a wash on the backdrop.
+    // Falloff-free spots, as #032's, so pathtrace/snapshot.js converts them alike.
+    const spot = (c, i, ang, pen) => { const l = new THREE.SpotLight(c, i, 0, ang, pen, 0); scene.add(l, l.target); return l }
+    const key = spot(0xffffff, 4, 0.36, 0.85)
+    key.castShadow = true; key.shadow.mapSize.set(LOWQ ? 1024 : 2048, LOWQ ? 1024 : 2048)
+    key.shadow.camera.near = 150; key.shadow.camera.far = 900
+    key.shadow.bias = -0.0003; key.shadow.normalBias = 0.05; key.shadow.radius = 6; key.shadow.blurSamples = 12
+    const fill = spot(0xffffff, 1, 0.45, 1)
+    const rimL = spot(0xffffff, 2, 0.28, 0.9), rimR = spot(0xffffff, 2, 0.28, 0.9)
+    const wash = spot(0xffffff, 1, 0.6, 1)
+    // [colour, intensity, position, target] per light; environment intensity; exposure
+    const LIGHTS = {
+      studio: { key: [0xfff3e6, 4.6, [-170, 330, -190], [0, 110, 44]], fill: [0xeef3ff, 1.5, [210, 190, -170], [0, 100, 44]], rimL: [0xffffff, 2.6, [-190, 280, 260], [0, 130, 44]], rimR: [0xffffff, 2.2, [200, 260, 250], [0, 120, 44]], wash: [0xffffff, 0.9, [0, 380, -120], [0, 60, 330]], env: 0.6, exposure: 1 },
+      stage: { key: [0xffcf98, 6.5, [-120, 520, -160], [0, 100, 44]], fill: [0xb8c6ff, 0.35, [230, 160, -120], [0, 100, 44]], rimL: [0xffe2c0, 4.2, [-160, 360, 300], [0, 140, 44]], rimR: [0xffd6a8, 3.2, [170, 340, 300], [0, 130, 44]], wash: [0xffb070, 0.25, [0, 400, -120], [0, 60, 330]], env: 0.25, exposure: 1 },
+      day: { key: [0xf2f6ff, 3.6, [-240, 300, -160], [0, 110, 44]], fill: [0xfff5e8, 2.4, [230, 220, -200], [0, 100, 44]], rimL: [0xffffff, 1.6, [-160, 260, 280], [0, 130, 44]], rimR: [0xffffff, 1.6, [180, 260, 260], [0, 120, 44]], wash: [0xffffff, 1.4, [0, 380, -120], [0, 60, 330]], env: 1, exposure: 1.05 },
+    }
+    const pmrem = new THREE.PMREMGenerator(renderer)
+    // softboxes around the set, for reflections (and #045's tracers: ray cast into an equirect map)
+    const envScene = new THREE.Scene()
+    {
+      const s = envScene; s.background = new THREE.Color(0x0c0c0c)
+      const box = (w, h, p, k, c = 0xffffff) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(c).multiplyScalar(k), side: THREE.DoubleSide })); m.position.set(...p); m.lookAt(0, 100, 40); s.add(m) }
+      box(220, 300, [-320, 300, -260], 5, 0xfff3e6)
+      box(180, 260, [360, 220, -220], 2, 0xeef3ff)
+      box(120, 400, [-300, 260, 420], 2.5)
+      box(120, 400, [320, 240, 420], 2.5)
+      box(600, 200, [0, 700, 40], 1.2)
+      box(1400, 300, [0, 40, -800], 0.15, 0xc8c0b4)
+      scene.environment = pmrem.fromScene(s, 0.02, 1, 6000).texture
+    }
+    function applyLight(k) {
+      const L = LIGHTS[k]
+      for (const [name, l] of Object.entries({ key, fill, rimL, rimR, wash })) {
+        const [c, i, p, t] = L[name]
+        l.color.set(c); l.intensity = i; l.position.set(...p); l.target.position.set(...t)
+      }
+      scene.environmentIntensity = L.env; renderer.toneMappingExposure = L.exposure
+    }
+
+    // ── The piano (for "At the piano"; built when first needed) ──────────
+    const SEAT_Y = 55.4
+    let piano = null
+    function ensurePiano() {
+      if (piano) return piano
+      piano = buildGrandPiano({ mirror: false })
+      piano.setFinish('ebony'); piano.setLid('full')
+      piano.bench.position.z = 47
+      piano.root.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true } })
+      scene.add(piano.root)
+      return piano
+    }
+    // the bench the skirt rests on (dress.js reads position.z and userData.lift
+    // each step): the piano's when seated, out of reach standing
+    let seated = false
+    const benchProxy = { position: { get z() { return seated && piano ? piano.bench.position.z : 1e5 } }, userData: {} }
+
+    // ── The model ────────────────────────────────────────────────────────
+    setStatus('Loading the model…')
+    const ch = await loadCharacter(new URL('./pianist/assets/', import.meta.url).href)
+    scene.add(ch.group)
+    const rig = createRig(ch, { seat: v3(0, SEAT_Y + 8.6, 44) })
+    rig.state.stand = 1
+    rig.state.gazeMode = 'music'
+    rig.update(0, 1 / 60, false)
+    ch.group.updateMatrixWorld(true)
+    const look = createLook(ch)
+
+    // what the rails offer (community entries only when the build has them)
+    const have = new Map(communityList(ch).map(e => [e.key, e]))
+    const pick = (obj, kinds) => Object.entries(obj).filter(([k]) => have.has(k) && kinds.includes(have.get(k).kind))
+    const DRESSES = [...OUR_DRESSES, ...pick(COMMUNITY.dress, ['dress']), ...pick(COMMUNITY.top, ['top'])]
+    const HAIRS = [...OUR_HAIR, ...pick(COMMUNITY.hair, ['hair'])]
+    const SHOES = [...OUR_SHOES, ...pick(COMMUNITY.shoes, ['shoes'])]
+    // MakeHuman's young women's skins (pianist/build/build-character.mjs)
+    const SKINS = [['caucasian', 'European'], ['asian', 'East Asian'], ['african', 'African']]
+    const BOTTOMS = [...OUR_BOTTOMS, ...pick(COMMUNITY.bottom, ['bottom'])]
+    // anything new in the build no list names yet
+    for (const e of have.values()) {
+      const L = e.kind === 'hair' ? HAIRS : e.kind === 'shoes' ? SHOES : e.kind === 'bottom' ? BOTTOMS : DRESSES
+      if (!L.some(([k]) => k === e.key)) L.push([e.key, e.title])
+    }
+    const OUTFIT_LIST = Object.entries(OUTFITS).filter(([, o]) => [o.dress, o.hair, o.shoes, o.bottom || 'ours'].every(k => k[0] !== 'c' || have.has(k))).map(([k, o]) => [k, o.name])
+    const isOurs = d => d[0] !== 'c'
+    const isTop = d => have.get(d)?.kind === 'top'
+    const isQipao = d => /qipao$/.test(d)
+
+    // ── The state: one object, in the link too ───────────────────────────
+    const W = {
+      outfit: 'fishtail-black', dress: 'c894', bottom: 'ours', dressColor: '#f2efe9', skirtColor: null, trim: null, fabric: 'made', slit: 'calf',
+      hair: 'c3694', hairColor: '#d9c7a3', shoes: 'flats', shoeColor: '#151214', skinTex: 'caucasian', skin: '#fff0e6', faceAsian: 0, faceAfrican: 0, backdrop: '#8d8a86',
+      look: 'realistic', pose: 'sides', light: 'studio',
+    }
+    const URLKEYS = { outfit: 'outfit', dress: 'dress', bottom: 'bottom', dressColor: 'dcol', skirtColor: 'skcol', trim: 'trim', fabric: 'fabric', slit: 'slit', hair: 'hair', hairColor: 'hcol', shoes: 'shoes', shoeColor: 'scol', skinTex: 'skintex', skin: 'skin', faceAsian: 'fasian', faceAfrican: 'fafrican', backdrop: 'bg', look: 'look', pose: 'pose', light: 'light' }
+    function outfitInto(k) {
+      const o = OUTFITS[k]; if (!o) return false
+      Object.assign(W, { outfit: k, dress: o.dress, bottom: o.bottom || 'ours', dressColor: o.color, skirtColor: o.skirtColor || null, trim: o.trim || null, fabric: o.fabric, slit: o.slit || 'calf', hair: o.hair, hairColor: o.hairColor, shoes: o.shoes, shoeColor: o.shoeColor || '#151214' })
+      return true
+    }
+    // (no wardrobe in the link: the first concert outfit)
+    if (params.get('outfit') || !['dress', 'hair', 'shoes'].some(k => params.has(k))) outfitInto(params.get('outfit') || W.outfit)
+    for (const [k, q] of Object.entries(URLKEYS)) if (k !== 'outfit' && params.has(q)) { const v = params.get(q); W[k] = /color|Color|skin|backdrop|trim/.test(k) && /^[0-9a-f]{6}$/i.test(v) ? '#' + v : v }
+    // (only what this build has)
+    if (!DRESSES.some(([k]) => k === W.dress)) W.dress = 'knee-fitted'
+    if (!HAIRS.some(([k]) => k === W.hair)) W.hair = 'long01'
+    if (!SHOES.some(([k]) => k === W.shoes)) W.shoes = 'flats'
+    if (!BOTTOMS.some(([k]) => k === W.bottom)) W.bottom = 'ours'
+    if (!LIGHTS[W.light]) W.light = 'studio'
+    W.faceAsian = Math.min(1, Math.max(0, +W.faceAsian || 0)); W.faceAfrican = Math.min(1 - W.faceAsian, Math.max(0, +W.faceAfrican || 0))
+    if (!SKINS.some(([k]) => k === W.skinTex)) W.skinTex = 'caucasian'
+    if (!['realistic', 'stylized', 'cel'].includes(W.look)) W.look = 'realistic'
+    if (!['stand', 'sides', 'seated'].includes(W.pose)) W.pose = 'sides'
+    let urlTimer = 0
+    function saveUrl() {
+      clearTimeout(urlTimer)
+      urlTimer = setTimeout(() => {
+        const q = new URLSearchParams()
+        for (const [k, p] of Object.entries(URLKEYS)) { const v = W[k]; if (v == null || v === '' || (k === 'outfit' && !v)) continue; q.set(p, typeof v === 'string' ? v.replace(/^#/, '') : v) }
+        for (const k of ['q', 'shot']) if (params.has(k)) q.set(k, params.get(k))
+        history.replaceState(null, '', '?' + q.toString())
+      }, 250)
+    }
+
+    // ── Wearing things ───────────────────────────────────────────────────
+    // A slot runs one build at a time; clicks while it builds keep only the
+    // latest choice (cycling fast never queues up every dress on the way).
+    const busy = new Set()
+    function slot(name, fn) {
+      let running = null, pending
+      const run = v => {
+        if (running) { pending = v; return running }
+        busy.add(name); railBusy(name, true)
+        running = (async () => {
+          try { await fn(v) } catch (e) { console.error(e); setStatus(`Could not load that (${e.message})`, true, 4000) }
+          finally {
+            running = null
+            if (pending !== undefined) { const p = pending; pending = undefined; await run(p) }
+            else { busy.delete(name); railBusy(name, false) }
+          }
+        })()
+        return running
+      }
+      return run
+    }
+    let hair = null, dress = null, shoes = null
+    const extras = () => [dress?.object]
+    function applyLook() { look.apply(W.look, extras()); look.recolor(extras()) }
+    // Modesty (as #032): nothing would cover her → the body stays hidden
+    const skinMeshes = () => { const l = []; ch.group.traverse(o => { if (o.isMesh && (o.material === ch.materials.skin || o.userData.origMat === ch.materials.skin || o.name === 'body')) l.push(o) }); return l }
+    const coverBody = on => { for (const o of skinMeshes()) { o.userData.modest = !on; o.visible = on } }
+    const keepModest = () => { for (const o of skinMeshes()) if (o.userData.modest) o.visible = false }
+
+    async function buildDress(v) {
+      const color = W.dressColor
+      if (!isOurs(v)) {
+        const item = await createCommunity(ch, v, { color })
+        if (!isTop(v)) return item
+        // their top over a bottom (our fitted skirt, or community trousers or a
+        // skirt), each with its own colour
+        const bc = W.skirtColor || color
+        let skirt
+        if (W.bottom === 'ours') skirt = createDress(ch, rig, { seatY: SEAT_Y, bench: benchProxy, length: 'midi', skirt: 'fitted', color: bc, bodice: false, waist: 13 })
+        else { const b = await createCommunity(ch, W.bottom, { color: bc }); skirt = { ...b, object: new THREE.Group(), settle() {} }; skirt.object.add(b.object); skirt.update = dt => { b.object.visible = skirt.object.visible; b.update(dt) } }
+        skirt.object.add(item.object)
+        return {
+          kind: 'top', object: skirt.object, simulate: false,
+          update(dt) { item.object.visible = skirt.object.visible; item.update(dt); skirt.update(dt) },
+          setColor(c) { item.setColor(c); if (!W.skirtColor) skirt.setColor(c) },
+          setSkirtColor(c) { skirt.setColor(c || W.dressColor) },
+          setFabric(k) { skirt.setFabric?.(k); item.setFabric(k) },
+          settle(s) { skirt.settle?.(s) },
+          dispose() { item.dispose(); skirt.dispose() },
+        }
+      }
+      let [length, skirt, sleeves = 'none'] = v.split('-')
+      const neck = sleeves === 'qipao' ? 'qipao' : 'halter'
+      if (neck === 'qipao') sleeves = 'none'
+      return createDress(ch, rig, { seatY: SEAT_Y, bench: benchProxy, length: length === 'knee' ? 'midi' : length, skirt, sleeves, neck, trim: W.trim, color, slits: W.slit !== 'off', slitAt: SLIT_AT[W.slit] ?? -14 })
+    }
+    const wearDress = slot('dress', async v => {
+      if (!dress) coverBody(false)
+      const next = await buildDress(v)
+      dress?.dispose()
+      dress = next
+      scene.add(dress.object)
+      dress.setFabric?.(W.fabric)
+      dress.settle?.(2.5)
+      applyLook()
+      coverBody(true)
+    })
+    const wearHair = slot('hair', async style => {
+      const color = W.hairColor
+      const next = style === 'halfup' || style === 'updo'
+        ? createHair(ch, rig, { density: LOWQ ? 0.5 : 1, color, style })
+        : style[0] === 'c' ? await createCommunity(ch, style, { color })
+        : await createMeshHair(ch, style, { color })
+      hair?.dispose()
+      hair = next
+      scene.add(hair.object)
+      hair.simulate = params.get('hairsim') !== '0'
+      if (hair.kind === 'strands') hair.settle(style === 'halfup' ? 2 : 0.05)
+      else hair.settle?.(1)
+      applyLook()
+    })
+    const wearShoes = slot('shoes', async v => {
+      const next = v === 'none' ? { object: Object.assign(new THREE.Group(), { name: 'barefoot' }), update() {}, dispose() {}, setColor() {} }
+        : v === 'flats' ? createShoes(ch, { color: W.shoeColor }) : await createCommunity(ch, v, { color: W.shoeColor })
+      shoes?.dispose?.(); shoes?.object.removeFromParent()
+      shoes = next
+      scene.add(shoes.object)
+      applyLook()
+    })
+
+    // colours: straight onto the materials, no rebuild
+    function paint(what) {
+      if (what === 'dress') dress?.setColor(W.dressColor)
+      if (what === 'skirt') dress?.setSkirtColor?.(W.skirtColor)
+      if (what === 'trim') dress?.setTrim?.(W.trim)
+      if (what === 'hair') { hair?.setColor(W.hairColor); ch.materials.brow.color.set(W.hairColor).multiplyScalar(0.7) }
+      if (what === 'shoes') shoes?.setColor?.(W.shoeColor)
+      if (what === 'skin') ch.materials.skin.color.set(W.skin)
+      if (what === 'backdrop') cycMat.color.set(W.backdrop)
+      look.recolor(extras())
+    }
+
+    // ── Poses ────────────────────────────────────────────────────────────
+    function applyPose() {
+      const was = seated
+      seated = W.pose === 'seated'
+      if (seated) ensurePiano()
+      // (at the piano the front is inside it: from her left side instead, and back)
+      if (was !== seated) camState.angle = seated ? 70 : 0
+      if (piano) piano.root.visible = seated
+      rig.state.stand = seated ? 0 : 1
+      rig.state.standArms = W.pose === 'sides' ? 'sides' : 'clasp'
+      // a few frames to get there, then let the cloth fall
+      for (let i = 0; i < 30; i++) { rig.update(simT, 1 / 60, false); simT += 1 / 60 }
+      ch.group.updateMatrixWorld(true)
+      dress?.settle?.(1.5); hair?.settle?.(0.5)
+      frameTo(camState.frame, camState.angle, true)
+    }
+
+    // ── Camera: framings and angles ──────────────────────────────────────
+    // target heights and distances for her standing / seated (cm, fov 30)
+    const FRAMES = {
+      full: { stand: [92, 360, 8], seated: [80, 345, 12] },
+      half: { stand: [125, 190, 4], seated: [105, 180, 8] },
+      face: { stand: [153, 78, 2], seated: [126, 78, 4] },
+      feet: { stand: [20, 140, 14], seated: [22, 150, 18] },
+    }
+    const camState = { frame: 'full', angle: 0, anim: null }
+    function camGoal(frame, angleDeg) {
+      const [y, d, el] = FRAMES[frame][seated ? 'seated' : 'stand']
+      const az = THREE.MathUtils.degToRad(angleDeg), e = THREE.MathUtils.degToRad(el)
+      const target = v3(0, y, seated ? 40 : 40)
+      // angle 0: in front of her (she faces -z); positive round to her left
+      const pos = target.clone().add(v3(-Math.sin(az) * Math.cos(e), Math.sin(e), -Math.cos(az) * Math.cos(e)).multiplyScalar(d))
+      return { pos, target }
+    }
+    function currentAngle() {
+      const o = camera.position.clone().sub(controls.target)
+      return THREE.MathUtils.radToDeg(Math.atan2(-o.x, -o.z))
+    }
+    function frameTo(frame, angle = null, instant = false) {
+      camState.frame = frame
+      if (angle != null) camState.angle = angle
+      const g = camGoal(frame, angle ?? currentAngle())
+      if (instant) { camera.position.copy(g.pos); controls.target.copy(g.target); camState.anim = null }
+      else camState.anim = { t: 0, p0: camera.position.clone(), t0: controls.target.clone(), ...g }
+      for (const b of document.querySelectorAll('#viewBar [data-frame]')) b.classList.toggle('on', b.dataset.frame === frame)
+    }
+    function animateCamera(dt) {
+      const a = camState.anim
+      if (!a) return
+      a.t = Math.min(1, a.t + dt / 0.55)
+      const k = a.t * a.t * (3 - 2 * a.t)
+      // orbit round the target rather than cutting through her
+      const tg = a.t0.clone().lerp(a.target, k)
+      const o0 = a.p0.clone().sub(a.t0), o1 = a.pos.clone().sub(a.target)
+      const s0 = new THREE.Spherical().setFromVector3(o0), s1 = new THREE.Spherical().setFromVector3(o1)
+      let dth = s1.theta - s0.theta; if (dth > Math.PI) dth -= 2 * Math.PI; if (dth < -Math.PI) dth += 2 * Math.PI
+      const s = new THREE.Spherical(s0.radius + (s1.radius - s0.radius) * k, s0.phi + (s1.phi - s0.phi) * k, s0.theta + dth * k)
+      controls.target.copy(tg); camera.position.copy(tg).add(v3().setFromSpherical(s))
+      if (a.t >= 1) camState.anim = null
+    }
+    for (const b of document.querySelectorAll('#viewBar [data-frame]')) b.onclick = () => frameTo(b.dataset.frame)
+    for (const b of document.querySelectorAll('#viewBar [data-angle]')) b.onclick = () => { controls.autoRotate = false; $('spinBtn').classList.remove('on'); frameTo(camState.frame, +b.dataset.angle) }
+    function toggleSpin(on = !controls.autoRotate) { controls.autoRotate = on; $('spinBtn').classList.toggle('on', on) }
+    $('spinBtn').onclick = () => toggleSpin()
+    controls.addEventListener('start', () => { camState.anim = null })
+
+    // ── The rails ────────────────────────────────────────────────────────
+    // Each: ‹ [name ▾] › to cycle (wraps round), and swatches + a picker
+    // where it has a colour.
+    const RAILS = [
+      { k: 'outfit', label: 'Outfit', list: () => [['', 'Custom'], ...OUTFIT_LIST], skipBlank: true },
+      { k: 'hair', label: 'Hair', list: () => HAIRS, color: 'hairColor', palette: 'hair' },
+      { k: 'dress', label: () => isTop(W.dress) ? 'Top' : 'Dress', list: () => DRESSES, color: 'dressColor', palette: 'dress' },
+      { k: 'bottom', label: 'Bottom', list: () => BOTTOMS, color: 'skirtColor', palette: 'dress', auto: true, show: () => isTop(W.dress) },
+      { k: 'trim', label: 'Trim', color: 'trim', palette: 'trim', auto: true, show: () => isQipao(W.dress) },
+      { k: 'fabric', label: 'Fabric', list: () => FABRICS.filter(([f]) => f !== 'knit' || isOurs(W.dress)) },
+      { k: 'slit', label: 'Slits', list: () => SLITS, show: () => isOurs(W.dress) },
+      { k: 'shoes', label: 'Shoes', list: () => SHOES, color: 'shoeColor', palette: 'shoes', showColor: () => W.shoes !== 'none' },
+      { k: 'skinTex', label: 'Skin', list: () => SKINS, color: 'skin', palette: 'skin', face: true },
+      { k: 'backdrop', label: 'Backdrop', color: 'backdrop', palette: 'backdrop' },
+    ]
+    const railEl = {}
+    let activeRail = 'hair'
+    function buildRails() {
+      const host = $('rails')
+      for (const r of RAILS) {
+        const el = document.createElement('div')
+        el.className = 'row'; el.dataset.k = r.k
+        el.innerHTML = `<div class="rowHead"><span class="lbl"></span><span class="spin"></span><span class="count"></span></div>`
+        if (r.list) {
+          const cy = document.createElement('div'); cy.className = 'cycler'
+          cy.innerHTML = `<button class="prev" title="Previous (←)" aria-label="Previous ${typeof r.label === 'string' ? r.label : ''}">‹</button><select></select><button class="next" title="Next (→)" aria-label="Next">›</button>`
+          cy.querySelector('.prev').onclick = () => { activate(r.k); cycle(r.k, -1) }
+          cy.querySelector('.next').onclick = () => { activate(r.k); cycle(r.k, 1) }
+          cy.querySelector('select').onchange = e => { activate(r.k); choose(r.k, e.target.value) }
+          el.appendChild(cy)
+        }
+        if (r.color) {
+          const cs = document.createElement('div'); cs.className = 'colors'
+          const inp = document.createElement('input'); inp.type = 'color'; inp.title = 'Any colour'
+          inp.oninput = () => { activate(r.k); setColor(r.color, inp.value) }
+          cs.appendChild(inp)
+          if (r.auto) {
+            const b = document.createElement('button'); b.className = 'sw auto'; b.title = r.k === 'bottom' ? 'As the top' : 'A deep shade of the dress'; b.dataset.c = ''
+            b.onclick = () => { activate(r.k); setColor(r.color, null) }
+            cs.appendChild(b)
+          }
+          for (const [c, name] of PALETTES[r.palette]) {
+            const b = document.createElement('button'); b.className = 'sw'; b.style.setProperty('--c', c); b.title = name; b.dataset.c = c
+            b.onclick = () => { activate(r.k); setColor(r.color, c) }
+            cs.appendChild(b)
+          }
+          el.appendChild(cs)
+        }
+        if (r.face) {
+          // the face's shape (character.js setFace): MakeHuman's ethnicity mix, the head only
+          const fs = document.createElement('div'); fs.className = 'face'
+          fs.innerHTML = ch.faceMorphs.map(k => `<label title="MakeHuman's ${k} face target (the head only: the body and the clothes stay as they are)">${{ asian: 'East Asian face', african: 'African face' }[k] || k}<input type="range" min="0" max="1" step="0.01" data-face="${k}"><span></span></label>`).join('')
+          for (const inp of fs.querySelectorAll('input')) {
+            inp.oninput = () => { activate(r.k); setFace(inp.dataset.face, +inp.value, false) }
+            inp.onchange = () => setFace(inp.dataset.face, +inp.value, true)
+          }
+          el.appendChild(fs)
+        }
+        el.addEventListener('pointerdown', () => activate(r.k))
+        host.appendChild(el)
+        railEl[r.k] = el
+      }
+    }
+    function railBusy(k, on) { railEl[k]?.classList.toggle('busy', on) }
+    function activate(k) { activeRail = k; for (const [kk, el] of Object.entries(railEl)) el.classList.toggle('active', kk === k) }
+    const railOf = k => RAILS.find(r => r.k === k)
+    function refreshRails() {
+      for (const r of RAILS) {
+        const el = railEl[r.k]
+        el.hidden = r.show ? !r.show() : false
+        el.querySelector('.lbl').textContent = typeof r.label === 'function' ? r.label() : r.label
+        if (r.list) {
+          const L = r.list(), sel = el.querySelector('select')
+          const sig = L.map(x => x[0]).join('|')
+          if (sel.dataset.sig !== sig) {
+            sel.innerHTML = ''
+            // outfits in their groups
+            let og = null
+            for (const [v, n] of L) {
+              const g = r.k === 'outfit' && OUTFITS[v] ? OUTFITS[v].group || 'More outfits' : null
+              if (g && og?.label !== g) { og = document.createElement('optgroup'); og.label = g; sel.appendChild(og) }
+              ;(g ? og : sel).appendChild(new Option(n, v))
+            }
+            sel.dataset.sig = sig
+          }
+          sel.value = W[r.k] ?? ''
+          const i = L.findIndex(x => x[0] === (W[r.k] ?? '')), n = L.length - (r.skipBlank ? 1 : 0)
+          el.querySelector('.count').textContent = i >= (r.skipBlank ? 1 : 0) ? `${i + (r.skipBlank ? 0 : 1)} / ${n}` : `${n}`
+        }
+        if (r.color) {
+          const cur = W[r.color]
+          const cs = el.querySelector('.colors')
+          cs.style.display = r.showColor && !r.showColor() ? 'none' : ''
+          cs.querySelector('input').value = cur || (r.k === 'bottom' ? W.dressColor : '#555555')
+          for (const b of cs.querySelectorAll('.sw')) b.classList.toggle('on', (b.dataset.c || null) === (cur || null))
+        }
+        for (const inp of el.querySelectorAll('[data-face]')) {
+          const v = W[faceKey(inp.dataset.face)]
+          inp.value = v; inp.nextElementSibling.textContent = Math.round(v * 100) + ' %'
+        }
+      }
+      for (const [id, k] of [['lookSeg', 'look'], ['poseSeg', 'pose'], ['lightSeg', 'light']]) for (const b of $(id).children) b.classList.toggle('on', b.dataset.v === W[k])
+      const o = OUTFITS[W.outfit]
+      $('caption').innerHTML = `<b>${o ? o.name : 'Custom look'}</b>${[nameOf(HAIRS, W.hair), nameOf(DRESSES, W.dress), isTop(W.dress) ? nameOf(BOTTOMS, W.bottom)?.toLowerCase() : null, FABRICS.find(f => f[0] === W.fabric)?.[1].toLowerCase(), nameOf(SHOES, W.shoes)].filter(Boolean).join(' · ')}`
+    }
+    const nameOf = (L, k) => L.find(x => x[0] === k)?.[1]
+
+    // one step along a rail
+    function cycle(k, d) {
+      const r = railOf(k)
+      if (!r.list) {
+        // a colour rail: step through its swatches
+        const P = PALETTES[r.palette].map(x => x[0]), i = P.indexOf(W[r.color])
+        return setColor(r.color, P[(i + d + P.length) % P.length])
+      }
+      const L = r.list().map(x => x[0]).filter(v => !(r.skipBlank && v === ''))
+      const i = L.indexOf(W[k] ?? '')
+      const next = L[i < 0 ? (d > 0 ? 0 : L.length - 1) : (i + d + L.length) % L.length]
+      return choose(k, next)
+    }
+    let lastOutfit = W.outfit
+    function choose(k, v) {
+      if (k === 'outfit') {
+        if (!v) { W.outfit = ''; refreshRails(); saveUrl(); return }
+        const before = { ...W }
+        outfitInto(v); lastOutfit = v
+        refreshRails(); saveUrl()
+        // only what changed is rebuilt; colours are painted
+        const jobs = []
+        const rebuildDress = before.dress !== W.dress || (isTop(W.dress) && before.bottom !== W.bottom) || (isOurs(W.dress) && (before.slit !== W.slit || before.trim !== W.trim))
+        if (rebuildDress) jobs.push(wearDress(W.dress))
+        else { paint('dress'); paint('skirt'); paint('trim'); if (before.fabric !== W.fabric) { dress?.setFabric?.(W.fabric); applyLook() } }
+        if (before.hair !== W.hair) jobs.push(wearHair(W.hair)); else paint('hair')
+        if (before.shoes !== W.shoes) jobs.push(wearShoes(W.shoes)); else paint('shoes')
+        paint('hair'); paint('dress')
+        prefetchAround()
+        return Promise.all(jobs)
+      }
+      W[k] = v
+      if (['dress', 'bottom', 'hair', 'shoes', 'fabric', 'slit'].includes(k)) W.outfit = ''
+      // knit is ours only
+      if (k === 'dress' && W.fabric === 'knit' && !isOurs(v)) W.fabric = 'made'
+      refreshRails(); saveUrl(); prefetchAround()
+      if (k === 'dress' || k === 'slit' || k === 'bottom') return wearDress(W.dress)
+      if (k === 'hair') return wearHair(v)
+      if (k === 'shoes') return wearShoes(v)
+      if (k === 'fabric') { dress?.setFabric?.(v); applyLook() }
+      // a skin brings its own face (the sliders fine-tune it) and an untinted texture
+      if (k === 'skinTex') {
+        W.skin = '#ffffff'; paint('skin')
+        for (const f of ch.faceMorphs) W[faceKey(f)] = f === v ? 1 : 0
+        applyFace(true)
+        return wearSkin()
+      }
+    }
+    const faceKey = f => 'face' + f[0].toUpperCase() + f.slice(1)
+    // live while dragging; on release, rebuild what kept the old head (simulated
+    // hair holds its rest shape, strands their roots)
+    function applyFace(commit) {
+      ch.setFace(Object.fromEntries(ch.faceMorphs.map(f => [f, W[faceKey(f)]])))
+      rig.measureEyes()
+      for (const f of ch.faceMorphs) W[faceKey(f)] = ch.face[f]
+      refreshRails(); saveUrl()
+      if (commit && hair && (hair.kind === 'strands' || hair.cloth)) return wearHair(W.hair)
+    }
+    function setFace(f, v, commit) { W[faceKey(f)] = v; return applyFace(commit) }
+    const wearSkin = slot('skinTex', async () => { await ch.setSkin(W.skinTex); look.recolor(extras()) })
+    function setColor(key, c) {
+      W[key] = c
+      if (['dressColor', 'hairColor', 'trim', 'skirtColor'].includes(key)) W.outfit = ''
+      paint({ dressColor: 'dress', skirtColor: 'skirt', trim: 'trim', hairColor: 'hair', shoeColor: 'shoes', skin: 'skin', backdrop: 'backdrop' }[key])
+      if (key === 'dressColor' && isTop(W.dress) && !W.skirtColor) paint('skirt')
+      refreshRails(); saveUrl()
+    }
+
+    // warm the browser cache for the neighbours on each rail, so the next click is quick
+    const warmed = new Set()
+    function warm(k) {
+      const e = have.get(k)
+      if (!e || warmed.has(k)) return
+      warmed.add(k)
+      const files = [ch.meta.parts[k]?.bin, e.map, e.normalMap].filter(Boolean)
+      for (const f of files) fetch(ch.baseUrl + f).catch(() => warmed.delete(k))
+    }
+    function prefetchAround() {
+      const idle = window.requestIdleCallback || (f => setTimeout(f, 300))
+      idle(() => {
+        for (const [L, k] of [[DRESSES, W.dress], [HAIRS, W.hair], [SHOES, W.shoes], ...(isTop(W.dress) ? [[BOTTOMS, W.bottom]] : [])]) {
+          const i = L.findIndex(x => x[0] === k)
+          for (const d of [1, -1, 2]) warm(L[(i + d + L.length) % L.length][0])
+        }
+        const oi = OUTFIT_LIST.findIndex(x => x[0] === lastOutfit)
+        const o = OUTFITS[OUTFIT_LIST[(oi + 1) % OUTFIT_LIST.length][0]]
+        for (const k of [o.dress, o.hair, o.shoes, o.bottom]) if (k) warm(k)
+      })
+    }
+
+    // ── Look, pose, light ────────────────────────────────────────────────
+    function setLook(v) { W.look = v; applyLook(); refreshRails(); saveUrl() }
+    function setPose(v) { W.pose = v; applyPose(); refreshRails(); saveUrl() }
+    function setLight(v) { W.light = v; applyLight(v); refreshRails(); saveUrl() }
+    for (const b of $('lookSeg').children) b.onclick = () => setLook(b.dataset.v)
+    for (const b of $('poseSeg').children) b.onclick = () => setPose(b.dataset.v)
+    for (const b of $('lightSeg').children) b.onclick = () => setLight(b.dataset.v)
+
+    // ── Shuffle ──────────────────────────────────────────────────────────
+    const rnd = L => L[Math.floor(Math.random() * L.length)]
+    function shuffleColours() {
+      const P = PALETTES
+      W.dressColor = rnd(P.dress)[0]
+      W.hairColor = Math.random() < 0.8 ? rnd(P.hair.slice(0, 10))[0] : rnd(P.hair)[0]
+      W.skirtColor = isTop(W.dress) && Math.random() < 0.6 ? rnd(P.dress.filter(([c]) => c !== W.dressColor))[0] : null
+      W.trim = isQipao(W.dress) && Math.random() < 0.7 ? rnd(P.trim)[0] : null
+      // shoes: black, nude, or with the dress
+      W.shoeColor = Math.random() < 0.3 ? W.dressColor : rnd(P.shoes)[0]
+      W.outfit = ''
+      for (const w of ['dress', 'skirt', 'trim', 'hair', 'shoes']) paint(w)
+      refreshRails(); saveUrl()
+    }
+    async function shuffleAll() {
+      W.outfit = ''
+      W.dress = rnd(DRESSES)[0]; W.bottom = rnd(BOTTOMS)[0]; W.hair = rnd(HAIRS)[0]; W.shoes = rnd(SHOES.filter(([k]) => k !== 'none'))[0]
+      W.fabric = rnd(FABRICS.filter(([f]) => f !== 'knit' || isOurs(W.dress)))[0]
+      W.slit = rnd(SLITS)[0]
+      shuffleColours()
+      refreshRails(); saveUrl()
+      await Promise.all([wearDress(W.dress), wearHair(W.hair), wearShoes(W.shoes)])
+    }
+    $('shuffleAll').onclick = () => shuffleAll()
+    $('shuffleCol').onclick = () => shuffleColours()
+
+    // ── Lookbook: saved combinations, a thumbnail each ───────────────────
+    const LS = 'midiviz.wardrobe047.looks'
+    let looks = []
+    try { looks = JSON.parse(localStorage.getItem(LS) || '[]') } catch {}
+    function snapThumb() {
+      render()
+      const src = renderer.domElement, c = document.createElement('canvas'); c.width = 132; c.height = 176
+      const h = src.height, w = Math.min(src.width, h * 0.75)
+      c.getContext('2d').drawImage(src, (src.width - w) / 2, 0, w, h, 0, 0, c.width, c.height)
+      return c.toDataURL('image/jpeg', 0.8)
+    }
+    function drawLookbook() {
+      const host = $('lookbook'); host.innerHTML = ''
+      looks.forEach((l, i) => {
+        const d = document.createElement('div'); d.className = 'lk'; d.style.backgroundImage = `url(${l.thumb})`
+        d.title = `${l.title} (click to wear)`
+        d.onclick = () => wearLook(l.state)
+        const x = document.createElement('button'); x.textContent = '×'; x.title = 'Remove'
+        x.onclick = ev => { ev.stopPropagation(); looks.splice(i, 1); storeLooks(); drawLookbook() }
+        d.appendChild(x); host.appendChild(d)
+      })
+    }
+    function storeLooks() { try { localStorage.setItem(LS, JSON.stringify(looks)) } catch (e) { setStatus('The lookbook is full (browser storage)', true, 3000) } }
+    function saveLook() {
+      const state = { ...W }
+      looks.push({ state, thumb: snapThumb(), title: OUTFITS[W.outfit]?.name || [nameOf(HAIRS, W.hair), nameOf(DRESSES, W.dress)].join(' · ') })
+      if (looks.length > 40) looks.shift()
+      storeLooks(); drawLookbook()
+      $('lookbook').scrollLeft = 1e6
+      setStatus('Saved to the lookbook', false, 1200)
+    }
+    async function wearLook(s) {
+      const before = { ...W }
+      Object.assign(W, s)
+      refreshRails(); saveUrl()
+      if (before.light !== W.light) applyLight(W.light)
+      if (before.pose !== W.pose) applyPose()
+      for (const w of ['skin', 'backdrop']) paint(w)
+      if (before.skinTex !== W.skinTex) wearSkin()
+      const faceChanged = ch.faceMorphs.some(f => before[faceKey(f)] !== W[faceKey(f)])
+      if (faceChanged) { ch.setFace(Object.fromEntries(ch.faceMorphs.map(f => [f, W[faceKey(f)] || 0]))); rig.measureEyes() }
+      const jobs = []
+      if (before.dress !== W.dress || (isTop(W.dress) && before.bottom !== W.bottom) || (isOurs(W.dress) && (before.slit !== W.slit || before.trim !== W.trim))) jobs.push(wearDress(W.dress))
+      else { paint('dress'); paint('skirt'); paint('trim'); if (before.fabric !== W.fabric) dress?.setFabric?.(W.fabric) }
+      if (before.hair !== W.hair || (faceChanged && (hair?.kind === 'strands' || hair?.cloth))) jobs.push(wearHair(W.hair)); else paint('hair')
+      if (before.shoes !== W.shoes) jobs.push(wearShoes(W.shoes)); else paint('shoes')
+      if (before.look !== W.look || before.fabric !== W.fabric) applyLook()
+      await Promise.all(jobs)
+    }
+    $('saveLook').onclick = saveLook
+
+    // ── Keys ─────────────────────────────────────────────────────────────
+    addEventListener('keydown', ev => {
+      if (ev.target.closest?.('input, select, textarea') && !['ArrowLeft', 'ArrowRight'].includes(ev.key)) return
+      if ($('ptView').classList.contains('open') || ev.metaKey || ev.ctrlKey || ev.altKey) return
+      const visible = RAILS.filter(r => !railEl[r.k].hidden)
+      const i = visible.findIndex(r => r.k === activeRail)
+      if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') { ev.preventDefault(); ev.target.blur?.(); cycle(activeRail, ev.key === 'ArrowRight' ? 1 : -1) }
+      else if (ev.key === 'ArrowUp' || ev.key === 'ArrowDown') { ev.preventDefault(); const r = visible[(i + (ev.key === 'ArrowDown' ? 1 : -1) + visible.length) % visible.length]; activate(r.k); railEl[r.k].scrollIntoView({ block: 'nearest' }) }
+      else if (ev.key >= '1' && ev.key <= '3') setLook(['realistic', 'stylized', 'cel'][+ev.key - 1])
+      else if (ev.key === 'r' || ev.key === 'R') shuffleAll()
+      else if (ev.key === 'c' || ev.key === 'C') shuffleColours()
+      else if (ev.key === 's' || ev.key === 'S') saveLook()
+      else if (ev.key === 't' || ev.key === 'T') toggleSpin()
+      else if (ev.key === 'f' || ev.key === 'F') frameTo('full')
+    })
+
+    // ── Loop ─────────────────────────────────────────────────────────────
+    let simT = 0
+    const clock = new THREE.Clock()
+    const camLocal = v3()
+    function step(dt) {
+      simT += dt
+      animateCamera(dt)
+      controls.update(dt)
+      // she looks at the camera when it is in front of her (the rig clamps the head)
+      if ($('eyeContact').checked && Math.abs(currentAngle()) < 100) rig.state.lookAt = ch.group.worldToLocal(camLocal.copy(camera.position))
+      else rig.state.lookAt = null
+      rig.update(simT, dt, false)
+      ch.group.updateMatrixWorld(true)
+      keepModest()
+      hair?.update(dt); dress?.update(dt); shoes?.update?.(dt)
+      look.update()
+    }
+    function render() { renderer.render(scene, camera) }
+    function frame() { step(Math.min(clock.getDelta(), 1 / 20)); render() }
+    function resize(w = stageEl.clientWidth, h = stageEl.clientHeight, style = true) {
+      camera.aspect = w / h
+      // a tall picture: widen the lens a little so the full figure keeps its margins
+      camera.zoom = Math.min(1, (w / h) / 0.62)
+      camera.updateProjectionMatrix()
+      renderer.setSize(w, h, style)
+    }
+    new ResizeObserver(() => resize()).observe(stageEl)
+
+    // ── #045: path-traced stills ─────────────────────────────────────────
+    // begin(): the picture as the page draws it at the still's size, in the
+    // realistic look (toon ramps and outlines are raster effects); end(): back
+    let ptPR = 1, ptLook = null
+    const ptCopy = src => { const c = document.createElement('canvas'); c.width = src.width; c.height = src.height; c.getContext('2d', { willReadFrequently: true }).drawImage(src, 0, 0); return c }
+    const ptStage = {
+      scene, camera, envScene, get envIntensity() { return scene.environmentIntensity },
+      hair: () => hair, exposure: () => renderer.toneMappingExposure,
+      fx: () => ({ exposure: renderer.toneMappingExposure, bloom: null, grain: { amount: 0, vig: 0, time: 0 }, grainShader: null }),
+      current: () => ptCopy(renderer.domElement),
+      begin(w, h) {
+        ptPR = renderer.getPixelRatio(); ptLook = W.look
+        if (W.look !== 'realistic') look.apply('realistic', extras())
+        renderer.setAnimationLoop(null); renderer.setPixelRatio(1)
+        resize(w, h, false)
+        step(1 / 60); render()
+        return ptCopy(renderer.domElement)
+      },
+      end() {
+        renderer.setPixelRatio(ptPR); resize()
+        if (ptLook && ptLook !== 'realistic') applyLook()
+        clock.getDelta()
+        if (!params.has('shot')) renderer.setAnimationLoop(frame)
+      },
+    }
+    const pt = createPathTraceStills(ptStage)
+    $('ptOpen').onclick = () => $('ptPop').classList.toggle('open')
+    $('ptHide').onclick = () => $('ptPop').classList.remove('open')
+
+    // ── Start ────────────────────────────────────────────────────────────
+    buildRails()
+    activate('hair')
+    applyLight(W.light)
+    cycMat.color.set(W.backdrop)
+    ch.materials.skin.color.set(W.skin)
+    // (the face before any hair is fitted)
+    ch.setFace(Object.fromEntries(ch.faceMorphs.map(f => [f, W[faceKey(f)]])))
+    rig.measureEyes()
+    await ch.setSkin(W.skinTex)
+    ch.materials.brow.color.set(W.hairColor).multiplyScalar(0.7)
+    resize()
+    applyPose()
+    refreshRails()
+    setStatus('Dressing…')
+    await Promise.all([wearDress(W.dress), wearShoes(W.shoes), wearHair(W.hair)])
+    applyLook()
+    drawLookbook()
+    setStatus('')
+    prefetchAround()
+    clock.getDelta()
+    if (!params.has('shot')) renderer.setAnimationLoop(frame)
+    window.__wardrobe = {
+      W, THREE, scene, camera, renderer, ch, rig, look, pt, get dress() { return dress }, get hair() { return hair }, get shoes() { return shoes },
+      choose, cycle, setColor, setFace, setLook, setPose, setLight, frameTo, shuffleAll, shuffleColours, saveLook, wearLook,
+      idle: async () => { while (busy.size) await new Promise(r => setTimeout(r, 30)) },
+      /** headless: n frames, then the picture */
+      shot(n = 30) { for (let i = 0; i < n; i++) step(1 / 30); render(); return renderer.domElement.toDataURL('image/png') },
+    }
+  </script>
+</body>
+</html>

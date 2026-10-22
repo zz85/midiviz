@@ -652,7 +652,8 @@
       for (const g of ['covered', 'cocktail', 'sleeveless', 'top']) add('dressStyle', g)
       add('hairStyle', 'hair'); add('shoeStyle', 'shoes')
       // anything new in the build the menu does not list yet
-      for (const e of have.values()) $(e.kind === 'hair' ? 'hairStyle' : e.kind === 'shoes' ? 'shoeStyle' : 'dressStyle').appendChild(new Option(`${e.title} · ${e.license}`, e.key))
+      // (trousers and skirts are worn under a top: #047's Bottom rail, not here)
+      for (const e of have.values()) if (e.kind !== 'bottom') $(e.kind === 'hair' ? 'hairStyle' : e.kind === 'shoes' ? 'shoeStyle' : 'dressStyle').appendChild(new Option(`${e.title} · ${e.license}`, e.key))
     }
     // outfits: a dress, fabric, colour, shoes and hair in one go
     const OUTFITS = {
