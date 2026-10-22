@@ -67,6 +67,8 @@ export async function createTraceSession(key, opts) {
 }
 
 let ltcReady = false
+// three-gpu-pathtracer WebGPU: tracer steps queued between waits for the GPU
+const STEPS = 8
 const toneOf = m => m === 'linear' ? THREE.NoToneMapping : THREE.AgXToneMapping
 
 // ── three-gpu-pathtracer, WebGL ──────────────────────────────────────────
@@ -136,23 +138,36 @@ async function gptWebGPU({ width, height, bounces, toneMapping, denoise }) {
       let t = performance.now()
       pt.setScene(scene, camera)
       times.setup = Math.round(performance.now() - t); t = performance.now()
-      let got = 0
+      // Paced by the GPU, not the display: each renderSample() is one step of
+      // the tracer's task (a tile or a wavefront pass, several per sample), and
+      // waiting for an animation frame after each capped it at 60 steps a
+      // second (16 spp at 1080p: ~2.5 s, whatever the GPU). Here a batch of
+      // steps is queued, then we wait for the GPU to finish it; the page gets
+      // a turn every ~50 ms. (pt.maxSamples stops the work at `samples`, so a
+      // batch running past it costs only the present.)
+      const device = renderer.backend.device, done = () => device.queue.onSubmittedWorkDone()
+      const yieldUI = () => new Promise(r => setTimeout(r, 0))
+      let got = 0, lastYield = performance.now()
       for (let i = 0; ; i++) {
         aborted(signal)
         pt.renderSample()
-        // (the sample counts are a GPU readback: every few frames)
-        if (i % 8 === 7 || got >= samples || samples <= 8) {
+        // (the sample counts: every few steps)
+        if (i % STEPS === STEPS - 1 || samples <= 4) {
+          await done()
           const c = await pt.getSampleCountsAsync()
           got = c.min
           if (times.firstSample == null && got >= 1) times.firstSample = Math.round(performance.now() - t)
           onProgress({ samples: c.avg, of: samples, status: 'tracing' })
           if (got >= samples) break
+          if (performance.now() - lastYield > 50) { await yieldUI(); lastYield = performance.now() }
         }
-        await frame()
       }
       times.trace = Math.round(performance.now() - t); t = performance.now()
       if (den) {
-        while (!den.complete) { aborted(signal); pt.renderSample(); onProgress({ samples, of: samples, status: 'denoising' }); await frame() }
+        for (let i = 0; !den.complete; i++) {
+          aborted(signal); pt.renderSample()
+          if (i % 4 === 3) { await done(); onProgress({ samples, of: samples, status: 'denoising' }); await yieldUI() }
+        }
         times.denoise = Math.round(performance.now() - t)
       }
       pt.renderSample()   // present, then copy in the same task
