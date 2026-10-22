@@ -412,19 +412,19 @@
     <div class="btnrow"><button id="clapNow" class="sec">Applaud now</button></div>
   </div>
   <div id="ptPop" class="pop ui">
-    <div class="sect">Path-traced still (this frame)</div>
+    <div class="sect">Path tracing (stills and video)</div>
     <div class="field" title="three-gpu-pathtracer (Garrett Johnson): WebGPU compute on three/webgpu, or its older WebGL fragment-shader tracer (deprecated upstream). MuTracer (Yi Shen): WebGPU, or its WebGL 2 fallback"><label>Renderer</label><select id="ptEngine">
       <option value="gpt-webgpu">three-gpu-pathtracer · WebGPU</option>
       <option value="gpt-webgl">three-gpu-pathtracer · WebGL</option>
       <option value="mu-webgpu" selected>MuTracer · WebGPU</option>
       <option value="mu-webgl">MuTracer · WebGL 2</option>
     </select></div>
-    <div class="field"><label>Samples per pixel</label><select id="ptSpp"><option>16</option><option>64</option><option selected>256</option><option>1024</option><option>4096</option></select></div>
+    <div class="field" title="Per picture: a still, or each frame of a video. For video, few samples with the denoiser is the practical setting (256 is minutes per second of film)"><label>Samples per pixel</label><select id="ptSpp"><option>4</option><option>16</option><option>64</option><option selected>256</option><option>1024</option><option>4096</option></select></div>
     <div class="field" title="How many times a path may scatter: 3 is enough for the lights on her and the keys, more for light inside the piano and under the lid"><label>Bounces</label><select id="ptBounces"><option>3</option><option selected>6</option><option>10</option></select></div>
-    <div class="field"><label>Size</label><select id="ptSize"><option value="screen">As on screen</option><option value="640x360">640×360 (test)</option><option value="1280x720" selected>1280×720</option><option value="1920x1080">1920×1080</option><option value="3840x2160">3840×2160</option><option value="1080x1920">1080×1920 (Short)</option></select></div>
+    <div class="field"><label>Still size</label><select id="ptSize"><option value="screen">As on screen</option><option value="640x360">640×360 (test)</option><option value="1280x720" selected>1280×720</option><option value="1920x1080">1920×1080</option><option value="3840x2160">3840×2160</option><option value="1080x1920">1080×1920 (Short)</option></select></div>
     <div class="field" title="The strand hair is baked into ribbons facing the camera; fewer, wider strands keep the BVH smaller"><label>Hair strands</label><select id="ptHair"><option value="0.25">25 %</option><option value="0.5" selected>50 %</option><option value="1">All</option></select></div>
     <label class="chk" title="Bloom, film grain and vignette as set in the Look menu, run on the traced picture in the page's order (bloom on linear light, then the page's AgX, then grain), and the same AgX for every tracer. The tracer's picture is captured as linear light up to 8× white in 8 bits, so deep shadows can band a little. No depth of field or dust"><input type="checkbox" id="ptFx">The page's effects (bloom, grain, vignette)</label>
-    <label class="chk" title="OIDN on WebGPU (both tracers), MuTracer's JNLM filter on WebGL; three-gpu-pathtracer's WebGL tracer has none"><input type="checkbox" id="ptDenoise" checked>Denoise the result</label>
+    <label class="chk" title="OIDN on WebGPU (both tracers), MuTracer's JNLM filter on WebGL; three-gpu-pathtracer's WebGL tracer has none"><input type="checkbox" id="ptDenoise" checked>Denoise</label>
     <div id="ptBar"><div></div></div>
     <div id="ptStatus">The song pauses; the picture is frozen at this moment, as the page draws it, then traced.</div>
     <div class="btnrow"><button id="ptStart">Render still</button><button id="ptAll" class="sec" title="The raster frame and every renderer this browser can run, at these settings, one after the other">Compare all</button></div>
@@ -468,15 +468,11 @@
     <div class="field wideOnly"><label>Card</label><select id="exCard"><option value="glass" selected>White on frosted glass</option><option value="glow">Warm glow</option></select></div>
     <canvas id="exPreview" class="wideOnly" width="456" height="256" title="The title card as it will look (the picture behind it is the current view)"></canvas>
     <div class="field"><label>Subtitle</label><input type="text" id="exSub" value="Midiviz Pianist" style="width:100%;box-sizing:border-box;background:#2b2b2b;color:#eee;border:1px solid #444;border-radius:6px;padding:4px 6px;font:inherit"></div>
-    <div class="field" title="Raster: the page's own picture (fast). Path traced: every frame frozen and traced with this renderer, using the Path trace menu's bounces, hair and effects settings. Seconds to minutes per frame: try a 5 s clip (Length) first"><label>Renderer</label><select id="exPt">
+    <div class="field" title="Raster: the page's own picture (fast). Path traced: every frame frozen and traced with the settings of the Path trace menu (renderer, samples, bounces, hair, denoise, effects), the same ones a still uses; the size is this menu's Resolution. Seconds per frame: try a 5 s clip (Length) first"><label>Renderer</label><select id="exPt">
       <option value="raster" selected>Raster (the page, fast)</option>
-      <option value="gpt-webgpu">Path traced · three-gpu-pathtracer WebGPU</option>
-      <option value="gpt-webgl">Path traced · three-gpu-pathtracer WebGL</option>
-      <option value="mu-webgpu">Path traced · MuTracer WebGPU</option>
-      <option value="mu-webgl">Path traced · MuTracer WebGL 2</option>
+      <option value="pt">Path traced (Path trace menu settings)</option>
     </select></div>
-    <div class="field ptOnly" title="Per frame. Few samples plus the denoiser is the practical setting for video; the denoiser can shimmer from frame to frame at very low counts"><label>Samples per frame</label><select id="exPtSpp"><option>4</option><option selected>16</option><option>64</option><option>256</option></select></div>
-    <label class="chk ptOnly" title="OIDN on WebGPU (both tracers), MuTracer's JNLM filter on WebGL; three-gpu-pathtracer's WebGL tracer has none. Off: faster, and noisier at low sample counts"><input type="checkbox" id="exPtDenoise" checked>Denoise each frame</label>
+    <div class="field ptOnly"><div id="exPtInfo" style="font-size:11.5px;opacity:.8;line-height:1.35"></div><div class="btnrow" style="padding:0"><button id="exPtEdit" class="sec">Path trace settings…</button></div></div>
     <div id="exBar"><div></div></div>
     <div id="exStatus">Choose a song first. Rendering is offline, so every frame is smooth however fast the GPU is.</div>
     <div class="btnrow"><button id="exStart">Export</button><button id="exCancel" class="sec">Cancel</button></div>
@@ -1742,7 +1738,7 @@
       ['dofamt', 'dofAmt'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
       ['vol', 'vol'], ['room', 'room'], ['seat', 'seat'], ['rv', 'rvAmt'], ['decay', 'rvDecay'], ['tone', 'rvTone'], ['boost', 'boost'], ['amb', 'amb'], ['applause', 'applause'],
       ['exformat', 'exFormat'], ['exlayout', 'exLayout'], ['exsplit', 'exSplit'], ['exhands', 'exHandsHalf'], ['exlview', 'exLessonView'], ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exsub', 'exSub'], ['excard', 'exCard'], ['excaps', 'exCaps'], ['exvtt', 'exVtt'], ['exlen', 'exLen'], ['exhold', 'exHold'],
-      ['notes', 'linerMode'], ['itstyle', 'itStyle'], ['itstylea', 'itStyleA'], ['itcol', 'itTheme'], ['itpos', 'itPos'], ['itheads', 'itHeads'], ['extitle', 'exTitle'], ['expt', 'exPt'], ['exptspp', 'exPtSpp'], ['exptdn', 'exPtDenoise'],
+      ['notes', 'linerMode'], ['itstyle', 'itStyle'], ['itstylea', 'itStyleA'], ['itcol', 'itTheme'], ['itpos', 'itPos'], ['itheads', 'itHeads'], ['extitle', 'exTitle'], ['expt', 'exPt'], ['ptengine', 'ptEngine'], ['ptspp', 'ptSpp'], ['ptbounces', 'ptBounces'], ['pthair', 'ptHair'], ['ptdn', 'ptDenoise'], ['ptfx', 'ptFx'], ['ptsize', 'ptSize'],
     ].filter(([, id]) => $(id))
     const OUTFIT_KEYS = { dress: 'dress', slit: 'slit', fabric: 'fabric', dcol: 'color', shoes: 'shoes', hair: 'hair', hcol: 'hairColor' }
     // (colours without their #, so links stay readable)
@@ -1755,6 +1751,10 @@
     // load: controls the start-up code did not already take from the URL
     // (the wardrobe, pose and director keys are read above) get their value
     // and their own handler, exactly as if picked in the menu
+    // (links from before the path-trace settings were one set: expt named the
+    // tracer, exptspp / exptdn the video's samples and denoise)
+    if (/^(gpt|mu)-/.test(params.get('expt') || '')) { if (!params.has('ptengine')) params.set('ptengine', params.get('expt')); params.set('expt', 'pt') }
+    for (const [o, n] of [['exptspp', 'ptspp'], ['exptdn', 'ptdn']]) if (params.has(o) && !params.has(n)) params.set(n, params.get(o))
     for (const [k, id] of STATE) {
       if (!params.has(k)) continue
       const el = $(id), v = params.get(k)
@@ -2089,7 +2089,7 @@
       if (!exportSupported()) return void ($('exStatus').textContent = 'This browser has no WebCodecs video encoder; try Chrome or Edge.')
       const [width, height] = $('exRes').value.split('x').map(Number), fps = +$('exFps').value
       // #045: path traced (pathtrace/video.js), one picture per frame
-      const ptKey = $('exPt').value === 'raster' ? null : $('exPt').value
+      const ptKey = $('exPt').value === 'raster' ? null : $('ptEngine').value
       if (ptKey && isShort() && $('exLayout').value === 'stack') return void ($('exStatus').textContent = 'Path tracing does one picture per frame: choose Layout → One picture, or the raster renderer.')
       // the part of the song to render (Length): all of it, or a test clip
       const len = $('exLen').value, here = /^here/.test(len), secs = len === 'all' ? Infinity : +len.replace('here', '')
@@ -2098,7 +2098,7 @@
       const asShort = isShort()
       if (asShort) { if (!(short.b > short.a)) clipFresh(); clipA = short.a; clipB = short.b }
       const clip = clipA > 0 || clipB < song.duration
-      const name = (song.title || 'pianist').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_') + (asShort ? '_short' : '') + (clip ? `_${Math.floor(clipA)}-${Math.ceil(clipB)}s` : '') + (ptKey ? '_' + ptKey : '') + `_${height}p${fps}.mp4`
+      const name = (song.title || 'pianist').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_') + (asShort ? '_short' : '') + (clip ? `_${Math.floor(clipA)}-${Math.ceil(clipB)}s` : '') + (ptKey ? `_${ptKey}_${$('ptSpp').value}spp` : '') + `_${height}p${fps}.mp4`
       let fileStream = null
       if (window.showSaveFilePicker) {
         try {
@@ -2125,8 +2125,8 @@
       $('exStart').disabled = true
       const programs = new Map(); for (let ch = 0; ch < 16; ch++) if (ch !== 9) programs.set(ch, 0)
       const ptv = ptKey ? pathTracedFrames(ptStage, {
-        engine: ptKey, width: width & ~1, height: height & ~1, samples: +$('exPtSpp').value, bounces: +$('ptBounces').value,
-        denoise: $('exPtDenoise').checked, hairFraction: +$('ptHair').value, fx: $('ptFx').checked, signal: exAbort.signal,
+        engine: ptKey, width: width & ~1, height: height & ~1, samples: +$('ptSpp').value, bounces: +$('ptBounces').value,
+        denoise: $('ptDenoise').checked, hairFraction: +$('ptHair').value, fx: $('ptFx').checked, signal: exAbort.signal,
       }) : null
       try {
         const blob = await exportVideo({
@@ -2218,7 +2218,14 @@
     }
     const ptStills = createPathTraceStills(ptStage)
     // Render → Renderer: path traced shows its own settings
-    $('exPt').onchange = () => { for (const e of document.querySelectorAll('#renderPop .ptOnly')) e.style.display = $('exPt').value === 'raster' ? 'none' : '' }
+    // Render → Renderer: path traced shows what it will use, from the Path trace menu
+    const ptSummary = () => {
+      const sel = $('ptEngine'), spp = +$('ptSpp').value
+      $('exPtInfo').textContent = `${sel.options[sel.selectedIndex].textContent} · ${spp} spp · ${$('ptBounces').value} bounces · hair ${Math.round($('ptHair').value * 100)} % · denoise ${$('ptDenoise').checked ? 'on' : 'off'} · effects ${$('ptFx').checked ? 'on' : 'off'}` + (spp >= 256 ? ' (many samples: slow for video)' : '')
+    }
+    $('exPt').onchange = () => { for (const e of document.querySelectorAll('#renderPop .ptOnly')) e.style.display = $('exPt').value === 'raster' ? 'none' : ''; ptSummary() }
+    for (const id of ['ptEngine', 'ptSpp', 'ptBounces', 'ptHair', 'ptDenoise', 'ptFx']) $(id).addEventListener('change', ptSummary)
+    $('exPtEdit').onclick = ev => { ev.stopPropagation(); closePops(); $('ptPop').classList.add('open') }
     $('exPt').onchange()
     window.__pianist.pt = ptStills
     window.__pianist.titleFonts = { TITLE_FONTS, loadTitleFont }

@@ -21,7 +21,7 @@ await page.waitForFunction(() => window.__pianist?.pt && document.getElementById
 await page.waitForTimeout(3000)
 await page.evaluate(o => {
   const set = (id, v) => { const el = document.getElementById(id); if (el.type === 'checkbox') el.checked = v; else el.value = v; el.dispatchEvent(new Event('change')); el.onchange?.() }
-  set('exPt', o.engine); set('exPtSpp', o.spp); set('exRes', o.res); set('exFps', o.fps); set('exLen', o.len); set('exAudio', false); set('exTitle', 'none')
+  set('exPt', 'pt'); set('ptEngine', o.engine); set('ptSpp', o.spp); set('exRes', o.res); set('exFps', o.fps); set('exLen', o.len); set('exAudio', false); set('exTitle', 'none')
   set('ptFx', o.fx); set('ptDenoise', o.denoise); set('ptBounces', o.bounces)
   window.showSaveFilePicker = undefined
 }, { engine: env('ENGINE') || 'gpt-webgl', spp: env('SPP') || '4', res: env('RES') || '426x240', fps: env('FPS') || '5', len: env('LEN') || '5', fx: env('FX') === '1', denoise: env('DENOISE') === '1', bounces: env('BOUNCES') || '3' })

@@ -25,8 +25,8 @@ export function createPathTraceStills(stage) {
   // ── menu ──
   hasWebGPU().then(ok => {
     state.gpu = ok
-    for (const sel of ['ptEngine', 'exPt']) for (const o of $(sel)?.options || []) if (ENGINES[o.value]?.webgpu && !ok) { o.disabled = true; o.textContent += ' (no WebGPU here)' }
-    if (!ok && ENGINES[$('ptEngine').value]?.webgpu) $('ptEngine').value = 'mu-webgl'
+    for (const o of $('ptEngine').options) if (ENGINES[o.value]?.webgpu && !ok) { o.disabled = true; o.textContent += ' (no WebGPU here)' }
+    if (!ok && ENGINES[$('ptEngine').value]?.webgpu) { $('ptEngine').value = 'mu-webgl'; $('ptEngine').dispatchEvent(new Event('change')) }
   })
   const status = (msg, frac) => { $('ptStatus').textContent = msg; if (frac != null) $('ptBar').firstElementChild.style.width = Math.round(frac * 100) + '%' }
   function size() {
