@@ -48,7 +48,12 @@ complete chord needs divisi. This fallback does not alter one-player motion or r
 `fingerLine` and `fingerHeld` remain as mutating compatibility wrappers for experiments #033,
 #034, #037 and #038. They write the established `string`, `finger`, `base`, `offset`,
 `position`, `ext`, `thumb`, `divisi`, and `unplayable` fields. Repeated calls clear all previous solver
-output, and `fingerHeld` no longer leaves its generated `lockString` constraints on notes.
+output, and `fingerHeld` no longer leaves its generated `lockString` constraints on notes. Beginner
+mode limits the frame to first position and removes extension states; the lower high-second cost used
+for the Sibelius viola approach is therefore scoped to standard/expressive/nearest viola planning.
+Recognized viola scores also retain each printed note's diatonic spelling: a soft, viola-scoped
+continuity cost can distinguish enharmonic C♯ and D♭ finger patterns without changing MIDI-only,
+violin, cello, bass, or beginner planning.
 
 Custom profiles use the same shape as entries in `INSTRUMENTS`. Set `template: 'violin'` to use
 the Galamian/Cooper scale patterns with an equivalent violin-family frame.
@@ -82,7 +87,7 @@ fewer than `limit` suggestions.
 
 ## Tests
 
-- `node --test strings/test/fingering.test.js` runs 48 tests: geometry, physical consistency, textbook patterns, stable semitone-pattern continuity, double stops and chords, independent divisi fallbacks, viola, cello and double bass, 3-octave scales, styles, string locks, motion, TNUA format, immutable results, exact range checks, repeated solves, diagnostics, validation, custom profiles, held voices and event timing.
+- `node --test strings/test/fingering.test.js` runs 49 tests: geometry, physical consistency, textbook patterns, stable semitone-pattern continuity, double stops and chords, independent divisi fallbacks, viola, cello and double bass, 3-octave scales, styles, string locks, motion, TNUA format, immutable results, exact range checks, repeated solves, diagnostics, validation, custom profiles, held voices and event timing.
 - `node strings/test/bench.js` scores the textbook exercises. Core: 29/33 exact (96.2% of notes), including all 10 double-bass cases. Three-octave scales: 4/5 exact (96.4% of notes).
   - The core misses are cases where the violinists in TNUA disagree with the beginner books. They take open D or open A going down where Schroeder writes 4, and they play D♯ on the G string in 2nd position.
 

@@ -14,7 +14,9 @@ part (with manual overrides), and draws the finger numbers back onto the normali
    Tied continuations become one duration-sensitive decision; grace ornaments are placed sequentially
    before their principal note and kept distinct from exact-onset chords through 260 bpm.
 3. `detectViolinViola()` uses an unambiguous filename, alto/low clef, viola-only low pitch, or strong
-   evidence retained for that part across PDF pages; otherwise it defaults to violin. The instrument
+   evidence retained for that part across PDF pages; otherwise it defaults to violin. A page whose
+   printed key signature is wholly or partially missed can inherit the preceding page's common key,
+   but only when every explicit key glyph on the new page agrees. The instrument
    menu can override auto detection. `suggestFingerings()` then produces up to four ranked, distinct
    whole-passage paths under the recommended held-safe constraints. Tempo changes the cost of fast
    shifts; style selects standard, beginner, expressive or fewest-shifts weights.
@@ -45,7 +47,11 @@ copy lets MidiViz run from its own static-server root and keeps recognition on-d
 **Try viola PDF** opens `sample-sibelius-symphony-2-viola.pdf`, the supplied 17-page viola part of
 Sibelius's *Symphony No. 2*. Every page is 720×936 pt. Page 1 is a useful alto-clef OCR stress page:
 9 staves, 174 raw detected notes and 48 assembled measures in the current snapshot. Auto resolves it
-as viola from both its filename and clefs; forcing violin demonstrates why the choice matters.
+as viola from both its filename and clefs; forcing violin demonstrates why the choice matters. Page 2
+is also a pinned cross-page regression: when its two-sharp signature is missed, page 1's D-major key
+restores E♯3–F♯3–A3 and the viola planner keeps base 2 with fingers 2–3–1. The same page also
+preserves ScoreShift's printed diatonic spelling, so bar 5 distinguishes D♭ from enharmonic C♯ and
+keeps A3–B♭3–D♭4–D♭4–C4 in first position as 1–2–4–4–3.
 
 ## Tests
 

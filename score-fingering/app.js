@@ -4,7 +4,7 @@ import { interpret, yOfP } from './scoreshift/omr.js'
 import { planFingering, annotationItems, hitAnnotation, sourceNoteId, detectViolinViola } from './adapter.js'
 import { drawFingerings, drawRecognition } from './overlay.js'
 import { INSTRUMENTS, solveFingering } from '../strings/fingering.js'
-import { createScoreDocument, pageState, cachePage, pageFileStem, trimPageRecords } from './document.js'
+import { createScoreDocument, pageState, cachePage, pageFileStem, trimPageRecords, precedingPageFifths, invalidatePageKeyEvidence } from './document.js'
 
 const $ = id => document.getElementById(id)
 const page = $('page'), overlay = $('overlay'), pageCtx = page.getContext('2d'), overlayCtx = overlay.getContext('2d')
@@ -95,16 +95,34 @@ function applyPageCorrections(model, state) {
   for (const staff of touched) interpret(staff)
 }
 
+function rememberPageFifths(state, score) {
+  if (!state?.fifthsByPart || !score?.parts) return
+  state.fifthsByPart.clear()
+  for (const part of score.parts) {
+    const staff = part.staves?.at(-1)
+    if (!staff) continue
+    const fifths = staff.keyChanges?.at(-1)?.fifths ?? staff.key?.fifths
+    if (Number.isInteger(fifths)) state.fifthsByPart.set(part.index, fifths)
+  }
+}
+
 function trimPageCache(doc, keepIndex) {
   if (doc.kind !== 'pdf') return
-  trimPageRecords(doc, keepIndex, MAX_CACHED_PAGES, state => {
-    for (const canvas of [state.image, state.renderer?.src, state.renderer?.small]) if (canvas) { canvas.width = 1; canvas.height = 1 }
-  })
+  trimPageRecords(doc, keepIndex, MAX_CACHED_PAGES, releasePageCanvases)
+}
+
+function releasePageCanvases(state) {
+  for (const canvas of [state.image, state.renderer?.src, state.renderer?.small]) if (canvas) { canvas.width = 1; canvas.height = 1 }
+}
+
+function invalidatePagePayload(state) {
+  releasePageCanvases(state)
+  invalidatePageKeyEvidence(state)
+  Object.assign(state, { status:'empty', image:null, model:null, renderer:null, score:null, plan:null, items:[], selectedId:null })
 }
 
 
-
-async function recognize(source, { probe=false, request=null } = {}) {
+async function recognize(source, { probe=false, request=null, fifths=null } = {}) {
   const run = async () => {
     const bitmap = source instanceof Blob ? await createImageBitmap(source, { imageOrientation:'from-image' }) : source
     const displayScale = Math.min(1, 3600 / Math.max(bitmap.width, bitmap.height))
@@ -134,7 +152,7 @@ async function recognize(source, { probe=false, request=null } = {}) {
       timeout = setTimeout(() => finish(reject, new Error('Recognition timed out')), 30000)
       recognizer.onmessage = event => event.data.error ? finish(reject, new Error(event.data.error)) : finish(resolve, event.data)
       recognizer.onerror = event => finish(reject, new Error(event.message || 'Recognition worker failed to start'))
-      recognizer.postMessage({ gray, w, h, f, probe }, [gray.buffer])
+      recognizer.postMessage({ gray, w, h, f, probe, fifths }, [gray.buffer])
     })
     if (probe) return response
     for (const note of response.model.notes) note.st = response.model.staves[note.si]
@@ -312,9 +330,10 @@ async function openPage(index, { request=null, fit=false } = {}) {
   doc.navigationRequest = ownRequest
   setBusy(true, `Reading page ${index}…`, owner)
   doc.page = index; pageUi()
-  const state = pageState(doc, index)
+  const state = pageState(doc, index), recognizedFifths = precedingPageFifths(doc, index)
   try {
-    if (state.status === 'ready') return await installReadyPage(state, { fit })
+    if (state.status === 'ready' && state.recognizedFifths === recognizedFifths) return await installReadyPage(state, { fit })
+    if (state.status === 'ready') invalidatePagePayload(state)
     if (state.status === 'nonmusic') { showNonMusicPage(state); return false }
     let rendered
     try {
@@ -344,12 +363,12 @@ async function openPage(index, { request=null, fit=false } = {}) {
       showNonMusicPage(state); return false
     }
     try {
-      const { model, image } = await recognize(rendered.canvas, { request:ownRequest })
+      const { model, image } = await recognize(rendered.canvas, { request:ownRequest, fifths:recognizedFifths })
       if (S.document !== doc || ownRequest !== loadRequest) { restorePagePointer(doc, index, ownRequest); return false }
       applyPageCorrections(model, state)
       if (!model.staves.length || !model.notes.length) throw new Error('No printed music was found after the staff probe')
       cachePage(doc, index, {
-        status:'ready', model, image, renderer:new Renderer(image, model), score:buildScore(model), error:null,
+        status:'ready', model, image, renderer:new Renderer(image, model), score:buildScore(model), error:null, recognizedFifths,
         widthPt:rendered.widthPt, heightPt:rendered.heightPt,
       })
       return await installReadyPage(state, { fit:true })
@@ -386,6 +405,7 @@ async function loadSource(source, name) {
 
 function rebuildParts() {
   S.score = buildScore(S.model)
+  rememberPageFifths(S.activePageState, S.score)
   const select = $('part'); select.innerHTML = ''
   S.score.parts.forEach((part, index) => {
     const count = part.measures.flatMap(measure => measure.events).filter(event => event.kind === 'note').reduce((sum, event) => sum + event.notes.length, 0)
@@ -662,6 +682,7 @@ function exportInstrumentLabel(settings) {
 function planPageState(state, settings = currentPlanningSettings()) {
   if (state.status !== 'ready') return state
   state.score = buildScore(state.model)
+  rememberPageFifths(state, state.score)
   const instrument = resolvePlanningInstrument(state, settings)
   state.plan = planFingering(state.score, state.part, {
     instrument,
@@ -685,9 +706,11 @@ function composePageState(state, settings) {
 }
 
 async function ensurePageForExport(doc, index, request) {
-  const cached = doc.pages.get(index)
+  const cached = doc.pages.get(index), recognizedFifths = precedingPageFifths(doc, index)
   if (cached?.status === 'failed') throw new Error(`Recognition failed on page ${index}: ${cached.error || 'unknown error'}`)
-  if (cached && cached.status !== 'empty') return { state:cached, temporary:false, sourceCanvas:null }
+  if (cached?.status === 'nonmusic') return { state:cached, temporary:false, sourceCanvas:null }
+  if (cached?.status === 'ready' && cached.recognizedFifths === recognizedFifths) return { state:cached, temporary:false, sourceCanvas:null }
+  if (cached?.status === 'ready') invalidatePageKeyEvidence(cached)
   const rendered = await renderPdf(doc.pdfPool, index, 2400, request)
   try {
     let probe
@@ -698,11 +721,11 @@ async function ensurePageForExport(doc, index, request) {
       temporary:true, sourceCanvas:rendered.canvas,
     }
     try {
-      const { model, image } = await recognize(rendered.canvas, { request })
+      const { model, image } = await recognize(rendered.canvas, { request, fifths:recognizedFifths })
       applyPageCorrections(model, pageState(doc, index))
       if (!model.staves.length || !model.notes.length) throw new Error('no recognized notes after the staff probe')
       return {
-        state:{ ...pageState(doc, index), status:'ready', model, image, renderer:new Renderer(image, model), score:buildScore(model), widthPt:rendered.widthPt, heightPt:rendered.heightPt },
+        state:{ ...pageState(doc, index), status:'ready', model, image, renderer:new Renderer(image, model), score:buildScore(model), recognizedFifths, widthPt:rendered.widthPt, heightPt:rendered.heightPt },
         temporary:true, sourceCanvas:rendered.canvas,
       }
     } catch (error) { throw new Error(`Recognition failed on page ${index}: ${error.message}`) }

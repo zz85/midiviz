@@ -722,30 +722,38 @@ export function analyze(norm, opts = {}) {
     const S = spaceAt(st, st.x0 + 4 * S0);
     const firstNote = Math.min(...notes.filter((n) => n.st === st).map((n) => n.box[0]), st.x1);
     let x = st.clef.box ? st.clef.box[2] : st.x0 + 2 * S;
-    const mine = accs.filter((a) => a.st === st && a.c.x0 > x - 0.3 * S && a.c.x1 < firstNote && (a.type === 1 || a.type === -1) && a.p >= -2 && a.p <= 10).sort((a, b) => a.c.x0 - b.c.x0);
+    const mine = accs.filter((a) => a.st === st && a.c.x0 > x - 0.3 * S && a.c.x1 < firstNote && (a.type === 1 || a.type === -1 || a.type === 0) && a.p >= -2 && a.p <= 10).sort((a, b) => a.c.x0 - b.c.x0);
     const key = [];
     for (const a of mine) {
-      if (a.c.x0 - x > 2.0 * S || key.length >= 7) break;
+      if (a.c.x0 - x > 2.0 * S || key.length >= 14) break;
       // a local accidental hugs its note (~0.2-0.3 spaces); a key signature keeps a full space
       // or more before the music, so an accidental with a head at its pitch right after it ends the key
-      if (notes.some((n) => n.st === st && Math.abs(n.p - a.p) <= 0 && n.box[0] - a.c.x1 > -0.3 * S && n.box[0] - a.c.x1 < 0.55 * S)) break;
-      if (key.length && a.type !== key[0].type) break;
+      const localGap = a.type === 0 ? 3.0 * S : 0.55 * S;
+      if (notes.some((n) => n.st === st && Math.abs(n.p - a.p) <= 0 && n.box[0] - a.c.x1 > -0.3 * S && n.box[0] - a.c.x1 < localGap)) break;
+      const replacementType = key.find(item => item.type !== 0)?.type;
+      if (a.type === 0 ? replacementType != null : replacementType != null && a.type !== replacementType) break;
       // glyphs of one signature are one size (a C or cut-C time signature can read as a sharp)
-      if (key.length && (a.c.x1 - a.c.x0) > 1.35 * (key[0].c.x1 - key[0].c.x0) + 1) break;
+      const sameType = key.find(item => item.type === a.type);
+      if (sameType && (a.c.x1 - a.c.x0) > 1.35 * (sameType.c.x1 - sameType.c.x0) + 1) break;
       // key signature glyphs are evenly spaced; a wider jump is the time signature or the music
       if (key.length >= 2) { const d = (key[key.length - 1].c.x0 - key[0].c.x0) / (key.length - 1); if (a.c.x0 - key[key.length - 1].c.x0 > 1.4 * d) break; }
       key.push(a); x = a.c.x1;
     }
-    // keep the prefix whose glyphs sit where a key signature puts them
+    // Naturals may cancel the old key before a replacement sharp/flat signature.
     const clef = CLEFS[st.clef.type];
-    if (key.length) {
-      const exp = keySigPositions(clef, key[0].type * key.length);
-      let n = 0; while (n < key.length && Math.abs(key[n].p - exp[n]) <= 1) n++;
-      key.length = n;
+    let naturalCount = key.findIndex(a => a.type !== 0); if (naturalCount < 0) naturalCount = key.length;
+    if (naturalCount < key.length) {
+      const replacement = key.slice(naturalCount), exp = keySigPositions(clef, replacement[0].type * replacement.length);
+      let n = 0; while (n < replacement.length && Math.abs(replacement[n].p - exp[n]) <= 1) n++;
+      key.length = naturalCount + n;
     }
+    naturalCount = Math.min(naturalCount, key.length);
+    const replacement = key.slice(naturalCount);
+    const cancellation = key.length > 0 && replacement.length === 0;
+    const detected = replacement.length ? replacement[0].type * replacement.length : 0;
     key.forEach((a) => (a.isKey = true));
-    st.key = { fifths: opts.fifths ?? (key.length ? key[0].type * key.length : 0), detected: key.length ? key[0].type * key.length : 0,
-      ids: key.flatMap((a) => a.c.ids), idsPer: key.map((a) => a.c.ids), glyphs: key.map((a) => ({ p: a.p, box: [a.c.x0, a.c.y0, a.c.x1, a.c.y1] })), x0: st.clef.box ? st.clef.box[2] + 1 : st.x0 + 2 * S, x1: key.length ? key[key.length - 1].c.x1 : (st.clef.box ? st.clef.box[2] + 1 : st.x0 + 2 * S) };
+    st.key = { fifths: cancellation ? 0 : detected || (opts.fifths ?? 0), detected, cancellation,
+      ids: key.flatMap((a) => a.c.ids), idsPer: key.map((a) => a.c.ids), glyphs: key.map((a) => ({ p:a.p, type:a.type, box:[a.c.x0, a.c.y0, a.c.x1, a.c.y1] })), x0: st.clef.box ? st.clef.box[2] + 1 : st.x0 + 2 * S, x1: key.length ? key[key.length - 1].c.x1 : (st.clef.box ? st.clef.box[2] + 1 : st.x0 + 2 * S) };
   }
 
   // a double flat engraved as two flat glyphs side by side: two separate components
@@ -774,7 +782,7 @@ export function analyze(norm, opts = {}) {
   for (const st of staves) {
     st.keyChanges = [];
     const clef = CLEFS[st.clef.type];
-    let cur = st.key.detected;
+    let cur = st.key.fifths;
     for (const b of st.bars) {
       const S = spaceAt(st, b.x), xs = b.x1;
       const run = [];
@@ -866,7 +874,8 @@ export function analyze(norm, opts = {}) {
     for (let d = 1; d < staves.length; d++) for (const o of [staves[st.index + d], staves[st.index - d]]) if (o && ok(o.key.detected)) return o.key.detected;
     return 0;
   };
-  if (opts.fifths == null) for (const st of staves) {
+  for (const st of staves) {
+    if (st.key.cancellation) continue;
     const sys = sysOf(st);
     let k = sys.length >= 3 && plural(sys);
     // in a part, a key change inside the previous staff carries into this one (its signature is
@@ -887,7 +896,12 @@ export function analyze(norm, opts = {}) {
       st.key.fifths = k; st.key.inferred = true;
       // one glyph too many read: it is something else (a time signature), not part of the key
       const n = Math.abs(k), K = st.key;
-      if (K.glyphs.length > n) { K.idsPer = K.idsPer.slice(0, n); K.glyphs = K.glyphs.slice(0, n); K.ids = K.idsPer.flat(); K.x1 = K.glyphs[n - 1].box[2]; }
+      let naturalCount = K.glyphs.findIndex(glyph => glyph.type !== 0); if (naturalCount < 0) naturalCount = K.glyphs.length;
+      const replacementCount = K.glyphs.length - naturalCount;
+      if (replacementCount > n) {
+        const keep = naturalCount + n;
+        K.idsPer = K.idsPer.slice(0, keep); K.glyphs = K.glyphs.slice(0, keep); K.ids = K.idsPer.flat(); K.x1 = K.glyphs[keep - 1].box[2];
+      }
       continue;
     }
     if (st.key.detected) continue;

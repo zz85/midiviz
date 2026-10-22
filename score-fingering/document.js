@@ -28,6 +28,8 @@ export function pageState(document, index = document.page) {
     keyboardIndex:0,
     selectedId:null,
     autoInstruments:new Map(),
+    fifthsByPart:new Map(),
+    recognizedFifths:null,
     widthPt:null,
     lastUsed:0,
     heightPt:null,
@@ -61,4 +63,34 @@ export function pageFileStem(document, index = document.page) {
   if (document.kind === 'image') return document.name
   const width = Math.max(2, String(document.pageCount).length)
   return `${document.name}-p${String(index).padStart(width, '0')}`
+}
+
+/** Invalidate derived carry context without discarding a page's display payload. */
+export function invalidatePageKeyEvidence(state) {
+  state?.fifthsByPart?.clear()
+  if (state) state.recognizedFifths = undefined
+}
+
+/** Return a common ending key only from the immediately preceding recognized page. */
+export function precedingPageFifths(document, index) {
+  const state = document?.pages?.get(index - 1)
+  if (!state?.fifthsByPart?.size) return null
+  if (state.recognizedFifths !== precedingPageFifths(document, index - 1)) return null
+  const values = [...new Set(state.fifthsByPart.values())]
+  return values.length === 1 ? values[0] : null
+}
+
+/** Apply a preceding page's key only where this page has no conflicting printed key evidence. */
+export function applyPriorFifths(staves, fifths, interpret) {
+  if (!Array.isArray(staves) || !Number.isInteger(fifths) || typeof interpret !== 'function') return 0
+  const printed = staves.filter(staff => staff.key?.cancellation || staff.key?.detected || staff.key?.glyphs?.length)
+  if (printed.some(staff => staff.key.fifths !== fifths)) return 0
+  let changed = 0, firstChanged = staves.length
+  for (let index = 0; index < staves.length; index++) {
+    const staff = staves[index]
+    if (!staff.key || staff.key.cancellation || staff.key.detected || staff.key.glyphs?.length) continue
+    staff.key.fifths = fifths; staff.key.documentInferred = true; changed++; firstChanged = Math.min(firstChanged, index)
+  }
+  for (let index = firstChanged; index < staves.length; index++) interpret(staves[index])
+  return changed
 }

@@ -178,6 +178,33 @@ const loadImageSample = target => target.evaluate(async () => {
     return { viola, violin, filenameInstrument:__scoreFingering.exportInstrumentLabel(settings), evidence:[...settings.autoInstruments.keys()] }
   })
   check(crossPartExport.viola === 'viola' && crossPartExport.violin === 'violin' && crossPartExport.filenameInstrument === 'auto' && crossPartExport.evidence.join() === '0', 'auto PDF export isolates part evidence and labels mixed instruments as auto')
+  await samplePage.evaluate(() => __scoreFingering.openPage(3, { fit:true }))
+  await samplePage.waitForFunction(() => __scoreFingering.S.activePageState?.index === 3 && getComputedStyle(document.getElementById('busy')).display === 'none', null, { timeout:30000 })
+  const directPage3 = await samplePage.evaluate(() => {
+    window.__directPage3Model = __scoreFingering.S.model
+    return { fifths:__scoreFingering.S.model.staves.map(staff => staff.key.fifths), recognized:__scoreFingering.S.activePageState.recognizedFifths }
+  })
+  check(directPage3.fifths.every(fifths => fifths === 0) && directPage3.recognized == null, 'direct page-3 navigation does not skip unresolved page 2 for key carry')
+  await samplePage.evaluate(() => __scoreFingering.openPage(2, { fit:true }))
+  await samplePage.waitForFunction(() => __scoreFingering.S.activePageState?.index === 2 && getComputedStyle(document.getElementById('busy')).display === 'none', null, { timeout:30000 })
+  const chromaticApproach = await samplePage.evaluate(() => {
+    const S = __scoreFingering.S
+    const index = S.items.findIndex(item => item.source.st?.index === 0 && item.source.x > 1090 && item.source.x < 1110)
+    return {
+      index,
+      names:S.items.slice(index, index + 3).map(item => item.source.name),
+      pitches:S.plan.notes.slice(index, index + 3).map(note => note.pitch),
+      fingers:S.items.slice(index, index + 3).map(item => item.assignment.finger),
+      bases:S.items.slice(index, index + 3).map(item => item.assignment.base),
+      fifths:S.model.staves.map(staff => staff.key.fifths),
+      inferred:S.model.staves.every(staff => staff.key.detected === 2 || staff.key.documentInferred),
+    }
+  })
+  check(chromaticApproach.index === 11 && chromaticApproach.names.join() === 'E♯3,F♯3,A3' && chromaticApproach.pitches.join() === '53,54,57' && chromaticApproach.fingers.join() === '2,3,1' && chromaticApproach.bases.every(base => base === 2) && chromaticApproach.fifths.every(fifths => fifths === 2) && chromaticApproach.inferred, `page 2 carries D major and fingers E♯-F♯-A as 2-3-1 (${chromaticApproach.names.join(' · ')} / ${chromaticApproach.fingers.join('-')})`)
+  await samplePage.evaluate(() => __scoreFingering.openPage(3, { fit:true }))
+  await samplePage.waitForFunction(() => __scoreFingering.S.activePageState?.index === 3 && __scoreFingering.S.model !== window.__directPage3Model && getComputedStyle(document.getElementById('busy')).display === 'none', null, { timeout:30000 })
+  const refreshedPage3 = await samplePage.evaluate(() => ({ fifths:__scoreFingering.S.model.staves.map(staff => staff.key.fifths), recognized:__scoreFingering.S.activePageState.recognizedFifths }))
+  check(refreshedPage3.fifths.every(fifths => fifths === 2) && refreshedPage3.recognized === 2, 'cached page 3 is re-recognized after page 2 establishes its key context')
   check(sampleErrors.length === 0, `no built-in sample browser errors${sampleErrors.length ? ': ' + sampleErrors.join(' | ') : ''}`)
   await sampleContext.close()
   // Loading a replacement closes old note closures, and a delayed older request cannot win.

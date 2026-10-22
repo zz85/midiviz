@@ -52,7 +52,7 @@ test('auto instrument detection uses name, clef, range, and part-specific docume
 test('adapter keeps part order, source identity, timing, pitches and stable coordinate ids', () => {
   const { score, notes } = fixture()
   const built = buildFingeringInput(score, 0, { quarterSeconds: 1 })
-  assert.deepEqual(built.notes.map(n => [n.pitch, n.on, n.off]), [[55, 0, 1], [62, 1, 2], [64, 2, 3]])
+  assert.deepEqual(built.notes.map(n => [n.pitch, n.diatonic, n.on, n.off]), [[55, 25, 0, 1], [62, 29, 1, 2], [64, 30, 2, 3]])
   assert.deepEqual(built.sources, [notes.a, notes.b, notes.c])
   assert.deepEqual(built.notes.map(n => n.id), ['0:100:80', '0:140:76', '0:180:72'])
   assert.equal(buildFingeringInput(score, 1).notes[0].pitch, 48)

@@ -275,7 +275,7 @@ export class Renderer {
     for (const st of this.m.staves) {
       const S = spaceAt(st, st.x0 + 4 * 16);
       st.key.glyphs?.forEach((g, i) => {
-        const type = Math.sign(st.key.detected), ids = st.key.idsPer?.[i];
+        const type = g.type ?? Math.sign(st.key.detected), ids = st.key.idsPer?.[i];
         if (ids) take(type, ids, g.box, type < 0 ? g.box[3] - 0.45 * S : (g.box[1] + g.box[3]) / 2, S);
       });
       for (const n of st.notes) if (n.accid && Math.abs(n.accid.type) < 2) {

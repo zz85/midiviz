@@ -50,6 +50,9 @@ const VIOLIN_FRAME = {
   3: { 2: [0.4, 0], 3: [0, 0], 4: [0, 0], 5: [1.8, 1] },
   4: { 3: [1.2, 0], 4: [0.3, 0], 5: [0, 0], 6: [0.6, 0], 7: [2.2, 1], 8: [4, 1], 9: [6, 1] },
 }
+// On the longer viola string, a forward high second is still preferable to a 3-4 chromatic pair
+// before crossing to the next string (the Sibelius page-2 E♯-F♯-A approach).
+const VIOLA_FRAME = { ...VIOLIN_FRAME, 2:{ ...VIOLIN_FRAME[2], 3:[1.2, 1] } }
 const CELLO_FRAME = {
   // closed frame 1-2-3-4 = 0,1,2,3 (a minor third); forward extension
   // between 1 and 2 moves 2-3-4 up a semitone; backward extension of 1
@@ -82,7 +85,7 @@ const BASS_POS = ['', '½', 'I', 'II', 'II½', 'III', 'III½', 'IV', 'V', 'V½',
 
 export const INSTRUMENTS = {
   violin: { name: 'Violin', open: [55, 62, 69, 76], strings: ['G', 'D', 'A', 'E'], L: 328, maxB: [14, 15, 17, 21], frame: VIOLIN_FRAME, template: 'violin', program: 40 },
-  viola: { name: 'Viola', open: [48, 55, 62, 69], strings: ['C', 'G', 'D', 'A'], L: 375, maxB: [13, 14, 15, 19], frame: VIOLIN_FRAME, template: 'violin', program: 41 },
+  viola: { name: 'Viola', open: [48, 55, 62, 69], strings: ['C', 'G', 'D', 'A'], L: 375, maxB: [13, 14, 15, 19], frame: VIOLA_FRAME, template: 'violin', program: 41, notationFingering:true },
   cello: { name: 'Cello', open: [36, 43, 50, 57], strings: ['C', 'G', 'D', 'A'], L: 690, maxB: [12, 12, 14, 19], frame: CELLO_FRAME, program: 42 },
   // tuned in fourths, sounding an octave below the written part; weights from research 04 §7.3
   bass: {
@@ -145,6 +148,8 @@ export const DEFAULTS = {
     crossed: 3,  // fingers out of order inside one frame
     repeatChange: 2.4,  // a repeated pitch moves to another string / finger
     fourth: 0.665,  // finger 4 is the weakest
+    notation: 1.6,  // soft preference for a printed interval to keep its diatonic finger pattern
+    notationShift: 0.4,  // extra reluctance to leave that pattern through a position shift
     stretch: 1,  // × extension costs (also × string length², ÷ hand size²)
     shape: 2.66,  // × non-extension frame shapes (augmented 4th, contracted 3/4)
     // strings
@@ -177,7 +182,7 @@ export const DEFAULTS = {
 }
 
 const MODES = {
-  beginner: { maxB: 2, weights: { open: -0.4, openLong: 0, openFast: 0.2, openDescend: 0.4, openAscend: 0.2, openTop: 0, topString: 0, lowString: 0 } },
+  beginner: { maxB: 2, allowExtensions:false, weights: { open: -0.4, openLong: 0, openFast: 0.2, openDescend: 0.4, openAscend: 0.2, openTop: 0, topString: 0, lowString: 0 } },
   standard: {},
   expressive: { weights: { openLong: 3, open: 0.6, openTop: 1.2, shift: 2, shiftDist: 0.7, cross: [0, 0.8, 3, 6], pos: [3, 0.9, 0, 0.7, 0.6, 0.3, 0.6, 0.5, 0.6, 0.6, 0.6, 0.7, 0.7] } },
   nearest: { weights: { shift: 5, shiftDist: 1.6 } },
@@ -255,10 +260,14 @@ export function createModel(options = {}) {
   const inst = validateInstrument(resolveInstrument(options.instrument))
   validateOptions(options, inst)
   const modeName = options.mode ?? DEFAULTS.mode
-  const mode = own(inst.modes, modeName) ? inst.modes[modeName] : MODES[modeName]
-  if (!mode || typeof mode !== 'object' || Array.isArray(mode)) throw new TypeError(`invalid fingering mode "${modeName}"`)
+  const baseMode = MODES[modeName] || {}, instrumentMode = own(inst.modes, modeName) ? inst.modes[modeName] : {}
+  if (!instrumentMode || typeof instrumentMode !== 'object' || Array.isArray(instrumentMode)) throw new TypeError(`invalid fingering mode "${modeName}"`)
+  if (own(instrumentMode, 'weights') && (!instrumentMode.weights || typeof instrumentMode.weights !== 'object' || Array.isArray(instrumentMode.weights))) throw new TypeError(`invalid fingering mode "${modeName}": weights must be an object`)
+  const mode = { ...baseMode, ...instrumentMode, weights:{ ...(baseMode.weights || {}), ...(instrumentMode.weights || {}) } }
+  if (!Object.keys(mode).length) throw new TypeError(`invalid fingering mode "${modeName}"`)
   if (own(mode, 'maxB') && (!Number.isFinite(mode.maxB) || mode.maxB < 1 || mode.maxB > 127)) throw new TypeError(`invalid fingering mode "${modeName}": maxB must be from 1 to 127`)
   if (own(mode, 'weights') && (!mode.weights || typeof mode.weights !== 'object' || Array.isArray(mode.weights))) throw new TypeError(`invalid fingering mode "${modeName}": weights must be an object`)
+  if (own(mode, 'allowExtensions') && typeof mode.allowExtensions !== 'boolean') throw new TypeError(`invalid fingering mode "${modeName}": allowExtensions must be boolean`)
   const W = { ...DEFAULTS.weights, ...(inst.weights || {}), ...(mode.weights || {}), ...(options.weights || {}) }
   if (!Array.isArray(W.cross) || W.cross.length < 4 || !W.cross.every(Number.isFinite)) throw new TypeError('invalid fingering weight "cross": expected at least four finite entries')
   if (!Array.isArray(W.pos) || !W.pos.length || !W.pos.every(Number.isFinite)) throw new TypeError('invalid fingering weight "pos": expected a non-empty finite array')
@@ -276,8 +285,14 @@ export function createModel(options = {}) {
   const posCost = new Float64Array(tableSize)
   for (let b = 0; b < tableSize; b++) posCost[b] = checkedCost(b < W.pos.length ? W.pos[b] : W.pos[W.pos.length - 1] + W.posHigh * (b - W.pos.length + 1), 'position table')
   const frame = []
-  if (inst.frameList) for (const e of inst.frameList) frame.push({ ...e, bMin: e.bMin ?? 1, bMax: e.bMax ?? 127, th: !!e.th, ext: !!e.ext })
-  else for (const f of [1, 2, 3, 4]) for (const [o, [c, ext]] of Object.entries(inst.frame[f])) frame.push({ f, o: +o, c, ext: !!ext, bMin: 1, bMax: 127, th: false })
+  if (inst.frameList) for (const e of inst.frameList) {
+    if (mode.allowExtensions === false && e.ext) continue
+    frame.push({ ...e, bMin:e.bMin ?? 1, bMax:e.bMax ?? 127, th:!!e.th, ext:!!e.ext })
+  }
+  else for (const f of [1, 2, 3, 4]) for (const [o, [c, ext]] of Object.entries(inst.frame[f])) {
+    if (mode.allowExtensions === false && ext) continue
+    frame.push({ f, o:+o, c, ext:!!ext, bMin:1, bMax:127, th:false })
+  }
   const highest = Math.ceil(Math.max(...maxB))
   for (const [i, entry] of frame.entries()) if (typeof entry.c === 'function') {
     for (let b = Math.max(1, Math.ceil(entry.bMin)); b <= Math.min(highest, Math.floor(entry.bMax)); b++) {
@@ -422,9 +437,19 @@ function letterCost(M, ev, p, s, b, f) {
 
 const tmplCost = (M, ev, s, f) => (ev.tmpl && !ev.tmpl.some(t => t.s === s && t.f === f) ? M.W.template : 0)
 
-function stoppedUnary(M, b, s, f) {
-  let c = M.posCost[b]
-  if (f === 4) c += M.W.fourth
+function printedFinger(M, note, s, b) {
+  if (!M.inst.notationFingering || M.mode === 'beginner' || !Number.isInteger(note?.diatonic)) return null
+  const natural = [0, 2, 4, 5, 7, 9, 11]
+  const open = M.inst.open[s], openStep = natural.indexOf(((open % 12) + 12) % 12)
+  if (openStep < 0) return null
+  const openDiatonic = (Math.floor(open / 12) - 1) * 7 + openStep
+  return note.diatonic - (openDiatonic + Math.round(b * 7 / 12)) + 1
+}
+
+const fourthCost = (M, b, s, f, note) => f === 4 && printedFinger(M, note, s, b) !== 4 ? M.W.fourth : 0
+
+function stoppedUnary(M, b, s, f, note) {
+  let c = M.posCost[b] + fourthCost(M, b, s, f, note)
   if (b > 7) c += M.W.lowStringHigh * (b - 7) * (M.inst.open.length - 1 - s)
   return c
 }
@@ -480,7 +505,7 @@ function eventStates(M, ev, prevTop, carryB) {
           for (let a = 0; a < k; a++) {
             const A = pick[a]
             if (A.f) u += letterCost(M, ev, ev.notes[a].pitch, s0 + a, b, A.f)
-            if (A.f) { u += first ? stoppedUnary(M, b, s0 + a, A.f) : (A.f === 4 ? M.W.fourth : 0); first = false }
+            if (A.f) { u += first ? stoppedUnary(M, b, s0 + a, A.f, ev.notes[a]) : fourthCost(M, b, s0 + a, A.f, ev.notes[a]); first = false }
             else u += openCost(M, ev, prevTop, s0 + a)
           }
           states.push({ b, th, n: pick.map((x, a) => ({ s: s0 + a, f: x.f, o: x.o, ext: x.ext })), open: false, u: checkedCost(u, 'stopped state') })
@@ -506,7 +531,7 @@ function shiftUnits(M, b1, b2) {
 
 const center = st => { let s = 0; for (const x of st.n) s += x.s; return s / st.n.length }
 
-function transition(M, A, B, pa, pb, dt, gap) {
+function transition(M, A, B, pa, pb, dt, gap, notesA = null, notesB = null) {
   const W = M.W
   let c = 0
   const fast = dt < 0.12
@@ -549,6 +574,14 @@ function transition(M, A, B, pa, pb, dt, gap) {
         else c += Math.abs(dp) > 1 ? W.slide * 2 : W.slideSemi
       } else if (A.b === B.b && A.th === B.th && (rank(b.f) - rank(a.f)) * (b.o - a.o) < 0 && Math.abs(rank(b.f) - rank(a.f)) === 1 && a.s === b.s) c += W.crossed
       else if (dp === 0) c += W.repeatChange
+    }
+  }
+  if (M.inst.notationFingering && M.mode !== 'beginner' && A.th === B.th && A.n.length === 1 && B.n.length === 1 && A.n[0].s === B.n[0].s && Number.isInteger(notesA?.[0]?.diatonic) && Number.isInteger(notesB?.[0]?.diatonic)) {
+    const diatonicStep = notesB[0].diatonic - notesA[0].diatonic
+    const fingerStep = rank(B.n[0].f) - rank(A.n[0].f)
+    if (A.n[0].f && B.n[0].f && Math.abs(diatonicStep) <= 3) {
+      if (A.b === B.b) c += M.W.notation * Math.abs(fingerStep - diatonicStep)
+      else c += M.W.notationShift
     }
   }
   return checkedCost(c, 'transition')
@@ -594,7 +627,7 @@ function solve(M, evs, write) {
       for (let s = 0; s < S.length; s++) {
         let best = Infinity, arg = 0
         for (let r = 0; r < P.length; r++) {
-          const edge = transition(M, P[r], S[s], pa, pb, dt, gap)
+          const edge = transition(M, P[r], S[s], pa, pb, dt, gap, evs[i - 1].notes, evs[i].notes)
           const slide = slideTo[i] && P[r].n.length === 1 && S[s].n.length === 1 && (P[r].n[0].s !== S[s].n[0].s || S[s].open)
           const v = extendPathCost(cp[r], edge, slide, S[s].u, 'viterbi')
           if (v < best) { best = v; arg = r }
@@ -666,7 +699,7 @@ function kBestPaths(M, evs, limit) {
         let total = 0
         for (let r = 0; r < P.length; r++) {
           if (!prev[r].cost.length) continue
-          const edge = transition(M, P[r], S[s], pa, pb, dt, gap)
+          const edge = transition(M, P[r], S[s], pa, pb, dt, gap, evs[i - 1].notes, evs[i].notes)
           const slide = slideTo[i] && P[r].n.length === 1 && S[s].n.length === 1 && (P[r].n[0].s !== S[s].n[0].s || S[s].open)
           const cost = extendPathCost(prev[r].cost[0], edge, slide, S[s].u, 'k-best')
           push(heap, { cost, state: r, rank: 0, edge, slide, unary: S[s].u })

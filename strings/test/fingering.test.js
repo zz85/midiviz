@@ -55,6 +55,40 @@ test('semitone figure keeps a stable 1-2-3 frame instead of sliding one finger',
   assert.equal(new Set(result.assignments.slice(0, 7).map(assignment => assignment.base)).size, 1)
 })
 
+test('viola page-2 phrases use chromatic and printed-diatonic finger patterns', () => {
+  const pitches = [54, 56, 54, 52, 54, 52, 54, 56, 52, 54, 50, 53, 54, 57, 57, 56, 61, 59, 64, 62, 61, 57, 58, 61, 61, 60, 65, 63, 68, 67]
+  const diatonic = [24, 25, 24, 23, 24, 23, 24, 25, 23, 24, 22, 23, 24, 26, 26, 25, 28, 27, 30, 29, 28, 26, 27, 29, 29, 28, 31, 30, 33, 32]
+  const onsets = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6.5, 7, 7.5, 8, 8.5, 9, 9.25, 9.75, 10.25, 10.5, 11.5, 12, 12.5, 13, 13.5, 14.5, 15, 15.5, 16]
+  const notes = pitches.map((pitch, index) => ({ pitch, diatonic:diatonic[index], on:onsets[index], off:onsets[index] + ([16, 19].includes(index) ? 0.25 : 0.5) }))
+  const result = solveFingering(notes, { instrument:'viola', templates:false })
+  assert.deepEqual(result.assignments.slice(11, 14).map(assignment => assignment.finger), [2, 3, 1])
+  assert.deepEqual(result.assignments.slice(11, 14).map(assignment => assignment.base), [2, 2, 2])
+  assert.deepEqual(result.assignments.slice(21, 26).map(assignment => assignment.finger), [1, 2, 4, 4, 3])
+  assert.deepEqual(result.assignments.slice(21, 26).map(assignment => assignment.base), [2, 2, 2, 2, 2])
+
+  const unspelled = notes.map(({ diatonic:_, ...note }) => note)
+  assert.deepEqual(solveFingering(unspelled, { instrument:'viola', templates:false }).assignments.slice(21, 26).map(assignment => assignment.finger), [1, 2, 3, 3, 3])
+
+  const beginner = solveFingering(notes, { instrument:'viola', mode:'beginner', templates:false })
+  const beginnerUnspelled = solveFingering(unspelled, { instrument:'viola', mode:'beginner', templates:false })
+  assert.ok(beginner.assignments.filter(assignment => assignment.playable).every(assignment => !assignment.extension))
+  assert.deepEqual(beginner.assignments.map(({ finger, base, string }) => ({ finger, base, string })), beginnerUnspelled.assignments.map(({ finger, base, string }) => ({ finger, base, string })))
+  assert.deepEqual(beginner.assignments.slice(11, 14).map(assignment => assignment.finger), [3, 4, 1])
+
+  const violin = solveFingering(notes.map(note => ({ ...note, pitch:note.pitch + 7, diatonic:note.diatonic + 4 })), { instrument:'violin', templates:false })
+  assert.deepEqual(violin.assignments.slice(11, 14).map(assignment => assignment.finger), [3, 4, 1])
+
+  const custom = structuredClone(INSTRUMENTS.viola); custom.modes = { beginner:{ maxB:2 } }
+  const inherited = solveFingering(notes, { instrument:custom, mode:'beginner', templates:false })
+  assert.ok(inherited.assignments.filter(assignment => assignment.playable).every(assignment => !assignment.extension))
+  custom.modes.beginner.allowExtensions = true
+  const explicit = solveFingering(notes, { instrument:custom, mode:'beginner', templates:false })
+  assert.deepEqual(explicit.assignments.slice(11, 14).map(assignment => assignment.finger), [2, 3, 1])
+
+  const bass = solveFingering([{ pitch:51, on:0, off:1 }], { instrument:'bass', mode:'beginner', templates:false })
+  assert.ok(bass.assignments.every(assignment => !assignment.playable || !assignment.extension))
+})
+
 test('beginner style: Twinkle in first position with open strings (Suzuki)', () => exact('twinkle'))
 
 test('double stops and chords (research 01 §7)', () => {
@@ -293,7 +327,9 @@ test('validated inputs fail early with stable messages', () => {
   assert.throws(() => solveFingering([{ pitch: 69, on: 1, off: 0 }]), /off must be greater than on/)
   assert.throws(() => solveFingering([{ pitch: NaN, on: 0, off: 1 }]), /pitch must be a finite number/)
   assert.throws(() => solveFingering([{ pitch: 69, on: 0, off: 1 }], { instrument: 'kazoo' }), /unknown instrument/)
-  assert.throws(() => solveFingering([{ pitch: 69, on: 0, off: 1, lockString: 4 }]), /lockString/)
+  assert.throws(() => solveFingering([{ pitch:69, on:0, off:1, lockString:4 }]), /lockString/)
+  const invalidMode = structuredClone(INSTRUMENTS.violin); invalidMode.modes = { beginner:{ allowExtensions:'sometimes' } }
+  assert.throws(() => solveFingering([{ pitch:69, on:0, off:1 }], { instrument:invalidMode, mode:'beginner' }), /allowExtensions/)
 })
 
 test('equivalent custom instruments keep preset behavior, including templates', () => {

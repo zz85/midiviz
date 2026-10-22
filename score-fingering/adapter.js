@@ -76,7 +76,7 @@ export function buildFingeringInput(score, partIndex = 0, { locks = new Map(), q
       used.set(base, count + 1)
       records.push({
         source, id, voice, ordinal:entryOrdinal.get(entry), grace:!!grace, tie:!!source.tie,
-        input:{ id, pitch:midiOf(source.pitch), on:eventOn, off:eventOn + eventDuration },
+        input:{ id, pitch:midiOf(source.pitch), diatonic:source.pitch.d, on:eventOn, off:eventOn + eventDuration },
       })
     }
   }
