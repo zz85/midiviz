@@ -2,6 +2,21 @@
   "files": {
     "Prelude1.mid": "bach-wtc1-prelude-c",
     "midis/mond_3.mid": "beethoven-op27-2-iii",
-    "violinist/midis/gounod_ave_maria.mid": "gounod-ave-maria"
+    "violinist/midis/gounod_ave_maria.mid": "gounod-ave-maria",
+    "midis/grieg_elves_dance.mid": "grieg-elves-dance",
+    "midis/scn15_6.mid": "schumann-important-event",
+    "midis/scriabin_op11_14.mid": "scriabin-op11-14",
+    "midis/tchai_op39_9_new_doll.mid": "tchaikovsky-new-doll",
+    "midis/bach_wtc1_11p.mid": "bach-wtc1-prelude-f",
+    "midis/liszt_s164g_berlin_preludio.mid": "liszt-berlin-preludio",
+    "midis/tchai_op39_20_baba_yaga.mid": "tchaikovsky-baba-yaga",
+    "midis/scn15_12.mid": "schumann-child-falling-asleep",
+    "midis/scriabin_op11_15.mid": "scriabin-op11-15",
+    "midis/tchai_op39_16_old_french_song.mid": "tchaikovsky-old-french-song",
+    "midis/grieg_op12_1_arietta.mid": "grieg-arietta",
+    "midis/amy_beach_op25_5_secrets.mid": "amy-beach-secrets",
+    "midis/ravel_m65_prelude.mid": "ravel-prelude-m65",
+    "midis/chaminade_op126_1_idylle.mid": "chaminade-idylle",
+    "midis/lyadov_op11_1_prelude.mid": "lyadov-prelude-op11-1"
   }
 }

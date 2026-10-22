@@ -138,6 +138,8 @@ A plain link opens on a dimmed start screen with one Play button (and the song i
 ## YouTube Shorts
 
 Render → Format → **YouTube Short (9:16)** turns the export into a Short: 1080×1920 (540×960 and 720×1280 to preview), a clip of the piece of up to 3 minutes (YouTube's limit for a Short), its own camera plan, and the text kept clear of YouTube's buttons.
+The working repertoire, licensing ledger, visual plans and running candidate pool are in [`shorts/README.md`](shorts/README.md).
+
 
 - **Choose the clip…** opens a strip above the transport: the piece's energy, its liner-note sections and phrase starts, the clip in green, and three suggestions in gold. The edges snap to phrase starts (in) and phrase ends (out); Shift drags freely, the middle moves the clip, a click elsewhere starts a clip there. Length chips 15 / 30 / 45 / 60 / 90 s and Whole set the out point on the nearest phrase end. **Preview 9:16** plays the clip on a loop in a 9:16 frame with the safe area dashed, through the same camera plan and text as the export.
 - Suggestions ([shorts.js](shorts.js)): every phrase start × 30 and 45 s (and the whole piece when it is under 3 minutes) is scored by its first 3 s (the hook, the strongest weight), its loudest moment and its mean against the piece's own, whether it rises to the end, a breath after the out point (so the loop doesn't cut into the next phrase), a liner section starting there, `listen` notes and intertitles inside it, less for a note held over the in point; the best three that don't mostly overlap, each with its reason. On Bach's Prelude in C: 1:17–1:58 (the dominant pedal to the end), the whole piece, 0:37–1:22.
