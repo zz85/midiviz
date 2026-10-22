@@ -1,7 +1,7 @@
 // Realize the ornaments of the Mutopia Bach files (Well-Tempered Clavier and
 // Goldberg Variations) in midis/.
 //
-//   node midis/tools/bach_ornaments.mjs [--from <git rev>] [--only bach_wtc1_03] [--dry] [--no-kern] [--no-subjects]
+//   node midis/tools/bach_ornaments.mjs [--from <git rev>] [--only bach_wtc1_03] [--dry] [--no-kern] [--no-subjects] [--no-cadences]
 //
 // Mutopia's MIDI is LilyPond's: it plays no trills, mordents or turns, and its
 // grace notes are 55 ms blips that steal time from the note before. This reads
@@ -35,6 +35,9 @@
 //   as players do (fugueEntries: the subject is the first voice until the next
 //   voice brings in its first four notes; an entry is the same rhythm and, up to
 //   two of them, the same intervals within 2 semitones, octaves aside)
+//   cadences: a trill on the note before the close of the main cadences, where players
+//   add one unwritten (cadenceTrills: the final cadence of every prelude and fugue, and
+//   perfect authentic cadences on a downbeat away from Bach's own signs)
 //
 // Auxiliary notes are diatonic: of the two candidates a semitone or a tone away,
 // the one heard more nearby (the same bar counts most) wins. Loudness comes from
@@ -202,6 +205,66 @@ function fugueEntries(src, log) {
   const nm = n => ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'G#', 'A', 'Bb', 'B'][n.pitch % 12]
   log.push(` fugue: subject ${L} notes (${subj.slice(0, 8).map(nm).join(' ')}${L > 8 ? ' …' : ''}), ${entries.length} entries, signs at notes ${[...signs.keys()].map(k => k + 1).join(', ') || 'none'}; added ${added}`)
   return added
+}
+
+// trills at the main cadences, where players add one though the score has no sign
+// (C. P. E. Bach, Versuch I.2.3: the trill belongs above all on the note before a
+// cadence's close). The note: in the top line over the dominant, on degree 2 or 7,
+// resolving to the tonic, at least an eighth long, with no sign on it. The cadences:
+//   the final one of each prelude and fugue: the last bass move from the dominant to
+//   the last chord's root (within 4 bars), else the last beat before the final chord
+//   others: a perfect authentic cadence on a downbeat (the bass leaping from the dominant,
+//   held at least an eighth, the top line arriving on the root), at least two bars from
+//   any sign in the score and eight from another added trill
+function cadenceTrills(src, log) {
+  const pc = p => ((p % 12) + 12) % 12
+  const ns = src.notes.filter(n => !n.art.grace)
+  const streams = new Map()
+  for (const n of ns) { const k = n.staff + ':' + (n.art.vk ?? n.voice); if (!streams.has(k)) streams.set(k, []); streams.get(k).push(n) }
+  const nextIn = new Map(); for (const st of streams.values()) st.forEach((n, i) => nextIn.set(n, st[i + 1]))
+  const at = q => ns.filter(n => n.q <= q + 1e-6 && n.q + n.len > q + 1e-6)
+  const lowest = q => at(q).reduce((a, b) => !a || b.pitch < a.pitch ? b : a, null)
+  const highest = q => at(q).reduce((a, b) => !a || b.pitch > a.pitch ? b : a, null)
+  const end = Math.max(...ns.map(n => n.q + n.len))
+  const signs = ns.filter(n => n.art.orn).map(n => n.measure)
+  const pick = (a, t, X, len) => {
+    let best = null
+    for (let q = a; q < t - 1e-6;) {
+      const h = highest(q + 1e-4); if (!h) break
+      const deg = pc(h.pitch - X)
+      if ((deg === 2 || deg === 11) && h.len >= len - 1e-6 && !h.art.orn) {
+        let nx = nextIn.get(h); if (nx && nx.pitch === h.pitch) nx = nextIn.get(nx)   // past an anticipation
+        if (nx && pc(nx.pitch) === X && nx.q <= t + 2 + 1e-6) best = h
+      }
+      q = Math.max(q + 0.125, h.q + h.len)
+    }
+    return best
+  }
+  const found = []
+  const fq = Math.max(...ns.filter(n => n.q + n.len > end - 1e-3).map(n => n.q))
+  const X = pc(lowest(fq + 1e-4).pitch)
+  let fin = null
+  for (const t of [...new Set(ns.map(n => +n.q.toFixed(5)))].sort((a, b) => b - a)) {
+    if (t > fq + 1e-6 || t < fq - 16) continue
+    const b = lowest(t + 1e-4), pb = lowest(t - 1e-4)
+    if (b && pb && pc(b.pitch) === X && pc(pb.pitch - X) === 7) { fin = pick(pb.q, t, X, 0.5); if (fin) break }
+  }
+  fin ??= pick(fq - 4, fq, X, 0.5)
+  if (fin) found.push({ note: fin, final: true })
+  const bars = [...new Set(ns.filter(n => Math.abs(n.beat) < 1e-6).map(n => +n.q.toFixed(5)))].sort((a, b) => a - b)
+  for (const t of bars) {
+    const b = lowest(t + 1e-4), pb = lowest(t - 1e-4), top = highest(t + 1e-4)
+    if (!b || !pb || !top || Math.abs(b.q - t) > 1e-6) continue
+    const Y = pc(b.pitch)
+    if (pc(pb.pitch - Y) !== 7 || ![5, 7].includes(pc(pb.pitch - b.pitch)) || pb.len < 0.5 - 1e-6 || pc(top.pitch) !== Y) continue
+    const n = pick(pb.q, t, Y, 0.5)
+    if (!n || signs.some(m => Math.abs(m - n.measure) <= 2) || found.some(f => Math.abs(f.note.measure - n.measure) < 8)) continue
+    found.push({ note: n, final: false })
+  }
+  for (const { note } of found) note.art = { ...note.art, orn: ['trill'], from: 'cadence' }
+  const nm = n => ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'G#', 'A', 'Bb', 'B'][pc(n.pitch)]
+  log.push(` cadences: ${found.length ? found.sort((a, b) => a.note.q - b.note.q).map(f => `bar ${f.note.measure}${f.final ? ' (final)' : ''} ${nm(f.note)}`).join(', ') : 'none'}`)
+  return found.length
 }
 
 function readSource(dir) {
@@ -480,7 +543,7 @@ async function main() {
   const args = process.argv.slice(2)
   const opt = k => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : null }
   const from = opt('--from') ?? '04b619f', only = opt('--only'), dry = args.includes('--dry')
-  const useKern = !args.includes('--no-kern'), useSubjects = !args.includes('--no-subjects')
+  const useKern = !args.includes('--no-kern'), useSubjects = !args.includes('--no-subjects'), useCadences = !args.includes('--no-cadences')
   const sources = new Map()
   for (const [file, dirs] of Object.entries(PIECES)) {
     if (only && only !== file) continue
@@ -498,6 +561,7 @@ async function main() {
         const kn = useKern && kernName(file, s)
         if (kn) mergeKern(src, await fetchKern(kn), segLog)
         if (useSubjects && isFugue(file, s, dirs)) fugueEntries(src, segLog)
+        if (useCadences && /^bach_wtc/.test(file)) cadenceTrills(src, segLog)
         sources.set(dir, src)
       }
       const r = segment(sources.get(dir), segs[s], segLog)
