@@ -80,6 +80,14 @@ export function precedingPageFifths(document, index) {
   return values.length === 1 ? values[0] : null
 }
 
+/** Whether a page needs a prior-key recognition pass without contradicting printed evidence. */
+export function needsPriorFifths(staves, fifths) {
+  if (!Array.isArray(staves) || !Number.isInteger(fifths)) return false
+  const printed = staves.filter(staff => staff.key?.cancellation || staff.key?.detected || staff.key?.glyphs?.length)
+  const missing = staves.some(staff => staff.key && !staff.key.keylessSection && !staff.key.cancellation && !staff.key.detected && !staff.key.glyphs?.length)
+  return missing && printed.every(staff => staff.key.fifths === fifths)
+}
+
 /** Apply a preceding page's key only where this page has no conflicting printed key evidence. */
 export function applyPriorFifths(staves, fifths, interpret) {
   if (!Array.isArray(staves) || !Number.isInteger(fifths) || typeof interpret !== 'function') return 0
@@ -88,7 +96,7 @@ export function applyPriorFifths(staves, fifths, interpret) {
   let changed = 0, firstChanged = staves.length
   for (let index = 0; index < staves.length; index++) {
     const staff = staves[index]
-    if (!staff.key || staff.key.cancellation || staff.key.detected || staff.key.glyphs?.length) continue
+    if (!staff.key || staff.key.keylessSection || staff.key.cancellation || staff.key.detected || staff.key.glyphs?.length) continue
     staff.key.fifths = fifths; staff.key.documentInferred = true; changed++; firstChanged = Math.min(firstChanged, index)
   }
   for (let index = firstChanged; index < staves.length; index++) interpret(staves[index])

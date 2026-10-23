@@ -2,7 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import { createScoreDocument, pageState, cachePage, pageFileStem, trimPageRecords, precedingPageFifths, invalidatePageKeyEvidence, applyPriorFifths } from '../document.js'
+import { createScoreDocument, pageState, cachePage, pageFileStem, trimPageRecords, precedingPageFifths, invalidatePageKeyEvidence, needsPriorFifths, applyPriorFifths } from '../document.js'
 import { writePdf } from '../scoreshift/pdfsource.js'
 
 test('document creates stable isolated page records', () => {
@@ -91,6 +91,23 @@ test('preceding-page keys fill only staves without conflicting printed evidence'
   assert.equal(applyPriorFifths([cancellation, untouched], 2, () => assert.fail('cancellation is authoritative')), 0)
   const replacement = staff({ fifths:1, detected:1, cancellation:false, glyphs:[{ type:0 }, { type:1 }] })
   assert.equal(applyPriorFifths([replacement, untouched], 2, () => assert.fail('replacement key is authoritative')), 0)
+})
+
+test('authoritative keyless sections survive prior-page recognition and carry', () => {
+  const missing = { key:{ fifths:0, detected:0, glyphs:[] } }
+  const keyless = { key:{ fifths:0, detected:0, glyphs:[], keylessSection:true } }
+  const printed = { key:{ fifths:2, detected:2, glyphs:[{}, {}] } }
+  const cancellation = { key:{ fifths:0, detected:0, cancellation:true, glyphs:[{ type:0 }] } }
+
+  assert.equal(needsPriorFifths([keyless], 2), false)
+  assert.equal(needsPriorFifths([missing, keyless, printed], 2), true)
+  assert.equal(needsPriorFifths([missing, cancellation], 2), false)
+
+  const interpreted = []
+  assert.equal(applyPriorFifths([missing, keyless], 2, staff => interpreted.push(staff)), 1)
+  assert.equal(missing.key.fifths, 2)
+  assert.equal(keyless.key.fifths, 0)
+  assert.deepEqual(interpreted, [missing, keyless])
 })
 
 test('page-aware filenames are stable for images and PDFs', () => {

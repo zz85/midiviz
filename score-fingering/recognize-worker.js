@@ -1,6 +1,6 @@
 // Image-only ScoreShift recognition worker for experiment #046.
 import { normalize, analyze, findStaves, interpret } from './scoreshift/omr.js'
-import { applyPriorFifths } from './document.js'
+import { applyPriorFifths, needsPriorFifths } from './document.js'
 import { sauvola, staffMetrics } from './scoreshift/imgproc.js'
 
 self.onmessage = event => {
@@ -18,9 +18,7 @@ self.onmessage = event => {
     const norm = normalize({ w, h, data: gray })
     const fifths = event.data.fifths
     let model = analyze(norm)
-    const printed = model.staves.filter(staff => staff.key.cancellation || staff.key.detected || staff.key.glyphs?.length)
-    const missing = model.staves.some(staff => !staff.key.cancellation && !staff.key.detected && !staff.key.glyphs?.length)
-    if (Number.isInteger(fifths) && missing && printed.every(staff => staff.key.fifths === fifths)) model = analyze(norm, { fifths })
+    if (needsPriorFifths(model.staves, fifths)) model = analyze(norm, { fifths })
     applyPriorFifths(model.staves, fifths, interpret)
     // normalize() saw the reduced analysis image. Map its coordinates back to
     // the retained UI image, as ScoreShift's original worker does.

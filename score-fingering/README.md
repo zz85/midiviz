@@ -37,10 +37,11 @@ part (with manual overrides), and draws the finger numbers back onto the normali
 
 ## ScoreShift snapshot
 
-The browser dependency closure is copied under `scoreshift/` from the sibling ScoreShift
-repository at commit `396f4619c531d978b49bbd81d15f5c766f6cf7a5`. See
-[scoreshift/README.md](scoreshift/README.md) for the included files and update procedure. The local
-copy lets MidiViz run from its own static-server root and keeps recognition on-device.
+The browser dependency closure under `scoreshift/` starts from the sibling ScoreShift repository at
+commit `396f4619c531d978b49bbd81d15f5c766f6cf7a5`, with the later focused OMR fixes from `43e00fe` and
+`6a705c1` selectively merged. See [scoreshift/README.md](scoreshift/README.md) for the included files,
+local integration differences and update procedure. The local copy lets MidiViz run from its own
+static-server root and keeps recognition on-device.
 
 ## Built-in sample
 

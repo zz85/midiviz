@@ -1,8 +1,11 @@
 # ScoreShift subset used by experiment #046
 
-This directory is a browser subset snapshot of `../random-sketches/vibes/scoreshift/` at commit
-`396f4619c531d978b49bbd81d15f5c766f6cf7a5`. It is copied rather than imported across repositories
-so `midiviz` remains a standalone static site when its own directory is served.
+This directory starts from the browser subset of `../random-sketches/vibes/scoreshift/` at commit
+`396f4619c531d978b49bbd81d15f5c766f6cf7a5`. The OMR additionally carries the focused recognition
+fixes from upstream commits `43e00fe` and `6a705c1`; they are merged rather than copied wholesale so
+MidiViz's natural-key and prior-page behavior remains intact. The subset is copied rather than
+imported across repositories so `midiviz` remains a standalone static site when its own directory is
+served.
 
 Included dependency closure:
 
@@ -24,11 +27,21 @@ normalizes the source page, although #046 does not call its transposition planne
 copied reader and minimal JPEG-page writer, while #046 supplies its own bounded document cache and
 annotation export.
 
-The local `PdfPool.open()` adds failure cleanup for readers that succeeded before a parallel reader
-failed; this is the only hand edit to `pdfsource.js` relative to the pinned source.
+Intentional differences from the base snapshot are kept narrow:
+
+- `omr.js` supports opening natural cancellations and cancellation-plus-replacement signatures,
+  inherited PDF-page keys, and the selectively ported IMSLP fixes. A genuinely keyless pair is
+  marked explicitly so inherited context cannot overwrite its C/a-minor reading.
+- `render.js` samples each opening key glyph by its own accidental type, needed when naturals precede
+  replacement sharps or flats.
+- `pdfsource.js` supports aborting stale renders and cleans up readers that succeeded before a
+  parallel reader failed.
+- `dynamics.js` is the documented OFL-only subset rather than the upstream text-font table.
 
 Recognition runs in `../recognize-worker.js`; #046-specific document, score-adapter, overlay and UI
-behavior remains outside this snapshot.
+behavior remains outside this snapshot. Current upstream `score.js` and `theory.js` use the separate
+`notation-ir` tree; those refactors are deliberately not copied because #046 does not consume that
+second score model.
 
 ## Licenses and deployment
 
