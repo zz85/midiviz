@@ -104,3 +104,16 @@ test('Inside the piano: avoided, every shot keeps the strings under its limit, a
     }
   }
 })
+
+test('Pedal shots off: no feet or pedal shots in the film or a Short', () => {
+  for (let k = 1; k <= 4; k++) {
+    const s = song(k, 600)
+    const on = planShots(s), off = planShots(s, { pedals: false })
+    expect(off.length).toBeGreaterThan(20)
+    expect(off.some(sh => sh.name === 'feet' || sh.name === 'pedalsClose')).toBe(false)
+    for (const o of [{}, { half: 'hands' }]) expect(planShort(s, { window: [60, 150], pedals: false, ...o }).some(sh => sh.name === 'pedalsClose' || sh.name === 'feet')).toBe(false)
+    if (k === 1) expect(on.length).toBeGreaterThan(20)
+  }
+  // (with them on, some film of these four songs does use them)
+  expect([1, 2, 3, 4].some(k => planShots(song(k, 600)).some(sh => sh.name === 'feet' || sh.name === 'pedalsClose'))).toBe(true)
+})

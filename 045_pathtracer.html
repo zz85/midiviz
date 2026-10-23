@@ -273,6 +273,7 @@
     <label class="chk" title="Off: each shot frames her as it starts and holds still while she moves. On: the camera operator follows her head"><input type="checkbox" id="camFollow"> Follow her movement</label>
     <div class="field" title="Which shot sizes the director may use"><label>Shots</label><div class="sizeChk"><label><input type="checkbox" id="dirFar" checked> Far</label><label><input type="checkbox" id="dirMed" checked> Medium</label><label><input type="checkbox" id="dirClose" checked> Close</label></div></div>
     <div class="field" title="The strings, plate and dampers inside the case are the slowest part of the stage to path trace. Each shot is checked for how much of its frame they fill (pianist/director.js, stringsShare): Mostly avoid leaves out the shots where they fill over 10 % (from above, over the shoulder, the hammers); Avoid leaves out any over 4 % (then the hands are filmed along the keys and from the side, her face and figure from low or level)"><label>Inside the piano</label><select id="dirStrings"><option value="show" selected>Show it</option><option value="mostly">Mostly avoid (faster path tracing)</option><option value="strict">Avoid (fastest path tracing)</option></select></div>
+    <label class="chk" title="Off: the director leaves out the shots of her feet and the pedals (Pedals, Pedals close)"><input type="checkbox" id="dirPedals" checked> Pedal shots</label>
     <label class="chk"><input type="checkbox" id="shotLbl"> Show shot names</label>
   </div>
   <div id="visualsPop" class="pop ui">
@@ -347,6 +348,9 @@
     <div class="field"><label>Strand density</label><select id="hairDensity"><option value="0.5">Light</option><option value="1" selected>Full</option><option value="1.6">Dense</option></select></div>
     <div class="field"><label>Hair colour</label><input type="color" id="hairColor" value="#5a3e2a"></div>
     <div class="field"><label>Dress colour</label><input type="color" id="dressColor" value="#8e1d1b"></div>
+    <div class="field" title="MakeHuman's East Asian face target, on the head only (as #047 Wardrobe): 0 % is her own face, 100 % the full target. The body and the clothes stay as they are"><label>Face: East Asian <span class="val" id="faceAsianV"></span></label><input type="range" id="faceAsian" min="0" max="1" step="0.01" value="0"></div>
+    <div class="field" title="MakeHuman's African face target, on the head only. With the East Asian one the two add up to at most 100 %"><label>Face: African <span class="val" id="faceAfricanV"></span></label><input type="range" id="faceAfrican" min="0" max="1" step="0.01" value="0"></div>
+    <div class="field" title="MakeHuman's young women's skin textures (as #047 Wardrobe)"><label>Skin</label><select id="skinTex"><option value="caucasian" selected>European</option><option value="asian">East Asian</option><option value="african">African</option></select></div>
     <div class="sect">Liner notes<small>background and analysis for pieces that have notes (ⓘ in Songs)</small></div>
     <div class="field" title="Intertitles: the few short lines the notes mark for the screen, faded in and out with room to read. Every note: each note as a caption as it comes. Click one, or press I, for the full notes"><label>On screen while it plays (I: the notes)</label><select id="linerMode"><option value="intertitles" selected>Intertitles</option><option value="notes">Every note (captions)</option><option value="off">Nothing</option></select></div>
     <div class="field" title="The story: history, trivia and the title"><label>Intertitle style</label><select id="itStyle"></select></div>
@@ -356,6 +360,9 @@
     <div class="field" title="Automatic: each intertitle goes to the side of the frame away from the pianist (her head and hands as the camera sees them), and to the top when the shot looks down on the keys"><label>Intertitle position</label><select id="itPos"></select></div>
     <label class="chk" title="The small capitals over each line (a place and year, a bar, a term)"><input type="checkbox" id="itHeads" checked>Headings over the lines</label>
     <div class="sect">Stage</div>
+    <div class="field" title="Black stage: the grand under its spotlights on a dark floor. Candlelit chamber (from #030): a stone wall with arches behind the piano, some 200 candles on two tiers and along the sides, sconces, a warm candle palette for the lights and the reflections"><label>Stage</label><select id="stageSet"><option value="stage" selected>Black stage</option><option value="candle">Candlelit chamber</option></select></div>
+    <div class="field"><label>Piano finish</label><select id="finish"></select></div>
+    <div class="field" title="The lid on its long stick (32°), on the short one (13°), or closed"><label>Lid</label><select id="lid"><option value="full" selected>Open, full stick</option><option value="half">Open, short stick</option><option value="closed">Closed</option></select></div>
     <div class="field"><label>Main light</label><input type="range" id="light" min="0" max="2" step="0.01" value="1"></div>
     <div class="field"><label>Exposure</label><input type="range" id="exposure" min="0.3" max="2.5" step="0.01" value="1"></div>
     <div class="sect">Post-processing</div>
@@ -419,7 +426,7 @@
       <option value="mu-webgpu" selected>MuTracer · WebGPU</option>
       <option value="mu-webgl">MuTracer · WebGL 2</option>
     </select></div>
-    <div class="field" title="Per picture: a still, or each frame of a video. For video, few samples with the denoiser is the practical setting (256 is minutes per second of film)"><label>Samples per pixel</label><select id="ptSpp"><option>4</option><option>16</option><option>64</option><option selected>256</option><option>1024</option><option>4096</option></select></div>
+    <div class="field" title="Per picture: a still, or each frame of a video. For video, few samples with the denoiser is the practical setting (256 is minutes per second of film)"><label>Samples per pixel</label><select id="ptSpp"><option>4</option><option>8</option><option>16</option><option>64</option><option selected>256</option><option>1024</option><option>4096</option></select></div>
     <div class="field" title="How many times a path may scatter: 3 is enough for the lights on her and the keys, more for light inside the piano and under the lid"><label>Bounces</label><select id="ptBounces"><option>3</option><option selected>6</option><option>10</option></select></div>
     <div class="field"><label>Still size</label><select id="ptSize"><option value="screen">As on screen</option><option value="640x360">640×360 (test)</option><option value="1280x720" selected>1280×720</option><option value="1920x1080">1920×1080</option><option value="3840x2160">3840×2160</option><option value="1080x1920">1080×1920 (Short)</option></select></div>
     <div class="field" title="The strand hair is baked into ribbons facing the camera; fewer, wider strands keep the BVH smaller"><label>Hair strands</label><select id="ptHair"><option value="0.25">25 %</option><option value="0.5" selected>50 %</option><option value="1">All</option></select></div>
@@ -448,7 +455,7 @@
       <div class="field" title="Goes into the description saved next to the video (name-short.txt)"><label>Link to the full video</label><input type="text" id="exFullUrl" placeholder="https://youtu.be/…" style="width:100%;box-sizing:border-box;background:#2b2b2b;color:#eee;border:1px solid #444;border-radius:6px;padding:4px 6px;font:inherit"></div>
     </div>
     <div class="field"><label>Resolution</label><select id="exRes"><option value="426x240">240p (preview)</option><option value="854x480">480p (preview)</option><option value="1280x720">720p</option><option value="1920x1080" selected>1080p</option><option value="2560x1440">1440p</option><option value="3840x2160">4K</option></select></div>
-    <div class="field"><label>Frame rate</label><select id="exFps"><option>4</option><option>5</option><option>8</option><option>15</option><option>16</option><option>24</option><option>25</option><option>30</option><option selected>60</option></select></div>
+    <div class="field"><label>Frame rate</label><select id="exFps"><option>4</option><option>5</option><option>8</option><option>12</option><option>15</option><option>16</option><option>24</option><option>25</option><option>30</option><option selected>60</option></select></div>
     <div class="field wideOnly" title="How much of the song to render: all of it, or a short test from the start or from where the song is now (the seek bar)"><label>Length</label><select id="exLen"><option value="all" selected>Whole song</option><option value="5">First 5 s (path-trace test)</option><option value="20">First 20 s (test)</option><option value="60">First minute</option><option value="here5">5 s from the current position</option><option value="here20">20 s from the current position</option><option value="here60">1 minute from the current position</option></select></div>
     <div class="field wideOnly"><label>Camera</label><select id="exCam"><option value="auto" selected>Director (auto)</option><option value="current">As on screen</option></select></div>
     <label class="chk"><input type="checkbox" id="exAudio" checked>Include audio (with the hall)</label>
@@ -521,7 +528,8 @@
     import { midiToSchedule } from './notation3d/midi-score.js'
     import { exportVideo, exportSupported, defaultBitrate } from './notation3d/video-export.js'
     import { installAcoustics, offlineHall, acousticParams, rt60Of, ROOMS, SEATS } from './concertstage/acoustics.js'
-    import { buildGrandPiano, LOW, HIGH, DIM } from './concertstage/concert-grand.js'
+    import { buildGrandPiano, LOW, HIGH, DIM, FINISHES } from './concertstage/concert-grand.js'
+    import { buildCandleChamber, candleEnvironment, CANDLE } from './pathtrace/candle-chamber.js'
     import { createLessonView, LESSON_VIEWS } from './pianist/lesson.js'
     import { loadCharacter } from './pianist/character.js'
     import { loadAltCharacter, MODELS } from './pianist/alt-model.js'
@@ -625,27 +633,77 @@
     const keyFill = new THREE.SpotLight(0xfff0e0, 0.8, 0, 0.5, 1, 0)
     keyFill.position.set(40, 260, 320); keyFill.target.position.set(0, 74, -10)
     scene.add(keyFill, keyFill.target)
-    const LIGHTS = [[spot, 4.2], [faceKey, 1.6], [rim, 4], [back, 4], [keyFill, 0.8]]
-    const applyLight = () => { const k = +$('light').value; for (const [l, i] of LIGHTS) l.intensity = i * k; lidLight.intensity = 0.55 * k }
+    const LIGHTS = [[spot, 4.2], [faceKey, 1.6], [rim, 4], [back, 4], [keyFill, 0.8], [lidLight, 0.55]]
+    // each stage's colours and strengths for these six (the candle chamber after
+    // #030's candle rig: its key / back / fill / lid against its concert rig, the
+    // face key and rim warmed to match)
+    const STAGE_LIGHTS = {
+      stage: [[0xffd2a0, 1], [0xffd9b8, 1], [0xffe6c8, 1], [0xffe2c0, 1], [0xfff0e0, 1], [0xffc28a, 1]],
+      candle: ((L, C) => [[L.key.color, L.key.intensity / C.key], [0xffc890, 0.85], [0xffb070, 0.8], [L.back.color, L.back.intensity / C.back], [L.fill.color, L.fill.intensity / C.fill], [L.lid.color, L.lid.intensity / C.lid]])(CANDLE.lights, CANDLE.concert),
+    }
+    const applyLight = () => {
+      const k = +$('light').value, look = STAGE_LIGHTS[$('stageSet').value] || STAGE_LIGHTS.stage
+      LIGHTS.forEach(([l, i], j) => { l.color.setHex(look[j][0]); l.intensity = i * look[j][1] * k })
+    }
     $('light').oninput = applyLight
     applyLight()
     $('exposure').oninput = () => { renderer.toneMappingExposure = +$('exposure').value }
 
     const pmrem = new THREE.PMREMGenerator(renderer)
-    let envScene   // (#045: the panels, ray cast into an equirect map for the path tracers)
-    {
-      const s = envScene = new THREE.Scene(); s.background = new THREE.Color(0x010101)
-      const box = (w, h, p, k, c = 0xffffff) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(c).multiplyScalar(k), side: THREE.DoubleSide })); m.position.set(...p); m.lookAt(0, 90, 0); s.add(m) }
-      box(260, 260, [-200, 640, 300], 8, 0xffcf9a)
-      box(900, 140, [0, 650, -150], 0.8, 0xffd7a8)
-      box(60, 500, [-900, 300, -300], 2, 0xffbf80)
-      box(60, 500, [900, 260, -100], 1.4, 0xffc890)
-      box(700, 220, [150, 420, -900], 2, 0xffe2c0)
-      box(1400, 300, [0, 120, 1100], 0.1, 0x8fa6c8)
-      scene.environment = pmrem.fromScene(s, 0.015, 1, 6000).texture
-      scene.environmentIntensity = 0.55
+    // the reflections: a few glowing panels around the stage, prefiltered for the
+    // page; envScene is the panels themselves (#045: the path tracers ray cast them
+    // into an equirect map). Black stage: our own; the candle chamber's from #030
+    let envScene
+    const ENVS = {}
+    function stageEnvironment(name) {
+      if (!ENVS[name]) {
+        if (name === 'stage') {
+          const s = new THREE.Scene(); s.background = new THREE.Color(0x010101)
+          const box = (w, h, p, k, c = 0xffffff) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(c).multiplyScalar(k), side: THREE.DoubleSide })); m.position.set(...p); m.lookAt(0, 90, 0); s.add(m) }
+          box(260, 260, [-200, 640, 300], 8, 0xffcf9a)
+          box(900, 140, [0, 650, -150], 0.8, 0xffd7a8)
+          box(60, 500, [-900, 300, -300], 2, 0xffbf80)
+          box(60, 500, [900, 260, -100], 1.4, 0xffc890)
+          box(700, 220, [150, 420, -900], 2, 0xffe2c0)
+          box(1400, 300, [0, 120, 1100], 0.1, 0x8fa6c8)
+          ENVS[name] = { scene: s, map: pmrem.fromScene(s, 0.015, 1, 6000).texture, intensity: 0.55 }
+        } else {
+          const e = candleEnvironment(THREE)
+          // (the page's 0.55 against #030's 0.7 for the black stage, kept in proportion)
+          ENVS[name] = { scene: e.scene, map: pmrem.fromScene(e.scene, e.sigma, 1, e.far).texture, intensity: 0.55 * CANDLE.environmentIntensity / CANDLE.stageEnvironmentIntensity }
+        }
+      }
+      const E = ENVS[name]
+      envScene = E.scene; scene.environment = E.map; scene.environmentIntensity = E.intensity
     }
+    stageEnvironment('stage')
 
+    // Stage, piano finish and lid (Visuals → Stage). The candle chamber's set
+    // (pathtrace/candle-chamber.js, from #030: wall, arches, ~200 candles,
+    // sconces with their own small lights) is built the first time it is chosen
+    const STAGE_LOOK = { stage: { background: 0x000000, floor: 0x1a1512 }, candle: { background: CANDLE.background, floor: 0x180d08, props: 'candle' } }
+    const stageProps = {}
+    function setStage(name) {
+      if (!STAGE_LOOK[name]) name = 'stage'
+      $('stageSet').value = name
+      stageEnvironment(name)
+      scene.background.setHex(STAGE_LOOK[name].background)
+      floorMat.color.setHex(STAGE_LOOK[name].floor)
+      const want = STAGE_LOOK[name].props
+      if (want && !stageProps[want]) { stageProps[want] = buildCandleChamber(THREE, LOWQ); scene.add(stageProps[want].root) }
+      for (const [k, p] of Object.entries(stageProps)) p.root.visible = k === want
+      applyLight()
+    }
+    $('stageSet').onchange = () => setStage($('stageSet').value)
+    for (const [k, f] of Object.entries(FINISHES)) $('finish').add(new Option(f.label, k))
+    $('finish').value = 'ebony'
+    $('finish').onchange = () => piano.setFinish($('finish').value)
+    // (the lid goes straight to its new angle, so a link or an export starts with it there)
+    const setLid = mode => {
+      piano.setLid(mode); lidLight.visible = mode !== 'closed'
+      for (let i = 0; i < 120; i++) piano.update(0.05)
+    }
+    $('lid').onchange = () => setLid($('lid').value)
     // ── The pianist ──────────────────────────────────────────────────────
     setStatus('Loading the pianist…')
     // ?model=quaternius|vrm: another rigged model (pianist/alt-model.js) with
@@ -837,8 +895,28 @@
       applyLook()
       coverBody(dress.object.visible)
     }
+    // her face and skin (as #047 Wardrobe: character.js setFace / setSkin), from
+    // the link before anything is dressed, so nothing is built twice
+    const facePct = x => Math.round(x * 100) + ' %'
+    const showFace = () => { $('faceAsianV').textContent = facePct(+$('faceAsian').value); $('faceAfricanV').textContent = facePct(+$('faceAfrican').value) }
+    function applyFace() {
+      if (ALT || !ch.setFace) return
+      ch.setFace({ asian: +$('faceAsian').value, african: +$('faceAfrican').value })
+      $('faceAsian').value = ch.face.asian ?? 0; $('faceAfrican').value = ch.face.african ?? 0   // (held to 100 % together)
+      rig.measureEyes?.(); showFace()
+    }
+    for (const [id, k] of [['faceAsian', 'fasian'], ['faceAfrican', 'fafrican']]) if (params.has(k)) $(id).value = Math.min(1, Math.max(0, +params.get(k) || 0))
+    if (['caucasian', 'asian', 'african'].includes(params.get('skintex'))) $('skinTex').value = params.get('skintex')
+    applyFace()
+    if (!ALT && $('skinTex').value !== 'caucasian') await ch.setSkin($('skinTex').value)
     await Promise.all([setDress($('dressStyle').value), setShoes($('shoeStyle').value)])
     await setHair($('hairStyle').value)
+    for (const id of ['faceAsian', 'faceAfrican']) {
+      $(id).oninput = () => { applyFace(); smoother.update?.() }
+      // (on release: what kept the old head is rebuilt, strand or simulated hair)
+      $(id).onchange = () => { applyFace(); if (hair && (hair.kind === 'strands' || hair.cloth)) setHair($('hairStyle').value); else applyLook() }
+    }
+    $('skinTex').onchange = async () => { if (!ALT) { await ch.setSkin($('skinTex').value); applyLook() } }
     // (the modesty flag wins over whatever else shows the body)
     const keepModest = () => { for (const o of skinMeshes()) if (o.userData.modest) o.visible = false }
     function wardrobeUpdate(dt) { ch.update?.(dt); keepModest(); hair.update(dt); dress?.update(dt); shoes?.update(dt); smoother.update(); look.update() }
@@ -1158,7 +1236,8 @@
     for (const [id, k] of [['dirFar', 'dfar'], ['dirMed', 'dmed'], ['dirClose', 'dclose']]) if (params.get(k) === '0') $(id).checked = false
     if (STRINGS_LEVELS[params.get('strings')]) $('dirStrings').value = params.get('strings')
     const dirStrings = () => STRINGS_LEVELS[$('dirStrings').value] ?? null
-    const director = createDirector({ pace: +(params.get('pace') ?? 1), bias: +(params.get('favour') ?? 0), trans: params.get('trans') || 'cuts', sizes: dirSizes(), strings: dirStrings() })
+    const director = createDirector({ pace: +(params.get('pace') ?? 1), bias: +(params.get('favour') ?? 0), trans: params.get('trans') || 'cuts', sizes: dirSizes(), strings: dirStrings(), pedals: params.get('dpedals') !== '0' })
+    $('dirPedals').checked = director.opts.pedals
     for (const id of ['dirFar', 'dirMed', 'dirClose']) $(id).onchange = () => {
       if (!dirSizes().length) $(id).checked = true   // (at least one)
       director.set('sizes', dirSizes())
@@ -1170,6 +1249,7 @@
     $('dirBias').onchange = () => dirSet('bias', +$('dirBias').value)
     $('dirTrans').onchange = () => dirSet('trans', $('dirTrans').value)
     $('dirStrings').onchange = () => dirSet('strings', dirStrings())
+    $('dirPedals').onchange = () => dirSet('pedals', $('dirPedals').checked)
     const SEQ_MOVES = { random: 'Random', cut: "Director's cut" }
     $('camMove').value = MOVES[params.get('move')] || SEQ_MOVES[params.get('move')] ? params.get('move') : 'cut'
     $('camMove').onchange = () => { moveT = 0; userCam = false; lastShot = null; $('shotName').textContent = '' }
@@ -1733,12 +1813,13 @@
       ['dresson', 'dressOn'], ['clothsim', 'clothSim'], ['vdress', 'vdress'], ['look', 'look'], ['smooth', 'smooth'], ['simplify', 'simplify'],
       ['gaze', 'gaze'], ['expr', 'expr'], ['hips', 'hips'], ['posture', 'posture'], ['reach', 'reach'], ['rock', 'rock'], ['sway', 'sway'], ['nod', 'nod'], ['glances', 'glances'], ['armw', 'armw'], ['lifth', 'lifth'], ['wflex', 'wflex'], ['frot', 'frot'], ['elbow', 'elbowLead'], ['liftoff', 'liftoff'], ['bench', 'benchDist'], ['benchh', 'benchH'],
       ['touch', 'touch'], ['fingering', 'fingering'],
-      ['light', 'light'], ['exposure', 'exposure'], ['dof', 'dof'],
-      ['move', 'camMove'], ['pace', 'dirPace'], ['favour', 'dirBias'], ['trans', 'dirTrans'], ['shotnames', 'shotLbl'], ['follow', 'camFollow'], ['dfar', 'dirFar'], ['dmed', 'dirMed'], ['dclose', 'dirClose'], ['strings', 'dirStrings'],
+      ['light', 'light'], ['exposure', 'exposure'], ['dof', 'dof'], ['scene', 'stageSet'], ['finish', 'finish'], ['lid', 'lid'],
+      ['fasian', 'faceAsian'], ['fafrican', 'faceAfrican'], ['skintex', 'skinTex'],
+      ['move', 'camMove'], ['pace', 'dirPace'], ['favour', 'dirBias'], ['trans', 'dirTrans'], ['shotnames', 'shotLbl'], ['follow', 'camFollow'], ['dfar', 'dirFar'], ['dmed', 'dirMed'], ['dclose', 'dirClose'], ['strings', 'dirStrings'], ['dpedals', 'dirPedals'],
       ['sf', 'sf'], ['avsync', 'avsync'],
       ['dofamt', 'dofAmt'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
       ['vol', 'vol'], ['room', 'room'], ['seat', 'seat'], ['rv', 'rvAmt'], ['decay', 'rvDecay'], ['tone', 'rvTone'], ['boost', 'boost'], ['amb', 'amb'], ['applause', 'applause'],
-      ['exformat', 'exFormat'], ['exlayout', 'exLayout'], ['exsplit', 'exSplit'], ['exhands', 'exHandsHalf'], ['exlview', 'exLessonView'], ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exsub', 'exSub'], ['excard', 'exCard'], ['excaps', 'exCaps'], ['exvtt', 'exVtt'], ['exlen', 'exLen'], ['exhold', 'exHold'],
+      ['exformat', 'exFormat'], ['exlayout', 'exLayout'], ['exsplit', 'exSplit'], ['exhands', 'exHandsHalf'], ['exlview', 'exLessonView'], ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exfps', 'exFps'], ['exsub', 'exSub'], ['excard', 'exCard'], ['excaps', 'exCaps'], ['exvtt', 'exVtt'], ['exlen', 'exLen'], ['exhold', 'exHold'],
       ['notes', 'linerMode'], ['itstyle', 'itStyle'], ['itstylea', 'itStyleA'], ['itcol', 'itTheme'], ['itpos', 'itPos'], ['itheads', 'itHeads'], ['extitle', 'exTitle'], ['expt', 'exPt'], ['ptengine', 'ptEngine'], ['ptspp', 'ptSpp'], ['ptbounces', 'ptBounces'], ['pthair', 'ptHair'], ['ptdn', 'ptDenoise'], ['ptfx', 'ptFx'], ['ptsize', 'ptSize'],
     ].filter(([, id]) => $(id))
     const OUTFIT_KEYS = { dress: 'dress', slit: 'slit', fabric: 'fabric', dcol: 'color', shoes: 'shoes', hair: 'hair', hcol: 'hairColor' }
@@ -1841,6 +1922,7 @@
       fxT += dt
       dust.material.uniforms.uTime.value = fxT
       piano.update(dt)
+      for (const p of Object.values(stageProps)) if (p.root.visible) p.update?.(dt, fxT)
       rig.setPedals(pedals[0], pedals[1], pedals[2])
       rig.update(t, dt)
       ch.group.updateMatrixWorld(true)
@@ -2195,7 +2277,7 @@
     let ptPR = 1
     const ptCopy = src => { const c = document.createElement('canvas'); c.width = src.width; c.height = src.height; c.getContext('2d', { willReadFrequently: true }).drawImage(src, 0, 0); return c }
     const ptStage = {
-      scene, camera, envScene, envIntensity: scene.environmentIntensity,
+      scene, camera, get envScene() { return envScene }, get envIntensity() { return scene.environmentIntensity },
       hair: () => hair, exposure: () => +$('exposure').value, liveExposure: () => renderer.toneMappingExposure,
       fx: () => ({
         exposure: +$('exposure').value,

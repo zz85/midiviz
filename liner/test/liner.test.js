@@ -312,3 +312,25 @@ test('library: index lookup by path or file name, cards attached', async () => {
 	const l = await lib.forFile('Prelude1.mid')
 	assert.deepEqual(Object.keys(l.cards).sort(), ['ave-maria', 'bach', 'diminished-seventh', 'pedal-point', 'well-tempered-clavier'])
 })
+
+test('Bach BWV 850 (a MAESTRO recording, no bar grid): notes placed by time land on the music', () => {
+	const midi = new Midi(readFileSync(new URL('midis/maestro_bach_850.mid', root)))
+	const liner = parseLiner(read('liner/pieces/bach-wtc1-850.md'))
+	const notes = midi.tracks.flatMap(t => t.notes).sort((a, b) => a.time - b.time)
+	const duration = Math.max(...notes.map(n => n.time + n.duration))
+	const tl = buildTimeline(liner, clockOfMidi(midi), duration)
+	assert.deepEqual(liner.warnings, [])
+	assert.deepEqual(tl.warnings, [])
+	const at = (k, s) => tl.intertitles.find(x => x.kicker === k)
+	// the prelude's pedal: the low A held from 0:45; the free ending's held chord from 0:56
+	assert.ok(notes.some(n => n.midi === 45 && Math.abs(n.time - 45.5) < 0.5 && n.duration > 4))
+	assert.ok(notes.some(n => n.time > 56 && n.time < 57 && n.duration > 1.5) || notes.filter(n => n.time > 56.9 && n.time < 58.7).length === 0)
+	// the fugue: silence before it, then the subject in the bass (D3) at 1:15
+	assert.equal(notes.filter(n => n.time > 68 && n.time < 75).length, 0)
+	const first = notes.find(n => n.time > 70)
+	assert.equal(first.midi, 50); assert.ok(Math.abs(first.time - 75.27) < 0.1)
+	// the sections follow the music: prelude, then the fugue at 1:15
+	assert.ok(tl.sections.some(s => s.title.startsWith('Fugue') && Math.abs(s.start - 75) < 0.5))
+	assert.ok(at('Both hands').start < duration - 10)
+	assert.ok(tl.intertitles.length >= 5)
+})

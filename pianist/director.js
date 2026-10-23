@@ -263,6 +263,9 @@ export function stringsShare(name, portrait = false) {
 // are filmed along the keys, from the side, and her face and figure from low)
 export const STRINGS_LEVELS = { mostly: 0.1, strict: 0.04 }
 const stringsOk = (name, portrait, max) => max == null || stringsShare(name, portrait) <= max
+// opts.pedals: false leaves out the shots of her feet and the pedals
+const PEDAL_SPOTS = new Set(['feet', 'pedalsClose'])
+const pedalsOk = (name, on) => on !== false || !PEDAL_SPOTS.has(name)
 
 // ── Takes on a fixed view (sequence) ──
 // The director's cut works from the chosen view's angle but changes the
@@ -432,7 +435,7 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
   const mean = (a, b) => { let s = 0, n = 0; for (let t = a; t < b; t += 0.25) { s += energyAt(t); n++ } return n ? s / n : 0 }
   const lookUp = (a, b) => glances.some(g => g.a < b - 1 && g.b > a + 0.5 && !g.quiet)
   const strMax = opts.strings ?? null
-  const names = spotsFor(false).filter(n => stringsOk(n, false, strMax))
+  const names = spotsFor(false).filter(n => stringsOk(n, false, strMax) && pedalsOk(n, opts.pedals))
   const shots = []
   // what the audience has been shown lately: when the last wide shot ended,
   // and when her face was last in view (from the front half, not from behind)
@@ -596,7 +599,7 @@ export function planShort({ duration, phrases = [], glances = [], energyAt = () 
   const [A, B] = opts.window ?? [0, duration]
   const seed = songSeed({ duration, phrases }) + Math.round(A * 10) % 997 + (opts.half === 'her' ? 501 : 0), hs = (k, n) => hash(k + seed, n)
   const half = HALVES[opts.half] ? opts.half : null, avoid = half && opts.avoid || []
-  const names = (half ? spotsFor(false).filter(HALVES[half]) : spotsFor(true)).filter(n => stringsOk(n, !half, opts.strings ?? null))
+  const names = (half ? spotsFor(false).filter(HALVES[half]) : spotsFor(true)).filter(n => stringsOk(n, !half, opts.strings ?? null) && pedalsOk(n, opts.pedals))
   const P = n => spotFor(n, !half)
   const starts = phrases.map(p => p[0]).filter(t => t > A + 1.5 && t < B - 1.5 && !avoid.some(c => Math.abs(c - t) < 0.8))
   const mean = (a, b) => { let s = 0, n = 0; for (let t = a; t < b; t += 0.25) { s += energyAt(t); n++ } return n ? s / n : 0 }
