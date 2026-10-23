@@ -197,6 +197,7 @@
     import { createLook } from './pianist/look.js'
     import { createCommunity, communityList } from './pianist/community.js'
     import { createPathTraceStills } from './pathtrace/still.js'
+    import { setLaceLining } from './pianist/fabric.js'
     import { OUR_DRESSES, OUR_HAIR, OUR_SHOES, OUR_BOTTOMS, COMMUNITY, FABRICS, SLITS, SLIT_AT, OUTFITS, PALETTES } from './wardrobe/catalog.js'
 
     const $ = id => document.getElementById(id)
@@ -331,13 +332,13 @@
     // ── The state: one object, in the link too ───────────────────────────
     const W = {
       outfit: 'fishtail-black', dress: 'c894', bottom: 'ours', dressColor: '#f2efe9', skirtColor: null, trim: null, fabric: 'made', slit: 'calf',
-      hair: 'c3694', hairColor: '#d9c7a3', shoes: 'flats', shoeColor: '#151214', skinTex: 'caucasian', skin: '#fff0e6', faceAsian: 0, faceAfrican: 0, backdrop: '#8d8a86',
+      hair: 'c3694', hairColor: '#d9c7a3', shoes: 'flats', shoeColor: '#151214', skinTex: 'caucasian', skin: '#fff0e6', lining: null, faceAsian: 0, faceAfrican: 0, backdrop: '#8d8a86',
       look: 'realistic', pose: 'sides', light: 'studio',
     }
-    const URLKEYS = { outfit: 'outfit', dress: 'dress', bottom: 'bottom', dressColor: 'dcol', skirtColor: 'skcol', trim: 'trim', fabric: 'fabric', slit: 'slit', hair: 'hair', hairColor: 'hcol', shoes: 'shoes', shoeColor: 'scol', skinTex: 'skintex', skin: 'skin', faceAsian: 'fasian', faceAfrican: 'fafrican', backdrop: 'bg', look: 'look', pose: 'pose', light: 'light' }
+    const URLKEYS = { outfit: 'outfit', dress: 'dress', bottom: 'bottom', dressColor: 'dcol', skirtColor: 'skcol', trim: 'trim', fabric: 'fabric', lining: 'lin', slit: 'slit', hair: 'hair', hairColor: 'hcol', shoes: 'shoes', shoeColor: 'scol', skinTex: 'skintex', skin: 'skin', faceAsian: 'fasian', faceAfrican: 'fafrican', backdrop: 'bg', look: 'look', pose: 'pose', light: 'light' }
     function outfitInto(k) {
       const o = OUTFITS[k]; if (!o) return false
-      Object.assign(W, { outfit: k, dress: o.dress, bottom: o.bottom || 'ours', dressColor: o.color, skirtColor: o.skirtColor || null, trim: o.trim || null, fabric: o.fabric, slit: o.slit || 'calf', hair: o.hair, hairColor: o.hairColor, shoes: o.shoes, shoeColor: o.shoeColor || '#151214' })
+      Object.assign(W, { outfit: k, dress: o.dress, bottom: o.bottom || 'ours', dressColor: o.color, skirtColor: o.skirtColor || null, trim: o.trim || null, fabric: o.fabric, lining: o.lining || null, slit: o.slit || 'calf', hair: o.hair, hairColor: o.hairColor, shoes: o.shoes, shoeColor: o.shoeColor || '#151214' })
       return true
     }
     // (no wardrobe in the link: the first concert outfit)
@@ -410,7 +411,8 @@
           update(dt) { item.object.visible = skirt.object.visible; item.update(dt); skirt.update(dt) },
           setColor(c) { item.setColor(c); if (!W.skirtColor) skirt.setColor(c) },
           setSkirtColor(c) { skirt.setColor(c || W.dressColor) },
-          setFabric(k) { skirt.setFabric?.(k); item.setFabric(k) },
+          // (pleats are the skirt's: a pleated top would read as ribbing)
+          setFabric(k) { skirt.setFabric?.(k); item.setFabric(k === 'pleated' ? 'made' : k) },
           settle(s) { skirt.settle?.(s) },
           dispose() { item.dispose(); skirt.dispose() },
         }
@@ -454,6 +456,26 @@
       applyLook()
     })
 
+    // her skin's mean colour (the skin texture's, under its tint), for an
+    // illusion-lace lining that matches her: sampled once per skin texture
+    const toneOf = new Map()
+    function skinTone() {
+      const img = ch.materials.skin.map?.image
+      let t = toneOf.get(img)
+      if (!t && img) {
+        const c = document.createElement('canvas'); c.width = c.height = 64
+        const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0, 64, 64)
+        const d = g.getImageData(0, 0, 64, 64).data
+        // (the body's skin: the middle of the brightness range, not lips, brows, eyes or the black gutters)
+        const px = []; for (let i = 0; i < d.length; i += 4) { const l = d[i] + d[i + 1] + d[i + 2]; if (d[i + 3] > 200 && l > 60) px.push([l, d[i], d[i + 1], d[i + 2]]) }
+        px.sort((a, b) => a[0] - b[0])
+        const mid = px.slice(Math.floor(px.length * 0.3), Math.ceil(px.length * 0.85)), m = [0, 0, 0]
+        for (const p of mid) for (let k = 0; k < 3; k++) m[k] += p[k + 1] / mid.length
+        t = new THREE.Color().setRGB(m[0] / 255, m[1] / 255, m[2] / 255, THREE.SRGBColorSpace)
+        toneOf.set(img, t)
+      }
+      return (t || new THREE.Color('#d6a88f')).clone().multiply(ch.materials.skin.color)
+    }
     // colours: straight onto the materials, no rebuild
     function paint(what) {
       if (what === 'dress') dress?.setColor(W.dressColor)
@@ -461,7 +483,9 @@
       if (what === 'trim') dress?.setTrim?.(W.trim)
       if (what === 'hair') { hair?.setColor(W.hairColor); ch.materials.brow.color.set(W.hairColor).multiplyScalar(0.7) }
       if (what === 'shoes') shoes?.setColor?.(W.shoeColor)
-      if (what === 'skin') ch.materials.skin.color.set(W.skin)
+      if (what === 'skin') { ch.materials.skin.color.set(W.skin); if (!W.lining) paint('lining') }
+      // lace's lining: her skin tone (auto) or a colour
+      if (what === 'lining') setLaceLining(W.lining || skinTone())
       if (what === 'backdrop') cycMat.color.set(W.backdrop)
       look.recolor(extras())
     }
@@ -542,6 +566,7 @@
       { k: 'bottom', label: 'Bottom', list: () => BOTTOMS, color: 'skirtColor', palette: 'dress', auto: true, show: () => isTop(W.dress) },
       { k: 'trim', label: 'Trim', color: 'trim', palette: 'trim', auto: true, show: () => isQipao(W.dress) },
       { k: 'fabric', label: 'Fabric', list: () => FABRICS.filter(([f]) => f !== 'knit' || isOurs(W.dress)) },
+      { k: 'lining', label: 'Lace lining', color: 'lining', palette: 'lining', auto: true, show: () => W.fabric === 'lace' },
       { k: 'slit', label: 'Slits', list: () => SLITS, show: () => isOurs(W.dress) },
       { k: 'shoes', label: 'Shoes', list: () => SHOES, color: 'shoeColor', palette: 'shoes', showColor: () => W.shoes !== 'none' },
       { k: 'skinTex', label: 'Skin', list: () => SKINS, color: 'skin', palette: 'skin', face: true },
@@ -569,7 +594,7 @@
           inp.oninput = () => { activate(r.k); setColor(r.color, inp.value) }
           cs.appendChild(inp)
           if (r.auto) {
-            const b = document.createElement('button'); b.className = 'sw auto'; b.title = r.k === 'bottom' ? 'As the top' : 'A deep shade of the dress'; b.dataset.c = ''
+            const b = document.createElement('button'); b.className = 'sw auto'; b.title = r.k === 'bottom' ? 'As the top' : r.k === 'lining' ? 'Her skin tone (illusion lace)' : 'A deep shade of the dress'; b.dataset.c = ''
             b.onclick = () => { activate(r.k); setColor(r.color, null) }
             cs.appendChild(b)
           }
@@ -625,7 +650,7 @@
           const cur = W[r.color]
           const cs = el.querySelector('.colors')
           cs.style.display = r.showColor && !r.showColor() ? 'none' : ''
-          cs.querySelector('input').value = cur || (r.k === 'bottom' ? W.dressColor : '#555555')
+          cs.querySelector('input').value = cur || (r.k === 'bottom' ? W.dressColor : r.k === 'lining' ? '#' + skinTone().getHexString(THREE.SRGBColorSpace) : '#555555')
           for (const b of cs.querySelectorAll('.sw')) b.classList.toggle('on', (b.dataset.c || null) === (cur || null))
         }
         for (const inp of el.querySelectorAll('[data-face]')) {
@@ -666,7 +691,7 @@
         else { paint('dress'); paint('skirt'); paint('trim'); if (before.fabric !== W.fabric) { dress?.setFabric?.(W.fabric); applyLook() } }
         if (before.hair !== W.hair) jobs.push(wearHair(W.hair)); else paint('hair')
         if (before.shoes !== W.shoes) jobs.push(wearShoes(W.shoes)); else paint('shoes')
-        paint('hair'); paint('dress')
+        paint('hair'); paint('dress'); paint('lining')
         prefetchAround()
         return Promise.all(jobs)
       }
@@ -698,11 +723,11 @@
       if (commit && hair && (hair.kind === 'strands' || hair.cloth)) return wearHair(W.hair)
     }
     function setFace(f, v, commit) { W[faceKey(f)] = v; return applyFace(commit) }
-    const wearSkin = slot('skinTex', async () => { await ch.setSkin(W.skinTex); look.recolor(extras()) })
+    const wearSkin = slot('skinTex', async () => { await ch.setSkin(W.skinTex); paint('lining'); look.recolor(extras()) })
     function setColor(key, c) {
       W[key] = c
-      if (['dressColor', 'hairColor', 'trim', 'skirtColor'].includes(key)) W.outfit = ''
-      paint({ dressColor: 'dress', skirtColor: 'skirt', trim: 'trim', hairColor: 'hair', shoeColor: 'shoes', skin: 'skin', backdrop: 'backdrop' }[key])
+      if (['dressColor', 'hairColor', 'trim', 'skirtColor', 'lining'].includes(key)) W.outfit = ''
+      paint({ dressColor: 'dress', skirtColor: 'skirt', trim: 'trim', lining: 'lining', hairColor: 'hair', shoeColor: 'shoes', skin: 'skin', backdrop: 'backdrop' }[key])
       if (key === 'dressColor' && isTop(W.dress) && !W.skirtColor) paint('skirt')
       refreshRails(); saveUrl()
     }
@@ -800,7 +825,7 @@
       refreshRails(); saveUrl()
       if (before.light !== W.light) applyLight(W.light)
       if (before.pose !== W.pose) applyPose()
-      for (const w of ['skin', 'backdrop']) paint(w)
+      for (const w of ['skin', 'backdrop', 'lining']) paint(w)
       if (before.skinTex !== W.skinTex) wearSkin()
       const faceChanged = ch.faceMorphs.some(f => before[faceKey(f)] !== W[faceKey(f)])
       if (faceChanged) { ch.setFace(Object.fromEntries(ch.faceMorphs.map(f => [f, W[faceKey(f)] || 0]))); rig.measureEyes() }
@@ -897,6 +922,7 @@
     ch.setFace(Object.fromEntries(ch.faceMorphs.map(f => [f, W[faceKey(f)]])))
     rig.measureEyes()
     await ch.setSkin(W.skinTex)
+    paint('lining')
     ch.materials.brow.color.set(W.hairColor).multiplyScalar(0.7)
     resize()
     applyPose()

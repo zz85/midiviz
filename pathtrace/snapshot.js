@@ -26,6 +26,8 @@
 // Units stay the page's (centimetres).
 
 import * as THREE from 'three'
+// (lace's lining is a shader mix: its baked texture stands in for map × colour)
+import { traceMapOf } from '../pianist/fabric.js'
 
 const _v = new THREE.Vector3(), _n = new THREE.Vector3(), _m = new THREE.Matrix4(), _m3 = new THREE.Matrix3()
 
@@ -117,6 +119,8 @@ function convertMaterial(m, seen, skipped, keep = null) {
     out.setValues({ color: m.color, map: m.map, normalMap: m.normalMap, roughness: m.isMeshPhongMaterial ? Math.max(0.15, 1 - Math.sqrt(m.shininess / 200)) : 0.85, metalness: 0,
       emissive: m.emissive, emissiveMap: m.emissiveMap, alphaMap: m.alphaMap, transparent: m.transparent, opacity: m.opacity, side: m.side, alphaTest: m.alphaTest, vertexColors: m.vertexColors })
   } else skipped.add(m.type + (m.name ? ` (${m.name})` : ''))
+  const baked = out && m.userData.traceMap ? traceMapOf(m) : null
+  if (baked) { out.map = baked; out.color.set(0xffffff) }
   if (prev && prev !== out) prev.dispose()
   if (keep) { if (out) keep.set(m, out); else keep.delete(m) }
   seen.set(m, out)

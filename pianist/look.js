@@ -10,6 +10,7 @@
 //    back faces only, drawn black).
 
 import * as THREE from 'three'
+import { linkFabric } from './fabric.js'
 
 let ramp = null
 function toonRamp() {
@@ -98,6 +99,7 @@ export function createLook(ch) {
       }
       // a fabric's shader (pleats) travels with the swapped material
       if (src.userData.fabricShader) { m.onBeforeCompile = src.onBeforeCompile; m.customProgramCacheKey = src.customProgramCacheKey }
+      linkFabric(m, src)
       o.userData.origMat = src
       o.material = m
       if (look === 'cel' && !NO_OUTLINE.test(o.name) && !src.alphaTest) {

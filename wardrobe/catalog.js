@@ -80,6 +80,16 @@ export const OUTFITS = {
   'strapless-gold': { group: 'Concert', name: 'Strapless gold lamé cocktail dress, wavy bob', dress: 'c1705', fabric: 'lame', color: '#c9a24a', shoes: 'c1694', shoeColor: '#151214', hair: 'c1551', hairColor: '#2b1d14' },
   'damask-gown': { group: 'Concert', name: 'Ivory damask halter gown, braided bun', dress: 'c1923', fabric: 'damask', color: '#e6d2ae', shoes: 'c1734', shoeColor: '#c9a24a', hair: 'c2177', hairColor: '#2b1d14' },
   'leather-jumpsuit': { group: 'Concert', name: 'Black leather jumpsuit, wavy bob', dress: 'c1924', fabric: 'leather', color: '#121214', shoes: 'c1822', shoeColor: '#151214', hair: 'c1551', hairColor: '#0e0b09' },
+  // illusion lace (lace over a lining in her skin tone) and pleats: two of
+  // the most common concert-gown finishes after plain satin and chiffon
+  'lace-fishtail': { group: 'Concert', name: 'Black lace fishtail gown over nude, chignon', dress: 'c1855', fabric: 'lace', color: '#121214', shoes: 'c1822', shoeColor: '#151214', hair: 'c2477', hairColor: '#0e0b09' },
+  'lace-sleeves': { group: 'Concert', name: 'Navy lace gown with long sheer sleeves, sleek bob', dress: 'gown-fitted-long', slit: 'off', fabric: 'lace', color: '#1f2a44', shoes: 'c1822', shoeColor: '#1f2a44', hair: 'c1474', hairColor: '#0e0b09' },
+  'lace-ivory': { group: 'Concert', name: 'Ivory lace column gown, long hair', dress: 'c2564', fabric: 'lace', color: '#efe6d6', shoes: 'c1734', shoeColor: '#d9b9a4', hair: 'c1861', hairColor: '#6b4428' },
+  'lace-wine-midi': { group: 'Concert', name: 'Wine lace dress below the knee, wavy bob', dress: 'knee-fitted', fabric: 'lace', color: '#5e1224', shoes: 'c2653', shoeColor: '#151214', hair: 'c1551', hairColor: '#2b1d14' },
+  'pleat-delphos': { group: 'Concert', name: 'Champagne pleated Grecian gown (Delphos), barefoot', dress: 'c2558', fabric: 'pleated', color: '#e6d2ae', shoes: 'none', hair: 'c2177', hairColor: '#4a3324' },
+  'pleat-emerald': { group: 'Concert', name: 'Emerald pleated halter gown, braided bun', dress: 'gown-cloth', slit: 'off', fabric: 'pleated', color: '#15563f', shoes: 'c1822', shoeColor: '#c9a24a', hair: 'c2177', hairColor: '#2b1d14' },
+  'pleat-gold': { group: 'Concert', name: 'Gold pleated column gown, long curls', dress: 'c2564', fabric: 'pleated', color: '#c9a24a', shoes: 'c1822', shoeColor: '#c9a24a', hair: 'c480', hairColor: '#2b1d14' },
+  'pleat-separates': { group: 'Concert', name: 'Black camisole, pleated blush midi skirt', dress: 'c1726', bottom: 'ours', fabric: 'pleated', color: '#121214', skirtColor: '#e4a9a0', shoes: 'c1734', shoeColor: '#151214', hair: 'c1677', hairColor: '#2b1d14' },
   'fishtail-champagne': { group: 'Concert', name: 'Champagne beaded fishtail gown, long curls', dress: 'c1855', fabric: 'beaded', color: '#e6d2ae', shoes: 'c1822', shoeColor: '#c9a24a', hair: 'c480', hairColor: '#6b4428' },
   'bob-tee': { name: 'White tee and skirt, platinum bob', dress: 'c894', fabric: 'made', color: '#f2efe9', shoes: 'flats', hair: 'c3694', hairColor: '#d9c7a3' },
   'bob-turtleneck': { name: 'Black turtleneck, ash-grey bob', dress: 'c3471', fabric: 'made', color: '#1b1b1e', shoes: 'flats', hair: 'c3694', hairColor: '#514f4d' },
@@ -106,5 +116,7 @@ export const PALETTES = {
   shoes: [['#151214', 'Black'], ['#f0ece4', 'White'], ['#c9a24a', 'Gold'], ['#b9b6b0', 'Silver'], ['#9b1b25', 'Red'], ['#d9b9a4', 'Nude'], ['#1f2a44', 'Navy']],
   // multiplies the skin texture (white: as textured)
   skin: [['#ffffff', 'As textured'], ['#fff6f0', 'Porcelain'], ['#fff0e6', 'Light'], ['#e8c8b0', 'Light medium'], ['#d0a184', 'Medium'], ['#b07c5c', 'Tan'], ['#8a5a3e', 'Brown'], ['#5e3a26', 'Deep']],
+  // under lace (the ▦ swatch is her own skin tone, the illusion lace look)
+  lining: [['#f1d7c6', 'Nude, light'], ['#d6a88f', 'Nude'], ['#a87458', 'Nude, deep'], ['#6e4430', 'Nude, darkest'], ['#121214', 'Black'], ['#f2efe9', 'White'], ['#c9a24a', 'Gold'], ['#e4a9a0', 'Blush']],
   backdrop: [['#d9d6d0', 'Paper white'], ['#8d8a86', 'Mid grey'], ['#2a2a2c', 'Charcoal'], ['#0b0b0c', 'Black'], ['#c9b79c', 'Sand'], ['#e7c9c1', 'Blush'], ['#7d8f7a', 'Sage'], ['#3b5672', 'Slate blue'], ['#5b2333', 'Burgundy']],
 }

@@ -27,7 +27,7 @@
 
 import * as THREE from 'three'
 import { cutShell, piping, skinned, hideBody, underGarment } from './shell.js'
-import { applyFabric } from './fabric.js'
+import { applyFabric, fabricMapOf } from './fabric.js'
 
 let serial = 0   // each dress hides the body under it under its own key (two can overlap while switching)
 
@@ -551,7 +551,7 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
     get hasTrim() { return !!trimMat },
     setFabric(kind) {
       // (a fabric's own map, e.g. lace, is applyFabric's to take back)
-      for (const m of [bodiceMat, skirtMat]) if (m.map && m.map !== m.userData.fabricMap) { m.map.dispose(); m.map = null }
+      for (const m of [bodiceMat, skirtMat]) if (m.map && m.map !== fabricMapOf(m)) { m.map.dispose(); m.map = null }
       // (our u runs round the body: pleats as a normal map)
       applyFabric([bodiceMat, skirtMat].map(material => ({ material, scale: 0.5, around: 'u' })), kind === 'knit' ? 'made' : kind)
       // the diamond knit (the reference's texture)
