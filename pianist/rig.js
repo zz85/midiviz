@@ -947,7 +947,8 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
   function express(dt) {
     const t = state.songT, x = state.expression
     const E = energyAt(t), A = accentAt(t), playing = state.playing
-    const g = x * (playing ? 1 : 0.35)
+    // (after the last chord: everything settles, see body())
+    const g = x * (playing ? 1 : 0.35) * (1 - (state.ending || 0))
     // into the keys with the energy (back off in quiet passages), dips on accents
     // style: rock (forward / back), sway (side to side), nod (the head)
     state.exLean = spring('lean', g * state.rock * (0.11 * (E - 0.45) + 0.07 * A + 0.03 * wander(t * 0.7, 1) - 0.06 * phraseEndAt(t)), dt, 1.1, 0.5)
@@ -972,7 +973,7 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     const load = 0.45 * extra + 0.35 * (state.reachSide ?? 0) / 45 + 0.25 * (state.reachTurn ?? 0) / TURN_R
     const roll = 0.045 * reach * Math.min(1.5, state.reach) + 0.05 * move + Math.min(1.5, state.reach) * load + state.sway * (playing ? 0.02 + 0.02 * E : 0.01) * wander(t * 0.22, 15)
     // (× 1.6 from the first version: about 2–3 cm of hip lift on a strong lean, visible under a skirt)
-    state.hipRoll = spring('hip', x * state.hipShift * clamp(1.6 * roll, -0.24, 0.24), dt, 0.55, 0.7)
+    state.hipRoll = spring('hip', x * state.hipShift * clamp(1.6 * roll, -0.24, 0.24) * (1 - (state.ending || 0)), dt, 0.55, 0.7)
     // shoulders lift a little in loud passages, drop on the accent
     state.exShrug = spring('shrug', g * (0.02 * E - 0.025 * A), dt, 2.5, 0.6)
     // breathing deepens with the phrase
@@ -1092,6 +1093,14 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     state.lean = Math.min(0.9, state.handLean + state.exLean + state.reachLean)
     state.side = clamp(state.handSide + state.exSide + state.reachSide / 45, -0.4, 0.4)
     state.turn = state.handTurn + state.exTurn + state.reachTurn / TURN_R
+    // the end: as her hands lift off the last chord and come to the middle,
+    // she sits up and comes back square to the keyboard, weight even
+    const fin = state.ending = hands.endingAt?.(state.songT + hands.lead) ?? 0
+    if (fin > 0) {
+      const up = 0.02 + 0.28 * state.posture - 0.05
+      state.lean += (up - state.lean) * fin
+      state.side *= 1 - fin; state.turn *= 1 - fin
+    }
   }
 
   return {

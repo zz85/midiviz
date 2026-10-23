@@ -110,6 +110,16 @@ export function createHandDriver(side, dims) {
   const shoulder = v3(), tip = v3(), base = v3()
   const SHOULDER = new THREE.Vector3(s * 20, 107, 45)
   let visible = false, pitch = 0, pitchGoal = 0
+  // the end of the piece: as the hands lift off the last chord they come in
+  // to the middle, square to the keys, a hand's width either side of her
+  // (ending(t) → 0..1, from the hands driver; null: never)
+  let ending = null
+  const END_X = s * 14
+  const endBlend = (tr, t) => {
+    const u = ending ? ending(t) : 0
+    if (u <= 0) return tr
+    return [tr[0] + (END_X - tr[0]) * u, tr[1], tr[2] * (1 - u), tr[3] * (1 - u), tr[4] * (1 - u), tr[5] * (1 - u)]
+  }
   // the wrist stroke (pianist/stroke.js): knuckle lift and wrist tilt over
   // the song; ptot = the crossing pitch plus the stroke's tilt
   let stroke = null, lift = 0, ptot = 0
@@ -283,7 +293,8 @@ export function createHandDriver(side, dims) {
   // finger IK: the middle knuckle at the hand's current height); null when
   // nothing is baked there. Lets the body lean in before a leap arrives.
   function wristAt(t, out) {
-    const tr = trackAt(t); if (!tr) return null
+    let tr = trackAt(t); if (!tr) return null
+    tr = endBlend(tr, t)
     const d = FINGERS[3], [bx, bz] = rot(s * d.base[0], d.base[2], tr[2]), [wx, wz] = rot(s * WRIST[0], WRIST[2], tr[2])
     const up = stroke ? stroke.at(t)[0] : 0
     return out.set(tr[0] + bx + tr[3] + wx, hand.y - lift + up + d.base[1] + tr[4] + WRIST[1], tr[1] + bz + tr[5] + wz)
@@ -303,7 +314,7 @@ export function createHandDriver(side, dims) {
     visible = true
     const { anchor, fingers: tips } = pose
     const fit = fitHand(tips, anchor)
-    const tr = trackAt(t)
+    const tr0 = trackAt(t), tr = tr0 && endBlend(tr0, t)
     if (tr) {
       // the stroke: carried above the keys between notes, the wrist tilting
       const st = stroke ? stroke.at(t) : null
@@ -501,7 +512,7 @@ export function createHandDriver(side, dims) {
     J.R.subVectors(J.fingers[5][0], J.fingers[2][0]).multiplyScalar(s).normalize()
     armIK(J.W, J.E)
   }
-  return { update, bakeTrack, clearTrack, wristAt, setPitch: p => { pitchGoal = p }, get pitch() { return pitch }, setStroke: p => { stroke = p }, get stroke() { return stroke }, get strokeLift() { return lift }, get strokeTilt() { return ptot - pitch }, get handRoll() { return hroll }, side, diag, hand, joints: J, shoulder: SHOULDER, get visible() { return visible } }
+  return { update, bakeTrack, clearTrack, wristAt, setEnding: f => { ending = f }, setPitch: p => { pitchGoal = p }, get pitch() { return pitch }, setStroke: p => { stroke = p }, get stroke() { return stroke }, get strokeLift() { return lift }, get strokeTilt() { return ptot - pitch }, get handRoll() { return hroll }, side, diag, hand, joints: J, shoulder: SHOULDER, get visible() { return visible } }
 }
 
 
@@ -510,9 +521,17 @@ export function createHandDriver(side, dims) {
 const PRESS_LEAD = 0.018
 
 /** Both hands, driven by a fingered song. */
+// the end of the piece, after the last key is let go: from, to (s), with the
+// final lift-off (stroke.js, ~2.4 s) and inside a film's 2 s tail at most of it
+export const ENDING = [0.1, 2.2]
+
 export function createHandsDriver(dims) {
   const L = createHandDriver('L', dims), R = createHandDriver('R', dims)
-  let motion = buildMotion([]), own = []
+  let motion = buildMotion([]), own = [], endT = Infinity
+  // 0 while she plays, rising to 1 as the hands lift off the last chord
+  // (the lift-off takes ~2.4 s, stroke.js): she comes back to the middle
+  const endingAt = t => THREE.MathUtils.smootherstep(t, endT + ENDING[0], endT + ENDING[1])
+  L.setEnding(endingAt); R.setEnding(endingAt)
   // wrist strokes: { armWeight, flex, liftOff, height } (research/01_biomechanics.md §3.5)
   const strokeOpts = { armWeight: 1, flex: 1, liftOff: 1, height: 1, rotation: 1 }
   const plan = () => { for (const d of [L, R]) d.setStroke(own.length ? planStrokes(own.filter(n => n.hand === d.side), { ...strokeOpts, velRange: velocityRange(own) }) : null) }
@@ -530,7 +549,9 @@ export function createHandsDriver(dims) {
       motion = buildMotion(own, { touch: this.touch, ...handDepths(dims) })
       plan()
       // bake the hands' placement over the song (60 Hz, interpolated)
-      if (!own.length) { L.clearTrack(); R.clearTrack(); return }
+      if (!own.length) { L.clearTrack(); R.clearTrack(); endT = Infinity; return }
+      // the piece's end: the last key let go (its release, else its off)
+      endT = own.reduce((e, m) => Math.max(e, m.release ?? m.off), -Infinity)
       const h = 1 / 60
       let t0 = Infinity, t1 = -Infinity
       for (const m of own) { t0 = Math.min(t0, m.on - 2); t1 = Math.max(t1, m.off + 6) }   // (to the end of the final lift-off)
@@ -539,7 +560,9 @@ export function createHandsDriver(dims) {
       L.bakeTrack(t => poses[Math.round((t - t0) / h)]?.L, t0, n, h)
       R.bakeTrack(t => poses[Math.round((t - t0) / h)]?.R, t0, n, h)
     },
-    clear() { motion = buildMotion([]); own = []; plan(); L.clearTrack(); R.clearTrack() },
+    clear() { motion = buildMotion([]); own = []; endT = Infinity; plan(); L.clearTrack(); R.clearTrack() },
+    /** 0 while she plays, 1 once she has lifted off the last chord and come back to the middle */
+    endingAt,
     lead: PRESS_LEAD,
     update(t, dt) { const tm = t + PRESS_LEAD, p = motion.poseAt(tm); L.update(p.L, dt, tm); R.update(p.R, dt, tm) },
   }
