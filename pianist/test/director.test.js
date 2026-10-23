@@ -6,7 +6,7 @@ import { test, expect, mock } from 'bun:test'
 // the page gets three.js from a CDN; here a stand-in with the bits the director uses
 mock.module('three', () => import('./three-shim.mjs'))
 const { Vector3 } = await import('./three-shim.mjs')
-const { planShots, planShort, createDirector, SPOTS, stringsShare, STRINGS_LEVELS } = await import('../director.js')
+const { planShots, planShort, createDirector, SPOTS, stringsShare, STRINGS_LEVELS, showsFeet } = await import('../director.js')
 
 function song(k, duration = 600) {
   const phrases = []
@@ -116,4 +116,26 @@ test('Pedal shots off: no feet or pedal shots in the film or a Short', () => {
   }
   // (with them on, some film of these four songs does use them)
   expect([1, 2, 3, 4].some(k => planShots(song(k, 600)).some(sh => sh.name === 'feet' || sh.name === 'pedalsClose'))).toBe(true)
+})
+
+test('Feet off: no planned shot shows her feet; opening wide: the first shot is the whole stage', () => {
+  for (let k = 1; k <= 4; k++) {
+    const s = song(k, 300)
+    for (const sh of planShots(s, { pedals: false })) expect(showsFeet(sh.name, false)).toBe(false)
+    for (const sh of planShort(s, { window: [60, 120], pedals: false })) expect(showsFeet(sh.name, true)).toBe(false)
+    // the pedal spots themselves count as showing the feet
+    expect(showsFeet('pedalsClose')).toBe(true); expect(showsFeet('feet')).toBe(true)
+    // her face and the keys still both filmed in a Short without the feet
+    const sh = planShort(s, { window: [60, 120], pedals: false })
+    expect(sh.some(x => SPOTS[x.name].subj === 'head')).toBe(true)
+    expect(sh.some(x => SPOTS[x.name].subj === 'hands')).toBe(true)
+    // opening wide
+    const film = planShots(s, { opening: 'wide' }), short = planShort(s, { window: [60, 120], opening: 'wide' })
+    expect(film[0].name).toBe('stage'); expect(film[0].t1 - film[0].t0).toBeGreaterThanOrEqual(7)
+    expect(short[0].name).toBe('stage'); expect(short[0].t1 - short[0].t0).toBeGreaterThanOrEqual(5.5)
+    expect(film.slice(1).some(x => x.name === 'stage')).toBe(false)
+    // never drawn otherwise
+    expect(planShots(s).some(x => x.name === 'stage')).toBe(false)
+    expect(planShort(s, { window: [60, 120] }).some(x => x.name === 'stage')).toBe(false)
+  }
 })

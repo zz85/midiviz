@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { parseLiner, parseCard, parseAnchor, barClock, clockOfMidi, buildTimeline, toVTT, toChapters, renderInline, plainText, momentAt, sectionAt, intertitleAt, createLinerLibrary, INTERTITLE, LAYOUT, layoutScreen, parsePlay, scoreClock, withTitle, titleScreen, parseScreen, titleSecs, TITLE } from '../liner.js'
+import { layoutClip, parseLiner, parseCard, parseAnchor, barClock, clockOfMidi, buildTimeline, toVTT, toChapters, renderInline, plainText, momentAt, sectionAt, intertitleAt, createLinerLibrary, INTERTITLE, LAYOUT, layoutScreen, parsePlay, scoreClock, withTitle, titleScreen, parseScreen, titleSecs, TITLE } from '../liner.js'
 
 const root = new URL('../../', import.meta.url)
 const { Midi } = createRequire(import.meta.url)('../../tonejs-midi.js')
@@ -333,4 +333,23 @@ test('Bach BWV 850 (a MAESTRO recording, no bar grid): notes placed by time land
 	assert.ok(tl.sections.some(s => s.title.startsWith('Fugue') && Math.abs(s.start - 75) < 0.5))
 	assert.ok(at('Both hands').start < duration - 10)
 	assert.ok(tl.intertitles.length >= 5)
+})
+
+test('layoutClip: a Short gets the pinned lines inside it and floating stories placed into it', () => {
+	const midi = new Midi(readFileSync(new URL('midis/maestro_bach_850.mid', root)))
+	const liner = parseLiner(read('liner/pieces/bach-wtc1-850.md'))
+	const tl = buildTimeline(liner, clockOfMidi(midi), 208.6)
+	for (const [a, b] of [[0, 30], [110, 145], [160, 205], [60, 105]]) {
+		const its = layoutClip(tl, a, b).intertitles
+		assert.ok(its.length >= 1, `${a}-${b}: no intertitles`)
+		let shown = 0
+		its.forEach((x, i) => {
+			assert.ok(x.start >= a + 4 && x.end <= b - 0.3, `${a}-${b}: ${x.text} at ${x.start}`)
+			if (i) assert.ok(x.start - its[i - 1].end >= INTERTITLE.gap - 1e-9, `${a}-${b}: too close`)
+			shown += x.end - x.start
+		})
+		assert.ok(shown <= 0.5 * (b - a) + 10, `${a}-${b}: ${shown} s on screen`)
+		// a pinned line inside the clip is kept at its place
+		for (const p of tl.screen.pins) if (p.start >= a + 4 && p.end <= b - 0.3) assert.ok(its.some(x => x.text === p.text && x.start === p.start))
+	}
 })

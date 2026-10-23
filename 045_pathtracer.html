@@ -273,7 +273,8 @@
     <label class="chk" title="Off: each shot frames her as it starts and holds still while she moves. On: the camera operator follows her head"><input type="checkbox" id="camFollow"> Follow her movement</label>
     <div class="field" title="Which shot sizes the director may use"><label>Shots</label><div class="sizeChk"><label><input type="checkbox" id="dirFar" checked> Far</label><label><input type="checkbox" id="dirMed" checked> Medium</label><label><input type="checkbox" id="dirClose" checked> Close</label></div></div>
     <div class="field" title="The strings, plate and dampers inside the case are the slowest part of the stage to path trace. Each shot is checked for how much of its frame they fill (pianist/director.js, stringsShare): Mostly avoid leaves out the shots where they fill over 10 % (from above, over the shoulder, the hammers); Avoid leaves out any over 4 % (then the hands are filmed along the keys and from the side, her face and figure from low or level)"><label>Inside the piano</label><select id="dirStrings"><option value="show" selected>Show it</option><option value="mostly">Mostly avoid (faster path tracing)</option><option value="strict">Avoid (fastest path tracing)</option></select></div>
-    <label class="chk" title="Off: the director leaves out the shots of her feet and the pedals (Pedals, Pedals close)"><input type="checkbox" id="dirPedals" checked> Pedal shots</label>
+    <label class="chk" title="Off: the director leaves out every close or medium shot that shows her feet or the pedals clearly in the frame (pianist/director.js showsFeet): the pedal shots, and framings such as over the shoulder and the hands from her right; in a Short also the hands from the side"><input type="checkbox" id="dirPedals" checked> Feet and pedal shots</label>
+    <div class="field" title="The first shot. Wide: the whole stage from high behind her, looking past the piano to the back wall (#030's candle-chamber establishing shot), a slow push in for 7 s (5.5 s in a Short), then the plan as usual. Automatic: wide on the Candlelit chamber, else the usual opening (wide from the hall for a film, straight onto the hands for a Short)"><label>Opening shot</label><select id="dirOpen"><option value="auto" selected>Automatic</option><option value="usual">Usual</option><option value="wide">The whole stage, wide</option></select></div>
     <label class="chk"><input type="checkbox" id="shotLbl"> Show shot names</label>
   </div>
   <div id="visualsPop" class="pop ui">
@@ -546,7 +547,7 @@
     import { suggestClips, snapStart, snapEnd, clipOf, shortDescription, SHORT_MAX, SHORT_LENGTHS, SHORT_DEFAULT } from './pianist/shorts.js'
     import { createPathTraceStills } from './pathtrace/still.js'
     import { pathTracedFrames } from './pathtrace/video.js'
-    import { createLinerLibrary, clockOfMidi, buildTimeline, toVTT, toChapters, titleScreen, withTitle, titleSecs } from './liner/liner.js'
+    import { createLinerLibrary, clockOfMidi, buildTimeline, toVTT, toChapters, titleScreen, withTitle, titleSecs, layoutClip } from './liner/liner.js'
     import { createLinerOverlay, drawLinerCaption, drawIntertitle, loadIntertitleFonts, INTERTITLE_STYLES, INTERTITLE_THEMES, INTERTITLE_POSITIONS } from './liner/overlay.js'
 
     const $ = id => document.getElementById(id)
@@ -1237,6 +1238,9 @@
     if (STRINGS_LEVELS[params.get('strings')]) $('dirStrings').value = params.get('strings')
     const dirStrings = () => STRINGS_LEVELS[$('dirStrings').value] ?? null
     const director = createDirector({ pace: +(params.get('pace') ?? 1), bias: +(params.get('favour') ?? 0), trans: params.get('trans') || 'cuts', sizes: dirSizes(), strings: dirStrings(), pedals: params.get('dpedals') !== '0' })
+    if (['auto', 'usual', 'wide'].includes(params.get('dopen'))) $('dirOpen').value = params.get('dopen')
+    const dirOpening = () => $('dirOpen').value === 'wide' || ($('dirOpen').value === 'auto' && $('stageSet').value === 'candle') ? 'wide' : null
+    director.set('opening', dirOpening())
     $('dirPedals').checked = director.opts.pedals
     for (const id of ['dirFar', 'dirMed', 'dirClose']) $(id).onchange = () => {
       if (!dirSizes().length) $(id).checked = true   // (at least one)
@@ -1250,6 +1254,8 @@
     $('dirTrans').onchange = () => dirSet('trans', $('dirTrans').value)
     $('dirStrings').onchange = () => dirSet('strings', dirStrings())
     $('dirPedals').onchange = () => dirSet('pedals', $('dirPedals').checked)
+    $('dirOpen').onchange = () => dirSet('opening', dirOpening())
+    $('stageSet').addEventListener('change', () => dirSet('opening', dirOpening()))
     const SEQ_MOVES = { random: 'Random', cut: "Director's cut" }
     $('camMove').value = MOVES[params.get('move')] || SEQ_MOVES[params.get('move')] ? params.get('move') : 'cut'
     $('camMove').onchange = () => { moveT = 0; userCam = false; lastShot = null; $('shotName').textContent = '' }
@@ -1815,7 +1821,7 @@
       ['touch', 'touch'], ['fingering', 'fingering'],
       ['light', 'light'], ['exposure', 'exposure'], ['dof', 'dof'], ['scene', 'stageSet'], ['finish', 'finish'], ['lid', 'lid'],
       ['fasian', 'faceAsian'], ['fafrican', 'faceAfrican'], ['skintex', 'skinTex'],
-      ['move', 'camMove'], ['pace', 'dirPace'], ['favour', 'dirBias'], ['trans', 'dirTrans'], ['shotnames', 'shotLbl'], ['follow', 'camFollow'], ['dfar', 'dirFar'], ['dmed', 'dirMed'], ['dclose', 'dirClose'], ['strings', 'dirStrings'], ['dpedals', 'dirPedals'],
+      ['move', 'camMove'], ['pace', 'dirPace'], ['favour', 'dirBias'], ['trans', 'dirTrans'], ['shotnames', 'shotLbl'], ['follow', 'camFollow'], ['dfar', 'dirFar'], ['dmed', 'dirMed'], ['dclose', 'dirClose'], ['strings', 'dirStrings'], ['dpedals', 'dirPedals'], ['dopen', 'dirOpen'],
       ['sf', 'sf'], ['avsync', 'avsync'],
       ['dofamt', 'dofAmt'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
       ['vol', 'vol'], ['room', 'room'], ['seat', 'seat'], ['rv', 'rvAmt'], ['decay', 'rvDecay'], ['tone', 'rvTone'], ['boost', 'boost'], ['amb', 'amb'], ['applause', 'applause'],
@@ -2462,7 +2468,9 @@
     // first 3.5 s, then the intertitles that fit wholly inside the clip, in the
     // safe area (top or bottom, away from her)
     function shortTimeline(a, b) {
-      const its = liner.mode === 'intertitles' ? (liner.screenTimeline?.intertitles || []).filter(x => !x.title && x.start >= a + 4 && x.end <= b - 0.3) : []
+      // the pinned lines inside the clip, and the floating stories placed into it
+      // (liner.js layoutClip): a 30 s clip rarely holds the piece's own placements
+      const its = liner.mode === 'intertitles' && liner.timeline ? layoutClip(liner.timeline, a, b).intertitles : []
       const x = $('exShortTitle').checked ? songTitleScreen() : null
       if (x) its.unshift({ ...x, title: true, start: a + 0.15, end: a + 3.6, fadeIn: 0.35, fadeOut: 0.7 })
       return { intertitles: its, sections: [], moments: [] }

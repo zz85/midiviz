@@ -393,6 +393,35 @@ export function layoutScreen(tl, { seed = 1, title = null, start = 0 } = {}) {
 }
 
 
+/**
+ * The intertitles for a clip of the piece (a Short): the pinned lines that
+ * fall inside it, and as many floating ones (stories, which fit anywhere) as
+ * there is room for, in written order, from `opts.from` (after the hook or the
+ * title) to the clip's end: INTERTITLE.gap apart, at most `opts.share` of the
+ * clip on screen. A floating line limited to a stretch of the piece (from / to)
+ * only goes there. A 30 s Short of a piece whose pinned lines fall elsewhere
+ * would otherwise show none.
+ * @returns { intertitles } (sorted, each with start / end in song seconds)
+ */
+export function layoutClip(tl, a, b, { from = a + 4, until = b - 0.3, share = 0.5, minGap = 6 } = {}) {
+	const sc = tl?.screen || { pins: tl?.intertitles?.filter(x => !x.float) || [], floats: [] }
+	const G = INTERTITLE.gap
+	const out = sc.pins.filter(x => x.start >= from && x.end <= until).map(x => ({ ...x }))
+	let shown = out.reduce((s, x) => s + x.end - x.start, 0)
+	const clash = (s, e) => out.some(p => p.start < e + G && p.end + G > s)
+	let t = from, prev = -Infinity
+	for (const f of sc.floats) {
+		if (shown + f.len > share * (b - a)) break
+		let s = Math.max(t, f.from ?? 0, prev + minGap)
+		for (let n = 0; clash(s, s + f.len) && n < 50; n++) s = Math.max(...out.filter(p => p.start < s + f.len + G && p.end + G > s).map(p => p.end)) + G
+		if (s + f.len > Math.min(until, f.to ?? Infinity)) continue
+		out.push({ ...f, start: s, end: s + f.len, clip: true })
+		shown += f.len; prev = s + f.len; t = prev + G
+	}
+	out.sort((x, y) => x.start - y.start)
+	return { intertitles: out }
+}
+
 export const intertitleSecs = text => Math.min(INTERTITLE.max, Math.max(INTERTITLE.min, INTERTITLE.fadeIn + INTERTITLE.breath + plainText(text).split(/\s+/).length * INTERTITLE.perWord + INTERTITLE.fadeOut))
 const mmss = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`
 /**

@@ -92,6 +92,10 @@ export const SPOTS = {
   feet: { label: 'Pedals', subj: 'feet', az: 58, el: 8, dist: 180, fov: 30, size: 1, moves: ['still', 'dollyIn'] },
   // made for a tall frame (Shorts): from straight above her left, the keyboard
   // running up the picture (bass at the bottom), her arms coming in from the right
+  // the whole stage from high behind her right, looking past her and the piano
+  // to the back wall (#030's candle-chamber establishing shot): only as the
+  // opening shot (opts.opening = 'wide'), or chosen as a view
+  stage: { label: 'The whole stage, from behind', only: 'opening', subj: 'figure', aim: [0, 2, -168], az: 33.5, el: 10.5, dist: 790, fov: 42, size: 2, moves: ['dollyIn', 'still'] },
   keysUp: { label: 'Keyboard up the frame', only: 'portrait', subj: 'hands', az: -90, el: 84, dist: 118, fov: 44, size: 0, moves: ['still', 'orbit', 'dollyIn'], orbitMax: 6 },
 }
 
@@ -124,6 +128,9 @@ export const PORTRAIT = {
   back: { p: 1, el: 22, dist: 175, fov: 52, aim: [0, -12, 0] },
   hammers: { p: 1, dist: 62, fov: 44 },
   pedalsClose: { p: 1, dist: 75, fov: 44 },
+  // (p 0: never drawn by a Short's plan, only its opening; the lens opened so
+  // the tall frame still takes in the candles to either side)
+  stage: { p: 0, dist: 860, fov: 64, el: 12, aim: [0, 40, -168] },
 }
 const PORTRAIT_K = 1.5, PORTRAIT_D = 1.15
 const _portrait = {}
@@ -136,7 +143,7 @@ export function spotFor(name, portrait) {
   return (_portrait[name] = { ...s, dist: s.dist * PORTRAIT_D, ...o, fov })
 }
 /** spots usable in a frame: portrait ones by rating, landscape all but the portrait-only */
-export const spotsFor = portrait => Object.keys(SPOTS).filter(n => portrait ? (PORTRAIT[n]?.p ?? 0) > 0 : SPOTS[n].only !== 'portrait')
+export const spotsFor = portrait => Object.keys(SPOTS).filter(n => SPOTS[n].only !== 'opening' && (portrait ? (PORTRAIT[n]?.p ?? 0) > 0 : SPOTS[n].only !== 'portrait'))
 const SUBJ_KIND = { hands: 'hands', feet: 'hands', head: 'pianist', figure: 'pianist', piano: 'piano', hammers: 'piano', pedals: 'piano' }
 // the menu's categories: by shot size, then what is in the frame
 export const SIZES = ['Close', 'Medium', 'Far']
@@ -258,14 +265,77 @@ export function stringsShare(name, portrait = false) {
   }
   return (_inside[key] = m)
 }
+// ── Are her feet (and the pedals) in a spot's frame? ──
+// For "Pedal shots" off: not only the two pedal spots but any close or
+// medium framing low or tall enough to take in her feet on the pedals (a
+// portrait lens opened up for a Short reaches the floor from her waist).
+// Her shoes and the pedals, projected from the spot's camera through its
+// moves as in stringsShare; a point counts inside `margin` of the frame edge
+// and when no box below stands in the way: the keys and keybed, the case, her
+// thighs and torso, the bench (rough, from concert-grand.js DIM and the seat).
+// Far shots don't count.
+const FEET_AT = [[-13, 4, 6], [13, 4, 6], [0, 7, -2]]
+const FEET_COVER = [
+  [[-74, 61, -17], [74, 78, -1]],     // keys and keybed
+  [[-74, 61, -211], [74, 97, -17]],   // the case (its bounding box)
+  [[-22, 50, 0], [22, 68, 47]],       // her thighs
+  [[-21, 56, 18], [21, 132, 44]],     // her torso
+  [[-32, 40, 32], [32, 56, 62]],      // the bench
+]
+// does the segment p0 → p1 cross the box?
+function crosses(p0, p1, [lo, hi]) {
+  let t0 = 0, t1 = 1
+  for (let k = 0; k < 3; k++) {
+    const d = p1[k] - p0[k]
+    if (Math.abs(d) < 1e-9) { if (p0[k] < lo[k] || p0[k] > hi[k]) return false; continue }
+    let a = (lo[k] - p0[k]) / d, b = (hi[k] - p0[k]) / d
+    if (a > b) [a, b] = [b, a]
+    t0 = Math.max(t0, a); t1 = Math.min(t1, b)
+    if (t0 > t1) return false
+  }
+  return true
+}
+function feetInView(s, P, hx, aspect, margin) {
+  const { c, t, f, r, u, d } = _sv
+  const a = SUBJ_AT[s.subj]
+  t.set(a[0] + (s.subj === 'pedals' || s.subj === 'feet' ? 0 : s.subj === 'piano' ? hx * 0.3 : hx), a[1], a[2])
+  if (s.aim) t.x += s.aim[0], t.y += s.aim[1], t.z += s.aim[2]
+  const az = P.az * D2R, el = P.el * D2R
+  c.set(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el)).multiplyScalar(P.dist).add(t)
+  f.subVectors(t, c).normalize()
+  r.crossVectors(f, u.set(0, 1, 0)); if (r.lengthSq() < 1e-6) r.set(1, 0, 0); r.normalize()
+  u.crossVectors(r, f)
+  const th = Math.tan(P.fov * D2R / 2), tw = th * aspect
+  for (const p of FEET_AT) {
+    d.set(p[0] - c.x, p[1] - c.y, p[2] - c.z)
+    const z = d.x * f.x + d.y * f.y + d.z * f.z; if (z <= 1) continue
+    const x = (d.x * r.x + d.y * r.y + d.z * r.z) / (z * tw), y = (d.x * u.x + d.y * u.y + d.z * u.z) / (z * th)
+    if (Math.abs(x) < 0.9 && Math.abs(y) < margin && !FEET_COVER.some(b => crosses([c.x, c.y, c.z], p, b))) return true
+  }
+  return false
+}
+const _feet = {}
+/** does the spot's frame take in her feet or the pedals at some point of its moves (close and medium shots) */
+export function showsFeet(name, portrait = false, margin = 0.6) {
+  const key = name + (portrait ? '|p' : '') + margin
+  if (_feet[key] != null) return _feet[key]
+  const s = spotFor(name, portrait), aspect = portrait ? 9 / 16 : 16 / 9
+  let hit = s.subj === 'feet' || s.subj === 'pedals'
+  if (!hit && s.size < 2) for (const move of s.moves) for (const v of [0, 0.5, 1]) for (const dir of [-1, 1]) for (const hx of [-30, 0, 30]) {
+    applyMove(s, move, v, 1, dir, _sv.P)
+    if (feetInView(s, _sv.P, hx, aspect, margin)) { hit = true; break }
+  }
+  return (_feet[key] = hit)
+}
+
 // opts.strings: null = any spot; a number = leave out the spots whose frame
 // the inside fills more of (0.1 'mostly', 0.04 'strictly': with 0.04 the hands
 // are filmed along the keys, from the side, and her face and figure from low)
 export const STRINGS_LEVELS = { mostly: 0.1, strict: 0.04 }
 const stringsOk = (name, portrait, max) => max == null || stringsShare(name, portrait) <= max
-// opts.pedals: false leaves out the shots of her feet and the pedals
-const PEDAL_SPOTS = new Set(['feet', 'pedalsClose'])
-const pedalsOk = (name, on) => on !== false || !PEDAL_SPOTS.has(name)
+// opts.pedals: false leaves out every close or medium shot that takes in her
+// feet or the pedals (showsFeet), the two pedal spots among them
+const pedalsOk = (name, on, portrait = false) => on !== false || !showsFeet(name, portrait)
 
 // ── Takes on a fixed view (sequence) ──
 // The director's cut works from the chosen view's angle but changes the
@@ -469,7 +539,8 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
     let name, move
     // open far (the page fades it in from black): side-on from the hall,
     // across the hall, or high from behind her; then medium, then close
-    if (opening && i < 2) {
+    if (i === 0 && opts.opening === 'wide') { name = 'stage'; move = 'dollyIn'; end = Math.max(end, t + 7) }
+    else if (opening && i < 2) {
       const pick = (opts, r) => { opts = opts.filter(([n]) => names.includes(n)); const tot = opts.reduce((a, o) => a + o[1], 0); let q = r * tot; return opts.find(o => (q -= o[1]) <= 0)?.[0] ?? opts[0][0] }
       name = i === 0 ? pick([['hallSide', 1.2], ['establish', 1], ['highBehind', 0.8]], hs(i, 3))
         : pick([['lowShoulder', 1.5], ['lowRight', 1], ['bust', 0.6]], hs(i, 3))
@@ -599,7 +670,7 @@ export function planShort({ duration, phrases = [], glances = [], energyAt = () 
   const [A, B] = opts.window ?? [0, duration]
   const seed = songSeed({ duration, phrases }) + Math.round(A * 10) % 997 + (opts.half === 'her' ? 501 : 0), hs = (k, n) => hash(k + seed, n)
   const half = HALVES[opts.half] ? opts.half : null, avoid = half && opts.avoid || []
-  const names = (half ? spotsFor(false).filter(HALVES[half]) : spotsFor(true)).filter(n => stringsOk(n, !half, opts.strings ?? null) && pedalsOk(n, opts.pedals))
+  const names = (half ? spotsFor(false).filter(HALVES[half]) : spotsFor(true)).filter(n => stringsOk(n, !half, opts.strings ?? null) && pedalsOk(n, opts.pedals, !half))
   const P = n => spotFor(n, !half)
   const starts = phrases.map(p => p[0]).filter(t => t > A + 1.5 && t < B - 1.5 && !avoid.some(c => Math.abs(c - t) < 0.8))
   const mean = (a, b) => { let s = 0, n = 0; for (let t = a; t < b; t += 0.25) { s += energyAt(t); n++ } return n ? s / n : 0 }
@@ -624,7 +695,10 @@ export function planShort({ duration, phrases = [], glances = [], energyAt = () 
     if (last) end = B
     const prev = shots[i - 1], prev2 = shots[i - 2], first = shots[0]
     let name, move
-    if (i === 0) {
+    if (i === 0 && opts.opening === 'wide' && half !== 'hands') {
+      // opening wide on the whole stage, a slow push in, then the plan as usual
+      name = 'stage'; move = 'dollyIn'; end = Math.max(end, t + 5.5)
+    } else if (i === 0) {
       // the hook: straight onto the hands
       const hook = (half ? HALF_HOOK[half] : HOOK).filter(([n]) => names.includes(n))
       name = hook.length ? pick(hook, hs(i, 3)) : names[Math.floor(hs(i, 3) * names.length)]
