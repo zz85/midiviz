@@ -276,6 +276,10 @@ export function snapshotScene(live, opts = {}) {
     if (o.isLight) return lightOf(o)
     if (!o.isMesh || o.isPoints || o.isLine || o.isSprite) return
     if (o.userData.outline) { skipped.add('ink outline'); return }
+    // additive glows (the candle chamber's floor pools): painted-on light for the
+    // raster page. A tracer computes the real pools, and neither blends: three-gpu-
+    // pathtracer drew each as a hard-edged disc over the floor
+    if (!o.isReflector && [o.material].flat().some(m => m?.blending === THREE.AdditiveBlending)) { skipped.add('additive glow'); return }
     if (hairShader && o.parent === hairShader) return   // (the ribbons below; the shadow proxy)
     const G = o.geometry, A = G.attributes
     if (o.isReflector) {
