@@ -536,6 +536,32 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
       const P = Jd.fingers[f + 1]
       for (let k = 0; k < 3; k++) aim(a.fingers[f][k], _w.subVectors(P[k + 1], P[k]).clone())
     }
+    if (state.lap > 0) toLap(a, state.lap)
+  }
+  // ── After the piece: the hands come down to rest in her lap ──
+  // (state.lapRest; off by default.) Once the hands have lifted off the last
+  // chord and come in to the middle (hand-driver.js ENDING, to ~2.2 s), they
+  // go down to her lap over 2 s: each arm bone (shoulder to fingertips) is
+  // eased from the pose the hands driver gives it to the lap pose restArm
+  // gives it, in world space, parent first; the hand relaxed on the thigh.
+  // On the page the picture runs on 4 s past the end (AFTER_END), so the
+  // move is over by then; an export's tail is 2 s, so it needs a longer one.
+  const LAP = [1.8, 3.8]
+  state.lap = 0
+  const lapAt = t => state.lapRest && !state.stand ? THREE.MathUtils.smootherstep(t, (hands.endT ?? Infinity) + LAP[0], (hands.endT ?? Infinity) + LAP[1]) : 0
+  const _lapA = [], _lapB = []
+  const chainOf = a => a.chain || (a.chain = [a.ua1, a.ua2, a.la1, a.la2, a.wrist, ...a.fingers.flat()])
+  function toLap(a, u) {
+    const ch = chainOf(a)
+    // the pose as driven
+    ch.forEach((i, k) => { solve(i); (_lapA[k] ||= new THREE.Quaternion()).copy(wQ[i]) })
+    // the lap: the arm from restArm, the hand and fingers relaxed in their rest
+    // pose on the forearm (as with no song)
+    restArm(a)
+    for (const i of ch.slice(4)) setQ(i, base(i, _q2))
+    ch.forEach((i, k) => { solve(i); (_lapB[k] ||= new THREE.Quaternion()).copy(wQ[i]) })
+    // between the two, parent first (a world rotation set on a parent moves its children)
+    ch.forEach((i, k) => setQ(i, _q2.slerpQuaternions(_lapA[k], _lapB[k], u)))
   }
   function restArm(a) {
     // no song: hands in the lap
@@ -592,6 +618,8 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     glanceW += (w - glanceW) * (1 - Math.exp(-dt * (slow ? 1.6 : 6)))
     state.lidDrop += (inner * 0.8 - state.lidDrop) * (1 - Math.exp(-dt * 3))
     look.copy(handsAt).lerp(glanceP, glanceW)
+    // (hands going to the lap: her eyes lower partway toward them)
+    if (state.lap > 0) look.lerp(_d1.set(0, 70, 22), 0.5 * state.lap)
     if (state.lookAt) look.copy(state.lookAt)
     // eyes: a quick saccade when the target jumps, smooth pursuit otherwise;
     // the head follows more slowly. A big gaze shift often comes with a blink
@@ -979,7 +1007,7 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     // breathing deepens with the phrase
     state.breathAmp = 1 + 1.2 * x * E
   }
-  Object.assign(state, { songT: 0, playing: false, exLean: 0, exSide: 0, exTurn: 0, exNod: 0, exRoll: 0, exShrug: 0, breathAmp: 1, hipRoll: 0, hipShift: 1, elbowLead: 1, posture: 0.5, reach: 1, rock: 1, sway: 1, nod: 1, glances: 1, gazeMode: 'music', blink: 0, lidDrop: 0, stand: 0, bowLean: 0, lookAt: null })
+  Object.assign(state, { songT: 0, playing: false, exLean: 0, exSide: 0, exTurn: 0, exNod: 0, exRoll: 0, exShrug: 0, breathAmp: 1, hipRoll: 0, hipShift: 1, elbowLead: 1, posture: 0.5, reach: 1, rock: 1, sway: 1, nod: 1, glances: 1, gazeMode: 'music', blink: 0, lidDrop: 0, stand: 0, bowLean: 0, lookAt: null, lapRest: false })
 
   const LOOK = 0.4, _fw = v3(), _sd = v3(), TURN_R = 25   // s ahead the body watches for keys out of reach
   /** Posture from the hands: lean / turn toward them, further when out of reach. */
@@ -1096,6 +1124,7 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     // the end: as her hands lift off the last chord and come to the middle,
     // she sits up and comes back square to the keyboard, weight even
     const fin = state.ending = hands.endingAt?.(state.songT + hands.lead) ?? 0
+    state.lap = lapAt(state.songT + hands.lead)
     if (fin > 0) {
       const up = 0.02 + 0.28 * state.posture - 0.05
       state.lean += (up - state.lean) * fin

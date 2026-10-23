@@ -563,6 +563,8 @@ export function createHandsDriver(dims) {
     clear() { motion = buildMotion([]); own = []; endT = Infinity; plan(); L.clearTrack(); R.clearTrack() },
     /** 0 while she plays, 1 once she has lifted off the last chord and come back to the middle */
     endingAt,
+    /** song time of the last key let go (Infinity with no notes) */
+    get endT() { return endT },
     lead: PRESS_LEAD,
     update(t, dt) { const tm = t + PRESS_LEAD, p = motion.poseAt(tm); L.update(p.L, dt, tm); R.update(p.R, dt, tm) },
   }
