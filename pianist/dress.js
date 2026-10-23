@@ -550,10 +550,12 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
     setTrim(c) { trimColor = c; api.setColor(api.color) },
     get hasTrim() { return !!trimMat },
     setFabric(kind) {
-      applyFabric([bodiceMat, skirtMat].map(material => ({ material, scale: 0.5 })), kind === 'knit' ? 'made' : kind)
+      // (a fabric's own map, e.g. lace, is applyFabric's to take back)
+      for (const m of [bodiceMat, skirtMat]) if (m.map && m.map !== m.userData.fabricMap) { m.map.dispose(); m.map = null }
+      // (our u runs round the body: pleats as a normal map)
+      applyFabric([bodiceMat, skirtMat].map(material => ({ material, scale: 0.5, around: 'u' })), kind === 'knit' ? 'made' : kind)
       // the diamond knit (the reference's texture)
       for (const m of [bodiceMat, skirtMat]) {
-        m.map?.dispose(); m.map = null
         if (kind === 'knit') {
           m.map = tex.color.clone(); m.map.needsUpdate = true
           m.normalMap = tex.normal.clone(); m.normalMap.needsUpdate = true; m.normalScale.set(0.8, 0.8)

@@ -96,6 +96,8 @@ export function createLook(ch) {
           if ('sheen' in m) { m.sheen = 0.9; m.sheenRoughness = 0.3; m.roughness = 0.7 }
         }
       }
+      // a fabric's shader (pleats) travels with the swapped material
+      if (src.userData.fabricShader) { m.onBeforeCompile = src.onBeforeCompile; m.customProgramCacheKey = src.customProgramCacheKey }
       o.userData.origMat = src
       o.material = m
       if (look === 'cel' && !NO_OUTLINE.test(o.name) && !src.alphaTest) {

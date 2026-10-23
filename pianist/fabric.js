@@ -25,7 +25,19 @@
 //  • lamé     — metallic threads in a fine plain weave;
 //  • glitter  — tiny metallic facets, each at its own angle, finer than sequins;
 //  • beaded   — a grid of glass beads, glossy and domed;
-//  • leather  — a pebbled grain, a light satin finish (for the jumpsuit or a top).
+//  • leather  — a pebbled grain, a light satin finish (for the jumpsuit or a top);
+//  • lace     — a Chantilly-style lace over a lining: corded rosettes and
+//    leaves on a hexagonal net, the gaps showing a darker, glossier lining.
+//    A colour tile too, multiplied into a community garment's own texture
+//    (a composite canvas) or used as the map of ours. Not open: the body
+//    under a garment is hidden, so real holes would show nothing behind;
+//  • pleated  — vertical knife pleats, ~2.3 cm (plissé is finer, ~1 cm, and
+//    disappears at full length). Our
+//    dresses' UVs run round the body (u), so for them it is a normal map;
+//    a community garment's UVs are an arbitrary atlas, so there the pleats
+//    are put in the shader from each vertex's angle round her body axis in
+//    the rest pose (skinned like the normal), with the crease darkened.
+//    The path tracers drop shader patches, so they trace that kind unpleated.
 
 import * as THREE from 'three'
 
@@ -110,27 +122,150 @@ const TILES = {
   },
   // leather grain: cells of a Voronoi field, creased at their edges
   leather: () => heightTile('leather', 256, (x, y) => {
-    const n = 40, X = x * n, Y = y * n, i = Math.floor(X), j = Math.floor(Y); let d1 = 9, d2 = 9
+    const n = 24, X = x * n, Y = y * n, i = Math.floor(X), j = Math.floor(Y); let d1 = 9, d2 = 9
     for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) { const ci = ((i + a) % n + n) % n, cj = ((j + b) % n + n) % n, px = i + a + hash(ci, cj, 8), py = j + b + hash(ci, cj, 9), d = Math.hypot(X - px, Y - py); if (d < d1) { d2 = d1; d1 = d } else if (d < d2) d2 = d }
     return Math.min(1, (d2 - d1) * 2.2)
   }, { strength: 1.6 }),
 }
+// lace: { normal, rough, color } tiles of one 512² repeat
+let laceTiles = null
+function lace() {
+  if (laceTiles) return laceTiles
+  const S = 512
+  // what each texel is: 3 cord, 2 toile (the motif's dense fill), 1 net, 0 gap
+  const field = (x, y) => {
+    // hexagonal net: three families of lines, 24 cells across
+    const n = 24, px = x * n, py = y * n * 0.866
+    const line = d => { const f = d - Math.floor(d); return Math.min(f, 1 - f) }
+    const net = Math.min(line(px), line(px * 0.5 + py), line(px * 0.5 - py)) < 0.07 ? 1 : 0
+    // two rosettes a tile (half-drop), five petals, with leaves on a vine
+    let best = 0
+    for (const [bx, by] of [[0.25, 0.25], [0.75, 0.75]]) for (let ox = -1; ox <= 1; ox++) for (let oy = -1; oy <= 1; oy++) {
+      const fx = x - bx - ox, fy = y - by - oy, r = Math.hypot(fx, fy); if (r > 0.25) continue
+      const a = Math.atan2(fy, fx)
+      // five round petals (a gap of net between them), a corded edge, a seeded centre
+      const edge = 0.05 + 0.11 * Math.pow(Math.abs(Math.cos(2.5 * a)), 0.7)
+      if (r < 0.03) best = Math.max(best, 3)
+      else if (r < 0.042) best = Math.max(best, 1)
+      else if (r < edge) best = Math.max(best, edge - r < 0.012 ? 3 : 2)
+      else if (Math.abs(r - 0.2) < 0.01) best = Math.max(best, 3)   // a corded ring round it
+    }
+    // the vine between them, with leaves either side
+    const vy = y - 0.5 - 0.12 * Math.sin(x * 2 * Math.PI * 2)
+    if (Math.abs(vy) < 0.008) best = Math.max(best, 3)
+    for (let k = 0; k < 4; k++) {
+      const lx = (k + 0.5) / 4, ly = 0.5 + 0.12 * Math.sin(lx * 2 * Math.PI * 2) + (k % 2 ? 0.05 : -0.05)
+      const dx = (x - lx) / 0.06, dy = (y - ly) / 0.025, d = dx * dx + dy * dy
+      if (d < 1) best = Math.max(best, d > 0.7 ? 3 : 2)
+    }
+    return best || net
+  }
+  const F = new Uint8Array(S * S)
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) F[y * S + x] = field(x / S, y / S)
+  const HEIGHT = [0, 0.35, 0.55, 1], COLOR = [0.42, 0.8, 0.93, 1], ROUGH = [0.38, 0.78, 0.8, 0.85]
+  const blur = arr => { const o = new Float32Array(S * S); for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) { let s = 0; for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) s += arr[((y + j + S) % S) * S + ((x + i + S) % S)]; o[y * S + x] = s / 9 } return o }
+  const H = blur(Float32Array.from(F, f => HEIGHT[f]))
+  const at = (x, y) => H[((y + S) % S) * S + ((x + S) % S)]
+  const mk = () => { const c = document.createElement('canvas'); c.width = c.height = S; const g = c.getContext('2d'); return [c, g, g.createImageData(S, S)] }
+  const [cn, gn, n] = mk(), [cr, gr, r] = mk(), [cc, gc, c] = mk()
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const i = (y * S + x) * 4, f = F[y * S + x]
+    const nx = (at(x - 1, y) - at(x + 1, y)) * 3, ny = (at(x, y - 1) - at(x, y + 1)) * 3, l = Math.hypot(nx, ny, 1)
+    n.data[i] = (nx / l * 0.5 + 0.5) * 255; n.data[i + 1] = (ny / l * 0.5 + 0.5) * 255; n.data[i + 2] = (1 / l * 0.5 + 0.5) * 255; n.data[i + 3] = 255
+    r.data[i] = r.data[i + 1] = r.data[i + 2] = ROUGH[f] * 255; r.data[i + 3] = 255
+    c.data[i] = c.data[i + 1] = c.data[i + 2] = COLOR[f] * 255; c.data[i + 3] = 255
+  }
+  gn.putImageData(n, 0, 0); gr.putImageData(r, 0, 0); gc.putImageData(c, 0, 0)
+  const tex = (cv, srgb) => { const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace; t.anisotropy = 8; return t }
+  return (laceTiles = { normal: tex(cn), rough: tex(cr), color: tex(cc, true), colorCanvas: cc })
+}
+function smoothstep(x, a, b) { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t) }
+// a community garment's map with the lace multiplied in, k repeats across
+function laceComposite(base, k) {
+  const img = base.image, W = Math.min(2048, Math.max(1024, (img.width || 512) * 2)), Hh = Math.round(W * (img.height || 512) / (img.width || 512))
+  const c = document.createElement('canvas'); c.width = W; c.height = Hh
+  const g = c.getContext('2d')
+  if (base.flipY === false) { g.translate(0, Hh); g.scale(1, -1) }
+  g.drawImage(img, 0, 0, W, Hh)
+  g.setTransform(1, 0, 0, 1, 0, 0)
+  const pat = g.createPattern(lace().colorCanvas, 'repeat')
+  pat.setTransform(new DOMMatrix().scale(W / k / 512, Hh / k / 512))
+  g.globalCompositeOperation = 'multiply'; g.fillStyle = pat; g.fillRect(0, 0, W, Hh)
+  const t = new THREE.CanvasTexture(c)
+  t.colorSpace = base.colorSpace; t.wrapS = base.wrapS; t.wrapT = base.wrapT; t.anisotropy = 8
+  return t
+}
+// pleats along u (our dresses): 8 knife pleats a tile, a long face and a sharp turn
+const pleatTile = () => heightTile('pleat', 256, x => { const f = (x * 8) % 1; return f < 0.82 ? f / 0.82 : (1 - f) / 0.18 }, { strength: 1.4 })
+// the crease's shade (colour), for garments with no map of their own
+let pleatShade = null
+function pleatShadeTile() {
+  if (pleatShade) return pleatShade
+  const c = document.createElement('canvas'); c.width = 256; c.height = 4
+  const g = c.getContext('2d'), im = g.createImageData(256, 4)
+  for (let x = 0; x < 256; x++) {
+    const f = (x / 256 * 8) % 1, d = Math.min(f, Math.abs(0.82 - f)), v = 255 * (0.74 + 0.26 * smoothstep(d, 0, 0.1))
+    for (let y = 0; y < 4; y++) { const i = (y * 256 + x) * 4; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 255 }
+  }
+  g.putImageData(im, 0, 0)
+  pleatShade = new THREE.CanvasTexture(c); pleatShade.wrapS = pleatShade.wrapT = THREE.RepeatWrapping; pleatShade.colorSpace = THREE.SRGBColorSpace
+  return pleatShade
+}
+// …and in the shader (community garments)
+const PLEAT_SHADER = {
+  vertexHead: 'uniform vec2 uPleatC;\nvarying float vPleatA;\nvarying vec3 vPleatT;\n',
+  vertex: `
+    vec2 pleatR = position.xz - uPleatC;
+    vPleatA = atan(pleatR.x, pleatR.y);
+    vec3 pleatT = vec3(pleatR.y, 0.0, -pleatR.x);
+    #ifdef USE_SKINNING
+      pleatT = (skinMatrix * vec4(pleatT, 0.0)).xyz;
+    #endif
+    vPleatT = normalize(normalMatrix * pleatT + 1e-6);`,
+  fragmentHead: 'uniform float uPleatN, uPleatDepth;\nvarying float vPleatA;\nvarying vec3 vPleatT;\nfloat pleatF() { return fract(vPleatA * uPleatN / 6.2831853); }\n',
+  // the long face tilts one way, the short turn the other; the crease is darker
+  normal: `
+    { float pf = pleatF(); float tilt = pf < 0.82 ? 0.35 : -1.3;
+      vec3 tv = vPleatT - dot(vPleatT, normal) * normal;
+      normal = normalize(normal + normalize(tv + 1e-6) * tilt * uPleatDepth); }`,
+  color: `
+    { float pf = pleatF(); diffuseColor.rgb *= 0.78 + 0.22 * smoothstep(0.0, 0.12, min(pf, 0.82 - pf + 0.18) ); }`,
+}
+function pleatShader(m, center, count = 44) {
+  const u = { uPleatC: { value: new THREE.Vector2(...center) }, uPleatN: { value: count }, uPleatDepth: { value: 1 } }
+  m.userData.fabricShader = 'pleat'
+  m.onBeforeCompile = sh => {
+    Object.assign(sh.uniforms, u)
+    sh.vertexShader = PLEAT_SHADER.vertexHead + sh.vertexShader.replace('#include <defaultnormal_vertex>', '#include <defaultnormal_vertex>' + PLEAT_SHADER.vertex)
+    sh.fragmentShader = PLEAT_SHADER.fragmentHead + sh.fragmentShader
+      .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>' + PLEAT_SHADER.normal)
+      .replace('#include <color_fragment>', '#include <color_fragment>' + PLEAT_SHADER.color)
+  }
+  m.customProgramCacheKey = () => 'pleat'
+}
+
 // tiles per garment UV unit, against the sequins' (cloth with a fine
 // surface repeats more; damask's medallions are large)
-const REPEAT = { crepe: 1, taffeta: 0.8, lame: 1.2, glitter: 1.5, beaded: 1.2, damask: 1, leather: 2, chiffon: 2 }
+const REPEAT = { crepe: 1, taffeta: 0.8, lame: 1.2, glitter: 1.5, beaded: 1.2, damask: 1, leather: 2, chiffon: 2, lace: 1.4, pleated: 0.6 }
 
 const KEYS = ['roughness', 'metalness', 'sheen', 'sheenRoughness', 'clearcoat', 'clearcoatRoughness', 'specularIntensity', 'iridescence', 'iridescenceIOR', 'anisotropy', 'anisotropyRotation']
 
 /** Restyle materials. mats: [{ material, scale }]; kind: one of FABRIC_KINDS. */
-export const FABRIC_KINDS = ['made', 'satin', 'velvet', 'sequin', 'silk', 'chiffon', 'crepe', 'taffeta', 'damask', 'lame', 'glitter', 'beaded', 'leather']
+export const FABRIC_KINDS = ['made', 'satin', 'velvet', 'sequin', 'silk', 'chiffon', 'crepe', 'taffeta', 'damask', 'lame', 'glitter', 'beaded', 'leather', 'lace', 'pleated']
+// mats: [{ material, scale, around, center }]: around 'u' when the garment's
+// u runs round the body (ours), else the pleats go in the shader about
+// center ([x, z] of her body axis in the garment's rest coordinates)
 export function applyFabric(mats, kind = 'made') {
-  for (const { material: m, scale = 1 } of mats) {
-    const o = (m.userData.fabric0 ||= { ...Object.fromEntries(KEYS.map(k => [k, m[k]])), normalMap: m.normalMap, normalScale: m.normalScale.clone(), roughnessMap: m.roughnessMap, iridescenceThicknessRange: [...m.iridescenceThicknessRange] })
+  for (const { material: m, scale = 1, around = null, center = [0, 0] } of mats) {
+    const o = (m.userData.fabric0 ||= { ...Object.fromEntries(KEYS.map(k => [k, m[k]])), normalMap: m.normalMap, normalScale: m.normalScale.clone(), roughnessMap: m.roughnessMap, iridescenceThicknessRange: [...m.iridescenceThicknessRange], onBeforeCompile: m.onBeforeCompile, customProgramCacheKey: m.customProgramCacheKey })
     for (const k of KEYS) m[k] = o[k]
     if (m.normalMap !== o.normalMap) m.normalMap?.dispose()
     if (m.roughnessMap !== o.roughnessMap) m.roughnessMap?.dispose()
     m.normalMap = o.normalMap; m.normalScale.copy(o.normalScale); m.roughnessMap = o.roughnessMap
     m.iridescenceThicknessRange = [...o.iridescenceThicknessRange]
+    // what an earlier fabric added beyond plain values: a composite map, a shader
+    if (m.userData.fabricMap) { if (m.map === m.userData.fabricMap) m.map = m.userData.fabricMapBase; m.userData.fabricMap.dispose(); delete m.userData.fabricMap; delete m.userData.fabricMapBase }
+    if (m.userData.fabricShader) { m.onBeforeCompile = o.onBeforeCompile; m.customProgramCacheKey = o.customProgramCacheKey; delete m.userData.fabricShader }
     // a fabric's own tile, tiled like the sequins (scale) times its REPEAT
     const tile = TILES[kind]?.()
     if (tile) {
@@ -156,6 +291,23 @@ export function applyFabric(mats, kind = 'made') {
     if (kind === 'lame') { m.metalness = 1; m.roughness = 0.32; m.sheen = 0; m.specularIntensity = 1; m.anisotropy = 0.4; m.normalScale.set(0.7, 0.7) }
     if (kind === 'glitter') { m.metalness = 0.85; m.roughness = 0.18; m.sheen = 0.1; m.clearcoat = 0.3; m.clearcoatRoughness = 0.15; m.specularIntensity = 1; m.normalScale.set(1, 1) }
     if (kind === 'beaded') { m.metalness = 0.15; m.roughness = 0.08; m.sheen = 0; m.clearcoat = 1; m.clearcoatRoughness = 0.04; m.specularIntensity = 1; m.iridescence = 0.25; m.normalScale.set(1, 1) }
+    if (kind === 'lace') {
+      const L = lace(), k = scale * REPEAT.lace, rep = t => { const c = t.clone(); c.repeat.set(k, k); c.needsUpdate = true; return c }
+      m.normalMap = rep(L.normal); m.normalScale.set(0.9, 0.9)
+      m.roughnessMap = rep(L.rough); m.roughness = 1
+      const base = m.map
+      m.userData.fabricMapBase = base
+      m.userData.fabricMap = m.map = base?.image ? laceComposite(base, k) : rep(L.color)
+      m.sheen = 0.35; m.sheenRoughness = 0.5; m.specularIntensity = 0.6
+    }
+    if (kind === 'pleated') {
+      m.roughness = 0.55; m.sheen = 0.45; m.sheenRoughness = 0.35; m.specularIntensity = 0.7
+      if (around === 'u') {
+        const t = pleatTile().normal.clone(), k = scale * REPEAT.pleated; t.repeat.set(k, k); t.needsUpdate = true
+        m.normalMap = t; m.normalScale.set(1.6, 1.6)
+        if (!m.map) { const sh = pleatShadeTile().clone(); sh.repeat.set(k, k); sh.needsUpdate = true; m.userData.fabricMapBase = null; m.userData.fabricMap = m.map = sh }
+      } else { m.normalScale.multiplyScalar(0.3); pleatShader(m, center) }
+    }
     if (kind === 'leather') { m.roughness = 0.5; m.sheen = 0.15; m.sheenRoughness = 0.5; m.clearcoat = 0.35; m.clearcoatRoughness = 0.35; m.specularIntensity = 0.7; m.normalScale.set(0.35, 0.35) }
     m.needsUpdate = true
   }

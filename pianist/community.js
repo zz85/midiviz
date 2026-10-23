@@ -140,7 +140,8 @@ export async function createCommunity(ch, key, { color = null } = {}) {
     kind: hair ? 'mesh' : 'community', entry, object, mesh, cap, cloth, mode: 'fitted',
     get simulate() { return !!cloth?.active }, set simulate(v) { if (cloth) cloth.active = v },
     setColor, setDensity() {}, settle() {}, setMode() {},
-    setFabric(kind) { if (!hair) applyFabric([{ material: mat, scale: 9 }], kind) },
+    // (pleats about her body axis: the garment's rest centre, x and z)
+    setFabric(kind) { if (hair) return; const bb = mesh.geometry.boundingBox || (mesh.geometry.computeBoundingBox(), mesh.geometry.boundingBox); applyFabric([{ material: mat, scale: 9, center: [(bb.min.x + bb.max.x) / 2, (bb.min.z + bb.max.z) / 2] }], kind) },
     update(dt = 1 / 60) { if (cloth) cloth.update(dt, object.visible); else mesh.visible = object.visible; if (cap) cap.visible = object.visible },
     dispose() {
       cloth?.dispose()

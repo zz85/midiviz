@@ -62,7 +62,7 @@ node pianist/build/build-character.mjs
 
 ## Fabrics
 
-There are 14 fabrics, defined in [pianist/fabric.js](../pianist/fabric.js) and shared with #032 and #045. Each one is a set of physical-material values. Where the surface texture shows, it also gets a procedural tile generated in the page (no texture files), repeated in the garment's own UVs:
+There are 16 fabrics, defined in [pianist/fabric.js](../pianist/fabric.js) and shared with #032 and #045. Each one is a set of physical-material values. Where the surface texture shows, it also gets a procedural tile generated in the page (no texture files), repeated in the garment's own UVs:
 
 | Fabric | How it is made |
 | --- | --- |
@@ -79,8 +79,14 @@ There are 14 fabrics, defined in [pianist/fabric.js](../pianist/fabric.js) and s
 | Glitter | tiny metallic facets, each tilted its own way, finer than sequins |
 | Beaded | a grid of domed glass beads, clear-coated |
 | Leather | a pebbled grain (Voronoi), satin clear coat |
+| Lace | Chantilly-style: corded five-petal rosettes and leaves on a vine, on a hexagonal net. The gaps show a darker, glossier lining. Besides the normal and roughness maps it has a colour tile: on our dresses that is the map, and on a community garment it is multiplied into the garment's own texture (a canvas composite of up to 2048 px, made when picked). The lace is not open, because the body under a garment is hidden and holes would show nothing behind |
+| Pleated | vertical knife pleats, about 2.3 cm, with a darker crease. On our dresses u runs round the body, so the pleats are a normal map plus a crease-shade map. A community garment's UVs are an arbitrary atlas, so there the pleats are added in the shader from each vertex's angle round her body axis in the rest pose (skinned like the normal), and they hang straight down whatever the UVs. The swapped stylized and cel materials keep that shader. The path tracers drop shader patches, so a community garment traces unpleated; ours traces pleated |
 
-Several of the concert outfits now use them: chiffon on the Grecian gowns, silk on the sapphire column gown, crepe on the red high-neck gown, taffeta on the emerald skirt, lamé on the gold cocktail dress, glitter on the one-shoulder mini, beading on the champagne fishtail. Two outfits are new: an ivory damask halter gown and a black leather jumpsuit. Switching fabric takes ≤ 18 ms, or about 1 ms once that fabric's tile has been made. The path tracers take the normal and roughness maps as they are.
+![The 16 fabrics on our floor-length gown, full length and close up](fabrics.webp)
+
+All 16 on our simulated floor-length halter gown (`gown-cloth`, crimson, studio light), full length and close up, from `wardrobe/test/smoke.mjs`'s set-up. In the cel look only lace and pleats keep a visible pattern, since toon shading flattens normal and roughness detail.
+
+Several of the concert outfits now use them: chiffon on the Grecian gowns, silk on the sapphire column gown, crepe on the red high-neck gown, taffeta on the emerald skirt, lamé on the gold cocktail dress, glitter on the one-shoulder mini, beading on the champagne fishtail. Two outfits are new: an ivory damask halter gown and a black leather jumpsuit. Switching fabric takes ≤ 18 ms, or about 1 ms once that fabric's tile has been made (lace's tile is about 0.3 s the first time). Switching back restores the garment's own maps and shader, which is checked by recording every material's maps and shader flag across lace → pleated → satin → plain. The path tracers take the normal and roughness maps as they are.
 
 ## Skins and face shapes
 

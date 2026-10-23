@@ -54,7 +54,7 @@ export const OUR_HAIR = [
 export const OUR_SHOES = [['flats', 'Flats'], ['none', 'Barefoot']]
 export const OUR_BOTTOMS = [['ours', 'Fitted skirt']]
 
-export const FABRICS = [['made', 'Plain'], ['knit', 'Knit'], ['satin', 'Satin'], ['silk', 'Silk charmeuse'], ['chiffon', 'Chiffon'], ['crepe', 'Crepe'], ['taffeta', 'Shot taffeta'], ['velvet', 'Velvet'], ['damask', 'Damask'], ['lame', 'Lamé'], ['sequin', 'Sequins'], ['glitter', 'Glitter'], ['beaded', 'Beaded'], ['leather', 'Leather']]
+export const FABRICS = [['made', 'Plain'], ['knit', 'Knit'], ['satin', 'Satin'], ['silk', 'Silk charmeuse'], ['chiffon', 'Chiffon'], ['crepe', 'Crepe'], ['taffeta', 'Shot taffeta'], ['velvet', 'Velvet'], ['damask', 'Damask'], ['lame', 'Lamé'], ['sequin', 'Sequins'], ['glitter', 'Glitter'], ['beaded', 'Beaded'], ['leather', 'Leather'], ['lace', 'Lace'], ['pleated', 'Pleated (plissé)']]
 
 // gown slits (our dresses), cm about the knee joint, as #032's ?slit=
 export const SLITS = [['off', 'Closed'], ['ankle', 'From the ankle'], ['calf', 'From mid-calf'], ['knee', 'From the knee'], ['thigh', 'Above the knee'], ['hip', 'From the hip']]
