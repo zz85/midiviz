@@ -12,7 +12,7 @@
 //   and fetched again if its size changed.
 // Range requests and non-GET requests go straight to the network.
 
-const ASSETS = 'midiviz-assets-v1'   // (the same name keeps what's cached; bump to drop it)
+const ASSETS = 'midiviz-assets-v2'   // (the same name keeps what's cached; bump to drop it. v2: #047 rebuilt pianist/assets/character.bin, and a cached old .bin with the new .json fails to load)
 const CODE = 'midiviz-code-v1'
 const ASSET_RE = /\.(sf2|sf3|mid|midi|bin|glb|gltf|vrm|png|jpe?g|webp|ktx2|wasm|hdr|exr|ogg|mp3|wav|woff2?)$/i
 const CDN_RE = /^https:\/\/cdn\.jsdelivr\.net\/npm\/[^/]+@\d/   // versioned: immutable
