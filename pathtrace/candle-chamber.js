@@ -106,6 +106,8 @@ export function buildCandleChamber(THREE, lowQuality = false) {
   const flames = new THREE.InstancedMesh(flameGeometry, flameMaterial, count)
   const matrix = new THREE.Matrix4(), quaternion = new THREE.Quaternion(), scale = new THREE.Vector3()
   const flamePositions = new Float32Array(count * 3)
+  // each flame's own flicker: [x, y, z, width, height, phase, rate]
+  const flameParts = new Float32Array(count * 7)
   for (let i = 0; i < count; i++) {
     let x, z, front = false
     if (i < count * 0.5) {
@@ -129,6 +131,7 @@ export function buildCandleChamber(THREE, lowQuality = false) {
     const fy = baseY + height + 1.4
     scale.set(radius * 0.82, 3.1 + random(), radius * 0.82); matrix.compose(new THREE.Vector3(x, fy, z), quaternion, scale); flames.setMatrixAt(i, matrix)
     flamePositions.set([x, fy, z], i * 3)
+    flameParts.set([x, fy, z, scale.x, scale.y, random() * Math.PI * 2, 0.8 + 0.5 * random()], i * 7)
   }
   wax.instanceMatrix.needsUpdate = flames.instanceMatrix.needsUpdate = true
   wax.castShadow = false; wax.receiveShadow = true; flames.renderOrder = 4
@@ -142,7 +145,10 @@ export function buildCandleChamber(THREE, lowQuality = false) {
   glowGradient.addColorStop(0.45, 'rgba(255,92,26,.24)'); glowGradient.addColorStop(1, 'rgba(255,70,20,0)')
   gg.fillStyle = glowGradient; gg.fillRect(0, 0, 64, 64)
   const glowGeometry = new THREE.BufferGeometry(); glowGeometry.setAttribute('position', new THREE.BufferAttribute(flamePositions, 3))
-  const glowMaterial = new THREE.PointsMaterial({ color: 0xffb05b, size: 11, map: new THREE.CanvasTexture(glowCanvas), transparent: true, opacity: 0.58, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false })
+  // (each glow's brightness, per point: its flame's flicker)
+  const glowShade = new Float32Array(count * 3).fill(1)
+  glowGeometry.setAttribute('color', new THREE.BufferAttribute(glowShade, 3))
+  const glowMaterial = new THREE.PointsMaterial({ color: 0xffb05b, size: 11, vertexColors: true, map: new THREE.CanvasTexture(glowCanvas), transparent: true, opacity: 0.58, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false })
   const flameGlows = new THREE.Points(glowGeometry, glowMaterial); flameGlows.renderOrder = 3; root.add(flameGlows)
 
   const glowPositions = [[-260, 48, -335], [260, 48, -335], [-350, 42, 20], [350, 42, 15], [75, 32, 225]]
@@ -163,9 +169,19 @@ export function buildCandleChamber(THREE, lowQuality = false) {
     root,
     update(_dt, time) {
       for (const light of glowLights) light.intensity = 80 + Math.sin(time * 2.7 + light.userData.phase) * 7 + Math.sin(time * 6.1 + light.userData.phase) * 3
-      glowMaterial.opacity = 0.54 + Math.sin(time * 3.7) * 0.035
-      // A very small collective shimmer avoids visibly static LED flames.
-      flames.scale.y = 1 + Math.sin(time * 4.3) * 0.025
+      // every flame on its own: its own phase and rate, a slow wander and a
+      // quicker shiver, taller as it brightens, its glow with it
+      const m = matrix, p = new THREE.Vector3(), sc = scale
+      for (let i = 0; i < count; i++) {
+        const o = i * 7, ph = flameParts[o + 5], k = flameParts[o + 6]
+        const f = Math.sin(time * 3.1 * k + ph) * 0.06 + Math.sin(time * 7.9 * k + 2.3 * ph) * 0.035 + Math.sin(time * 13.7 * k + 4.1 * ph) * 0.015
+        p.set(flameParts[o], flameParts[o + 1] + f * flameParts[o + 4] * 0.5, flameParts[o + 2])
+        sc.set(flameParts[o + 3] * (1 - 0.4 * f), flameParts[o + 4] * (1 + f), flameParts[o + 3] * (1 - 0.4 * f))
+        flames.setMatrixAt(i, m.compose(p, quaternion, sc))
+        glowShade[i * 3] = glowShade[i * 3 + 1] = glowShade[i * 3 + 2] = 1 + 1.6 * f
+      }
+      flames.instanceMatrix.needsUpdate = true
+      glowGeometry.attributes.color.needsUpdate = true
     },
   }
 }
