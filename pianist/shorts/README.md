@@ -66,6 +66,44 @@ Rejected sources include NC/ND MIDIs, Kunst der Fuge's no-redistribution files, 
 - Tchaikovsky — *Mama*, Op. 39 No. 4
 - Grieg — *Melody*, Op. 12 No. 3
 
+## Proposed collection 3: Melody and harmony
+
+Programme order and notes in brief: [repertoire-draft.md](repertoire-draft.md).
+
+Brief: 1–2 minutes, 3 at most; a memorable melody over harmony that does something unexpected. Same rule as before: nothing a non-pianist would recognise. Durations are typical performances, not measured MIDI. Every composition is public domain; a reusable MIDI or score source still has to be found for each (state: **proposed**).
+
+| # | Piece | Typical duration | Why it fits |
+|---|---|---:|---|
+| 1 | Liszt — *Nuages gris*, S. 199 (1881) | 2:45–3:00 | A bare melody over augmented chords; ends without resolving. Late Liszt pointing at Debussy |
+| 2 | Lili Boulanger — *D'un jardin clair* (1914) | ≈2:00 | Luminous, gently modal harmony; a composer few listeners know |
+| 3 | Janáček — *A Blown-Away Leaf*, *On an Overgrown Path* I/2 | ≈2:30 | A folk-like tune pulled by sudden, Moravian harmonic turns |
+| 4 | Ravel — *Menuet sur le nom d'Haydn* (1909) | ≈2:00 | The melody spells HAYDN as notes, then appears backwards and upside down under shifting chords |
+| 5 | Grieg — *Remembrances*, Op. 71 No. 7 (1901) | ≈2:00 | Grieg's last Lyric Piece turns the *Arietta* tune into a fading waltz: a direct link to Quiet Discoveries |
+| 6 | Fauré — *Romance sans paroles*, Op. 17 No. 3 | ≈2:30 | A long-breathed melody with Fauré's sliding inner harmonies |
+| 7 | Rachmaninoff — Prelude in G major, Op. 32 No. 5 | ≈3:00 | A still, high melody over rippling accompaniment; a pianist's favourite, little known outside |
+| 8 | Schumann — *Bird as Prophet*, Op. 82 No. 7 | ≈3:00 | Strange, hovering harmonies around a chorale-like middle |
+
+Reserves: Debussy *Canope*; Liszt *En rêve*, S. 207; Brahms Intermezzo Op. 76 No. 3; Chopin Prelude Op. 28 No. 13; Scriabin Prelude Op. 11 No. 13; Rachmaninoff Étude-tableau Op. 33 No. 8 (already in the library, Krüger CC BY-SA).
+
+## Proposed collection 4: Bravura
+
+Brief: same length; exciting, medium to advanced, still off the beaten track. State: **proposed**.
+
+| # | Piece | Typical duration | Level | Why it fits |
+|---|---|---:|---|---|
+| 1 | Prokofiev — *Suggestion diabolique*, Op. 4 No. 4 (1908) | ≈2:30 | Advanced | Hammered dissonance and leaps across the keyboard |
+| 2 | Bartók — *Allegro barbaro* (1911) | ≈2:30 | Medium–advanced | The piano as a percussion instrument; driving ostinato |
+| 3 | Schumann — *Traumes Wirren*, Op. 12 No. 7 | ≈2:30 | Advanced | Feathery, restless figuration with a chorale-like middle |
+| 4 | Liszt — *Gnomenreigen*, S. 145 No. 2 | ≈3:00 | Advanced | Flickering staccato against a fierce, harmonically wild middle |
+| 5 | Moszkowski — *Étincelles*, Op. 36 No. 6 | ≈2:30 | Advanced | Sparkling repeated notes; a recitalist's encore |
+| 6 | Rachmaninoff — Étude-tableau in E-flat minor, Op. 33 No. 6 | ≈1:45 | Advanced | A storm in under two minutes. MIDI already in the library (Krüger, CC BY-SA 3.0) |
+| 7 | Mendelssohn — Scherzo in E minor, Op. 16 No. 2 | ≈2:00 | Medium | Light, quick fingerwork; the most approachable of the set |
+| 8 | Chopin — Prelude in B-flat minor, Op. 28 No. 16 | ≈1:00 | Advanced | The hardest of the Preludes: one breathless minute |
+
+Reserves: Alkan *Toccatina* (already built, 1:29, CC BY-SA 4.0); Grieg *Butterfly*, Op. 43 No. 1; Scriabin Étude Op. 42 No. 5; Debussy *Les collines d'Anacapri*; Mendelssohn *Spinning Song*, Op. 67 No. 4; Moszkowski Étude Op. 72 No. 6.
+
+Rights notes: Prokofiev (d. 1953) and Bartók (d. 1945) are now public domain in life-plus-70 countries, and these two works were published before 1929, so they are also public domain in the US. The MIDI source must still be separately licensed, as before.
+
 ## Season 1: working slate
 
 | # | Piece | Current file | Duration | Source/licence | Production state |
