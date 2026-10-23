@@ -493,9 +493,11 @@ export function toChapters(tl, { offset = 0, speed = 1, total = Infinity, intro 
 
 /**
  * The notes collection under `base` (liner/ by default): index.json maps
- * song files to pieces/<id>.md, cards live in cards/<id>.md.
+ * song files to pieces/<id>.md, cards live in cards/<id>.md. Fetched with
+ * cache: 'no-cache' (revalidated every load): a static server's Last-Modified
+ * lets the browser reuse an old index.json for hours, without a new piece in it.
  */
-export function createLinerLibrary(base = new URL('./', import.meta.url).href, fetchText = async u => { const r = await fetch(u); if (!r.ok) throw new Error(`${r.status} ${u}`); return r.text() }) {
+export function createLinerLibrary(base = new URL('./', import.meta.url).href, fetchText = async u => { const r = await fetch(u, { cache: 'no-cache' }); if (!r.ok) throw new Error(`${r.status} ${u}`); return r.text() }) {
 	const pieces = new Map(), cards = new Map()
 	let index = {}
 	const ready = fetchText(base + 'index.json').then(t => { index = JSON.parse(t).files || {} }).catch(e => console.warn('[liner] no index:', e.message))
