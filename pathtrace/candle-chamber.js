@@ -7,6 +7,14 @@
 //
 //   const set = buildCandleChamber(THREE, lowQuality)   // { root, update(dt, time) }
 //   const env = candleEnvironment(THREE)                // { scene, sigma, far }: the panels, for PMREM and the path tracers
+//
+// Turned a quarter round from #030's (FACING): #030 puts the back wall across
+// the keyboard from her (-z), so she plays facing it with her back to the
+// hall. In a recital the piano stands side-on, its lid opening to the hall
+// (+x, the audience side, az 90 in pianist/director.js) and the wall behind
+// the piano's spine (-x): here the wall, the candle tiers and the panels'
+// glow are there, and the side candles in front of the keyboard and past the tail.
+export const FACING = Math.PI / 2
 //   CANDLE: background, environment intensity, and #030's candle and concert light rigs
 
 export const CANDLE = {
@@ -44,11 +52,15 @@ export function candleEnvironment(THREE) {
   panel(s, 90, 420, [700, 210, -240], 2.2, 0xff8a45)
   panel(s, 700, 280, [100, 260, -850], 0.7, 0x864020)
   floor(s, 0x120705)
+  // (the room turned with the set; the first panel is the key light's own and stays)
+  const up = new THREE.Vector3(0, 1, 0)
+  s.children.slice(1, 5).forEach(m => { m.position.applyAxisAngle(up, FACING); m.lookAt(new THREE.Vector3(0, 80, -60).applyAxisAngle(up, FACING)) })
   return { scene: s, sigma: 0.025, far: 5000 }
 }
 
 export function buildCandleChamber(THREE, lowQuality = false) {
   const root = new THREE.Group(); root.name = 'stage-candlelit-chamber'
+  root.rotation.y = FACING
   const stone = new THREE.MeshStandardMaterial({ color: 0x351812, roughness: 0.82, metalness: 0.02, emissive: 0x100403, emissiveIntensity: 0.7 })
   const trim = new THREE.MeshStandardMaterial({ color: 0x6b3925, roughness: 0.68, emissive: 0x160603, emissiveIntensity: 0.65 })
   const wall = new THREE.Mesh(new THREE.PlaneGeometry(1150, 560), stone)
@@ -100,8 +112,9 @@ export function buildCandleChamber(THREE, lowQuality = false) {
       const side = random() < 0.5 ? -1 : 1
       x = side * (215 + random() * 285); z = 130 - random() * 430
     }
-    // Leave the piano and bench footprint clear.
-    if (Math.abs(x) < 205 && z > -265) x += x < 0 ? -210 : 210
+    // Leave the piano and bench footprint clear (here, turned: the piano runs
+    // along this x, from the bench at -60 to the tail at +211)
+    if (Math.abs(x) < 235 && z > -265) x += x < 0 ? -240 : 240
     const baseY = z < -370 ? 18 : z < -300 ? 9 : 0
     const height = 8 + random() * 19, radius = 0.78 + random() * 0.58
     scale.set(radius, height, radius); matrix.compose(new THREE.Vector3(x, baseY + height / 2, z), quaternion, scale); wax.setMatrixAt(i, matrix)

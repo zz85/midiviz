@@ -92,10 +92,11 @@ export const SPOTS = {
   feet: { label: 'Pedals', subj: 'feet', az: 58, el: 8, dist: 180, fov: 30, size: 1, moves: ['still', 'dollyIn'] },
   // made for a tall frame (Shorts): from straight above her left, the keyboard
   // running up the picture (bass at the bottom), her arms coming in from the right
-  // the whole stage from high behind her right, looking past her and the piano
-  // to the back wall (#030's candle-chamber establishing shot): only as the
-  // opening shot (opts.opening = 'wide'), or chosen as a view
-  stage: { label: 'The whole stage, from behind', only: 'opening', subj: 'figure', aim: [0, 2, -168], az: 33.5, el: 10.5, dist: 790, fov: 42, size: 2, moves: ['dollyIn', 'still'] },
+  // the whole stage as the hall sees it: high on the audience side (the open
+  // lid), the piano side-on with her at the keyboard on the left, the tail on
+  // the right and the back wall behind (a recital photographed from the
+  // balcony): only as the opening shot (opts.opening = 'wide'), or as a view
+  stage: { label: 'The whole stage, from the hall', only: 'opening', subj: 'figure', aim: [-150, 2, -80], az: 96, el: 14, dist: 820, fov: 42, size: 2, moves: ['dollyIn', 'still'] },
   keysUp: { label: 'Keyboard up the frame', only: 'portrait', subj: 'hands', az: -90, el: 84, dist: 118, fov: 44, size: 0, moves: ['still', 'orbit', 'dollyIn'], orbitMax: 6 },
 }
 
@@ -130,7 +131,7 @@ export const PORTRAIT = {
   pedalsClose: { p: 1, dist: 75, fov: 44 },
   // (p 0: never drawn by a Short's plan, only its opening; the lens opened so
   // the tall frame still takes in the candles to either side)
-  stage: { p: 0, dist: 860, fov: 64, el: 12, aim: [0, 40, -168] },
+  stage: { p: 0, dist: 900, fov: 64, el: 14, aim: [-150, 40, -80] },
 }
 const PORTRAIT_K = 1.5, PORTRAIT_D = 1.15
 const _portrait = {}
