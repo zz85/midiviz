@@ -124,6 +124,13 @@ async function gptWebGPU({ width, height, bounces, toneMapping, denoise }) {
   renderer.toneMapping = toneOf(toneMapping)
   const pt = new WebGPUPathTracer(renderer)
   Object.assign(pt, { renderDelay: 0, fadeDuration: 0, minSamples: 0, dynamicLowRes: false, maxBounces: bounces })
+  // frameBudget: path slots per renderSample() (the wavefront tracer's pool,
+  // 250 000 by default, sized to keep an interactive page at 60 fps). Offline
+  // there is no frame rate to keep: one slot per pixel, so a sample is one
+  // step instead of ~8 at 1080p. The library caps the pool by its buffer
+  // limit (~0.9 M slots, ~128 MB). ?ptbudget=<n> on the page overrides it.
+  const want = +new URLSearchParams(location.search).get('ptbudget')
+  pt.frameBudget = want > 0 ? want : width * height
   let den = null
   if (denoise) {
     const { initUNetFromURL } = await import(VENDOR + 'three-gpu-pathtracer/oidn-web.js')
