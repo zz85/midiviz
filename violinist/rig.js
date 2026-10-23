@@ -608,15 +608,18 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
   // reaching out flat across the neck
   const _fq = [v3(), v3(), v3(), v3()]
   const smoothstep = x => x * x * (3 - 2 * x)
+  const FREE_SPLAY = 14
   function freeTarget(m, i, JF, base, d, N, on) {
     const T = JF.cur
     if (on) return T
     const F = m.fingers[i]
     const q = handFinger(base, T, F.len, 0.72, d, N, _fq, SPLAY[i])
-    const bad = clamp(Math.max((55 - q.pip) / 25, (Math.abs(q.splay) - THREE.MathUtils.radToDeg(SPLAY[i]) + 2) / 6, q.miss / 1.2), 0, 1)
+    // a lifted finger keeps the hand's natural fan (about ±14°) and stays above the
+    // board; a slot further out, or one needing the knuckle past 75°, gets the relaxed curl
+    const bad = clamp(Math.max((55 - q.pip) / 25, (Math.abs(q.splay) - FREE_SPLAY) / 8, (q.flex - 75) / 10, q.miss / 1.2), 0, 1)
     if (bad <= 0) return T
     const fd = d.clone().addScaledVector(N, -d.dot(N)).normalize(), fl = fd.clone().cross(N)
-    const sp = THREE.MathUtils.degToRad(q.splay)
+    const sp = THREE.MathUtils.degToRad(clamp(q.splay, -FREE_SPLAY, FREE_SPLAY))
     const u = fd.clone().multiplyScalar(Math.cos(sp)).addScaledVector(fl, Math.sin(sp)), w = N.clone().negate()
     const D = Math.PI / 180, a = [35 * D, 110 * D, 164 * D]
     const tip = base.clone()
@@ -638,7 +641,7 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
       let on = JF.dot.material.opacity > 0
       if (held) { const q = handFinger(base, JF.cur, F.len, 0.72, d, N, _fq, SPLAY[i]); if (q.miss > 0.3 || q.pip < 30) on = false }
       F.held = held && !on
-      F.q = handFinger(base, freeTarget(m, i, JF, base, d, N, on), F.len, 0.72, d, N, F.pts, SPLAY[i])
+      F.q = handFinger(base, freeTarget(m, i, JF, base, d, N, on), F.len, 0.72, d, N, F.pts, on ? SPLAY[i] : FREE_SPLAY * Math.PI / 180)
       // roll each phalanx about the finger's own hinge (its side, as the knuckle line's)
       const W = F.pts.map(p => p.clone().applyMatrix4(mat))
       const hinge = W[1].clone().sub(W[0]).cross(W[2].clone().sub(W[1]))
