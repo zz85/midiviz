@@ -65,6 +65,68 @@ function greyCopy(tex, target = 200) {
   return t
 }
 
+// A garment's texture made safe for a hidden body. Two things in the
+// community textures show as black on her:
+//  • sheer panels (alpha ~0.5, e.g. c806's yoke under the halter and its hem
+//    band): drawn with alpha to coverage, but the body under the garment is
+//    hidden, so through them is the empty stage;
+//  • the atlas background (alpha 0, black once drawn to a canvas, which
+//    premultiplies): filtering and mipmaps blend it into the edge of every UV
+//    island, so each seam gets a dark line, and where the blended alpha falls
+//    under alphaTest, a crack.
+// So anything at least a quarter opaque becomes solid, and the islands' colour
+// is grown out into the background (opaque: no geometry samples it beyond
+// filtering). Transparent holes inside an island narrower than twice the
+// padding fill in; wider cut-outs (lace, fringes) stay.
+function solidGarmentMap(tex) {
+  const img = tex?.image
+  if (!img?.width) return tex
+  const w = img.width, h = img.height, c = document.createElement('canvas')
+  c.width = w; c.height = h
+  const g = c.getContext('2d'); g.drawImage(img, 0, 0)
+  const d = g.getImageData(0, 0, w, h), a = d.data
+  let filled = new Uint8Array(w * h), clear = 0
+  const solid = new Uint8Array(w * h)
+  for (let p = 0; p < w * h; p++) if (a[p * 4 + 3] >= 64) solid[p] = 1; else clear++
+  if (!clear) return tex
+  // (the island's own edge pixels carry the black it was antialiased against:
+  // they are left out and grown back from the pixels inside them)
+  for (let p = 0; p < w * h; p++) {
+    if (!solid[p]) { a[p * 4 + 3] = 0; continue }
+    const x = p % w, y = (p - x) / w
+    let inner = true
+    for (let dy = -1; dy <= 1 && inner; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const X = x + dx, Y = y + dy
+      if (X >= 0 && X < w && Y >= 0 && Y < h && !solid[Y * w + X]) { inner = false; break }
+    }
+    a[p * 4 + 3] = 255; if (inner) filled[p] = 1
+  }
+  // grow by one pixel a pass, each new pixel the mean of its filled neighbours
+  const passes = Math.max(4, Math.round(8 * Math.max(w, h) / 512))
+  let front = []
+  for (let p = 0; p < w * h; p++) if (!filled[p]) front.push(p)
+  for (let pass = 0; pass < passes && front.length; pass++) {
+    const next = filled.slice(), keep = []
+    for (const p of front) {
+      const x = p % w, y = (p - x) / w
+      let r = 0, gg = 0, b = 0, n = 0
+      for (const q of [x > 0 ? p - 1 : -1, x < w - 1 ? p + 1 : -1, y > 0 ? p - w : -1, y < h - 1 ? p + w : -1]) {
+        if (q < 0 || !filled[q]) continue
+        r += a[q * 4]; gg += a[q * 4 + 1]; b += a[q * 4 + 2]; n++
+      }
+      if (!n) { keep.push(p); continue }
+      a[p * 4] = r / n; a[p * 4 + 1] = gg / n; a[p * 4 + 2] = b / n; a[p * 4 + 3] = 255; next[p] = 1
+    }
+    filled = next; front = keep
+  }
+  g.putImageData(d, 0, 0)
+  const t = new THREE.CanvasTexture(c)
+  t.colorSpace = tex.colorSpace; t.flipY = tex.flipY; t.wrapS = tex.wrapS; t.wrapT = tex.wrapT
+  t.anisotropy = Math.max(tex.anisotropy, 8)
+  tex.dispose()
+  return t
+}
+
 function hasAlpha(tex) {
   const img = tex?.image
   if (!img) return false
@@ -79,12 +141,13 @@ function hasAlpha(tex) {
 export async function createCommunity(ch, key, { color = null } = {}) {
   const entry = ch.meta.community.find(e => e.key === key)
   if (!entry) throw new Error('no community asset ' + key)
-  const [map, normalMap] = await Promise.all([
+  const hair = entry.kind === 'hair'
+  let [map, normalMap] = await Promise.all([
     entry.map ? ch.loadTexture(entry.map) : null,
     entry.normalMap ? ch.loadTexture(entry.normalMap, false) : null,
     ch.ensurePart(key),
   ])
-  const hair = entry.kind === 'hair'
+  if (!hair) map = solidGarmentMap(map)
   const alpha = hasAlpha(map)
   const mat = new THREE.MeshPhysicalMaterial({
     map, normalMap, side: THREE.DoubleSide,
