@@ -96,7 +96,9 @@ export function buildCandleChamber(THREE, lowQuality = false) {
     light.position.set(x, 200, -448); light.userData.phase = index * 2.1; root.add(light)
   }
 
-  const count = lowQuality ? 120 : 220, random = seeded(30)
+  // (#030: 220; a few more here, and a third group in front, so the candles
+  // stand round the piano on every side but the wall's)
+  const count = lowQuality ? 160 : 300, random = seeded(30)
   const waxGeometry = new THREE.CylinderGeometry(0.72, 0.92, 1, 8)
   const wax = new THREE.InstancedMesh(waxGeometry, new THREE.MeshStandardMaterial({ color: 0xf1cda0, roughness: 0.78 }), count)
   const flameGeometry = new THREE.SphereGeometry(0.75, 7, 5)
@@ -105,18 +107,24 @@ export function buildCandleChamber(THREE, lowQuality = false) {
   const matrix = new THREE.Matrix4(), quaternion = new THREE.Quaternion(), scale = new THREE.Vector3()
   const flamePositions = new Float32Array(count * 3)
   for (let i = 0; i < count; i++) {
-    let x, z
-    if (i < count * 0.62) {
+    let x, z, front = false
+    if (i < count * 0.5) {
       x = (random() - 0.5) * 900; z = -250 - random() * 205
-    } else {
+    } else if (i < count * 0.78) {
       const side = random() < 0.5 ? -1 : 1
       x = side * (215 + random() * 285); z = 130 - random() * 430
+    } else {
+      // in front (the hall's side): an arc round the piano's middle (x 75 here),
+      // kept 60 cm and more off the open lid, shorter so they don't hide it
+      front = true
+      const a = (random() * 2 - 1) * 55 * Math.PI / 180, r = 1.1 + random() * 0.3
+      x = 75 + 330 * Math.sin(a) * r; z = 240 * Math.cos(a) * r
     }
     // Leave the piano and bench footprint clear (here, turned: the piano runs
     // along this x, from the bench at -60 to the tail at +211)
-    if (Math.abs(x) < 235 && z > -265) x += x < 0 ? -240 : 240
+    if (!front && Math.abs(x) < 235 && z > -265) x += x < 0 ? -240 : 240
     const baseY = z < -370 ? 18 : z < -300 ? 9 : 0
-    const height = 8 + random() * 19, radius = 0.78 + random() * 0.58
+    const height = front ? 5 + random() * 11 : 8 + random() * 19, radius = 0.78 + random() * 0.58
     scale.set(radius, height, radius); matrix.compose(new THREE.Vector3(x, baseY + height / 2, z), quaternion, scale); wax.setMatrixAt(i, matrix)
     const fy = baseY + height + 1.4
     scale.set(radius * 0.82, 3.1 + random(), radius * 0.82); matrix.compose(new THREE.Vector3(x, fy, z), quaternion, scale); flames.setMatrixAt(i, matrix)
@@ -137,7 +145,7 @@ export function buildCandleChamber(THREE, lowQuality = false) {
   const glowMaterial = new THREE.PointsMaterial({ color: 0xffb05b, size: 11, map: new THREE.CanvasTexture(glowCanvas), transparent: true, opacity: 0.58, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false })
   const flameGlows = new THREE.Points(glowGeometry, glowMaterial); flameGlows.renderOrder = 3; root.add(flameGlows)
 
-  const glowPositions = [[-260, 48, -335], [260, 48, -335], [-350, 42, 20], [350, 42, 15]]
+  const glowPositions = [[-260, 48, -335], [260, 48, -335], [-350, 42, 20], [350, 42, 15], [75, 32, 225]]
   const glowLights = glowPositions.map((position, index) => {
     const light = new THREE.PointLight(0xff843f, 82, 270, 2)
     light.position.set(...position); light.userData.phase = index * 1.7; root.add(light); return light
@@ -147,7 +155,7 @@ export function buildCandleChamber(THREE, lowQuality = false) {
   poolGradient.addColorStop(0, '#ffffff'); poolGradient.addColorStop(0.35, '#777777'); poolGradient.addColorStop(1, '#000000')
   pg.fillStyle = poolGradient; pg.fillRect(0, 0, 128, 128)
   const poolAlpha = new THREE.CanvasTexture(poolCanvas)
-  for (const [x, z, radius] of [[-280, -335, 115], [280, -335, 115], [-365, 5, 105], [365, 5, 105]]) {
+  for (const [x, z, radius] of [[-280, -335, 115], [280, -335, 115], [-365, 5, 105], [365, 5, 105], [75, 230, 130]]) {
     const pool = new THREE.Mesh(new THREE.CircleGeometry(radius, 40), new THREE.MeshBasicMaterial({ color: 0xb84a20, alphaMap: poolAlpha, transparent: true, opacity: 0.18, depthWrite: false, blending: THREE.AdditiveBlending }))
     pool.rotation.x = -Math.PI / 2; pool.position.set(x, 0.35, z); root.add(pool)
   }
