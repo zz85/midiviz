@@ -358,7 +358,7 @@
     <div class="field" title="The intertitles about the music itself (analysis, things to listen for), in a voice of their own"><label>Analysis style</label><select id="itStyleA"><option value="same">Same as the story</option></select></div>
     <div class="field" title="History and trivia float: the first a few seconds in, then one every 20–30 s through the opening, then spread over the rest. Each take places them differently (the same take, the same places, here and in the export). Lines about the music stay where the music is"><label>Floating intertitles: take <span class="val" id="itSeedV">1</span></label><div class="btnrow" style="padding:0"><button id="itSeedPrev" class="sec">‹ Previous take</button><button id="itSeedNext" class="sec">Next take ›</button></div></div>
     <div class="field"><label>Intertitle colours</label><select id="itTheme"></select></div>
-    <div class="field" title="Automatic: each intertitle goes to the side of the frame away from the pianist (her head and hands as the camera sees them), and to the top when the shot looks down on the keys"><label>Intertitle position</label><select id="itPos"></select></div>
+    <div class="field" title="Automatic: each intertitle goes to the corner of the frame that the pianist and the piano fill least, as the camera sees them when it appears (her face counts most); when two are about as empty, the one away from her. In a Short: the top or the bottom of the safe area, the same way"><label>Intertitle position</label><select id="itPos"></select></div>
     <label class="chk" title="The small capitals over each line (a place and year, a bar, a term)"><input type="checkbox" id="itHeads" checked>Headings over the lines</label>
     <div class="sect">Stage</div>
     <div class="field" title="Black stage: the grand under its spotlights on a dark floor. Candlelit chamber (from #030): a stone wall with arches behind the piano, some 200 candles on two tiers and along the sides, sconces, a warm candle palette for the lights and the reflections"><label>Stage</label><select id="stageSet"><option value="stage" selected>Black stage</option><option value="candle">Candlelit chamber</option></select></div>
@@ -547,6 +547,7 @@
     import { suggestClips, snapStart, snapEnd, clipOf, shortDescription, SHORT_MAX, SHORT_LENGTHS, SHORT_DEFAULT } from './pianist/shorts.js'
     import { createPathTraceStills } from './pathtrace/still.js'
     import { pathTracedFrames } from './pathtrace/video.js'
+    import { createFrameSpace, LANDSCAPE_PLACES, portraitPlaces } from './pianist/frame-space.js'
     import { createLinerLibrary, clockOfMidi, buildTimeline, toVTT, toChapters, titleScreen, withTitle, titleSecs, layoutClip } from './liner/liner.js'
     import { createLinerOverlay, drawLinerCaption, drawIntertitle, loadIntertitleFonts, INTERTITLE_STYLES, INTERTITLE_THEMES, INTERTITLE_POSITIONS } from './liner/overlay.js'
 
@@ -1522,7 +1523,11 @@
     const linerLib = createLinerLibrary()
     // where the pianist is in the frame (her head and hands, in -1..1), for intertitles placed automatically
     const subjectNdc = { x: 0, y: 0 }
-    const autoPosition = () => (subjectNdc.y < -0.25 ? 'top-' : 'bottom-') + (subjectNdc.x < -0.12 ? 'right' : 'left')
+    // Automatic: the corner the pianist and the piano fill least (pianist/frame-space.js,
+    // measured once as each intertitle appears), the one away from her when it's as good
+    const frameSpace = createFrameSpace({ objects: [piano.root], skeleton: ch.skeleton || null })
+    const awayFromHer = () => (subjectNdc.y < -0.25 ? 'top-' : 'bottom-') + (subjectNdc.x < -0.12 ? 'right' : 'left')
+    const autoPosition = () => { try { return frameSpace.pick(camera, LANDSCAPE_PLACES, awayFromHer()).place } catch (e) { console.warn(e); return awayFromHer() } }
     const liner = createLinerOverlay({ seek: $('seek'), title: $('songTitle'), onSeek: t => seekTo(t), download: saveText, autoPosition })
     liner.attachMenu($('songList'), linerLib)
     window.__liner = { liner, lib: linerLib }
@@ -1535,7 +1540,7 @@
     $('itSeedNext').onclick = () => setSeed(liner.seed + 1)
     if (+params.get('itseed') > 1) { liner.seed = +params.get('itseed'); $('itSeedV').textContent = liner.seed }
     for (const [k, th] of Object.entries(INTERTITLE_THEMES)) $('itTheme').append(new Option(th.label, k, k === 'mono', k === 'mono'))
-    for (const [k, label] of Object.entries(INTERTITLE_POSITIONS)) $('itPos').append(new Option(label, k, k === 'auto', k === 'auto'))
+    for (const [k, label] of Object.entries(INTERTITLE_POSITIONS)) $('itPos').append(new Option(k === 'auto' ? 'Automatic (away from her and the piano)' : label, k, k === 'auto', k === 'auto'))
     $('linerMode').onchange = () => { liner.mode = $('linerMode').value; for (const id of ['itStyle', 'itStyleA', 'itTheme', 'itPos', 'itHeads', 'itSeedPrev', 'itSeedNext']) $(id).disabled = liner.mode !== 'intertitles' }
     $('itPos').onchange = () => { liner.position = $('itPos').value }
     $('itStyle').onchange = () => { liner.style = $('itStyle').value; drawPreview() }
@@ -2476,7 +2481,15 @@
       return { intertitles: its, sections: [], moments: [] }
     }
     const shortPlaced = new WeakMap()
-    const shortPos = x => { if (x.title) return 'top-center'; if (!shortPlaced.has(x)) shortPlaced.set(x, subjectNdc.y < -0.2 ? 'top-center' : 'bottom-center'); return shortPlaced.get(x) }
+    const shortPos = x => {
+      if (x.title) return 'top-center'
+      if (!shortPlaced.has(x)) {
+        const prefer = subjectNdc.y < -0.2 ? 'top-center' : 'bottom-center'
+        let p = prefer; try { p = frameSpace.pick(camera, portraitPlaces(SHORT_SAFE), prefer).place } catch (e) { console.warn(e) }
+        shortPlaced.set(x, p)
+      }
+      return shortPlaced.get(x)
+    }
     // (stacked: the intertitles sit just above the seam, over her half, not on the hands)
     const shortOverlay = tl => (g, w, h, t) => {
       const x = stacked && tl.intertitles.find(x => t >= x.start - 0.05 && t < x.end)
