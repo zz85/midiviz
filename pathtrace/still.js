@@ -7,13 +7,14 @@
 //                      raster picture as a canvas
 //   stage.end()        back to the live loop at the window's size
 //   stage.scene, stage.camera, stage.hair(), stage.envScene, stage.envIntensity,
-//   stage.exposure(), stage.fx() (the page's bloom / grain settings, for post.js)
+//   stage.exposure(), stage.fx() (the page's bloom / grain settings, for post.js),
+//   stage.dof() (the page's depth of field this frame: { focus, aperture }, or null when off)
 // and the menu (#ptPop) holds the settings. A still is: the raster frame,
 // snapshotScene() of that same moment, then each chosen tracer in turn.
 
 import * as THREE from 'three'
 import { snapshotScene, snapshotCamera, bakeEnvironment, disposeSnapshot } from './snapshot.js'
-import { ENGINES, traceStill, hasWebGPU } from './engines.js'
+import { ENGINES, traceStill, hasWebGPU, lensFromBokeh } from './engines.js'
 import { finishTrace, HDR_SCALE } from './post.js'
 
 const $ = id => document.getElementById(id)
@@ -49,6 +50,8 @@ export function createPathTraceStills(stage) {
       status('Freezing the frame…', 0)
       const raster = headless ? stage.current() : stage.begin(w, h)
       const cam = snapshotCamera(stage.camera, w / h)
+      // the page's depth of field, as a lens the tracers trace (engines.js lensFromBokeh)
+      const dof = lensFromBokeh(stage.dof?.() || {}, cam)
       results.push({ engine: 'raster', label: 'Raster (the page, WebGL)', canvas: raster, info: 'three.js r' + THREE.REVISION + ', AgX' })
       // (re-baked when the page's environment intensity changed: #047's light presets)
       // (baked again for another stage's panels or strength)
@@ -61,6 +64,7 @@ export function createPathTraceStills(stage) {
         const t0 = performance.now()
         try {
           const r = await traceStill(key, {
+            dof,
             scene: snap.scene, camera: cam, width: w, height: h, samples: s.samples, bounces: s.bounces, denoise: s.denoise && !!E.denoiser, signal: ac.signal,
             // (with the page's effects: linear light out, finished in post.js)
             ...(s.fx ? { toneMapping: 'linear', exposure: 1 / HDR_SCALE } : { exposure: stage.exposure() }),
@@ -72,7 +76,7 @@ export function createPathTraceStills(stage) {
           }
           const T = r.times
           r.label = E.label
-          r.info = `${w}×${h}, ${Math.round(r.samples)} spp, ${s.bounces} bounces${s.denoise && E.denoiser ? ', ' + E.denoiser + ' denoised' : ''} · ${(T.total / 1000).toFixed(1)} s (scene ${(T.setup / 1000).toFixed(1)} s, first sample ${((T.firstSample ?? 0) / 1000).toFixed(1)} s, tracing ${(T.trace / 1000).toFixed(1)} s${T.denoise ? `, denoise ${(T.denoise / 1000).toFixed(1)} s` : ''}${T.init ? `, init ${(T.init / 1000).toFixed(1)} s` : ''}${T.readback ? `, readback ${(T.readback / 1000).toFixed(1)} s` : ''}${T.post != null ? `, effects ${(T.post / 1000).toFixed(1)} s` : ''})${r.hdrStats ? ` · the page's AgX and effects (linear light: mean ${r.hdrStats.mean.toFixed(2)}, ${(r.hdrStats.clipped * 100).toFixed(1)} % of pixels at the ${HDR_SCALE}× ceiling)` : ''} · ${sceneInfo}`
+          r.info = `${w}×${h}, ${Math.round(r.samples)} spp, ${s.bounces} bounces${s.denoise && E.denoiser ? ', ' + E.denoiser + ' denoised' : ''}${dof ? `, depth of field: focus ${dof.focus.toFixed(0)} cm, aperture ${(dof.aperture * 10).toFixed(1)} mm` : ''} · ${(T.total / 1000).toFixed(1)} s (scene ${(T.setup / 1000).toFixed(1)} s, first sample ${((T.firstSample ?? 0) / 1000).toFixed(1)} s, tracing ${(T.trace / 1000).toFixed(1)} s${T.denoise ? `, denoise ${(T.denoise / 1000).toFixed(1)} s` : ''}${T.init ? `, init ${(T.init / 1000).toFixed(1)} s` : ''}${T.readback ? `, readback ${(T.readback / 1000).toFixed(1)} s` : ''}${T.post != null ? `, effects ${(T.post / 1000).toFixed(1)} s` : ''})${r.hdrStats ? ` · the page's AgX and effects (linear light: mean ${r.hdrStats.mean.toFixed(2)}, ${(r.hdrStats.clipped * 100).toFixed(1)} % of pixels at the ${HDR_SCALE}× ceiling)` : ''} · ${sceneInfo}`
           results.push(r)
         } catch (e) {
           if (e.name === 'AbortError') throw e

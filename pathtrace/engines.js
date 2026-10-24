@@ -67,6 +67,42 @@ export async function createTraceSession(key, opts) {
 }
 
 let ltcReady = false
+
+// ── Depth of field: a thin lens ──
+// dof: { focus (cm, along the view axis), aperture (cm, the lens opening's
+// diameter), blades (0 = round) }, or null for a pinhole. Both tracers trace
+// it: three-gpu-pathtracer from its PhysicalCamera (both tracers; its
+// aperture is bokehSize mm × 1e-3 scene units, a scene in metres, so here
+// bokehSize = aperture × 1000), MuTracer from fStop with metersPerUnit 0.01.
+/**
+ * The page's BokehPass as a lens: its blur grows by `aperture` per cm off the
+ * focus plane (0.8·aperture·aspect of the frame's height, a diameter), a thin
+ * lens's circle by A/(2·s²·tan(fov/2)) per cm near the plane. The same blur
+ * there: A = 1.6·aperture·aspect·s²·tan(fov/2). (Far from it they part: the
+ * page's blur is capped (maxblur), a lens's grows to A/(2·s·tan) at infinity.)
+ */
+export function lensFromBokeh({ focus, aperture } = {}, camera, blades = 0) {
+  if (!(focus > 0) || !(aperture > 0)) return null
+  const tan = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) / (camera.zoom || 1)
+  return { focus, aperture: 1.6 * aperture * camera.aspect * focus * focus * tan, blades }
+}
+let PhysicalCameraClass = null
+async function lensCamera(camera, dof) {
+  if (!dof) return camera
+  PhysicalCameraClass ||= (await import(VENDOR + 'three-gpu-pathtracer/three-gpu-pathtracer.js')).PhysicalCamera
+  const c = new PhysicalCameraClass()
+  c.copy(camera)
+  Object.assign(c, { focusDistance: dof.focus, apertureBlades: dof.blades || 0, apertureRotation: 0, anamorphicRatio: 1 })
+  c.bokehSize = dof.aperture * 1000
+  c.updateProjectionMatrix(); c.updateMatrixWorld(true)
+  return c
+}
+// MuTracer: aperture radius = focal (mm, from sensorHeight and the fov) / (2·fStop) / 1000 / metersPerUnit
+function muLens(camera, dof) {
+  if (!dof) return {}
+  const focal = 0.5 * camera.getFilmHeight() * (camera.zoom || 1) / Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)
+  return { fStop: focal / (10 * dof.aperture), focusDistance: dof.focus, metersPerUnit: 0.01 }
+}
 // three-gpu-pathtracer WebGPU: tracer steps queued between waits for the GPU
 const STEPS = 8
 const toneOf = m => m === 'linear' ? THREE.NoToneMapping : THREE.AgXToneMapping
@@ -82,11 +118,11 @@ async function gptWebGL({ width, height, bounces, toneMapping }) {
   Object.assign(pt, { renderDelay: 0, fadeDuration: 0, minSamples: 0, dynamicLowRes: false, rasterizeScene: false, bounces, filterGlossyFactor: 0.5 })
   pt.tiles.set(2, 2)
   return {
-    async frame({ scene, camera, samples, exposure, onProgress, signal }) {
+    async frame({ scene, camera, samples, exposure, onProgress, signal, dof = null }) {
       renderer.toneMappingExposure = exposure
       const times = {}
       let t = performance.now()
-      pt.setScene(scene, camera)
+      pt.setScene(scene, await lensCamera(camera, dof))
       times.setup = Math.round(performance.now() - t); t = performance.now()
       while (pt.samples < samples) {
         aborted(signal)
@@ -138,12 +174,13 @@ async function gptWebGPU({ width, height, bounces, toneMapping, denoise }) {
     pt.setDenoiser(den)
   }
   return {
-    async frame({ scene, camera, samples, exposure, onProgress, signal }) {
+    async frame({ scene, camera, samples, exposure, onProgress, signal, dof = null }) {
       renderer.toneMappingExposure = exposure
       pt.maxSamples = samples
       const times = {}
       let t = performance.now()
-      pt.setScene(scene, camera)
+      // (webgpu.js gives the PhysicalCamera its thin-lens camera ray)
+      pt.setScene(scene, await lensCamera(camera, dof))
       times.setup = Math.round(performance.now() - t); t = performance.now()
       // Paced by the GPU, not the display: each renderSample() is one step of
       // the tracer's task (a tile or a wavefront pass, several per sample), and
@@ -201,7 +238,7 @@ async function mutracer({ width, height, bounces, toneMapping, denoise }, backen
   engine.display.setSize(width, height)
   return {
     times: { init },
-    async frame({ scene, camera, samples, exposure, onProgress, signal }) {
+    async frame({ scene, camera, samples, exposure, onProgress, signal, dof = null }) {
       const times = {}
       let t = performance.now()
       // MuTracer reads an equirect's first row as the zenith (theta = acos(y)), three.js
@@ -215,7 +252,7 @@ async function mutracer({ width, height, bounces, toneMapping, denoise }, backen
       // the BVH, built in workers, ahead of the first update
       await engine.prepare(muScene)
       engine.scene = muScene
-      engine.camera = MU.fromTHREECamera(camera)
+      engine.camera = MU.fromTHREECamera(camera, muLens(camera, dof))
       Object.assign(engine.display, { toneMapping, toneMappingExposure: exposure })
       last?.dispose?.()
       const render = last = new MU.Render(engine, { width, height, bounces, maxSamples: samples, allowMultipleSamplesPerFrame: true })

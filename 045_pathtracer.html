@@ -367,8 +367,8 @@
     <div class="field"><label>Main light</label><input type="range" id="light" min="0" max="2" step="0.01" value="1"></div>
     <div class="field"><label>Exposure</label><input type="range" id="exposure" min="0.3" max="2.5" step="0.01" value="1"></div>
     <div class="sect">Post-processing</div>
-    <label class="chk"><input type="checkbox" id="dof">Depth of field</label>
-    <div class="field" title="How soft the out-of-focus parts get"><label>Blur <span class="val" id="dofAmtV"></span></label><input type="range" id="dofAmt" min="0.2" max="4" step="0.05" value="1"></div>
+    <label class="chk" title="A focus puller keeps her eyes sharp in the shots of her and one hand in the shots of the hands (the one nearer the middle of the frame or the busier, changing only when the other clearly wins for 1.5 s), the shallower the closer the camera. Path-traced stills and videos trace the same focus and blur through a lens"><input type="checkbox" id="dof">Depth of field</label>
+    <div class="field" title="How soft the out-of-focus parts get (each shot also has its own amount: shallower along the keys and on the hammers, deeper looking straight down)"><label>Blur <span class="val" id="dofAmtV"></span></label><input type="range" id="dofAmt" min="0.2" max="4" step="0.05" value="1"></div>
     <label class="chk"><input type="checkbox" id="bloom">Bloom</label>
     <div class="field"><label>Bloom strength <span class="val" id="bloomAmtV"></span></label><input type="range" id="bloomAmt" min="0" max="1.2" step="0.01" value="0.12"></div>
     <label class="chk"><input type="checkbox" id="filmGrain">Film grain &amp; vignette</label>
@@ -548,6 +548,7 @@
     import { createPathTraceStills } from './pathtrace/still.js'
     import { pathTracedFrames } from './pathtrace/video.js'
     import { createFrameSpace, LANDSCAPE_PLACES, portraitPlaces } from './pianist/frame-space.js'
+    import { createFocusPuller, SHOT_DOF } from './pianist/focus-puller.js'
     import { createLinerLibrary, clockOfMidi, buildTimeline, toVTT, toChapters, titleScreen, withTitle, titleSecs, layoutClip } from './liner/liner.js'
     import { createLinerOverlay, drawLinerCaption, drawIntertitle, loadIntertitleFonts, INTERTITLE_STYLES, INTERTITLE_THEMES, INTERTITLE_POSITIONS } from './liner/overlay.js'
 
@@ -1921,6 +1922,13 @@
     const clock = new THREE.Clock()
     let fixedT = null   // ?t= for headless stills: song time to pose at
     const head = new THREE.Vector3(), handsC = new THREE.Vector3(), _ndc = new THREE.Vector3()
+    // depth of field (pianist/focus-puller.js): her eyes for the face, a hand the puller picks for the hands;
+    // a second puller for the hands half of a stacked Short
+    const focusPull = createFocusPuller(), focusPull2 = createFocusPuller()
+    const eyesC = new THREE.Vector3(), hasEyes = !!(ch.byName?.['eye.L'] && ch.byName?.['eye.R'])
+    const eyesAt = () => hasEyes ? eyesC.copy(rig.pos('eye.L')).add(rig.pos('eye.R')).multiplyScalar(0.5) : head
+    const dofOf = name => SHOT_DOF[name] ?? 1
+    let lastShot2 = null
     let fxT = 0, exporting = false, exTitleCard = false
     function frame() {
       const dt = Math.min(clock.getDelta(), 1 / 20)
@@ -1986,11 +1994,13 @@
       } else controls.update()
       // (where she is in the frame: for intertitles placed automatically)
       { const a = _ndc.copy(head).project(camera), ax = a.x, ay = a.y, b = _ndc.copy(handsC).project(camera); subjectNdc.x = (ax + b.x) / 2; subjectNdc.y = Math.max(ay, b.y) }
-      // focus: the face in close shots, the hands looking down at the keys
-      const fd = camera.position.distanceTo(focusOn)
-      bokeh.uniforms.focus.value += (fd - bokeh.uniforms.focus.value) * (snapFocus ? 1 : 0.1)
-      bokeh.uniforms.aperture.value = wide ? 0.00003 : 0.0001
-      bokeh.uniforms.aperture.value *= +$('dofAmt').value
+      // focus: her eyes in the shots of her, a hand in the shots of the hands, the
+      // shot's aim on the mechanism; shallower the closer (pianist/focus-puller.js)
+      {
+        const f = focusPull.update({ camera, dt, subject: focusOn === handsC ? 'hands' : focusOn === head ? 'head' : 'target', hands: rig.hands, handsMid: handsC,
+          eyes: focusOn === head ? eyesAt() : null, target: focusOn, snap: snapFocus, amount: +$('dofAmt').value, shot: dofOf(driven?.shot?.name ?? view) })
+        bokeh.uniforms.focus.value = f.focus; bokeh.uniforms.aperture.value = f.aperture
+      }
       // (the director's fade-in only while the song runs: a loaded song paused at 0 isn't black)
       renderer.toneMappingExposure = +$('exposure').value * (dirShot && !userCam && ((offline && !exTitleCard) || scheduler?.playing) ? dirShot.fade ?? 1 : 1)
       grain.uniforms.uTime.value = fxT
@@ -2071,8 +2081,10 @@
         const c = director2.update(t, dt, live)
         camera.position.copy(c.pos); camera.lookAt(c.target)
         if (camera.fov !== c.fov) { camera.fov = c.fov; camera.updateProjectionMatrix() }
-        bokeh.uniforms.focus.value = camera.position.distanceTo(c.focus === 'target' ? c.target : live.hands)
-        bokeh.uniforms.aperture.value = 0.0001 * +$('dofAmt').value
+        const f2 = focusPull2.update({ camera, dt, subject: c.focus === 'target' ? 'target' : 'hands', hands: rig.hands, handsMid: live.hands, target: c.target,
+          snap: c.shot !== lastShot2, amount: +$('dofAmt').value, shot: dofOf(c.shot?.name) })
+        lastShot2 = c.shot
+        bokeh.uniforms.focus.value = f2.focus; bokeh.uniforms.aperture.value = f2.aperture
         renderer.setViewport(0, 0, w, hb); renderer.setScissor(0, 0, w, hb); draw()
       }
       // the seam
@@ -2290,6 +2302,8 @@
     const ptStage = {
       scene, camera, get envScene() { return envScene }, get envIntensity() { return scene.environmentIntensity },
       hair: () => hair, exposure: () => +$('exposure').value, liveExposure: () => renderer.toneMappingExposure,
+      // the depth of field this frame, for the tracers' lens (null when off)
+      dof: () => bokeh.enabled ? { focus: bokeh.uniforms.focus.value, aperture: bokeh.uniforms.aperture.value } : null,
       fx: () => ({
         exposure: +$('exposure').value,
         bloom: bloom.enabled ? { strength: bloom.strength, radius: bloom.radius, threshold: bloom.threshold } : null,
@@ -2605,8 +2619,11 @@
           camera.position.set(...d.pos); controls.target.set(...d.target); camera.fov = d.fov; camera.updateProjectionMatrix(); controls.update()
           if (camFree) { camera.position.copy(camGoal.pos); controls.target.copy(camGoal.target); controls.update() }   // (?cam=)
         }
-        bokeh.uniforms.focus.value = camera.position.distanceTo(focusOn)
-        bokeh.uniforms.aperture.value = wide ? 0.00003 : 0.0001
+        {
+          const hd = focusOn === handsAt ? 'hands' : focusOn === rig.pos('head') ? 'head' : 'target'
+          const f = focusPull.update({ camera, dt: 0, subject: hd, hands: rig.hands, handsMid: handsAt, eyes: hd === 'head' ? eyesAt() : null, target: focusOn, snap: true, amount: +$('dofAmt').value, shot: dofOf(window.__shotInfo?.name ?? view) })
+          bokeh.uniforms.focus.value = f.focus; bokeh.uniforms.aperture.value = f.aperture
+        }
         bokeh.enabled = !params.has('nodof')
         renderer.toneMappingExposure = +$('exposure').value
         if (stacked) { drawStacked(T, 1 / 60, { hands: handsAt, head: rig.pos('head') }); window.__shotInfo2 = director2.update(T, 0, { hands: handsAt, head: rig.pos('head') }).shot }

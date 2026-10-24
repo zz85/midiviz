@@ -21,7 +21,7 @@
 // frame with (the director's fades included).
 
 import { snapshotScene, snapshotCamera, bakeEnvironment, disposeSnapshot, createSnapshotCache } from './snapshot.js'
-import { createTraceSession } from './engines.js'
+import { createTraceSession, lensFromBokeh } from './engines.js'
 import { finishTrace, HDR_SCALE } from './post.js'
 
 // a new tracer (renderer, pipelines) every this many frames: whatever a
@@ -44,7 +44,9 @@ export function pathTracedFrames(stage, o) {
     const snap = snapshotScene(stage.scene, { camera, hair: stage.hair(), envMap: env, hairFraction, cache })
     const exposure = stage.liveExposure()
     try {
-      const r = await session.frame({ scene: snap.scene, camera, samples, exposure: fx ? 1 / HDR_SCALE : exposure, signal })
+      // (the page's depth of field this frame, as a lens: engines.js lensFromBokeh)
+      const dof = lensFromBokeh(stage.dof?.() || {}, camera)
+      const r = await session.frame({ scene: snap.scene, camera, samples, exposure: fx ? 1 / HDR_SCALE : exposure, signal, dof })
       const tf = performance.now()
       const out = fx ? finishTrace(r.canvas, { ...stage.fx(), exposure }).fx : r.canvas
       const fxMs = fx ? Math.round(performance.now() - tf) : 0
