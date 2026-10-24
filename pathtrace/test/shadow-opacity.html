@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>three-gpu-pathtracer (WebGPU): partially transparent surfaces block shadow rays</title>
+<!--
+  Standalone repro for three-gpu-pathtracer's WebGPUPathTracer, written for
+  gkjohnson/three-gpu-pathtracer#897. Loads everything from jsDelivr, so the
+  file can be pasted into a gist or opened from any static server.
+
+  A white floor under one point light. Four grey panels float 40 cm above it,
+  left to right:
+    A  opaque                                        (reference: full shadow)
+    B  transparent, opacity 0.1                      expected ~10 % shadow
+    C  opacity 0.1, material.castShadow = false      expected no shadow
+    D  opacity 0.1, object.visibleToShadowRays=false expected no shadow
+  Press R to switch between the path tracer and three's own WebGPU raster
+  (which draws B as a faint shadow-less tint, since the panels don't cast
+  shadow maps). ?mega uses the megakernel backend instead of the wavefront one.
+-->
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.webgpu.js",
+  "three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.webgpu.js",
+  "three/tsl": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.tsl.js",
+  "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/",
+  "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.9.16/src/index.js",
+  "three-mesh-bvh/webgpu": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.9.16/src/webgpu/index.js",
+  "three-gpu-pathtracer/webgpu": "https://cdn.jsdelivr.net/npm/three-gpu-pathtracer@0.0.27/src/webgpu/index.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; color: #ddd; font: 13px/1.4 system-ui, sans-serif }
+  canvas { display: block; width: 100%; height: 100% }
+  #info { position: fixed; left: 10px; top: 8px; text-shadow: 0 1px 2px #000; pointer-events: none }
+  .lbl { position: fixed; bottom: 14px; transform: translateX(-50%); font-weight: 600; text-shadow: 0 1px 2px #000 }
+</style>
+</head>
+<body>
+<div id="info">loading…</div>
+<div class="lbl" style="left:16%">A opaque</div>
+<div class="lbl" style="left:38.5%">B opacity 0.1</div>
+<div class="lbl" style="left:61.5%">C 0.1 + castShadow:false</div>
+<div class="lbl" style="left:84%">D 0.1 + visibleToShadowRays:false</div>
+<script type="module">
+import * as THREE from 'three/webgpu'
+import { WebGPUPathTracer } from 'three-gpu-pathtracer/webgpu'
+
+const info = document.getElementById('info')
+if (!navigator.gpu) { info.textContent = 'This repro needs WebGPU.'; throw new Error('no WebGPU') }
+
+const renderer = new THREE.WebGPURenderer({ antialias: false })
+await renderer.init()
+renderer.setPixelRatio(1)
+renderer.setSize(innerWidth, innerHeight)
+renderer.toneMapping = THREE.NeutralToneMapping
+document.body.appendChild(renderer.domElement)
+
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0)
+
+// a white floor, lit only by one point light straight above the panels
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(600, 300), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 }))
+floor.rotation.x = -Math.PI / 2
+scene.add(floor)
+const light = new THREE.PointLight(0xffffff, 1.2e5, 0, 2)
+light.position.set(0, 250, 0)
+scene.add(light)
+
+// four panels, 80 × 80 cm, 40 cm above the floor
+const panel = (x, opts, objectOpts = {}) => {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), new THREE.MeshStandardMaterial({ color: 0x808080, roughness: 1, side: THREE.DoubleSide, ...opts }))
+  m.rotation.x = -Math.PI / 2
+  m.position.set(x, 40, 0)
+  Object.assign(m, objectOpts)
+  scene.add(m)
+  return m
+}
+panel(-200, {})
+panel(-70, { transparent: true, opacity: 0.1 })
+const c = panel(70, { transparent: true, opacity: 0.1 }); c.material.castShadow = false
+panel(200, { transparent: true, opacity: 0.1 }, { visibleToShadowRays: false })
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 1, 5000)
+camera.position.set(0, 520, 260)
+camera.lookAt(0, 0, 0)
+
+const pt = new WebGPUPathTracer(renderer)
+pt.maxBounces = 2
+pt.maxSamples = 256
+pt.setScene(scene, camera)
+// (useMegakernel is marked private in 0.0.27; it is the only switch there is)
+const mega = new URLSearchParams(location.search).has('mega')
+if (mega) pt.useMegakernel(true)
+
+let traced = true, spp = 0, counting = false
+const count = () => { if (counting) return; counting = true; pt.getSampleCountsAsync().then(c => { spp = c.min; counting = false }) }
+addEventListener('keydown', e => { if (e.key === 'r' || e.key === 'R') traced = !traced })
+addEventListener('resize', () => {
+  renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix()
+  pt.updateCamera()
+})
+
+renderer.setAnimationLoop(() => {
+  if (traced) {
+    pt.renderSample(); count()
+    info.textContent = `three-gpu-pathtracer 0.0.27, WebGPU (${mega ? 'megakernel' : 'wavefront'}) · ${spp} spp · R: raster`
+  } else {
+    renderer.render(scene, camera)
+    info.textContent = 'three.js WebGPU raster · R: path tracer'
+  }
+})
+</script>
+</body>
+</html>
