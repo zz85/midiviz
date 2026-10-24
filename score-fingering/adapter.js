@@ -1,7 +1,7 @@
 // ScoreShift score model -> immutable string-fingering inputs and page annotations.
 // Pure ES module: browser and Node.
-import { timeline, DIV } from './scoreshift/score.js'
-import { midiOf } from './scoreshift/theory.js'
+import { timeline, DIV } from '../../random-sketches/vibes/scoreshift/score.js'
+import { midiOf } from '../../random-sketches/vibes/scoreshift/theory.js'
 import { suggestFingerings, INSTRUMENTS, fingerLabel } from '../strings/fingering.js'
 
 const round = value => Math.round(value * 10) / 10

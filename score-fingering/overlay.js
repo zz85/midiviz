@@ -1,4 +1,4 @@
-import { lineY } from './scoreshift/omr.js'
+import { lineY } from '../../random-sketches/vibes/scoreshift/omr.js'
 
 // Canvas overlay for experiment #046. Coordinates are ScoreShift-normalized.
 const STRING_COLOURS = ['#9f1239', '#b45309', '#047857', '#1d4ed8']

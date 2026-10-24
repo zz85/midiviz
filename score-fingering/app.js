@@ -1,6 +1,6 @@
-import { buildScore } from './scoreshift/score.js'
-import { Renderer } from './scoreshift/render.js'
-import { interpret, yOfP } from './scoreshift/omr.js'
+import { buildScore } from '../../random-sketches/vibes/scoreshift/score.js'
+import { Renderer } from '../../random-sketches/vibes/scoreshift/render.js'
+import { interpret, yOfP } from '../../random-sketches/vibes/scoreshift/omr.js'
 import { planFingering, annotationItems, hitAnnotation, sourceNoteId, detectViolinViola } from './adapter.js'
 import { drawFingerings, drawRecognition } from './overlay.js'
 import { INSTRUMENTS, solveFingering } from '../strings/fingering.js'
@@ -50,7 +50,7 @@ function closeDocument() {
   S.document = null; S.activePageState = null
   $('pages').hidden = true; $('exportPdf').hidden = true
 }
-const pdfModule = () => import('./scoreshift/pdfsource.js')
+const pdfModule = () => import('../../random-sketches/vibes/scoreshift/pdfsource.js')
 
 const STRONG_AUTO_REASONS = new Set(['name', 'alto-clef', 'low-clef', 'range'])
 function detectPageInstrument(state, score, part, { name = S.document?.name || S.name, fallback = null, remember = true } = {}) {

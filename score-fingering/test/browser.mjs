@@ -6,10 +6,13 @@ import path from 'node:path'
 import os from 'node:os'
 import { fileURLToPath } from 'node:url'
 
-const root = path.resolve(fileURLToPath(new URL('../..', import.meta.url)))
+// Serves the folder that holds both checkouts (midiviz and random-sketches), as GitHub Pages does.
+const root = path.resolve(fileURLToPath(new URL('../../..', import.meta.url)))
+const site = path.basename(path.resolve(fileURLToPath(new URL('../..', import.meta.url))))
 const mime = { '.html':'text/html', '.js':'text/javascript', '.mjs':'text/javascript', '.wasm':'application/wasm', '.jpg':'image/jpeg', '.png':'image/png', '.pdf':'application/pdf', '.md':'text/markdown' }
 const server = http.createServer((request, response) => {
   const pathname = decodeURIComponent(new URL(request.url, 'http://127.0.0.1').pathname)
+  if (pathname === '/favicon.ico') { response.writeHead(204).end(); return }
   const file = path.resolve(root, '.' + pathname)
   if (!(file === root || file.startsWith(root + path.sep))) { response.writeHead(403).end('forbidden'); return }
   fs.stat(file, (error, stat) => {
@@ -23,7 +26,7 @@ const server = http.createServer((request, response) => {
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
 const address = server.address()
 if (address.address !== '127.0.0.1') throw new Error(`test server exposed on ${address.address}`)
-const base = `http://127.0.0.1:${address.port}`
+const base = `http://127.0.0.1:${address.port}/${site}`
 
 const PW = process.env.PLAYWRIGHT || [
   '/tmp/pw/node_modules/playwright-core/index.mjs',
@@ -46,7 +49,7 @@ const check = (condition, message) => { checks.push([condition, message]); conso
 
 try {
 const loadImageSample = target => target.evaluate(async () => {
-  const blob = await (await fetch('score-fingering/scoreshift/sample.jpg')).blob()
+  const blob = await (await fetch('../random-sketches/vibes/scoreshift/sample.jpg')).blob()
   return __scoreFingering.load(blob, 'sample-score.jpg')
 })
   await page.goto(`${base}/046_score_fingering.html`)
@@ -203,15 +206,17 @@ const loadImageSample = target => target.evaluate(async () => {
   check(chromaticApproach.index === 11 && chromaticApproach.names.join() === 'E♯3,F♯3,A3' && chromaticApproach.pitches.join() === '53,54,57' && chromaticApproach.fingers.join() === '2,3,1' && chromaticApproach.bases.every(base => base === 2) && chromaticApproach.fifths.every(fifths => fifths === 2) && chromaticApproach.inferred, `page 2 carries D major and fingers E♯-F♯-A as 2-3-1 (${chromaticApproach.names.join(' · ')} / ${chromaticApproach.fingers.join('-')})`)
   await samplePage.evaluate(() => __scoreFingering.openPage(3, { fit:true }))
   await samplePage.waitForFunction(() => __scoreFingering.S.activePageState?.index === 3 && __scoreFingering.S.model !== window.__directPage3Model && getComputedStyle(document.getElementById('busy')).display === 'none', null, { timeout:30000 })
-  const refreshedPage3 = await samplePage.evaluate(() => ({ fifths:__scoreFingering.S.model.staves.map(staff => staff.key.fifths), recognized:__scoreFingering.S.activePageState.recognizedFifths }))
-  check(refreshedPage3.fifths.every(fifths => fifths === 2) && refreshedPage3.recognized === 2, 'cached page 3 is re-recognized after page 2 establishes its key context')
+  const refreshedPage3 = await samplePage.evaluate(() => ({ fifths:__scoreFingering.S.model.staves.map(staff => staff.key.fifths), keyless:__scoreFingering.S.model.staves.filter(staff => staff.key.keylessSection && staff.key.fifths === 0).length, recognized:__scoreFingering.S.activePageState.recognizedFifths }))
+  // Page 3 prints no key signature (a C section, accidentals written out): recognized again with
+  // page 2's D major as context, its keyless staves stay in C rather than inheriting D.
+  check(refreshedPage3.recognized === 2 && refreshedPage3.keyless >= 10, `cached page 3 is re-recognized after page 2 establishes its key context, keeping its keyless section in C (keys ${refreshedPage3.fifths.join(',')}, carried ${refreshedPage3.recognized})`)
   check(sampleErrors.length === 0, `no built-in sample browser errors${sampleErrors.length ? ': ' + sampleErrors.join(' | ') : ''}`)
   await sampleContext.close()
   // Loading a replacement closes old note closures, and a delayed older request cannot win.
   await page.focus('#overlay'); await page.keyboard.press('Enter'); await page.waitForSelector('#pop', { state:'visible' })
   const reloadRevision = await page.evaluate(() => __scoreFingering.S.planRevision)
   await page.evaluate(async () => {
-    const blob = await (await fetch('score-fingering/scoreshift/sample.jpg')).blob()
+    const blob = await (await fetch('../random-sketches/vibes/scoreshift/sample.jpg')).blob()
     window.__testScoreBlob = blob
     __scoreFingering.load(blob, 'replacement.jpg')
   })
@@ -275,7 +280,7 @@ const loadImageSample = target => target.evaluate(async () => {
   await pdfItem.saveAs(pdfOutput)
   const pdfBytes = fs.readFileSync(pdfOutput); fs.unlinkSync(pdfOutput)
   const pdfCheck = await page.evaluate(async bytes => {
-    const { openPdf, renderPage } = await import('./score-fingering/scoreshift/pdfsource.js')
+    const { openPdf, renderPage } = await import('../random-sketches/vibes/scoreshift/pdfsource.js')
     const doc = await openPdf(new Blob([new Uint8Array(bytes)], { type:'application/pdf' }))
     const original = await openPdf(await (await fetch('score-fingering/test/fixtures/parts.pdf')).blob())
     const sizes = [], outputPixels = [], sourcePixels = []
@@ -372,7 +377,7 @@ const loadImageSample = target => target.evaluate(async () => {
   const preemptContext = await browser.newContext({ viewport:{ width:800, height:600 } })
   const preempt = await preemptContext.newPage(); await preempt.goto(`${base}/046_score_fingering.html`); await loadImageSample(preempt)
   await preempt.waitForFunction(() => __scoreFingering?.S?.planRevision > 0, null, { timeout:30000 })
-  await preempt.evaluate(async () => { window.__preemptBlob = await (await fetch('score-fingering/scoreshift/sample.jpg')).blob() })
+  await preempt.evaluate(async () => { window.__preemptBlob = await (await fetch('../random-sketches/vibes/scoreshift/sample.jpg')).blob() })
   let workerRequests = 0
   await preempt.route('**/score-fingering/recognize-worker.js', route => {
     workerRequests++
@@ -388,8 +393,8 @@ const loadImageSample = target => target.evaluate(async () => {
   await preempt.waitForFunction(() => __scoreFingering.S.name === 'preempted-by-latest' && getComputedStyle(document.getElementById('busy')).display === 'none', null, { timeout:10000 })
   const renderFailureContext = await browser.newContext({ viewport:{ width:800, height:600 } })
   const renderFailurePage = await renderFailureContext.newPage()
-  const brokenPdfSource = fs.readFileSync(path.join(root, 'score-fingering/scoreshift/pdfsource.js'), 'utf8').replace('async render(k, px, signal = null) {', 'async render(k, px, signal = null) { throw new Error("pdf-render-test");')
-  await renderFailurePage.route('**/score-fingering/scoreshift/pdfsource.js', route => route.fulfill({ status:200, contentType:'text/javascript', body:brokenPdfSource }))
+  const brokenPdfSource = fs.readFileSync(path.join(root, 'random-sketches/vibes/scoreshift/pdfsource.js'), 'utf8').replace('async render(k, px, signal = null) {', 'async render(k, px, signal = null) { throw new Error("pdf-render-test");')
+  await renderFailurePage.route('**/random-sketches/vibes/scoreshift/pdfsource.js', route => route.fulfill({ status:200, contentType:'text/javascript', body:brokenPdfSource }))
   await renderFailurePage.goto(`${base}/046_score_fingering.html`)
   await renderFailurePage.evaluate(async () => {
     const blob = await (await fetch('score-fingering/test/fixtures/parts.pdf')).blob()

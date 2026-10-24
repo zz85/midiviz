@@ -6,7 +6,7 @@ part (with manual overrides), and draws the finger numbers back onto the normali
 
 ## Pipeline
 
-1. `recognize-worker.js` runs the embedded ScoreShift spatial OMR pipeline off the main thread. It
+1. `recognize-worker.js` runs the ScoreShift spatial OMR pipeline off the main thread. It
    normalizes staff spacing, removes skew, and returns staves, clefs, keys, bars, noteheads,
    accidentals, rhythms, voices and source coordinates.
 2. ScoreShift's `buildScore()` assembles parts, measures and exact tick onsets. `adapter.js` turns one
@@ -35,13 +35,23 @@ part (with manual overrides), and draws the finger numbers back onto the normali
    detection. PNG export flattens the current page; PDF export visits every page in order, annotates
    cached choices, recognizes unopened music pages, and keeps title/text pages visually unchanged.
 
-## ScoreShift snapshot
+## ScoreShift
 
-The browser dependency closure under `scoreshift/` starts from the sibling ScoreShift repository at
-commit `396f4619c531d978b49bbd81d15f5c766f6cf7a5`, with the later focused OMR fixes from `43e00fe` and
-`6a705c1` selectively merged. See [scoreshift/README.md](scoreshift/README.md) for the included files,
-local integration differences and update procedure. The local copy lets MidiViz run from its own
-static-server root and keeps recognition on-device.
+Recognition imports ScoreShift directly from the sibling
+[random-sketches](https://github.com/zz85/random-sketches) checkout,
+`../random-sketches/vibes/scoreshift/` (with the `notation-ir/` primitives it uses), rather than a
+vendored copy: on GitHub Pages both sites are served from `zz85.github.io`, so the relative import
+resolves to the published upstream. Fix recognition upstream, with a test there.
+
+Locally, clone both repositories side by side and serve their parent folder, then open
+`/midiviz/046_score_fingering.html`:
+
+```sh
+git clone git@github.com:zz85/random-sketches.git ../random-sketches
+cd .. && python3 -m http.server
+```
+
+Upstream changes reach #046 without a version pin; run the tests below after pulling it.
 
 ## Built-in sample
 

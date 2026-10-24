@@ -2,8 +2,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import { createScoreDocument, pageState, cachePage, pageFileStem, trimPageRecords, precedingPageFifths, invalidatePageKeyEvidence, needsPriorFifths, applyPriorFifths } from '../document.js'
-import { writePdf } from '../scoreshift/pdfsource.js'
+import { createScoreDocument, pageState, cachePage, pageFileStem, trimPageRecords, precedingPageFifths, invalidatePageKeyEvidence } from '../document.js'
+import { needsPriorKey, applyPriorKey } from '../../../random-sketches/vibes/scoreshift/omr.js'
+import { writePdf } from '../../../random-sketches/vibes/scoreshift/pdfsource.js'
 
 test('document creates stable isolated page records', () => {
   const doc = createScoreDocument({ kind:'pdf', name:'Quartet No. 1.pdf', pageCount:3 })
@@ -77,37 +78,39 @@ test('key-evidence invalidation preserves display payload but blocks stale carry
   assert.equal(state.image, image)
 })
 
+// The prior-page key step lives in ScoreShift (omr.js needsPriorKey / applyPriorKey / analyzeAfter,
+// with raster fixtures in its own suite); these pin the behaviour #046 relies on.
 test('preceding-page keys fill only staves without conflicting printed evidence', () => {
-  const staff = key => ({ key }), calls = []
+  const staff = key => ({ key, clef:{ type:'alto' }, notes:[] })
   const detected = staff({ fifths:2, detected:2, glyphs:[{}, {}] })
   const missing = staff({ fifths:0, detected:0, glyphs:[] })
-  assert.equal(applyPriorFifths([missing, detected], 2, value => calls.push(value)), 1)
-  assert.equal(missing.key.fifths, 2); assert.equal(missing.key.documentInferred, true); assert.deepEqual(calls, [missing, detected])
+  assert.equal(applyPriorKey([missing, detected], 2), 1)
+  assert.equal(missing.key.fifths, 2); assert.equal(missing.key.documentInferred, true)
 
   const conflicting = staff({ fifths:1, detected:1, glyphs:[{}] }), untouched = staff({ fifths:0, detected:0, glyphs:[] })
-  assert.equal(applyPriorFifths([conflicting, untouched], 2, () => assert.fail('must not reinterpret')), 0)
+  assert.equal(applyPriorKey([conflicting, untouched], 2), 0)
   assert.equal(untouched.key.fifths, 0)
   const cancellation = staff({ fifths:0, detected:0, cancellation:true, glyphs:[{ type:0 }] })
-  assert.equal(applyPriorFifths([cancellation, untouched], 2, () => assert.fail('cancellation is authoritative')), 0)
+  assert.equal(applyPriorKey([cancellation, untouched], 2), 0)
   const replacement = staff({ fifths:1, detected:1, cancellation:false, glyphs:[{ type:0 }, { type:1 }] })
-  assert.equal(applyPriorFifths([replacement, untouched], 2, () => assert.fail('replacement key is authoritative')), 0)
+  assert.equal(applyPriorKey([replacement, untouched], 2), 0)
+  assert.equal(untouched.key.fifths, 0)
 })
 
 test('authoritative keyless sections survive prior-page recognition and carry', () => {
-  const missing = { key:{ fifths:0, detected:0, glyphs:[] } }
-  const keyless = { key:{ fifths:0, detected:0, glyphs:[], keylessSection:true } }
-  const printed = { key:{ fifths:2, detected:2, glyphs:[{}, {}] } }
-  const cancellation = { key:{ fifths:0, detected:0, cancellation:true, glyphs:[{ type:0 }] } }
+  const staff = key => ({ key, clef:{ type:'alto' }, notes:[] })
+  const missing = staff({ fifths:0, detected:0, glyphs:[] })
+  const keyless = staff({ fifths:0, detected:0, glyphs:[], keylessSection:true })
+  const printed = staff({ fifths:2, detected:2, glyphs:[{}, {}] })
+  const cancellation = staff({ fifths:0, detected:0, cancellation:true, glyphs:[{ type:0 }] })
 
-  assert.equal(needsPriorFifths([keyless], 2), false)
-  assert.equal(needsPriorFifths([missing, keyless, printed], 2), true)
-  assert.equal(needsPriorFifths([missing, cancellation], 2), false)
+  assert.equal(needsPriorKey([keyless], 2), false)
+  assert.equal(needsPriorKey([missing, keyless, printed], 2), true)
+  assert.equal(needsPriorKey([missing, cancellation], 2), false)
 
-  const interpreted = []
-  assert.equal(applyPriorFifths([missing, keyless], 2, staff => interpreted.push(staff)), 1)
+  assert.equal(applyPriorKey([missing, keyless], 2), 1)
   assert.equal(missing.key.fifths, 2)
   assert.equal(keyless.key.fifths, 0)
-  assert.deepEqual(interpreted, [missing, keyless])
 })
 
 test('page-aware filenames are stable for images and PDFs', () => {
