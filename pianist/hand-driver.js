@@ -21,6 +21,13 @@ const KEY_TOP = 73
 const v3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z)
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t) }
 const lerp = (a, b, t) => a + (b - a) * t
+// How far the hand may bend at the wrist from straight on the forearm
+// (radians). A wrist moves ~30–35° toward the little finger (ulnar), ~20°
+// toward the thumb (radial), ~70° back and ~80° down; at the piano far less:
+// the hand turns with the arm rather than bending sideways, and the wrist
+// stays near level. Past these the hand is turned or tilted with the forearm
+// (keepWrist), whatever the fit would like.
+export const WRIST_RANGE = { ulnar: 25 * Math.PI / 180, radial: 12 * Math.PI / 180, ext: 35 * Math.PI / 180, flex: 45 * Math.PI / 180 }
 // The top of the keyboard under (x, z), above the white key tops: a black
 // key's top where one is (with a fingertip's width of margin), else 0.
 // Black keys run from the back to 5.5 cm behind the white key fronts.
@@ -126,6 +133,100 @@ export function createHandDriver(side, dims) {
   // forearm rotation (roll about the hand's long axis, through the middle
   // knuckle and the wrist): positive = the little-finger side down
   let hroll = 0
+  // The hand's axes in the world for a yaw, pitch (ptot) and forearm roll:
+  // toward the little finger, out of the back of the hand, toward the wrist
+  // (the rig maps the rest hand frame onto these)
+  const _hq = new THREE.Quaternion(), _hv = v3()
+  function handAxes(yaw = hand.yaw, p = ptot, roll = hroll, out = { lat: v3(), up: v3(), back: v3() }) {
+    const c = Math.cos(yaw), sn = Math.sin(yaw)
+    out.lat.set(s * c, 0, s * sn); out.up.set(0, 1, 0); out.back.set(-sn, 0, c)
+    if (p) { _hq.setFromAxisAngle(_hv.set(c, 0, sn), -p); out.up.applyQuaternion(_hq); out.back.applyQuaternion(_hq) }
+    // (the rest frame's lateral axis points toward each hand's own little
+    // finger, so the left hand's turn about the forward axis is mirrored)
+    _hq.setFromAxisAngle(_hv.copy(out.back).negate(), s * roll)
+    out.lat.applyQuaternion(_hq); out.up.applyQuaternion(_hq)
+    return out
+  }
+  // The elbow (the rig's last frame: setElbow), null when unknown. The
+  // hand's yaw and pitch are kept within WRIST_RANGE of straight on the
+  // forearm, from there to the wrist: a wrist bent further turns or tilts
+  // the hand with the arm.
+  let elbow = null
+  const FORE_DEV = dims.FORE_DEV ?? 0, FORE_ELEV = dims.FORE_ELEV ?? 0
+  const wristBend = { ulnar: 0, ext: 0 }
+  const _ax = { lat: v3(), up: v3(), back: v3() }
+  // the wrist's bend for a yaw and pitch: ulnar (> 0 toward the little
+  // finger, < 0 radial) and extension (> 0 the back of the hand up), radians
+  function bendAt(yaw, p, out, fv, roll = hroll) {
+    handAxes(yaw, p, roll, _ax)
+    const f = -fv.dot(_ax.back)
+    out.ulnar = FORE_DEV - Math.atan2(fv.dot(_ax.lat), f)
+    out.ext = FORE_ELEV - Math.atan2(fv.dot(_ax.up), f)
+    return out
+  }
+  // turn placement P ({ x, z, yaw }: the middle knuckle) by δ about pivot
+  // (hand frame): where the fingertips are rather than the knuckle, so they
+  // stay over their keys
+  function turnAbout(P, pivot, d) {
+    const [ax, az] = rot(pivot[0], pivot[1], P.yaw)
+    P.yaw += d
+    const [bx, bz] = rot(pivot[0], pivot[1], P.yaw)
+    P.x += ax - bx; P.z += az - bz
+  }
+  // The same while baking, where the arm is not known yet: the forearm from
+  // this driver's own arm IK (from the shoulder as last placed), on a level
+  // hand with no roll. The fit then places the hand for the yaw it will
+  // play with (and the slide reaches from there); keepWrist only corrects
+  // what the rig's arm does differently.
+  const _bw = v3(), _be = v3(), _bf = v3(), _bb = { ulnar: 0, ext: 0 }
+  function bakeWrist(P) {
+    const d = FINGERS[3]
+    for (let it = 0; it < 4; it++) {
+      const [bx, bz] = rot(s * d.base[0], d.base[2], P.yaw), [wx, wz] = rot(s * WRIST[0], WRIST[2], P.yaw)
+      _bw.set(P.x + bx + wx, P.y + d.base[1] + WRIST[1], P.z + bz + wz)
+      armIK(_bw, _be)
+      bendAt(P.yaw, 0, _bb, _bf.subVectors(_bw, _be).normalize(), 0)
+      const du = _bb.ulnar - THREE.MathUtils.clamp(_bb.ulnar, -WRIST_RANGE.radial, WRIST_RANGE.ulnar)
+      if (Math.abs(du) < 1e-3) break
+      turnAbout(P, [P.px, P.pz], -s * du)
+    }
+    return P
+  }
+  // the wrist, from the middle knuckle (basePos); raised by pitching the
+  // hand about its knuckles (a hand crossing over the other: the fingers
+  // drop onto the keys from a high wrist, setPitch; the stroke's tilt)
+  const _k3 = v3()
+  function wristOf(out) {
+    basePos(3, _k3)
+    const cp = Math.cos(ptot), sp = Math.sin(ptot)
+    const wy = WRIST[1] * cp + WRIST[2] * sp, wzp = -WRIST[1] * sp + WRIST[2] * cp
+    const [wx, wz] = rot(s * WRIST[0], wzp, hand.yaw)
+    return out.set(_k3.x + wx, _k3.y + wy, _k3.z + wz)
+  }
+  const _kw = v3(), _kf = v3(), _ke = v3(), elbowOff = v3(), _kb = { ulnar: 0, ext: 0 }
+  function keepWrist(pivot) {
+    if (!elbow) { wristBend.ulnar = wristBend.ext = 0; return }
+    const R = WRIST_RANGE, clamp = THREE.MathUtils.clamp
+    const keep = [hand.x, hand.z, hand.yaw, ptot]
+    // A few damped Newton steps, the forearm re-aimed from the elbow at
+    // each: turning the hand by δ about the vertical changes its ulnar bend
+    // by about s·δ (and a little more, as the wrist swings the other way and
+    // takes the forearm with it); raising the wrist by δ lowers the
+    // extension by about δ. The elbow: where the rig put it last frame...
+    // ...moved with the wrist since as this driver's own arm IK has it
+    // (the rig's elbow differs from that by elbowOff: steered round the
+    // body, leading the hand). What that misses, the rig's redo catches.
+    for (let it = 0; it < 8; it++) {
+      wristOf(_kw); armIK(_kw, _ke).add(elbowOff)
+      bendAt(hand.yaw, ptot, wristBend, _kf.subVectors(_kw, _ke).normalize())
+      const du = wristBend.ulnar - clamp(wristBend.ulnar, -R.radial, R.ulnar)
+      const de = wristBend.ext - clamp(wristBend.ext, -R.flex, R.ext)
+      if (Math.abs(du) < 2e-3 && Math.abs(de) < 2e-3) break
+      turnAbout(hand, pivot, -s * du * 0.7); ptot += de * 0.8
+    }
+    // (a degenerate arm, the elbow on the wrist: leave the hand as fitted)
+    if (![hand.x, hand.z, hand.yaw, ptot].every(Number.isFinite)) { [hand.x, hand.z, hand.yaw, ptot] = keep; wristBend.ulnar = wristBend.ext = 0 }
+  }
   const knuckleUp = d => d.base[1] * Math.cos(hroll) - d.base[0] * Math.sin(hroll)
   const thumbCurl = { side: new THREE.Vector3(s, 0, 0), tilt: FINGERS[1].tilt }
   // Where each fingertip sits in a relaxed hand, relative to the middle
@@ -159,7 +260,7 @@ export function createHandDriver(side, dims) {
     const pole = _b.set(s * 0.6, -0.75, 0.3)
     pole.addScaledVector(n, -pole.dot(n)).normalize()
     J.S.copy(shoulder)
-    out.copy(shoulder).addScaledVector(n, UPPER * cosA).addScaledVector(pole, UPPER * sinA)
+    return out.copy(shoulder).addScaledVector(n, UPPER * cosA).addScaledVector(pole, UPPER * sinA)
   }
 
   // Fit the hand to the fingertip targets: the rigid motion (x, z, yaw) that
@@ -188,7 +289,7 @@ export function createHandDriver(side, dims) {
     const armYaw = Math.atan2(qx - SHOULDER.x, -(qz - SHOULDER.z))
     yaw = THREE.MathUtils.clamp(0.75 * yaw + 0.3 * armYaw, -0.4, 0.4)
     const [rx, rz] = rot(px, pz, yaw)
-    return { x: qx - rx, z: THREE.MathUtils.clamp(qz - rz, KNUCKLE_Z - 6.5, KNUCKLE_Z + 4), yaw, y: KEY_TOP + KNUCKLE_Y + 1.2 * anchor.idle }
+    return { x: qx - rx, z: THREE.MathUtils.clamp(qz - rz, KNUCKLE_Z - 6.5, KNUCKLE_Z + 4), yaw, y: KEY_TOP + KNUCKLE_Y + 1.2 * anchor.idle, px, pz }
   }
 
   function basePos(f, out) {
@@ -272,7 +373,7 @@ export function createHandDriver(side, dims) {
     const keep = { ...hand }, keepSlide = slide.clone()
     for (let i = 0; i < n; i++) {
       const pose = poseAt(t0 + i * h); if (!pose) continue
-      const f = fitHand(pose.fingers, pose.anchor)
+      const f = bakeWrist(fitHand(pose.fingers, pose.anchor))
       X[i * COLS] = f.x; X[i * COLS + 1] = f.z; X[i * COLS + 2] = f.yaw
     }
     zeroPhase(X, n, 0, 3, 1 - Math.exp(-14 * h))
@@ -308,8 +409,10 @@ export function createHandDriver(side, dims) {
     return pr
   }
 
+  let lastPose = null, lastT = 0
   function update(pose, dt, t) {
-    if (!pose) { visible = false; pitch = 0; lift = 0; ptot = 0; hroll = 0; return }
+    lastPose = pose; lastT = t
+    if (!pose) { visible = false; pitch = 0; lift = 0; ptot = 0; hroll = 0; elbow = null; return }
     pitch += (pitchGoal - pitch) * Math.min(1, dt / 0.12)
     visible = true
     const { anchor, fingers: tips } = pose
@@ -334,6 +437,9 @@ export function createHandDriver(side, dims) {
       hand.yaw += (fit.yaw - hand.yaw) * k; hand.y = fit.y
       slide.lerp(computeSlideGoal(tips), Math.min(1, dt * 18))
     }
+    // never past what a wrist can bend: the hand turns and tilts with the
+    // forearm where the fit alone would bend it further
+    keepWrist([fit.px, fit.pz])
     // fingertip targets in the hand frame (lx toward the little finger = s·x)
     const lx = [], lz = [], held = [], ty = []
     for (const f of [1, 2, 3, 4, 5]) {
@@ -499,20 +605,24 @@ export function createHandDriver(side, dims) {
         diag.err[i] = solveFinger(P[0].clone(), tip, d.len, d.k, P, f === 1 ? thumbCurl : null)
       }
     }
-    const k3 = J.fingers[3][0]
-    // the wrist, from the middle knuckle; raised by pitching the hand about
-    // its knuckles (a hand crossing over the other: the fingers drop onto
-    // the keys from a high wrist), set by the rig through setPitch
-    const cp = Math.cos(ptot), sp = Math.sin(ptot)
-    const wy = WRIST[1] * cp + WRIST[2] * sp, wzp = -WRIST[1] * sp + WRIST[2] * cp
-    const [wx, wz] = rot(s * WRIST[0], wzp, hand.yaw)
-    J.W.set(k3.x + wx, k3.y + wy, k3.z + wz)
+    wristOf(J.W)
     palmPoint(J, J.M)
     // (the knuckle line carries the forearm's roll: basePos)
     J.R.subVectors(J.fingers[5][0], J.fingers[2][0]).multiplyScalar(s).normalize()
     armIK(J.W, J.E)
   }
-  return { update, bakeTrack, clearTrack, wristAt, setEnding: f => { ending = f }, setPitch: p => { pitchGoal = p }, get pitch() { return pitch }, setStroke: p => { stroke = p }, get stroke() { return stroke }, get strokeLift() { return lift }, get strokeTilt() { return ptot - pitch }, get handRoll() { return hroll }, side, diag, hand, joints: J, shoulder: SHOULDER, get visible() { return visible } }
+  return { update, bakeTrack, clearTrack, wristAt, setEnding: f => { ending = f }, setPitch: p => { pitchGoal = p },
+    /** where the elbow is (the rig's arm; null: unknown): the wrist is kept within WRIST_RANGE of straight on the forearm */
+    setElbow: v => { if (!v) { elbow = null; return } elbow = (elbow || v3()).copy(v); elbowOff.subVectors(v, J.E) },
+    /** how far (radians) the wrist is bent past WRIST_RANGE on a forearm from elbow E to this frame's wrist */
+    wristExcess(E) {
+      if (!visible) return 0
+      bendAt(hand.yaw, ptot, _kb, _kf.subVectors(J.W, E).normalize())
+      const R = WRIST_RANGE
+      return Math.max(_kb.ulnar - R.ulnar, -R.radial - _kb.ulnar, _kb.ext - R.ext, -R.flex - _kb.ext, 0)
+    },
+    /** this frame again (no time passing), for the elbow last given to setElbow */
+    redo() { if (lastPose) update(lastPose, 0, lastT) }, wristBend, handAxes, get pitch() { return pitch }, setStroke: p => { stroke = p }, get stroke() { return stroke }, get strokeLift() { return lift }, get strokeTilt() { return ptot - pitch }, get handRoll() { return hroll }, side, diag, hand, joints: J, shoulder: SHOULDER, get visible() { return visible } }
 }
 
 

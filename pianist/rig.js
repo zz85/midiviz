@@ -57,7 +57,14 @@ export function measureHand(J, side) {
   FINGERS[1].dir = [-0.42, -0.3, -0.86]
   for (const f of [2, 3, 4, 5]) FINGERS[f].dir[1] = 0
   const r = mid / 10.1                 // vs the #030 avatar's middle finger
+  // the forearm (elbow → wrist) as seen from the rest hand: a neutral wrist,
+  // neither bent sideways nor up or down. FORE_DEV: its sideways angle off
+  // the wrist → middle-knuckle line, positive toward the little finger;
+  // FORE_ELEV: its angle up out of the back of the hand (radians)
+  const fore = W.clone().sub(j(`lowerarm01${S}____head`)).normalize()
+  const FORE_DEV = Math.atan2(fore.dot(lat), fore.dot(fwd)), FORE_ELEV = Math.atan2(fore.dot(up), fore.dot(fwd))
   return {
+    FORE_DEV, FORE_ELEV,
     FINGERS, WRIST: coords(W), KNUCKLE_Y: 5.9 * r, KNUCKLE_Z: 3.6 * r,
     REACH: [0, 0, 7.4, 8, 7.4, 6.2].map(x => x * r),
     UPPER: j(`upperarm01${S}____head`).distanceTo(j(`lowerarm01${S}____head`)),
@@ -480,20 +487,38 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     const d = a.drv
     d.shoulder.copy(S)
     const Jd = d.joints
-    if (!d.visible || state.stand) { restArm(a); return }
+    if (!d.visible || state.stand) { d.setElbow(null); restArm(a); return }
     // two-bone IK, elbows out and down, as the driver
-    tW.copy(Jd.W)
-    const v = _v.subVectors(tW, S)
-    let L = v.length()
-    const maxL = a.UPPER + a.FORE - 0.05
-    a.deficit = L - maxL   // > 0: the wrist is out of this arm's reach (body() leans in)
-    a.deficitDir = (a.deficitDir || v3()).copy(v).divideScalar(L || 1)   // ...and which way
-    if (L > maxL) { tW.copy(S).addScaledVector(v.normalize(), maxL); L = maxL }
-    const n = dir.subVectors(tW, S).normalize()
-    const cosA = clamp((a.UPPER ** 2 + L * L - a.FORE ** 2) / (2 * a.UPPER * L), -1, 1), sinA = Math.sqrt(1 - cosA * cosA)
+    const reach = () => {
+      tW.copy(Jd.W)
+      const v = _v.subVectors(tW, S)
+      let L = v.length()
+      const maxL = a.UPPER + a.FORE - 0.05
+      a.deficit = L - maxL   // > 0: the wrist is out of this arm's reach (body() leans in)
+      a.deficitDir = (a.deficitDir || v3()).copy(v).divideScalar(L || 1)   // ...and which way
+      if (L > maxL) { tW.copy(S).addScaledVector(v.normalize(), maxL); L = maxL }
+      dir.subVectors(tW, S).normalize()
+      const cosA = clamp((a.UPPER ** 2 + L * L - a.FORE ** 2) / (2 * a.UPPER * L), -1, 1)
+      return [cosA, Math.sqrt(1 - cosA * cosA)]
+    }
+    let [cosA, sinA] = reach()
+    const n = dir
     pole.set(a.s * 0.6, -0.75, 0.3).addScaledVector(n, -pole.dot(n)).normalize()
     pole.copy(steerElbow(a, S, tW, n, a.UPPER, cosA, sinA, pole, dt))
     tE.copy(S).addScaledVector(n, a.UPPER * cosA).addScaledVector(pole, a.UPPER * sinA)
+    // The elbow, for the driver: it keeps the wrist within what a wrist can
+    // bend on this forearm (hand-driver.js WRIST_RANGE), from where the elbow
+    // was last frame. When the arm has moved on too far for that (a leap, the
+    // elbow leading a stroke), the hand is placed again for this elbow and
+    // the arm follows it, keeping its swing.
+    d.setElbow(tE)
+    if (d.wristExcess(tE) > 0.01) {
+      d.redo()
+      ;[cosA, sinA] = reach()
+      pole.addScaledVector(n, -pole.dot(n)).normalize()
+      tE.copy(S).addScaledVector(n, a.UPPER * cosA).addScaledVector(pole, a.UPPER * sinA)
+      d.setElbow(tE)
+    }
     hingeNow.crossVectors(_v.subVectors(tE, S), _w.subVectors(tW, tE)).normalize()
     const up = tE.clone().sub(S)
     aim(a.ua1, up, a.hingeUA, hingeNow)
@@ -501,21 +526,14 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     const fo = tW.clone().sub(tE)
     aim(a.la1, fo, a.hingeLA, hingeNow)
     aim(a.la2, fo, a.hingeLA2, hingeNow)
-    // hand: map the rest hand frame onto the driver's (yaw only, plus a slight roll)
-    const yaw = d.hand.yaw, c = Math.cos(yaw), sn = Math.sin(yaw)
-    const e0 = v3(a.s * c, 0, a.s * sn), e1 = v3(0, 1, 0), e2 = v3(-sn, 0, c)
-    // pitch: the wrist raised about the knuckle line (the driver's setPitch
-    // for crossings plus the wrist stroke's tilt: both moved the joints)
+    // hand: map the rest hand frame onto the driver's: its yaw, the wrist
+    // raised about the knuckle line (the driver's setPitch for crossings
+    // plus the wrist stroke's tilt: both moved the joints) and the forearm's
+    // roll (the driver rolled the knuckles by it; positive = the
+    // little-finger side down), as the driver itself keeps the wrist (handAxes)
     const pitch = d.pitch + (d.strokeTilt || 0)
-    if (pitch) { const qp = _q.setFromAxisAngle(_v.set(c, 0, sn), -pitch); e1.applyQuaternion(qp); e2.applyQuaternion(qp) }
-    // the forearm's roll (the driver rolled the knuckles by it; positive =
-    // the little-finger side down)
-    // (the rest frame's lateral axis points toward each hand's own little
-    // finger, so the left hand's turn about the forward axis is mirrored)
-    const roll = a.s * (d.handRoll ?? Math.asin(clamp(-Jd.R.clone().multiplyScalar(a.s).y, -0.45, 0.45)))
-    const fwdAxis = e2.clone().negate()
-    const qr = _q.setFromAxisAngle(fwdAxis, roll)
-    e0.applyQuaternion(qr); e1.applyQuaternion(qr)
+    const roll = d.handRoll ?? Math.asin(clamp(-Jd.R.clone().multiplyScalar(a.s).y, -0.45, 0.45))
+    const { lat: e0, up: e1, back: e2 } = d.handAxes(d.hand.yaw, pitch, roll)
     const Mh = new THREE.Matrix4().makeBasis(e0, e1, e2).multiply(a.restBasisInv)
     const qh = new THREE.Quaternion().setFromRotationMatrix(Mh).multiply(restQ[a.wrist])
     // forearm pronation: spread the twist between hand and forearm along the forearm

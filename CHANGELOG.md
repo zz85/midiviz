@@ -12,6 +12,15 @@ What each experiment does and how, newest first. The short list is in the [READM
 - Six presets cover solo legato, sul tasto, sul ponticello, baroque, flautando and the raw string. A live display reports the selected string, pitch and stick/slip regime while waveform and spectrum traces show the output.
 - Offline diagnostics render G3–E6 within 4 cents with about one slip per period. `node --test physical-violin/test/*.test.mjs` checks pitch, stability, page wiring and the experiment’s standalone terminology.
 
+## 24 Oct 2026
+
+[Experiment #032 - Pianist](032_pianist.html): the wrist stays within what a wrist can bend (shared by #038, #045 and #047)
+- Before, the hand's turn came only from fitting the fingertips to the keys. Its yaw was clamped to ±23° but never measured against the forearm, so with the elbow out to the side or brought forward round the body, the hand met the arm at an impossible angle. Measured on the skeleton: in Prelude1 the bend toward the little finger was 46–70° at the 99th percentile and up to 75°, and the wrist was bent back up to 70°. A real wrist manages about 30° and 70°.
+- New `WRIST_RANGE` in [pianist/hand-driver.js](pianist/hand-driver.js): 25° toward the little finger, 12° toward the thumb, 35° back and 45° down, from the character's own rest pose (`FORE_DEV` and `FORE_ELEV`, measured by `measureHand`). Past that, the hand turns with the forearm, about the centre of its fingertips so they stay over their keys, and the wrist rises about the knuckles.
+- Applied twice. While baking the hand's placement, the forearm comes from the driver's own arm IK, so the fit and the slide are planned for the yaw the hand will actually play with. Each frame, the elbow the rig placed is used (`setElbow`). When the arm has moved on too far for that (a leap, or the elbow leading a stroke), the rig places the hand again for this frame's elbow (`wristExcess`, `redo`) and the arm follows it, keeping its swing. The driver and the rig now share one hand frame (`handAxes`).
+- After the change, in Prelude1, Chopin's prelude, The Entertainer and Rush E: about 25° at the 99th percentile and never more than 10° past the range. Fingertips short of their keys are no more frequent than before. The Entertainer's 16 and 31 % were already there: its fingering asks for stretches this hand cannot make.
+- Test: `node pianist/test/wrist.mjs [song.mid …]`, headless, measured from the bones. It fails on more than 1 % of frames 3° past the range, any frame 10° past, or more key misses than a per-piece budget. Each piece has a time limit (`PIECE_TIMEOUT`, default 10 min). `SECONDS` sets how much of each piece and `FPS` the frame rate (30). A hand whose arm degenerates keeps its fitted placement (no NaN).
+
 ## 22 Oct 2026
 
 [Experiment #047 - Wardrobe](047_wardrobe.html) ([notes](wardrobe/README.md))
