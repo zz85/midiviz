@@ -66,35 +66,60 @@ const FINGERS = ['Index', 'Middle', 'Ring', 'Little']
  * the knuckle line (the hinge of an unsplayed finger).
  */
 const _fa = new THREE.Vector3(), _fd = new THREE.Vector3(), _fl = new THREE.Vector3(), _fu = new THREE.Vector3(), _fv = new THREE.Vector3()
+const _ft = new THREE.Vector3(), _fw = new THREE.Vector3(), _fpts = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()]
+const GAMMA = 0.21
 export function handFinger(B, T, L, k, d, N, out, spMax = 0.61) {
   _fa.subVectors(T, B)
   _fd.copy(d).addScaledVector(N, -d.dot(N)).normalize()
   _fl.crossVectors(_fd, N)
-  const f = _fa.dot(_fd), l = _fa.dot(_fl)
-  const sp = Math.abs(f) < 1e-6 ? Math.sign(l) * spMax : Math.max(-spMax, Math.min(spMax, Math.atan(l / f)))
-  _fu.copy(_fd).multiplyScalar(Math.cos(sp)).addScaledVector(_fl, Math.sin(sp))      // in-plane forward
-  _fv.copy(N).negate()                                                                // in-plane toward the palm
-  const tu = _fa.dot(_fu), tv = _fa.dot(_fv), r = Math.hypot(tu, tv)
+  _fv.copy(N).negate()                                                                // toward the palm
   const shape = p => {
     const x = L[0] + L[1] * Math.cos(p) + L[2] * Math.cos((1 + k) * p), y = L[1] * Math.sin(p) + L[2] * Math.sin((1 + k) * p)
     return [Math.hypot(x, y), Math.atan2(y, x)]
   }
   const PMAX = 1.95                    // 112°
   const rMax = shape(0)[0], rMin = shape(PMAX)[0]
-  const rr = Math.max(rMin, Math.min(rMax, r))
+  const rr = Math.max(rMin, Math.min(rMax, _fa.length()))
   let lo = 0, hi = PMAX
   for (let i = 0; i < 20; i++) { const m = (lo + hi) / 2; if (shape(m)[0] > rr) lo = m; else hi = m }
-  const p = (lo + hi) / 2
-  // (the base joint stays within its range, −15…90°; a stop it cannot reach
-  // from there is missed rather than reached by turning the finger round)
-  const a = Math.max(-0.26, Math.min(1.57, Math.atan2(tv, tu) - shape(p)[1]))
-  const ang = [a, a + p, a + (1 + k) * p]
-  out[0].copy(B)
-  for (let i = 0; i < 3; i++) out[i + 1].copy(out[i]).addScaledVector(_fu, L[i] * Math.cos(ang[i])).addScaledVector(_fv, L[i] * Math.sin(ang[i]))
+  const p = (lo + hi) / 2, phi = shape(p)[1], cph = Math.cos(phi), sph = Math.sin(phi)
+  // The knuckle (MCP) as the joint it is: it flexes about an axis fixed in the hand
+  // (the knuckle line) and abducts about the finger's own back-of-finger axis, so a
+  // bent finger is never spun about its own length. Abducting moves the middle
+  // joint sideways; the curled part follows, parallel. Only what that cannot
+  // reach is taken by turning the whole curl about N (gamma), which is a roll of
+  // the finger about its length, and that is capped at GAMMA (~12°, about the
+  // passive axial play of a knuckle).
+  const pose = (g, pts) => {
+    _ft.copy(_fa).applyAxisAngle(N, -g)
+    const tf = _ft.dot(_fl), td = _ft.dot(_fd), tn = _ft.dot(_fv)
+    const b = cph > 0.05 ? Math.asin(Math.max(-1, Math.min(1, tf / (rr * cph)))) : 0
+    const be = Math.max(-spMax, Math.min(spMax, b))
+    const a = Math.max(-0.26, Math.min(1.57, Math.atan2(tn, td) - Math.atan2(sph, cph * Math.cos(be))))
+    const ca = Math.cos(a), sa = Math.sin(a), cb = Math.cos(be), sb = Math.sin(be)
+    _fu.copy(_fd).multiplyScalar(cb * ca).addScaledVector(_fv, cb * sa).addScaledVector(_fl, sb).applyAxisAngle(N, g)   // along the proximal phalanx
+    _fw.copy(_fd).multiplyScalar(-sa).addScaledVector(_fv, ca).applyAxisAngle(N, g)                                       // its palm side
+    pts[0].copy(B)
+    const ang = [0, p, (1 + k) * p]
+    for (let i = 0; i < 3; i++) pts[i + 1].copy(pts[i]).addScaledVector(_fu, L[i] * Math.cos(ang[i])).addScaledVector(_fw, L[i] * Math.sin(ang[i]))
+    return { a, be, miss: pts[3].distanceTo(T) }
+  }
+  let g = 0, r = pose(0, out)
+  if (r.miss > 0.05) {
+    const rp = pose(GAMMA, _fpts), rn = pose(-GAMMA, _fpts)
+    const sg = rp.miss < rn.miss ? 1 : -1, rg = sg > 0 ? rp : rn
+    if (rg.miss < r.miss - 0.02) {
+      let lo = 0, hi = GAMMA
+      if (rg.miss > 0.05) lo = hi
+      else for (let i = 0; i < 10; i++) { const m = (lo + hi) / 2; if (pose(sg * m, _fpts).miss > 0.05) lo = m; else hi = m }
+      g = sg * hi
+      r = pose(g, out)
+    }
+  }
   const R2D = 180 / Math.PI
   _fa.subVectors(out[3], out[0])
   const lean = Math.asin(Math.max(-1, Math.min(1, _fa.dot(_fl) / (_fa.length() || 1)))) * R2D
-  return { flex: a * R2D, splay: sp * R2D, pip: p * R2D, lean, miss: out[3].distanceTo(T) }
+  return { flex: r.a * R2D, splay: (r.be + g) * R2D, abd: r.be * R2D, axial: g * R2D, pip: p * R2D, lean, miss: r.miss }
 }
 
 export const HOLD = {
@@ -205,6 +230,15 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
     _m2.multiplyMatrices(_Bd, _m)
     return out.setFromRotationMatrix(_m2)
   }
+  /** Bone b turned only by the shortest swing that aims it along dir from the pose its
+   * parent carries it in (rest relative to the parent): no roll about its own axis. */
+  function swingChild(b, parent, dir) {
+    const Rp = wq(parent).multiply(_q.copy(rest.get(parent).q).invert())
+    const d0 = _a2.setFromMatrixColumn(rest.get(b).B, 0).applyQuaternion(Rp).normalize()
+    const R = _q2.setFromUnitVectors(d0, _b2.copy(dir).normalize()).multiply(Rp)
+    setWorldQ(b, _qq.copy(R).multiply(rest.get(b).q))
+  }
+  const _a2 = new THREE.Vector3(), _b2 = new THREE.Vector3()
   function orient(b, dir, ref) {
     rotFor(b, dir, ref, _R)
     setWorldQ(b, _qq.copy(_R).multiply(rest.get(b).q))
@@ -675,9 +709,11 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
     const mid = twoBone(J1.clone(), tip.clone(), T.len[0], T.len[1], pole, v3())
     // (where the thumb's tip ends up, for the posture test)
     T.tip = mid.clone().addScaledVector(tip.clone().sub(mid).normalize(), T.len[1])
-    const back = Y.clone().applyQuaternion(handR)
-    orient(T.bones[1], mid.clone().sub(wp(T.bones[1])), back)
-    orient(T.bones[2], tip.clone().sub(mid), back)
+    // each phalanx swings from where its parent carries it, without turning about
+    // its own length: a roll taken from a fixed reference twisted the joints when
+    // that reference lay near the thumb's line (up to ~140° under the neck)
+    swingChild(T.bones[1], T.bones[0], mid.clone().sub(wp(T.bones[1])))
+    swingChild(T.bones[2], T.bones[1], tip.clone().sub(mid))
   }
   // ── the bow hand (research/05_bow_hand.md §3) ──
   // Contacts in the bow frame (x along the stick toward the tip from the
