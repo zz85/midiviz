@@ -18,6 +18,8 @@
     "midis/ravel_m65_prelude.mid": "ravel-prelude-m65",
     "midis/chaminade_op126_1_idylle.mid": "chaminade-idylle",
     "midis/lyadov_op11_1_prelude.mid": "lyadov-prelude-op11-1",
-    "midis/maestro_bach_850.mid": "bach-wtc1-850"
+    "midis/maestro_bach_850.mid": "bach-wtc1-850",
+    "midis/bach_goldberg.mid": "bach-goldberg-complete",
+    "midis/bach_goldberg_aria.mid": "bach-goldberg-aria"
   }
 }

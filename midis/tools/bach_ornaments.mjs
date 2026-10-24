@@ -1,7 +1,7 @@
 // Realize the ornaments of the Mutopia Bach files (Well-Tempered Clavier and
 // Goldberg Variations) in midis/.
 //
-//   node midis/tools/bach_ornaments.mjs [--from <git rev>] [--only bach_wtc1_03] [--dry] [--no-kern] [--no-subjects] [--no-cadences]
+//   node midis/tools/bach_ornaments.mjs [--from <git rev> | --input-dir <dir>] [--only bach_wtc1_03] [--dry] [--no-kern] [--no-subjects] [--no-cadences]
 //
 // Mutopia's MIDI is LilyPond's: it plays no trills, mordents or turns, and its
 // grace notes are 55 ms blips that steal time from the note before. This reads
@@ -90,7 +90,7 @@ const kernName = (file, s) => { const m = /^bach_wtc(\d)_(\d\d)/.exec(file); ret
 const isFugue = (file, s, dirs) => /^bach_wtc/.test(file) && dirs.length === 2 && s === 1
 
 // ── sources ──────────────────────────────────────────────────────────────────
-async function fetchSource(dir) {
+export async function fetchSource(dir) {
   const out = CACHE + dir + '/'
   if (existsSync(out + '.done')) return out
   mkdirSync(out, { recursive: true })
@@ -267,7 +267,7 @@ function cadenceTrills(src, log) {
   return found.length
 }
 
-function readSource(dir) {
+export function readSource(dir) {
   const files = new Map(readdirSync(dir).filter(n => /\.(ly|ily|lyi)$/i.test(n)).map(n => [n, readFileSync(dir + n, 'utf8')]))
   const main = mainLyFile(files)
   const first = readLilyPondFiles(files, { main, graces: true })
@@ -284,7 +284,7 @@ function readSource(dir) {
 }
 
 // ── lining the score up with the file: LCS on (onset order, pitch) ───────────
-function align(ly, fn) {
+export function align(ly, fn) {
   const n = ly.length, m = fn.length, W = m + 1
   const L = new Uint16Array((n + 1) * W)
   for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--)
@@ -528,7 +528,7 @@ function segment(src, fn, log) {
 const isDotted = len => { for (let k = -6; k <= 3; k++) if (Math.abs(len - 1.5 * 2 ** k) < 1e-3) return true; return false }
 
 // ── a file ───────────────────────────────────────────────────────────────────
-function splitSegments(notes, count) {
+export function splitSegments(notes, count) {
   const ns = notes.slice().sort((a, b) => a.ticks - b.ticks || a.midi - b.midi)
   const gaps = []; let end = 0
   ns.forEach((n, k) => { if (k && n.time - end > 1) gaps.push([n.time - end, k]); end = Math.max(end, n.time + n.duration) })
@@ -542,13 +542,15 @@ function splitSegments(notes, count) {
 async function main() {
   const args = process.argv.slice(2)
   const opt = k => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : null }
-  const from = opt('--from') ?? '04b619f', only = opt('--only'), dry = args.includes('--dry')
+  const from = opt('--from') ?? '04b619f', inputDir = opt('--input-dir'), only = opt('--only'), dry = args.includes('--dry')
   const useKern = !args.includes('--no-kern'), useSubjects = !args.includes('--no-subjects'), useCadences = !args.includes('--no-cadences')
   const sources = new Map()
   for (const [file, dirs] of Object.entries(PIECES)) {
     if (only && only !== file) continue
     const log = []
-    const buf = execFileSync('git', ['show', `${from}:midis/${file}.mid`], { cwd: root, maxBuffer: 1 << 28 })
+    const buf = inputDir
+      ? readFileSync(inputDir + '/' + file + '.mid')
+      : execFileSync('git', ['show', `${from}:midis/${file}.mid`], { cwd: root, maxBuffer: 1 << 28 })
     const midi = new Midi(buf)
     const track = midi.tracks.find(t => t.notes.length)
     const segs = splitSegments(track.notes, dirs.length)
