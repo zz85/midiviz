@@ -65,7 +65,11 @@ function ltas(instrument, model, spec, bank) {
   for (const [key, pack] of Object.entries(bank.m.packs)) {
     const [s, dyn] = key.split('_'), x = bank.pcm[key]
     for (const m of pack.notes) {
-      if (m.midi % 2 || (QUICK && m.midi % 3)) continue
+      // notes above 1 kHz have at most one harmonic in the 300 Hz – 2 kHz
+      // reference (none from 2 kHz), so their bands read 20–33 dB high and set
+      // the power mean: two of them were 84 % of the violin's 4.5–12 kHz energy,
+      // and matching it made the typical note 6–12 dB too bright up there
+      if (m.midi % 2 || (QUICK && m.midi % 3) || m.f0 > 1000) continue
       const a = m.offset + m.attackEnd + Math.round(0.05 * SR), b = m.offset + Math.min(m.headEnd, m.attackEnd + Math.round(1.4 * SR))
       const Pi = powerSpec(x, a, b); if (!Pi) continue
       const Po = powerSpec(renderRaw(instrument, model, m.midi, +s, VEL[dyn], 1.6, spec), Math.round(0.55 * SR), Math.round(1.55 * SR))

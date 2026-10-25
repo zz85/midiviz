@@ -176,6 +176,14 @@ const PRESS = 2, ATK_F = 2, ATK_T = 0.04
 // a player's 3–4 N accents, and cracked (the Tchaikovsky concerto's chord
 // strokes, strings/README.md "Short strokes")
 const ATK_F_SHORT = 1.5, ATK_SHORT_RAMP = 2
+// a long stroke from rest (no stroke in the last 0.35 s) sets off slower the
+// softer it is: the bow speed rises over REST_T·(1 + REST_K·soft) along
+// (1 − (1 − x)²)^(1 + REST_P·soft), soft = 1 − dynamic, while the force keeps
+// more of the usual faster rise (× speed ratio^−REST_Q), so the first tens of
+// ms are raucous. Fitted to the Iowa violin onsets (strings/README.md "Attacks
+// from rest"); the cello keeps the usual attack (its Iowa onsets are not
+// reliable enough to fit it)
+const REST_T = 0.07, REST_K = 2.9, REST_P = 2, REST_Q = 0.65, REST_INST = ['violin', 'viola']
 const HARM_F = 0.6   // harmonics are bowed lighter (the touch takes energy; at full force they crack)
 const smooth5 = x => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * x * (x * (6 * x - 15) + 10))
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x))
@@ -374,6 +382,11 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
     const rel = rel0 + (Math.min(rel0, LEG_T) - rel0) * lgO
     const next = strokes[strokes.indexOf(st) + 1]
     const rest = !next || next.t0 - st.t1 > 0.35
+    // a long stroke from rest (REST_*): its own, slower bow-speed rise
+    const prevSt = strokes[strokes.indexOf(st) - 1]
+    const fromRest = REST_INST.includes(instrument) && !st.short && !sk && !st.trem && (!prevSt || st.t0 - prevSt.t1 > 0.35)
+    const soft = 1 - clamp(dynOf(st.events[0].notes[0]), 0.08, 1)
+    const atkR = REST_T * (1 + REST_K * soft) / Math.sqrt(atkK), pR = 1 + REST_P * soft
     // bow lift 'off string': the bow leaves after a phrase and the string rings;
     // 'on string': it stays on the string (light, still) and stops it
     const onString = S.bowLift === 'on'
@@ -443,15 +456,24 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
           }
           if (pulses.length) env *= pulse(t)
           const vmag = st.V * (0.5 + 0.7 * dyn) * pg * sw * env
+          // from rest: the bow's speed (not the loudness curve, which the hybrid
+          // sampler and DDSP read) follows the slower rise, aR × the usual one
+          let aR = 1
+          if (fromRest && t > st.t0) {
+            const xo = (t - st.t0) / atk, xr = (t - st.t0) / atkR
+            const eo = xo >= 1 ? 1 : 1 - (1 - xo) * (1 - xo), er = xr >= 1 ? 1 : Math.pow(1 - (1 - xr) * (1 - xr), pR)
+            aR = Math.min(1, er / Math.max(1e-6, eo))
+          }
           // handover across strings inside a slur
           let w = 1
           if (xIn && t < a) w = smooth5((t - (a - xIn)) / xIn)
           if (xOut && t > bN - xOut) w = Math.min(w, smooth5((bN + xOut - t) / (2 * xOut)))
           if (t < a - xIn - (sk === 'martele' && k === 0 ? 0.016 : 0)) w = 0   // martelé: the pinch comes before the note
-          let v = st.dir * vmag
+          let v = st.dir * vmag * aR
           // tremolo: the bow turns every 1/r s (rounded square wave); the force
           // follows the stroke's speed, not the turns, so each change bites
-          let vF = Math.abs(v)
+          // the bow's weight is on the string before its speed is: the force keeps more of the usual rise
+          let vF = Math.abs(v) / (aR < 1 ? Math.pow(Math.max(0.05, aR), REST_Q) : 1)
           if (st.trem && t >= st.t0 && t <= st.t1) {
             const q = Math.tanh(2.2 * Math.sin(Math.PI * tremPhase(t - st.t0, st.trem, tremAcc))) / TQ
             v *= 1.15 * q

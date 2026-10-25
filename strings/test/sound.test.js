@@ -507,13 +507,55 @@ test('attack: a lighter attack (Baroque) ramps the bow in slower with less bite;
   assert.ok(l.v10 < 0.8 * d.v10, `slower ramp: bow speed after 12 ms ${d.v10.toFixed(2)} → ${l.v10.toFixed(2)} of its sustain`)
 })
 
-test('waveguide attacks (Guettler): most bow starts reach Helmholtz motion within 50 ms (90 ms if loose) and stay there', async () => {
-  const { evaluate } = await import('./attack.js')
+test('waveguide attacks (Guettler): most bow changes reach Helmholtz motion within 50 ms (90 ms if loose), strokes from rest within 120 ms, and they stay there', async () => {
+  const { evaluate, good } = await import('./attack.js')
   const r = evaluate({ quick: true })
-  // before the pitch-tracking end losses and the attack press: 44 / 288, median 89 ms
-  assert.ok(r.good >= 0.65 * r.total, `good attacks ${r.good}/${r.total}`)
+  // before the pitch-tracking end losses and the attack press: 44 / 288, median 89 ms.
+  // From rest (violin, viola) the bow sets off slower and is raucous for longer, as
+  // in the Iowa recordings (next test), so Guettler's 50 ms holds for bow changes only
+  const ch = r.rows.filter(x => x.change), fr = r.rows.filter(x => !x.change)
+  assert.ok(ch.filter(good).length >= 0.65 * ch.length, `good bow changes ${ch.filter(good).length}/${ch.length}`)
+  assert.ok(fr.filter(x => x.ms <= 120).length >= 0.85 * fr.length, `from rest, Helmholtz within 120 ms: ${fr.filter(x => x.ms <= 120).length}/${fr.length}`)
   assert.ok(r.ms < 50, `median time to Helmholtz ${r.ms.toFixed(1)} ms`)
   assert.ok(r.stays >= 0.85 * r.total, `stay in Helmholtz ${r.stays}/${r.total}`)
+})
+
+test('waveguide attacks from rest follow the Iowa violin onsets: the level rises as slowly and the start is not clean', async t => {
+  const { hasBank, hasFfmpeg, loadBankNode } = await import('./hybrid-bank.js')
+  if (!hasFfmpeg() || !hasBank('violin')) return t.skip('no Iowa bank or no ffmpeg')
+  const TS = [10, 20, 30, 40, 60, 80, 100, 130, 160]
+  // level (dB re the steady part) and periodicity (best normalised correlation within
+  // ±60 cents of a period) at TS ms after the −40 dB onset
+  const onset = (x, from, to, f0, steadyAt) => {
+    const T = SR / f0, W = Math.max(Math.round(2 * T), 384), w = 96
+    let ss = 0; for (let i = steadyAt; i < steadyAt + 14400; i++) ss += x[i] * x[i]
+    const ref = ss / 14400
+    let on = from; while (on + w < to) { let e = 0; for (let j = on; j < on + w; j++) e += x[j] * x[j]; if (e / w > 1e-4 * ref) break; on += w }
+    return TS.map(ms => {
+      const i = on + Math.round(ms * SR / 1000); let e0 = 0, best = -1
+      for (let j = i; j < i + W; j++) e0 += x[j] * x[j]
+      for (let l = Math.floor(T * 0.966); l <= Math.ceil(T * 1.035); l++) { let a = 0, c = 0; for (let j = i; j < i + W; j++) { a += x[j] * x[j + l]; c += x[j + l] * x[j + l] } best = Math.max(best, a / Math.sqrt(e0 * c + 1e-20)) }
+      return { db: 10 * Math.log10(e0 / W / ref + 1e-12), r: best }
+    })
+  }
+  const med = a => [...a].sort((x, y) => x - y)[a.length >> 1]
+  const bank = loadBankNode('violin'), err = [], early = []
+  for (const [dyn, velocity] of [['pp', 0.35], ['mf', 0.68], ['ff', 0.95]]) {
+    const iowa = [], ours = []
+    for (let s = 0; s < 4; s++) for (const d of [2, 7]) {
+      const m = [55, 62, 69, 76][s] + d, key = `${s}_${dyn}`, nt = bank.m.packs[key].notes.find(n => n.midi === m), x = bank.pcm[key]
+      iowa.push(onset(x, nt.offset + Math.max(0, (nt.onset || 0) - 2400), nt.offset + nt.length, nt.f0, nt.offset + nt.attackEnd + 12000))
+      const notes = finger([{ pitch: m, on: 0.1, off: 1.6, velocity }]); notes[0].string = s; notes[0].finger = notes[0].finger || 1
+      const [L] = renderCurves(renderPerformance(notes, { style: { vibrato: 0, timing: 0, intonation: 0, variance: 0 } }), { sampleRate: SR, model: 'waveguide' })
+      ours.push(onset(L, 0, L.length, midiHz(m), Math.round(0.8 * SR)))
+    }
+    TS.forEach((_, k) => err.push(Math.abs(med(iowa.map(c => c[k].db)) - med(ours.map(c => c[k].db)))))
+    early.push(med(ours.map(c => c[0].r)), med(ours.map(c => c[1].r)))
+  }
+  // before (every stroke up to speed in 25–70 ms): 6.4 dB, 0.91; Iowa 0.2–0.9
+  const e = err.reduce((a, b) => a + b) / err.length
+  assert.ok(e < 4, `level after the onset: ${e.toFixed(2)} dB from the recordings`)
+  assert.ok(med(early) < 0.8, `periodicity 10–20 ms after the onset ${med(early).toFixed(2)}`)
 })
 
 test('measured body (Philharmonia): fitted for violin, viola and cello, beats no body on its held-out notes; unfitted models play the Iowa body', async () => {

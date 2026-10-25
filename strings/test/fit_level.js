@@ -2,7 +2,7 @@
 // (strings/sound/level-body.js) so a note's loudness follows the recorded
 // instrument's across the range.
 //
-//   node strings/test/fit_level.js [--instrument=violin]
+//   node strings/test/fit_level.js [--instrument=violin] [--body=iowa|phil]
 //
 // The measured bodies (fit_body.js, fit_body_philharmonia.js) are fitted to the
 // shape of each recorded note's harmonics, not to its level, so the level from
@@ -23,12 +23,14 @@ import { fingerLine } from '../fingering.js'
 import { renderPerformance } from '../sound/performance.js'
 import { renderCurves } from '../sound/bowed.js'
 import { kLoudness } from './audio-util.js'
+import { BODY_IOWA } from '../sound/body-iowa.js'
+import { BODY_PHIL } from '../sound/body-philharmonia.js'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const arg = k => process.argv.find(a => a.startsWith(`--${k}=`))?.split('=')[1]
 const OUT = here + '../sound/level-body.js'
 const SR = 48000
-const BODIES = ['iowa', 'phil'], MODELS = ['waveguide', 'source']
+const BODIES = arg('body') ? [arg('body')] : ['iowa', 'phil'], MODELS = ['waveguide', 'source']
 const instruments = arg('instrument') ? [arg('instrument')] : ['violin', 'viola', 'cello']
 const VEL = 0.6   // the performance renderer's mezzo-forte
 
@@ -62,7 +64,11 @@ for (const instrument of instruments) {
       fingerLine(notes, { instrument })
       if (notes[0].string !== r.s) continue
       const perf = renderPerformance(notes, { instrument, style: { vibrato: 0, timing: 0, intonation: 0, variance: 0, autoBow: 0 } })
-      const ch = renderCurves(perf, { sampleRate: SR, instrument, model, tail: 0, params: { body, oversample: 2 } })
+      // the body as a spec object (as ViolinSynth picks it for the name) plays
+      // without the voicing, so the fit measures the body alone and a refit
+      // does not just write the remainder over the voicing it is replacing
+      const spec = body === 'phil' ? BODY_PHIL[instrument]?.[model] ?? BODY_IOWA[instrument]?.[model] : BODY_IOWA[instrument]?.[model]
+      const ch = renderCurves(perf, { sampleRate: SR, instrument, model, tail: 0, params: { body: spec, oversample: 2 } })
       diff.push({ midi: r.midi, d: r.L - kLoudness(ch.map(c => c.subarray(0.45 * SR, 1.45 * SR)), SR) })
     }
     // smooth over pitch (Gaussian, σ = 2.5 semitones, ±5 window), mean removed

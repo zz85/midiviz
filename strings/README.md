@@ -373,6 +373,8 @@ Worst band above 1.6 kHz, ours − recordings:
 
 The held-out median residual stays 2.5–3.3 dB. The per-band before / after figures are in each body's `stats.energy`.
 
+Most of that gap turned out to be the normalisation, not the body: see [the energy match without the top notes](#measured-bodies-the-energy-match-without-the-top-notes).
+
 ## Waveguide: per-slip jitter
 
 The Source model's per-period jitter applied to the waveguide too: its upper harmonics stood 56 / 46 dB above the gaps between them at 1–3 / 3–8 kHz, against the Iowa recordings' 45 / 34. Each slip now draws the next period's bow force (15 % rms) and static friction (3 % rms), correlated 0.5 between periods and scaled by Rosin. Result: 44 / 36 dB.
@@ -624,3 +626,55 @@ Recordings outside the Bach Violin Dataset come with no alignment. [align.js](al
 Repeats written out. Mutopia's MIDI files are made with `\unfoldRepeats`, so a repeat the player skips used to have no plan to match it. The LilyPond reader now keeps a written-out volta too (`unfolded: true`, with `keep`, the one pass played when the repeat is not taken), and `repeatPlans` tries it both ways. Beyond four repeats it tries all of them taken, none, and each one alone flipped from those two (2R + 2 plans, not 2^R): Caprice 24 has 11. On the QMUL Caprice this took the pitch-where-placed check from 39 % to 71 % (chance 13 %): the player skips the first variation's repeat. The solo part's notes are now the tracks on the violin's channel when the part is split across tracks, as Caprice 24's pizzicato variation is (1,593 notes, was 1,470), the same choice #037 and #038 make.
 
 The dynamics lane is now corrected by listening on the Waveguide model too, and each engine plays its own (`applyRecording(…, { engine })`; the others take Source's). On five movements rendered on the Waveguide, the note levels correlate with the player's 0.86 with its own lane and 0.84 with Source's (`node strings/test/expression_ab.js --model=waveguide [--lane=source]`); Source with its own, 0.88. On five of the newly aligned recordings (Heifetz, Menuhin and three others): 0.86, pitch curves within 5.9 cents (14 to 17 with our rules).
+
+## Attacks from rest
+
+Every stroke reached full bow speed in 25–70 ms whatever the dynamic, and the waveguide was in clean Helmholtz motion within ~10 ms of being heard. The Iowa violinist's notes from rest rise far more slowly at soft dynamics, and their first 40–70 ms are not periodic. Measured on the Iowa violin notes (every third semitone, four strings, pp / mf / ff): the level and the periodicity (best normalised correlation within ±60 cents of one period) after the −40 dB onset.
+
+A long stroke from rest (no stroke in the last 0.35 s; not short, spiccato, martelé or tremolo) now sets off slower the softer it is. The bow speed rises over 70 ms × (1 + 2.9·soft), soft = 1 − dynamic (about 0.25 s at pp), along (1 − (1 − x)²)^(1 + 2·soft). The force keeps more of the usual faster rise (× speed ratio^−0.65): the bow's weight is on the string before its speed is, so the first tens of ms are raucous, as Guettler's diagram has it for a slow acceleration. Constants `REST_*` in [sound/performance.js](sound/performance.js), fitted by a search over the onset error.
+
+| | Iowa | before | after |
+|---|---|---|---|
+| level 40 ms after the onset, pp / mf / ff | −19 / −12 / −7 dB | −4 / −5 / −5 dB | −19 / −12 / −7 dB |
+| periodicity 20 ms after the onset, pp / mf / ff | 0.71 / 0.45 / 0.34 | 0.95 / 0.95 / 0.94 | 0.26 / 0.47 / 0.87 |
+| level error, 5–250 ms (mean) | | 5.6 dB | 1.35 dB |
+
+Only the bow speed and force change, so it reaches the waveguide and the Source model. The loudness curve does not change: the hybrid sampler already plays the recorded attack, and DDSP reads that curve. The Source model's sawtooth stays periodic from its first period; only its rise follows.
+
+Limits:
+- ff still settles about 20 ms early.
+- pp is noisier than the recordings in its first 10 ms.
+- The viola takes the violin's constants untested: its Iowa onsets, like the cello's, are not reliable enough to fit. Cello onsets with a 30 ms −34 dB step, viola pp still −12 dB at 250 ms.
+- The cello keeps the usual attack. With these constants it lost Helmholtz motion on 4 of 144 notes in attack.js, and halved its good attacks from rest.
+
+attack.js, 432 bow starts:
+
+| | before | after |
+|---|---|---|
+| stay in Helmholtz | 409 | 406 |
+| good bow changes | 160 / 216 | 158 / 216 |
+| good from rest (Guettler's 50 ms from the bow start) | 138 / 216 | 105 / 216 |
+| violin from rest: median / p90 time to Helmholtz | 32 / 74 ms | 56 / 93 ms |
+
+The bowing regime is chaotic: nearby constants give 405–410 notes in Helmholtz, and the refitted bodies move a few notes too, through the voicing and the bridge coupling.
+
+The recordings themselves would miss Guettler's 50 ms from rest by this count: they are aperiodic for 40–70 ms after they can be heard. The Guettler test in sound.test.js therefore holds bow changes to it, and strokes from rest to Helmholtz within 120 ms. A new test holds the attacks from rest to the Iowa onsets (level error under 4 dB, it was 6.4 on its 24 notes; periodicity 10–20 ms after the onset under 0.8, it was 0.91).
+
+## Measured bodies: the energy match without the top notes
+
+The energy match normalised each note to its own 300 Hz – 2 kHz power. Above 1 kHz, at the top of the E string, that band holds one harmonic at most, and none from 2 kHz. Those notes' upper bands read 20–33 dB high and set the power mean. E7 ff alone was 61 % of the violin's 4.5–12 kHz power mean, and E7 ff + pp together 84 %. Matching them lifted the whole upper body: the typical note came out 6–12 dB too bright there.
+
+`fit_body.js` now leaves notes above 1 kHz out of the energy match; the median fit still uses every note. All six Iowa bodies were refitted (held-out residual unchanged, 2.4–3.3 dB). Measured on notes up to 1 kHz, ours − recordings:
+
+| typical note (median), 4.5–6.5 / 6.5–9 / 9–12 kHz | before | after |
+|---|---|---|
+| violin waveguide | +6.2 / +11.2 / +11.6 dB | −0.3 / +3.3 / +3.3 dB |
+| violin source | +4.9 / +9.9 / +6.4 dB | −0.4 / +3.0 / +3.4 dB |
+| viola waveguide / source | +6 to +8 dB | +3 to +6 dB |
+| cello | 0 to +3 dB | unchanged |
+
+On the same notes, the energy above 4.5 kHz (5 % trimmed power mean) went from +4 to +9 dB to within ±0.9 dB on the violin, and from +2 to +3 dB to within ±0.7 dB on the viola. In the fit's own check, every band above 1.6 kHz is within ±1.4 dB.
+
+The scatter explanation above was mostly this too. On notes up to 1 kHz, the recordings' upper bands vary 4.3–5.4 dB from note to note within a string and dynamic, against our 3.7–4.6 dB. A seeded resonance detail in the body (3 dB rms, about one resonance wide) moved our spread by 0.5 dB at most, so it is not in. Its likely use is the shimmer of vibrato across the resonances, which needs vibrato recordings to check.
+
+`fit_level.js` rendered with the body's name, so `ViolinSynth` played the existing voicing while the fit measured. A refit then wrote only the remainder over it: the E string's +5 dB lift fell to +1.7, and loudness.test.js failed. It now renders the body's spec object (no voicing), so refits are idempotent; `--body=iowa|phil` refits one. The Iowa voicing was refitted. The Philharmonia and NBody bodies have no energy match and were not changed.
