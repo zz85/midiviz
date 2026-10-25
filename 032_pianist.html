@@ -2365,7 +2365,7 @@
           s.notes = s.notes.filter(n => n.channel !== 9 && n.midi >= LOW && n.midi <= HIGH)
           song = s
           fingerInWorker(s.notes)
-          for (let i = 0; i < 400 && !fingered; i++) await new Promise(r => setTimeout(r, 50))
+          for (let i = 0; i < +(params.get("fingerwait") || 400) && !fingered; i++) await new Promise(r => setTimeout(r, 50))
         }
         const T = +(params.get('t') || 0)
         // a Short's frame (?short=1&clip=a-b, at a 9:16 viewport): the portrait framings and its plan

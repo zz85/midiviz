@@ -450,10 +450,22 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     under.on = false
     const dl = arm.L.drv, dr = arm.R.drv
     let order = ['L', 'R']
-    if (dl.visible && dr.visible && dr.joints.W.x - dl.joints.W.x < 8) {
+    // The gap between the wrists, now and where the hands are going (the
+    // baked placement, CROSS_AHEAD s on): the crossing hand's wrist is
+    // already rising as it comes over, not once it has arrived
+    let gap = dl.visible && dr.visible ? dr.joints.W.x - dl.joints.W.x : Infinity
+    if (gap < Infinity) for (const tau of CROSS_AHEAD) {
+      const tm = state.songT + hands.lead + tau
+      if (dl.wristAt(tm, _cl) && dr.wristAt(tm, _cr)) gap = Math.min(gap, _cr.x - _cl.x)
+    }
+    if (gap < 8) {
       const c = pos('spine01').x
       const acrossOf = a => -a.s * (a.drv.joints.W.x - c)
-      const over = acrossOf(arm.L) > acrossOf(arm.R) ? 'L' : 'R', below = over === 'L' ? 'R' : 'L'
+      // the arm further across the body goes over; the one that already is
+      // stays over until the other is clearly further (no flicker as they pass)
+      const dA = acrossOf(arm.L) - acrossOf(arm.R)
+      const over = !state.overArm || Math.abs(dA) > 3 ? (dA > 0 ? 'L' : 'R') : state.overArm, below = over === 'L' ? 'R' : 'L'
+      state.overArm = over
       order = [below, over]
       armPose(arm[below], dt)
       const b = arm[below], g = under.seg
@@ -464,9 +476,11 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
       // the crossing hand comes in from above: its wrist rises as the hands
       // close in (up to ~50°) and the lower one flattens a little (~11°
       // down), set for the drivers' next frame
-      const gap = dr.joints.W.x - dl.joints.W.x
-      arm[over].drv.setPitch(0.85 * clamp((8 - gap) / 10, 0, 1)); arm[below].drv.setPitch(-0.2 * clamp((8 - gap) / 10, 0, 1))
-    } else { for (const side of order) armPose(arm[side], dt); dl.setPitch(0); dr.setPitch(0) }
+      // (less while its thumb plays: from a wrist that high the thumb, which
+      // hangs from the side of the hand, cannot reach the key)
+      const thumb = arm[over].drv.diag.press[0]
+      arm[over].drv.setPitch(0.85 * (1 - 0.6 * thumb) * clamp((8 - gap) / 10, 0, 1)); arm[below].drv.setPitch(-0.2 * clamp((8 - gap) / 10, 0, 1))
+    } else { for (const side of order) armPose(arm[side], dt); dl.setPitch(0); dr.setPitch(0); state.overArm = null }
     // head: look toward the hands, partly (the eyes take the rest)
     headPose(dt)
     // legs onto the pedals
@@ -482,6 +496,9 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
   }
 
   const tE = v3(), tW = v3(), dir = v3(), pole = v3(), hingeNow = v3()
+  // how far ahead (s) a crossing is seen coming
+  const CROSS_AHEAD = [0.06, 0.12, 0.18]
+  const _cl = v3(), _cr = v3()
   function armPose(a, dt) {
     const S = pos(bones[a.ua1].name)
     const d = a.drv

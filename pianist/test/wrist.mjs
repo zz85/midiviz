@@ -26,8 +26,12 @@ const PW = process.env.PLAYWRIGHT || '/tmp/pw/node_modules/playwright-core/index
 const CHROME = process.env.CHROME || `${process.env.HOME}/.cache/ms-playwright/chromium-1134/chrome-linux/chrome`
 const SECONDS = +(process.env.SECONDS || 90)
 const FPS = +(process.env.FPS || 30)
+// START: song time to begin at (s); a song may be given as song.mid@start
+const START = +(process.env.START || 0)
 const DEFAULT = ['Prelude1.mid', 'chpn-p15.mid', 'entertainer.mid', 'rush_e_real.mid']
 const TOL = 3, FAR = 10, OUT_SHARE = 0.01, MISS_SHARE = 0.05
+// the forearms' centre lines closer than this (cm): one arm through the other
+const FOREARMS = 4
 const MISSES = { 'entertainer.mid': { L: 0.19, R: 0.37 }, 'rush_e_real.mid': { L: 0.09, R: 0.1 } }
 
 const { chromium } = await import(PW)
@@ -41,7 +45,8 @@ for (const song of songs) try { await within(runPiece(song), PIECE_TIMEOUT, song
 await browser.close().catch(() => {})
 process.exit(failed ? 1 : 0)
 
-async function runPiece(song) {
+async function runPiece(run) {
+  const [song, at] = run.split('@'), start = at ? +at : START
   const page = await browser.newPage({ viewport: { width: 320, height: 240 } })
   try {
   const errors = []
@@ -49,7 +54,10 @@ async function runPiece(song) {
   await page.goto(`${BASE}032_pianist.html?shot&q=low&hairsim=0&clothsim=0&song=${encodeURIComponent(song)}&t=0`)
   await page.waitForFunction(() => window.__shot, null, { timeout: 180000 })
   await page.evaluate(() => window.__shot())
-  const r = await page.evaluate(async ([SECONDS, FPS]) => {
+  // (a long piece can take longer to finger than the page's own 20 s wait)
+  await page.waitForFunction(() => window.__pianist.rig.hands.notes.length > 0, null, { timeout: 240000 })
+  await page.evaluate(() => window.__shot())
+  const r = await page.evaluate(async ([SECONDS, FPS, START]) => {
     const { WRIST_RANGE } = await import('./pianist/hand-driver.js')
     const { ch, rig } = window.__pianist
     const V = ch.group.position.constructor, DEG = 180 / Math.PI
@@ -64,10 +72,20 @@ async function runPiece(song) {
     }
     const rest = {}, j = n => new V().copy(ch.joints[n + '____head'])
     for (const sd of ['L', 'R']) { const S = '.' + sd; rest[sd] = bend(j('lowerarm01' + S), j('wrist' + S), j('finger3-1' + S), j('finger2-1' + S), j('finger5-1' + S), sd === 'R' ? 1 : -1) }
-    const dur = Math.min(SECONDS, rig.hands.notes.reduce((m, n) => Math.max(m, n.off), 0))
-    const out = { L: [], R: [] }
-    for (let t = 0; t < dur; t += 1 / FPS) {
+    const dur = Math.min(START + SECONDS, rig.hands.notes.reduce((m, n) => Math.max(m, n.off), 0))
+    const out = { L: [], R: [] }, both = []
+    // closest approach of two segments (the forearms: elbow → wrist)
+    const segDist = (p1, q1, p2, q2) => {
+      let best = Infinity
+      for (let i = 0; i <= 10; i++) for (let j = 0; j <= 10; j++) best = Math.min(best, p1.clone().lerp(q1, i / 10).distanceTo(p2.clone().lerp(q2, j / 10)))
+      return best
+    }
+    for (let t = START; t < dur; t += 1 / FPS) {
       rig.update(t, 1 / FPS); ch.group.updateMatrixWorld(true)
+      if (rig.hands.L.visible && rig.hands.R.visible) {
+        const WL = wp('wrist.L'), WR = wp('wrist.R')
+        both.push([t, WL.x > WR.x, segDist(wp('lowerarm01.L'), WL, wp('lowerarm01.R'), WR)])
+      }
       for (const sd of ['L', 'R']) {
         const d = rig.hands[sd]; if (!d.visible) continue
         const S = '.' + sd, [u, e] = bend(wp('lowerarm01' + S), wp('wrist' + S), wp('finger3-1' + S), wp('finger2-1' + S), wp('finger5-1' + S), sd === 'R' ? 1 : -1)
@@ -75,8 +93,8 @@ async function runPiece(song) {
         out[sd].push([t, u - rest[sd][0], e - rest[sd][1], miss])
       }
     }
-    return { out, range: Object.fromEntries(Object.entries(WRIST_RANGE).map(([k, v]) => [k, v * DEG])) }
-  }, [SECONDS, FPS])
+    return { out, both, range: Object.fromEntries(Object.entries(WRIST_RANGE).map(([k, v]) => [k, v * DEG])) }
+  }, [SECONDS, FPS, start])
   const R = r.range
   const checks = [['ulnar', 1, R.ulnar], ['radial', 1, -R.radial], ['extension', 2, R.ext], ['flexion', 2, -R.flex]]
   for (const sd of ['L', 'R']) {
@@ -91,9 +109,15 @@ async function runPiece(song) {
     }
     const miss = a.filter(x => x[3]).length
     if (miss > (MISSES[song]?.[sd] ?? MISS_SHARE) * a.length) msgs.push(`fingertips short of their keys on ${miss} frames`)
-    console.log(`${msgs.length ? 'FAIL' : 'ok  '} ${song} ${sd}: ulnar p1/50/99 ${pc(1, 0.01)}/${pc(1, 0.5)}/${pc(1, 0.99)}°, extension ${pc(2, 0.01)}/${pc(2, 0.5)}/${pc(2, 0.99)}°, keys missed ${(100 * miss / a.length).toFixed(1)} % (${a.length} frames)`)
+    console.log(`${msgs.length ? 'FAIL' : 'ok  '} ${run} ${sd}: ulnar p1/50/99 ${pc(1, 0.01)}/${pc(1, 0.5)}/${pc(1, 0.99)}°, extension ${pc(2, 0.01)}/${pc(2, 0.5)}/${pc(2, 0.99)}°, keys missed ${(100 * miss / a.length).toFixed(1)} % (${a.length} frames)`)
     for (const m of msgs) console.log('       ' + m)
     if (msgs.length) failed++
+  }
+  if (r.both.length) {
+    const crossed = r.both.filter(x => x[1]).length, d = r.both.map(x => x[2]).sort((a, b) => a - b)
+    const touching = r.both.filter(x => x[2] < FOREARMS).length
+    console.log(`${touching > OUT_SHARE * r.both.length ? 'FAIL' : 'ok  '} ${run} hands: crossed on ${crossed} frames, forearms at least ${d[0].toFixed(1)} cm apart (p1 ${d[Math.floor(0.01 * (d.length - 1))].toFixed(1)} cm), closer than ${FOREARMS} cm on ${touching}`)
+    if (touching > OUT_SHARE * r.both.length) failed++
   }
   if (errors.length) { console.log('FAIL', song, 'page errors:', errors.join(' | ')); failed++ }
   } finally { await page.close().catch(() => {}) }
