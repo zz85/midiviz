@@ -585,6 +585,8 @@ async function main() {
     console.log(`${file}: ${total.ornaments} ornaments, ${total.graces} grace groups; score ${total.ly} notes, file ${total.file}, matched ${total.matched}, LilyPond graces removed ${total.extra}; notes now ${all.length}`)
     for (const l of log) console.log(l)
     if (!dry) writeFileSync(root + `midis/${file}.mid`, Buffer.from(midi.toArray()))
+    // then each note's hand, from the score, as a right- and a left-hand track
+    if (!dry) await (await import('./bach_hands.mjs')).writeHands(file)
   }
 }
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) await main()

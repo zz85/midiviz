@@ -20,7 +20,8 @@
 // than 1 cm short of its target on at most 5 % of the frames (MISSES: more
 // where the fingering already asks for more than a hand can reach, as
 // measured before the wrist was kept: The Entertainer's left hand 17 % and
-// right 35 %, Rush E's 7 and 8 %).
+// right 35 %, Rush E's 7 and 8 %; the Goldberg's right hand over Variations 5
+// and 6, 5.6 %).
 const BASE = process.env.BASE || 'http://127.0.0.1:8000/midiviz/'
 const PW = process.env.PLAYWRIGHT || '/tmp/pw/node_modules/playwright-core/index.mjs'
 const CHROME = process.env.CHROME || `${process.env.HOME}/.cache/ms-playwright/chromium-1134/chrome-linux/chrome`
@@ -28,11 +29,12 @@ const SECONDS = +(process.env.SECONDS || 90)
 const FPS = +(process.env.FPS || 30)
 // START: song time to begin at (s); a song may be given as song.mid@start
 const START = +(process.env.START || 0)
-const DEFAULT = ['Prelude1.mid', 'chpn-p15.mid', 'entertainer.mid', 'rush_e_real.mid']
+// (the Goldberg from Variation 5, Bach's hand crossings, to Variation 6)
+const DEFAULT = ['Prelude1.mid', 'chpn-p15.mid', 'entertainer.mid', 'rush_e_real.mid', 'midis/bach_goldberg.mid@419']
 const TOL = 3, FAR = 10, OUT_SHARE = 0.01, MISS_SHARE = 0.05
 // the forearms' centre lines closer than this (cm): one arm through the other
 const FOREARMS = 4
-const MISSES = { 'entertainer.mid': { L: 0.19, R: 0.37 }, 'rush_e_real.mid': { L: 0.09, R: 0.1 } }
+const MISSES = { 'entertainer.mid': { L: 0.19, R: 0.37 }, 'rush_e_real.mid': { L: 0.09, R: 0.1 }, 'midis/bach_goldberg.mid': { R: 0.065 } }
 
 const { chromium } = await import(PW)
 const songs = process.argv.slice(2).length ? process.argv.slice(2) : DEFAULT

@@ -97,6 +97,11 @@ export const DEFAULTS = {
     // a long singing note to the 3rd (the 2nd and 4th half as much)
     outer5: 0,          // top note of a chord (RH space) not on finger 5
     sing3: 0,           // long melody note (single, or a chord's top; SING s or more) not on finger 3
+    // A note played with the hand crossed over (or under) the other: taken
+    // with 2 or 3, the long fingers that reach down from a hand held above
+    // the other; the thumb hangs from the side of the hand and cannot (and 5
+    // is short), per CROSS_FINGER
+    crossHand: 6,
   },
 
 }
@@ -124,7 +129,7 @@ export const PARNCUTT = {
     fourOnBlack: 1, thumbOnBlack: 1, thumbOnBlackNext: 2, fiveOnBlack: 2, thumbPass: 1,
     cross: null, crossDist: 0, turnaround: 0, repeatShuttle: 0, sameFinger: 1000,
     repeatSame: 0, repeatChange: 0, anchor: 0, leap: 1000, template: 0, vertical: 1, natural: 0, consistency: 0,
-    handSpan: 0, release: null,
+    handSpan: 0, release: null, crossHand: 0,
   },
 }
 
@@ -413,7 +418,8 @@ export function fingerHand(notes, model, hand = 'R') {
     const unary = fresh.map((n, i) => {
       const pw = nearestWhite(prevSl, n.p), nw = nearestWhite(nextSl, n.p)
       const role = { top: k > 1 && i === k - 1, melody: i === k - 1 }
-      return [0, 1, 2, 3, 4, 5].map(f => (f ? model.noteCost(n, f, pw, nw, role) : 0))
+      const cross = n.src?.cross ? model.W.crossHand || 0 : 0
+      return [0, 1, 2, 3, 4, 5].map(f => (f ? model.noteCost(n, f, pw, nw, role) + cross * CROSS_FINGER[f] : 0))
     })
     const next = new Map()
     const wx = p => keyX(p) / WHITE_W
@@ -571,6 +577,35 @@ export function splitHands(notes, { handSize = 1, beam = 32, chordTolerance = 0.
   return notes
 }
 
+// cost per finger of a note played with the hands crossed (× W.crossHand)
+const CROSS_FINGER = [0, 3, 0, 0, 1, 2]
+
+/**
+ * Mark the notes a hand plays across the other (n.cross): a right-hand note
+ * below a left-hand note sounding within CROSS_WINDOW s of it, or a left-hand
+ * note above a right-hand one.
+ */
+const CROSS_WINDOW = 0.15
+export function markCrossings(notes) {
+  const by = { L: [], R: [] }
+  for (const n of notes) { n.cross = false; if (by[n.hand]) by[n.hand].push(n) }
+  for (const h of ['L', 'R']) by[h].sort((a, b) => a.on - b.on)
+  const other = { L: by.R, R: by.L }
+  for (const h of ['L', 'R']) {
+    const os = other[h]
+    let lo = 0
+    for (const n of by[h]) {
+      while (lo < os.length && os[lo].on < n.on - 4) lo++   // (no note is held longer than 4 s and crosses)
+      for (let i = lo; i < os.length && os[i].on < n.off + CROSS_WINDOW; i++) {
+        const o = os[i]
+        if (o.off < n.on - CROSS_WINDOW) continue
+        if (h === 'R' ? o.pitch > n.pitch : o.pitch < n.pitch) { n.cross = true; break }
+      }
+    }
+  }
+  return notes
+}
+
 // ── Whole piece ────────────────────────────────────────────────────────────
 /**
  * Finger a piece. notes: [{ pitch, on, off, hand? ('L'|'R'), ... }] (seconds).
@@ -580,6 +615,7 @@ export function fingerPiece(notes, options = {}) {
   const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now()
   const model = createModel(options)
   if (options.splitHands !== false) splitHands(notes, model.opts)
+  if (model.W.crossHand) markCrossings(notes)
   const out = {}
   for (const hand of ['R', 'L']) {
     const own = notes.filter(n => n.hand === hand)

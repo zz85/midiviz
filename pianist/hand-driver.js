@@ -117,6 +117,10 @@ export function createHandDriver(side, dims) {
   const shoulder = v3(), tip = v3(), base = v3()
   const SHOULDER = new THREE.Vector3(s * 20, 107, 45)
   let visible = false, pitch = 0, pitchGoal = 0
+  // the hands crossed: the one over plays further in along the keys and
+  // the one under nearer their fronts, so their fingers are not among each
+  // other's (setDepth, cm; < 0 in toward the fallboard)
+  let depth = 0, depthGoal = 0
   // the end of the piece: as the hands lift off the last chord they come in
   // to the middle, square to the keys, a hand's width either side of her
   // (ending(t) → 0..1, from the hands driver; null: never)
@@ -412,8 +416,10 @@ export function createHandDriver(side, dims) {
   let lastPose = null, lastT = 0
   function update(pose, dt, t) {
     lastPose = pose; lastT = t
-    if (!pose) { visible = false; pitch = 0; lift = 0; ptot = 0; hroll = 0; elbow = null; return }
+    if (!pose) { visible = false; pitch = 0; depth = 0; lift = 0; ptot = 0; hroll = 0; elbow = null; return }
     pitch += (pitchGoal - pitch) * Math.min(1, dt / 0.12)
+    depth += (depthGoal - depth) * Math.min(1, dt / 0.08)
+    if (Math.abs(depth) < 0.02 && !depthGoal) depth = 0
     visible = true
     const { anchor, fingers: tips } = pose
     const fit = fitHand(tips, anchor)
@@ -440,11 +446,19 @@ export function createHandDriver(side, dims) {
     // never past what a wrist can bend: the hand turns and tilts with the
     // forearm where the fit alone would bend it further
     keepWrist([fit.px, fit.pz])
+    hand.z += depth
     // fingertip targets in the hand frame (lx toward the little finger = s·x)
     const lx = [], lz = [], held = [], ty = []
     for (const f of [1, 2, 3, 4, 5]) {
       const d = FINGERS[f]
       let t = tips[f - 1]
+      // (a held key struck further in or out with the hand: a white key
+      // between the black keys on its narrow part, a black key along it)
+      if (depth && t.press > 0.2 && t.pitch != null) {
+        const black = isBlack(t.pitch)
+        const z = THREE.MathUtils.clamp(t.z + depth, black ? -12.5 : -11, black ? -6 : -0.8)
+        t = { ...t, z, x: !black && z < -4.6 ? narrowX(t.pitch, t.x) : t.x }
+      }
       let [ax, az] = rot(t.x - hand.x - slide.x, t.z - hand.z - slide.z, -hand.yaw)
       // A finger pressing a key that lies too close under its knuckle (the
       // hand brought well in for a thumb on a black key, say) strikes it
@@ -611,7 +625,7 @@ export function createHandDriver(side, dims) {
     J.R.subVectors(J.fingers[5][0], J.fingers[2][0]).multiplyScalar(s).normalize()
     armIK(J.W, J.E)
   }
-  return { update, bakeTrack, clearTrack, wristAt, setEnding: f => { ending = f }, setPitch: p => { pitchGoal = p },
+  return { update, bakeTrack, clearTrack, wristAt, setEnding: f => { ending = f }, setPitch: p => { pitchGoal = p }, setDepth: d => { depthGoal = d },
     /** where the elbow is (the rig's arm; null: unknown): the wrist is kept within WRIST_RANGE of straight on the forearm */
     setElbow: v => { if (!v) { elbow = null; return } elbow = (elbow || v3()).copy(v); elbowOff.subVectors(v, J.E) },
     /** how far (radians) the wrist is bent past WRIST_RANGE on a forearm from elbow E to this frame's wrist */

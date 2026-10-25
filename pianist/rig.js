@@ -453,14 +453,24 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     // The gap between the wrists, now and where the hands are going (the
     // baked placement, CROSS_AHEAD s on): the crossing hand's wrist is
     // already rising as it comes over, not once it has arrived
-    let gap = dl.visible && dr.visible ? dr.joints.W.x - dl.joints.W.x : Infinity
+    // ...and between the hands themselves: one hand's fingers among the
+    // other's (the left hand reaching over to a key just above the right
+    // hand's thumb) counts as crossed, wrists apart or not
+    let gap = dl.visible && dr.visible ? Math.min(dr.joints.W.x - dl.joints.W.x, tipGap(dl, dr) + TIP_GAP) : Infinity
     if (gap < Infinity) for (const tau of CROSS_AHEAD) {
       const tm = state.songT + hands.lead + tau
       if (dl.wristAt(tm, _cl) && dr.wristAt(tm, _cr)) gap = Math.min(gap, _cr.x - _cl.x)
     }
     if (gap < 8) {
       const c = pos('spine01').x
-      const acrossOf = a => -a.s * (a.drv.joints.W.x - c)
+      // how far across the body each hand reaches: its furthest pressed
+      // fingertip (else its wrist), so the hand that has crossed over to a
+      // key goes over, even when its wrist lags behind
+      // ...and how far it has come over from where it plays around this
+      // moment (its baked wrist over ±0.6 s): the hand that leaps across
+      // and back goes over the one that stays, as Bach writes it (the left
+      // hand's single notes over the right hand's run in Variation 5)
+      const acrossOf = a => -a.s * (reachX(a.drv) - c) + 2 * excursion(a)
       // the arm further across the body goes over; the one that already is
       // stays over until the other is clearly further (no flicker as they pass)
       const dA = acrossOf(arm.L) - acrossOf(arm.R)
@@ -479,8 +489,10 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
       // (less while its thumb plays: from a wrist that high the thumb, which
       // hangs from the side of the hand, cannot reach the key)
       const thumb = arm[over].drv.diag.press[0]
-      arm[over].drv.setPitch(0.85 * (1 - 0.6 * thumb) * clamp((8 - gap) / 10, 0, 1)); arm[below].drv.setPitch(-0.2 * clamp((8 - gap) / 10, 0, 1))
-    } else { for (const side of order) armPose(arm[side], dt); dl.setPitch(0); dr.setPitch(0); state.overArm = null }
+      const u = clamp((8 - gap) / 10, 0, 1)
+      arm[over].drv.setDepth(-3.5 * u); arm[below].drv.setDepth(1.5 * u)
+      arm[over].drv.setPitch(0.85 * (1 - 0.6 * thumb) * u); arm[below].drv.setPitch(-0.2 * clamp((8 - gap) / 10, 0, 1))
+    } else { for (const side of order) armPose(arm[side], dt); dl.setPitch(0); dr.setPitch(0); dl.setDepth(0); dr.setDepth(0); state.overArm = null }
     // head: look toward the hands, partly (the eyes take the rest)
     headPose(dt)
     // legs onto the pedals
@@ -496,6 +508,33 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
   }
 
   const tE = v3(), tW = v3(), dir = v3(), pole = v3(), hingeNow = v3()
+  // the gap between the hands' fingertips: the right hand's leftmost
+  // pressed tip less the left hand's rightmost (negative: interleaved). Plus TIP_GAP it
+  // compares with the gap between the wrists (crossed below 8 cm): only
+  // fingers actually among the other hand's count, not two hands playing
+  // side by side with their thumbs close
+  const TIP_GAP = 8
+  const tipX = (d, f) => d.joints.fingers[f][3].x
+  // (pressed fingertips only, and only while both hands press: a free
+  // finger hovering over the other hand's keys is not a crossing)
+  const handX = (d, pick) => {
+    let x = null
+    for (let f = 1; f <= 5; f++) if (d.diag.press[f - 1] > 0.2) x = x == null ? tipX(d, f) : pick(x, tipX(d, f))
+    return x
+  }
+  const tipGap = (dl, dr) => { const r = handX(dr, Math.min), l = handX(dl, Math.max); return r == null || l == null ? Infinity : r - l }
+  function reachX(d) {
+    const s = d.side === 'R' ? 1 : -1
+    let x = null
+    for (let f = 1; f <= 5; f++) if (d.diag.press[f - 1] > 0.2) { const t = tipX(d, f); if (x == null || -s * t > -s * x) x = t }
+    return x ?? d.joints.W.x
+  }
+  const _ex = v3()
+  function excursion(a) {
+    let sx = 0, n = 0
+    for (let tau = -0.6; tau <= 0.6 + 1e-6; tau += 0.15) if (a.drv.wristAt(state.songT + hands.lead + tau, _ex)) { sx += _ex.x; n++ }
+    return n ? -a.s * (a.drv.joints.W.x - sx / n) : 0
+  }
   // how far ahead (s) a crossing is seen coming
   const CROSS_AHEAD = [0.06, 0.12, 0.18]
   const _cl = v3(), _cr = v3()

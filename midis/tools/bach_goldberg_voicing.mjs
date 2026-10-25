@@ -7,8 +7,8 @@
 // us distinguish melody, canonic voices and bass. We raise important lines and
 // slightly recess their accompaniment; this is balance, not a global volume
 // increase. The existing ornament stage then realizes every written ornament
-// at the newly voiced note's velocity, and bach_goldberg_hands.mjs writes each
-// note's hand from the score as two tracks.
+// at the newly voiced note's velocity, and (bach_hands.mjs) writes each note's
+// hand from the score as two tracks.
 //
 // Policy:
 //   Aria / lyrical variations 7, 13, 19, 25: singing upper line +8–10 MIDI units
@@ -24,7 +24,6 @@ import { tmpdir } from 'node:os'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { PIECES, align, fetchSource, readSource, splitSegments } from './bach_ornaments.mjs'
-import { writeHands } from './bach_goldberg_hands.mjs'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const root = here + '../../'
@@ -164,8 +163,6 @@ async function main() {
       if (dry) args.push('--dry')
       execFileSync(process.execPath, args, { cwd: root, stdio: 'inherit' })
     }
-    // then each note's hand, from the score, as a right- and a left-hand track
-    if (!dry) for (const file of TARGETS) await writeHands(file)
   } finally { rmSync(dir, { recursive: true, force: true }) }
 }
 

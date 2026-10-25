@@ -1,26 +1,33 @@
-// Write each Goldberg note's hand into the MIDI, from the score: a "Right hand"
-// and a "Left hand" track (#032 Pianist reads the names: handsFromTracks).
+// Write each note's hand into the Bach MIDI files, from the score: a "Right
+// hand" and a "Left hand" track (#032 Pianist reads the names: handsFromTracks).
 //
-//   node midis/tools/bach_goldberg_hands.mjs [--dry]
+//   node midis/tools/bach_hands.mjs [--dry] [--only bach_wtc1_03]
 //
 // The files hold one track, so a player had to guess the hands, and #032's
 // split (fingering.js splitHands) charges for every left-hand note above the
-// right: it played none of the crossings Bach wrote for two manuals (Var. 5:
-// 83 left-hand notes sounding above the right in the score, 2 in the split).
+// right: it played none of the crossings Bach wrote for two manuals in the
+// Goldberg (Var. 5: 83 left-hand notes sounding above the right in the score,
+// 2 in the split), and an inner voice went to whichever hand was nearer.
 //
 // Each movement is aligned with its Mutopia LilyPond source (bach_ornaments.mjs
-// align, written grace notes included). The source has two parts, upper and
-// lower, and a part is a hand: when the left hand crosses over, its part only
-// changes clef (Var. 5 bar 1: g8 r8 \clef "treble" b'8 …), and the odd notes the
-// upper part writes on the lower staff (\staffDown, Var. 5 bar 26) are still the
-// right hand's, the left hand being busy there. A note the score does not have
-// (the notes of a realized ornament) takes the hand of the written note it
-// decorates: a matched note sounding then, nearest in pitch.
+// align, written grace notes included). Where the source has two parts, upper
+// and lower, a part is a hand: when the left hand crosses over, its part only
+// changes clef (Goldberg Var. 5 bar 1: g8 r8 \clef "treble" b'8 …), and the odd
+// notes the upper part writes on the lower staff (\staffDown, Var. 5 bar 26)
+// are still the right hand's, the left hand being busy there. In the fugues
+// the staves are the edition's choice of hand for each inner-voice note, as
+// players read them. A source written as one part whose voices move between
+// the staves with \change Staff (WTC I No. 12's prelude), which the reader does
+// not follow, says nothing about hands: its notes go in a third track, "Piano",
+// for the player's own split (splitting it by voice, tenor and bass to the
+// left, missed keys on 11 % of the left hand's frames, against 6.5 %).
+// A note the score does not have (the notes of a realized ornament,
+// a cadence trill) takes the hand of the written note it decorates: a matched
+// note sounding then, nearest in pitch.
 //
-// Reads and rewrites midis/bach_goldberg.mid and bach_goldberg_aria.mid in place
-// (the tracks are merged first, so it can run again). Run after
-// bach_goldberg_voicing.mjs, which calls it; onsets, durations, pitches and
-// velocities are untouched.
+// Reads and rewrites the files in place (the tracks are merged first, so it can
+// run again); onsets, durations, pitches and velocities are untouched.
+// bach_ornaments.mjs (and so bach_goldberg_voicing.mjs) ends by calling it.
 import { readFileSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
@@ -29,7 +36,6 @@ import { PIECES, align, fetchSource, readSource, splitSegments } from './bach_or
 const here = fileURLToPath(new URL('.', import.meta.url))
 const root = here + '../../'
 const { Midi } = createRequire(import.meta.url)(root + 'tonejs-midi.js')
-const TARGETS = ['bach_goldberg', 'bach_goldberg_aria']
 const NAMES = { R: 'Right hand', L: 'Left hand' }
 
 // a note the score lacks: the hand of a matched note sounding at its onset
@@ -52,9 +58,16 @@ function crossings(ns) {
   return c
 }
 
+// the score's hand for each of its notes: by part (upper: right); null for a
+// one-part source, which says nothing about hands
+function handsOfScore(score) {
+  if (new Set(score.map(n => n.staff)).size > 1) return n => n.staff === 0 ? 'R' : 'L'
+  return null
+}
+
 export async function handsFor(file, midi) {
   const notes = midi.tracks.flatMap(t => t.notes)
-  const dirs = PIECES[file]
+  const dirs = dirsOf(file)
   const segments = splitSegments(notes, dirs.length)
   const report = []
   let matched = 0, written = 0
@@ -62,8 +75,10 @@ export async function handsFor(file, midi) {
     const seg = segments[index].slice().sort((a, b) => a.ticks - b.ticks || a.midi - b.midi)
     const score = readSource(await fetchSource(dir)).notes
     const pairs = align(score, seg)
+    const handOf = handsOfScore(score)
+    if (!handOf) { for (const n of seg) n.hand = null; report.push({ dir, notes: seg.length, matched: 0, crossings: 0, unknown: true }); continue }
     const hit = []
-    for (const [i, j] of pairs) { seg[j].hand = score[i].staff === 0 ? 'R' : 'L'; hit.push(seg[j]) }
+    for (const [i, j] of pairs) { seg[j].hand = handOf(score[i]); hit.push(seg[j]) }
     for (const n of seg) if (!n.hand) n.hand = nearestHand(n, hit)
     matched += pairs.length; written += score.length
     report.push({ dir, notes: seg.length, matched: pairs.length, crossings: crossings(seg) })
@@ -86,17 +101,31 @@ export async function writeHands(file, { dry = false } = {}) {
     for (const n of notes.filter(n => n.hand === h).sort((a, b) => a.ticks - b.ticks || a.midi - b.midi))
       t.addNote({ midi: n.midi, ticks: n.ticks, durationTicks: n.durationTicks, velocity: n.velocity })
   }
-  const counts = { R: midi.tracks[0].notes.length, L: midi.tracks[1].notes.length }
-  if (counts.R + counts.L !== notes.length) throw new Error(`${file}: ${counts.R + counts.L} notes written of ${notes.length}`)
+  // (a movement whose source has one part: its notes without a hand, for the
+  // player's own split)
+  const rest = notes.filter(n => !n.hand)
+  if (rest.length) {
+    const t = midi.addTrack()
+    t.name = 'Piano'; t.channel = channel; t.instrument.number = instrument
+    for (const n of rest.sort((a, b) => a.ticks - b.ticks || a.midi - b.midi)) t.addNote({ midi: n.midi, ticks: n.ticks, durationTicks: n.durationTicks, velocity: n.velocity })
+  }
+  const counts = { R: midi.tracks[0].notes.length, L: midi.tracks[1].notes.length, none: rest.length }
+  if (counts.R + counts.L + counts.none !== notes.length) throw new Error(`${file}: ${counts.R + counts.L} notes written of ${notes.length}`)
   if (!dry) writeFileSync(path, Buffer.from(midi.toArray()))
-  console.log(`${file}: ${notes.length} notes, ${matched} of the score's ${written} matched; right ${counts.R}, left ${counts.L}${dry ? ' (dry run)' : ''}`)
-  const busy = report.filter(r => r.crossings).map(r => `${r.dir.split('-').pop()} ${r.crossings}`)
+  console.log(`${file}: ${notes.length} notes, ${matched} of the score's ${written} matched; right ${counts.R}, left ${counts.L}${counts.none ? `, ${counts.none} left to the player (${report.filter(r => r.unknown).map(r => r.dir.split('/').pop()).join(', ')}: one part)` : ''}${dry ? ' (dry run)' : ''}`)
+  const busy = report.filter(r => r.crossings).map(r => `${r.dir.split('/').pop().replace(/^bwv-988-/, '')} ${r.crossings}`)
   if (busy.length) console.log(`  left-hand notes above the right: ${busy.join(', ')}`)
 }
 
+// files cut from another for the Shorts (not rebuilt by bach_ornaments.mjs):
+// their movements' sources
+const EXTRA = { bach_wtc1_11p: PIECES.bach_wtc1_11.slice(0, 1) }
+const dirsOf = file => PIECES[file] ?? EXTRA[file]
+
 async function main() {
-  const dry = process.argv.includes('--dry')
-  for (const file of TARGETS) await writeHands(file, { dry })
+  const args = process.argv.slice(2), dry = args.includes('--dry')
+  const only = args.includes('--only') ? args[args.indexOf('--only') + 1] : null
+  for (const file of [...Object.keys(PIECES), ...Object.keys(EXTRA)]) if (!only || file === only) await writeHands(file, { dry })
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) await main()
