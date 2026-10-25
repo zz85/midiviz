@@ -2,6 +2,16 @@
 
 What each experiment does and how, newest first. The short list is in the [README](README.md).
 
+## 25 Oct 2026
+
+[Experiment #048 - Bowed Violin](048_bowed_violin.html) ([notes](physical-violin/README.md))
+- A monophonic physical bowed-string instrument running live in an AudioWorklet: hysteretic stick/slip bow friction excites a two-part fractional-delay waveguide, with pitch-tracking loss, changing bow position, pressure, rosin grip, bow noise, portamento and slow performance variation.
+- Four open-string models cover G3, D4, A4 and E5. The played note automatically chooses a string; filtered feedback delays add sympathetic resonance from all four open strings. Legato keeps the bow moving while the active string or pitch changes.
+- The string passes through a selectable violin-body response and a generated stereo room. Two included body responses are fitted from the University of Iowa Musical Instrument Samples violin recordings; synthetic classic, dark and bright bodies, a dry string and any user-loaded WAV response are available too.
+- The XY performance pad controls expression vertically and vibrato horizontally, with optional spring return or press-to-bow behavior. Computer keys play chromatically from G3, and Web MIDI supports notes, CC11/CC2 expression and CC1 vibrato.
+- Six presets cover solo legato, sul tasto, sul ponticello, baroque, flautando and the raw string. A live display reports the selected string, pitch and stick/slip regime while waveform and spectrum traces show the output.
+- Offline diagnostics render G3–E6 within 4 cents with about one slip per period. `node --test physical-violin/test/*.test.mjs` checks pitch, stability, page wiring and the experiment’s standalone terminology.
+
 ## 22 Oct 2026
 
 [Experiment #047 - Wardrobe](047_wardrobe.html) ([notes](wardrobe/README.md))

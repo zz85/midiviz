@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#171719">
+  <title>Experiment #048 - Bowed Violin</title>
+  <!--
+    Experiment #048 - a playable physical bowed-string model in Web Audio.
+    The string, bow friction, body response, sympathetic strings and room all
+    run live in the browser. See physical-violin/README.md.
+  -->
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #171719;
+      --panel: #202024;
+      --panel2: #28282e;
+      --ink: #ece8e0;
+      --muted: #aaa5a0;
+      --line: #3d3b42;
+      --gold: #e4b665;
+      --blue: #73c6e8;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    body { padding: 24px; }
+    main { width: min(1120px, 100%); margin: 0 auto; }
+    header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+    h1 { margin: 0; font: 400 clamp(22px, 3vw, 34px)/1.1 Georgia, serif; color: #f6e8cb; }
+    header a { color: var(--muted); text-decoration: none; font-size: 12px; }
+    header a:hover { color: var(--ink); }
+    .intro { max-width: 760px; margin: 6px 0 0; color: var(--muted); }
+    .toolbar, .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+    .toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; padding: 12px; margin-bottom: 12px; }
+    button, select, input { font: inherit; }
+    button {
+      border: 1px solid #6d5734; border-radius: 8px; background: var(--gold); color: #20170b;
+      padding: 8px 14px; font-weight: 650; cursor: pointer;
+    }
+    button:disabled { opacity: .55; cursor: default; }
+    select, input[type=file] { color: var(--ink); }
+    select { min-height: 34px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel2); padding: 4px 8px; }
+    .toolbar label { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); }
+    #note { color: var(--gold); font: 13px ui-monospace, monospace; min-width: 64px; }
+    #stats { margin-bottom: 12px; padding: 9px 12px; border-radius: 8px; background: #111114; color: #c9c5be; font: 12px ui-monospace, monospace; }
+    .workspace { display: grid; grid-template-columns: minmax(300px, 380px) 1fr; gap: 12px; }
+    .card { padding: 14px; min-width: 0; }
+    .card h2 { margin: 0 0 10px; color: var(--muted); font-size: 11px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
+    #xypad { display: block; width: 100%; aspect-ratio: 1; height: auto; border-radius: 9px; cursor: crosshair; touch-action: none; }
+    .pad-opts { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 10px; color: var(--muted); font-size: 12px; }
+    .pad-opts label { display: flex; align-items: center; gap: 5px; }
+    input[type=checkbox], input[type=range] { accent-color: var(--gold); }
+    .help { margin: 10px 0 0; color: var(--muted); font-size: 12px; }
+    #params { display: grid; gap: 7px; }
+    #params label { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(130px, 1.4fr) 48px; gap: 10px; align-items: center; }
+    #params small { color: #77737c; }
+    #params output { color: var(--muted); text-align: right; font: 12px ui-monospace, monospace; }
+    #params input { width: 100%; }
+    .room { display: flex; flex-wrap: wrap; gap: 12px 20px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+    .room label { color: var(--muted); display: flex; align-items: center; gap: 7px; }
+    .room input[type=range] { width: 120px; }
+    #scope { display: block; width: 100%; height: 250px; margin-top: 12px; border-radius: 12px; background: #111; }
+    .keys { margin: 12px 2px 0; color: var(--muted); font-size: 12px; }
+    kbd { border: 1px solid #55515a; border-bottom-width: 2px; border-radius: 4px; padding: 1px 5px; color: var(--ink); font: 11px ui-monospace, monospace; }
+    @media (max-width: 780px) {
+      body { padding: 14px; }
+      .workspace { grid-template-columns: 1fr; }
+      #params label { grid-template-columns: minmax(125px, 1fr) minmax(100px, 1.2fr) 42px; }
+      header { align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>#048 · Bowed Violin</h1>
+        <p class="intro">A playable physical string: bow pressure and motion excite a waveguide, then a violin-body response and room shape the sound.</p>
+      </div>
+      <a href="README.md">Back to experiments</a>
+    </header>
+
+    <div class="toolbar">
+      <button id="start">Start audio</button>
+      <span id="note"></span>
+      <label>Preset <select id="preset"></select></label>
+      <label>Body <select id="body"></select></label>
+      <label title="Replace the body stage with any WAV impulse response">Load body response <input id="ir" type="file" accept="audio/*"></label>
+    </div>
+
+    <div id="stats">not started</div>
+
+    <div class="workspace">
+      <section class="card">
+        <h2>Performance pad</h2>
+        <canvas id="xypad" width="360" height="360" aria-label="Expression and vibrato pad"></canvas>
+        <div class="pad-opts">
+          <label><input id="padSpring" type="checkbox"> Spring back</label>
+          <label><input id="padBow" type="checkbox"> Pad press bows last note</label>
+        </div>
+        <p class="help">Move up for expression and right for vibrato. Incoming MIDI expression, breath and mod-wheel messages move the pad too.</p>
+      </section>
+
+      <section class="card">
+        <h2>Instrument</h2>
+        <div id="params"></div>
+        <div class="room">
+          <label>Room mix <input id="roomMix" type="range" min="0" max="0.6" step="0.01" value="0.18"></label>
+          <label>Room decay <input id="rt60" type="range" min="0.2" max="4" step="0.1" value="1.6"></label>
+        </div>
+      </section>
+    </div>
+
+    <canvas id="scope" width="1200" height="400" aria-label="Waveform and spectrum"></canvas>
+    <p class="keys">
+      Play chromatically from G3 with
+      <kbd>A</kbd> <kbd>W</kbd> <kbd>S</kbd> <kbd>E</kbd> <kbd>D</kbd> <kbd>F</kbd> <kbd>T</kbd> <kbd>G</kbd>
+      <kbd>Y</kbd> <kbd>H</kbd> <kbd>U</kbd> <kbd>J</kbd> <kbd>K</kbd> <kbd>O</kbd> <kbd>L</kbd> <kbd>P</kbd>
+      <kbd>;</kbd> <kbd>'</kbd>. Hold <kbd>Shift</kbd> for one octave higher. A MIDI keyboard works too.
+    </p>
+  </main>
+  <script type="module" src="physical-violin/app.js"></script>
+</body>
+</html>
