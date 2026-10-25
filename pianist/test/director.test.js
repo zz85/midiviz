@@ -4,8 +4,10 @@
 import { test, expect, mock } from 'bun:test'
 
 // the page gets three.js from a CDN; here a stand-in with the bits the director uses
-mock.module('three', () => import('./three-shim.mjs'))
-const { Vector3 } = await import('./three-shim.mjs')
+// (a module object, not import(): a factory that imports hangs bun 1.3 once another test file has mocked 'three')
+const shim = await import('./three-shim.mjs')
+mock.module('three', () => shim)
+const { Vector3 } = shim
 const { planShots, planShort, createDirector, SPOTS, stringsShare, STRINGS_LEVELS, showsFeet } = await import('../director.js')
 
 function song(k, duration = 600) {
