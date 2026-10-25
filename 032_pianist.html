@@ -335,7 +335,7 @@
     <div class="field"><label>Main light</label><input type="range" id="light" min="0" max="2" step="0.01" value="1"></div>
     <div class="field"><label>Exposure</label><input type="range" id="exposure" min="0.3" max="2.5" step="0.01" value="1"></div>
     <div class="sect">Post-processing</div>
-    <label class="chk"><input type="checkbox" id="dof">Depth of field</label>
+    <label class="chk" title="A focus puller keeps her eyes sharp in the shots of her and one hand in the shots of the hands (the one nearer the middle of the frame or the busier, changing only when the other clearly wins for 1.5 s), the shallower the closer the camera"><input type="checkbox" id="dof">Depth of field</label>
     <div class="field" title="How soft the out-of-focus parts get"><label>Blur <span class="val" id="dofAmtV"></span></label><input type="range" id="dofAmt" min="0.2" max="4" step="0.05" value="1"></div>
     <label class="chk"><input type="checkbox" id="bloom">Bloom</label>
     <div class="field"><label>Bloom strength <span class="val" id="bloomAmtV"></span></label><input type="range" id="bloomAmt" min="0" max="1.2" step="0.01" value="0.12"></div>
@@ -349,6 +349,7 @@
   </div>
   <div id="perfPop" class="pop ui">
     <div class="sect">Body<small>how much she moves with the music</small></div>
+    <label class="chk" title="After the last note she lifts off, comes back to the middle and, about 2 s later, brings her hands down to rest in her lap (an export needs Render → Tail after the end of 4 s or more to show it all)"><input type="checkbox" id="lapRest" checked>Hands to her lap after the end</label>
     <div class="field"><label>Body expression</label><input type="range" id="expr" min="0" max="2" step="0.1" value="1"></div>
     <div class="field"><label>Posture</label><input type="range" id="posture" min="-0.5" max="1.6" step="0.05" value="0.5"><span id="postureV">between</span></div>
     <div class="field"><label>Weight shift (one hip)</label><input type="range" id="hips" min="0" max="2" step="0.1" value="1"></div>
@@ -403,6 +404,7 @@
     <div class="field"><label>Resolution</label><select id="exRes"><option value="426x240">240p (preview)</option><option value="854x480">480p (preview)</option><option value="1280x720">720p</option><option value="1920x1080" selected>1080p</option><option value="2560x1440">1440p</option><option value="3840x2160">4K</option></select></div>
     <div class="field"><label>Frame rate</label><select id="exFps"><option>5</option><option>15</option><option>25</option><option>30</option><option selected>60</option></select></div>
     <div class="field wideOnly" title="How much of the song to render: all of it, or a short test from the start or from where the song is now (the seek bar)"><label>Length</label><select id="exLen"><option value="all" selected>Whole song</option><option value="20">First 20 s (test)</option><option value="60">First minute</option><option value="here20">20 s from the current position</option><option value="here60">1 minute from the current position</option></select></div>
+    <div class="field" title="Picture past the end, for editing: after the last note she lifts off, comes back to the middle and (with hands to the lap) rests, while the hall rings out. Automatic: 2 s (a Short 0.6 s). A clip that ends before the piece does gets the same length of handle past its out point, the music going on. A Short's sound fades out over the last second"><label>Tail after the end</label><select id="exTail"><option value="auto" selected>Automatic (2 s, a Short 0.6 s)</option><option value="4">4 s</option><option value="6">6 s</option><option value="8">8 s</option><option value="12">12 s</option></select></div>
     <div class="field wideOnly"><label>Camera</label><select id="exCam"><option value="auto" selected>Director (auto)</option><option value="current">As on screen</option></select></div>
     <label class="chk"><input type="checkbox" id="exAudio" checked>Include audio (with the hall)</label>
     <div class="field wideOnly" title="Title card: the classic card, before the music. First intertitle: the title fades in over the opening bars like the other intertitles (composer, title and the notes' subtitle, in the intertitle style), and also when the song plays here"><label>Song title</label><select id="exTitle"><option value="none" selected>None (the intertitles open the video)</option><option value="intertitle">As the first intertitle</option><option value="card">Title card (fades out as the music starts)</option></select></div>
@@ -484,6 +486,7 @@
     import { createDirector, SPOTS, PORTRAIT, spotFor, MOVES, FRAME_LABELS, SIZES, spotKind } from './pianist/director.js'
     import { hideBody } from './pianist/shell.js'
     import { suggestClips, snapStart, snapEnd, clipOf, shortDescription, SHORT_MAX, SHORT_LENGTHS, SHORT_DEFAULT } from './pianist/shorts.js'
+    import { createFocusPuller, SHOT_DOF } from './pianist/focus-puller.js'
     import { createLinerLibrary, clockOfMidi, buildTimeline, toVTT, toChapters, titleScreen, withTitle, titleSecs } from './liner/liner.js'
     import { createLinerOverlay, drawLinerCaption, drawIntertitle, loadIntertitleFonts, INTERTITLE_STYLES, INTERTITLE_THEMES, INTERTITLE_POSITIONS } from './liner/overlay.js'
 
@@ -872,6 +875,8 @@
     $('clothSim').onchange = () => { dress.simulate = $('clothSim').checked; if (ch.dress) ch.dress.simulate = $('clothSim').checked }
     $('expr').value = params.get('expr') ?? 1
     rig.state.expression = +$('expr').value
+    rig.state.lapRest = $('lapRest').checked
+    $('lapRest').onchange = () => { rig.state.lapRest = $('lapRest').checked }
     $('expr').oninput = () => { rig.state.expression = +$('expr').value }
     $('hips').value = params.get('hips') ?? 1
     rig.state.hipShift = +$('hips').value
@@ -1492,7 +1497,7 @@
     }
     // after the song ends the picture runs on a few seconds (the hands lift
     // off, she settles) while the sound and the song clock have stopped
-    const AFTER_END = 4
+    const AFTER_END = 6   // (s the picture runs on past the end: the lift-off, the move to the middle, the hands to the lap)
     let endedAt = null
     function pictureTime(dt) {
       if (!scheduler?.playing) {
@@ -1673,14 +1678,14 @@
       ['outfit', 'outfit'], ['dress', 'dressStyle'], ['slit', 'slit'], ['fabric', 'fabric'], ['dcol', 'dressColor'], ['shoes', 'shoeStyle'],
       ['hair', 'hairStyle'], ['hcol', 'hairColor'], ['density', 'hairDensity'], ['hairon', 'hairOn'], ['hairsim', 'hairSim'],
       ['dresson', 'dressOn'], ['clothsim', 'clothSim'], ['vdress', 'vdress'], ['look', 'look'], ['smooth', 'smooth'], ['simplify', 'simplify'],
-      ['gaze', 'gaze'], ['expr', 'expr'], ['hips', 'hips'], ['posture', 'posture'], ['reach', 'reach'], ['rock', 'rock'], ['sway', 'sway'], ['nod', 'nod'], ['glances', 'glances'], ['armw', 'armw'], ['lifth', 'lifth'], ['wflex', 'wflex'], ['frot', 'frot'], ['elbow', 'elbowLead'], ['liftoff', 'liftoff'], ['bench', 'benchDist'], ['benchh', 'benchH'],
+      ['gaze', 'gaze'], ['expr', 'expr'], ['lap', 'lapRest'], ['hips', 'hips'], ['posture', 'posture'], ['reach', 'reach'], ['rock', 'rock'], ['sway', 'sway'], ['nod', 'nod'], ['glances', 'glances'], ['armw', 'armw'], ['lifth', 'lifth'], ['wflex', 'wflex'], ['frot', 'frot'], ['elbow', 'elbowLead'], ['liftoff', 'liftoff'], ['bench', 'benchDist'], ['benchh', 'benchH'],
       ['touch', 'touch'], ['fingering', 'fingering'],
       ['light', 'light'], ['exposure', 'exposure'], ['dof', 'dof'],
       ['move', 'camMove'], ['pace', 'dirPace'], ['favour', 'dirBias'], ['trans', 'dirTrans'], ['shotnames', 'shotLbl'], ['follow', 'camFollow'], ['dfar', 'dirFar'], ['dmed', 'dirMed'], ['dclose', 'dirClose'],
       ['sf', 'sf'], ['avsync', 'avsync'],
       ['dofamt', 'dofAmt'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
       ['vol', 'vol'], ['room', 'room'], ['seat', 'seat'], ['rv', 'rvAmt'], ['decay', 'rvDecay'], ['tone', 'rvTone'], ['boost', 'boost'], ['amb', 'amb'], ['applause', 'applause'],
-      ['exformat', 'exFormat'], ['exlayout', 'exLayout'], ['exsplit', 'exSplit'], ['exhands', 'exHandsHalf'], ['exlview', 'exLessonView'], ['exltilt', 'exLaneTilt'], ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exsub', 'exSub'], ['excard', 'exCard'], ['excaps', 'exCaps'], ['exvtt', 'exVtt'], ['exlen', 'exLen'], ['exhold', 'exHold'],
+      ['exformat', 'exFormat'], ['exlayout', 'exLayout'], ['exsplit', 'exSplit'], ['exhands', 'exHandsHalf'], ['exlview', 'exLessonView'], ['exltilt', 'exLaneTilt'], ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exfps', 'exFps'], ['extail', 'exTail'], ['exsub', 'exSub'], ['excard', 'exCard'], ['excaps', 'exCaps'], ['exvtt', 'exVtt'], ['exlen', 'exLen'], ['exhold', 'exHold'],
       ['notes', 'linerMode'], ['itstyle', 'itStyle'], ['itstylea', 'itStyleA'], ['itcol', 'itTheme'], ['itpos', 'itPos'], ['itheads', 'itHeads'], ['extitle', 'exTitle'],
     ].filter(([, id]) => $(id))
     const OUTFIT_KEYS = { dress: 'dress', slit: 'slit', fabric: 'fabric', dcol: 'color', shoes: 'shoes', hair: 'hair', hcol: 'hairColor' }
@@ -1767,6 +1772,13 @@
     const clock = new THREE.Clock()
     let fixedT = null   // ?t= for headless stills: song time to pose at
     const head = new THREE.Vector3(), handsC = new THREE.Vector3(), _ndc = new THREE.Vector3()
+    // depth of field (pianist/focus-puller.js, as #045): her eyes for the face, a hand the puller
+    // picks for the hands; a second puller for the hands half of a stacked Short
+    const focusPull = createFocusPuller(), focusPull2 = createFocusPuller()
+    const eyesC = new THREE.Vector3(), hasEyes = !!(ch.byName?.['eye.L'] && ch.byName?.['eye.R'])
+    const eyesAt = () => hasEyes ? eyesC.copy(rig.pos('eye.L')).add(rig.pos('eye.R')).multiplyScalar(0.5) : head
+    const dofOf = name => SHOT_DOF[name] ?? 1
+    let lastShot2 = null
     let fxT = 0, exporting = false, exTitleCard = false
     function frame() {
       const dt = Math.min(clock.getDelta(), 1 / 20)
@@ -1832,10 +1844,11 @@
       // (where she is in the frame: for intertitles placed automatically)
       { const a = _ndc.copy(head).project(camera), ax = a.x, ay = a.y, b = _ndc.copy(handsC).project(camera); subjectNdc.x = (ax + b.x) / 2; subjectNdc.y = Math.max(ay, b.y) }
       // focus: the face in close shots, the hands looking down at the keys
-      const fd = camera.position.distanceTo(focusOn)
-      bokeh.uniforms.focus.value += (fd - bokeh.uniforms.focus.value) * (snapFocus ? 1 : 0.1)
-      bokeh.uniforms.aperture.value = wide ? 0.00003 : 0.0001
-      bokeh.uniforms.aperture.value *= +$('dofAmt').value
+      {
+        const f = focusPull.update({ camera, dt, subject: focusOn === handsC ? 'hands' : focusOn === head ? 'head' : 'target', hands: rig.hands, handsMid: handsC,
+          eyes: focusOn === head ? eyesAt() : null, target: focusOn, snap: snapFocus, amount: +$('dofAmt').value, shot: dofOf(driven?.shot?.name ?? view) })
+        bokeh.uniforms.focus.value = f.focus; bokeh.uniforms.aperture.value = f.aperture
+      }
       // (the director's fade-in only while the song runs: a loaded song paused at 0 isn't black)
       renderer.toneMappingExposure = +$('exposure').value * (dirShot && !userCam && ((offline && !exTitleCard) || scheduler?.playing) ? dirShot.fade ?? 1 : 1)
       grain.uniforms.uTime.value = fxT
@@ -1916,8 +1929,10 @@
         const c = director2.update(t, dt, live)
         camera.position.copy(c.pos); camera.lookAt(c.target)
         if (camera.fov !== c.fov) { camera.fov = c.fov; camera.updateProjectionMatrix() }
-        bokeh.uniforms.focus.value = camera.position.distanceTo(c.focus === 'target' ? c.target : live.hands)
-        bokeh.uniforms.aperture.value = 0.0001 * +$('dofAmt').value
+        const f2 = focusPull2.update({ camera, dt, subject: c.focus === 'target' ? 'target' : 'hands', hands: rig.hands, handsMid: live.hands, target: c.target,
+          snap: c.shot !== lastShot2, amount: +$('dofAmt').value, shot: dofOf(c.shot?.name) })
+        lastShot2 = c.shot
+        bokeh.uniforms.focus.value = f2.focus; bokeh.uniforms.aperture.value = f2.aperture
         renderer.setViewport(0, 0, w, hb); renderer.setScissor(0, 0, w, hb); draw()
       }
       // the seam
@@ -2032,6 +2047,7 @@
       let clipA = here ? Math.max(0, Math.min(songNow(), song.duration - 1)) : 0, clipB = Math.min(song.duration, clipA + secs)
       // a Short: the clip from the strip
       const asShort = isShort()
+      const tailS = $('exTail').value === 'auto' ? (asShort ? 0.6 : 2) : +$('exTail').value
       if (asShort) { if (!(short.b > short.a)) clipFresh(); clipA = short.a; clipB = short.b }
       const clip = clipA > 0 || clipB < song.duration
       const name = (song.title || 'pianist').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_') + (asShort ? '_short' : '') + (clip ? `_${Math.floor(clipA)}-${Math.ceil(clipB)}s` : '') + `_${height}p${fps}.mp4`
@@ -2066,11 +2082,12 @@
           song: { schedule: { notes: song.notes, controlChanges: (song.controlChanges || []).filter(c => c.controller !== 7) }, programs, duration: song.duration, title: song.title },
           width, height, fps, start: clipA,
           // a Short: on the music from the first frame, the room rings 0.6 s past the out point while it fades
-          end: asShort ? Math.min(song.duration, clipB + 0.6) : clipB, ...(asShort ? { preroll: 0.1, tail: 0.6 } : {}),
+          // the tail (Render → Tail after the end): past the piece's end, or a handle past a clip's out point
+          end: asShort || $('exTail').value !== 'auto' ? Math.min(song.duration, clipB + tailS) : clipB, tail: tailS, ...(asShort ? { preroll: 0.1 } : {}),
           bitrate: defaultBitrate(width, height, fps),
           audio: $('exAudio').checked,
           audioOpts: { vendorPath, soundfonts: [$('sf').value], volume: 1, convertSF3: engine._backend?._convertSF3 ? d => engine._backend._convertSF3(d) : null },
-          audioFx: (fx => !asShort ? fx : shortFades(fx, clipA - 0.1, Math.min(song.duration + 0.6, clipB + 0.6)))(offlineHall($('room').value === 'dry' ? null : acousticParams(hallSettings()), 48000, { volume: +$('vol').value })),
+          audioFx: (fx => !asShort ? fx : shortFades(fx, clipA - 0.1, Math.min(song.duration + tailS, clipB + tailS)))(offlineHall($('room').value === 'dry' ? null : acousticParams(hallSettings()), 48000, { volume: +$('vol').value })),
           tour: null,
           // the card holds ~1 s, then the music starts and the card fades over
           // 3.5 s while the scene focuses in underneath it
@@ -2398,8 +2415,11 @@
           camera.position.set(...d.pos); controls.target.set(...d.target); camera.fov = d.fov; camera.updateProjectionMatrix(); controls.update()
           if (camFree) { camera.position.copy(camGoal.pos); controls.target.copy(camGoal.target); controls.update() }   // (?cam=)
         }
-        bokeh.uniforms.focus.value = camera.position.distanceTo(focusOn)
-        bokeh.uniforms.aperture.value = wide ? 0.00003 : 0.0001
+        {
+          const hd = focusOn === handsAt ? 'hands' : focusOn === rig.pos('head') ? 'head' : 'target'
+          const f = focusPull.update({ camera, dt: 0, subject: hd, hands: rig.hands, handsMid: handsAt, eyes: hd === 'head' ? eyesAt() : null, target: focusOn, snap: true, amount: +$('dofAmt').value, shot: dofOf(window.__shotInfo?.name ?? view) })
+          bokeh.uniforms.focus.value = f.focus; bokeh.uniforms.aperture.value = f.aperture
+        }
         bokeh.enabled = !params.has('nodof')
         renderer.toneMappingExposure = +$('exposure').value
         if (stacked) { drawStacked(T, 1 / 60, { hands: handsAt, head: rig.pos('head') }); window.__shotInfo2 = director2.update(T, 0, { hands: handsAt, head: rig.pos('head') }).shot }

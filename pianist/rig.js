@@ -557,38 +557,53 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     if (state.lap > 0) toLap(a, state.lap)
   }
   // ── After the piece: the hands come down to rest in her lap ──
-  // (state.lapRest; off by default.) Once the hands have lifted off the last
+  // (state.lapRest, on by default.) Once the hands have lifted off the last
   // chord and come in to the middle (hand-driver.js ENDING, to ~2.2 s), they
-  // go down to her lap over 2 s: each arm bone (shoulder to fingertips) is
-  // eased from the pose the hands driver gives it to the lap pose restArm
-  // gives it, in world space, parent first; the hand relaxed on the thigh.
-  // On the page the picture runs on 4 s past the end (AFTER_END), so the
-  // move is over by then; an export's tail is 2 s, so it needs a longer one.
-  const LAP = [1.8, 3.8]
+  // go down to her lap over 2.2 s. The wrist travels a curve from where the
+  // driver holds it, first back toward her and a little up (clear of the
+  // keyboard's front edge, 73 cm high), then down onto her thigh: an arm
+  // solved to each point on it (restArm's IK), the hand and fingers easing
+  // to their relaxed rest pose on the forearm. Each arm bone is blended from
+  // the driven pose into that over the first third, in world space, parent
+  // first. On the page the picture runs on 6 s past the end (AFTER_END); an
+  // export needs Render → Tail after the end of 4 s or more to show it.
+  const LAP = [1.8, 4.0]
   state.lap = 0
   const lapAt = t => state.lapRest && !state.stand ? THREE.MathUtils.smootherstep(t, (hands.endT ?? Infinity) + LAP[0], (hands.endT ?? Infinity) + LAP[1]) : 0
   const _lapA = [], _lapB = []
   const chainOf = a => a.chain || (a.chain = [a.ua1, a.ua2, a.la1, a.la2, a.wrist, ...a.fingers.flat()])
+  const _lapP = v3(), _lapC = v3(), _lapL = v3(), _qh = new THREE.Quaternion()
   function toLap(a, u) {
     const ch = chainOf(a)
     // the pose as driven
     ch.forEach((i, k) => { solve(i); (_lapA[k] ||= new THREE.Quaternion()).copy(wQ[i]) })
-    // the lap: the arm from restArm, the hand and fingers relaxed in their rest
-    // pose on the forearm (as with no song)
-    restArm(a)
-    for (const i of ch.slice(4)) setQ(i, base(i, _q2))
-    ch.forEach((i, k) => { solve(i); (_lapB[k] ||= new THREE.Quaternion()).copy(wQ[i]) })
-    // between the two, parent first (a world rotation set on a parent moves its children)
-    ch.forEach((i, k) => setQ(i, _q2.slerpQuaternions(_lapA[k], _lapB[k], u)))
+    // the wrist's way down: a curve from the driven wrist through a point back
+    // toward her at its height (a little above) to the lap
+    const W0 = a.drv.joints.W
+    _lapL.set(a.s * 9, 62, 26)
+    _lapC.set((W0.x + _lapL.x) / 2, Math.max(W0.y, 76) + 4, _lapL.z)
+    const e = u, f = 1 - e
+    _lapP.set(f * f * W0.x + 2 * e * f * _lapC.x + e * e * _lapL.x, f * f * W0.y + 2 * e * f * _lapC.y + e * e * _lapL.y, f * f * W0.z + 2 * e * f * _lapC.z + e * e * _lapL.z)
+    // the arm to that point; the hand from as driven to relaxed on the forearm
+    restArm(a, _lapP)
+    ch.slice(0, 4).forEach((i, k) => { solve(i); (_lapB[k] ||= new THREE.Quaternion()).copy(wQ[i]) })
+    const take = THREE.MathUtils.smoothstep(u, 0, 0.33)
+    ch.slice(0, 4).forEach((i, k) => setQ(i, _q2.slerpQuaternions(_lapA[k], _lapB[k], take)))
+    // (the hand bones: their driven rotation relative to the forearm, eased to the rest one)
+    ch.slice(4).forEach((i, j) => {
+      const k = j + 4
+      _qh.copy(_lapA[k])
+      setQ(i, _q2.slerpQuaternions(_qh, base(i, new THREE.Quaternion()), u))
+    })
   }
-  function restArm(a) {
-    // no song: hands in the lap
+  function restArm(a, at = null) {
+    // no song: hands in the lap (at: the wrist to this point instead)
     const S = pos(bones[a.ua1].name)
     // (standing: hands together in front of her, following the bow down)
     // (#047's state.standArms: 'sides' arms hanging, the hands a little out from the thighs, as for a fitting; 'clasp' hands together, clear of the skirt)
     const lap = state.stand && state.standArms === 'sides' ? v3(S.x + Math.sign(S.x) * 7, S.y - (a.UPPER + a.FORE) * 0.96, S.z - 2)
       : state.stand && state.standArms === 'clasp' ? v3(a.s * 2.5, hipMid.y - 17, seat0.z - 22)   // (clasped clear of the skirt)
-      : state.stand ? v3(a.s * 2.5, hipMid.y - 14 - 30 * state.lean, seat0.z - 13 - 32 * state.lean) : v3(a.s * 9, 62, 26)
+      : state.stand ? v3(a.s * 2.5, hipMid.y - 14 - 30 * state.lean, seat0.z - 13 - 32 * state.lean) : at ? at.clone() : v3(a.s * 9, 62, 26)
     const v = _v.subVectors(lap, S), L = Math.min(v.length(), a.UPPER + a.FORE - 1)
     const n = v.normalize().clone()
     const cosA = clamp((a.UPPER ** 2 + L * L - a.FORE ** 2) / (2 * a.UPPER * L), -1, 1), sinA = Math.sqrt(1 - cosA * cosA)
@@ -1025,7 +1040,7 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     // breathing deepens with the phrase
     state.breathAmp = 1 + 1.2 * x * E
   }
-  Object.assign(state, { songT: 0, playing: false, exLean: 0, exSide: 0, exTurn: 0, exNod: 0, exRoll: 0, exShrug: 0, breathAmp: 1, hipRoll: 0, hipShift: 1, elbowLead: 1, posture: 0.5, reach: 1, rock: 1, sway: 1, nod: 1, glances: 1, gazeMode: 'music', blink: 0, lidDrop: 0, stand: 0, bowLean: 0, lookAt: null, lapRest: false })
+  Object.assign(state, { songT: 0, playing: false, exLean: 0, exSide: 0, exTurn: 0, exNod: 0, exRoll: 0, exShrug: 0, breathAmp: 1, hipRoll: 0, hipShift: 1, elbowLead: 1, posture: 0.5, reach: 1, rock: 1, sway: 1, nod: 1, glances: 1, gazeMode: 'music', blink: 0, lidDrop: 0, stand: 0, bowLean: 0, lookAt: null, lapRest: true })
 
   const LOOK = 0.4, _fw = v3(), _sd = v3(), TURN_R = 25   // s ahead the body watches for keys out of reach
   /** Posture from the hands: lean / turn toward them, further when out of reach. */

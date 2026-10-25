@@ -92,6 +92,16 @@ export const SPOTS = {
   feet: { label: 'Pedals', subj: 'feet', az: 58, el: 8, dist: 180, fov: 30, size: 1, moves: ['still', 'dollyIn'] },
   // made for a tall frame (Shorts): from straight above her left, the keyboard
   // running up the picture (bass at the bottom), her arms coming in from the right
+  // at either end of the keyboard, a little in front of her and a little
+  // raised, looking along the keys at her: the keys, her fingers and her face
+  // in one frame. A grand allows no more front than this for the hands: the
+  // camera must stay on her side of the case's front (z > -17), or the case
+  // and the open lid hide the keys, and raising it more looks into the
+  // strings past the folded flap (these stay under 10 %, stringsShare). The
+  // treble end (the audience side) at two sizes, the bass end once
+  keysFront: { label: 'Keys and her, from the treble end', fav: 1.4, subj: 'figure', az: 96, el: 9, dist: 190, fov: 34, size: 1, moves: ['orbit', 'dollyIn', 'still', 'zoomIn'], orbitMax: 6 },
+  keysFrontClose: { label: 'Hands and face, from the treble end', fav: 1.2, subj: 'hands', aim: [4, 16, 8], az: 97, el: 6, dist: 122, fov: 32, size: 0, moves: ['still', 'orbit', 'zoomOut', 'dollyOut'], orbitMax: 6 },
+  keysFrontBass: { label: 'Keys and her, from the bass end', fav: 1, subj: 'figure', az: -97, el: 10, dist: 190, fov: 34, size: 1, moves: ['orbit', 'dollyIn', 'still'], orbitMax: 6 },
   // the whole stage as the hall sees it: high on the audience side (the open
   // lid), the piano side-on with her at the keyboard on the left, the tail on
   // the right and the back wall behind (a recital photographed from the
@@ -129,6 +139,9 @@ export const PORTRAIT = {
   back: { p: 1, el: 22, dist: 175, fov: 52, aim: [0, -12, 0] },
   hammers: { p: 1, dist: 62, fov: 44 },
   pedalsClose: { p: 1, dist: 75, fov: 44 },
+  keysFront: { p: 1, dist: 235, fov: 46 },
+  keysFrontClose: { p: 2, dist: 150, fov: 44, aim: [6, 20, 6] },
+  keysFrontBass: { p: 1, dist: 235, fov: 46 },
   // (p 0: never drawn by a Short's plan, only its opening; the lens opened so
   // the tall frame still takes in the candles to either side)
   stage: { p: 0, dist: 900, fov: 64, el: 14, aim: [-150, 40, -80] },
@@ -535,7 +548,7 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
       end = near.length ? near.reduce((b, s) => Math.abs(s - want) < Math.abs(b - want) ? s : b) : want
     }
     const last = duration - end < Math.max(4, 0.5 * L)
-    if (last) end = duration + 6
+    if (last) end = duration + 15   // (past the end: the export's tail, up to 12 s)
     const prev = shots[i - 1], prev2 = shots[i - 2]
     let name, move
     // open far (the page fades it in from black): side-on from the hall,
@@ -754,7 +767,7 @@ export function planShort({ duration, phrases = [], glances = [], energyAt = () 
   const f = shots[0], z = shots[shots.length - 1]
   if (shots.length > 1 && z.name === f.name) { z.move = f.move; z.amt = f.amt; z.dir = -f.dir; z.reverse = true }
   // padding: the export's pre-roll and tail stay on the first and last shots
-  f.t0 = Math.min(f.t0, A - 3); z.t1 = Math.max(z.t1, B + 6)
+  f.t0 = Math.min(f.t0, A - 3); z.t1 = Math.max(z.t1, B + 15)
   return shots
 }
 
