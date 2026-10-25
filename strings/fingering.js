@@ -860,16 +860,19 @@ function heldConflicts(notes, tolerance) {
   const eventOf = new Map()
   makeEvents(notes, tolerance).forEach((event, i) => event.notes.forEach(note => eventOf.set(note, i)))
   const playable = onePlayerNotes(notes).sort((a, b) => a.on - b.on || a.pitch - b.pitch)
+  // a sweep in onset order over the notes still sounding (same pairs, same order
+  // as comparing every pair, without the quadratic cost on a long piece)
   const out = []
-  for (let i = 0; i < playable.length; i++) for (let j = 0; j < i; j++) {
-    const n = playable[i], h = playable[j]
-    if (eventOf.get(n) === eventOf.get(h) || h.off <= n.on + 0.001 || h.string !== n.string) continue
-    out.push({ h, n })
+  let active = []
+  for (const n of playable) {
+    active = active.filter(h => h.off > n.on + 0.001)
+    for (const h of active) if (h.string === n.string && eventOf.get(n) !== eventOf.get(h)) out.push({ h, n })
+    active.push(n)
   }
   return out
 }
 
-function fingerHeldMutable(notes, options = {}) {
+function heldSearch(notes, options = {}) {
   let result = fingerMutable(notes, options)
   const M = result.model
   const baselineStrings = notes.map(n => n.string)
@@ -977,6 +980,73 @@ function heldSafeFallback(notes, model, result, evaluate, maxNodes = 100000) {
   const conflicts = heldConflicts(notes, M.chordTolerance)
   const moved = notes.reduce((count, n, i) => count + Number(baselinePlayable[i] && n.string !== baselineStrings[i]), 0)
   return { moved, result, conflicts, constraints: best?.constraints || new Map() }
+}
+
+// The search above re-solves the whole line for every candidate, so on a long
+// piece (thousands of notes, hundreds of overlaps) it costs hundreds of full
+// solves per conflict: minutes to hours, which reads as a hang. Conflicts are
+// local, so a long line is searched in windows: overlapping conflicts merge
+// into a cluster, each cluster is searched on the notes around it (HELD_PAD
+// onsets either side, and every note sounding through it), and the constraints
+// found are applied to one solve of the whole line. Conflicts that a window's
+// edge creates are searched again, a few rounds at most.
+const HELD_WHOLE = 160, HELD_PAD = 8, HELD_ROUNDS = 3
+
+function fingerHeldMutable(notes, options = {}) {
+  if (notes.length <= HELD_WHOLE) return heldSearch(notes, options)
+  let result = fingerMutable(notes, options)
+  const M = result.model
+  const baselineStrings = notes.map(n => n.string)
+  const baselinePlayable = notes.map(n => n.string != null && !n.unplayable)
+  const userLocked = new Set(notes.flatMap((n, i) => n.lockString == null ? [] : [i]))
+  const index = new Map(notes.map((n, i) => [n, i]))
+  const byOn = notes.map((_, i) => i).sort((a, b) => notes[a].on - notes[b].on || notes[a].pitch - notes[b].pitch)
+  const rank = new Map(byOn.map((i, r) => [i, r]))
+  const constraints = new Map()
+  const solveWith = cs => {
+    try {
+      for (const [i, string] of cs) notes[i].lockString = string
+      return fingerMutable(notes, options)
+    } finally {
+      for (const i of cs.keys()) if (!userLocked.has(i)) delete notes[i].lockString
+    }
+  }
+  let conflicts = heldConflicts(notes, M.chordTolerance)
+  for (let round = 0; round < HELD_ROUNDS && conflicts.length; round++) {
+    // clusters of conflicts whose note ranges (in onset order) overlap once padded
+    const spans = conflicts.map(({ h, n }) => {
+      const a = [rank.get(index.get(h)), rank.get(index.get(n))]
+      return [Math.min(...a), Math.max(...a)]
+    }).sort((x, y) => x[0] - y[0])
+    const clusters = []
+    for (const [lo, hi] of spans) {
+      const last = clusters[clusters.length - 1]
+      if (last && lo - HELD_PAD <= last[1] + HELD_PAD) last[1] = Math.max(last[1], hi)
+      else clusters.push([lo, hi])
+    }
+    const found = new Map(constraints)
+    for (const [lo, hi] of clusters) {
+      const r0 = Math.max(0, lo - HELD_PAD), r1 = Math.min(byOn.length - 1, hi + HELD_PAD)
+      const t0 = notes[byOn[r0]].on, t1 = notes[byOn[r1]].on
+      // the window: its onsets, and anything still sounding into it
+      const ids = byOn.filter((i, r) => (r >= r0 && r <= r1) || (notes[i].on < t0 && notes[i].off > t0 + 0.001) || (notes[i].on >= t0 && notes[i].on <= t1))
+      const sub = ids.map(i => {
+        const n = { ...notes[i] }
+        if (found.has(i)) n.lockString = found.get(i)
+        return n
+      })
+      const local = heldSearch(sub, options)
+      for (const [j, string] of local.constraints) if (!userLocked.has(ids[j])) found.set(ids[j], string)
+    }
+    const trial = solveWith(found)
+    if (baselinePlayable.some((was, i) => was && (notes[i].string == null || notes[i].unplayable))) { result = solveWith(constraints); break }
+    const next = heldConflicts(notes, M.chordTolerance)
+    if (next.length >= conflicts.length) { result = solveWith(constraints); conflicts = heldConflicts(notes, M.chordTolerance); break }
+    for (const [i, string] of found) constraints.set(i, string)
+    result = trial; conflicts = next
+  }
+  const moved = notes.reduce((count, n, i) => count + Number(baselinePlayable[i] && n.string !== baselineStrings[i]), 0)
+  return { moved, result, conflicts, constraints }
 }
 
 /**

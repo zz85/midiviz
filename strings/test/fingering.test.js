@@ -560,3 +560,23 @@ test('held-safe fallback resolves long overlapping passages beyond the cost-sear
     if (notes[j].off > notes[i].on + 0.001) assert.notEqual(result.assignments[j].string, result.assignments[i].string)
   }
 })
+
+test('held-note planning stays fast on a long two-voice line (windowed search)', () => {
+  // 400 notes: a held note every bar under a moving voice that keeps landing on
+  // its string (98 overlaps), as a concerto's double-stop passages. The search
+  // over the whole line took about 130 s here (and hours on a concerto
+  // movement, which read as a hang); windowed, about 2.5 s
+  const notes = []
+  const scale = [71, 73, 74, 76, 78, 76, 74, 73]
+  for (let bar = 0; bar < 50; bar++) {
+    const t = bar * 2
+    notes.push({ pitch: [69, 71, 66][bar % 3], on: t, off: t + 1.9 })
+    for (let k = 0; k < 7; k++) notes.push({ pitch: scale[(bar + k) % 8], on: t + 0.25 * (k + 1), off: t + 0.25 * (k + 1) + 0.24 })
+  }
+  const t0 = performance.now()
+  const r = solveFingering(notes)
+  const ms = performance.now() - t0
+  assert.ok(ms < 15000, `took ${ms.toFixed(0)} ms`)
+  assert.equal(r.unresolvedHeldConflicts, 0)
+  assert.ok(r.assignments.every(a => a.playable))
+})
