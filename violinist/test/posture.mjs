@@ -30,6 +30,12 @@
 // bent (≥ 15°); the back of the hand up (palm down onto the stick); the wrist
 // within 15° of the research's bend for that part of the bow (≤ 35° in all);
 // the elbow bent 60…165°.
+// And every finger of both hands, pressing or not: no twist about its own
+// length at the knuckle (MCP axial rotation, the hand's knuckle line against
+// the proximal phalanx's hinge, both square to the phalanx, as a joint
+// coordinate system measures it) beyond 20°; a knuckle's passive axial play is
+// about that, and the rig's own roll is capped at 12°. The thumb's two outer
+// joints (MCP, IP), measured as their own turn about the bone from rest, ≤ 25°.
 // A check fails when more than 2 % of its samples are outside its range, or
 // more than 0.5 % are far outside it (FAR); for a fingertip off its stop, 3 %
 // and 1.5 %: the fingerings ask for the odd chord, crossed double stop or shift
@@ -69,10 +75,10 @@ for (const run of runs) {
     const J = leftHand.joints, m = rig.M.L
     const inv = new THREE.Matrix4(), L = p => p.clone().applyMatrix4(inv)
     const NAMES = ['Index', 'Middle', 'Ring', 'Little']
-    const vals = { tip: [], flex: [], lean: [], pip: [], pip4: [], bend: [], contact: [], little: [], thumb: [], elbow: [], bTip: [], bFlex: [], bLean: [], bPip: [], bThumb: [], bThumbBend: [], bPalm: [], bWrist: [], bElbow: [] }
+    const vals = { tip: [], flex: [], lean: [], pip: [], pip4: [], bend: [], contact: [], little: [], thumb: [], elbow: [], bTip: [], bFlex: [], bLean: [], bPip: [], bThumb: [], bThumbBend: [], bPalm: [], bWrist: [], bElbow: [], twist: [], bTwist: [], thTwist: [], bThTwist: [] }
     let stretches = 0, pressed = 0
     const LEN033 = [8.6, 9.7, 9.1, 7.3]           // #033's finger lengths (strings/hand3d.js LEFT), × its scale
-    const FAR = { tip: 1, flex: 30, lean: 8, pip: 20, pip4: 10, bend: 15, contact: 2, little: 1.5, thumb: 1.5, elbow: 4, bTip: 1, bFlex: 30, bLean: 10, bPip: 15, bThumb: 1, bThumbBend: 10, bPalm: 0.3, bWrist: 15, bElbow: 15 }
+    const FAR = { tip: 1, flex: 30, lean: 8, pip: 20, pip4: 10, bend: 15, contact: 2, little: 1.5, thumb: 1.5, elbow: 4, bTip: 1, bFlex: 30, bLean: 10, bPip: 15, bThumb: 1, bThumbBend: 10, bPalm: 0.3, bWrist: 15, bElbow: 15, twist: 10, bTwist: 10, thTwist: 10, bThTwist: 10 }
     const worst = {}, out = {}, far = {}
     const note = (k, v, t, bad) => {
       vals[k].push(v)
@@ -82,6 +88,24 @@ for (const run of runs) {
         if (!worst[k] || bad > worst[k].by) worst[k] = { v: +v.toFixed(1), t: +t.toFixed(2), by: +bad.toFixed(1) }
       }
     }
+    // knuckle twist (see the header): per hand, the knuckle line at rest in the hand's frame
+    const KN = {}
+    for (const s of ['left', 'right']) KN[s] = H(s + 'IndexProximal').position.clone().sub(H(s + 'LittleProximal').position).normalize()
+    const _qh = new THREE.Quaternion(), _qp = new THREE.Quaternion()
+    const knuckleTwist = (s, F) => {
+      H(s + 'Hand').getWorldQuaternion(_qh)
+      const pr = H(s + F + 'Proximal'); pr.getWorldQuaternion(_qp)
+      const ax = H(s + F + 'Intermediate').position.clone().normalize().applyQuaternion(_qp)
+      const a = KN[s].clone().applyQuaternion(_qh), b = KN[s].clone().applyQuaternion(_qp)
+      a.addScaledVector(ax, -a.dot(ax)).normalize(); b.addScaledVector(ax, -b.dot(ax)).normalize()
+      return Math.abs(Math.atan2(a.clone().cross(b).dot(ax), a.dot(b))) * 180 / Math.PI
+    }
+    const ownTurn = (b, child) => {          // turn of a bone about its own length, from rest (normalized bones rest at identity)
+      const q = b.quaternion, ax = child.position.clone().normalize()
+      let tw = Math.abs(2 * Math.atan2(q.x * ax.x + q.y * ax.y + q.z * ax.z, q.w)) * 180 / Math.PI
+      return tw > 180 ? 360 - tw : tw
+    }
+    const thumbTwist = s => Math.max(ownTurn(H(s + 'ThumbProximal'), H(s + 'ThumbDistal')), ownTurn(H(s + 'ThumbDistal'), H(s + 'ThumbDistal')))
     let prev = 0, frames = 0
     const end = Math.min(SECONDS, songDuration)
     for (let t = 2; t < end; t += 0.25) {
@@ -90,6 +114,10 @@ for (const run of runs) {
       inv.copy(V.group.matrixWorld).invert()
       if (!leftHand.group.visible) continue           // nothing fingered (rests)
       frames++
+      for (const [s, k, kt] of [['left', 'twist', 'thTwist'], ['right', 'bTwist', 'bThTwist']]) {
+        for (const F of NAMES) { const a = knuckleTwist(s, F); note(k, a, t, a > 20 && a - 20) }
+        const a = thumbTwist(s); note(kt, a, t, a > 25 && a - 25)
+      }
       for (let i = 0; i < 4; i++) {
         const F = m.fingers[i], q = F.q, f = i + 1
         if (!q || !(J.fingers[f].dot.material.opacity > 0) || F.held) continue     // pressing a string (a held finger the rig let go is lifted)
