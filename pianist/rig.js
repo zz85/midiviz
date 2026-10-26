@@ -457,9 +457,16 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     // other's (the left hand reaching over to a key just above the right
     // hand's thumb) counts as crossed, wrists apart or not
     let gap = dl.visible && dr.visible ? Math.min(dr.joints.W.x - dl.joints.W.x, tipGap(dl, dr) + TIP_GAP) : Infinity
-    if (gap < Infinity) for (const tau of CROSS_AHEAD) {
+    // (further ahead, PREP_AHEAD s, the hand that will go over is already
+    // being lifted: prep, the nearest the wrists come in that time)
+    // and moveL / moveR, how far each hand travels across meanwhile: the one
+    // that comes over is the one that travels)
+    let prep = Infinity, moveL = 0, moveR = 0
+    if (gap < Infinity) for (const tau of PREP_AHEAD) {
       const tm = state.songT + hands.lead + tau
-      if (dl.wristAt(tm, _cl) && dr.wristAt(tm, _cr)) gap = Math.min(gap, _cr.x - _cl.x)
+      if (!dl.wristAt(tm, _cl) || !dr.wristAt(tm, _cr)) continue
+      if (tau <= CROSS_AHEAD) gap = Math.min(gap, _cr.x - _cl.x)
+      if (_cr.x - _cl.x < prep) { prep = _cr.x - _cl.x; moveL = _cl.x - dl.joints.W.x; moveR = dr.joints.W.x - _cr.x }
     }
     if (gap < 8) {
       const c = pos('spine01').x
@@ -474,7 +481,13 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
       // the arm further across the body goes over; the one that already is
       // stays over until the other is clearly further (no flicker as they pass)
       const dA = acrossOf(arm.L) - acrossOf(arm.R)
-      const over = !state.overArm || Math.abs(dA) > 3 ? (dA > 0 ? 'L' : 'R') : state.overArm, below = over === 'L' ? 'R' : 'L'
+      // (as a crossing begins: the hand already lifted for it, coming over)
+      // ...unless the score says which hand is playing across the other
+      // (hands.crossAt): that one, as a pianist reads it
+      const xL = hands.crossAt('L', state.songT), xR = hands.crossAt('R', state.songT)
+      const held = state.overArm || state.prepArm
+      const over = Math.abs(xL - xR) > 0.2 ? (xL > xR ? 'L' : 'R')
+        : !held || (state.overArm && Math.abs(dA) > 3) ? (dA > 0 ? 'L' : 'R') : held, below = over === 'L' ? 'R' : 'L'
       state.overArm = over
       order = [below, over]
       armPose(arm[below], dt)
@@ -491,8 +504,30 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
       const thumb = arm[over].drv.diag.press[0]
       const u = clamp((8 - gap) / 10, 0, 1)
       arm[over].drv.setDepth(-3.5 * u); arm[below].drv.setDepth(1.5 * u)
+      // ...and higher: a little as it comes over, and as much more as its
+      // palm and fingers still meet the other hand (measured on this frame's
+      // joints, for the next; let down only once well clear, and remembered
+      // for a second after, so a passage that crosses again and again comes
+      // over at the height it needed the last time)
+      const pen = handsOverlap(arm[over], arm[below])
+      const ov = arm[over]
+      ov.clearLift = pen > 0 ? Math.min(CROSS_LIFT_MAX, (ov.clearLift || 0) + 0.8 * pen) : pen < -1 ? Math.max(0, (ov.clearLift || 0) - dt * 3) : ov.clearLift || 0
+      ov.drv.setLift(Math.min(CROSS_LIFT_MAX, CROSS_LIFT * Math.max(u, over === 'L' ? xL : xR) + ov.clearLift)); arm[below].drv.setLift(-CROSS_DROP * u)
       arm[over].drv.setPitch(0.85 * (1 - 0.6 * thumb) * u); arm[below].drv.setPitch(-0.2 * clamp((8 - gap) / 10, 0, 1))
-    } else { for (const side of order) armPose(arm[side], dt); dl.setPitch(0); dr.setPitch(0); dl.setDepth(0); dr.setDepth(0); state.overArm = null }
+    } else {
+      for (const side of order) armPose(arm[side], dt); dl.setPitch(0); dr.setPitch(0); dl.setDepth(0); dr.setDepth(0)
+      for (const a of [arm.L, arm.R]) a.clearLift = Math.max(0, (a.clearLift || 0) - dt)
+      state.overArm = null
+      // a crossing coming: the hand that will go over (the one coming
+      // across from where it plays) rises toward it, the other stays
+      // (the score's crossing first: hands.crossAt rises before its note)
+      const xL = hands.crossAt('L', state.songT), xR = hands.crossAt('R', state.songT)
+      let up = null, k = clamp((8 - prep) / 10, 0, 1)
+      if (Math.max(xL, xR) > 0.05) { up = xL > xR ? arm.L : arm.R; k = Math.max(k, Math.max(xL, xR)) }
+      else if (prep < 8) up = moveL > moveR ? arm.L : arm.R
+      state.prepArm = up === arm.L ? 'L' : up === arm.R ? 'R' : null
+      for (const a of [arm.L, arm.R]) a.drv.setLift(a === up ? Math.min(CROSS_LIFT_MAX, CROSS_LIFT * k + a.clearLift) : 0)
+    }
     // head: look toward the hands, partly (the eyes take the rest)
     headPose(dt)
     // legs onto the pedals
@@ -508,6 +543,60 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
   }
 
   const tE = v3(), tW = v3(), dir = v3(), pole = v3(), hingeNow = v3()
+  // The hands crossed: how far (cm) the hand over still meets the one under,
+  // as capsules on the drivers' joints (the end of the forearm, the palm
+  // from the wrist to each knuckle, each phalanx); < 0: that far clear.
+  // CROSS_LIFT: how much higher the hand over is carried as it comes over,
+  // CROSS_LIFT_MAX at most, with what the overlap asks for (and as high as
+  // its pressed fingers still reach their keys: hand-driver.js)
+  const CROSS_LIFT = 2.5, CROSS_LIFT_MAX = 4.5
+  // ...and how much lower the hand under it is held (its fingers flatter)
+  const CROSS_DROP = 1.5
+  const R_FORE = 2.4, R_PALM = 1.6, R_PHAL = [0.9, 0.8, 0.7], R_THUMB = [1.1, 0.95, 0.85]
+  const capsOf = (a, out) => {
+    const J = a.drv.joints
+    let n = 0
+    const put = (p, q, r) => { const c = out[n] || (out[n] = [v3(), v3(), 0]); c[0].copy(p); c[1].copy(q); c[2] = r; n++ }
+    put(_cw.copy(pos(bones[a.la1].name)).lerp(J.W, 0.6), J.W, R_FORE)
+    for (let f = 1; f <= 5; f++) {
+      const P = J.fingers[f]
+      put(J.W, P[0], R_PALM)
+      for (let k = 0; k < 3; k++) put(P[k], P[k + 1], (f === 1 ? R_THUMB : R_PHAL)[k])
+    }
+    out.n = n
+    return out
+  }
+  const _capA = [], _capB = [], _cw = v3()
+  function handsOverlap(over, under) {
+    const A = capsOf(over, _capA), B = capsOf(under, _capB)
+    let worst = -Infinity
+    for (let i = 0; i < A.n; i++) for (let j = 0; j < B.n; j++) {
+      const pen = A[i][2] + B[j][2] - segSegDist(A[i][0], A[i][1], B[j][0], B[j][1])
+      if (pen > worst) worst = pen
+    }
+    return worst
+  }
+  // closest distance between segments p1q1 and p2q2
+  const _sd1 = v3(), _sd2 = v3(), _sr = v3(), _sc1 = v3(), _sc2 = v3()
+  function segSegDist(p1, q1, p2, q2) {
+    _sd1.subVectors(q1, p1); _sd2.subVectors(q2, p2); _sr.subVectors(p1, p2)
+    const a = _sd1.dot(_sd1), e = _sd2.dot(_sd2), f = _sd2.dot(_sr)
+    let sc, tc
+    if (a < 1e-9 && e < 1e-9) return _sr.length()
+    if (a < 1e-9) { sc = 0; tc = clamp(f / e, 0, 1) }
+    else {
+      const c = _sd1.dot(_sr)
+      if (e < 1e-9) { tc = 0; sc = clamp(-c / a, 0, 1) }
+      else {
+        const b = _sd1.dot(_sd2), den = a * e - b * b
+        sc = den > 1e-9 ? clamp((b * f - c * e) / den, 0, 1) : 0
+        tc = (b * sc + f) / e
+        if (tc < 0) { tc = 0; sc = clamp(-c / a, 0, 1) } else if (tc > 1) { tc = 1; sc = clamp((b - c) / a, 0, 1) }
+      }
+    }
+    _sc1.copy(p1).addScaledVector(_sd1, sc); _sc2.copy(p2).addScaledVector(_sd2, tc)
+    return _sc1.distanceTo(_sc2)
+  }
   // the gap between the hands' fingertips: the right hand's leftmost
   // pressed tip less the left hand's rightmost (negative: interleaved). Plus TIP_GAP it
   // compares with the gap between the wrists (crossed below 8 cm): only
@@ -535,8 +624,9 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     for (let tau = -0.6; tau <= 0.6 + 1e-6; tau += 0.15) if (a.drv.wristAt(state.songT + hands.lead + tau, _ex)) { sx += _ex.x; n++ }
     return n ? -a.s * (a.drv.joints.W.x - sx / n) : 0
   }
-  // how far ahead (s) a crossing is seen coming
-  const CROSS_AHEAD = [0.06, 0.12, 0.18]
+  // how far ahead (s) a crossing is seen coming (the last CROSS_AHEAD s of
+  // it count as crossed; the rest only lifts the hand that will go over)
+  const CROSS_AHEAD = 0.18, PREP_AHEAD = [0.06, 0.12, 0.18, 0.24, 0.3, 0.36]
   const _cl = v3(), _cr = v3()
   function armPose(a, dt) {
     const S = pos(bones[a.ua1].name)

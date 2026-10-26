@@ -34,6 +34,12 @@ const DEFAULT = ['Prelude1.mid', 'chpn-p15.mid', 'entertainer.mid', 'rush_e_real
 const TOL = 3, FAR = 10, OUT_SHARE = 0.01, MISS_SHARE = 0.05
 // the forearms' centre lines closer than this (cm): one arm through the other
 const FOREARMS = 4
+// crossed, the hand over clears the one under: deeper than HANDS_PEN cm into
+// it (capsules on the bones: palm 1.6 cm, fingers 0.8-0.9) on at most
+// HANDS_SHARE of the crossed frames. (Goldberg Var. 5: 47 % before the hand
+// over was carried higher, 9 % after; what is left is mostly the first frame or
+// two of a crossing and a finger reaching down past the other hand's.)
+const HANDS_PEN = 1, HANDS_SHARE = 0.15
 const MISSES = { 'entertainer.mid': { L: 0.19, R: 0.37 }, 'rush_e_real.mid': { L: 0.09, R: 0.1 }, 'midis/bach_goldberg.mid': { R: 0.065 } }
 
 const { chromium } = await import(PW)
@@ -77,16 +83,34 @@ async function runPiece(run) {
     const dur = Math.min(START + SECONDS, rig.hands.notes.reduce((m, n) => Math.max(m, n.off), 0))
     const out = { L: [], R: [] }, both = []
     // closest approach of two segments (the forearms: elbow → wrist)
-    const segDist = (p1, q1, p2, q2) => {
+    // hand capsules: the end of the forearm, the palm (wrist to each knuckle), each phalanx
+    const caps = S => {
+      const W = wp('wrist' + S), out = [[wp('lowerarm01' + S).lerp(W, 0.6), W, 2.4]]
+      for (const f of [1, 2, 3, 4, 5]) {
+        const P = [1, 2, 3].map(k => wp(`finger${f}-${k}` + S))
+        out.push([W, P[0], f === 1 ? 1.4 : 1.6], [P[0], P[1], f === 1 ? 1 : 0.9], [P[1], P[2], f === 1 ? 0.85 : 0.8])
+      }
+      return out
+    }
+    const handsPen = (A, B) => {
+      let worst = -Infinity
+      for (const x of caps(A)) for (const y of caps(B)) worst = Math.max(worst, x[2] + y[2] - segDist(x[0], x[1], y[0], y[1], 6))
+      return worst
+    }
+    const segDist = (p1, q1, p2, q2, k = 10) => {
       let best = Infinity
-      for (let i = 0; i <= 10; i++) for (let j = 0; j <= 10; j++) best = Math.min(best, p1.clone().lerp(q1, i / 10).distanceTo(p2.clone().lerp(q2, j / 10)))
+      for (let i = 0; i <= k; i++) for (let j = 0; j <= k; j++) best = Math.min(best, p1.clone().lerp(q1, i / k).distanceTo(p2.clone().lerp(q2, j / k)))
       return best
     }
     for (let t = START; t < dur; t += 1 / FPS) {
       rig.update(t, 1 / FPS); ch.group.updateMatrixWorld(true)
       if (rig.hands.L.visible && rig.hands.R.visible) {
         const WL = wp('wrist.L'), WR = wp('wrist.R')
-        both.push([t, WL.x > WR.x, segDist(wp('lowerarm01.L'), WL, wp('lowerarm01.R'), WR)])
+        // with the hands crossed (or about to): how far the hand over goes
+        // into the one under, as capsules on the bones
+        const over = rig.state.overArm
+        const pen = over ? handsPen('.' + over, over === 'L' ? '.R' : '.L') : null
+        both.push([t, WL.x > WR.x, segDist(wp('lowerarm01.L'), WL, wp('lowerarm01.R'), WR), pen])
       }
       for (const sd of ['L', 'R']) {
         const d = rig.hands[sd]; if (!d.visible) continue
@@ -120,6 +144,12 @@ async function runPiece(run) {
     const touching = r.both.filter(x => x[2] < FOREARMS).length
     console.log(`${touching > OUT_SHARE * r.both.length ? 'FAIL' : 'ok  '} ${run} hands: crossed on ${crossed} frames, forearms at least ${d[0].toFixed(1)} cm apart (p1 ${d[Math.floor(0.01 * (d.length - 1))].toFixed(1)} cm), closer than ${FOREARMS} cm on ${touching}`)
     if (touching > OUT_SHARE * r.both.length) failed++
+    const crossedF = r.both.filter(x => x[3] != null), deep = crossedF.filter(x => x[3] > HANDS_PEN)
+    if (crossedF.length) {
+      const bad = deep.length > HANDS_SHARE * crossedF.length
+      console.log(`${bad ? 'FAIL' : 'ok  '} ${run} hand over hand: one hand more than ${HANDS_PEN} cm into the other on ${deep.length} of ${crossedF.length} crossed frames (${(100 * deep.length / crossedF.length).toFixed(0)} %, at most ${100 * HANDS_SHARE} %)`)
+      if (bad) failed++
+    }
   }
   if (errors.length) { console.log('FAIL', song, 'page errors:', errors.join(' | ')); failed++ }
   } finally { await page.close().catch(() => {}) }

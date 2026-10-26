@@ -2,6 +2,15 @@
 
 What each experiment does and how, newest first. The short list is in the [README](README.md).
 
+## 26 Oct 2026
+
+[Experiment #032 - Pianist](032_pianist.html): crossing hands no longer pass through each other (shared by #038, #045 and #047)
+- In Goldberg Variation 5 the hand going over stayed at the other's height, its wrist only tilting up, so the palms met: measured as capsules on the bones (palm 1.6 cm, fingers 0.8–0.9), one hand was more than 1 cm into the other on 47 % of the crossed frames. Now 9 %.
+- The hand over is carried up to 4.5 cm higher ([pianist/hand-driver.js](pianist/hand-driver.js) `setLift`): 2.5 cm as it comes over, plus whatever overlap is still measured on the drivers' joints each frame ([pianist/rig.js](pianist/rig.js) `handsOverlap`), remembered for a second so a passage that crosses again and again comes over at the height it needed last time. Its free fingers and thumb ride up with it rather than hang down into the other hand. The hand under drops 1.5 cm. The wrist rises faster (0.05 s instead of 0.12).
+- Raised, a hand's pressed finger reaches less far forward, so it moves in over its key (up to 5 cm), coming down steeply as a crossing hand does; only what that can't make up comes off the height. Keys missed in Variations 5–6: left 2.6 %, right 6.3 %.
+- Which hand goes over, and when to start lifting it, now comes from the score: `markCrossings` marks both hands' notes (the left above the right is the right below the left), so the one going over is the one that has left its own register for the note, 7 semitones or more past the middle of what it plays around it (hands driver `crossAt`, rising 0.3 s before the note). Before, the hand lifted ahead was sometimes the one that stayed under.
+- `pianist/test/wrist.mjs` fails when one hand is more than 1 cm into the other on more than 15 % of the crossed frames.
+
 ## 25 Oct 2026
 
 [Experiment #048 - Bowed Violin](048_bowed_violin.html) ([notes](physical-violin/README.md))

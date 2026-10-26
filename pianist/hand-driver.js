@@ -16,6 +16,7 @@ import { solveFinger } from '../fingering/hands3d.js'
 import { buildMotion, KEY, restOffset } from '../fingering/motion.js'
 import { planStrokes, velocityRange } from './stroke.js'
 import { keyX, isBlack, LOW, HIGH, WHITE_W } from '../fingering/keyboard.js'
+import { markCrossings } from '../fingering/fingering.js'
 
 const KEY_TOP = 73
 const v3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z)
@@ -121,6 +122,11 @@ export function createHandDriver(side, dims) {
   // the one under nearer their fronts, so their fingers are not among each
   // other's (setDepth, cm; < 0 in toward the fallboard)
   let depth = 0, depthGoal = 0
+  // ...and the one over is carried higher (setLift, cm): its palm clear of
+  // the other hand's fingers, its own long fingers reaching down to the keys
+  // (and the one under a little lower: < 0)
+  let rise = 0, riseGoal = 0
+  const RISE_IN = 5
   // the end of the piece: as the hands lift off the last chord they come in
   // to the middle, square to the keys, a hand's width either side of her
   // (ending(t) → 0..1, from the hands driver; null: never)
@@ -416,10 +422,13 @@ export function createHandDriver(side, dims) {
   let lastPose = null, lastT = 0
   function update(pose, dt, t) {
     lastPose = pose; lastT = t
-    if (!pose) { visible = false; pitch = 0; depth = 0; lift = 0; ptot = 0; hroll = 0; elbow = null; return }
-    pitch += (pitchGoal - pitch) * Math.min(1, dt / 0.12)
+    if (!pose) { visible = false; pitch = 0; depth = 0; rise = 0; lift = 0; ptot = 0; hroll = 0; elbow = null; return }
+    pitch += (pitchGoal - pitch) * Math.min(1, dt / (pitchGoal > pitch ? 0.05 : 0.12))
     depth += (depthGoal - depth) * Math.min(1, dt / 0.08)
     if (Math.abs(depth) < 0.02 && !depthGoal) depth = 0
+    // (up quickly, as the hand comes over; down more slowly)
+    rise += (riseGoal - rise) * Math.min(1, dt / (riseGoal > rise ? 0.04 : 0.12))
+    if (Math.abs(rise) < 0.02 && !riseGoal) rise = 0
     visible = true
     const { anchor, fingers: tips } = pose
     const fit = fitHand(tips, anchor)
@@ -446,7 +455,27 @@ export function createHandDriver(side, dims) {
     // never past what a wrist can bend: the hand turns and tilts with the
     // forearm where the fit alone would bend it further
     keepWrist([fit.px, fit.pz])
-    hand.z += depth
+    hand.z += depth; hand.y += rise
+    // ...its pressed fingers still reaching their keys (a nearly straight
+    // finger, 0.25 rad a joint): from higher up a finger reaches less far
+    // forward, so the hand moves in over its keys (by up to RISE_IN cm, as a
+    // crossing hand comes down onto them from above, fingers steep), and
+    // what that cannot make up comes off the height
+    if (rise > 0) for (let pass = 0; pass < 2; pass++) {
+      let need = 0, nx = 0, nz = 0, over = 0
+      for (const f of [1, 2, 3, 4, 5]) {
+        const t = tips[f - 1], d = FINGERS[f]
+        if (!(t.press > 0.2)) continue
+        basePos(f, base)
+        const dx = t.x - base.x, dz = t.z + depth - base.z, dy = base.y - (KEY_TOP + t.y + d.rad[2] * 0.9)
+        const R = chainReach(d.len, d.k, 0.25), h = Math.hypot(dx, dz), hMax = Math.sqrt(Math.max(0, R * R - dy * dy))
+        if (h - hMax > need) { need = h - hMax; nx = dx / (h || 1); nz = dz / (h || 1) }
+        over = Math.max(over, dy - Math.sqrt(Math.max(0, R * R - h * h)))
+      }
+      if (need <= 0) break
+      if (pass === 0) { const m = Math.min(need, RISE_IN); hand.x += nx * m; hand.z += nz * m; continue }
+      if (over > 0) hand.y -= Math.min(rise, over)
+    }
     // fingertip targets in the hand frame (lx toward the little finger = s·x)
     const lx = [], lz = [], held = [], ty = []
     for (const f of [1, 2, 3, 4, 5]) {
@@ -465,7 +494,9 @@ export function createHandDriver(side, dims) {
       // further in instead of hooking back under itself: up to its natural
       // reach. A white key, between the black keys if it must (then on its
       // narrow part, clear of them); a black key, along its length.
-      if (f > 1 && t.press > 0.2 && t.pitch != null && az > REST[f - 1][1] + 1.2) {
+      // (not for a hand carried high over the other: its fingers come down
+      // steeply onto their keys from above, rise)
+      if (f > 1 && t.press > 0.2 && t.pitch != null && az > REST[f - 1][1] + 1.2 && rise < 0.5) {
         const black = isBlack(t.pitch)
         const z = Math.max(black ? -12.5 : -11, t.z - (az - REST[f - 1][1] - 1.2) / Math.max(0.6, Math.cos(hand.yaw)))
         t = { ...t, z, x: !black && z < -4.6 ? narrowX(t.pitch, t.x) : t.x }
@@ -485,7 +516,8 @@ export function createHandDriver(side, dims) {
       }
       // (a free finger rides up with the hand when the stroke lifts it)
       // (a free finger rides with its knuckle as the forearm rolls)
-      let y = KEY_TOP + t.y + d.rad[2] * 0.9 + (held[f - 1] ? 0 : lift + knuckleUp(d) - d.base[1])
+      // (and with it as it is carried over the other hand: rise)
+      let y = KEY_TOP + t.y + d.rad[2] * 0.9 + (held[f - 1] ? 0 : lift + rise + knuckleUp(d) - d.base[1])
       // ...where the arm already carries the hand up for the note, the
       // finger's own fall (fingering/motion.js touch 'fall') gives way to it
       if (!held[f - 1] && t.lift && lift > 0) y -= t.lift * Math.min(1, lift / 3)
@@ -625,7 +657,7 @@ export function createHandDriver(side, dims) {
     J.R.subVectors(J.fingers[5][0], J.fingers[2][0]).multiplyScalar(s).normalize()
     armIK(J.W, J.E)
   }
-  return { update, bakeTrack, clearTrack, wristAt, setEnding: f => { ending = f }, setPitch: p => { pitchGoal = p }, setDepth: d => { depthGoal = d },
+  return { update, bakeTrack, clearTrack, wristAt, setEnding: f => { ending = f }, setPitch: p => { pitchGoal = p }, setDepth: d => { depthGoal = d }, setLift: h => { riseGoal = h }, get crossLift() { return rise },
     /** where the elbow is (the rig's arm; null: unknown): the wrist is kept within WRIST_RANGE of straight on the forearm */
     setElbow: v => { if (!v) { elbow = null; return } elbow = (elbow || v3()).copy(v); elbowOff.subVectors(v, J.E) },
     /** how far (radians) the wrist is bent past WRIST_RANGE on a forearm from elbow E to this frame's wrist */
@@ -658,6 +690,25 @@ export function createHandsDriver(dims) {
   L.setEnding(endingAt); R.setEnding(endingAt)
   // wrist strokes: { armWeight, flex, liftOff, height } (research/01_biomechanics.md §3.5)
   const strokeOpts = { armWeight: 1, flex: 1, liftOff: 1, height: 1, rotation: 1 }
+  // Where each hand plays across the other (fingering.js markCrossings: a
+  // right-hand note below a left-hand one, or the other way round): that
+  // hand goes over. crossAt(side, t) 0..1: rising over CROSS_PREP s before
+  // such a note (the hand lifting as it comes over), 1 while it sounds,
+  // falling over CROSS_AFTER s after
+  const CROSS_PREP = 0.3, CROSS_AFTER = 0.25, CROSS_REACH = 7
+  let crossing = { L: [], R: [] }
+  const crossAt = (side, t) => {
+    const a = crossing[side]
+    let lo = 0, hi = a.length
+    while (lo < hi) { const m = (lo + hi) >> 1; if (a[m].off + CROSS_AFTER < t) lo = m + 1; else hi = m }
+    let u = 0
+    for (let i = lo; i < a.length && a[i].on - CROSS_PREP <= t; i++) {
+      const n = a[i]
+      const v = t < n.on ? 1 - (n.on - t) / CROSS_PREP : t <= n.off ? 1 : 1 - (t - n.off) / CROSS_AFTER
+      if (v > u) u = v
+    }
+    return THREE.MathUtils.smoothstep(u, 0, 1)
+  }
   const plan = () => { for (const d of [L, R]) d.setStroke(own.length ? planStrokes(own.filter(n => n.hand === d.side), { ...strokeOpts, velRange: velocityRange(own) }) : null) }
   return {
     L, R,
@@ -669,6 +720,26 @@ export function createHandsDriver(dims) {
     setStrokeOpts(o) { Object.assign(strokeOpts, o); plan() },
     setNotes(notes) {
       own = notes.filter(n => n.finger >= 1)
+      markCrossings(own)
+      // A crossing marks both hands' notes (the left above the right is the
+      // right below the left); the hand going over is the one that has left
+      // its own register for it: the note CROSS_REACH semitones or more past
+      // the middle of what that hand plays around it (±1.5 s) toward the
+      // other. And a crossing is a passage, not one stray note: two or more
+      // within 2 s
+      crossing = { L: [], R: [] }
+      for (const h of ['L', 'R']) {
+        const mine = own.filter(n => n.hand === h).sort((a, b) => a.on - b.on), sg = h === 'L' ? 1 : -1
+        let lo = 0, hi = 0
+        const reach = n => {
+          while (mine[lo].on < n.on - 1.5) lo++
+          while (hi < mine.length && mine[hi].on <= n.on + 1.5) hi++
+          const ps = mine.slice(lo, hi).map(m => m.pitch).sort((a, b) => a - b)
+          return sg * (n.pitch - ps[ps.length >> 1])
+        }
+        const c = mine.filter(n => n.cross && reach(n) >= CROSS_REACH)
+        crossing[h] = c.filter((n, i) => (c[i - 1] && n.on - c[i - 1].on < 2) || (c[i + 1] && c[i + 1].on - n.on < 2))
+      }
       // fingers fall onto the keys, each in its own way (motion.js TOUCH)
       motion = buildMotion(own, { touch: this.touch, ...handDepths(dims) })
       plan()
@@ -684,11 +755,13 @@ export function createHandsDriver(dims) {
       L.bakeTrack(t => poses[Math.round((t - t0) / h)]?.L, t0, n, h)
       R.bakeTrack(t => poses[Math.round((t - t0) / h)]?.R, t0, n, h)
     },
-    clear() { motion = buildMotion([]); own = []; endT = Infinity; plan(); L.clearTrack(); R.clearTrack() },
+    clear() { motion = buildMotion([]); own = []; crossing = { L: [], R: [] }; endT = Infinity; plan(); L.clearTrack(); R.clearTrack() },
     /** 0 while she plays, 1 once she has lifted off the last chord and come back to the middle */
     endingAt,
     /** song time of the last key let go (Infinity with no notes) */
     get endT() { return endT },
+    /** 0..1: how much hand side ('L' | 'R') is playing across the other at song time t (it goes over) */
+    crossAt: (side, t) => crossAt(side, t + PRESS_LEAD),
     lead: PRESS_LEAD,
     update(t, dt) { const tm = t + PRESS_LEAD, p = motion.poseAt(tm); L.update(p.L, dt, tm); R.update(p.R, dt, tm) },
   }
