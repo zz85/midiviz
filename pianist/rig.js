@@ -847,6 +847,8 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     return out
   })()
   const _sk = { M: [], m: new THREE.Matrix4(), v: v3(), acc: v3(), q: v3() }
+  // a bin's value, or its neighbours' (along and round) when it has none
+  const binNear = (g, k) => { let R = g.get(k); if (R == null) for (const d of [1, -1, 1000, -1000]) { const x = g.get(k + d); if (x != null) R = Math.max(R ?? 0, x) } return R }
   const binKey = (u, a) => (Math.round(u / 2) + 200) * 1000 + Math.round(a / 0.1745) + 100
   function liveThigh(sd) {
     const L = thighSkin?.[sd]; if (!L) return null
@@ -861,16 +863,39 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
       const key = binKey(u, Math.atan2(q.dot(f.S), q.dot(f.U))), r = q.length()
       if (!(L.grid.get(key) >= r)) L.grid.set(key, r)
     }
+    // what she wears over it (state.restCover: the dress's object, set by the
+    // page): per bin, the layer of it nearest the thigh, within 8 cm of the
+    // skin (single-layer cloth, so a skirt simulated over her lap is where it
+    // lies now; the furthest out would be the skirt across the other thigh)
+    L.cover ||= new Map(); L.cover.clear()
+    const C = state.restCover
+    if (C?.visible) {
+      C.updateMatrixWorld(true)
+      C.traverse(o => {
+        if (!o.isMesh || !o.visible || !o.geometry?.attributes.position) return
+        for (let i = 0, n = o.geometry.attributes.position.count; i < n; i++) {
+          o.getVertexPosition(i, v).applyMatrix4(o.matrixWorld)
+          q.subVectors(v, f.H); const u = q.dot(f.T); if (u < 0 || u > f.len) continue
+          q.addScaledVector(f.T, -u)
+          const key = binKey(u, Math.atan2(q.dot(f.S), q.dot(f.U))), r = q.length(), skin = binNear(L.grid, key)
+          if (skin == null || r < skin - 0.5 || r > skin + 8) continue
+          if (!(L.cover.get(key) <= r)) L.cover.set(key, r)
+        }
+      })
+    }
     L.stamp = stamp
     return L
   }
-  // the thigh's surface radius at (u cm along, angle a round from her front toward her outside)
+  // the thigh's surface radius at (u cm along, angle a round from her front
+  // toward her outside), with what covers it: the skin plus PAD (a dress the
+  // rig cannot see), or the dress itself where it can (state.restCover) and a
+  // few millimetres for the cloth's own thickness
   function liveRadius(sd, u, a) {
     const L = liveThigh(sd); if (!L) return null
-    const k = binKey(u, a)
-    let R = L.grid.get(k)
-    if (R == null) for (const d of [1, -1, 1000, -1000]) { const x = L.grid.get(k + d); if (x != null) R = Math.max(R ?? 0, x) }
-    return R ?? null
+    const k = binKey(u, a), near = g => binNear(g, k)
+    const skin = near(L.grid); if (skin == null) return null
+    const cov = state.restCover ? near(L.cover) : null
+    return cov != null ? Math.max(skin + 0.3, cov + 0.35) : skin + PAD
   }
   // how far p is outside the thigh (negative: inside)
   function thighClear(sd, p) {
@@ -879,7 +904,7 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
       if (u < 1 || u > f.len - 1) return Infinity
       q.addScaledVector(f.T, -u)
       const R = liveRadius(sd, u, Math.atan2(q.dot(f.S), q.dot(f.U)))
-      return R == null ? Infinity : q.length() - R - PAD
+      return R == null ? Infinity : q.length() - R
     }
     const f = thighFrame(sd), q = f.q.subVectors(p, f.H), u = clamp(q.dot(f.T) / f.len, 0, 1)
     q.addScaledVector(f.T, -u * f.len)
@@ -888,8 +913,12 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     return r - 1 / Math.sqrt((a / r / rt) ** 2 + (b / r / rs) ** 2)
   }
   const benchTop = () => state.benchTop ?? seat0.y - BENCH_DROP
+  // clasped: the left hand, lying in her lap, is what the right one rests on
+  // (its joints and the middles of its bones, each with its flesh: restPose)
+  const lapUnder = { pts: [], on: false }
   function clearOf(p, mode) {
     let c = Math.min(thighClear('L', p), thighClear('R', p))
+    if (mode === 'clasp' && lapUnder.on) for (const o of lapUnder.pts) c = Math.min(c, p.distanceTo(o.p) - o.r)
     // the bench (76 × 34 cm round her seat)
     if (Math.abs(p.x) < 38 && Math.abs(p.z - seat0.z) < 18) c = Math.min(c, p.y - benchTop() - (mode === 'sides' ? PAD * 0.5 : 0))
     return c
@@ -954,20 +983,31 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     dirty(a.la2)
     chainOf(a).slice(4).forEach((i, k) => { setQ(i, keep[k]); if (k === 0) dirty(i) })
   }
-  /** pose a resting arm (mode 'lap' | 'sides'); returns the wrist point it went to */
+  /** pose a resting arm (mode 'lap' | 'sides' | 'clasp'); returns the wrist point it went to */
   function restPose(a, mode) {
     const sd = a.s > 0 ? 'R' : 'L', f = thighFrame(sd, { H: v3(), K: v3(), T: v3(), U: v3(), S: v3(), q: v3() })
     const { e0, e1, e2, F, W } = _r
-    if (mode === 'sides') {
+    // (the left hand first, under; the right one lies on it)
+    if (mode === 'clasp' && sd === 'L') lapUnder.on = false
+    if (mode === 'clasp') {
+      // together in her lap: each wrist on its thigh, halfway to the knee, the
+      // fingers turned in across her lap (the left 60°, the right 50° and a
+      // little further forward), so the right hand lies over the left one's fingers
+      const u = sd === 'L' ? 0.48 : 0.55, ang = 0.3, rt = liveRadius(sd, u * f.len, -ang) ?? radAt(thigh[sd].top, u) + PAD
+      const turn = sd === 'L' ? 1.05 : 0.88
+      e1.copy(f.U).multiplyScalar(Math.cos(ang)).addScaledVector(f.S, -Math.sin(ang))
+      F.copy(f.T).multiplyScalar(Math.cos(turn)).addScaledVector(f.S, -Math.sin(turn))
+      W.copy(f.H).addScaledVector(f.T, u * f.len).addScaledVector(e1, rt + 2.4 + (sd === 'R' ? 2.5 : 0))
+    } else if (mode === 'sides') {
       // by her side: the arm hanging, the palm against the outside of the thigh
       // by the hip (70° round from its top), the fingers along it toward the knee
-      const u = 0.24, ang = 1.22, rs = (liveRadius(sd, u * f.len, ang) ?? radAt(thigh[sd].side, u)) + PAD
+      const u = 0.24, ang = 1.22, rs = liveRadius(sd, u * f.len, ang) ?? radAt(thigh[sd].side, u) + PAD
       e1.copy(f.U).multiplyScalar(Math.cos(ang)).addScaledVector(f.S, Math.sin(ang))
       F.copy(f.T)
       W.copy(f.H).addScaledVector(f.T, u * f.len).addScaledVector(e1, rs + 2.2)
     } else {
       // on top of her thigh, two fifths of the way to the knee, a little in from its top
-      const u = 0.42, ang = 0.26, rt = (liveRadius(sd, u * f.len, -ang) ?? radAt(thigh[sd].top, u)) + PAD
+      const u = 0.42, ang = 0.26, rt = liveRadius(sd, u * f.len, -ang) ?? radAt(thigh[sd].top, u) + PAD
       e1.copy(f.U).multiplyScalar(Math.cos(ang)).addScaledVector(f.S, -Math.sin(ang))
       F.copy(f.T).multiplyScalar(Math.cos(0.35)).addScaledVector(f.S, -Math.sin(0.35))
       W.copy(f.H).addScaledVector(f.T, u * f.len).addScaledVector(e1, rt + 2.4)
@@ -990,7 +1030,7 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
       let lo = -0.6, hi = 1.0
       const fLo = at(lo), fHi = at(hi)
       // sinking in even tilted up: the wrist higher (off her thigh; by her side, up off the bench)
-      if (fLo < 0 && pass === 0) { W.addScaledVector(mode === 'sides' ? _v.set(0, 1, 0) : e1, 0.3 - fLo); continue }
+      if (fLo < 0 && pass === 0) { W.addScaledVector(mode === 'sides' || mode === 'clasp' ? _v.set(0, 1, 0) : e1, 0.3 - fLo); continue }
       if (fLo < 0) best = lo
       else if (fHi > 0) best = hi
       else { for (let n = 0; n < 9; n++) { const m = (lo + hi) / 2; if (at(m) > 0) lo = m; else hi = m } best = lo }
@@ -998,6 +1038,18 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     }
     placeHand(a, _r.q0, best)
     twistForearm(a)
+    if (mode === 'clasp' && sd === 'L') {
+      // the left hand as the right one's surface: its back (thinner than its palm)
+      const F2 = flesh.L, pts = lapUnder.pts; pts.length = 0
+      const add = (p, r) => pts.push({ p: p.clone(), r })
+      solve(a.wrist); add(wP[a.wrist], 1.6)
+      for (let k = 0; k < 5; k++) {
+        const b = a.fingers[k]; for (let j = 0; j < 3; j++) solve(b[j])
+        if (k > 0) for (const t of [0.4, 0.75]) add(_v.lerpVectors(wP[a.wrist], wP[b[0]], t), 1.3)
+        for (let j = 0; j < 3; j++) { add(wP[b[j]], 0.75 * F2.finger[k][j]); if (j < 2) add(_v.lerpVectors(wP[b[j]], wP[b[j + 1]], 0.5), 0.7 * F2.finger[k][j]) }
+      }
+      lapUnder.on = true
+    }
     return W.clone()
   }
 
@@ -1016,6 +1068,7 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     // and a little up (clear of the keyboard's front edge), then down to it
     // (beside her: straight down outside the thigh)
     if (mode === 'sides') _lapC.set(L.x, Math.max(W0.y, 78) + 6, L.z)
+    else if (mode === 'clasp') _lapC.set((W0.x + L.x) / 2, Math.max(W0.y, 76) + 6, L.z)
     else _lapC.set((W0.x + L.x) / 2, Math.max(W0.y, 76) + 4, L.z)
     const e = u, f = 1 - e
     _lapP.set(f * f * W0.x + 2 * e * f * _lapC.x + e * e * L.x, f * f * W0.y + 2 * e * f * _lapC.y + e * e * L.y, f * f * W0.z + 2 * e * f * _lapC.z + e * e * L.z)

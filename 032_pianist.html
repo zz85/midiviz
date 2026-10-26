@@ -349,7 +349,7 @@
   </div>
   <div id="perfPop" class="pop ui">
     <div class="sect">Body<small>how much she moves with the music</small></div>
-    <div class="field" title="After the last note she lifts off and comes back to the middle; about 2 s later her hands go to rest: in her lap (on her thighs, fingers toward the knees), or on the bench beside her, or they stay over the keys. An export needs Render → Tail after the end of 4 s or more to show it all"><label>Hands after the end</label><select id="restAfter"><option value="lap" selected>In her lap</option><option value="sides">On the bench, by her sides</option><option value="none">Stay over the keys</option></select></div>
+    <div class="field" title="After the last note she lifts off and comes back to the middle; about 2 s later her hands go to rest: in her lap (one on each thigh, fingers toward the knees), together in her lap (the right one over the left), by her sides (the palms against her thighs by the hips), or they stay over the keys. An export needs Render → Tail after the end of 4 s or more to show it all"><label>Hands after the end</label><select id="restAfter"><option value="lap" selected>In her lap</option><option value="clasp">Together in her lap</option><option value="sides">By her sides</option><option value="none">Stay over the keys</option></select></div>
     <div class="field"><label>Body expression</label><input type="range" id="expr" min="0" max="2" step="0.1" value="1"></div>
     <div class="field"><label>Posture</label><input type="range" id="posture" min="-0.5" max="1.6" step="0.05" value="0.5"><span id="postureV">between</span></div>
     <div class="field"><label>Weight shift (one hip)</label><input type="range" id="hips" min="0" max="2" step="0.1" value="1"></div>
@@ -781,6 +781,8 @@
       dress.simulate = $('clothSim').checked
       dress.setFabric?.($('fabric').value)
       dress.settle(3)
+      // (her hands at rest lie on the dress, where it is: rig.js liveRadius)
+      rig.state.restCover = dress.object
       if (window.__pianist) window.__pianist.dress = dress
       applyLook()
       coverBody(dress.object.visible)
