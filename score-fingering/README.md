@@ -35,6 +35,26 @@ part (with manual overrides), and draws the finger numbers back onto the normali
    detection. PNG export flattens the current page; PDF export visits every page in order, annotates
    cached choices, recognizes unopened music pages, and keeps title/text pages visually unchanged.
 
+## Reading, playing and writing on the score
+
+The page is also a score reader. **📖 Reader** (remembered, or `?reader`) shows the page full
+width with the controls tucked away; ⛶ goes full screen. The transport under the page plays the
+recognized music with ScoreShift's player (the notation-ir Web Audio voice and lookahead
+scheduler): ▶ Play from the top, or tap a bar in Reader (▶ Play from this bar in a note's popup)
+to start there; tempo, ×0.5–×1.5 speed and the metronome (bar-aware clicks, compound meters by
+dotted beat) change while playing. The sounding noteheads are ringed, **follow** keeps the playing
+staff in view, and **turn pages** carries on onto the next PDF page with music at the end of a page.
+In Reader, Space plays or stops, ← → / Page Up / Page Down turn pages and M toggles the metronome.
+**fingerings** hides the pencil numbers for plain reading.
+
+**✎ Ink** writes on the page with a pen, mouse or finger (after a pen is used, fingers scroll).
+Through notation-ir `annotations.js` each mark is attached to the note, passage or moment under it
+in staff spaces, so it stays with the music through pitch corrections and re-reads; strokes written
+together are one mark. Colours, two widths, eraser (and a pen's eraser end), undo / redo and clear;
+tap a mark to recolour, delete or re-attach it when its note was removed. Ink is kept per file
+(name and size) and page in this browser's localStorage and drawn into the PNG and PDF exports.
+`reader.js` holds the pure parts: bar start ticks, the bar under a tap, the sounding heads, storage.
+
 ## ScoreShift
 
 Recognition imports ScoreShift directly from the sibling
@@ -67,7 +87,7 @@ keeps A3–B♭3–D♭4–D♭4–C4 in first position as 1–2–4–4–3.
 ## Tests
 
 ```sh
-node --test score-fingering/test/adapter.test.js score-fingering/test/overlay.test.js score-fingering/test/document.test.js score-fingering/test/integration.test.js
+node --test score-fingering/test/*.test.js
 node score-fingering/test/browser.mjs
 ```
 

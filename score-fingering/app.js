@@ -1,15 +1,28 @@
 import { buildScore } from '../../random-sketches/vibes/scoreshift/score.js'
 import { Renderer } from '../../random-sketches/vibes/scoreshift/render.js'
-import { interpret, yOfP } from '../../random-sketches/vibes/scoreshift/omr.js'
+import { interpret, yOfP, lineY } from '../../random-sketches/vibes/scoreshift/omr.js'
 import { planFingering, annotationItems, hitAnnotation, sourceNoteId, detectViolinViola } from './adapter.js'
 import { drawFingerings, drawRecognition } from './overlay.js'
 import { INSTRUMENTS, solveFingering } from '../strings/fingering.js'
 import { createScoreDocument, pageState, cachePage, pageFileStem, trimPageRecords, precedingPageFifths, invalidatePageKeyEvidence } from './document.js'
+import { measureStarts, measureAt, soundingHeads, annotationKey, loadAnnotations, saveAnnotations } from './reader.js'
 
 const $ = id => document.getElementById(id)
 const page = $('page'), overlay = $('overlay'), pageCtx = page.getContext('2d'), overlayCtx = overlay.getContext('2d')
+const ink = $('ink'), heads = $('heads'), inkCtx = ink.getContext('2d'), headsCtx = heads.getContext('2d')
+// Playback and pen annotations come from ScoreShift / notation-ir, loaded on first use so a
+// missing module only disables its feature
+const playerModule = () => import('../../random-sketches/vibes/scoreshift/player.js')
+const inkModules = () => Promise.all([
+  import('../../random-sketches/vibes/notation-ir/adapters/scoreshift.js'),
+  import('../../random-sketches/vibes/scoreshift/surface.js'),
+  import('../../random-sketches/vibes/notation-ir/annotations.js'),
+]).then(([adapter, surface, annotations]) => ({ ...adapter, ...surface, ...annotations }))
 const DEFAULT_OVERLAY_LABEL = 'Annotated score. Use the arrow keys to select a note and Enter to edit it, or use the Edit recognized notes list.'
 const S = { document:null, activePageState:null, model:null, image:null, renderer:null, score:null, plan:null, items:[], locks:new Map(), part:0, suggestion:0, zoom:1, selectedId:null, keyboardIndex:0, popupOpener:null, planRevision:0, name:'score' }
+// P: playback of the shown page. INK: pen annotations (notation-ir annotations.js) on it.
+const P = { player:null, manual:false, turning:false, state:null, headsKey:'' }
+const INK = { on:false, color:'#c2255c', width:0.2, erase:false, penSeen:false, undo:[], redo:[], sel:null, group:null, ptrs:new Map(), mods:null, failed:false, irc:null, items:[], surface:null, model:null }
 let loadRequest = 0
 const activeRecognitions = new Set(), activePdfRenders = new Set(), busyOwners = new Set()
 
@@ -25,8 +38,15 @@ const cancelPdfRenders = () => { for (const controller of [...activePdfRenders])
 const beginLoadRequest = () => {
   const request = ++loadRequest
   cancelRecognitions(); cancelPdfRenders(); busyOwners.clear(); $('busy').style.display = 'none'
+  if (!P.turning) stopPlayback()
   return request
 }
+function showStage() {
+  $('empty').hidden = true; $('stage').hidden = false; $('export').disabled = false; $('transport').hidden = false
+  $('play').disabled = !S.model; $('rewind').disabled = !S.model; $('inkMode').disabled = !S.model || INK.failed
+  if (!S.model) { setInkMode(false); drawInk() }
+}
+function hideStage() { $('export').disabled = true; $('stage').hidden = true; $('empty').hidden = false; $('transport').hidden = true; stopPlayback(); setInkMode(false) }
 
 
 function syncCurrentPage() {
@@ -178,11 +198,12 @@ async function loadWithRequest(blob, name, request) {
     overlay.setAttribute('aria-label', DEFAULT_OVERLAY_LABEL)
     closeDocument()
     S.document = createScoreDocument({ kind:'image', name, pageCount:1 })
+    S.document.sourceKey = `${name}:${blob.size}`
     const state = cachePage(S.document, 1, { status:'ready', model, image, renderer:new Renderer(image, model), locks:new Map() })
     S.activePageState = state
     S.model = state.model; S.image = state.image; S.renderer = state.renderer; S.name = pageFileStem(S.document)
     S.locks = state.locks; S.part = 0; S.suggestion = 0; S.selectedId = null; S.keyboardIndex = 0
-    $('empty').hidden = true; $('stage').hidden = false; $('export').disabled = false
+    showStage()
     rebuildParts()
     if (!await replan(false)) return false
     fitPageZoom(); layoutPage()
@@ -204,19 +225,20 @@ async function loadPdfWithRequest(blob, name, request) {
     if (request !== loadRequest) { pool.destroy(); return false }
     closeDocument(); resetPageGlobals()
     const doc = createScoreDocument({ kind:'pdf', name, pageCount:pool.numPages, pdfPool:pool })
+    doc.sourceKey = `${name}:${blob.size}`
     S.document = doc
     $('pages').hidden = false; $('exportPdf').hidden = false; $('exportPdf').disabled = !!pdfExportPromise
     buildPageStrip()
     await openPage(1, { request, fit:true })
     if (S.document === doc && S.activePageState) return true
     if (S.document === doc) {
-      closeDocument(); resetPageGlobals(); clearPlanUi(); $('export').disabled = true; $('stage').hidden = true; $('empty').hidden = false
+      closeDocument(); resetPageGlobals(); clearPlanUi(); hideStage()
     }
     if (request === loadRequest) throw new Error('The first PDF page could not be installed')
     return false
   } catch (error) {
     if (request !== loadRequest) { if (S.document?.pdfPool !== pool) pool?.destroy(); return false }
-    if (S.document?.pdfPool === pool) { closeDocument(); resetPageGlobals(); clearPlanUi(); $('export').disabled = true; $('stage').hidden = true; $('empty').hidden = false }
+    if (S.document?.pdfPool === pool) { closeDocument(); resetPageGlobals(); clearPlanUi(); hideStage() }
     else pool?.destroy()
     if (request === loadRequest) setStatus(`<b>Could not open this PDF:</b> ${escapeHtml(error.message)}`)
     return false
@@ -232,10 +254,11 @@ function thumbOf(source) {
 }
 
 function pageUi() {
-  const doc = S.document
-  if (!doc || doc.kind !== 'pdf') return
+  const doc = S.document, pdf = doc?.kind === 'pdf'
+  $('tPrev').hidden = $('tNext').hidden = $('turnPagesLabel').hidden = !pdf
+  if (!pdf) return
   $('pageNo').textContent = `${doc.page} / ${doc.pageCount}`
-  $('prevPage').disabled = doc.page <= 1; $('nextPage').disabled = doc.page >= doc.pageCount
+  $('prevPage').disabled = $('tPrev').disabled = doc.page <= 1; $('nextPage').disabled = $('tNext').disabled = doc.page >= doc.pageCount
   document.querySelectorAll('#thumbs button').forEach(button => button.setAttribute('aria-current', +button.dataset.page === doc.page ? 'page' : 'false'))
   document.querySelector(`#thumbs button[data-page="${doc.page}"]`)?.scrollIntoView({ block:'nearest', inline:'nearest' })
 }
@@ -280,7 +303,7 @@ function showNonMusicPage(state) {
   pageCtx.drawImage(state.image, 0, 0); overlayCtx.clearRect(0, 0, overlay.width, overlay.height)
   S.name = pageFileStem(S.document, state.index)
   if (S.document?.kind === 'pdf') S.document.page = state.index
-  $('empty').hidden = true; $('stage').hidden = false; $('export').disabled = false
+  showStage()
   clearPlanUi(); fitPageZoom(); layoutPage(); pageUi()
   setStatus(`Page ${state.index} of ${S.document.pageCount} · <b>no staves found</b> · kept unchanged.`)
   trimPageCache(S.document, state.index)
@@ -295,7 +318,7 @@ function showFailedPage(state) {
   S.name = pageFileStem(S.document, state.index)
   if (S.document?.kind === 'pdf') S.document.page = state.index
   overlay.setAttribute('aria-label', `PDF page ${state.index} of ${S.document.pageCount}, recognition failed. Activate this page again to retry.`)
-  $('empty').hidden = true; $('stage').hidden = false; $('export').disabled = false
+  showStage()
   clearPlanUi(); fitPageZoom(); layoutPage(); pageUi()
   setStatus(`Page ${state.index} of ${S.document.pageCount} · <b>recognition failed:</b> ${escapeHtml(state.error || 'unknown error')} · choose the page again to retry.`)
   trimPageCache(S.document, state.index)
@@ -307,7 +330,7 @@ async function installReadyPage(state, { fit=false } = {}) {
   S.plan = state.plan; S.items = state.items; S.locks = state.locks; S.part = state.part; S.suggestion = state.suggestion
   S.keyboardIndex = state.keyboardIndex; S.selectedId = null; S.name = pageFileStem(S.document, state.index)
   overlay.setAttribute('aria-label', `${DEFAULT_OVERLAY_LABEL}${S.document?.kind === 'pdf' ? ` Page ${state.index} of ${S.document.pageCount}.` : ''}`)
-  $('empty').hidden = true; $('stage').hidden = false; $('export').disabled = false
+  showStage()
   rebuildParts()
   if (!await replan(false)) return false
   if (S.document?.kind === 'pdf') S.document.page = state.index
@@ -435,7 +458,7 @@ async function replan(showBusy=true) {
     })
     S.planRevision++
     S.suggestion = Math.min(S.suggestion, Math.max(0, S.plan.suggestions.length - 1))
-    renderAlternatives(); renderPage(); renderNoteList(); updateStatus()
+    renderAlternatives(); renderPage(); renderNoteList(); updateStatus(); refreshInk()
     return true
   } catch (error) {
     setStatus(`<b>Could not plan this part:</b> ${escapeHtml(error.message)}`)
@@ -464,7 +487,7 @@ function renderAlternatives() {
 
 function fitPageZoom() {
   if (!page.width) return
-  const available = Math.max(260, $('wrap').clientWidth - 32)
+  const available = Math.max(260, $('wrap').clientWidth - (document.body.classList.contains('reader') ? 14 : 32))
   S.zoom = Math.max(0.1, Math.min(1, available / page.width))
   $('zoom').value = S.zoom
 }
@@ -491,7 +514,7 @@ function layoutPage() {
   if (!page.width) return
   const width = page.width * S.zoom, height = page.height * S.zoom
   $('stage').style.width = `${width}px`; $('stage').style.height = `${height}px`
-  for (const canvas of [page, overlay]) { canvas.style.width = `${width}px`; canvas.style.height = `${height}px` }
+  for (const canvas of [page, overlay, ink, heads]) { canvas.style.width = `${width}px`; canvas.style.height = `${height}px` }
 }
 
 function scrollAnnotationIntoView(item) {
@@ -510,7 +533,7 @@ function renderPage() {
   S.items = annotationItems(S.plan, S.suggestion, { instrument:S.plan.instrument })
   S.keyboardIndex = Math.max(0, Math.min(S.keyboardIndex, Math.max(0, S.items.length - 1)))
   if ($('recognition').checked) drawRecognition(overlayCtx, S.model, S.renderer.r, S.score, S.items.find(item => item.id === S.selectedId)?.source)
-  drawFingerings(overlayCtx, S.items, S.renderer.r, { selectedId:S.selectedId, showDetails:$('details').checked })
+  if ($('fingerings').checked) drawFingerings(overlayCtx, S.items, S.renderer.r, { selectedId:S.selectedId, showDetails:$('details').checked })
   layoutPage(); syncCurrentPage()
 }
 
@@ -525,6 +548,15 @@ function updateStatus() {
   setStatus(`${pagePrefix}<b>${S.model.staves.length}</b> staves · <b>${S.model.notes.length}</b> recognized notes · part ${S.part + 1}: <b>${S.plan.notes.length}</b> notes${auto} · <b>${S.plan.suggestions.length}</b> fingering paths · ${escapeHtml(chosen.label)}${badBars ? ` · <b>${badBars}</b> bars need checking` : ''}${rejected ? ` · <b>${rejected}</b> notes not playable` : ''}${divisi ? ` · <b>${divisi}</b> chord note${divisi > 1 ? 's' : ''} fingered independently for divisi` : ''}${conflicts ? ` · <b>${conflicts}</b> incompatible string lock${conflicts > 1 ? 's' : ''}` : ''} · read in ${Math.round(S.model.ms)} ms`)
 }
 
+function placePopup(event) {
+  const pop = $('pop')
+  pop.style.visibility = 'hidden'; pop.style.display = 'block'; pop.style.left = '8px'; pop.style.top = '8px'
+  const box = pop.getBoundingClientRect()
+  const left = Math.max(8, Math.min(innerWidth - box.width - 8, event.clientX + 10))
+  const top = Math.max(8, Math.min(innerHeight - box.height - 8, event.clientY + 10))
+  pop.style.left = `${left}px`; pop.style.top = `${top}px`; pop.style.visibility = 'visible'
+  pop.querySelector('button:not(:disabled)')?.focus()
+}
 function hidePopup(restoreFocus=true) {
   const opener = S.popupOpener
   $('pop').style.display = 'none'; S.selectedId = null; S.popupOpener = null
@@ -550,13 +582,8 @@ function focusAfterEdit(opener, id, fallbackIndex) {
     <p>${item.warnings.length ? `<b>${escapeHtml(item.warnings.map(warning => warning.message).join(' '))}</b><br>` : ''}Choose a string to re-plan the whole passage around this note, or correct the recognized pitch.</p>
     <div class="row"><span>String</span><button data-string="auto" aria-pressed="${lock == null}">auto</button>${profile.strings.map((name, index) => `<button data-string="${index}" aria-pressed="${lock === index}" ${playableStrings[index] ? '' : 'disabled'}>${name}</button>`).join('')}</div>
     <div class="row"><span>Pitch</span><button id="down" aria-label="Move recognized pitch down one staff step">▼</button><button id="up" aria-label="Move recognized pitch up one staff step">▲</button><button data-acc="-1" aria-label="Set flat" aria-pressed="${note.accid?.type === -1}">♭</button><button data-acc="0" aria-label="Set natural" aria-pressed="${note.accid?.type === 0}">♮</button><button data-acc="1" aria-label="Set sharp" aria-pressed="${note.accid?.type === 1}">♯</button><button data-acc="none" aria-pressed="${!note.accid}">no accidental</button></div>
-    <div class="row"><button id="remove" class="danger">Not a note</button><button id="close">Close</button></div>`
-  pop.style.visibility = 'hidden'; pop.style.display = 'block'; pop.style.left = '8px'; pop.style.top = '8px'
-  const box = pop.getBoundingClientRect()
-  const left = Math.max(8, Math.min(innerWidth - box.width - 8, event.clientX + 10))
-  const top = Math.max(8, Math.min(innerHeight - box.height - 8, event.clientY + 10))
-  pop.style.left = `${left}px`; pop.style.top = `${top}px`; pop.style.visibility = 'visible'
-  pop.querySelector('button:not(:disabled)')?.focus()
+    <div class="row"><button id="playHere">▶ Play from this bar</button><button id="remove" class="danger">Not a note</button><button id="close">Close</button></div>`
+  placePopup(event)
   pop.querySelectorAll('[data-string]').forEach(button => button.onclick = async () => {
     const opener = S.popupOpener
     if (button.dataset.string === 'auto') S.locks.delete(item.id); else S.locks.set(item.id, +button.dataset.string)
@@ -585,6 +612,7 @@ function focusAfterEdit(opener, id, fallbackIndex) {
     interpret(note.st); hidePopup(false); rebuildParts(); await replan(); focusAfterEdit(opener, item.id, item.index)
   }
   $('close').onclick = hidePopup
+  $('playHere').onclick = () => { const tick = tickOfNote(note); hidePopup(false); startPlayback(tick) }
 }
 
 function resetDocumentAlternatives() {
@@ -593,10 +621,13 @@ function resetDocumentAlternatives() {
 }
 
 overlay.addEventListener('click', event => {
-  if (!S.renderer || !S.items.length) return
+  if (!S.renderer) return
   const rect = overlay.getBoundingClientRect()
   const x = (event.clientX - rect.left) * overlay.width / rect.width / S.renderer.r
   const y = (event.clientY - rect.top) * overlay.height / rect.height / S.renderer.r
+  // Reader: a tap plays from the bar under it
+  if (document.body.classList.contains('reader')) { const measure = S.score && measureAt(S.score, { x, y }); if (measure) startPlayback(measureStarts(S.score).get(measure)); return }
+  if (!S.items.length) return
   const item = hitAnnotation(S.items, x, y, 18)
   if (item) showPopup(item, event); else hidePopup()
 })
@@ -604,7 +635,7 @@ overlay.addEventListener('click', event => {
 document.addEventListener('keydown', event => { if (event.key === 'Escape') hidePopup() })
 
 overlay.addEventListener('keydown', event => {
-  if (!S.items.length) return
+  if (!S.items.length || document.body.classList.contains('reader')) return
   if (event.key === 'ArrowRight' || event.key === 'ArrowDown') S.keyboardIndex = (S.keyboardIndex + 1) % S.items.length
   else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') S.keyboardIndex = (S.keyboardIndex - 1 + S.items.length) % S.items.length
   else if (event.key === 'Home') S.keyboardIndex = 0
@@ -623,11 +654,12 @@ overlay.addEventListener('keydown', event => {
 $('instrument').onchange = () => { hidePopup(false); resetDocumentAlternatives(); replan() }
 $('mode').onchange = () => { hidePopup(false); resetDocumentAlternatives(); replan() }
 $('part').onchange = () => { S.part = +$('part').value; S.suggestion = 0; hidePopup(false); replan() }
-$('tempo').onchange = () => { resetDocumentAlternatives(); replan() }
+$('tempo').onchange = () => { if (P.player?.playing) P.player.tempo = currentTempo(); resetDocumentAlternatives(); replan() }
 $('recognition').onchange = renderPage
 $('details').onchange = renderPage
+$('fingerings').onchange = renderPage
 $('zoom').oninput = event => { S.zoom = +event.target.value; layoutPage() }
-window.addEventListener('resize', layoutPage)
+window.addEventListener('resize', () => { if (document.body.classList.contains('reader')) fitPageZoom(); layoutPage() })
 
 for (const id of ['camera','camera2','file']) $(id).onchange = event => {
   const file = event.target.files[0]; if (file) load(file, file.name); event.target.value = ''
@@ -656,6 +688,7 @@ const currentPlanningSettings = () => {
     mode:$('mode').value,
     quarterSeconds:60 / Math.max(30, Math.min(260, +$('tempo').value || 120)),
     showDetails:$('details').checked,
+    showFingerings:$('fingerings').checked,
     autoInstruments:new Map(S.document?.autoInstruments || []),
     resolvedInstruments:new Set(),
   }
@@ -696,12 +729,19 @@ function planPageState(state, settings = currentPlanningSettings()) {
   return state
 }
 
-function composePageState(state, settings) {
+function composePageState(state, settings, inkMods = null) {
   if (state.status !== 'ready') return state.image
   planPageState(state, settings)
   const canvas = document.createElement('canvas'); canvas.width = state.renderer.W; canvas.height = state.renderer.H
   const context = canvas.getContext('2d'); context.drawImage(state.renderer.src, 0, 0)
-  drawFingerings(context, state.items, state.renderer.r, { showDetails:settings.showDetails })
+  if (settings.showFingerings !== false) drawFingerings(context, state.items, state.renderer.r, { showDetails:settings.showDetails })
+  const annotations = inkMods && pageInk(S.document, state.index)
+  if (annotations?.length) {
+    try {
+      const { irc, items, surface } = inkSurface(inkMods, state.model, state.score, state.renderer.r)
+      inkMods.drawAnnotations(context, surface, annotations, items)
+    } catch (error) { console.warn('annotations not exported', error) }
+  }
   return canvas
 }
 
@@ -742,6 +782,7 @@ async function runAnnotatedPdfExport() {
   const revision = loadRequest, settings = currentPlanningSettings()
   const owner = Symbol('pdf-export'); setBusy(true, 'Annotating PDF…', owner)
   try {
+    const inkMods = await inkModulesOrNull()
     const pages = []; let jpegBytes = 0
     for (let index = 1; index <= doc.pageCount; index++) {
       if (S.document !== doc || loadRequest !== revision) throw new Error('Export stopped because another document or page was opened')
@@ -750,7 +791,7 @@ async function runAnnotatedPdfExport() {
       if (S.document !== doc || loadRequest !== revision) throw new Error('Export stopped because another document or page was opened')
       let canvas = null
       try {
-        canvas = composePageState(state, settings)
+        canvas = composePageState(state, settings, inkMods)
         const jpeg = await jpegPage(canvas); jpegBytes += jpeg.length
         if (jpegBytes > MAX_EXPORT_JPEG_BYTES) throw new Error('Encoded pages exceed the 64 MB whole-document export limit')
         pages.push({ jpeg, w:canvas.width, h:canvas.height, widthPt:state.widthPt, heightPt:state.heightPt })
@@ -788,7 +829,7 @@ $('export').onclick = async () => {
   syncCurrentPage()
   const state = S.activePageState
   let output
-  if (state?.status === 'ready') output = composePageState(state, currentPlanningSettings())
+  if (state?.status === 'ready') output = composePageState(state, currentPlanningSettings(), await inkModulesOrNull())
   else {
     output = document.createElement('canvas'); output.width = page.width; output.height = page.height
     output.getContext('2d').drawImage(page, 0, 0)
@@ -804,4 +845,300 @@ $('export').onclick = async () => {
 }
 $('exportPdf').onclick = exportAnnotatedPdf
 
-window.__scoreFingering = { S, load, loadSource, recognize, replan, renderPage, openPage, exportAnnotatedPdf, sourceNoteId, resolvePlanningInstrument, exportInstrumentLabel }
+
+// ---------- playback: ScoreShift's player (notation-ir Web Audio voice, metronome, lookahead) ----------
+const currentTempo = () => Math.max(30, Math.min(260, +$('tempo').value || 120))
+const readerOn = () => document.body.classList.contains('reader')
+function playUi(on) {
+  $('play').setAttribute('aria-pressed', on); $('play').textContent = on ? '■ Stop' : '▶ Play'; $('play').setAttribute('aria-label', on ? 'Stop' : 'Play')
+}
+function clearHeads() { P.headsKey = ''; headsCtx.clearRect(0, 0, heads.width, heads.height) }
+function stopPlayback() {
+  if (!P.player?.playing) return
+  P.manual = true; P.player.stop(); P.manual = false
+}
+/** Play the shown page from `fromTick` (ticks of 96 per quarter, bars from measureStarts). */
+async function startPlayback(fromTick = 0) {
+  if (!S.model || !S.score) return false
+  let Player
+  try { ({ Player } = await playerModule()) }
+  catch (error) { setStatus(`<b>Playback is unavailable:</b> ${escapeHtml(error.message)}`); return false }
+  if (!S.model || !S.score) return false
+  P.player ||= new Player()
+  const player = P.player
+  player.onStop = onPlaybackStop
+  player.metronome = $('metronome').checked
+  player.setSpeed(+$('speed').value || 1)
+  P.state = S.activePageState
+  P.manual = true // play() stops a run already going; that is not the end of the page
+  try { player.play(S.model, S.score, { tempo:currentTempo() }, (events, tick) => drawPlayhead(events, tick), fromTick) }
+  finally { P.manual = false }
+  playUi(true)
+  return true
+}
+function onPlaybackStop() {
+  playUi(false); clearHeads()
+  if (P.manual) return
+  // the end of the page: carry on onto the next page with music
+  const doc = S.document
+  if ($('turnPages').checked && doc?.kind === 'pdf' && S.activePageState === P.state && doc.page < doc.pageCount) turnAndContinue(doc.page + 1)
+}
+async function turnAndContinue(index) {
+  const doc = S.document
+  P.turning = true
+  try {
+    for (; index <= doc.pageCount; index++) {
+      if (S.document !== doc) return
+      await openPage(index, { fit:readerOn() })
+      if (S.document !== doc || S.activePageState?.index !== index) return
+      if (S.model) { window.scrollTo({ top:0 }); $('wrap').scrollTo({ top:0, left:0 }); await startPlayback(0); return }
+    }
+  } finally { P.turning = false }
+}
+function drawPlayhead(events, tick) {
+  if (!S.renderer || S.activePageState !== P.state) return
+  const notes = soundingHeads(events, tick), key = notes.map(note => `${note.si ?? note.st?.index}:${note.x}:${note.y}`).join()
+  if (key === P.headsKey) return
+  P.headsKey = key
+  if (heads.width !== page.width || heads.height !== page.height) { heads.width = page.width; heads.height = page.height }
+  headsCtx.clearRect(0, 0, heads.width, heads.height)
+  if (!notes.length) return
+  const r = S.renderer.r, space = (S.model.space || 16) * r
+  headsCtx.save(); headsCtx.fillStyle = 'rgba(232,89,12,.22)'; headsCtx.strokeStyle = '#e8590c'; headsCtx.lineWidth = Math.max(2, space * 0.16)
+  const staves = new Map()
+  for (const note of notes) {
+    headsCtx.beginPath(); headsCtx.ellipse(note.x * r, note.y * r, space * 0.95, space * 0.75, 0, 0, Math.PI * 2); headsCtx.fill(); headsCtx.stroke()
+    if (note.st && !staves.has(note.st)) staves.set(note.st, note.x)
+  }
+  // a cursor through each sounding staff
+  headsCtx.globalAlpha = 0.55
+  for (const [staff, x] of staves) {
+    headsCtx.beginPath(); headsCtx.moveTo(x * r, (lineY(staff, 0, x) - 1.5 * (S.model.space || 16)) * r); headsCtx.lineTo(x * r, (lineY(staff, 4, x) + 1.5 * (S.model.space || 16)) * r); headsCtx.stroke()
+  }
+  headsCtx.restore()
+  if ($('follow').checked) { const [staff, x] = staves.entries().next().value || []; if (staff) revealStaff(staff, x) }
+}
+/** Scroll so a staff stays in view (a third of the way down), whichever box scrolls. */
+function revealStaff(staff, x) {
+  const r = S.renderer.r * S.zoom, space = (S.model.space || 16) * r, rect = $('stage').getBoundingClientRect()
+  const top = rect.top + lineY(staff, 0, x) * r - 2.5 * space, bottom = rect.top + lineY(staff, 4, x) * r + 2.5 * space
+  const viewTop = (document.querySelector('header')?.getBoundingClientRect().bottom || 0), viewBottom = Math.min(innerHeight, $('transport').hidden ? innerHeight : $('transport').getBoundingClientRect().top)
+  const wrap = $('wrap')
+  if (top < viewTop || bottom > viewBottom) {
+    const delta = top - (viewTop + (viewBottom - viewTop) / 3)
+    if (wrap.scrollHeight > wrap.clientHeight + 1) wrap.scrollBy({ top:delta, behavior:'smooth' }); else window.scrollBy({ top:delta, behavior:'smooth' })
+  }
+  const left = rect.left + x * r, wrapRect = wrap.getBoundingClientRect()
+  if (wrap.scrollWidth > wrap.clientWidth + 1 && (left < wrapRect.left + 20 || left > wrapRect.right - 20)) wrap.scrollBy({ left:left - (wrapRect.left + wrapRect.width / 3), behavior:'smooth' })
+}
+/** The bar a recognized note is in, as a start tick. */
+function tickOfNote(note) {
+  const measure = S.score?.measures.find(m => m.events.some(e => e.notes?.includes(note)))
+  return measure ? measureStarts(S.score).get(measure) ?? 0 : 0
+}
+$('play').onclick = () => { if (P.player?.playing) stopPlayback(); else startPlayback(0) }
+$('rewind').onclick = () => startPlayback(0)
+$('speed').onchange = () => P.player?.setSpeed(+$('speed').value || 1)
+$('metronome').onchange = () => { if (P.player) P.player.metronome = $('metronome').checked }
+$('tPrev').onclick = () => $('prevPage').click()
+$('tNext').onclick = () => $('nextPage').click()
+
+// ---------- reader: the page full width, the controls tucked away ----------
+function setReader(on) {
+  document.body.classList.toggle('reader', on); $('readerMode').setAttribute('aria-pressed', on)
+  try { localStorage.setItem('score-fingering:reader', on ? '1' : '') } catch {}
+  hidePopup(false)
+  if (page.width) { fitPageZoom(); layoutPage() }
+}
+$('readerMode').onclick = () => setReader(!readerOn())
+$('fullscreen').onclick = () => document.fullscreenElement ? document.exitFullscreen?.() : document.documentElement.requestFullscreen?.().catch(() => {})
+document.addEventListener('fullscreenchange', () => { if (page.width) { fitPageZoom(); layoutPage() } })
+document.addEventListener('keydown', event => {
+  if (!readerOn() || event.ctrlKey || event.metaKey || event.altKey || event.target.closest?.('input,select,textarea,#pop')) return
+  if (event.key === ' ') { event.preventDefault(); $('play').click() }
+  else if (event.key === 'ArrowRight' || event.key === 'PageDown') { event.preventDefault(); if (S.document?.kind === 'pdf') openPage(S.document.page + 1, { fit:true }) }
+  else if (event.key === 'ArrowLeft' || event.key === 'PageUp') { event.preventDefault(); if (S.document?.kind === 'pdf') openPage(S.document.page - 1, { fit:true }) }
+  else if (event.key === 'm' || event.key === 'M') { $('metronome').click() }
+})
+try { if (localStorage.getItem('score-fingering:reader') || new URLSearchParams(location.search).has('reader')) setReader(true) } catch {}
+
+// ---------- ✎ Ink: pen annotations that stick to the music (notation-ir annotations.js) ----------
+// Ink is attached to the note, passage or moment under it, in staff spaces, so it stays with the
+// notes through pitch corrections and page re-reads. A pen or mouse writes; a finger writes until
+// a pen has been used, then fingers scroll. Strokes written together form one mark. Saved per
+// file and page in this browser, and drawn into the PNG / PDF export.
+const INK_GROUP_MS = 650
+let inkModulePromise = null
+const loadInkModules = () => (inkModulePromise ||= inkModules().catch(error => { inkModulePromise = null; throw error }))
+const inkModulesOrNull = () => loadInkModules().catch(() => null)
+const inkPage = () => S.activePageState?.index ?? 1
+// undo and redo belong to one page
+const inkStacks = () => { if (INK.undoPage !== inkPage()) { INK.undo = []; INK.redo = []; INK.undoPage = inkPage() } }
+function pageInk(doc = S.document, index = inkPage()) {
+  if (!doc) return []
+  doc.ink ||= new Map()
+  if (!doc.ink.has(index)) doc.ink.set(index, doc.sourceKey ? loadAnnotations(globalThis.localStorage, annotationKey(doc.sourceKey, index)) : [])
+  return doc.ink.get(index)
+}
+function setPageInk(list) {
+  const doc = S.document; if (!doc) return
+  doc.ink ||= new Map(); doc.ink.set(inkPage(), list)
+  if (doc.sourceKey && !saveAnnotations(globalThis.localStorage, annotationKey(doc.sourceKey, inkPage()), list)) setStatus('<b>Ink kept for this session only:</b> browser storage is full or unavailable.')
+}
+function inkSurface(mods, model, score, r) {
+  const irc = mods.fromScoreShift(model, score, { title:'Score' })
+  const view = () => ({ X:x => x * r, Y:y => y * r, sp:(model.space || 16) * r })
+  return { irc, items:mods.itemsOf(irc.score), surface:mods.photoSurface({ model, score, irc, view }) }
+}
+/** Rebuild the music the ink attaches to (after a page is read or corrected). */
+async function refreshInk() {
+  const model = S.model, score = S.score, renderer = S.renderer
+  if (!model || !score || !renderer || (!INK.on && !pageInk().length)) { INK.irc = null; INK.model = null; drawInk(); return }
+  let mods
+  try { mods = INK.mods = await loadInkModules() }
+  catch (error) { INK.failed = true; setInkMode(false); $('inkMode').disabled = true; $('inkMode').title = `Ink is unavailable: ${error.message}`; drawInk(); return }
+  if (S.model !== model || S.score !== score) return
+  try { Object.assign(INK, inkSurface(mods, model, score, renderer.r), { model }) }
+  catch (error) { INK.irc = null; console.warn('ink surface', error) }
+  drawInk()
+  const lost = INK.irc ? pageInk().filter(a => mods.resolveAnnotation(INK.surface, a, INK.items)?.lost).length : 0
+  if (lost) setStatus($('status').innerHTML + ` · <b>${lost} ink mark${lost > 1 ? 's' : ''} lost ${lost > 1 ? 'their' : 'its'} note</b> (dashed: tap it in ✎ Ink to re-attach)`)
+}
+function drawInk() {
+  if (ink.width !== page.width || ink.height !== page.height) { ink.width = page.width; ink.height = page.height }
+  inkCtx.clearRect(0, 0, ink.width, ink.height)
+  if (!S.model || !S.renderer) return
+  if (INK.irc && INK.model === S.model) INK.mods.drawAnnotations(inkCtx, INK.surface, pageInk(), INK.items, { selected:INK.sel })
+  // ink still being written: plain strokes until it is attached
+  const r = S.renderer.r, live = [...(INK.group?.strokes || []), ...[...INK.ptrs.values()].filter(p => p.ink).map(p => p.pts)]
+  inkCtx.save(); inkCtx.lineCap = 'round'; inkCtx.lineJoin = 'round'; inkCtx.strokeStyle = inkCtx.fillStyle = INK.group?.color || INK.color; inkCtx.globalAlpha = 0.85
+  const width = Math.max(1, INK.width * (S.model.space || 16) * r)
+  for (const stroke of live) {
+    if (stroke.length === 1) { inkCtx.beginPath(); inkCtx.arc(stroke[0].x * r, stroke[0].y * r, width / 2, 0, 7); inkCtx.fill(); continue }
+    for (let i = 1; i < stroke.length; i++) { inkCtx.lineWidth = width * (0.6 + 0.8 * (stroke[i].p ?? 0.5)); inkCtx.beginPath(); inkCtx.moveTo(stroke[i - 1].x * r, stroke[i - 1].y * r); inkCtx.lineTo(stroke[i].x * r, stroke[i].y * r); inkCtx.stroke() }
+  }
+  inkCtx.restore()
+}
+function inkBar() {
+  inkStacks()
+  $('inkBar').hidden = !INK.on; $('inkMode').setAttribute('aria-pressed', INK.on)
+  $('inkBar').querySelectorAll('[data-c]').forEach(b => b.setAttribute('aria-pressed', !INK.erase && b.dataset.c === INK.color))
+  $('inkBar').querySelectorAll('[data-w]').forEach(b => b.setAttribute('aria-pressed', !INK.erase && +b.dataset.w === INK.width))
+  $('inkErase').setAttribute('aria-pressed', INK.erase)
+  $('inkUndo').disabled = !INK.undo.length; $('inkRedo').disabled = !INK.redo.length; $('inkClear').disabled = !pageInk().length
+}
+function inkChange(fn) {
+  inkStacks()
+  const before = JSON.stringify(pageInk()), list = JSON.parse(before); fn(list)
+  if (JSON.stringify(list) === before) return
+  INK.undo.push(before); if (INK.undo.length > 100) INK.undo.shift(); INK.redo = []
+  setPageInk(list); drawInk(); inkBar()
+}
+function inkUndo(redo = false) {
+  inkStacks()
+  const from = redo ? INK.redo : INK.undo, to = redo ? INK.undo : INK.redo
+  if (!from.length) return
+  to.push(JSON.stringify(pageInk())); setPageInk(JSON.parse(from.pop())); INK.sel = null; drawInk(); inkBar()
+}
+function commitInkGroup() {
+  const group = INK.group; INK.group = null
+  if (!group) return
+  clearTimeout(group.timer)
+  if (!INK.irc || INK.model !== S.model) { drawInk(); return }
+  const mark = INK.mods.attachStrokes(INK.surface, INK.items, group.strokes, { id:`a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, color:group.color, width:group.width })
+  if (!mark) { drawInk(); setStatus('That ink is not near any music on the page, so it was not kept.'); return }
+  inkChange(list => list.push(mark))
+}
+function setInkMode(on) {
+  if (on === INK.on) return
+  commitInkGroup(); INK.on = on; INK.sel = null; INK.undo = []; INK.redo = []
+  $('stage').classList.toggle('inking', on); inkBar()
+  if (on) { stopPlayback(); refreshInk(); setStatus('<b>✎ Ink</b>: write on the music with a pen, mouse or finger. Ink sticks to the notes under it. Tap a mark to recolour or delete it; ⌫ erase wipes marks.') }
+}
+$('inkMode').onclick = () => setInkMode(!INK.on)
+$('inkBar').addEventListener('click', event => {
+  const button = event.target.closest('button'); if (!button) return
+  if (button.dataset.c) { INK.color = button.dataset.c; INK.erase = false }
+  else if (button.dataset.w) { INK.width = +button.dataset.w; INK.erase = false }
+  else if (button.id === 'inkErase') INK.erase = !INK.erase
+  else if (button.id === 'inkUndo') inkUndo(false)
+  else if (button.id === 'inkRedo') inkUndo(true)
+  else if (button.id === 'inkClear') { if (confirm('Remove all ink on this page? (Undo brings it back.)')) inkChange(list => { list.length = 0 }) }
+  inkBar()
+})
+function inkPoint(event) {
+  const rect = ink.getBoundingClientRect(), r = S.renderer.r
+  return { x:(event.clientX - rect.left) * ink.width / rect.width / r, y:(event.clientY - rect.top) * ink.height / rect.height / r }
+}
+function eraseInkAt(pt) {
+  const hit = INK.irc && INK.mods.hitAnnotation(INK.surface, pageInk(), INK.items, pt, 0.9)
+  if (hit) inkChange(list => { const i = list.findIndex(a => a.id === hit.id); if (i >= 0) list.splice(i, 1) })
+}
+function inkPopup(id, event) {
+  const mark = pageInk().find(a => a.id === id); if (!mark) return
+  INK.sel = id; drawInk()
+  const lost = INK.mods.resolveAnnotation(INK.surface, mark, INK.items)?.lost
+  const what = { event:'a note', span:'a passage', time:'a moment on the staff' }[mark.anchor.kind]
+  const pop = $('pop')
+  pop.innerHTML = `<h3 id="popTitle">Ink mark</h3><p>${lost ? '<b>Its note was removed by a correction.</b>' : `Attached to ${what}: it stays with the music.`}</p>
+    ${lost ? '<div class="row"><button id="inkNear">Attach to the nearest note</button></div>' : ''}
+    <div class="row">${['#c2255c', '#1c7ed6', '#2b8a3e', '#212529'].map(c => `<button data-ic="${c}" aria-label="Colour ${c}" aria-pressed="${c === mark.color}" style="background:${c};border-color:${c};border-radius:50%"></button>`).join('')}</div>
+    <div class="row"><button id="inkDelete" class="danger">Delete</button><button id="inkClose">Close</button></div>`
+  placePopup(event)
+  pop.querySelectorAll('[data-ic]').forEach(b => b.onclick = () => { inkChange(list => { list.find(a => a.id === id).color = b.dataset.ic }); inkPopup(id, event) })
+  $('inkDelete').onclick = () => { inkChange(list => { const i = list.findIndex(a => a.id === id); if (i >= 0) list.splice(i, 1) }); INK.sel = null; hidePopup(false); drawInk() }
+  $('inkClose').onclick = () => { INK.sel = null; hidePopup(false); drawInk() }
+  if (lost) $('inkNear').onclick = () => {
+    const resolved = INK.mods.resolveAnnotation(INK.surface, mark, INK.items), at = resolved?.pieces[0]?.points[0], near = at && INK.surface.eventAt(at, 6)
+    if (!near) { setStatus('No note near that mark.'); return }
+    inkChange(list => INK.mods.reattachAnnotation(list.find(a => a.id === id), near, INK.items)); inkPopup(id, event)
+  }
+}
+ink.addEventListener('pointerdown', event => {
+  if (!INK.on || !S.model) return
+  if (event.pointerType === 'pen') INK.penSeen = true
+  const rec = { type:event.pointerType, x0:event.clientX, y0:event.clientY, pts:[], moved:0, ink:false,
+    scroll:event.pointerType === 'touch' && INK.penSeen, erase:INK.erase || (event.pointerType === 'pen' && (event.buttons & 32)), sx:scrollX, sy:scrollY, wx:$('wrap').scrollLeft }
+  // a second finger: stop writing, scroll instead
+  const touches = [...INK.ptrs.values()].filter(p => p.type === 'touch')
+  if (event.pointerType === 'touch' && touches.length) { for (const t of touches) { t.ink = false; t.scroll = true; t.pts = [] } rec.scroll = true }
+  INK.ptrs.set(event.pointerId, rec); ink.setPointerCapture(event.pointerId)
+  if (rec.scroll) return
+  event.preventDefault()
+  const pt = inkPoint(event)
+  if (rec.erase) { eraseInkAt(pt); return }
+  // a new stroke far from the waiting group: that group is one mark, done
+  if (INK.group) { clearTimeout(INK.group.timer); const space = S.model.space || 16; if (Math.min(...INK.group.strokes.flat().map(q => Math.hypot(q.x - pt.x, q.y - pt.y))) > 3 * space) commitInkGroup() }
+  rec.ink = true; rec.pts.push({ x:pt.x, y:pt.y, p:event.pointerType === 'pen' ? event.pressure : 0.5 })
+  drawInk()
+})
+ink.addEventListener('pointermove', event => {
+  const rec = INK.ptrs.get(event.pointerId); if (!rec) return
+  rec.moved = Math.max(rec.moved, Math.hypot(event.clientX - rec.x0, event.clientY - rec.y0))
+  if (rec.scroll) { window.scrollTo(scrollX, rec.sy - (event.clientY - rec.y0)); $('wrap').scrollLeft = rec.wx - (event.clientX - rec.x0); return }
+  if (rec.erase) { eraseInkAt(inkPoint(event)); return }
+  if (!rec.ink) return
+  for (const sample of event.getCoalescedEvents ? event.getCoalescedEvents() : [event]) {
+    const q = inkPoint(sample), last = rec.pts[rec.pts.length - 1]
+    if (!last || Math.hypot(q.x - last.x, q.y - last.y) > 0.6) rec.pts.push({ x:q.x, y:q.y, p:event.pointerType === 'pen' ? sample.pressure : 0.5 })
+  }
+  drawInk()
+})
+function inkUp(event) {
+  const rec = INK.ptrs.get(event.pointerId); if (!rec) return
+  INK.ptrs.delete(event.pointerId)
+  if (rec.scroll || rec.erase || event.type === 'pointercancel') { drawInk(); return }
+  if (rec.moved < 6 && !INK.group) { // a tap: select a mark, or keep a dot (a staccato, a breath mark)
+    const hit = INK.irc && INK.mods.hitAnnotation(INK.surface, pageInk(), INK.items, inkPoint(event), 0.9)
+    if (hit) { inkPopup(hit.id, event); return }
+    if (INK.sel) { INK.sel = null; hidePopup(false); drawInk(); return }
+  }
+  INK.group ||= { strokes:[], color:INK.color, width:INK.width }
+  INK.group.strokes.push(rec.pts)
+  INK.group.timer = setTimeout(commitInkGroup, INK_GROUP_MS)
+  drawInk()
+}
+ink.addEventListener('pointerup', inkUp)
+ink.addEventListener('pointercancel', inkUp)
+
+window.__scoreFingering = { S, P, INK, load, loadSource, recognize, replan, renderPage, openPage, exportAnnotatedPdf, sourceNoteId, resolvePlanningInstrument, exportInstrumentLabel, startPlayback, stopPlayback, setReader, setInkMode, refreshInk, pageInk, inkChange, inkUndo, commitInkGroup, measureStarts, measureAt, tickOfNote }

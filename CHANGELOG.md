@@ -4,6 +4,11 @@ What each experiment does and how, newest first. The short list is in the [READM
 
 ## 26 Oct 2026
 
+[Experiment #046 - Score fingering](046_score_fingering.html) as a score reader ([notes](score-fingering/README.md#reading-playing-and-writing-on-the-score))
+- 📖 Reader shows the page full width with the controls hidden (⛶ full screen); Space plays, ← → turn pages, M the metronome. A transport plays the recognized page through ScoreShift's player (notation-ir Web Audio voice, lookahead scheduler, bar-aware metronome) from the top, from a tapped bar or from a note's popup, with live tempo, speed and metronome; the sounding noteheads are ringed, the playing staff kept in view, and at the end of a page playback turns to the next page with music and carries on. Fingerings can be hidden for plain reading.
+- ✎ Ink: pen annotations from notation-ir `annotations.js`, attached to the note, passage or moment under them so they follow corrections; colours, widths, eraser, undo / redo, re-attach a mark whose note was removed; kept per file and page in localStorage and drawn into the PNG / PDF exports.
+- Tests: `reader.test.js` (bar starts on the playback clock, tap-to-bar, sounding heads, ink attached and stored); the browser smoke adds 16 checks (playhead, metronome / speed, Reader layout and keys, tap-to-play, page turn while playing, ink attach / undo / persistence / export).
+
 [Experiment #032 - Pianist](032_pianist.html): crossing hands no longer pass through each other (shared by #038, #045 and #047)
 - In Goldberg Variation 5 the hand going over stayed at the other's height, its wrist only tilting up, so the palms met: measured as capsules on the bones (palm 1.6 cm, fingers 0.8–0.9), one hand was more than 1 cm into the other on 47 % of the crossed frames. Now 9 %.
 - The hand over is carried up to 4.5 cm higher ([pianist/hand-driver.js](pianist/hand-driver.js) `setLift`): 2.5 cm as it comes over, plus whatever overlap is still measured on the drivers' joints each frame ([pianist/rig.js](pianist/rig.js) `handsOverlap`), remembered for a second so a passage that crosses again and again comes over at the height it needed last time. Its free fingers and thumb ride up with it rather than hang down into the other hand. The hand under drops 1.5 cm. The wrist rises faster (0.05 s instead of 0.12).

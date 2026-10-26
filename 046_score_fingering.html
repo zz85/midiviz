@@ -58,6 +58,23 @@
   #stage { position:relative; margin:0 auto; transform-origin:top left; box-shadow:0 8px 32px #2b211a26; background:white; }
   #stage canvas { display:block; position:absolute; left:0; top:0; }
   #overlay { cursor:pointer; }
+  #ink,#heads { pointer-events:none; }
+  #stage.inking #ink { pointer-events:auto; cursor:crosshair; touch-action:none; }
+  #transport { position:sticky; bottom:0; z-index:7; display:flex; flex-wrap:wrap; align-items:center; gap:.4rem .7rem; padding:.45rem .75rem; background:#faf7f0f2; border-top:1px solid var(--line); box-shadow:0 -2px 12px #0001; }
+  #transport label { display:flex; align-items:center; gap:.3rem; color:var(--muted); font-size:.86rem; }
+  #transport .sep { flex:1; }
+  #play { min-width:6rem; font-weight:600; }
+  #inkBar { display:inline-flex; flex-wrap:wrap; align-items:center; gap:.3rem; }
+  #inkBar [data-c] { width:1.9rem; min-width:1.9rem; padding:0; border-radius:50%; background:var(--c); border-color:var(--c); }
+  #inkBar [data-c][aria-pressed=true] { outline:2px solid #111; outline-offset:2px; }
+  body.reader #controls,body.reader #choices,body.reader #status,body.reader #thumbs { display:none; }
+  body.reader #pages { display:none !important; }
+  body.reader #layout { grid-template-columns:minmax(0,1fr); min-height:0; }
+  body.reader #wrap { padding:.4rem; }
+  body.reader #stage { box-shadow:none; }
+  body.reader #tPrev,body.reader #tNext { min-width:3rem; }
+  body.reader header { padding:.35rem .75rem; }
+  body.reader header > label.open,body.reader header > #sample,body.reader header > #export,body.reader header > #exportPdf { display:none; }
   #busy { position:fixed; inset:0; z-index:30; display:none; place-items:center; background:#f3efe6cc; backdrop-filter:blur(2px); }
   #busy div { padding:.8rem 1.1rem; border:1px solid var(--line); border-radius:10px; background:var(--card); box-shadow:0 8px 30px #0002; }
   #pop { position:fixed; z-index:20; display:none; max-width:min(26rem,calc(100vw - 16px)); max-height:calc(100vh - 16px); overflow:auto; padding:.7rem; border:1px solid var(--line); border-radius:12px; background:var(--card); box-shadow:0 12px 34px #0003; }
@@ -78,6 +95,9 @@
     #wrap { padding:.5rem; }
     #controls label { flex:1 1 9rem; }
     #controls select { flex:1; }
+    #transport { gap:.35rem .5rem; padding:.4rem .5rem; }
+    #transport .sep { flex-basis:100%; height:0; }
+    body.reader header h1 { flex-basis:auto; font-size:.95rem; }
   }
 </style>
 </head>
@@ -89,12 +109,14 @@
   <button id="sample">Try viola PDF</button>
   <button id="export" disabled>⬇ Annotated PNG</button>
   <button id="exportPdf" hidden>⬇ Annotated PDF</button>
+  <button id="readerMode" aria-pressed="false" title="Reader: the page full width, the controls hidden; Space plays, ← → turn pages">📖 Reader</button>
+  <button id="fullscreen" aria-label="Full screen" title="Full screen">⛶</button>
 </header>
 <div id="controls">
   <label>Instrument <select id="instrument"><option value="auto" selected>Auto (violin/viola)</option><option value="violin">Violin</option><option value="viola">Viola</option></select></label>
   <label>Part <select id="part" disabled><option>—</option></select></label>
   <label>Style <select id="mode"><option value="standard">Standard</option><option value="beginner">Beginner</option><option value="expressive">Expressive</option><option value="nearest">Fewest shifts</option></select></label>
-  <label>Tempo <input id="tempo" type="number" min="30" max="260" value="120"> ♩/min</label>
+  <label><input id="fingerings" type="checkbox" checked> fingerings</label>
   <label><input id="recognition" type="checkbox"> recognition</label>
   <label title="Show string changes and hand-position changes beside their noteheads"><input id="details" type="checkbox"> string / position details</label>
   <label>Zoom <input id="zoom" type="range" min="0.1" max="2" step="0.05" value="1"></label>
@@ -116,8 +138,26 @@
       <div class="actions"><label class="open">📷 Take a photo<input id="camera2" type="file" accept="image/*" capture="environment"></label><button id="sample2">Use the Sibelius viola PDF</button></div>
       <p>For the best reading: printed music, a flat page, the whole staff width in frame, and even light. Open a multi-page PDF to navigate thumbnails and export one annotated PDF. Tap any wrong pitch to correct or remove it.</p>
     </div>
-    <div id="stage" hidden><canvas id="page"></canvas><canvas id="overlay" tabindex="0" role="application" aria-label="Annotated photographed score. Use the arrow keys to select a note and Enter to edit it, or use the Edit recognized notes list."></canvas></div>
+    <div id="stage" hidden><canvas id="page"></canvas><canvas id="overlay" tabindex="0" role="application" aria-label="Annotated photographed score. Use the arrow keys to select a note and Enter to edit it, or use the Edit recognized notes list."></canvas><canvas id="ink" aria-hidden="true"></canvas><canvas id="heads" aria-hidden="true"></canvas></div>
   </main>
+</div>
+<div id="transport" hidden role="toolbar" aria-label="Playback and annotation">
+  <button id="tPrev" aria-label="Previous page" hidden>◀</button>
+  <button id="play" aria-pressed="false" aria-label="Play">▶ Play</button>
+  <button id="rewind" aria-label="Play from the top of the page" title="From the top of the page">⏮</button>
+  <label>Tempo <input id="tempo" type="number" min="30" max="260" value="120"> ♩/min</label>
+  <label>Speed <select id="speed"><option value="0.5">×0.5</option><option value="0.75">×0.75</option><option value="1" selected>×1</option><option value="1.25">×1.25</option><option value="1.5">×1.5</option></select></label>
+  <label><input id="metronome" type="checkbox"> metronome</label>
+  <label title="Keep the playing staff in view"><input id="follow" type="checkbox" checked> follow</label>
+  <label id="turnPagesLabel" title="Carry on onto the next page at the end of this one" hidden><input id="turnPages" type="checkbox" checked> turn pages</label>
+  <button id="tNext" aria-label="Next page" hidden>▶</button>
+  <span class="sep"></span>
+  <button id="inkMode" aria-pressed="false" title="Write on the music with a pen, mouse or finger; ink sticks to the notes under it">✎ Ink</button>
+  <span id="inkBar" hidden>
+    <button data-c="#c2255c" aria-label="Magenta ink" style="--c:#c2255c"></button><button data-c="#1c7ed6" aria-label="Blue ink" style="--c:#1c7ed6"></button><button data-c="#2b8a3e" aria-label="Green ink" style="--c:#2b8a3e"></button><button data-c="#212529" aria-label="Black ink" style="--c:#212529"></button>
+    <button data-w="0.14" aria-label="Thin pen">thin</button><button data-w="0.26" aria-label="Thick pen">thick</button>
+    <button id="inkErase" aria-pressed="false">⌫ erase</button><button id="inkUndo" aria-label="Undo">↶</button><button id="inkRedo" aria-label="Redo">↷</button><button id="inkClear">clear page</button>
+  </span>
 </div>
 <div id="pop" role="dialog" aria-modal="false" aria-labelledby="popTitle"></div>
 <div id="busy" role="status"><div>Reading the music…</div></div>

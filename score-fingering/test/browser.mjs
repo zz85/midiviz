@@ -212,6 +212,82 @@ const loadImageSample = target => target.evaluate(async () => {
   check(refreshedPage3.recognized === 2 && refreshedPage3.keyless >= 10, `cached page 3 is re-recognized after page 2 establishes its key context, keeping its keyless section in C (keys ${refreshedPage3.fifths.join(',')}, carried ${refreshedPage3.recognized})`)
   check(sampleErrors.length === 0, `no built-in sample browser errors${sampleErrors.length ? ': ' + sampleErrors.join(' | ') : ''}`)
   await sampleContext.close()
+
+  // Score reader: playback with a playhead, the metronome, reader layout and page turns, pen ink.
+  const readerContext = await browser.newContext({ acceptDownloads:true, viewport:{ width:1100, height:800 } })
+  const reader = await readerContext.newPage(), readerErrors = []
+  reader.on('pageerror', error => readerErrors.push(error.message))
+  await reader.goto(`${base}/046_score_fingering.html`)
+  check(await reader.locator('#transport').isHidden(), 'transport stays hidden until a score is open')
+  await reader.click('#sample')
+  const readerReady = index => reader.waitForFunction(index => __scoreFingering.S.activePageState?.index === index && __scoreFingering.S.activePageState?.status === 'ready' && getComputedStyle(document.getElementById('busy')).display === 'none', index, { timeout:60000 })
+  await readerReady(1)
+  const inkPixels = id => reader.evaluate(id => { const c = document.getElementById(id), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n }, id)
+  // play from bar 8 (it has notes): the playhead rings the sounding heads
+  const barStart = await reader.evaluate(() => { const { S } = __scoreFingering, m = S.score.measures.find((q, i) => i >= 7 && q.events.some(e => e.kind === 'note')); return __scoreFingering.measureStarts(S.score).get(m) })
+  await reader.evaluate(tick => __scoreFingering.startPlayback(tick), barStart)
+  await reader.waitForFunction(() => { const c = document.getElementById('heads'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; for (let i = 3; i < d.length; i += 64) if (d[i]) return true; return false }, null, { timeout:10000 })
+  const playing = await reader.evaluate(() => ({ playing:__scoreFingering.P.player.playing, pos:__scoreFingering.P.player.pos, label:document.getElementById('play').textContent }))
+  check(playing.playing && playing.pos >= barStart - 96 && /Stop/.test(playing.label) && await inkPixels('heads') > 100, `playback starts at a bar and rings the sounding noteheads (from tick ${barStart}: ${JSON.stringify(playing)}, ${await inkPixels('heads')} px)`)
+  await reader.check('#metronome'); await reader.selectOption('#speed', '1.5')
+  check(await reader.evaluate(() => __scoreFingering.P.player.metronome && __scoreFingering.P.player.speed === 1.5), 'metronome and speed change while playing')
+  await reader.click('#play')
+  check(await reader.evaluate(() => !__scoreFingering.P.player.playing && /Play/.test(document.getElementById('play').textContent)), 'stop ends playback')
+  check(await inkPixels('heads') === 0, 'the playhead is cleared on stop')
+  await reader.click('#readerMode')
+  const readerLayout = await reader.evaluate(() => ({ hidden:['controls', 'choices', 'status'].every(id => getComputedStyle(document.getElementById(id)).display === 'none'), stage:document.getElementById('stage').getBoundingClientRect().width, wrap:document.getElementById('wrap').clientWidth, pages:!document.getElementById('tNext').hidden }))
+  check(readerLayout.hidden && readerLayout.stage > readerLayout.wrap - 40 && readerLayout.pages, `reader mode shows the page full width with page buttons in the transport (${Math.round(readerLayout.stage)} of ${readerLayout.wrap} px)`)
+  await reader.keyboard.press('ArrowRight'); await readerReady(2)
+  check(true, 'arrow key turns to the next page in reader mode')
+  const bar = await reader.evaluate(() => {
+    const { S } = __scoreFingering, m = S.score.measures[3], note = m.events.find(e => e.kind === 'note').notes[0], rect = document.getElementById('overlay').getBoundingClientRect(), r = S.renderer.r * S.zoom
+    return { x:rect.left + note.x * r, y:rect.top + note.y * r, start:__scoreFingering.measureStarts(S.score).get(m) }
+  })
+  await reader.mouse.click(bar.x, bar.y)
+  await reader.waitForFunction(() => __scoreFingering.P.player.playing, null, { timeout:10000 })
+  const tapped = await reader.evaluate(() => __scoreFingering.P.player.pos)
+  check(tapped >= bar.start - 96, `a tap in reader mode plays from that bar (${Math.round(tapped)} from ${bar.start})`)
+  await reader.keyboard.press(' ')
+  check(await reader.evaluate(() => !__scoreFingering.P.player.playing), 'Space stops playback in reader mode')
+  // the end of a page carries on onto the next one
+  await reader.evaluate(() => { const { S } = __scoreFingering; return __scoreFingering.startPlayback(Math.max(0, __scoreFingering.P.player.total - 30)) })
+  await readerReady(3)
+  await reader.waitForFunction(() => __scoreFingering.P.player.playing, null, { timeout:20000 })
+  check(await reader.evaluate(() => __scoreFingering.S.document.page === 3 && __scoreFingering.P.player.pos < 400), 'playback turns the page and carries on at the top of the next one')
+  await reader.click('#play')
+  await reader.click('#readerMode')
+  // pen ink attached to a note, stored, back after leaving the page, undoable, in the export
+  await reader.click('#inkMode'); await reader.waitForFunction(() => __scoreFingering.INK.irc, null, { timeout:10000 })
+  const pen = await reader.evaluate(() => {
+    const { S } = __scoreFingering, note = S.model.notes.find(n => n.st.index === 1), rect = document.getElementById('ink').getBoundingClientRect(), r = S.renderer.r * S.zoom
+    return { x:rect.left + note.x * r, y:rect.top + (note.y - 2.5 * S.model.space) * r }
+  })
+  await reader.mouse.move(pen.x - 6, pen.y); await reader.mouse.down()
+  for (let i = 1; i <= 8; i++) await reader.mouse.move(pen.x - 6 + 2 * i, pen.y - i)
+  await reader.mouse.up()
+  await reader.waitForFunction(() => __scoreFingering.pageInk().length === 1, null, { timeout:5000 })
+  const mark = await reader.evaluate(() => ({ kind:__scoreFingering.pageInk()[0].anchor.kind, stored:Object.keys(localStorage).filter(k => k.startsWith('score-fingering:ink:')).length }))
+  check(mark.kind === 'event' && mark.stored === 1 && await inkPixels('ink') > 20, `ink is attached to the note under it and saved (${mark.kind})`)
+  await reader.click('#inkUndo'); const undone = await reader.evaluate(() => __scoreFingering.pageInk().length)
+  await reader.click('#inkRedo'); const redone = await reader.evaluate(() => __scoreFingering.pageInk().length)
+  check(undone === 0 && redone === 1, 'ink undo and redo')
+  await reader.click('#inkMode')
+  await reader.evaluate(() => __scoreFingering.openPage(2, { fit:true })); await readerReady(2)
+  await reader.evaluate(() => __scoreFingering.openPage(3, { fit:true })); await readerReady(3)
+  await reader.waitForFunction(() => __scoreFingering.INK.irc && __scoreFingering.INK.model === __scoreFingering.S.model, null, { timeout:10000 })
+  check(await reader.evaluate(() => __scoreFingering.pageInk().length) === 1 && await inkPixels('ink') > 20, 'ink comes back with its page')
+  await reader.uncheck('#fingerings')
+  check(await inkPixels('overlay') === 0, 'fingerings can be hidden for plain reading')
+  const [inkDownload] = await Promise.all([reader.waitForEvent('download'), reader.click('#export')])
+  const inkPng = fs.readFileSync(await inkDownload.path())
+  const exported = await reader.evaluate(async bytes => {
+    const image = await createImageBitmap(new Blob([new Uint8Array(bytes)], { type:'image/png' })), c = new OffscreenCanvas(image.width, image.height), g = c.getContext('2d'); g.drawImage(image, 0, 0)
+    const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] > 150 && d[i + 1] < 90 && d[i + 2] > 60 && d[i + 2] < 140) n++; return n
+  }, [...inkPng])
+  check(exported > 20, `exported PNG carries the ink (${exported} ink pixels)`)
+  await reader.check('#fingerings')
+  check(readerErrors.length === 0, `no reader browser errors${readerErrors.length ? ': ' + readerErrors.join(' | ') : ''}`)
+  await readerContext.close()
   // Loading a replacement closes old note closures, and a delayed older request cannot win.
   await page.focus('#overlay'); await page.keyboard.press('Enter'); await page.waitForSelector('#pop', { state:'visible' })
   const reloadRevision = await page.evaluate(() => __scoreFingering.S.planRevision)
