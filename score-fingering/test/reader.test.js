@@ -52,3 +52,26 @@ test('ink attaches to a recognized note and survives storage', () => {
   assert.deepEqual(loadAnnotations({ getItem:() => '{broken' }, key), [])
   assert.equal(saveAnnotations({ setItem:() => { throw new Error('quota') } }, key, [mark]), false)
 })
+
+test('a part on only some systems starts its bars with the bars it stands under', () => {
+  const m = (part, ticks, at) => ({ part, ticks, status:'ok', ...(at != null ? { at } : {}) })
+  const upper = [m(0, 288), m(0, 288), m(0, 288)], lower = [m(1, 288, 288), m(1, 288, 576)]
+  const starts = measureStarts({ parts:[{ measures:upper }, { measures:lower }] })
+  assert.deepEqual(upper.map(x => starts.get(x)), [0, 288, 576])
+  assert.deepEqual(lower.map(x => starts.get(x)), [288, 576])
+})
+
+test('a note is read from the recording on its fingered string, else the closest one', async () => {
+  const { pickSample } = await import('../sound.js')
+  const note = (midi, extra = {}) => ({ midi, rms:0.03, attackEnd:10, headEnd:100, ...extra })
+  const bank = { manifest:{ open:[48, 55, 62, 69] }, packs:new Map([
+    [0, { pack:{ notes:[48, 50, 52, 55, 57, 60].map(n => note(n)) } }],
+    [1, { pack:{ notes:[55, 57, 59, 62].map(n => note(n)) } }],
+    [2, { pack:{ notes:[62, 64, 70].map(n => note(n)) } }],
+  ]) }
+  assert.equal(pickSample(bank, 57, 0).string, 0, 'the fingered string')
+  assert.equal(pickSample(bank, 57, null).string, 1, 'unfingered: the higher string (lower position)')
+  assert.equal(pickSample(bank, 66, 2).string, 2, 'nearest on the fingered string when within reach')
+  assert.equal(pickSample(bank, 47, null), null, 'below the lowest string')
+  assert.equal(pickSample(bank, 66, 1).string, 2, 'the fingered string has nothing close: the closest elsewhere')
+})

@@ -12,7 +12,6 @@ const page = $('page'), overlay = $('overlay'), pageCtx = page.getContext('2d'),
 const ink = $('ink'), heads = $('heads'), inkCtx = ink.getContext('2d'), headsCtx = heads.getContext('2d')
 // Playback and pen annotations come from ScoreShift / notation-ir, loaded on first use so a
 // missing module only disables its feature
-const playerModule = () => import('../../random-sketches/vibes/scoreshift/player.js')
 const inkModules = () => Promise.all([
   import('../../random-sketches/vibes/notation-ir/adapters/scoreshift.js'),
   import('../../random-sketches/vibes/scoreshift/surface.js'),
@@ -22,7 +21,7 @@ const DEFAULT_OVERLAY_LABEL = 'Annotated score. Use the arrow keys to select a n
 const S = { document:null, activePageState:null, model:null, image:null, renderer:null, score:null, plan:null, items:[], locks:new Map(), part:0, suggestion:0, zoom:1, selectedId:null, keyboardIndex:0, popupOpener:null, planRevision:0, name:'score' }
 // P: playback of the shown page. INK: pen annotations (notation-ir annotations.js) on it.
 const P = { player:null, manual:false, turning:false, state:null, headsKey:'' }
-const INK = { on:false, color:'#c2255c', width:0.2, erase:false, penSeen:false, undo:[], redo:[], sel:null, group:null, ptrs:new Map(), mods:null, failed:false, irc:null, items:[], surface:null, model:null }
+const INK = { pending:null, pendingGroups:[], on:false, color:'#c2255c', width:0.2, erase:false, penSeen:false, undo:[], redo:[], sel:null, group:null, ptrs:new Map(), mods:null, failed:false, irc:null, items:[], surface:null, model:null }
 let loadRequest = 0
 const activeRecognitions = new Set(), activePdfRenders = new Set(), busyOwners = new Set()
 
@@ -39,12 +38,15 @@ const beginLoadRequest = () => {
   const request = ++loadRequest
   cancelRecognitions(); cancelPdfRenders(); busyOwners.clear(); $('busy').style.display = 'none'
   if (!P.turning) stopPlayback()
+  if (P.picking) { P.picking = null; loopLabel() }
   return request
 }
 function showStage() {
   $('empty').hidden = true; $('stage').hidden = false; $('export').disabled = false; $('transport').hidden = false
-  $('play').disabled = !S.model; $('rewind').disabled = !S.model; $('inkMode').disabled = !S.model || INK.failed
+  $('play').disabled = !S.model; $('rewind').disabled = !S.model; $('inkMode').disabled = !S.model
   if (!S.model) { setInkMode(false); drawInk() }
+  loopLabel(); clearHeads()
+  if (S.model) loadInkModules().catch(() => {}) // ready before the first stroke
 }
 function hideStage() { $('export').disabled = true; $('stage').hidden = true; $('empty').hidden = false; $('transport').hidden = true; stopPlayback(); setInkMode(false) }
 
@@ -582,7 +584,7 @@ function focusAfterEdit(opener, id, fallbackIndex) {
     <p>${item.warnings.length ? `<b>${escapeHtml(item.warnings.map(warning => warning.message).join(' '))}</b><br>` : ''}Choose a string to re-plan the whole passage around this note, or correct the recognized pitch.</p>
     <div class="row"><span>String</span><button data-string="auto" aria-pressed="${lock == null}">auto</button>${profile.strings.map((name, index) => `<button data-string="${index}" aria-pressed="${lock === index}" ${playableStrings[index] ? '' : 'disabled'}>${name}</button>`).join('')}</div>
     <div class="row"><span>Pitch</span><button id="down" aria-label="Move recognized pitch down one staff step">▼</button><button id="up" aria-label="Move recognized pitch up one staff step">▲</button><button data-acc="-1" aria-label="Set flat" aria-pressed="${note.accid?.type === -1}">♭</button><button data-acc="0" aria-label="Set natural" aria-pressed="${note.accid?.type === 0}">♮</button><button data-acc="1" aria-label="Set sharp" aria-pressed="${note.accid?.type === 1}">♯</button><button data-acc="none" aria-pressed="${!note.accid}">no accidental</button></div>
-    <div class="row"><button id="playHere">▶ Play from this bar</button><button id="remove" class="danger">Not a note</button><button id="close">Close</button></div>`
+    <div class="row"><button id="playHere">▶ Play from this bar</button><button id="loopHere">⟳ Loop this bar…</button><button id="remove" class="danger">Not a note</button><button id="close">Close</button></div>`
   placePopup(event)
   pop.querySelectorAll('[data-string]').forEach(button => button.onclick = async () => {
     const opener = S.popupOpener
@@ -612,7 +614,12 @@ function focusAfterEdit(opener, id, fallbackIndex) {
     interpret(note.st); hidePopup(false); rebuildParts(); await replan(); focusAfterEdit(opener, item.id, item.index)
   }
   $('close').onclick = hidePopup
-  $('playHere').onclick = () => { const tick = tickOfNote(note); hidePopup(false); startPlayback(tick) }
+  $('playHere').onclick = () => { const tick = tickOfNote(note); hidePopup(false); if (P.loop && !P.loop.measures.includes(measureOfNote(note))) clearLoop(); startPlayback(tick) }
+  $('loopHere').onclick = () => {
+    const measure = measureOfNote(note); hidePopup(false); if (!measure) return
+    stopPlayback(); P.loop = null; P.picking = { first:measure }; loopLabel(); clearHeads()
+    hint(`Bar ${measure.number}: tap the last bar of the passage (or the same bar again).`, 0)
+  }
 }
 
 function resetDocumentAlternatives() {
@@ -625,8 +632,13 @@ overlay.addEventListener('click', event => {
   const rect = overlay.getBoundingClientRect()
   const x = (event.clientX - rect.left) * overlay.width / rect.width / S.renderer.r
   const y = (event.clientY - rect.top) * overlay.height / rect.height / S.renderer.r
-  // Reader: a tap plays from the bar under it
-  if (document.body.classList.contains('reader')) { const measure = S.score && measureAt(S.score, { x, y }); if (measure) startPlayback(measureStarts(S.score).get(measure)); return }
+  if (pickLoopBar(x, y)) return
+  // Reader: a tap plays from the bar under it (a bar outside the loop ends the loop)
+  if (document.body.classList.contains('reader')) {
+    const measure = S.score && measureAt(S.score, { x, y }); if (!measure) return
+    if (P.loop && !P.loop.measures.includes(measure)) clearLoop()
+    startPlayback(measureStarts(S.score).get(measure)); return
+  }
   if (!S.items.length) return
   const item = hitAnnotation(S.items, x, y, 18)
   if (item) showPopup(item, event); else hidePopup()
@@ -654,7 +666,7 @@ overlay.addEventListener('keydown', event => {
 $('instrument').onchange = () => { hidePopup(false); resetDocumentAlternatives(); replan() }
 $('mode').onchange = () => { hidePopup(false); resetDocumentAlternatives(); replan() }
 $('part').onchange = () => { S.part = +$('part').value; S.suggestion = 0; hidePopup(false); replan() }
-$('tempo').onchange = () => { if (P.player?.playing) P.player.tempo = currentTempo(); resetDocumentAlternatives(); replan() }
+$('tempo').onchange = () => { if (P.player?.playing) P.player.setRate(currentTempo() * QUARTER / 60); resetDocumentAlternatives(); replan() }
 $('recognition').onchange = renderPage
 $('details').onchange = renderPage
 $('fingerings').onchange = renderPage
@@ -846,39 +858,93 @@ $('export').onclick = async () => {
 $('exportPdf').onclick = exportAnnotatedPdf
 
 
-// ---------- playback: ScoreShift's player (notation-ir Web Audio voice, metronome, lookahead) ----------
+// ---------- playback: a violin / viola voice (sound.js) on notation-ir's scheduler ----------
+// The notes come from ScoreShift's performance() (ties merged, slurs legato, staccato short,
+// dynamics), every part of the page on one clock (a divisi staff sounds with the bars it stands
+// under), the metronome from its bar-aware beats(). A loop repeats a passage of bars, optionally
+// starting slower and speeding up each pass.
 const currentTempo = () => Math.max(30, Math.min(260, +$('tempo').value || 120))
 const readerOn = () => document.body.classList.contains('reader')
+const QUARTER = 96 // ScoreShift ticks per quarter note
 function playUi(on) {
   $('play').setAttribute('aria-pressed', on); $('play').textContent = on ? '■ Stop' : '▶ Play'; $('play').setAttribute('aria-label', on ? 'Stop' : 'Play')
 }
-function clearHeads() { P.headsKey = ''; headsCtx.clearRect(0, 0, heads.width, heads.height) }
+let hintTimer = null
+/** A short message in the transport, visible in Reader mode too (the status line is hidden there). */
+function hint(text, ms = 4000) {
+  $('hint').textContent = text; clearTimeout(hintTimer)
+  if (ms) hintTimer = setTimeout(() => { $('hint').textContent = '' }, ms)
+}
+function clearHeads() { P.headsKey = ''; drawHeadsLayer([]) }
 function stopPlayback() {
   if (!P.player?.playing) return
   P.manual = true; P.player.stop(); P.manual = false
 }
-/** Play the shown page from `fromTick` (ticks of 96 per quarter, bars from measureStarts). */
+const scoreModules = () => Promise.all([
+  import('../../random-sketches/vibes/scoreshift/export.js'),
+  import('../../random-sketches/vibes/scoreshift/player.js'),
+  import('./sound.js'),
+]).then(([exp, player, sound]) => ({ performance:exp.performance, beats:player.beats, StringPlayer:sound.StringPlayer }))
+/** The string each sounding note was fingered on, by onset tick and pitch. */
+function fingeredStrings() {
+  const strings = new Map(), plan = S.plan, chosen = plan?.suggestions?.[S.suggestion]
+  if (!chosen) return strings
+  const quarterSeconds = 60 / currentTempo()
+  plan.notes.forEach((input, i) => {
+    const a = chosen.assignments[i]
+    if (a?.playable) strings.set(`${Math.round(input.on / quarterSeconds * QUARTER)}:${input.pitch}`, a.string)
+  })
+  return strings
+}
+/** Play the shown page from `fromTick` (96 per quarter; bars from measureStarts). */
 async function startPlayback(fromTick = 0) {
   if (!S.model || !S.score) return false
-  let Player
-  try { ({ Player } = await playerModule()) }
-  catch (error) { setStatus(`<b>Playback is unavailable:</b> ${escapeHtml(error.message)}`); return false }
+  let mods
+  try { mods = await scoreModules() }
+  catch (error) { hint(`Playback is unavailable: ${error.message}`); return false }
   if (!S.model || !S.score) return false
-  P.player ||= new Player()
+  P.player ||= new mods.StringPlayer()
   const player = P.player
   player.onStop = onPlaybackStop
   player.metronome = $('metronome').checked
-  player.setSpeed(+$('speed').value || 1)
-  P.state = S.activePageState
-  P.manual = true // play() stops a run already going; that is not the end of the page
-  try { player.play(S.model, S.score, { tempo:currentTempo() }, (events, tick) => drawPlayhead(events, tick), fromTick) }
-  finally { P.manual = false }
+  player.sound = $('sound').value
+  const instrument = S.plan?.instrument === 'violin' ? 'violin' : 'viola'
+  if (player.sound === 'strings' && player.bank?.instrument !== instrument) {
+    $('play').textContent = '… loading'; hint(`Loading the ${instrument} recordings…`, 0)
+    const ok = await player.prepare(instrument)
+    hint(ok ? '' : `The ${instrument} recordings could not load, playing a piano sound instead.`, ok ? 1 : 6000)
+    if (!S.model || !S.score) return false
+  } else player.instrument = instrument
+  const loop = P.loop && P.loop.state === S.activePageState ? P.loop : null
+  if (loop) {
+    if (fromTick < loop.from || fromTick >= loop.to) fromTick = loop.from
+    const base = +$('speed').value || 1
+    loop.speed = $('ramp').checked ? Math.min(base, base * (0.6 + 0.05 * loop.pass)) : base
+    player.setSpeed(loop.speed)
+    loopLabel()
+  } else player.setSpeed(+$('speed').value || 1)
+  const { notes, events, total } = mods.performance(S.model, S.score)
+  const strings = fingeredStrings()
+  const end = loop ? loop.to : total + QUARTER / 4
+  P.state = S.activePageState; P.events = events
+  P.manual = true // a run already going is stopped first: that is not the end of the page
+  try {
+    player.total = total
+    player.schedule({
+      notes:notes.filter(n => !loop || n.tick < loop.to).map(n => ({ at:n.tick, dur:loop ? Math.min(n.sound, loop.to - n.tick) : n.sound, midi:n.midi, vel:n.vel, string:strings.get(`${n.tick}:${n.midi}`) ?? null })),
+      clicks:mods.beats(S.score).map(b => ({ at:b.tick, accent:b.accent })),
+      rate:currentTempo() * QUARTER / 60, from:fromTick, end,
+      onFrame:tick => drawPlayhead(events, tick),
+    })
+  } finally { P.manual = false }
   playUi(true)
   return true
 }
 function onPlaybackStop() {
   playUi(false); clearHeads()
   if (P.manual) return
+  const loop = P.loop
+  if (loop && loop.state === S.activePageState) { loop.pass++; startPlayback(loop.from); return }
   // the end of the page: carry on onto the next page with music
   const doc = S.document
   if ($('turnPages').checked && doc?.kind === 'pdf' && S.activePageState === P.state && doc.page < doc.pageCount) turnAndContinue(doc.page + 1)
@@ -895,28 +961,44 @@ async function turnAndContinue(index) {
     }
   } finally { P.turning = false }
 }
-function drawPlayhead(events, tick) {
-  if (!S.renderer || S.activePageState !== P.state) return
-  const notes = soundingHeads(events, tick), key = notes.map(note => `${note.si ?? note.st?.index}:${note.x}:${note.y}`).join()
-  if (key === P.headsKey) return
-  P.headsKey = key
+/** The playhead layer: the loop's bars, then the sounding noteheads with a cursor per staff. */
+function drawHeadsLayer(notes) {
   if (heads.width !== page.width || heads.height !== page.height) { heads.width = page.width; heads.height = page.height }
   headsCtx.clearRect(0, 0, heads.width, heads.height)
+  if (!S.renderer || !S.model) return
+  const r = S.renderer.r, sp = S.model.space || 16, space = sp * r
+  const loop = P.loop && P.loop.state === S.activePageState ? P.loop : null
+  const marked = loop ? loop.measures : P.picking?.first ? [P.picking.first] : []
+  if (marked.length) {
+    headsCtx.save(); headsCtx.fillStyle = 'rgba(28,126,214,.10)'; headsCtx.strokeStyle = 'rgba(28,126,214,.75)'; headsCtx.lineWidth = Math.max(2, space * 0.12)
+    for (const m of marked) {
+      const x0 = m.x0, x1 = Math.min(m.x1, m.st.x1), y0 = lineY(m.st, 0, x0) - 1.6 * sp, y1 = lineY(m.st, 4, x0) + 1.6 * sp
+      headsCtx.fillRect(x0 * r, y0 * r, (x1 - x0) * r, (y1 - y0) * r)
+      headsCtx.beginPath(); headsCtx.moveTo(x0 * r, y0 * r); headsCtx.lineTo(x1 * r, y0 * r); headsCtx.moveTo(x0 * r, y1 * r); headsCtx.lineTo(x1 * r, y1 * r); headsCtx.stroke()
+    }
+    headsCtx.restore()
+  }
   if (!notes.length) return
-  const r = S.renderer.r, space = (S.model.space || 16) * r
   headsCtx.save(); headsCtx.fillStyle = 'rgba(232,89,12,.22)'; headsCtx.strokeStyle = '#e8590c'; headsCtx.lineWidth = Math.max(2, space * 0.16)
   const staves = new Map()
   for (const note of notes) {
     headsCtx.beginPath(); headsCtx.ellipse(note.x * r, note.y * r, space * 0.95, space * 0.75, 0, 0, Math.PI * 2); headsCtx.fill(); headsCtx.stroke()
     if (note.st && !staves.has(note.st)) staves.set(note.st, note.x)
   }
-  // a cursor through each sounding staff
   headsCtx.globalAlpha = 0.55
   for (const [staff, x] of staves) {
-    headsCtx.beginPath(); headsCtx.moveTo(x * r, (lineY(staff, 0, x) - 1.5 * (S.model.space || 16)) * r); headsCtx.lineTo(x * r, (lineY(staff, 4, x) + 1.5 * (S.model.space || 16)) * r); headsCtx.stroke()
+    headsCtx.beginPath(); headsCtx.moveTo(x * r, (lineY(staff, 0, x) - 1.5 * sp) * r); headsCtx.lineTo(x * r, (lineY(staff, 4, x) + 1.5 * sp) * r); headsCtx.stroke()
   }
   headsCtx.restore()
-  if ($('follow').checked) { const [staff, x] = staves.entries().next().value || []; if (staff) revealStaff(staff, x) }
+  return staves
+}
+function drawPlayhead(events, tick) {
+  if (!S.renderer || S.activePageState !== P.state) return
+  const notes = soundingHeads(events, tick), key = notes.map(note => `${note.si ?? note.st?.index}:${note.x}:${note.y}`).join()
+  if (key === P.headsKey) return
+  P.headsKey = key
+  const staves = drawHeadsLayer(notes)
+  if (staves && $('follow').checked) { const [staff, x] = staves.entries().next().value || []; if (staff) revealStaff(staff, x) }
 }
 /** Scroll so a staff stays in view (a third of the way down), whichever box scrolls. */
 function revealStaff(staff, x) {
@@ -931,17 +1013,69 @@ function revealStaff(staff, x) {
   const left = rect.left + x * r, wrapRect = wrap.getBoundingClientRect()
   if (wrap.scrollWidth > wrap.clientWidth + 1 && (left < wrapRect.left + 20 || left > wrapRect.right - 20)) wrap.scrollBy({ left:left - (wrapRect.left + wrapRect.width / 3), behavior:'smooth' })
 }
-/** The bar a recognized note is in, as a start tick. */
+/** The bar a recognized note is in. */
+const measureOfNote = note => S.score?.measures.find(m => m.events.some(e => e.notes?.includes(note))) || null
 function tickOfNote(note) {
-  const measure = S.score?.measures.find(m => m.events.some(e => e.notes?.includes(note)))
+  const measure = measureOfNote(note)
   return measure ? measureStarts(S.score).get(measure) ?? 0 : 0
 }
-$('play').onclick = () => { if (P.player?.playing) stopPlayback(); else startPlayback(0) }
-$('rewind').onclick = () => startPlayback(0)
-$('speed').onchange = () => P.player?.setSpeed(+$('speed').value || 1)
+
+// ---------- ⟳ loop: practise a passage of bars ----------
+/** Loop bars a..b of the shown page (any order); they must be in one part. */
+function setLoop(a, b) {
+  const starts = measureStarts(S.score)
+  if (starts.get(b) < starts.get(a)) [a, b] = [b, a]
+  const part = S.score.parts[a.part], i = part.measures.indexOf(a), j = part.measures.indexOf(b)
+  const measures = part.measures.slice(i, Math.max(i, j) + 1)
+  const last = measures[measures.length - 1]
+  P.loop = { state:S.activePageState, part:a.part, measures, from:starts.get(a), to:starts.get(last) + (last.status === 'rest' ? last.cap : last.ticks), pass:0, speed:+$('speed').value || 1 }
+  P.picking = null; loopLabel(); clearHeads()
+  startPlayback(P.loop.from)
+}
+function clearLoop() {
+  const looping = P.loop && P.player?.playing
+  P.loop = null; P.picking = null; loopLabel(); clearHeads()
+  if (looping) { stopPlayback(); P.player?.setSpeed(+$('speed').value || 1) }
+}
+function loopLabel() {
+  const loop = P.loop && P.loop.state === S.activePageState ? P.loop : null
+  $('loop').setAttribute('aria-pressed', !!(loop || P.picking))
+  $('loop').textContent = loop ? '⟳ Loop on' : P.picking ? '⟳ tap bars…' : '⟳ Loop'
+  $('loopInfo').textContent = loop ? `bars ${loop.measures[0].number}–${loop.measures[loop.measures.length - 1].number}${loop.pass ? ` · pass ${loop.pass + 1}` : ''}${$('ramp').checked ? ` · ×${(loop.speed ?? 1).toFixed(2)}` : ''}` : ''
+}
+/** A tap on a bar while choosing a loop: the first bar, then the last. Returns true when used. */
+function pickLoopBar(x, y) {
+  if (!P.picking || !S.score) return false
+  const measure = measureAt(S.score, { x, y })
+  if (!measure) { hint('Tap inside a bar of the music.'); return true }
+  if (!P.picking.first) { P.picking.first = measure; hint(`Bar ${measure.number}: now tap the last bar of the passage (or the same bar again).`, 0); clearHeads(); return true }
+  if (measure.part !== P.picking.first.part) { hint('The last bar must be in the same part (the same staff line of a system).'); return true }
+  hint('', 1); setLoop(P.picking.first, measure); return true
+}
+$('loop').onclick = () => {
+  if (P.loop || P.picking) { clearLoop(); hint('Loop off.'); return }
+  if (!S.score) return
+  stopPlayback(); setInkMode(false)
+  P.picking = { first:null }; loopLabel()
+  hint('Tap the first bar of the passage to loop.', 0)
+}
+$('ramp').onchange = () => { if (P.loop) { P.loop.pass = 0; loopLabel(); if (P.player?.playing) startPlayback(P.loop.from) } }
+document.addEventListener('keydown', event => { if (event.key === 'Escape' && P.picking) { P.picking = null; loopLabel(); clearHeads(); hint('Loop cancelled.') } })
+
+$('play').onclick = () => { if (P.player?.playing) stopPlayback(); else startPlayback(P.loop?.state === S.activePageState ? P.loop.from : 0) }
+$('rewind').onclick = () => startPlayback(P.loop?.state === S.activePageState ? P.loop.from : 0)
+$('speed').onchange = () => { if (P.loop) { P.loop.pass = 0; if (P.player?.playing) { startPlayback(P.loop.from); return } } P.player?.setSpeed(+$('speed').value || 1) }
 $('metronome').onchange = () => { if (P.player) P.player.metronome = $('metronome').checked }
-$('tPrev').onclick = () => $('prevPage').click()
-$('tNext').onclick = () => $('nextPage').click()
+$('sound').onchange = () => { if (P.player?.playing) startPlayback(Math.floor(P.player.pos)) }
+/** The previous / next PDF page, shown from its top. */
+async function turnPage(step) {
+  const doc = S.document; if (doc?.kind !== 'pdf') return
+  const index = doc.page + step; if (index < 1 || index > doc.pageCount) return
+  await openPage(index, { fit:true })
+  if (S.document === doc && S.activePageState?.index === index) { window.scrollTo({ top:0 }); $('wrap').scrollTo({ top:0, left:0 }) }
+}
+$('tPrev').onclick = () => turnPage(-1)
+$('tNext').onclick = () => turnPage(1)
 
 // ---------- reader: the page full width, the controls tucked away ----------
 function setReader(on) {
@@ -956,8 +1090,8 @@ document.addEventListener('fullscreenchange', () => { if (page.width) { fitPageZ
 document.addEventListener('keydown', event => {
   if (!readerOn() || event.ctrlKey || event.metaKey || event.altKey || event.target.closest?.('input,select,textarea,#pop')) return
   if (event.key === ' ') { event.preventDefault(); $('play').click() }
-  else if (event.key === 'ArrowRight' || event.key === 'PageDown') { event.preventDefault(); if (S.document?.kind === 'pdf') openPage(S.document.page + 1, { fit:true }) }
-  else if (event.key === 'ArrowLeft' || event.key === 'PageUp') { event.preventDefault(); if (S.document?.kind === 'pdf') openPage(S.document.page - 1, { fit:true }) }
+  else if (event.key === 'ArrowRight' || event.key === 'PageDown') { event.preventDefault(); turnPage(1) }
+  else if (event.key === 'ArrowLeft' || event.key === 'PageUp') { event.preventDefault(); turnPage(-1) }
   else if (event.key === 'm' || event.key === 'M') { $('metronome').click() }
 })
 try { if (localStorage.getItem('score-fingering:reader') || new URLSearchParams(location.search).has('reader')) setReader(true) } catch {}
@@ -983,7 +1117,7 @@ function pageInk(doc = S.document, index = inkPage()) {
 function setPageInk(list) {
   const doc = S.document; if (!doc) return
   doc.ink ||= new Map(); doc.ink.set(inkPage(), list)
-  if (doc.sourceKey && !saveAnnotations(globalThis.localStorage, annotationKey(doc.sourceKey, inkPage()), list)) setStatus('<b>Ink kept for this session only:</b> browser storage is full or unavailable.')
+  if (doc.sourceKey && !saveAnnotations(globalThis.localStorage, annotationKey(doc.sourceKey, inkPage()), list)) hint('Ink is kept for this session only: browser storage is full or unavailable.', 8000)
 }
 function inkSurface(mods, model, score, r) {
   const irc = mods.fromScoreShift(model, score, { title:'Score' })
@@ -991,18 +1125,19 @@ function inkSurface(mods, model, score, r) {
   return { irc, items:mods.itemsOf(irc.score), surface:mods.photoSurface({ model, score, irc, view }) }
 }
 /** Rebuild the music the ink attaches to (after a page is read or corrected). */
-async function refreshInk() {
+function refreshInk() { return (INK.pending = buildInk().finally(() => { INK.pending = null })) }
+async function buildInk() {
   const model = S.model, score = S.score, renderer = S.renderer
   if (!model || !score || !renderer || (!INK.on && !pageInk().length)) { INK.irc = null; INK.model = null; drawInk(); return }
   let mods
   try { mods = INK.mods = await loadInkModules() }
-  catch (error) { INK.failed = true; setInkMode(false); $('inkMode').disabled = true; $('inkMode').title = `Ink is unavailable: ${error.message}`; drawInk(); return }
+  catch (error) { hint(`Ink is unavailable: ${error.message}`, 8000); setInkMode(false); drawInk(); return }
   if (S.model !== model || S.score !== score) return
   try { Object.assign(INK, inkSurface(mods, model, score, renderer.r), { model }) }
-  catch (error) { INK.irc = null; console.warn('ink surface', error) }
+  catch (error) { INK.irc = null; INK.model = null; console.warn('ink surface', error); hint(`Ink cannot attach to this page's music: ${error.message}`, 8000) }
   drawInk()
   const lost = INK.irc ? pageInk().filter(a => mods.resolveAnnotation(INK.surface, a, INK.items)?.lost).length : 0
-  if (lost) setStatus($('status').innerHTML + ` · <b>${lost} ink mark${lost > 1 ? 's' : ''} lost ${lost > 1 ? 'their' : 'its'} note</b> (dashed: tap it in ✎ Ink to re-attach)`)
+  if (lost) hint(`${lost} ink mark${lost > 1 ? 's' : ''} lost ${lost > 1 ? 'their' : 'its'} note (dashed): tap it in ✎ Ink to re-attach.`, 8000)
 }
 function drawInk() {
   if (ink.width !== page.width || ink.height !== page.height) { ink.width = page.width; ink.height = page.height }
@@ -1010,7 +1145,7 @@ function drawInk() {
   if (!S.model || !S.renderer) return
   if (INK.irc && INK.model === S.model) INK.mods.drawAnnotations(inkCtx, INK.surface, pageInk(), INK.items, { selected:INK.sel })
   // ink still being written: plain strokes until it is attached
-  const r = S.renderer.r, live = [...(INK.group?.strokes || []), ...[...INK.ptrs.values()].filter(p => p.ink).map(p => p.pts)]
+  const r = S.renderer.r, live = [...(INK.pendingGroups || []).flatMap(g => g.strokes), ...(INK.group?.strokes || []), ...[...INK.ptrs.values()].filter(p => p.ink).map(p => p.pts)]
   inkCtx.save(); inkCtx.lineCap = 'round'; inkCtx.lineJoin = 'round'; inkCtx.strokeStyle = inkCtx.fillStyle = INK.group?.color || INK.color; inkCtx.globalAlpha = 0.85
   const width = Math.max(1, INK.width * (S.model.space || 16) * r)
   for (const stroke of live) {
@@ -1040,20 +1175,36 @@ function inkUndo(redo = false) {
   if (!from.length) return
   to.push(JSON.stringify(pageInk())); setPageInk(JSON.parse(from.pop())); INK.sel = null; drawInk(); inkBar()
 }
-function commitInkGroup() {
-  const group = INK.group; INK.group = null
+function commitInkGroup(group = INK.group) {
+  if (group === INK.group) INK.group = null
   if (!group) return
   clearTimeout(group.timer)
-  if (!INK.irc || INK.model !== S.model) { drawInk(); return }
+  if (!INK.irc || INK.model !== S.model) {
+    // the music the ink attaches to is still being read (a slow first load): keep the strokes on
+    // screen and attach them once it is ready, rather than dropping them
+    if (S.model && !group.waited) {
+      group.waited = true; (INK.pendingGroups ||= []).push(group); drawInk()
+      const model = S.model
+      ;(INK.pending || refreshInk()).then(() => {
+        INK.pendingGroups = (INK.pendingGroups || []).filter(g => g !== group)
+        if (S.model === model) commitInkGroup(group); else drawInk()
+      })
+      return
+    }
+    drawInk(); hint('That ink could not be attached to the music, so it was not kept.'); return
+  }
   const mark = INK.mods.attachStrokes(INK.surface, INK.items, group.strokes, { id:`a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, color:group.color, width:group.width })
-  if (!mark) { drawInk(); setStatus('That ink is not near any music on the page, so it was not kept.'); return }
+  if (!mark) { drawInk(); hint('That ink is not near any music on the page, so it was not kept. Write on or just above a staff.'); return }
   inkChange(list => list.push(mark))
 }
 function setInkMode(on) {
   if (on === INK.on) return
   commitInkGroup(); INK.on = on; INK.sel = null; INK.undo = []; INK.redo = []
   $('stage').classList.toggle('inking', on); inkBar()
-  if (on) { stopPlayback(); refreshInk(); setStatus('<b>✎ Ink</b>: write on the music with a pen, mouse or finger. Ink sticks to the notes under it. Tap a mark to recolour or delete it; ⌫ erase wipes marks.') }
+  if (on) {
+    stopPlayback(); if (P.picking) { P.picking = null; loopLabel(); clearHeads() }
+    refreshInk(); hint('Write on or just above a staff: ink sticks to the notes under it. Tap a mark to recolour or delete it.', 6000)
+  }
 }
 $('inkMode').onclick = () => setInkMode(!INK.on)
 $('inkBar').addEventListener('click', event => {
@@ -1127,8 +1278,9 @@ ink.addEventListener('pointermove', event => {
 function inkUp(event) {
   const rec = INK.ptrs.get(event.pointerId); if (!rec) return
   INK.ptrs.delete(event.pointerId)
-  if (rec.scroll || rec.erase || event.type === 'pointercancel') { drawInk(); return }
-  if (rec.moved < 6 && !INK.group) { // a tap: select a mark, or keep a dot (a staccato, a breath mark)
+  // (a cancelled pointer - the browser took the touch, a palm - keeps what it wrote)
+  if (rec.scroll || rec.erase || (event.type === 'pointercancel' && rec.pts.length < 2)) { drawInk(); return }
+  if (rec.moved < 6 && !INK.group && event.type !== 'pointercancel') { // a tap: select a mark, or keep a dot (a staccato, a breath mark)
     const hit = INK.irc && INK.mods.hitAnnotation(INK.surface, pageInk(), INK.items, inkPoint(event), 0.9)
     if (hit) { inkPopup(hit.id, event); return }
     if (INK.sel) { INK.sel = null; hidePopup(false); drawInk(); return }
@@ -1141,4 +1293,4 @@ function inkUp(event) {
 ink.addEventListener('pointerup', inkUp)
 ink.addEventListener('pointercancel', inkUp)
 
-window.__scoreFingering = { S, P, INK, load, loadSource, recognize, replan, renderPage, openPage, exportAnnotatedPdf, sourceNoteId, resolvePlanningInstrument, exportInstrumentLabel, startPlayback, stopPlayback, setReader, setInkMode, refreshInk, pageInk, inkChange, inkUndo, commitInkGroup, measureStarts, measureAt, tickOfNote }
+window.__scoreFingering = { S, P, INK, load, loadSource, recognize, replan, renderPage, openPage, exportAnnotatedPdf, sourceNoteId, resolvePlanningInstrument, exportInstrumentLabel, startPlayback, stopPlayback, setLoop, clearLoop, setReader, setInkMode, refreshInk, pageInk, inkChange, inkUndo, commitInkGroup, measureStarts, measureAt, tickOfNote }

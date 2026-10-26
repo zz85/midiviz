@@ -256,6 +256,58 @@ const loadImageSample = target => target.evaluate(async () => {
   check(await reader.evaluate(() => __scoreFingering.S.document.page === 3 && __scoreFingering.P.player.pos < 400), 'playback turns the page and carries on at the top of the next one')
   await reader.click('#play')
   await reader.click('#readerMode')
+  // the recorded viola plays the notes (sample voices, not the additive piano)
+  check(await reader.evaluate(() => __scoreFingering.P.player.bank?.instrument === 'viola' && __scoreFingering.P.player.bank.packs.size === 4), 'the viola recordings load for playback')
+  // page 3 has no divisi; page 2 does: its divisi staves sound with their bars, not from the top
+  await reader.evaluate(() => __scoreFingering.openPage(2, { fit:true })); await readerReady(2)
+  const divisi = await reader.evaluate(async () => {
+    const { S } = __scoreFingering, { performance } = await import('../random-sketches/vibes/scoreshift/export.js')
+    const notes = performance(S.model, S.score).notes, starts = __scoreFingering.measureStarts(S.score)
+    const lower = S.score.parts[1], upperStart = Math.min(...S.score.parts[0].measures.filter(m => lower?.staves.some(st => st.system === m.st.system)).map(m => starts.get(m)))
+    return { parts:S.score.parts.length, first:Math.min(...notes.filter(n => n.part === 1).map(n => n.tick)), upperStart }
+  })
+  check(divisi.parts === 2 && divisi.first >= divisi.upperStart && divisi.upperStart > 0, `divisi staves play with the bars they stand under (from tick ${divisi.first}, their system at ${divisi.upperStart})`)
+  // ⟳ loop: tap the first and last bar, it repeats from the first, speeding up each pass
+  const loopBars = await reader.evaluate(() => {
+    const { S } = __scoreFingering, part = S.score.parts[0], rect = document.getElementById('overlay').getBoundingClientRect(), r = S.renderer.r * S.zoom
+    const at = m => { const n = m.events.find(e => e.kind === 'note').notes[0]; return { x:rect.left + n.x * r, y:rect.top + n.y * r } }
+    const a = part.measures[1], b = part.measures[2], starts = __scoreFingering.measureStarts(S.score)
+    return { a:at(a), b:at(b), from:starts.get(a), to:starts.get(b) + b.ticks }
+  })
+  await reader.check('#ramp')
+  await reader.click('#loop')
+  await reader.evaluate(p => window.scrollTo(0, Math.max(0, p.a.y + scrollY - 200)), loopBars)
+  const scrolled = await reader.evaluate(() => scrollY)
+  await reader.mouse.click(loopBars.a.x, loopBars.a.y - scrolled + 0); await reader.mouse.click(loopBars.b.x, loopBars.b.y - scrolled)
+  await reader.waitForFunction(() => __scoreFingering.P.loop && __scoreFingering.P.player.playing, null, { timeout:10000 })
+  const loopState = await reader.evaluate(() => ({ from:__scoreFingering.P.loop.from, to:__scoreFingering.P.loop.to, speed:__scoreFingering.P.player.speed, label:document.getElementById('loopInfo').textContent }))
+  check(loopState.from === loopBars.from && loopState.to === loopBars.to && Math.abs(loopState.speed - 0.6 * await reader.evaluate(() => +document.getElementById('speed').value)) < 1e-6 && /bars \d+–\d+/.test(loopState.label), `a tapped passage loops, starting at 60% of the speed with speed-up (${loopState.label})`)
+  await reader.evaluate(() => __scoreFingering.P.player.setSpeed(8)) // through the pass quickly
+  await reader.waitForFunction(() => __scoreFingering.P.loop.pass >= 1 && __scoreFingering.P.player.playing, null, { timeout:15000 })
+  const pass2 = await reader.evaluate(() => ({ pass:__scoreFingering.P.loop.pass, speed:__scoreFingering.P.player.speed, pos:__scoreFingering.P.player.pos }))
+  check(pass2.pass >= 1 && pass2.speed > 0.6 && pass2.pos < loopBars.to, `the loop goes round again, a little faster (pass ${pass2.pass + 1}, ×${pass2.speed.toFixed(2)})`)
+  await reader.click('#loop')
+  check(await reader.evaluate(() => !__scoreFingering.P.loop && !__scoreFingering.P.player.playing), 'loop off stops the loop')
+  await reader.uncheck('#ramp')
+  // ink written before the music is ready to take it is kept, not dropped
+  await reader.click('#inkMode'); await reader.waitForFunction(() => __scoreFingering.INK.irc, null, { timeout:10000 })
+  await reader.evaluate(() => { const I = __scoreFingering.INK; I.irc = null; I.model = null; I.pending = new Promise(resolve => setTimeout(resolve, 1500)).then(() => __scoreFingering.refreshInk()) })
+  await reader.evaluate(() => { const { S } = __scoreFingering, note = S.model.notes.find(n => n.st.index === 0); document.getElementById('ink').scrollIntoView({ block:'start' }); window.scrollBy(0, note.y * S.renderer.r * S.zoom - 250) })
+  const early = await reader.evaluate(() => {
+    const { S } = __scoreFingering, note = S.model.notes.find(n => n.st.index === 0), rect = document.getElementById('ink').getBoundingClientRect(), r = S.renderer.r * S.zoom
+    return { x:rect.left + note.x * r, y:rect.top + (note.y - 2.5 * S.model.space) * r }
+  })
+  const sy = 0, before = await reader.evaluate(() => __scoreFingering.pageInk().length)
+  await reader.mouse.move(early.x - 6, early.y - sy); await reader.mouse.down()
+  for (let i = 1; i <= 8; i++) await reader.mouse.move(early.x - 6 + 2 * i, early.y - sy - i)
+  await reader.mouse.up()
+  await reader.waitForTimeout(900)
+  const waiting = await reader.evaluate(n => __scoreFingering.pageInk().length === n && __scoreFingering.INK.pendingGroups.length === 1, before)
+  await reader.waitForFunction(n => __scoreFingering.pageInk().length === n + 1, before, { timeout:8000 })
+  check(waiting, 'ink written while the page is still being prepared is attached once it is ready')
+  await reader.click('#inkMode')
+  await reader.evaluate(() => __scoreFingering.openPage(3, { fit:true })); await readerReady(3)
+  await reader.waitForFunction(() => !__scoreFingering.INK.on, null, { timeout:5000 })
   // pen ink attached to a note, stored, back after leaving the page, undoable, in the export
   await reader.click('#inkMode'); await reader.waitForFunction(() => __scoreFingering.INK.irc, null, { timeout:10000 })
   const pen = await reader.evaluate(() => {
@@ -267,7 +319,7 @@ const loadImageSample = target => target.evaluate(async () => {
   await reader.mouse.up()
   await reader.waitForFunction(() => __scoreFingering.pageInk().length === 1, null, { timeout:5000 })
   const mark = await reader.evaluate(() => ({ kind:__scoreFingering.pageInk()[0].anchor.kind, stored:Object.keys(localStorage).filter(k => k.startsWith('score-fingering:ink:')).length }))
-  check(mark.kind === 'event' && mark.stored === 1 && await inkPixels('ink') > 20, `ink is attached to the note under it and saved (${mark.kind})`)
+  check(mark.kind === 'event' && mark.stored >= 1 && await inkPixels('ink') > 20, `ink is attached to the note under it and saved (${mark.kind})`)
   await reader.click('#inkUndo'); const undone = await reader.evaluate(() => __scoreFingering.pageInk().length)
   await reader.click('#inkRedo'); const redone = await reader.evaluate(() => __scoreFingering.pageInk().length)
   check(undone === 0 && redone === 1, 'ink undo and redo')

@@ -39,21 +39,40 @@ part (with manual overrides), and draws the finger numbers back onto the normali
 
 The page is also a score reader. **📖 Reader** (remembered, or `?reader`) shows the page full
 width with the controls tucked away; ⛶ goes full screen. The transport under the page plays the
-recognized music with ScoreShift's player (the notation-ir Web Audio voice and lookahead
-scheduler): ▶ Play from the top, or tap a bar in Reader (▶ Play from this bar in a note's popup)
-to start there; tempo, ×0.5–×1.5 speed and the metronome (bar-aware clicks, compound meters by
-dotted beat) change while playing. The sounding noteheads are ringed, **follow** keeps the playing
-staff in view, and **turn pages** carries on onto the next PDF page with music at the end of a page.
-In Reader, Space plays or stops, ← → / Page Up / Page Down turn pages and M toggles the metronome.
-**fingerings** hides the pencil numbers for plain reading.
+recognized music: ▶ Play from the top, or tap a bar in Reader (▶ Play from this bar in a note's
+popup) to start there; tempo, ×0.5–×1.5 speed and the metronome (bar-aware clicks, compound meters
+by dotted beat) change while playing. The sounding noteheads are ringed, **follow** keeps the
+playing staff in view, and **turn pages** carries on onto the next PDF page with music at the end
+of a page. In Reader, Space plays or stops, ← → / Page Up / Page Down turn pages and M toggles the
+metronome. **fingerings** hides the pencil numbers for plain reading.
+
+**Sound.** `sound.js` plays each note from the University of Iowa arco recordings #034 already
+ships (`strings/sound/samples/iowa`, the mezzo-forte take of each string, about 3 MB, loaded on the
+first Play): violin or viola as the page is planned, every note on the string it is fingered on, from
+its recorded attack (short notes bite into it), held on the recording's pitch-synchronous loop, with
+a delayed vibrato on long notes and a small generated room. **Sound: Piano** (or a failed download)
+uses notation-ir's light additive voice. Notes come from ScoreShift's `performance()`: ties merged,
+slurs legato, staccato short, printed dynamics. When an orchestral part goes divisi on two braced
+staves, ScoreShift reads the lower staves as a second part; its bars now sound with the bars they
+stand under (`score.js` `alignParts`), so both lines play together instead of the lower one starting
+from the top of the page.
+
+**⟳ Loop** repeats a passage: tap its first and last bar (or the same bar twice; ⟳ Loop this bar…
+in a note's popup starts from that bar). The bars are shaded, and **speed up** starts the loop at
+60% of the chosen speed and adds 5% each pass. Tapping a bar outside the loop in Reader, or ⟳ again,
+ends it.
 
 **✎ Ink** writes on the page with a pen, mouse or finger (after a pen is used, fingers scroll).
 Through notation-ir `annotations.js` each mark is attached to the note, passage or moment under it
 in staff spaces, so it stays with the music through pitch corrections and re-reads; strokes written
 together are one mark. Colours, two widths, eraser (and a pen's eraser end), undo / redo and clear;
-tap a mark to recolour, delete or re-attach it when its note was removed. Ink is kept per file
+tap a mark to recolour, delete or re-attach it when its note was removed. Ink written before the
+page's music is ready to take it (a slow first load) waits and is attached, and a stroke the browser
+cancels part way (a palm, a scroll gesture) keeps what it wrote; ink that is not near any staff is
+reported rather than silently dropped. Ink is kept per file
 (name and size) and page in this browser's localStorage and drawn into the PNG and PDF exports.
-`reader.js` holds the pure parts: bar start ticks, the bar under a tap, the sounding heads, storage.
+`reader.js` holds the pure parts: bar start ticks, the bar under a tap, the sounding heads, storage;
+`sound.js` the string voice and which recording a note uses.
 
 ## ScoreShift
 

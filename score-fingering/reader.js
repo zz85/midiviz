@@ -9,6 +9,7 @@ export function measureStarts(score) {
   for (const part of score?.parts || []) {
     let t0 = 0
     for (const measure of part.measures) {
+      if (measure.at != null) t0 = measure.at // a part on only some systems (divisi): under the first part's bars
       starts.set(measure, t0)
       t0 += measure.status === 'rest' ? measure.cap : measure.ticks
     }

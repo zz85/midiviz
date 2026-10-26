@@ -64,6 +64,9 @@
   #transport label { display:flex; align-items:center; gap:.3rem; color:var(--muted); font-size:.86rem; }
   #transport .sep { flex:1; }
   #play { min-width:6rem; font-weight:600; }
+  #loopInfo { color:#1c5fa8; font-size:.84rem; font-variant-numeric:tabular-nums; }
+  #hint { flex-basis:100%; min-height:0; color:var(--accent); font-size:.84rem; }
+  #hint:empty { display:none; }
   #inkBar { display:inline-flex; flex-wrap:wrap; align-items:center; gap:.3rem; }
   #inkBar [data-c] { width:1.9rem; min-width:1.9rem; padding:0; border-radius:50%; background:var(--c); border-color:var(--c); }
   #inkBar [data-c][aria-pressed=true] { outline:2px solid #111; outline-offset:2px; }
@@ -150,7 +153,12 @@
   <label><input id="metronome" type="checkbox"> metronome</label>
   <label title="Keep the playing staff in view"><input id="follow" type="checkbox" checked> follow</label>
   <label id="turnPagesLabel" title="Carry on onto the next page at the end of this one" hidden><input id="turnPages" type="checkbox" checked> turn pages</label>
+  <label title="Recorded violin or viola (University of Iowa samples), or a light piano">Sound <select id="sound"><option value="strings" selected>Violin / viola</option><option value="piano">Piano</option></select></label>
+  <button id="loop" aria-pressed="false" title="Repeat a passage: tap its first and last bar">⟳ Loop</button>
+  <label title="Each pass of the loop starts slower and gets 5% faster, up to the chosen speed"><input id="ramp" type="checkbox"> speed up</label>
+  <span id="loopInfo" aria-live="polite"></span>
   <button id="tNext" aria-label="Next page" hidden>▶</button>
+  <span id="hint" role="status" aria-live="polite"></span>
   <span class="sep"></span>
   <button id="inkMode" aria-pressed="false" title="Write on the music with a pen, mouse or finger; ink sticks to the notes under it">✎ Ink</button>
   <span id="inkBar" hidden>
