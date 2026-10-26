@@ -381,7 +381,7 @@
   </div>
   <div id="perfPop" class="pop ui">
     <div class="sect">Body<small>how much she moves with the music</small></div>
-    <label class="chk" title="After the last note she lifts off, comes back to the middle and, about 2 s later, brings her hands down to rest in her lap (an export needs Render → Tail after the end of 4 s or more to show it all)"><input type="checkbox" id="lapRest" checked>Hands to her lap after the end</label>
+    <div class="field" title="After the last note she lifts off and comes back to the middle; about 2 s later her hands go to rest: in her lap (on her thighs, fingers toward the knees), or on the bench beside her, or they stay over the keys. An export needs Render → Tail after the end of 4 s or more to show it all"><label>Hands after the end</label><select id="restAfter"><option value="lap" selected>In her lap</option><option value="sides">On the bench, by her sides</option><option value="none">Stay over the keys</option></select></div>
     <div class="field"><label>Body expression</label><input type="range" id="expr" min="0" max="2" step="0.1" value="1"></div>
     <div class="field"><label>Posture</label><input type="range" id="posture" min="-0.5" max="1.6" step="0.05" value="0.5"><span id="postureV">between</span></div>
     <div class="field"><label>Weight shift (one hip)</label><input type="range" id="hips" min="0" max="2" step="0.1" value="1"></div>
@@ -1010,8 +1010,10 @@
     $('clothSim').onchange = () => { dress.simulate = $('clothSim').checked; if (ch.dress) ch.dress.simulate = $('clothSim').checked }
     $('expr').value = params.get('expr') ?? 1
     rig.state.expression = +$('expr').value
-    rig.state.lapRest = $('lapRest').checked
-    $('lapRest').onchange = () => { rig.state.lapRest = $('lapRest').checked }
+    // (older links: ?lap=0 kept the hands over the keys)
+    if (params.get('lap') === '0' && !params.has('rest')) $('restAfter').value = 'none'
+    rig.state.restAfter = $('restAfter').value
+    $('restAfter').onchange = () => { rig.state.restAfter = $('restAfter').value }
     $('expr').oninput = () => { rig.state.expression = +$('expr').value }
     $('hips').value = params.get('hips') ?? 1
     rig.state.hipShift = +$('hips').value
@@ -1827,7 +1829,7 @@
       ['outfit', 'outfit'], ['dress', 'dressStyle'], ['slit', 'slit'], ['fabric', 'fabric'], ['dcol', 'dressColor'], ['shoes', 'shoeStyle'],
       ['hair', 'hairStyle'], ['hcol', 'hairColor'], ['density', 'hairDensity'], ['hairon', 'hairOn'], ['hairsim', 'hairSim'],
       ['dresson', 'dressOn'], ['clothsim', 'clothSim'], ['vdress', 'vdress'], ['look', 'look'], ['smooth', 'smooth'], ['simplify', 'simplify'],
-      ['gaze', 'gaze'], ['expr', 'expr'], ['lap', 'lapRest'], ['hips', 'hips'], ['posture', 'posture'], ['reach', 'reach'], ['rock', 'rock'], ['sway', 'sway'], ['nod', 'nod'], ['glances', 'glances'], ['armw', 'armw'], ['lifth', 'lifth'], ['wflex', 'wflex'], ['frot', 'frot'], ['elbow', 'elbowLead'], ['liftoff', 'liftoff'], ['bench', 'benchDist'], ['benchh', 'benchH'],
+      ['gaze', 'gaze'], ['expr', 'expr'], ['rest', 'restAfter'], ['hips', 'hips'], ['posture', 'posture'], ['reach', 'reach'], ['rock', 'rock'], ['sway', 'sway'], ['nod', 'nod'], ['glances', 'glances'], ['armw', 'armw'], ['lifth', 'lifth'], ['wflex', 'wflex'], ['frot', 'frot'], ['elbow', 'elbowLead'], ['liftoff', 'liftoff'], ['bench', 'benchDist'], ['benchh', 'benchH'],
       ['touch', 'touch'], ['fingering', 'fingering'],
       ['light', 'light'], ['exposure', 'exposure'], ['dof', 'dof'], ['scene', 'stageSet'], ['finish', 'finish'], ['lid', 'lid'],
       ['fasian', 'faceAsian'], ['fafrican', 'faceAfrican'], ['skintex', 'skinTex'],

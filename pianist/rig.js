@@ -906,8 +906,14 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
   // again. The forearm takes the hand's twist, as when playing.
   const CURL = [[0.05, 0.12, 0.1], [0.2, 0.3, 0.18], [0.22, 0.32, 0.18], [0.24, 0.34, 0.2], [0.26, 0.36, 0.2]]
   const _r = { e0: v3(), e1: v3(), e2: v3(), F: v3(), W: v3(), C: v3(), ax: v3(), p: v3(), m: new THREE.Matrix4(), q0: new THREE.Quaternion(), q: new THREE.Quaternion() }
+  // (bone i was moved: what hangs from it is to be placed again, the bones
+  // nothing sets, the metacarpals, among them; solve() keeps a frame's answer)
+  const kids = parent.map(() => [])
+  parent.forEach((p, i) => { if (p >= 0) kids[p].push(i) })
+  function dirty(i) { for (const c of kids[i]) { done[c] = 0; dirty(c) } }
   function placeHand(a, qHand, pitch) {
     setQ(a.wrist, _r.q.setFromAxisAngle(_r.ax, pitch).multiply(qHand))
+    dirty(a.wrist)
     // the curl about the hand's own lateral axis, toward the palm
     const cx = _r.p.copy(_r.e2).cross(_r.e1).normalize().applyAxisAngle(_r.ax, pitch)
     for (let f = 0; f < 5; f++) for (let k = 0; k < 3; k++) {
@@ -945,7 +951,8 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     if (tw < -Math.PI) tw += 2 * Math.PI
     const keep = chainOf(a).slice(4).map(i => wQ[i].clone())
     for (const [bi, f] of [[a.la1, 0.45], [a.la2, 0.85]]) setQ(bi, wQ[bi].clone().premultiply(_q2.setFromAxisAngle(fo, tw * f)))
-    chainOf(a).slice(4).forEach((i, k) => setQ(i, keep[k]))
+    dirty(a.la2)
+    chainOf(a).slice(4).forEach((i, k) => { setQ(i, keep[k]); if (k === 0) dirty(i) })
   }
   /** pose a resting arm (mode 'lap' | 'sides'); returns the wrist point it went to */
   function restPose(a, mode) {
@@ -968,7 +975,8 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     e2.copy(F).addScaledVector(e1, -F.dot(e1)).normalize().negate()
     e0.crossVectors(e1, e2).multiplyScalar(a.s)
     // the little-finger side a little down (as armPose's roll)
-    const fwd = _r.C.copy(e2).negate(), qr = _q.setFromAxisAngle(fwd, a.s * 0.15)
+    // (by her side, level: the little finger's edge is the one toward the bench)
+    const fwd = _r.C.copy(e2).negate(), qr = _q.setFromAxisAngle(fwd, mode === 'sides' ? 0 : a.s * 0.15)
     e0.applyQuaternion(qr); e1.applyQuaternion(qr)
     _r.m.makeBasis(e0, e1, e2).multiply(a.restBasisInv)
     _r.q0.setFromRotationMatrix(_r.m).multiply(restQ[a.wrist])
@@ -977,10 +985,12 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     let best = 0
     for (let pass = 0; pass < 2; pass++) {
       restArm(a, W)
+      dirty(a.la2)
       const at = th => { placeHand(a, _r.q0, th); return handClear(a, mode) - 0.1 }
       let lo = -0.6, hi = 1.0
       const fLo = at(lo), fHi = at(hi)
-      if (fLo < 0 && pass === 0) { W.addScaledVector(e1, 0.3 - fLo); continue }   // sinking in even tilted up: raise the wrist
+      // sinking in even tilted up: the wrist higher (off her thigh; by her side, up off the bench)
+      if (fLo < 0 && pass === 0) { W.addScaledVector(mode === 'sides' ? _v.set(0, 1, 0) : e1, 0.3 - fLo); continue }
       if (fLo < 0) best = lo
       else if (fHi > 0) best = hi
       else { for (let n = 0; n < 9; n++) { const m = (lo + hi) / 2; if (at(m) > 0) lo = m; else hi = m } best = lo }
@@ -988,7 +998,6 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     }
     placeHand(a, _r.q0, best)
     twistForearm(a)
-    if (state.restDebug) { state.restDebug.clearOf = (p, m) => clearOf(p, m); state.restDebug.liveRadius = liveRadius; state.restDebug.thighFrame = sd => { const f = thighFrame(sd); return { H: f.H.clone(), T: f.T.clone(), U: f.U.clone(), S: f.S.clone(), len: f.len } }; const S = pos(bones[a.ua1].name); state.restDebug[a.s > 0 ? 'R' : 'L'] = { pitch: +best.toFixed(3), reach: +(S.distanceTo(W) - (a.UPPER + a.FORE - 1)).toFixed(2), clear: +handClear(a, mode).toFixed(2), idx3: (solve(a.fingers[1][2]), wP[a.fingers[1][2]].toArray().map(x => +x.toFixed(1))), wrist: wP[a.wrist].toArray().map(x => +x.toFixed(1)), W: W.toArray().map(x => +x.toFixed(1)), mode } }
     return W.clone()
   }
 
@@ -1011,13 +1020,14 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     const e = u, f = 1 - e
     _lapP.set(f * f * W0.x + 2 * e * f * _lapC.x + e * e * L.x, f * f * W0.y + 2 * e * f * _lapC.y + e * e * L.y, f * f * W0.z + 2 * e * f * _lapC.z + e * e * L.z)
     restArm(a, _lapP)
+    dirty(a.ua1)
     ch.slice(0, 4).forEach((i, k) => { solve(i); (_lapB[k] ||= new THREE.Quaternion()).copy(wQ[i]) })
     // the arm from as driven onto the curve over the first third, the hand from as driven to at rest
     const take = THREE.MathUtils.smoothstep(u, 0, 0.33)
     ch.slice(0, 4).forEach((i, k) => setQ(i, _q2.slerpQuaternions(_lapA[k], u >= 1 ? _lapH[k] : _lapB[k], take)))
-    ch.slice(4).forEach((i, j) => setQ(i, _q2.slerpQuaternions(_lapA[j + 4], _lapH[j + 4], u)))
+    dirty(a.la2)
+    ch.slice(4).forEach((i, j) => { setQ(i, _q2.slerpQuaternions(_lapA[j + 4], _lapH[j + 4], u)); if (j === 0) dirty(i) })
     twistForearm(a)
-    if (state.restDebug) { solve(a.fingers[1][2]); state.restDebug['after' + (a.s > 0 ? 'R' : 'L')] = { idx3: wP[a.fingers[1][2]].toArray().map(x => +x.toFixed(1)), wrist: wP[a.wrist].toArray().map(x => +x.toFixed(1)), clear: +handClear(a, mode).toFixed(2) } }
   }
   function restArm(a, at = null) {
     // no song: hands in the lap (at: the wrist to this point instead)
