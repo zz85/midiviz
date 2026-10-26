@@ -485,10 +485,18 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
       // ...unless the score says which hand is playing across the other
       // (hands.crossAt): that one, as a pianist reads it
       const xL = hands.crossAt('L', state.songT), xR = hands.crossAt('R', state.songT)
-      const held = state.overArm || state.prepArm
-      const over = Math.abs(xL - xR) > 0.2 ? (xL > xR ? 'L' : 'R')
-        : !held || (state.overArm && Math.abs(dA) > 3) ? (dA > 0 ? 'L' : 'R') : held, below = over === 'L' ? 'R' : 'L'
-      state.overArm = over
+      // A hand that has gone over stays the one over (and the other the one
+      // under) through the crossing and into the next within KEEP_OVER s,
+      // as a pianist keeps the same hand on top through a passage: either
+      // hand can be on top in any crossing, so nothing in the passage needs
+      // them to swap (the right hand's run passing below the left's held
+      // note stays under it). A fresh crossing, after a pause: the hand the
+      // score sends across (crossAt), else the one lifted for it, else the
+      // one further across.
+      const kept = state.overArm || (recentOver() ? state.lastOver : null)
+      const other = h => (h === 'L' ? 'R' : 'L')
+      const over = kept || (Math.abs(xL - xR) > 0.2 ? (xL > xR ? 'L' : 'R') : state.prepArm || (dA > 0 ? 'L' : 'R')), below = other(over)
+      state.overArm = over; state.lastOver = over; state.overT = state.songT
       order = [below, over]
       armPose(arm[below], dt)
       const b = arm[below], g = under.seg
@@ -511,7 +519,7 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
       // over at the height it needed the last time)
       const pen = handsOverlap(arm[over], arm[below])
       const ov = arm[over]
-      ov.clearLift = pen > 0 ? Math.min(CROSS_LIFT_MAX, (ov.clearLift || 0) + 0.8 * pen) : pen < -1 ? Math.max(0, (ov.clearLift || 0) - dt * 3) : ov.clearLift || 0
+      ov.clearLift = pen > 0.3 ? Math.min(CROSS_LIFT_MAX, (ov.clearLift || 0) + 0.3 * pen) : pen < -0.3 ? Math.max(0, (ov.clearLift || 0) - dt * 2) : ov.clearLift || 0
       ov.drv.setLift(Math.min(CROSS_LIFT_MAX, CROSS_LIFT * Math.max(u, over === 'L' ? xL : xR) + ov.clearLift)); arm[below].drv.setLift(-CROSS_DROP * u)
       arm[over].drv.setPitch(0.85 * (1 - 0.6 * thumb) * u); arm[below].drv.setPitch(-0.2 * clamp((8 - gap) / 10, 0, 1))
     } else {
@@ -523,8 +531,10 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
       // (the score's crossing first: hands.crossAt rises before its note)
       const xL = hands.crossAt('L', state.songT), xR = hands.crossAt('R', state.songT)
       let up = null, k = clamp((8 - prep) / 10, 0, 1)
-      if (Math.max(xL, xR) > 0.05) { up = xL > xR ? arm.L : arm.R; k = Math.max(k, Math.max(xL, xR)) }
-      else if (prep < 8) up = moveL > moveR ? arm.L : arm.R
+      const recent = recentOver() ? state.lastOver : null
+      // (inside a passage, the hand that has been over; a fresh one, as above)
+      if (Math.max(xL, xR) > 0.05) { up = arm[recent || (xL > xR ? 'L' : 'R')]; k = Math.max(k, Math.max(xL, xR)) }
+      else if (prep < 8) up = recent ? arm[recent] : moveL > moveR ? arm.L : arm.R
       state.prepArm = up === arm.L ? 'L' : up === arm.R ? 'R' : null
       for (const a of [arm.L, arm.R]) a.drv.setLift(a === up ? Math.min(CROSS_LIFT_MAX, CROSS_LIFT * k + a.clearLift) : 0)
     }
@@ -532,6 +542,12 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     headPose(dt)
     // legs onto the pedals
     for (const side of ['L', 'R']) legPose(side)
+    // hands at rest (no song, or after the end): now that the thighs are placed
+    for (const side of ['L', 'R']) {
+      const a = arm[side]
+      if (a.restPending) { a.restPending = false; restPose(a, restMode() || 'lap') }
+      else if (state.lap > 0 && a.drv.visible) toLap(a, state.lap)
+    }
     // write locals
     for (let i = 0; i < N; i++) {
       solve(i)
@@ -549,9 +565,13 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
   // CROSS_LIFT: how much higher the hand over is carried as it comes over,
   // CROSS_LIFT_MAX at most, with what the overlap asks for (and as high as
   // its pressed fingers still reach their keys: hand-driver.js)
-  const CROSS_LIFT = 2.5, CROSS_LIFT_MAX = 4.5
+  const CROSS_LIFT = 1.2, CROSS_LIFT_MAX = 3
+  // how long (s) the hand that went over stays the one to go over
+  const KEEP_OVER = 3
+  // (and not after a seek back past it)
+  const recentOver = () => { const d = state.songT - (state.overT ?? -Infinity); return d >= 0 && d < KEEP_OVER }
   // ...and how much lower the hand under it is held (its fingers flatter)
-  const CROSS_DROP = 1.5
+  const CROSS_DROP = 1
   const R_FORE = 2.4, R_PALM = 1.6, R_PHAL = [0.9, 0.8, 0.7], R_THUMB = [1.1, 0.95, 0.85]
   const capsOf = (a, out) => {
     const J = a.drv.joints
@@ -633,7 +653,12 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     const d = a.drv
     d.shoulder.copy(S)
     const Jd = d.joints
-    if (!d.visible || state.stand) { d.setElbow(null); restArm(a); return }
+    if (!d.visible || state.stand) {
+      d.setElbow(null)
+      // (seated: posed after the legs, restPose, as it rests on her thighs or the bench)
+      if (state.stand) restArm(a); else a.restPending = true
+      return
+    }
     // two-bone IK, elbows out and down, as the driver
     const reach = () => {
       tW.copy(Jd.W)
@@ -700,7 +725,6 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
       const P = Jd.fingers[f + 1]
       for (let k = 0; k < 3; k++) aim(a.fingers[f][k], _w.subVectors(P[k + 1], P[k]).clone())
     }
-    if (state.lap > 0) toLap(a, state.lap)
   }
   // ── After the piece: the hands come down to rest in her lap ──
   // (state.lapRest, on by default.) Once the hands have lifted off the last
@@ -715,32 +739,285 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
   // export needs Render → Tail after the end of 4 s or more to show it.
   const LAP = [1.8, 4.0]
   state.lap = 0
-  const lapAt = t => state.lapRest && !state.stand ? THREE.MathUtils.smootherstep(t, (hands.endT ?? Infinity) + LAP[0], (hands.endT ?? Infinity) + LAP[1]) : 0
-  const _lapA = [], _lapB = []
+  // where the hands go after the end: 'lap', 'sides' (on the bench beside her),
+  // or 'none' (they stay where the last chord left them); state.lapRest (older
+  // pages: true / false) when restAfter is not set
+  const restMode = () => state.restAfter ? (state.restAfter === 'none' ? null : state.restAfter) : state.lapRest === false ? null : 'lap'
+  const lapAt = t => restMode() && !state.stand ? THREE.MathUtils.smootherstep(t, (hands.endT ?? Infinity) + LAP[0], (hands.endT ?? Infinity) + LAP[1]) : 0
+
+  // ── What a resting hand lies on ──
+  // Her thighs as tapered elliptical tubes along the thigh bone (hip joint to
+  // knee), their top (her front, standing) and side radii measured from the
+  // body mesh in the bind pose; and the bench top beside her (the page's seat
+  // is 8.6 cm above it, see 045_pathtracer.html SEAT). A dress adds PAD.
+  const PAD = 1.2, BENCH_DROP = 8.6
+  const thigh = (() => {
+    const out = {}, m = ch.meshes?.body, g = m?.geometry, si = g?.attributes.skinIndex, sw = g?.attributes.skinWeight
+    for (const sd of ['L', 'R']) {
+      const top = [[], [], [], []], side = [[], [], [], []]
+      const A = restHead[B('upperleg01.' + sd)], K = restHead[B('lowerleg01.' + sd)]
+      if (si && sw && A && K) {
+        const ax = K.clone().sub(A), len = ax.length(); ax.normalize()
+        const P = g.attributes.position, sb = ch.skeleton.bones, p = v3(), q = v3()
+        for (let i = 0; i < P.count; i++) {
+          let bb = 0, w = -1; for (let k = 0; k < 4; k++) { const x = sw.getComponent(i, k); if (x > w) { w = x; bb = si.getComponent(i, k) } }
+          if (!/^upperleg0[12]\.[LR]$/.test(sb[bb].name) || !sb[bb].name.endsWith(sd)) continue
+          p.fromBufferAttribute(P, i).applyMatrix4(m.bindMatrix).sub(A)
+          const u = p.dot(ax) / len; if (u < 0.05 || u > 0.95) continue
+          q.copy(p).addScaledVector(ax, -u * len)
+          const bin = Math.min(3, Math.floor(u * 4))
+          // (standing, she faces -z: her front is the top of the seated thigh)
+          if (-q.z > 0.6 * q.length()) top[bin].push(-q.z)
+          if (Math.abs(q.x) > 0.6 * q.length()) side[bin].push(Math.abs(q.x))
+        }
+      }
+      const p90 = (l, d) => { if (l.length < 5) return d; l.sort((x, y) => x - y); return l[Math.floor(0.9 * (l.length - 1))] }
+      out[sd] = { top: top.map((l, k) => p90(l, [8, 7.5, 6.5, 5.5][k])), side: side.map((l, k) => p90(l, [9, 8, 7, 6][k])) }
+    }
+    return out
+  })()
+  // how much flesh each hand bone has on its palm side (the thumb: all round),
+  // from the body mesh in the bind pose: wrist, the palm along each
+  // metacarpal, each phalanx (90th percentile of its vertices' offset from
+  // its bone, toward the palm)
+  const flesh = (() => {
+    const out = {}, m = ch.meshes?.body, g = m?.geometry, si = g?.attributes.skinIndex, sw = g?.attributes.skinWeight
+    for (const sd of ['L', 'R']) {
+      const f = handDims[sd].frame, down = f.up.clone().negate(), S = '.' + sd
+      const segOf = { ['wrist' + S]: ['wrist' + S, 'finger3-1' + S] }
+      for (let k = 1; k <= 5; k++) {
+        segOf[`metacarpal${k}${S}`] = [`metacarpal${k}${S}`, `finger${k}-1${S}`]
+        segOf[`finger${k}-1${S}`] = [`finger${k}-1${S}`, `finger${k}-2${S}`]
+        segOf[`finger${k}-2${S}`] = [`finger${k}-2${S}`, `finger${k}-3${S}`]
+        segOf[`finger${k}-3${S}`] = [`finger${k}-3${S}`, null]
+      }
+      const d = {}
+      if (si && sw) {
+        const P = g.attributes.position, sb = ch.skeleton.bones, p = v3(), q = v3(), ax = v3()
+        for (let i = 0; i < P.count; i++) {
+          let bb = 0, w = -1; for (let k = 0; k < 4; k++) { const x = sw.getComponent(i, k); if (x > w) { w = x; bb = si.getComponent(i, k) } }
+          const name = sb[bb].name, seg = segOf[name]; if (!seg || !(B(seg[0]) >= 0)) continue
+          const A = restHead[B(seg[0])]
+          if (seg[1] && B(seg[1]) >= 0) ax.subVectors(restHead[B(seg[1])], A).normalize()
+          else { const pa = restHead[parent[B(seg[0])]]; ax.subVectors(A, pa).normalize() }
+          p.fromBufferAttribute(P, i).applyMatrix4(m.bindMatrix).sub(A)
+          q.copy(p).addScaledVector(ax, -p.dot(ax))
+          ;(d[name] ||= []).push(name.startsWith('finger1') ? q.length() : q.dot(down))
+        }
+      }
+      const p90 = (l, def) => { if (!l || l.length < 4) return def; l.sort((x, y) => x - y); return Math.max(0.4, l[Math.floor(0.9 * (l.length - 1))]) }
+      out[sd] = {
+        wrist: p90(d['wrist' + S], 2.0), palm: [1, 2, 3, 4, 5].map(k => p90(d[`metacarpal${k}${S}`], 1.5)),
+        finger: [1, 2, 3, 4, 5].map(k => [1, 2, 3].map(j => p90(d[`finger${k}-${j}${S}`], [1.1, 0.9, 0.8][j - 1]))),
+      }
+    }
+    return out
+  })()
+  const _th = { H: v3(), K: v3(), T: v3(), U: v3(), S: v3(), q: v3() }
+  // the thigh's frame now: hip H, direction T (to the knee), up U (her front), out S (away from her middle)
+  function thighFrame(sd, o = _th) {
+    const l = leg[sd]; solve(l.ul1); solve(l.ll1)
+    o.H.copy(wP[l.ul1]); o.K.copy(wP[l.ll1]); o.len = o.H.distanceTo(o.K)
+    o.T.subVectors(o.K, o.H).normalize()
+    o.U.set(0, 1, 0).addScaledVector(o.T, -o.T.y).normalize()
+    o.S.crossVectors(o.T, o.U).normalize(); if (o.S.x * (sd === 'R' ? 1 : -1) < 0) o.S.negate()
+    return o
+  }
+  const radAt = (r, u) => { const x = clamp(u * 4 - 0.5, 0, 3), k = Math.min(2, Math.floor(x)); return r[k] + (r[k + 1] - r[k]) * (x - k) }
+  // The thigh as it is this frame: its own vertices skinned here (from this
+  // frame's bones, as the GPU will), binned along the thigh bone (2 cm) and
+  // round it (10°), the furthest out in each bin; built once a frame, when a
+  // hand rests (the measured tube above is the fallback, without a body mesh)
+  const thighSkin = (() => {
+    const m = ch.meshes?.body, g = m?.geometry, si = g?.attributes.skinIndex, sw = g?.attributes.skinWeight
+    if (!si || !sw || !ch.skeleton) return null
+    const sb = ch.skeleton.bones, P = g.attributes.position, p = v3(), out = {}
+    const invRest = restWorld.map(M => M.clone().invert())
+    for (const sd of ['L', 'R']) {
+      const pos = [], bi = [], bw = []
+      for (let i = 0; i < P.count; i++) {
+        let bb = 0, w = -1; for (let k = 0; k < 4; k++) { const x = sw.getComponent(i, k); if (x > w) { w = x; bb = si.getComponent(i, k) } }
+        const n = sb[bb].name; if (!/^upperleg0[12]\./.test(n) || !n.endsWith(sd)) continue
+        p.fromBufferAttribute(P, i).applyMatrix4(m.bindMatrix); pos.push(p.x, p.y, p.z)
+        for (let k = 0; k < 4; k++) { bi.push(idx[sb[si.getComponent(i, k)].name] ?? 0); bw.push(sw.getComponent(i, k)) }
+      }
+      out[sd] = { pos: Float32Array.from(pos), bi: Int16Array.from(bi), bw: Float32Array.from(bw), grid: new Map(), stamp: -1 }
+    }
+    out.invRest = invRest
+    return out
+  })()
+  const _sk = { M: [], m: new THREE.Matrix4(), v: v3(), acc: v3(), q: v3() }
+  const binKey = (u, a) => (Math.round(u / 2) + 200) * 1000 + Math.round(a / 0.1745) + 100
+  function liveThigh(sd) {
+    const L = thighSkin?.[sd]; if (!L) return null
+    if (L.stamp === stamp) return L
+    const f = thighFrame(sd, L.f ||= { H: v3(), K: v3(), T: v3(), U: v3(), S: v3(), q: v3() }), { v, acc, q } = _sk
+    const Mof = i => { if (!_sk.M[i] || _sk.M[i].stamp !== stamp) { solve(i); const M = _sk.M[i] ||= new THREE.Matrix4(); M.compose(wP[i], wQ[i], _sk.ones ||= v3(1, 1, 1)).multiply(thighSkin.invRest[i]); M.stamp = stamp } return _sk.M[i] }
+    L.grid.clear()
+    for (let j = 0, n = L.pos.length / 3; j < n; j++) {
+      acc.set(0, 0, 0)
+      for (let k = 0; k < 4; k++) { const w = L.bw[j * 4 + k]; if (!w) continue; acc.addScaledVector(v.set(L.pos[j * 3], L.pos[j * 3 + 1], L.pos[j * 3 + 2]).applyMatrix4(Mof(L.bi[j * 4 + k])), w) }
+      q.subVectors(acc, f.H); const u = q.dot(f.T); q.addScaledVector(f.T, -u)
+      const key = binKey(u, Math.atan2(q.dot(f.S), q.dot(f.U))), r = q.length()
+      if (!(L.grid.get(key) >= r)) L.grid.set(key, r)
+    }
+    L.stamp = stamp
+    return L
+  }
+  // the thigh's surface radius at (u cm along, angle a round from her front toward her outside)
+  function liveRadius(sd, u, a) {
+    const L = liveThigh(sd); if (!L) return null
+    const k = binKey(u, a)
+    let R = L.grid.get(k)
+    if (R == null) for (const d of [1, -1, 1000, -1000]) { const x = L.grid.get(k + d); if (x != null) R = Math.max(R ?? 0, x) }
+    return R ?? null
+  }
+  // how far p is outside the thigh (negative: inside)
+  function thighClear(sd, p) {
+    if (thighSkin) {
+      const f = thighFrame(sd), q = f.q.subVectors(p, f.H), u = q.dot(f.T)
+      if (u < 1 || u > f.len - 1) return Infinity
+      q.addScaledVector(f.T, -u)
+      const R = liveRadius(sd, u, Math.atan2(q.dot(f.S), q.dot(f.U)))
+      return R == null ? Infinity : q.length() - R - PAD
+    }
+    const f = thighFrame(sd), q = f.q.subVectors(p, f.H), u = clamp(q.dot(f.T) / f.len, 0, 1)
+    q.addScaledVector(f.T, -u * f.len)
+    const a = q.dot(f.U), b = q.dot(f.S), r = Math.hypot(a, b) || 1e-6
+    const rt = radAt(thigh[sd].top, u) + PAD, rs = radAt(thigh[sd].side, u) + PAD
+    return r - 1 / Math.sqrt((a / r / rt) ** 2 + (b / r / rs) ** 2)
+  }
+  const benchTop = () => state.benchTop ?? seat0.y - BENCH_DROP
+  function clearOf(p, mode) {
+    let c = Math.min(thighClear('L', p), thighClear('R', p))
+    // the bench (76 × 34 cm round her seat)
+    if (Math.abs(p.x) < 38 && Math.abs(p.z - seat0.z) < 18) c = Math.min(c, p.y - benchTop() - (mode === 'sides' ? PAD * 0.5 : 0))
+    return c
+  }
+
+  // ── A hand at rest, on her thigh or on the bench ──
+  // The wrist goes just above the surface; the hand lies along it (on the
+  // thigh: fingers toward the knee, turned a little in; on the bench: forward,
+  // turned out), the fingers curled a little, the little-finger side a little
+  // down; then the hand is pitched about the wrist until it just touches
+  // (the lowest point of it, each bone with its own flesh, measured from the
+  // mesh: 1 mm clear),
+  // and if it can't help sinking in, the wrist is raised and the arm solved
+  // again. The forearm takes the hand's twist, as when playing.
+  const CURL = [[0.05, 0.12, 0.1], [0.2, 0.3, 0.18], [0.22, 0.32, 0.18], [0.24, 0.34, 0.2], [0.26, 0.36, 0.2]]
+  const _r = { e0: v3(), e1: v3(), e2: v3(), F: v3(), W: v3(), C: v3(), ax: v3(), p: v3(), m: new THREE.Matrix4(), q0: new THREE.Quaternion(), q: new THREE.Quaternion() }
+  function placeHand(a, qHand, pitch) {
+    setQ(a.wrist, _r.q.setFromAxisAngle(_r.ax, pitch).multiply(qHand))
+    // the curl about the hand's own lateral axis, toward the palm
+    const cx = _r.p.copy(_r.e2).cross(_r.e1).normalize().applyAxisAngle(_r.ax, pitch)
+    for (let f = 0; f < 5; f++) for (let k = 0; k < 3; k++) {
+      const i = a.fingers[f][k]
+      setQ(i, base(i, _q2).premultiply(_q.setFromAxisAngle(cx, CURL[f][k])))
+    }
+  }
+  const _hc = v3(), _hd = v3()
+  function handClear(a, mode) {
+    const F = flesh[a.s > 0 ? 'R' : 'L']
+    solve(a.wrist)
+    let c = clearOf(wP[a.wrist], mode) - F.wrist
+    for (let f = 0; f < 5; f++) {
+      const b = a.fingers[f]
+      for (let k = 0; k < 3; k++) solve(b[k])
+      // the palm: along each metacarpal (from the wrist) to its knuckle
+      if (f > 0) for (const u of [0.4, 0.75]) c = Math.min(c, clearOf(_hc.lerpVectors(wP[a.wrist], wP[b[0]], u), mode) - F.palm[f])
+      // each phalanx: its joint, its middle and (the last) its tip
+      for (let k = 0; k < 3; k++) {
+        const r = F.finger[f][k], A = wP[b[k]]
+        const Bp = k < 2 ? wP[b[k + 1]] : _hd.subVectors(wP[b[2]], wP[b[1]]).multiplyScalar(0.85).add(wP[b[2]])
+        if (k > 0 || f > 0) c = Math.min(c, clearOf(A, mode) - (k === 0 && f > 0 ? Math.max(r, F.palm[f]) : r))
+        c = Math.min(c, clearOf(_hc.lerpVectors(A, Bp, 0.5), mode) - r)
+        if (k === 2) c = Math.min(c, clearOf(Bp, mode) - 0.8 * r)
+      }
+    }
+    return c
+  }
+  function twistForearm(a) {
+    const qh = wQ[a.wrist].clone()
+    const fo = _v.subVectors(wP[a.wrist], wP[a.la1]).normalize().clone()
+    const D = qh.clone().multiply(base(a.wrist, new THREE.Quaternion()).invert())
+    let tw = 2 * Math.atan2(D.x * fo.x + D.y * fo.y + D.z * fo.z, D.w)
+    if (tw > Math.PI) tw -= 2 * Math.PI
+    if (tw < -Math.PI) tw += 2 * Math.PI
+    const keep = chainOf(a).slice(4).map(i => wQ[i].clone())
+    for (const [bi, f] of [[a.la1, 0.45], [a.la2, 0.85]]) setQ(bi, wQ[bi].clone().premultiply(_q2.setFromAxisAngle(fo, tw * f)))
+    chainOf(a).slice(4).forEach((i, k) => setQ(i, keep[k]))
+  }
+  /** pose a resting arm (mode 'lap' | 'sides'); returns the wrist point it went to */
+  function restPose(a, mode) {
+    const sd = a.s > 0 ? 'R' : 'L', f = thighFrame(sd, { H: v3(), K: v3(), T: v3(), U: v3(), S: v3(), q: v3() })
+    const { e0, e1, e2, F, W } = _r
+    if (mode === 'sides') {
+      // by her side: the arm hanging, the palm against the outside of the thigh
+      // by the hip (70° round from its top), the fingers along it toward the knee
+      const u = 0.24, ang = 1.22, rs = (liveRadius(sd, u * f.len, ang) ?? radAt(thigh[sd].side, u)) + PAD
+      e1.copy(f.U).multiplyScalar(Math.cos(ang)).addScaledVector(f.S, Math.sin(ang))
+      F.copy(f.T)
+      W.copy(f.H).addScaledVector(f.T, u * f.len).addScaledVector(e1, rs + 2.2)
+    } else {
+      // on top of her thigh, two fifths of the way to the knee, a little in from its top
+      const u = 0.42, ang = 0.26, rt = (liveRadius(sd, u * f.len, -ang) ?? radAt(thigh[sd].top, u)) + PAD
+      e1.copy(f.U).multiplyScalar(Math.cos(ang)).addScaledVector(f.S, -Math.sin(ang))
+      F.copy(f.T).multiplyScalar(Math.cos(0.35)).addScaledVector(f.S, -Math.sin(0.35))
+      W.copy(f.H).addScaledVector(f.T, u * f.len).addScaledVector(e1, rt + 2.4)
+    }
+    e2.copy(F).addScaledVector(e1, -F.dot(e1)).normalize().negate()
+    e0.crossVectors(e1, e2).multiplyScalar(a.s)
+    // the little-finger side a little down (as armPose's roll)
+    const fwd = _r.C.copy(e2).negate(), qr = _q.setFromAxisAngle(fwd, a.s * 0.15)
+    e0.applyQuaternion(qr); e1.applyQuaternion(qr)
+    _r.m.makeBasis(e0, e1, e2).multiply(a.restBasisInv)
+    _r.q0.setFromRotationMatrix(_r.m).multiply(restQ[a.wrist])
+    // pitch about the lateral axis: positive = fingers down
+    _r.ax.copy(e2).cross(e1).normalize()
+    let best = 0
+    for (let pass = 0; pass < 2; pass++) {
+      restArm(a, W)
+      const at = th => { placeHand(a, _r.q0, th); return handClear(a, mode) - 0.1 }
+      let lo = -0.6, hi = 1.0
+      const fLo = at(lo), fHi = at(hi)
+      if (fLo < 0 && pass === 0) { W.addScaledVector(e1, 0.3 - fLo); continue }   // sinking in even tilted up: raise the wrist
+      if (fLo < 0) best = lo
+      else if (fHi > 0) best = hi
+      else { for (let n = 0; n < 9; n++) { const m = (lo + hi) / 2; if (at(m) > 0) lo = m; else hi = m } best = lo }
+      break
+    }
+    placeHand(a, _r.q0, best)
+    twistForearm(a)
+    if (state.restDebug) { state.restDebug.clearOf = (p, m) => clearOf(p, m); state.restDebug.liveRadius = liveRadius; state.restDebug.thighFrame = sd => { const f = thighFrame(sd); return { H: f.H.clone(), T: f.T.clone(), U: f.U.clone(), S: f.S.clone(), len: f.len } }; const S = pos(bones[a.ua1].name); state.restDebug[a.s > 0 ? 'R' : 'L'] = { pitch: +best.toFixed(3), reach: +(S.distanceTo(W) - (a.UPPER + a.FORE - 1)).toFixed(2), clear: +handClear(a, mode).toFixed(2), idx3: (solve(a.fingers[1][2]), wP[a.fingers[1][2]].toArray().map(x => +x.toFixed(1))), wrist: wP[a.wrist].toArray().map(x => +x.toFixed(1)), W: W.toArray().map(x => +x.toFixed(1)), mode } }
+    return W.clone()
+  }
+
+  const _lapA = [], _lapB = [], _lapH = []
   const chainOf = a => a.chain || (a.chain = [a.ua1, a.ua2, a.la1, a.la2, a.wrist, ...a.fingers.flat()])
-  const _lapP = v3(), _lapC = v3(), _lapL = v3(), _qh = new THREE.Quaternion()
+  const _lapP = v3(), _lapC = v3()
   function toLap(a, u) {
-    const ch = chainOf(a)
+    const ch = chainOf(a), mode = restMode() || 'lap'
     // the pose as driven
     ch.forEach((i, k) => { solve(i); (_lapA[k] ||= new THREE.Quaternion()).copy(wQ[i]) })
-    // the wrist's way down: a curve from the driven wrist through a point back
-    // toward her at its height (a little above) to the lap
-    const W0 = a.drv.joints.W
-    _lapL.set(a.s * 9, 62, 26)
-    _lapC.set((W0.x + _lapL.x) / 2, Math.max(W0.y, 76) + 4, _lapL.z)
+    const W0 = a.drv.joints.W.clone()
+    // where it ends: the rest pose, hand and all
+    const L = restPose(a, mode)
+    ch.forEach((i, k) => { solve(i); (_lapH[k] ||= new THREE.Quaternion()).copy(wQ[i]) })
+    // the wrist's way there: a curve from the driven wrist, back toward her
+    // and a little up (clear of the keyboard's front edge), then down to it
+    // (beside her: straight down outside the thigh)
+    if (mode === 'sides') _lapC.set(L.x, Math.max(W0.y, 78) + 6, L.z)
+    else _lapC.set((W0.x + L.x) / 2, Math.max(W0.y, 76) + 4, L.z)
     const e = u, f = 1 - e
-    _lapP.set(f * f * W0.x + 2 * e * f * _lapC.x + e * e * _lapL.x, f * f * W0.y + 2 * e * f * _lapC.y + e * e * _lapL.y, f * f * W0.z + 2 * e * f * _lapC.z + e * e * _lapL.z)
-    // the arm to that point; the hand from as driven to relaxed on the forearm
+    _lapP.set(f * f * W0.x + 2 * e * f * _lapC.x + e * e * L.x, f * f * W0.y + 2 * e * f * _lapC.y + e * e * L.y, f * f * W0.z + 2 * e * f * _lapC.z + e * e * L.z)
     restArm(a, _lapP)
     ch.slice(0, 4).forEach((i, k) => { solve(i); (_lapB[k] ||= new THREE.Quaternion()).copy(wQ[i]) })
+    // the arm from as driven onto the curve over the first third, the hand from as driven to at rest
     const take = THREE.MathUtils.smoothstep(u, 0, 0.33)
-    ch.slice(0, 4).forEach((i, k) => setQ(i, _q2.slerpQuaternions(_lapA[k], _lapB[k], take)))
-    // (the hand bones: their driven rotation relative to the forearm, eased to the rest one)
-    ch.slice(4).forEach((i, j) => {
-      const k = j + 4
-      _qh.copy(_lapA[k])
-      setQ(i, _q2.slerpQuaternions(_qh, base(i, new THREE.Quaternion()), u))
-    })
+    ch.slice(0, 4).forEach((i, k) => setQ(i, _q2.slerpQuaternions(_lapA[k], u >= 1 ? _lapH[k] : _lapB[k], take)))
+    ch.slice(4).forEach((i, j) => setQ(i, _q2.slerpQuaternions(_lapA[j + 4], _lapH[j + 4], u)))
+    twistForearm(a)
+    if (state.restDebug) { solve(a.fingers[1][2]); state.restDebug['after' + (a.s > 0 ? 'R' : 'L')] = { idx3: wP[a.fingers[1][2]].toArray().map(x => +x.toFixed(1)), wrist: wP[a.wrist].toArray().map(x => +x.toFixed(1)), clear: +handClear(a, mode).toFixed(2) } }
   }
   function restArm(a, at = null) {
     // no song: hands in the lap (at: the wrist to this point instead)
@@ -798,7 +1075,7 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     state.lidDrop += (inner * 0.8 - state.lidDrop) * (1 - Math.exp(-dt * 3))
     look.copy(handsAt).lerp(glanceP, glanceW)
     // (hands going to the lap: her eyes lower partway toward them)
-    if (state.lap > 0) look.lerp(_d1.set(0, 70, 22), 0.5 * state.lap)
+    if (state.lap > 0) look.lerp(_d1.set(0, 70, 22), (restMode() === 'sides' ? 0.25 : 0.5) * state.lap)
     if (state.lookAt) look.copy(state.lookAt)
     // eyes: a quick saccade when the target jumps, smooth pursuit otherwise;
     // the head follows more slowly. A big gaze shift often comes with a blink
@@ -1186,7 +1463,7 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     // breathing deepens with the phrase
     state.breathAmp = 1 + 1.2 * x * E
   }
-  Object.assign(state, { songT: 0, playing: false, exLean: 0, exSide: 0, exTurn: 0, exNod: 0, exRoll: 0, exShrug: 0, breathAmp: 1, hipRoll: 0, hipShift: 1, elbowLead: 1, posture: 0.5, reach: 1, rock: 1, sway: 1, nod: 1, glances: 1, gazeMode: 'music', blink: 0, lidDrop: 0, stand: 0, bowLean: 0, lookAt: null, lapRest: true })
+  Object.assign(state, { songT: 0, playing: false, exLean: 0, exSide: 0, exTurn: 0, exNod: 0, exRoll: 0, exShrug: 0, breathAmp: 1, hipRoll: 0, hipShift: 1, elbowLead: 1, posture: 0.5, reach: 1, rock: 1, sway: 1, nod: 1, glances: 1, gazeMode: 'music', blink: 0, lidDrop: 0, stand: 0, bowLean: 0, lookAt: null, lapRest: true, restAfter: 'lap' })
 
   const LOOK = 0.4, _fw = v3(), _sd = v3(), TURN_R = 25   // s ahead the body watches for keys out of reach
   /** Posture from the hands: lean / turn toward them, further when out of reach. */
