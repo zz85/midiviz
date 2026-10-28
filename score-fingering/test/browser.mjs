@@ -81,10 +81,10 @@ const loadImageSample = target => target.evaluate(async () => {
     const control = document.getElementById('fingerSize'), canvas = document.getElementById('overlay'), context = canvas.getContext('2d')
     const ink = () => { const data = context.getImageData(0, 0, canvas.width, canvas.height).data; let count = 0; for (let i = 3; i < data.length; i += 4) if (data[i]) count++; return count }
     const set = v => { control.value = v; control.dispatchEvent(new Event('input')); return ink() }
-    const normal = set('1'), big = set('2'), small = set('0.5'), label = document.getElementById('fingerSizeOut').textContent
+    const normal = set('1'), big = set('1.5'), small = set('0.5'), label = document.getElementById('fingerSizeOut').textContent
     set('1'); return { normal, big, small, label }
   })
-  check(sizeInk.big > sizeInk.normal * 2 && sizeInk.small < sizeInk.normal * 0.6 && sizeInk.label === '50%', `the size slider redraws the finger numbers larger and smaller (${sizeInk.small} / ${sizeInk.normal} / ${sizeInk.big} px)`)
+  check(sizeInk.big > sizeInk.normal * 1.6 && sizeInk.small < sizeInk.normal * 0.6 && sizeInk.label === '50%', `the size slider redraws the finger numbers larger and smaller (${sizeInk.small} / ${sizeInk.normal} / ${sizeInk.big} px)`)
   await page.locator('#alternatives button').nth(1).focus(); await page.keyboard.press('Enter')
   check(await page.evaluate(() => __scoreFingering.S.suggestion === 1), 'whole-path alternative can be selected')
   check(await page.evaluate(() => document.activeElement?.closest('#alternatives') != null), 'alternative selection preserves keyboard focus')

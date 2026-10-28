@@ -1,7 +1,7 @@
 // node --test score-fingering/test/adapter.test.js
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { sourceNoteId, buildFingeringInput, detectViolinViola, planFingering, annotationItems, hitAnnotation } from '../adapter.js'
+import { sourceNoteId, buildFingeringInput, detectViolinViola, planFingering, annotationItems, hitAnnotation, stackStep, DIGIT_HEIGHT } from '../adapter.js'
 import { makeEvents } from '../../strings/fingering.js'
 
 const pitch = midi => {
@@ -145,7 +145,8 @@ test('shared-stem chord fingerings form a vertical stack', () => {
   const ys = items.map(item => item.labelY).sort((a, b) => a - b)
   assert.equal(items.length, 4)
   assert.equal(xs.size, 1, 'chord fingerings share one vertical column')
-  assert.ok(ys.slice(1).every((y, index) => y - ys[index] >= 25), 'stacked chord numerals do not overlap')
+  assert.ok(ys.slice(1).every((y, index) => Math.abs(y - ys[index] - stackStep(1)) < 1e-9), 'stacked chord numerals sit one numeral height plus a small gap apart')
+  assert.ok(stackStep(1) - DIGIT_HEIGHT <= 4 && stackStep(1) >= DIGIT_HEIGHT, 'the gap is small but numerals do not overlap')
   assert.ok(items.every(item => item.labelY < 170))
 })
 

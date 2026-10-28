@@ -121,7 +121,42 @@ export function planFingering(score, partIndex = 0, options = {}) {
   const { locks = new Map(), quarterSeconds = 0.5, ...solver } = options
   const input = buildFingeringInput(score, partIndex, { locks, quarterSeconds })
   const result = suggestFingerings(input.notes, { chordTolerance:0.001, ...solver })
-  return { ...result, notes:input.notes, sources:input.sources, sourceGroups:input.sourceGroups, part:input.part, instrument:solver.instrument || 'violin' }
+  return { ...result, notes:input.notes, sources:input.sources, sourceGroups:input.sourceGroups, part:input.part, instrument:solver.instrument || 'violin', quarterSeconds }
+}
+
+/** Height of a finger numeral at size 1 (the 24 px pencil font) and the gap between stacked ones. */
+export const DIGIT_HEIGHT = 19, STACK_GAP = 4
+/** Centre-to-centre distance of a double stop's numerals: the gap stays the same at every size. */
+export const stackStep = (size = 1) => DIGIT_HEIGHT * size + STACK_GAP
+
+/**
+ * A finger that repeats the one just written needs no new number. It is written again on a new
+ * system, after a rest of a beat or more, after `longQuarters` beats without one, or when the
+ * string, position or chord changes.
+ */
+export function markRepeats(items, notes, { quarterSeconds = 0.5, longQuarters = 6 } = {}) {
+  // a double stop is one unit: it repeats when all its fingers, strings and positions do
+  const units = []
+  for (const item of items) {
+    const last = units[units.length - 1]
+    if (item.stackKey && last?.key === item.stackKey) last.items.push(item)
+    else units.push({ key:item.stackKey || item.id, items:[item] })
+  }
+  const signature = unit => unit.items.map(({ assignment:a }) => `${a.finger}:${a.string}:${a.base}:${!!a.thumb}`).sort().join('|')
+  let shown = null, previousOff = null
+  for (const unit of units) {
+    const first = unit.items[0], input = notes[first.index]
+    const on = input.on, off = Math.max(...unit.items.map(item => notes[item.index].off))
+    for (const item of unit.items) item.repeat = false
+    if (unit.items.some(item => !item.playable || item.locked || item.warnings.some(warning => warning.code !== 'chord-capacity'))) { shown = null; previousOff = off; continue }
+    unit.sig = signature(unit); unit.on = on; unit.st = first.source.st?.index ?? 0
+    const rest = previousOff == null || on - previousOff >= quarterSeconds * 0.99
+    const repeat = shown && unit.sig === shown.sig && !rest && unit.st === shown.st && on - shown.on < longQuarters * quarterSeconds - 1e-9
+    if (repeat) for (const item of unit.items) item.repeat = true
+    else shown = unit
+    previousOff = off
+  }
+  return items
 }
 
 /** Drawing-independent annotation descriptors for one ranked suggestion. */
@@ -164,10 +199,11 @@ export function annotationItems(plan, suggestionIndex = 0, { instrument = plan.i
     group.sort((a, b) => a.source.y - b.source.y)
     const x = group.reduce((sum, item) => sum + item.source.x, 0) / group.length
     const nearest = Math.min(...group.map(item => item.labelY))
-    const top = Math.max(18, nearest - (group.length - 1) * 26)
-    group.forEach((item, index) => { item.labelX = x; item.labelY = top + index * 26; item.stackIndex = group.length - 1 - index })
+    const top = Math.max(18, nearest - (group.length - 1) * stackStep(1))
+    const stackKey = group[0].id
+    group.forEach((item, index) => { item.labelX = x; item.labelY = top + index * stackStep(1); item.stackIndex = group.length - 1 - index; item.stackCount = group.length; item.stackKey = stackKey })
   }
-  return items
+  return markRepeats(items, plan.notes, { quarterSeconds:plan.quarterSeconds || 0.5 })
 }
 
 /** Nearest annotation in normalized ScoreShift coordinates. */

@@ -138,9 +138,10 @@
   <label>Part <select id="part" disabled><option>—</option></select></label>
   <label>Style <select id="mode"><option value="standard">Standard</option><option value="beginner">Beginner</option><option value="expressive">Expressive</option><option value="nearest">Fewest shifts</option></select></label>
   <label><input id="fingerings" type="checkbox" checked> fingerings</label>
-  <label title="Size of the finger numbers">Size <input id="fingerSize" type="range" min="0.5" max="2" step="0.05" value="1" aria-label="Fingering size"><output id="fingerSizeOut" for="fingerSize">100%</output></label>
+  <label title="Size of the finger numbers">Size <input id="fingerSize" type="range" min="0.25" max="1.5" step="0.05" value="1" aria-label="Fingering size"><output id="fingerSizeOut" for="fingerSize">100%</output></label>
   <label><input id="recognition" type="checkbox"> recognition</label>
   <label title="Show string changes and hand-position changes beside their noteheads"><input id="details" type="checkbox"> string / position details</label>
+  <label title="Write a finger again on every note, instead of only when it changes"><input id="repeats" type="checkbox"> repeated fingers</label>
   <label>Zoom <input id="zoom" type="range" min="0.1" max="2" step="0.05" value="1"></label>
 </div>
 <nav id="pages" hidden aria-label="PDF pages"><button id="prevPage" aria-label="Previous page">◀</button><span id="pageNo" aria-live="polite"></span><button id="nextPage" aria-label="Next page">▶</button><div id="thumbs"></div></nav>

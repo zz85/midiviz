@@ -2,7 +2,7 @@ import { buildScore } from '../../random-sketches/vibes/scoreshift/score.js'
 import { Renderer } from '../../random-sketches/vibes/scoreshift/render.js'
 import { interpret, yOfP, lineY } from '../../random-sketches/vibes/scoreshift/omr.js'
 import { planFingering, annotationItems, hitAnnotation, sourceNoteId, detectViolinViola } from './adapter.js'
-import { drawFingerings, drawRecognition, labelAt } from './overlay.js'
+import { drawFingerings, drawRecognition, labelAt, placeLabels } from './overlay.js'
 import { INSTRUMENTS, solveFingering } from '../strings/fingering.js'
 import { createScoreDocument, pageState, cachePage, pageFileStem, trimPageRecords, precedingPageFifths, invalidatePageKeyEvidence } from './document.js'
 import { measureStarts, measureAt, soundingHeads, annotationKey, loadAnnotations, saveAnnotations } from './reader.js'
@@ -537,11 +537,40 @@ function layoutPage() {
 
 function scrollAnnotationIntoView(item) {
   const wrap = $('wrap'), stage = $('stage')
-  const label = labelAt(item, fingerSize())
+  const label = labelAt(item, fingerScale())
   const x = stage.offsetLeft + label.x * S.renderer.r * S.zoom
   const y = stage.offsetTop + label.y * S.renderer.r * S.zoom
   const left = Math.max(0, x - wrap.clientWidth / 2), top = Math.max(0, y - wrap.clientHeight / 2)
   wrap.scrollTo({ left, top, behavior:'instant' })
+}
+
+// Printed ink in normalized page pixels, with staff lines removed, so finger numbers can be
+// kept off text, dynamics and other notes. Built once per page.
+const INK_MASKS = new WeakMap()
+function inkSampler(renderer, model) {
+  let mask = INK_MASKS.get(renderer)
+  if (!mask) {
+    const r = renderer.r, W = Math.ceil(renderer.W / r), H = Math.ceil(renderer.H / r)
+    const canvas = document.createElement('canvas'); canvas.width = W; canvas.height = H
+    const context = canvas.getContext('2d', { willReadFrequently:true }); context.drawImage(renderer.src, 0, 0, W, H)
+    const rgba = context.getImageData(0, 0, W, H).data, bits = new Uint8Array(W * H)
+    for (let i = 0; i < bits.length; i++) bits[i] = (rgba[i * 4] * 77 + rgba[i * 4 + 1] * 150 + rgba[i * 4 + 2] * 29) >> 8 < 140 ? 1 : 0
+    for (const st of model?.staves || []) {
+      const x0 = Math.max(0, Math.floor(st.x0 ?? 0)), x1 = Math.min(W - 1, Math.ceil(st.x1 ?? W - 1))
+      for (let x = x0; x <= x1; x++) for (let line = 0; line < 5; line++) {
+        const y = Math.round(lineY(st, line, x))
+        for (let dy = -2; dy <= 2; dy++) if (y + dy >= 0 && y + dy < H) bits[(y + dy) * W + x] = 0
+      }
+    }
+    mask = { W, H, bits }; INK_MASKS.set(renderer, mask)
+  }
+  return (x, y) => { x = Math.round(x); y = Math.round(y); return x >= 0 && y >= 0 && x < mask.W && y < mask.H && mask.bits[y * mask.W + x] === 1 }
+}
+
+/** The highest a label may be moved: just below the staff above its own. */
+const labelCeiling = model => item => {
+  const index = item.source?.st?.index, above = Number.isInteger(index) ? model?.staves?.[index - 1] : null
+  return above ? lineY(above, 4, item.x) + 8 : 2
 }
 
 function renderPage() {
@@ -552,7 +581,8 @@ function renderPage() {
   S.items = annotationItems(S.plan, S.suggestion, { instrument:S.plan.instrument })
   S.keyboardIndex = Math.max(0, Math.min(S.keyboardIndex, Math.max(0, S.items.length - 1)))
   if ($('recognition').checked) drawRecognition(overlayCtx, S.model, S.renderer.r, S.score, S.items.find(item => item.id === S.selectedId)?.source)
-  if ($('fingerings').checked) drawFingerings(overlayCtx, S.items, S.renderer.r, { selectedId:S.selectedId, showDetails:$('details').checked, size:fingerSize() })
+  placeLabels(S.items, fingerScale(), inkSampler(S.renderer, S.model), { showRepeats:$('repeats').checked, ceiling:labelCeiling(S.model) })
+  if ($('fingerings').checked) drawFingerings(overlayCtx, S.items, S.renderer.r, { selectedId:S.selectedId, showDetails:$('details').checked, size:fingerScale(), showRepeats:$('repeats').checked })
   layoutPage(); syncCurrentPage()
 }
 
@@ -659,7 +689,7 @@ overlay.addEventListener('click', event => {
     startPlayback(measureStarts(S.score).get(measure)); return
   }
   if (!S.items.length) return
-  const size = fingerSize(), item = hitAnnotation(S.items, x, y, 18 * Math.max(1, size), it => labelAt(it, size))
+  const size = fingerScale(), item = hitAnnotation(S.items, x, y, 18 * Math.max(1, size), it => labelAt(it, size))
   if (item) showPopup(item, event); else hidePopup()
 })
 
@@ -688,14 +718,19 @@ $('part').onchange = () => { S.part = +$('part').value; S.suggestion = 0; hidePo
 $('tempo').onchange = () => { if (P.player?.playing) P.player.setRate(currentTempo() * QUARTER / 60); resetDocumentAlternatives(); replan() }
 $('recognition').onchange = renderPage
 $('details').onchange = renderPage
+$('repeats').onchange = renderPage
 $('fingerings').onchange = renderPage
 // fingering size: 50-200% of the 24 px pencil numeral, remembered
-const fingerSize = () => Math.max(0.5, Math.min(2, +$('fingerSize').value || 1))
+// The slider's 100% draws numbers at twice the overlay's 24 px base (48 px on the page).
+const FINGER_BASE = 2, FINGER_MIN = 0.25, FINGER_MAX = 1.5
+const fingerSize = () => Math.max(FINGER_MIN, Math.min(FINGER_MAX, +$('fingerSize').value || 1))
+const fingerScale = () => FINGER_BASE * fingerSize()
 function showFingerSize() { $('fingerSizeOut').textContent = `${Math.round(fingerSize() * 100)}%` }
-try { const saved = +localStorage.getItem('score-fingering:size'); if (saved >= 0.5 && saved <= 2) $('fingerSize').value = saved } catch {}
+// a new key: sizes saved against the old 24 px 100% would now draw twice as large
+try { const saved = +localStorage.getItem('score-fingering:fingerSize'); if (saved >= FINGER_MIN && saved <= FINGER_MAX) $('fingerSize').value = saved } catch {}
 showFingerSize()
 $('fingerSize').oninput = () => { showFingerSize(); if (S.plan) renderPage() }
-$('fingerSize').onchange = () => { try { localStorage.setItem('score-fingering:size', String(fingerSize())) } catch {} }
+$('fingerSize').onchange = () => { try { localStorage.setItem('score-fingering:fingerSize', String(fingerSize())) } catch {} }
 $('zoom').oninput = event => { S.zoom = +event.target.value; layoutPage() }
 window.addEventListener('resize', () => { if (document.body.classList.contains('reader')) fitPageZoom(); layoutPage() })
 
@@ -727,7 +762,8 @@ const currentPlanningSettings = () => {
     quarterSeconds:60 / Math.max(30, Math.min(260, +$('tempo').value || 120)),
     showDetails:$('details').checked,
     showFingerings:$('fingerings').checked,
-    fingerSize:fingerSize(),
+    fingerSize:fingerScale(),
+    showRepeats:$('repeats').checked,
     autoInstruments:new Map(S.document?.autoInstruments || []),
     resolvedInstruments:new Set(),
   }
@@ -773,7 +809,10 @@ function composePageState(state, settings, inkMods = null) {
   planPageState(state, settings)
   const canvas = document.createElement('canvas'); canvas.width = state.renderer.W; canvas.height = state.renderer.H
   const context = canvas.getContext('2d'); context.drawImage(state.renderer.src, 0, 0)
-  if (settings.showFingerings !== false) drawFingerings(context, state.items, state.renderer.r, { showDetails:settings.showDetails, size:settings.fingerSize ?? 1 })
+  if (settings.showFingerings !== false) {
+    placeLabels(state.items, settings.fingerSize ?? 2, inkSampler(state.renderer, state.model), { showRepeats:settings.showRepeats, ceiling:labelCeiling(state.model) })
+    drawFingerings(context, state.items, state.renderer.r, { showDetails:settings.showDetails, size:settings.fingerSize ?? 2, showRepeats:settings.showRepeats })
+  }
   const annotations = inkMods && pageInk(S.document, state.index)
   if (annotations?.length) {
     try {
@@ -1402,4 +1441,4 @@ function inkUp(event) {
 ink.addEventListener('pointerup', inkUp)
 ink.addEventListener('pointercancel', inkUp)
 
-window.__scoreFingering = { S, P, INK, load, loadSource, recognize, replan, renderPage, openPage, exportAnnotatedPdf, sourceNoteId, resolvePlanningInstrument, exportInstrumentLabel, startPlayback, stopPlayback, setLoop, clearLoop, setReader, setStand, STAND, turnPage, setInkMode, refreshInk, pageInk, inkChange, inkUndo, commitInkGroup, measureStarts, measureAt, tickOfNote }
+window.__scoreFingering = { S, P, INK, load, loadSource, recognize, replan, renderPage, openPage, exportAnnotatedPdf, sourceNoteId, resolvePlanningInstrument, exportInstrumentLabel, startPlayback, stopPlayback, setLoop, clearLoop, setReader, setStand, STAND, turnPage, setInkMode, refreshInk, pageInk, inkChange, inkUndo, commitInkGroup, measureStarts, measureAt, tickOfNote, inkSampler }

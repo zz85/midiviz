@@ -44,8 +44,11 @@ popup) to start there; tempo, ×0.5–×1.5 speed and the metronome (bar-aware c
 by dotted beat) change while playing. The sounding noteheads are ringed, **follow** keeps the
 playing staff in view, and **turn pages** carries on onto the next PDF page with music at the end
 of a page. In Reader, Space plays or stops, ← → / Page Up / Page Down turn pages and M toggles the
-metronome. **fingerings** hides the pencil numbers for plain reading, and **Size** (50–200%, remembered)
-scales them; larger numbers grow away from their notes and chord stacks spread apart.
+metronome. **fingerings** hides the pencil numbers for plain reading, and **Size** (25–150%, remembered;
+100% is 48 px on the page) scales them; larger numbers grow away from their notes, and a double stop's numbers keep the
+same small gap. Numbers step aside from printed text and markings. A finger is written once
+until it changes, and again on a new line, after a rest or after six beats; **repeated fingers**
+writes every one.
 
 **🎼 Stand** is for a laptop turned on its side as a music stand: the whole app is drawn a quarter
 turn round (`stand.js`), so the page stands upright and fits the tall screen, and it goes full
