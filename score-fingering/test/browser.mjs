@@ -28,10 +28,10 @@ const address = server.address()
 if (address.address !== '127.0.0.1') throw new Error(`test server exposed on ${address.address}`)
 const base = `http://127.0.0.1:${address.port}/${site}`
 
+const kirocrew = `${process.env.HOME}/.toolbox/tools/kirocrew`
 const PW = process.env.PLAYWRIGHT || [
   '/tmp/pw/node_modules/playwright-core/index.mjs',
-  `${process.env.HOME}/.toolbox/tools/kirocrew/0.9.0.4/browser/cli/node_modules/playwright-core/index.mjs`,
-  `${process.env.HOME}/.toolbox/tools/kirocrew/0.8.0.9/browser/cli/node_modules/playwright-core/index.mjs`,
+  ...(fs.existsSync(kirocrew) ? fs.readdirSync(kirocrew).sort().reverse().map(version => `${kirocrew}/${version}/browser/cli/node_modules/playwright-core/index.mjs`) : []),
 ].find(candidate => fs.existsSync(candidate))
 const CHROME = process.env.CHROME || [
   `${process.env.HOME}/.cache/ms-playwright/chromium_headless_shell-1232/chrome-linux/headless_shell`,
@@ -77,6 +77,14 @@ const loadImageSample = target => target.evaluate(async () => {
     return { defaultHidden, extra:shown - before, restored:restored === before }
   })
   check(detailToggle.defaultHidden && detailToggle.extra > 100 && detailToggle.restored, `string/position details are opt-in and redraw beside notes (${detailToggle.extra} added pixels)`)
+  const sizeInk = await page.evaluate(() => {
+    const control = document.getElementById('fingerSize'), canvas = document.getElementById('overlay'), context = canvas.getContext('2d')
+    const ink = () => { const data = context.getImageData(0, 0, canvas.width, canvas.height).data; let count = 0; for (let i = 3; i < data.length; i += 4) if (data[i]) count++; return count }
+    const set = v => { control.value = v; control.dispatchEvent(new Event('input')); return ink() }
+    const normal = set('1'), big = set('2'), small = set('0.5'), label = document.getElementById('fingerSizeOut').textContent
+    set('1'); return { normal, big, small, label }
+  })
+  check(sizeInk.big > sizeInk.normal * 2 && sizeInk.small < sizeInk.normal * 0.6 && sizeInk.label === '50%', `the size slider redraws the finger numbers larger and smaller (${sizeInk.small} / ${sizeInk.normal} / ${sizeInk.big} px)`)
   await page.locator('#alternatives button').nth(1).focus(); await page.keyboard.press('Enter')
   check(await page.evaluate(() => __scoreFingering.S.suggestion === 1), 'whole-path alternative can be selected')
   check(await page.evaluate(() => document.activeElement?.closest('#alternatives') != null), 'alternative selection preserves keyboard focus')
@@ -340,6 +348,63 @@ const loadImageSample = target => target.evaluate(async () => {
   await reader.check('#fingerings')
   check(readerErrors.length === 0, `no reader browser errors${readerErrors.length ? ': ' + readerErrors.join(' | ') : ''}`)
   await readerContext.close()
+
+  // 🎼 Stand: the app turned a quarter for a laptop on its side; taps and scrolls turn pages,
+  // the next page is read ahead, and ink lands where it is written on the rotated page.
+  const standContext = await browser.newContext({ viewport:{ width:1100, height:800 } })
+  const stand = await standContext.newPage(), standErrors = []
+  stand.on('pageerror', error => standErrors.push(error.message))
+  await stand.goto(`${base}/046_score_fingering.html`)
+  await stand.click('#sample')
+  const standReady = index => stand.waitForFunction(index => __scoreFingering.S.activePageState?.index === index && __scoreFingering.S.activePageState?.status === 'ready' && getComputedStyle(document.getElementById('busy')).display === 'none', index, { timeout:60000 })
+  await standReady(1)
+  await stand.click('#standMode')
+  const frame = await stand.evaluate(() => {
+    const app = document.getElementById('app'), r = app.getBoundingClientRect(), wrap = document.getElementById('wrap'), stage = document.getElementById('stage')
+    return { w:app.offsetWidth, h:app.offsetHeight, sw:Math.round(r.width), sh:Math.round(r.height), transform:getComputedStyle(app).transform, fits:stage.offsetHeight <= wrap.clientHeight && stage.offsetWidth <= wrap.clientWidth, dir:__scoreFingering.STAND.dir }
+  })
+  check(frame.dir === 1 && frame.w === 800 && frame.h === 1100 && frame.sw === 1100 && frame.sh === 800 && frame.transform !== 'none' && frame.fits, `stand mode turns the app a quarter and fits the whole page (${frame.w}×${frame.h} app on a 1100×800 screen)`)
+  // where a point of a canvas is on the screen, from its rotated screen box alone
+  const onScreen = (id, fx, fy) => stand.evaluate(({ id, fx, fy }) => {
+    const r = document.getElementById(id).getBoundingClientRect(), dir = __scoreFingering.STAND.dir
+    return dir > 0 ? { x:r.right - fy * r.width, y:r.top + fx * r.height } : { x:r.left + fy * r.width, y:r.bottom - fx * r.height }
+  }, { id, fx, fy })
+  let at = await onScreen('overlay', 0.8, 0.5); await stand.mouse.click(at.x, at.y); await standReady(2)
+  check(true, 'a tap on the right of the rotated page turns to the next page')
+  at = await onScreen('overlay', 0.15, 0.5); await stand.mouse.click(at.x, at.y); await standReady(1)
+  check(true, 'a tap on the left of the page goes back')
+  at = await onScreen('overlay', 0.5, 0.5); await stand.mouse.move(at.x, at.y); await stand.mouse.wheel(0, 400); await standReady(2)
+  check(true, 'a scroll turns the page')
+  await stand.waitForFunction(() => { const doc = __scoreFingering.S.document; return !doc.prefetch && doc.pages.get(3)?.status === 'ready' }, null, { timeout:60000 })
+  const ahead = await stand.evaluate(() => { window.__aheadModel = __scoreFingering.S.document.pages.get(3).model; return true })
+  await stand.keyboard.press('ArrowDown'); await standReady(3)
+  check(ahead && await stand.evaluate(() => __scoreFingering.S.model === window.__aheadModel), 'the next page is read ahead and shown at once (↓ as a page-turner pedal sends)')
+  // ink on the rotated page lands where the pen is
+  await stand.click('#inkMode'); await stand.waitForFunction(() => __scoreFingering.INK.irc, null, { timeout:10000 })
+  const target = await stand.evaluate(() => {
+    const { S } = __scoreFingering, n = S.model.staves[2].notes[3], r = S.renderer.r, c = document.getElementById('ink')
+    return { fx:n.x * r / c.width, fy:(n.y - 2.2 * S.model.space) * r / c.height, x:n.x, y:n.y - 2.2 * S.model.space, sp:S.model.space }
+  })
+  const standPen = await onScreen('ink', target.fx, target.fy)
+  await stand.mouse.move(standPen.x, standPen.y); await stand.mouse.down()
+  for (let i = 1; i <= 8; i++) await stand.mouse.move(standPen.x - i, standPen.y + 2 * i) // along the page's x in the cw frame
+  await stand.mouse.up()
+  await stand.waitForFunction(() => __scoreFingering.pageInk().length === 1, null, { timeout:8000 })
+  const landed = await stand.evaluate(() => { const I = __scoreFingering.INK, a = __scoreFingering.pageInk()[0]; return { kind:a.anchor.kind, first:I.mods.resolveAnnotation(I.surface, a, I.items).pieces[0].points[0] } })
+  const off = Math.hypot(landed.first.x - target.x, landed.first.y - target.y)
+  check(['event', 'span'].includes(landed.kind) && off < 0.5 * target.sp, `ink written on the rotated page sits where it was written (${off.toFixed(1)} px off, attached to a ${landed.kind})`)
+  await stand.click('#inkMode')
+  const inkBefore = await stand.evaluate(() => { const c = document.getElementById('ink'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n })
+  await stand.click('#standFlip')
+  const flipped = await stand.evaluate(() => ({ dir:__scoreFingering.STAND.dir, ccw:document.body.classList.contains('ccw') }))
+  const inkAfter = await stand.evaluate(() => { const c = document.getElementById('ink'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n })
+  check(flipped.dir === -1 && flipped.ccw && inkBefore > 20 && inkAfter === inkBefore, 'flip turns the page the other way; the ink turns with it')
+  at = await onScreen('overlay', 0.8, 0.5); await stand.mouse.click(at.x, at.y); await standReady(4)
+  check(true, 'taps still turn pages after a flip')
+  await stand.click('#standMode')
+  check(await stand.evaluate(() => !__scoreFingering.STAND.dir && getComputedStyle(document.getElementById('app')).display === 'contents' && !document.body.classList.contains('reader')), 'leaving stand mode restores the normal layout')
+  check(standErrors.length === 0, `no stand browser errors${standErrors.length ? ': ' + standErrors.join(' | ') : ''}`)
+  await standContext.close()
   // Loading a replacement closes old note closures, and a delayed older request cannot win.
   await page.focus('#overlay'); await page.keyboard.press('Enter'); await page.waitForSelector('#pop', { state:'visible' })
   const reloadRevision = await page.evaluate(() => __scoreFingering.S.planRevision)

@@ -165,16 +165,17 @@ export function annotationItems(plan, suggestionIndex = 0, { instrument = plan.i
     const x = group.reduce((sum, item) => sum + item.source.x, 0) / group.length
     const nearest = Math.min(...group.map(item => item.labelY))
     const top = Math.max(18, nearest - (group.length - 1) * 26)
-    group.forEach((item, index) => { item.labelX = x; item.labelY = top + index * 26 })
+    group.forEach((item, index) => { item.labelX = x; item.labelY = top + index * 26; item.stackIndex = group.length - 1 - index })
   }
   return items
 }
 
 /** Nearest annotation in normalized ScoreShift coordinates. */
-export function hitAnnotation(items, x, y, radius = 16) {
+export function hitAnnotation(items, x, y, radius = 16, labelAt = item => ({ x:item.labelX, y:item.labelY })) {
   let best = null, distance = radius
   for (const item of items) {
-    const d = Math.min(Math.hypot(item.x - x, item.y - y), Math.hypot(item.labelX - x, item.labelY - y))
+    const label = labelAt(item)
+    const d = Math.min(Math.hypot(item.x - x, item.y - y), Math.hypot(label.x - x, label.y - y))
     if (d <= distance) { distance = d; best = item }
   }
   return best

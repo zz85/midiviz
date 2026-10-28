@@ -44,7 +44,18 @@ popup) to start there; tempo, ×0.5–×1.5 speed and the metronome (bar-aware c
 by dotted beat) change while playing. The sounding noteheads are ringed, **follow** keeps the
 playing staff in view, and **turn pages** carries on onto the next PDF page with music at the end
 of a page. In Reader, Space plays or stops, ← → / Page Up / Page Down turn pages and M toggles the
-metronome. **fingerings** hides the pencil numbers for plain reading.
+metronome. **fingerings** hides the pencil numbers for plain reading, and **Size** (50–200%, remembered)
+scales them; larger numbers grow away from their notes and chord stacks spread apart.
+
+**🎼 Stand** is for a laptop turned on its side as a music stand: the whole app is drawn a quarter
+turn round (`stand.js`), so the page stands upright and fits the tall screen, and it goes full
+screen. ⟲ flip turns it the other way (the keyboard on the left or right; remembered, or open with
+`?stand=left|right`). A tap on the right two thirds of the page, a scroll with nothing left to
+scroll, or → / ↓ / Page Down (what Bluetooth page-turner pedals send) goes to the next page; the
+left third, ← / ↑ / Page Up go back. One page turns per scroll gesture, inertia included. The next
+PDF page is read in the background while one is shown (also in Reader), so a turn is immediate.
+Pointer, wheel and popup positions are mapped into the rotated frame, so ink written on the turned
+page lands where the pen is, and playback, loops and the metronome work as usual.
 
 **Sound.** `sound.js` plays each note from the University of Iowa arco recordings #034 already
 ships (`strings/sound/samples/iowa`, the mezzo-forte take of each string, about 3 MB, loaded on the
@@ -72,7 +83,8 @@ cancels part way (a palm, a scroll gesture) keeps what it wrote; ink that is not
 reported rather than silently dropped. Ink is kept per file
 (name and size) and page in this browser's localStorage and drawn into the PNG and PDF exports.
 `reader.js` holds the pure parts: bar start ticks, the bar under a tap, the sounding heads, storage;
-`sound.js` the string voice and which recording a note uses.
+`sound.js` the string voice and which recording a note uses; `stand.js` the rotated-frame geometry
+and the one-turn-per-gesture wheel rule.
 
 ## ScoreShift
 

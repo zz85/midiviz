@@ -2,10 +2,11 @@ import { buildScore } from '../../random-sketches/vibes/scoreshift/score.js'
 import { Renderer } from '../../random-sketches/vibes/scoreshift/render.js'
 import { interpret, yOfP, lineY } from '../../random-sketches/vibes/scoreshift/omr.js'
 import { planFingering, annotationItems, hitAnnotation, sourceNoteId, detectViolinViola } from './adapter.js'
-import { drawFingerings, drawRecognition } from './overlay.js'
+import { drawFingerings, drawRecognition, labelAt } from './overlay.js'
 import { INSTRUMENTS, solveFingering } from '../strings/fingering.js'
 import { createScoreDocument, pageState, cachePage, pageFileStem, trimPageRecords, precedingPageFifths, invalidatePageKeyEvidence } from './document.js'
 import { measureStarts, measureAt, soundingHeads, annotationKey, loadAnnotations, saveAnnotations } from './reader.js'
+import { toLocal, localRect, localDelta, wheelTurner } from './stand.js'
 
 const $ = id => document.getElementById(id)
 const page = $('page'), overlay = $('overlay'), pageCtx = page.getContext('2d'), overlayCtx = overlay.getContext('2d')
@@ -23,7 +24,16 @@ const S = { document:null, activePageState:null, model:null, image:null, rendere
 const P = { player:null, manual:false, turning:false, state:null, headsKey:'' }
 const INK = { pending:null, pendingGroups:[], on:false, color:'#c2255c', width:0.2, erase:false, penSeen:false, undo:[], redo:[], sel:null, group:null, ptrs:new Map(), mods:null, failed:false, irc:null, items:[], surface:null, model:null }
 let loadRequest = 0
-const activeRecognitions = new Set(), activePdfRenders = new Set(), busyOwners = new Set()
+const activeRecognitions = new Set(), backgroundRecognitions = new Set(), activePdfRenders = new Set(), busyOwners = new Set()
+// Stand: the app drawn a quarter turn round (stand.js); dir 1 clockwise, -1 counter-clockwise, 0 off
+const STAND = { dir:0, fullscreen:false }
+/** An element's box in the app's own frame (the rotated frame in Stand). */
+function appBox(el) { const r = el.getBoundingClientRect(); return STAND.dir ? localRect(r, STAND.dir, innerWidth, innerHeight) : r }
+/** A pointer event's position on a canvas, in canvas pixels, whatever the rotation. */
+function canvasPoint(event, canvas) {
+  const box = appBox(canvas), p = toLocal(event.clientX, event.clientY, STAND.dir, innerWidth, innerHeight)
+  return { x:(p.u - box.left) * canvas.width / box.width, y:(p.v - box.top) * canvas.height / box.height }
+}
 
 const escapeHtml = value => String(value).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]))
 const setStatus = html => { $('status').innerHTML = html }
@@ -66,7 +76,7 @@ function recordCorrection(id, patch) {
 }
 
 function closeDocument() {
-  cancelRecognitions(); cancelPdfRenders()
+  cancelRecognitions(); cancelPdfRenders(); for (const cancel of [...backgroundRecognitions]) cancel()
   S.document?.thumbnailObserver?.disconnect()
   S.document?.pdfPool?.destroy()
   S.document = null; S.activePageState = null
@@ -144,7 +154,8 @@ function invalidatePagePayload(state) {
 }
 
 
-async function recognize(source, { probe=false, request=null, fifths=null } = {}) {
+async function recognize(source, { probe=false, request=null, fifths=null, background=false } = {}) {
+  const owners = background ? backgroundRecognitions : activeRecognitions
   const run = async () => {
     const bitmap = source instanceof Blob ? await createImageBitmap(source, { imageOrientation:'from-image' }) : source
     const displayScale = Math.min(1, 3600 / Math.max(bitmap.width, bitmap.height))
@@ -166,11 +177,11 @@ async function recognize(source, { probe=false, request=null, fifths=null } = {}
       const finish = (callback, value) => {
         if (settled) return
         settled = true; clearTimeout(timeout); recognizer.terminate()
-        activeRecognitions.delete(cancel)
+        owners.delete(cancel)
         callback(value)
       }
       const cancel = () => finish(reject, new Error('Recognition superseded by a newer image'))
-      activeRecognitions.add(cancel)
+      owners.add(cancel)
       timeout = setTimeout(() => finish(reject, new Error('Recognition timed out')), 30000)
       recognizer.onmessage = event => event.data.error ? finish(reject, new Error(event.data.error)) : finish(resolve, event.data)
       recognizer.onerror = event => finish(reject, new Error(event.message || 'Recognition worker failed to start'))
@@ -338,6 +349,7 @@ async function installReadyPage(state, { fit=false } = {}) {
   if (S.document?.kind === 'pdf') S.document.page = state.index
   if (fit) { fitPageZoom(); layoutPage() }
   pageUi(); trimPageCache(S.document, state.index)
+  setTimeout(prefetchNext, 400)
   return true
 }
 
@@ -355,6 +367,8 @@ async function openPage(index, { request=null, fit=false } = {}) {
   doc.navigationRequest = ownRequest
   setBusy(true, `Reading page ${index}…`, owner)
   doc.page = index; pageUi()
+  // the page being read in the background: wait for it rather than reading it twice
+  if (doc.prefetch?.index === index) { await doc.prefetch.job; if (S.document !== doc || ownRequest !== loadRequest) { setBusy(false, '', owner); return false } }
   const state = pageState(doc, index), recognizedFifths = precedingPageFifths(doc, index)
   try {
     if (state.status === 'ready' && state.recognizedFifths === recognizedFifths) return await installReadyPage(state, { fit })
@@ -491,6 +505,8 @@ function fitPageZoom() {
   if (!page.width) return
   const available = Math.max(260, $('wrap').clientWidth - (document.body.classList.contains('reader') ? 14 : 32))
   S.zoom = Math.max(0.1, Math.min(1, available / page.width))
+  // Stand: the whole page in view, like a part on a stand
+  if (STAND.dir) S.zoom = Math.max(0.1, Math.min(S.zoom, (Math.max(200, $('wrap').clientHeight - 12)) / page.height))
   $('zoom').value = S.zoom
 }
 
@@ -521,8 +537,9 @@ function layoutPage() {
 
 function scrollAnnotationIntoView(item) {
   const wrap = $('wrap'), stage = $('stage')
-  const x = stage.offsetLeft + item.labelX * S.renderer.r * S.zoom
-  const y = stage.offsetTop + item.labelY * S.renderer.r * S.zoom
+  const label = labelAt(item, fingerSize())
+  const x = stage.offsetLeft + label.x * S.renderer.r * S.zoom
+  const y = stage.offsetTop + label.y * S.renderer.r * S.zoom
   const left = Math.max(0, x - wrap.clientWidth / 2), top = Math.max(0, y - wrap.clientHeight / 2)
   wrap.scrollTo({ left, top, behavior:'instant' })
 }
@@ -535,7 +552,7 @@ function renderPage() {
   S.items = annotationItems(S.plan, S.suggestion, { instrument:S.plan.instrument })
   S.keyboardIndex = Math.max(0, Math.min(S.keyboardIndex, Math.max(0, S.items.length - 1)))
   if ($('recognition').checked) drawRecognition(overlayCtx, S.model, S.renderer.r, S.score, S.items.find(item => item.id === S.selectedId)?.source)
-  if ($('fingerings').checked) drawFingerings(overlayCtx, S.items, S.renderer.r, { selectedId:S.selectedId, showDetails:$('details').checked })
+  if ($('fingerings').checked) drawFingerings(overlayCtx, S.items, S.renderer.r, { selectedId:S.selectedId, showDetails:$('details').checked, size:fingerSize() })
   layoutPage(); syncCurrentPage()
 }
 
@@ -553,9 +570,10 @@ function updateStatus() {
 function placePopup(event) {
   const pop = $('pop')
   pop.style.visibility = 'hidden'; pop.style.display = 'block'; pop.style.left = '8px'; pop.style.top = '8px'
-  const box = pop.getBoundingClientRect()
-  const left = Math.max(8, Math.min(innerWidth - box.width - 8, event.clientX + 10))
-  const top = Math.max(8, Math.min(innerHeight - box.height - 8, event.clientY + 10))
+  const at = toLocal(event.clientX, event.clientY, STAND.dir, innerWidth, innerHeight)
+  const W = STAND.dir ? $('app').offsetWidth : innerWidth, H = STAND.dir ? $('app').offsetHeight : innerHeight
+  const left = Math.max(8, Math.min(W - pop.offsetWidth - 8, at.u + 10))
+  const top = Math.max(8, Math.min(H - pop.offsetHeight - 8, at.v + 10))
   pop.style.left = `${left}px`; pop.style.top = `${top}px`; pop.style.visibility = 'visible'
   pop.querySelector('button:not(:disabled)')?.focus()
 }
@@ -628,10 +646,11 @@ function resetDocumentAlternatives() {
 }
 
 overlay.addEventListener('click', event => {
+  const pt = canvasPoint(event, overlay)
+  // Stand: a tap on the left third goes back a page, anywhere else forward
+  if (STAND.dir && !P.picking) { turnPage(pt.x < overlay.width / 3 ? -1 : 1); return }
   if (!S.renderer) return
-  const rect = overlay.getBoundingClientRect()
-  const x = (event.clientX - rect.left) * overlay.width / rect.width / S.renderer.r
-  const y = (event.clientY - rect.top) * overlay.height / rect.height / S.renderer.r
+  const x = pt.x / S.renderer.r, y = pt.y / S.renderer.r
   if (pickLoopBar(x, y)) return
   // Reader: a tap plays from the bar under it (a bar outside the loop ends the loop)
   if (document.body.classList.contains('reader')) {
@@ -640,7 +659,7 @@ overlay.addEventListener('click', event => {
     startPlayback(measureStarts(S.score).get(measure)); return
   }
   if (!S.items.length) return
-  const item = hitAnnotation(S.items, x, y, 18)
+  const size = fingerSize(), item = hitAnnotation(S.items, x, y, 18 * Math.max(1, size), it => labelAt(it, size))
   if (item) showPopup(item, event); else hidePopup()
 })
 
@@ -670,6 +689,13 @@ $('tempo').onchange = () => { if (P.player?.playing) P.player.setRate(currentTem
 $('recognition').onchange = renderPage
 $('details').onchange = renderPage
 $('fingerings').onchange = renderPage
+// fingering size: 50-200% of the 24 px pencil numeral, remembered
+const fingerSize = () => Math.max(0.5, Math.min(2, +$('fingerSize').value || 1))
+function showFingerSize() { $('fingerSizeOut').textContent = `${Math.round(fingerSize() * 100)}%` }
+try { const saved = +localStorage.getItem('score-fingering:size'); if (saved >= 0.5 && saved <= 2) $('fingerSize').value = saved } catch {}
+showFingerSize()
+$('fingerSize').oninput = () => { showFingerSize(); if (S.plan) renderPage() }
+$('fingerSize').onchange = () => { try { localStorage.setItem('score-fingering:size', String(fingerSize())) } catch {} }
 $('zoom').oninput = event => { S.zoom = +event.target.value; layoutPage() }
 window.addEventListener('resize', () => { if (document.body.classList.contains('reader')) fitPageZoom(); layoutPage() })
 
@@ -701,6 +727,7 @@ const currentPlanningSettings = () => {
     quarterSeconds:60 / Math.max(30, Math.min(260, +$('tempo').value || 120)),
     showDetails:$('details').checked,
     showFingerings:$('fingerings').checked,
+    fingerSize:fingerSize(),
     autoInstruments:new Map(S.document?.autoInstruments || []),
     resolvedInstruments:new Set(),
   }
@@ -746,7 +773,7 @@ function composePageState(state, settings, inkMods = null) {
   planPageState(state, settings)
   const canvas = document.createElement('canvas'); canvas.width = state.renderer.W; canvas.height = state.renderer.H
   const context = canvas.getContext('2d'); context.drawImage(state.renderer.src, 0, 0)
-  if (settings.showFingerings !== false) drawFingerings(context, state.items, state.renderer.r, { showDetails:settings.showDetails })
+  if (settings.showFingerings !== false) drawFingerings(context, state.items, state.renderer.r, { showDetails:settings.showDetails, size:settings.fingerSize ?? 1 })
   const annotations = inkMods && pageInk(S.document, state.index)
   if (annotations?.length) {
     try {
@@ -1002,15 +1029,16 @@ function drawPlayhead(events, tick) {
 }
 /** Scroll so a staff stays in view (a third of the way down), whichever box scrolls. */
 function revealStaff(staff, x) {
-  const r = S.renderer.r * S.zoom, space = (S.model.space || 16) * r, rect = $('stage').getBoundingClientRect()
+  const r = S.renderer.r * S.zoom, space = (S.model.space || 16) * r, rect = appBox($('stage'))
   const top = rect.top + lineY(staff, 0, x) * r - 2.5 * space, bottom = rect.top + lineY(staff, 4, x) * r + 2.5 * space
-  const viewTop = (document.querySelector('header')?.getBoundingClientRect().bottom || 0), viewBottom = Math.min(innerHeight, $('transport').hidden ? innerHeight : $('transport').getBoundingClientRect().top)
+  const H = STAND.dir ? $('app').offsetHeight : innerHeight
+  const viewTop = (document.querySelector('header') ? appBox(document.querySelector('header')).bottom : 0), viewBottom = Math.min(H, $('transport').hidden ? H : appBox($('transport')).top)
   const wrap = $('wrap')
   if (top < viewTop || bottom > viewBottom) {
     const delta = top - (viewTop + (viewBottom - viewTop) / 3)
     if (wrap.scrollHeight > wrap.clientHeight + 1) wrap.scrollBy({ top:delta, behavior:'smooth' }); else window.scrollBy({ top:delta, behavior:'smooth' })
   }
-  const left = rect.left + x * r, wrapRect = wrap.getBoundingClientRect()
+  const left = rect.left + x * r, wrapRect = appBox(wrap)
   if (wrap.scrollWidth > wrap.clientWidth + 1 && (left < wrapRect.left + 20 || left > wrapRect.right - 20)) wrap.scrollBy({ left:left - (wrapRect.left + wrapRect.width / 3), behavior:'smooth' })
 }
 /** The bar a recognized note is in. */
@@ -1070,7 +1098,8 @@ $('sound').onchange = () => { if (P.player?.playing) startPlayback(Math.floor(P.
 /** The previous / next PDF page, shown from its top. */
 async function turnPage(step) {
   const doc = S.document; if (doc?.kind !== 'pdf') return
-  const index = doc.page + step; if (index < 1 || index > doc.pageCount) return
+  const index = doc.page + step
+  if (index < 1 || index > doc.pageCount) { hint(index < 1 ? 'This is the first page.' : 'This is the last page.', 2000); return }
   await openPage(index, { fit:true })
   if (S.document === doc && S.activePageState?.index === index) { window.scrollTo({ top:0 }); $('wrap').scrollTo({ top:0, left:0 }) }
 }
@@ -1085,13 +1114,90 @@ function setReader(on) {
   if (page.width) { fitPageZoom(); layoutPage() }
 }
 $('readerMode').onclick = () => setReader(!readerOn())
+
+// ---------- 🎼 Stand: a laptop turned on its side as a music stand ----------
+// The app is drawn a quarter turn round, so the page stands upright and fills the tall screen.
+// A tap on the right two thirds of the page (or a scroll, or → / ↓ / Page Down, as a page-turner
+// pedal sends) goes to the next page; the left third, ← / ↑ / Page Up go back. The next page is
+// read in the background, so it is ready when it is needed. Ink, loops and playback work as usual.
+const STAND_KEY = 'score-fingering:stand'
+function setStand(dir) {
+  const was = STAND.dir
+  STAND.dir = dir
+  document.body.classList.toggle('stand', !!dir); document.documentElement.classList.toggle('stand-root', !!dir)
+  document.body.classList.toggle('cw', dir > 0); document.body.classList.toggle('ccw', dir < 0)
+  $('standMode').setAttribute('aria-pressed', !!dir); $('standFlip').hidden = !dir
+  if (dir) { try { localStorage.setItem(STAND_KEY, dir > 0 ? 'cw' : 'ccw') } catch {} }
+  if (dir && !readerOn()) { STAND.reader = true; setReader(true) } else if (!dir && STAND.reader) { STAND.reader = false; setReader(false) }
+  hidePopup(false)
+  if (page.width) { fitPageZoom(); layoutPage(); $('wrap').scrollTo({ top:0, left:0 }) }
+  if (dir && !was) {
+    hint(`Tap the right of the page, scroll, or press → for the next page; the left of the page or ← to go back. Keyboard on the ${dir > 0 ? 'left' : 'right'}? Press ⟲ flip.`, 9000)
+    prefetchNext()
+  }
+}
+const storedStand = () => { try { return localStorage.getItem(STAND_KEY) === 'ccw' ? -1 : 1 } catch { return 1 } }
+$('standMode').onclick = async () => {
+  if (STAND.dir) {
+    setStand(0)
+    if (STAND.fullscreen && document.fullscreenElement) document.exitFullscreen?.().catch(() => {})
+    STAND.fullscreen = false
+    return
+  }
+  if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+    try { await document.documentElement.requestFullscreen(); STAND.fullscreen = true } catch {}
+  }
+  setStand(storedStand())
+}
+$('standFlip').onclick = () => setStand(-STAND.dir)
+addEventListener('resize', () => { if (STAND.dir && page.width) { fitPageZoom(); layoutPage() } })
+// a scroll that has nothing left to move turns the page (mapped to the rotated page's axes)
+const standWheel = wheelTurner()
+$('wrap').addEventListener('wheel', event => {
+  if (!STAND.dir) return
+  event.preventDefault()
+  const k = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? innerHeight : 1
+  const { du, dv } = localDelta(event.deltaX * k, event.deltaY * k, STAND.dir)
+  const wrap = $('wrap'), before = wrap.scrollLeft + wrap.scrollTop
+  wrap.scrollLeft += du; wrap.scrollTop += dv
+  const moved = Math.abs(wrap.scrollLeft + wrap.scrollTop - before) > 0.5
+  const step = standWheel(moved ? 0 : Math.abs(dv) >= Math.abs(du) ? dv : du, performance.now())
+  if (step) turnPage(step)
+}, { passive:false })
+const standParam = new URLSearchParams(location.search).get('stand')
+if (standParam) setStand(/^(right|ccw|-1)$/.test(standParam) ? -1 : 1)
+
+// The next PDF page, read in the background while this one is shown (Reader and Stand), so a page
+// turn does not wait for recognition.
+function prefetchNext() {
+  const doc = S.document
+  if (doc?.kind !== 'pdf' || !(STAND.dir || readerOn()) || !S.activePageState) return
+  const index = S.activePageState.index + 1
+  if (index > doc.pageCount || doc.prefetch) return
+  const state = pageState(doc, index)
+  if (state.status !== 'empty') return
+  const fifths = precedingPageFifths(doc, index)
+  const job = (async () => {
+    const rendered = await doc.pdfPool.render(index, 3000)
+    if (S.document !== doc || state.status !== 'empty') return
+    const probe = await recognize(rendered.canvas, { probe:true, background:true })
+    if (S.document !== doc || state.status !== 'empty') return
+    if (!probe.staves) { cachePage(doc, index, { status:'nonmusic', image:rendered.canvas, error:null, widthPt:rendered.widthPt, heightPt:rendered.heightPt, lastUsed:performance.now() }); return }
+    const { model, image } = await recognize(rendered.canvas, { fifths, background:true })
+    if (S.document !== doc || state.status !== 'empty' || precedingPageFifths(doc, index) !== fifths) return
+    applyPageCorrections(model, state)
+    if (!model.staves.length || !model.notes.length) return
+    cachePage(doc, index, { status:'ready', model, image, renderer:new Renderer(image, model), score:buildScore(model), error:null, recognizedFifths:fifths, widthPt:rendered.widthPt, heightPt:rendered.heightPt, lastUsed:performance.now() })
+  })().catch(() => {}).finally(() => { if (doc.prefetch?.index === index) doc.prefetch = null })
+  doc.prefetch = { index, job }
+}
 $('fullscreen').onclick = () => document.fullscreenElement ? document.exitFullscreen?.() : document.documentElement.requestFullscreen?.().catch(() => {})
 document.addEventListener('fullscreenchange', () => { if (page.width) { fitPageZoom(); layoutPage() } })
 document.addEventListener('keydown', event => {
   if (!readerOn() || event.ctrlKey || event.metaKey || event.altKey || event.target.closest?.('input,select,textarea,#pop')) return
   if (event.key === ' ') { event.preventDefault(); $('play').click() }
-  else if (event.key === 'ArrowRight' || event.key === 'PageDown') { event.preventDefault(); turnPage(1) }
-  else if (event.key === 'ArrowLeft' || event.key === 'PageUp') { event.preventDefault(); turnPage(-1) }
+  else if (event.key === 'ArrowRight' || event.key === 'PageDown' || (STAND.dir && event.key === 'ArrowDown')) { event.preventDefault(); turnPage(1) }
+  else if (event.key === 'ArrowLeft' || event.key === 'PageUp' || (STAND.dir && event.key === 'ArrowUp')) { event.preventDefault(); turnPage(-1) }
   else if (event.key === 'm' || event.key === 'M') { $('metronome').click() }
 })
 try { if (localStorage.getItem('score-fingering:reader') || new URLSearchParams(location.search).has('reader')) setReader(true) } catch {}
@@ -1218,8 +1324,8 @@ $('inkBar').addEventListener('click', event => {
   inkBar()
 })
 function inkPoint(event) {
-  const rect = ink.getBoundingClientRect(), r = S.renderer.r
-  return { x:(event.clientX - rect.left) * ink.width / rect.width / r, y:(event.clientY - rect.top) * ink.height / rect.height / r }
+  const p = canvasPoint(event, ink), r = S.renderer.r
+  return { x:p.x / r, y:p.y / r }
 }
 function eraseInkAt(pt) {
   const hit = INK.irc && INK.mods.hitAnnotation(INK.surface, pageInk(), INK.items, pt, 0.9)
@@ -1249,7 +1355,7 @@ ink.addEventListener('pointerdown', event => {
   if (!INK.on || !S.model) return
   if (event.pointerType === 'pen') INK.penSeen = true
   const rec = { type:event.pointerType, x0:event.clientX, y0:event.clientY, pts:[], moved:0, ink:false,
-    scroll:event.pointerType === 'touch' && INK.penSeen, erase:INK.erase || (event.pointerType === 'pen' && (event.buttons & 32)), sx:scrollX, sy:scrollY, wx:$('wrap').scrollLeft }
+    scroll:event.pointerType === 'touch' && INK.penSeen, erase:INK.erase || (event.pointerType === 'pen' && (event.buttons & 32)), sx:scrollX, sy:scrollY, wx:$('wrap').scrollLeft, wy:$('wrap').scrollTop }
   // a second finger: stop writing, scroll instead
   const touches = [...INK.ptrs.values()].filter(p => p.type === 'touch')
   if (event.pointerType === 'touch' && touches.length) { for (const t of touches) { t.ink = false; t.scroll = true; t.pts = [] } rec.scroll = true }
@@ -1266,7 +1372,10 @@ ink.addEventListener('pointerdown', event => {
 ink.addEventListener('pointermove', event => {
   const rec = INK.ptrs.get(event.pointerId); if (!rec) return
   rec.moved = Math.max(rec.moved, Math.hypot(event.clientX - rec.x0, event.clientY - rec.y0))
-  if (rec.scroll) { window.scrollTo(scrollX, rec.sy - (event.clientY - rec.y0)); $('wrap').scrollLeft = rec.wx - (event.clientX - rec.x0); return }
+  if (rec.scroll) {
+    if (STAND.dir) { const d = localDelta(event.clientX - rec.x0, event.clientY - rec.y0, STAND.dir); $('wrap').scrollLeft = rec.wx - d.du; $('wrap').scrollTop = rec.wy - d.dv; return }
+    window.scrollTo(scrollX, rec.sy - (event.clientY - rec.y0)); $('wrap').scrollLeft = rec.wx - (event.clientX - rec.x0); return
+  }
   if (rec.erase) { eraseInkAt(inkPoint(event)); return }
   if (!rec.ink) return
   for (const sample of event.getCoalescedEvents ? event.getCoalescedEvents() : [event]) {
@@ -1293,4 +1402,4 @@ function inkUp(event) {
 ink.addEventListener('pointerup', inkUp)
 ink.addEventListener('pointercancel', inkUp)
 
-window.__scoreFingering = { S, P, INK, load, loadSource, recognize, replan, renderPage, openPage, exportAnnotatedPdf, sourceNoteId, resolvePlanningInstrument, exportInstrumentLabel, startPlayback, stopPlayback, setLoop, clearLoop, setReader, setInkMode, refreshInk, pageInk, inkChange, inkUndo, commitInkGroup, measureStarts, measureAt, tickOfNote }
+window.__scoreFingering = { S, P, INK, load, loadSource, recognize, replan, renderPage, openPage, exportAnnotatedPdf, sourceNoteId, resolvePlanningInstrument, exportInstrumentLabel, startPlayback, stopPlayback, setLoop, clearLoop, setReader, setStand, STAND, turnPage, setInkMode, refreshInk, pageInk, inkChange, inkUndo, commitInkGroup, measureStarts, measureAt, tickOfNote }

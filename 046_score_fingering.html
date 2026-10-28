@@ -24,6 +24,8 @@
   #controls select { max-width:14rem; }
   #tempo { width:5rem; }
   #zoom { width:8rem; accent-color:var(--accent); }
+  #fingerSize { width:6.5rem; accent-color:var(--accent); }
+  #fingerSizeOut { min-width:2.6rem; font-variant-numeric:tabular-nums; }
   #status { min-height:2rem; padding:.35rem .8rem; color:var(--muted); border-bottom:1px solid #e5ded1; }
   #pages { display:flex; align-items:center; gap:.45rem; padding:.35rem .75rem; border-bottom:1px solid var(--line); background:#faf7f0; }
   #pages > span { min-width:4rem; text-align:center; font-variant-numeric:tabular-nums; }
@@ -78,6 +80,19 @@
   body.reader #tPrev,body.reader #tNext { min-width:3rem; }
   body.reader header { padding:.35rem .75rem; }
   body.reader header > label.open,body.reader header > #sample,body.reader header > #export,body.reader header > #exportPdf { display:none; }
+  /* Stand: the app turned a quarter (stand.js), tall and narrow like a printed part */
+  #app { display:contents; }
+  html.stand-root,body.stand { overflow:hidden; }
+  body.stand #app { display:flex; flex-direction:column; position:fixed; left:0; top:0; width:100vh; height:100vw; overflow:hidden; transform-origin:0 0; background:var(--paper); }
+  body.stand.cw #app { transform:translateX(100vw) rotate(90deg); }
+  body.stand.ccw #app { transform:translateY(100vh) rotate(-90deg); }
+  body.stand header { position:static; flex:0 0 auto; }
+  body.stand header h1 { font-size:.9rem; }
+  body.stand #readerMode { display:none; }
+  body.stand #layout { display:flex; flex:1 1 auto; min-height:0; }
+  body.stand #wrap { flex:1 1 auto; min-height:0; overflow:auto; padding:.35rem; }
+  body.stand #transport { position:static; flex:0 0 auto; padding:.3rem .5rem; gap:.3rem .5rem; }
+  body.stand #stage { box-shadow:none; }
   #busy { position:fixed; inset:0; z-index:30; display:none; place-items:center; background:#f3efe6cc; backdrop-filter:blur(2px); }
   #busy div { padding:.8rem 1.1rem; border:1px solid var(--line); border-radius:10px; background:var(--card); box-shadow:0 8px 30px #0002; }
   #pop { position:fixed; z-index:20; display:none; max-width:min(26rem,calc(100vw - 16px)); max-height:calc(100vh - 16px); overflow:auto; padding:.7rem; border:1px solid var(--line); border-radius:12px; background:var(--card); box-shadow:0 12px 34px #0003; }
@@ -105,6 +120,7 @@
 </style>
 </head>
 <body>
+<div id="app">
 <header>
   <h1><span>#046</span> Score fingering</h1>
   <label class="open">📷 Photo<input id="camera" type="file" accept="image/*" capture="environment"></label>
@@ -113,6 +129,8 @@
   <button id="export" disabled>⬇ Annotated PNG</button>
   <button id="exportPdf" hidden>⬇ Annotated PDF</button>
   <button id="readerMode" aria-pressed="false" title="Reader: the page full width, the controls hidden; Space plays, ← → turn pages">📖 Reader</button>
+  <button id="standMode" aria-pressed="false" title="Music stand: the page upright on a laptop turned on its side. Tap or scroll to turn pages">🎼 Stand</button>
+  <button id="standFlip" hidden title="The laptop is turned the other way: rotate the page the other way">⟲ flip</button>
   <button id="fullscreen" aria-label="Full screen" title="Full screen">⛶</button>
 </header>
 <div id="controls">
@@ -120,6 +138,7 @@
   <label>Part <select id="part" disabled><option>—</option></select></label>
   <label>Style <select id="mode"><option value="standard">Standard</option><option value="beginner">Beginner</option><option value="expressive">Expressive</option><option value="nearest">Fewest shifts</option></select></label>
   <label><input id="fingerings" type="checkbox" checked> fingerings</label>
+  <label title="Size of the finger numbers">Size <input id="fingerSize" type="range" min="0.5" max="2" step="0.05" value="1" aria-label="Fingering size"><output id="fingerSizeOut" for="fingerSize">100%</output></label>
   <label><input id="recognition" type="checkbox"> recognition</label>
   <label title="Show string changes and hand-position changes beside their noteheads"><input id="details" type="checkbox"> string / position details</label>
   <label>Zoom <input id="zoom" type="range" min="0.1" max="2" step="0.05" value="1"></label>
@@ -169,6 +188,7 @@
 </div>
 <div id="pop" role="dialog" aria-modal="false" aria-labelledby="popTitle"></div>
 <div id="busy" role="status"><div>Reading the music…</div></div>
+</div>
 <script type="module" src="score-fingering/app.js"></script>
 </body>
 </html>

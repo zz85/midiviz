@@ -2,6 +2,13 @@
 
 What each experiment does and how, newest first. The short list is in the [README](README.md).
 
+## 28 Oct 2026
+
+[Experiment #046 - Score fingering](046_score_fingering.html): 🎼 Stand mode, for a laptop turned on its side as a music stand ([notes](score-fingering/README.md#reading-playing-and-writing-on-the-score))
+- The app is drawn a quarter turn round, full screen, the page upright and fitted to the tall screen; ⟲ flip for the other side (`?stand=left|right`). Tap the right of the page, scroll, or press → / ↓ / Page Down (page-turner pedals) for the next page; the left of the page, ← / ↑ / Page Up to go back; one turn per scroll gesture. The next PDF page is recognized in the background (Stand and Reader), so turns are immediate. Ink, popups and scrolling map pointer and wheel input into the rotated frame (`score-fingering/stand.js`), so annotations land under the pen and turn with the page.
+- A **Size** slider (50–200%, remembered) scales the pencil finger numbers on the page and in the PNG / PDF exports. Numbers grow away from their notes and chord stacks spread, so larger numbers never cover a notehead; tap targets follow.
+- Tests: `stand.test.js` (frame round trips, rotated boxes, drag / wheel axes, one turn per gesture); the browser smoke adds 10 checks (layout and fit, tap / scroll / ↓ turns, read-ahead, ink position on the turned page, flip, exit).
+
 ## 26 Oct 2026
 
 [Experiment #046 - Score fingering](046_score_fingering.html) as a score reader ([notes](score-fingering/README.md#reading-playing-and-writing-on-the-score))

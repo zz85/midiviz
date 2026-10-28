@@ -66,3 +66,21 @@ test('top-edge lock, string, position and warning marks remain inside the canvas
   assert.ok(calls.rects.every(rect => rect.y >= 0), 'metadata and warning pills are not clipped')
   assert.ok(calls.text.find(call => call.text === '◆')?.y >= 0, 'lock mark is not clipped')
 })
+
+test('the fingering size slider scales the numeral and keeps it clear of its note', async () => {
+  const { labelAt, fingeringFont } = await import('../overlay.js')
+  for (const size of [0.5, 1.5, 2]) {
+    const { ctx, calls } = recordingContext()
+    drawFingerings(ctx, [item], 1, { size })
+    const digits = calls.text.filter(call => call.text === '2')
+    assert.ok(digits.length && digits.every(call => call.font === fingeringFont(size)))
+    assert.equal(Number(digits[0].font.match(/([\d.]+)px/)[1]), 24 * size)
+    // a numeral above its note grows upward: its near edge stays the same distance from the note
+    const at = labelAt(item, size), half = 0.36 * 24
+    assert.ok(Math.abs((item.y - (at.y + half * size)) - (item.y - (item.labelY + half))) < 1e-9)
+  }
+  assert.deepEqual(labelAt(item, 1), { x:item.labelX, y:item.labelY })
+  // a chord stack spreads with the size so its numerals never overlap
+  const low = { ...item, id:'low', labelY:42, stackIndex:0 }, high = { ...item, id:'high', labelY:16, stackIndex:1 }
+  for (const size of [1, 1.5, 2]) assert.ok(labelAt(low, size).y - labelAt(high, size).y >= 26 * size - 1e-9)
+})
