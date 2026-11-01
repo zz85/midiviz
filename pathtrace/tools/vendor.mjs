@@ -8,7 +8,7 @@
 //    or megakernel compute on three/webgpu) and the deprecated WebGL one
 //    (WebGLPathTracer, the main entry), code-split so three-mesh-bvh is
 //    shared; `three` and its subpaths stay external (the page's import map,
-//    r185). oidn-web beside them for its OIDN denoiser.
+//    r187). oidn-web beside them for its OIDN denoiser.
 //  • MuTracer (@meimu/mutracer, Yi Shen, MIT): the whole library with
 //    gl-matrix and oidn-web inlined, code-split so OIDN loads only when used;
 //    its BVH worker and TinyBVH WASM beside it, the OIDN weights at ../oidn/
@@ -19,7 +19,7 @@ import path from 'node:path'
 import os from 'node:os'
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../..')
-const VERSIONS = { 'three-gpu-pathtracer': '0.0.27', 'three-mesh-bvh': '0.9.16', '@meimu/mutracer': '0.1.3', three: '0.185.1', 'oidn-web': '0.4.0' }
+const VERSIONS = { 'three-gpu-pathtracer': '0.0.27', 'three-mesh-bvh': '0.9.17', '@meimu/mutracer': '0.2.0', three: '0.187.0', 'oidn-web': '0.4.0' }
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pt-vendor-'))
 const sh = (cmd, cwd = tmp) => execSync(cmd, { cwd, stdio: 'inherit' })
 fs.writeFileSync(path.join(tmp, 'package.json'), '{"private":true,"type":"module"}')

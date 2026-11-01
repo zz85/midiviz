@@ -1,10 +1,10 @@
-import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i as te,o as Ya,q as Za,r as Ja,s as ei,t as ti,w as ri,x as ai,z as ii}from"./chunk-ANAG5KZE.js";import{a as jr}from"./chunk-WOT6VMZA.js";import{Box3 as kc,DataTexture as Hc,LinearFilter as To,Vector2 as Do,Scene as Vc,PerspectiveCamera as Oc,Color as Wc,NoToneMapping as Io,FloatType as Uc,Timer as qc,StorageTexture as Gc,MeshBasicNodeMaterial as Qc,Matrix4 as jc,WebGPUCoordinateSystem as Kc}from"three/webgpu";import{uv as Xc,uniform as Yc,varying as Zc}from"three/tsl";import{wgslFn as Xr}from"three/tsl";import{wgslFn as ni,wgsl as li}from"three/tsl";import{StructTypeNode as Ce}from"three/webgpu";var E=new Ce({min:"array<f32, 3>",max:"array<f32, 3>"},"BVHBoundingBox");E.getLength=()=>6;var B=new Ce({bounds:"BVHBoundingBox",rightChildOrTriangleOffset:"uint",splitAxisOrTriangleCount:"uint"},"BVHNode");B.getLength=()=>E.getLength()+2;var oi=new Ce({matrixWorld:"mat4x4f",inverseMatrixWorld:"mat4x4f",visible:"uint",_alignment0:"uint",_alignment1:"uint",_alignment2:"uint"},"TransformStruct"),v=new Ce({origin:"vec3f",direction:"vec3f",maxDist:"float"},"Ray"),re=new Ce({indices:"vec4u",normal:"vec3f",didHit:"bool",barycoord:"vec3f",objectIndex:"uint",side:"float",dist:"float"},"IntersectionResult"),et=new Ce({faceIndices:"vec4u",closestPoint:"vec3f",found:"bool",barycoord:"vec3f",objectIndex:"uint",faceNormal:"vec3f",side:"float",distanceSq:"float"},"PointQueryResult");var Rt=li(`
+import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as De,f as Xa,g as Kr,h as fe,i as te,o as Ya,q as Za,r as Ja,s as ei,t as ti,w as ri,x as ai,z as ii}from"./chunk-5ZMNVODB.js";import{a as jr}from"./chunk-WOT6VMZA.js";import{Box3 as Wc,DataTexture as Uc,LinearFilter as Do,Vector2 as $o,Scene as qc,PerspectiveCamera as Gc,Color as Qc,NoToneMapping as Co,FloatType as jc,Timer as Kc,StorageTexture as Xc,MeshBasicNodeMaterial as Yc,Matrix4 as Zc,WebGPUCoordinateSystem as Jc}from"three/webgpu";import{uv as eu,uniform as tu,varying as ru}from"three/tsl";import{wgslFn as Xr}from"three/tsl";import{wgslFn as ni,wgsl as li}from"three/tsl";import{StructTypeNode as Ce}from"three/webgpu";var E=new Ce({min:"array<f32, 3>",max:"array<f32, 3>"},"BVHBoundingBox");E.getLength=()=>6;var B=new Ce({leftBounds:"BVHBoundingBox",rightBounds:"BVHBoundingBox",rightChildOrTriangleOffset:"uint",splitAxisOrTriangleCount:"uint",_alignment0:"uint",_alignment1:"uint"},"BVHNode");B.getLength=()=>2*E.getLength()+4;var oi=new Ce({matrixWorld:"mat4x4f",inverseMatrixWorld:"mat4x4f",visible:"uint",_alignment0:"uint",_alignment1:"uint",_alignment2:"uint"},"TransformStruct"),v=new Ce({origin:"vec3f",direction:"vec3f",maxDist:"float"},"Ray"),re=new Ce({indices:"vec4u",normal:"vec3f",didHit:"bool",barycoord:"vec3f",objectIndex:"uint",side:"float",dist:"float"},"IntersectionResult"),et=new Ce({faceIndices:"vec4u",closestPoint:"vec3f",found:"bool",barycoord:"vec3f",objectIndex:"uint",faceNormal:"vec3f",side:"float",distanceSq:"float"},"PointQueryResult");var Rt=li(`
 
 	const BVH_STACK_DEPTH = 60u;
 	const INFINITY = 1e20;
 	const TRI_INTERSECT_EPSILON = 1e-5;
 
-`),Dt=li(`
+`),_t=li(`
 	struct IntersectionResult {
 		indices: vec4u,
 		normal: vec3f,
@@ -13,7 +13,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 		side: f32,
 		dist: f32,
 	};
-`),Hu=ni(`
+`),Uu=ni(`
 
 	fn getVertexAttribute(
 		barycoord: vec3f,
@@ -110,7 +110,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,[v,Dt,Rt]),qo=Xr(`
+`,[v,_t,Rt]),Ko=Xr(`
 
 	fn intersectTriangles(
 		bvh_position: ptr<storage, array<vec3f>, read>,
@@ -147,7 +147,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,[Yr,v,Dt,Rt]),qu=Xr(`
+`,[Yr,v,_t,Rt]),Ku=Xr(`
 
 	fn bvhIntersectFirstHit(
 		bvh_index: ptr<storage, array<vec3u>, read>,
@@ -231,11 +231,13 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,[qo,ci,v,B,Dt,Rt]);import{Matrix4 as $i,Mesh as Mt,Group as sn}from"three";import{StorageBufferAttribute as Nt,StructTypeNode as on}from"three/webgpu";import{storage as Bt}from"three/tsl";import{Node as Go,TSL as ui}from"three/webgpu";var _t=class extends Go{static get type(){return"ProxyCallNode"}constructor(e,t){super(),this.proxyNode=e,this.params=t}setup(){return this.proxyNode.proxyNode.call(...this.params)}},tt=class{get isNode(){return!0}get proxyNode(){let{proxyObject:e,proxyProperty:t}=this,r=t.split("."),a=e;for(let s=0,i=r.length;s<i;s++)a=a?.[r[s]];return a&&"functionNode"in a?a.functionNode:a??null}constructor(e,t=null){return this.proxyObject=t,this.proxyProperty=e,new Proxy(this,{get(r,a){if(a in r)return Reflect.get(r,a);{let s=r.proxyNode;if(!s)return;let i=Reflect.get(s,a);return typeof i=="function"?i.bind(s):i}},set(r,a,s){if(a in r)return Reflect.set(r,a,s);throw new Error("NodeProxy: Cannot set members of proxied nodes.")}})}},R=(...c)=>new tt(...c),w=(...c)=>{let e=new tt(...c),t=(...r)=>new _t(e,r);return ui.nodeProxyConstructor(t,e)},Zr=class extends tt{get proxyNode(){return super.proxyNode||this.fallbackNode}constructor(e,t){super(e,null),Object.defineProperty(this,"fallbackNode",{value:t})}setup(e){return this.proxyObject=e.getContext(),this.proxyNode.setup(e)}};var pe=(...c)=>{let e=new Zr(...c),t=(...r)=>new _t(e,r);return ui.nodeProxyConstructor(t,e)};import{Vector4 as di}from"three";var ae=new di,U=new di;function Qo(c,e){let t=c?c.array:null,r=new Uint32Array(e.length*3);for(let a=0,s=e.length;a<s;a++){let i=3*a,n=3*e[a];for(let o=0;o<3;o++)r[i+o]=t?t[n+o]:n+o}return r}function Jr(c,e,t,r){let a=new Uint32Array(r),s=new Float32Array(r);c._roots.forEach(i=>{let n=new Uint16Array(i),o=new Uint32Array(i);for(let u=0,l=i.byteLength/32;u<l;u++){let f=u*8,p=f*2,m=t*8,d=new Float32Array(i,u*32,6);if(u===0)for(let x=0;x<3;x++){let I=d[x+0],b=d[x+3];I>b?(s[m+x+0]=1,s[m+x+3]=-1):(s[m+x+0]=I,s[m+x+3]=b)}else s.set(d,m);if(e===null){t++;continue}if(Je(p,n)){let x=o[f+6],I=n[p+14],{transformSlot:b,nodeOffset:D}=I===0?{transformSlot:0,nodeOffset:0}:e[x];if(b>16777215)throw new Error(`packBVHBufferUtils: transform slot ${b} exceeds the 24-bit TLAS leaf limit.`);a[m+6]=D,a[m+7]=4278190080|b&16777215}else a[m+6]=o[f+6],a[m+7]=o[f+7];t++}})}function hi(c,e){return fi(new Uint16Array(c),new Uint32Array(c),e)}function fi(c,e,t){if(Je(t*8*2,c))return 1;let a=e[t*8+6];return a+fi(c,e,t+a)}function ea(c,e=0){let t=new Uint16Array(c),r=new Uint32Array(c),a=0;return s(e*8,1),a;function s(i,n){let o=i,u=i*2;if(Je(u,t))a=Math.max(n,a);else{let f=Ka(o,r),p=ja(o);s(p,n+1),s(f,n+1)}}}function pi(c,e,t,r,a,s){let i=new Uint16Array(s),n=new Uint32Array(s),o=new Float32Array(s),u=new Uint16Array(c),l=new Uint32Array(c);for(let f=0;f<t;f++){let p=e+f,m=p*8,d=m*2,g=a*8,x=g*2,I=new Float32Array(c,p*32,6);if(f===0)for(let D=0;D<3;D++){let y=I[D+0],C=I[D+3];y>C?(o[g+D+0]=1,o[g+D+3]=-1):(o[g+D+0]=y,o[g+D+3]=C)}else o.set(I,g);Je(d,u)?(n[g+6]=l[m+6]+r,i[x+14]=u[d+14],i[x+15]=65535):(n[g+6]=l[m+6],n[g+7]=l[m+7]),a++}}function mi(c,e,t,r,a){let{geometry:s}=c,{start:i,count:n,vertexStart:o}=e;if(c.indirect){let u=Qo(s.index,c._indirectBuffer);for(let l=0;l<u.length;l++)a[l+r]=u[l]-o+t}else if(s.index)for(let u=0;u<n;u++)a[u+r]=s.index.getX(u+i)-o+t;else for(let u=0;u<n;u++)a[u+r]=u+i+t}function gi(c,e,t,r,a,s){let{geometry:i,mesh:n=null}=c,{vertexStart:o,vertexCount:u}=e,l=new Float32Array(r),f=a.getLength();a.membersLayout.forEach(({name:p},m)=>{let d=i.attributes[p];s.getDefaultAttributeValue(p,ae);for(let g=0;g<u;g++){if(d){switch(U.fromBufferAttribute(d,g+o),d.itemSize){case 1:U.y=ae.y,U.z=ae.z,U.w=ae.w;break;case 2:U.z=ae.z,U.w=ae.w;break;case 3:U.w=ae.w;break}n&&(p==="position"||p==="normal"||p==="tangent")&&n.applyBoneTransform(g+o,U)}else U.copy(ae);U.toArray(l,(t+g)*f+m*4)}})}import{CodeNode as jo,FunctionNode as Ko,Node as xi,TSL as Xo}from"three/webgpu";var ta=class extends xi{constructor(e){super(),this.literal=e}build(){return this.literal}},rt=class extends xi{constructor(e,t="property"){super(),this.node=e,this.output=t}build(e){return this.node.build(e,this.output)}};function Yo(c){return c.isNode?new rt(c):null}function vi(c){let e=[];for(let t of c)if(Array.isArray(t))for(let r of t){let a=Yo(r);a&&e.push(a)}return e}function yi(c,e){return c.map(t=>(t&&!t.isNode&&t instanceof Function&&(t=t(e)),t&&t.isNode?(t.setup(e),t.isWGSLTagCodeNode?new rt(t,"inline"):new rt(t)):t))}function ra(c,e,t){let r="";for(let a=0,s=c.length;a<s;a++)if(r+=c[a],a<e.length){let i=e[a];Array.isArray(i)||(typeof i=="string"||typeof i=="number"?r+=String(i):r+=i.build(t))}return r}var aa=class extends Ko{static get type(){return"WGSLTagFnNode"}constructor(e,t,r="wgsl"){super("",vi(t),r),this.isWGSLTagFnNode=!0,this.tokens=e,this.args=t}setup(e){super.setup(e),this._normalizedArgs=yi(this.args,e)}getNodeFunction(e){let{tokens:t,_normalizedArgs:r}=this,a=e.getDataFromNode(this),s=a.nodeFunction;if(s===void 0){let i="";for(let n=0,o=t.length;n<o;n++)if(i+=t[n],n<r.length){let u=r[n];Array.isArray(u)||(typeof u=="string"||typeof u=="number"?i+=String(u):u.isStructLayoutNode?i+=u.getNodeType(e):u.isStruct?i+=u.layout.getNodeType(e):i+="_arg"+n)}i=i.replace(/\/\/.*[\n\r]/g,""),s=e.parser.parseFunction(i),a.nodeFunction=s}return s}generate(e,t){let r=super.generate(e,t),{_normalizedArgs:a}=this,s=ra(this.tokens,a,e),{type:i}=this.getNodeFunction(e),n=e.getCodeFromNode(this,i);return n.code=s.replace(/\/\/.+[\n\r]/g,"").replace(/->\s*void/,"").trim(),r}},ia=class extends jo{static get type(){return"WGSLTagCodeNode"}constructor(e,t,r="wgsl"){super("",vi(t),r),this.isWGSLTagCodeNode=!0,this.tokens=e,this.args=t}setup(e){super.setup(e),this._normalizedArgs=yi(this.args,e)}build(e,t){return t==="inline"?ra(this.tokens,this._normalizedArgs,e):super.build(e,t)}generate(e){super.generate(e);let t=e.getCodeFromNode(this,this.getNodeType(e));return t.code=ra(this.tokens,this._normalizedArgs,e),t.code}},Zo=c=>{let e=(...t)=>{if(t.length===1&&t[0]&&typeof t[0]=="object"&&!t[0].isNode){let r=t[0];for(let a in r)typeof r[a]=="string"&&(r[a]=new ta(r[a]))}return c.call(...t)};return Xo.nodeProxyConstructor(e,c)},h=(c,...e)=>Zo(new aa(c,e)),me=(c,...e)=>new ia(c,e);import{uint as Jo}from"three/tsl";var at=Jo(60);function bi(c,e){let{name:t=`bvh_shapecast_fn_${Math.random().toString(36).substring(2,7)}`,shapeStruct:r,resultStruct:a=null,prefixFn:s=null,boundsOrderFn:i=null,intersectsBoundsFn:n,intersectRangeFn:o,transformShapeFn:u=null,transformResultFn:l=null,resetShapeFn:f=null}=e,{nodes:p,transforms:m}=c.storage,d="";s&&(d=me`${s}();`);let g="";l&&(g=me`${l}( result, objectIndex );`);let x="";u&&(x=me`${u}( &localShape, objectIndex );`);let I="";f&&(I=me`${f}( objectIndex );`);let b="";i&&(b=me`
+`,[Ko,ci,v,B,_t,Rt]);import{Matrix4 as Pi,Mesh as Mt,Group as un}from"three";import{StorageBufferAttribute as Nt,StructTypeNode as dn}from"three/webgpu";import{storage as Bt}from"three/tsl";import{Node as Xo,TSL as ui}from"three/webgpu";var Dt=class extends Xo{static get type(){return"ProxyCallNode"}constructor(e,t){super(),this.proxyNode=e,this.params=t}setup(){return this.proxyNode.proxyNode.call(...this.params)}},tt=class{get isNode(){return!0}get proxyNode(){let{proxyObject:e,proxyProperty:t}=this,r=t.split("."),a=e;for(let s=0,i=r.length;s<i;s++)a=a?.[r[s]];return a&&"functionNode"in a?a.functionNode:a??null}constructor(e,t=null){return this.proxyObject=t,this.proxyProperty=e,new Proxy(this,{get(r,a){if(a in r)return Reflect.get(r,a);{let s=r.proxyNode;if(!s)return;let i=Reflect.get(s,a);return typeof i=="function"?i.bind(s):i}},set(r,a,s){if(a in r)return Reflect.set(r,a,s);throw new Error("NodeProxy: Cannot set members of proxied nodes.")}})}},I=(...c)=>new tt(...c),w=(...c)=>{let e=new tt(...c),t=(...r)=>new Dt(e,r);return ui.nodeProxyConstructor(t,e)},Zr=class extends tt{get proxyNode(){return super.proxyNode||this.fallbackNode}constructor(e,t){super(e,null),Object.defineProperty(this,"fallbackNode",{value:t})}setup(e){return this.proxyObject=e.getContext(),this.proxyNode.setup(e)}};var pe=(...c)=>{let e=new Zr(...c),t=(...r)=>new Dt(e,r);return ui.nodeProxyConstructor(t,e)};import{Vector4 as hi}from"three";var Ct=64,fi=Ct/4,ae=new hi,U=new hi;function di(c,e,t,r){let a=e*8;for(let s=0;s<3;s++){let i=c[a+s],o=c[a+s+3];i>o?(t[r+s]=1,t[r+s+3]=-1):(t[r+s]=i,t[r+s+3]=o)}}function pi(c,e,t,r,a){let s=t*8;di(c,t+1,r,a),di(c,t+e[s+6],r,a+6)}function Zo(c,e){let t=c?c.array:null,r=new Uint32Array(e.length*3);for(let a=0,s=e.length;a<s;a++){let i=3*a,o=3*e[a];for(let n=0;n<3;n++)r[i+n]=t?t[o+n]:o+n}return r}function Jr(c,e,t,r){let a=new Uint32Array(r),s=new Float32Array(r);c._roots.forEach(i=>{let o=new Uint16Array(i),n=new Uint32Array(i),u=new Float32Array(i);for(let l=0,f=i.byteLength/32;l<f;l++){let p=l*8,m=p*2,d=t*fi,g=Je(m,o);if(g||pi(u,n,l,s,d),e===null){t++;continue}if(g){let x=n[p+6],_=o[m+14],{transformSlot:b,nodeOffset:D}=_===0?{transformSlot:0,nodeOffset:0}:e[x];if(b>16777215)throw new Error(`packBVHBufferUtils: transform slot ${b} exceeds the 24-bit TLAS leaf limit.`);a[d+12]=D,a[d+13]=4278190080|b&16777215}else a[d+12]=n[p+6],a[d+13]=n[p+7];t++}})}function mi(c,e){return gi(new Uint16Array(c),new Uint32Array(c),e)}function gi(c,e,t){if(Je(t*8*2,c))return 1;let a=e[t*8+6];return a+gi(c,e,t+a)}function ea(c,e=0){let t=new Uint16Array(c),r=new Uint32Array(c),a=0;return s(e*8,1),a;function s(i,o){let n=i,u=i*2;if(Je(u,t))a=Math.max(o,a);else{let f=Ka(n,r),p=ja(n);s(p,o+1),s(f,o+1)}}}function xi(c,e,t,r,a,s){let i=new Uint16Array(s),o=new Uint32Array(s),n=new Float32Array(s),u=new Uint16Array(c),l=new Uint32Array(c),f=new Float32Array(c);for(let p=0;p<t;p++){let m=e+p,d=m*8,g=d*2,x=a*fi,_=x*2;Je(g,u)?(o[x+12]=l[d+6]+r,i[_+26]=u[g+14],i[_+27]=65535):(pi(f,l,m,n,x),o[x+12]=l[d+6],o[x+13]=l[d+7]),a++}}function vi(c,e,t,r,a){let{geometry:s}=c,{start:i,count:o,vertexStart:n}=e;if(c.indirect){let u=Zo(s.index,c._indirectBuffer);for(let l=0;l<u.length;l++)a[l+r]=u[l]-n+t}else if(s.index)for(let u=0;u<o;u++)a[u+r]=s.index.getX(u+i)-n+t;else for(let u=0;u<o;u++)a[u+r]=u+i+t}function yi(c,e,t,r,a,s){let{geometry:i,mesh:o=null}=c,{vertexStart:n,vertexCount:u}=e,l=new Float32Array(r),f=a.getLength();a.membersLayout.forEach(({name:p},m)=>{let d=i.attributes[p];s.getDefaultAttributeValue(p,ae);for(let g=0;g<u;g++){if(d){switch(U.fromBufferAttribute(d,g+n),d.itemSize){case 1:U.y=ae.y,U.z=ae.z,U.w=ae.w;break;case 2:U.z=ae.z,U.w=ae.w;break;case 3:U.w=ae.w;break}o&&(p==="position"||p==="normal"||p==="tangent")&&o.applyBoneTransform(g+n,U)}else U.copy(ae);U.toArray(l,(t+g)*f+m*4)}})}import{CodeNode as Jo,FunctionNode as en,Node as bi,TSL as tn}from"three/webgpu";var ta=class extends bi{constructor(e){super(),this.literal=e}build(){return this.literal}},rt=class extends bi{constructor(e,t="property"){super(),this.node=e,this.output=t}build(e){return this.node.build(e,this.output)}};function rn(c){return c.isNode?new rt(c):null}function Si(c){let e=[];for(let t of c)if(Array.isArray(t))for(let r of t){let a=rn(r);a&&e.push(a)}return e}function wi(c,e){return c.map(t=>(t&&!t.isNode&&t instanceof Function&&(t=t(e)),t&&t.isNode?(t.setup(e),t.isWGSLTagCodeNode?new rt(t,"inline"):new rt(t)):t))}function ra(c,e,t){let r="";for(let a=0,s=c.length;a<s;a++)if(r+=c[a],a<e.length){let i=e[a];Array.isArray(i)||(typeof i=="string"||typeof i=="number"?r+=String(i):r+=i.build(t))}return r}var aa=class extends en{static get type(){return"WGSLTagFnNode"}constructor(e,t,r="wgsl"){super("",Si(t),r),this.isWGSLTagFnNode=!0,this.tokens=e,this.args=t}setup(e){super.setup(e),this._normalizedArgs=wi(this.args,e)}getNodeFunction(e){let{tokens:t,_normalizedArgs:r}=this,a=e.getDataFromNode(this),s=a.nodeFunction;if(s===void 0){let i="";for(let o=0,n=t.length;o<n;o++)if(i+=t[o],o<r.length){let u=r[o];Array.isArray(u)||(typeof u=="string"||typeof u=="number"?i+=String(u):u.isStructLayoutNode?i+=u.getNodeType(e):u.isStruct?i+=u.layout.getNodeType(e):i+="_arg"+o)}i=i.replace(/\/\/.*[\n\r]/g,""),s=e.parser.parseFunction(i),a.nodeFunction=s}return s}generate(e,t){let r=super.generate(e,t),{_normalizedArgs:a}=this,s=ra(this.tokens,a,e),{type:i}=this.getNodeFunction(e),o=e.getCodeFromNode(this,i);return o.code=s.replace(/\/\/.+[\n\r]/g,"").replace(/->\s*void/,"").trim(),r}},ia=class extends Jo{static get type(){return"WGSLTagCodeNode"}constructor(e,t,r="wgsl"){super("",Si(t),r),this.isWGSLTagCodeNode=!0,this.tokens=e,this.args=t}setup(e){super.setup(e),this._normalizedArgs=wi(this.args,e)}build(e,t){return t==="inline"?ra(this.tokens,this._normalizedArgs,e):super.build(e,t)}generate(e){super.generate(e);let t=e.getCodeFromNode(this,this.getNodeType(e));return t.code=ra(this.tokens,this._normalizedArgs,e),t.code}},an=c=>{let e=(...t)=>{if(t.length===1&&t[0]&&typeof t[0]=="object"&&!t[0].isNode){let r=t[0];for(let a in r)typeof r[a]=="string"&&(r[a]=new ta(r[a]))}return c.call(...t)};return tn.nodeProxyConstructor(e,c)},h=(c,...e)=>an(new aa(c,e)),me=(c,...e)=>new ia(c,e);import{uint as sn}from"three/tsl";var at=sn(60);function Ti(c,e){let{name:t=`bvh_shapecast_fn_${Math.random().toString(36).substring(2,7)}`,shapeStruct:r,resultStruct:a=null,prefixFn:s=null,boundsOrderFn:i=null,intersectsBoundsFn:o,intersectRangeFn:n,transformShapeFn:u=null,transformResultFn:l=null,resetShapeFn:f=null}=e,{nodes:p,transforms:m}=c.storage,d="";s&&(d=me`${s}();`);let g="";l&&(g=me`${l}( result, objectIndex );`);let x="";u&&(x=me`${u}( &localShape, objectIndex );`);let _="";f&&(_=me`${f}( objectIndex );`);let b="";i&&(b=me`
 			let leftToRight = ${i}( localShape, splitAxis, node );
 			c1 = select( rightIndex, leftIndex, leftToRight );
 			c2 = select( leftIndex, rightIndex, leftToRight );
-		`);let D=a?me`result: ptr<function, ${a}>`:"",y=a?"result":"",C=h`
+			hit1 = select( hitRight, hitLeft, leftToRight );
+			hit2 = select( hitLeft, hitRight, leftToRight );
+		`);let D=a?me`result: ptr<function, ${a}>`:"",y=a?"result":"",$=h`
 		// fn
 		fn ${t}( shape: ${r}, ${D} ) -> bool {
 
@@ -269,7 +271,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 					}
 
-					${I}
+					${_}
 
 					objectIndex = 0;
 					isTLAS = true;
@@ -284,16 +286,10 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 				}
 
+				// a node's bounds were tested by its parent, so the popped node is always entered
 				let nodeIndex = stack[ pointer ];
 				let node = ${p}[ nodeIndex ];
 				pointer = pointer - 1;
-
-				// skip the node if we don't intersect the bounds
-				if ( ${n}( localShape, node.bounds, ${y} ) == 0u ) {
-
-					continue;
-
-				}
 
 				let infoX = node.splitAxisOrTriangleCount;
 				let infoY = node.rightChildOrTriangleOffset;
@@ -328,25 +324,38 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 						let count = infoX & 0x0000ffffu;
 						let offset = infoY;
-						blasDidHit = ${o}( localShape, offset, count, ${y} ) || blasDidHit;
+						blasDidHit = ${n}( localShape, offset, count, ${y} ) || blasDidHit;
 
 					}
 
 				} else {
 
+					// test both children here, pushing the farther one first so the nearer is popped next
 					let leftIndex = nodeIndex + 1u;
 					let splitAxis = infoX & 0x0000ffffu;
 					let rightIndex = nodeIndex + infoY;
+					let hitLeft = ${o}( localShape, node.leftBounds, ${y} ) != 0u;
+					let hitRight = ${o}( localShape, node.rightBounds, ${y} ) != 0u;
 
 					var c1 = rightIndex;
 					var c2 = leftIndex;
+					var hit1 = hitRight;
+					var hit2 = hitLeft;
 					${b}
 
-					pointer = pointer + 1;
-					stack[ pointer ] = c2;
+					if ( hit2 ) {
 
-					pointer = pointer + 1;
-					stack[ pointer ] = c1;
+						pointer = pointer + 1;
+						stack[ pointer ] = c2;
+
+					}
+
+					if ( hit1 ) {
+
+						pointer = pointer + 1;
+						stack[ pointer ] = c1;
+
+					}
 
 				}
 
@@ -355,7 +364,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 			return didHit;
 
 		}
-	`;return C.outputType=a,C.functionName=t,C}import{float as en}from"three/tsl";var Si=h`
+	`;return $.outputType=a,$.functionName=t,$}import{float as on}from"three/tsl";var Ii=h`
 	// fn
 	fn closestPointToTriangle(
 		p: vec3f,
@@ -475,7 +484,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 		return ray;
 
 	}
-`;function wi(c){let{index:e,attributes:t,transforms:r}=c.storage,a=en(1).toVar(`bvh_rayScalar_${Math.random().toString(36).substring(2,7)}`);return c.getShapecastFn({name:"bvh_RaycastFirstHit",shapeStruct:v,resultStruct:re,boundsOrderFn:h`
+`;function Ri(c){let{index:e,attributes:t,transforms:r}=c.storage,a=on(1).toVar(`bvh_rayScalar_${Math.random().toString(36).substring(2,7)}`);return c.getShapecastFn({name:"bvh_RaycastFirstHit",shapeStruct:v,resultStruct:re,boundsOrderFn:h`
 			fn getBoundsOrder( ray: ${v}, splitAxis: u32, node: ${B} ) -> bool {
 
 				return ray.direction[ splitAxis ] >= 0.0;
@@ -587,7 +596,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 				${a} = 1.0;
 
 			}
-		`})}function Ti(c){let{storage:e,structs:t}=c,r=t.attributes.membersLayout.map(({name:a})=>`result.${a} = a0.${a} * barycoord.x + a1.${a} * barycoord.y + a2.${a} * barycoord.z;`).join(`
+		`})}function _i(c){let{storage:e,structs:t}=c,r=t.attributes.membersLayout.map(({name:a})=>`result.${a} = a0.${a} * barycoord.x + a1.${a} * barycoord.y + a2.${a} * barycoord.z;`).join(`
 `);return h`
 		// fn
 		fn bvh_sampleTrianglePoint( barycoord: vec3f, indices: vec3u ) -> ${t.attributes} {
@@ -600,20 +609,31 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 			return result;
 
 		}
-	`}import{mat4 as tn}from"three/tsl";function Ii(c){let{index:e,attributes:t,transforms:r}=c.storage,a=tn().toVar("bvh_toWorldMat");return c.getShapecastFn({name:"bvh_ClosestPointToPoint",shapeStruct:"vec3f",resultStruct:et,boundsOrderFn:h`
+	`}import{mat4 as nn}from"three/tsl";function Di(c){let{index:e,attributes:t,transforms:r}=c.storage,a=nn().toVar("bvh_toWorldMat");return c.getShapecastFn({name:"bvh_ClosestPointToPoint",shapeStruct:"vec3f",resultStruct:et,boundsOrderFn:h`
 			fn cppBoundsOrder( shape: vec3f, splitAxis: u32, node: ${B} ) -> bool {
 
 				let toWorld = ${a};
+				let absX = abs( toWorld[ 0 ].xyz );
+				let absY = abs( toWorld[ 1 ].xyz );
+				let absZ = abs( toWorld[ 2 ].xyz );
 
-				// get center
-				let bMin = vec3f( node.bounds.min[ 0 ], node.bounds.min[ 1 ], node.bounds.min[ 2 ] );
-				let bMax = vec3f( node.bounds.max[ 0 ], node.bounds.max[ 1 ], node.bounds.max[ 2 ] );
-				let center = bMin * 0.5 + bMax * 0.5;
+				// squared distance from the point to each child's bounds in world space
+				let lMin = vec3f( node.leftBounds.min[ 0 ], node.leftBounds.min[ 1 ], node.leftBounds.min[ 2 ] );
+				let lMax = vec3f( node.leftBounds.max[ 0 ], node.leftBounds.max[ 1 ], node.leftBounds.max[ 2 ] );
+				let lHalf = ( lMax - lMin ) * 0.5;
+				let lCenter = ( toWorld * vec4f( ( lMin + lMax ) * 0.5, 1.0 ) ).xyz;
+				let lExtent = absX * lHalf.x + absY * lHalf.y + absZ * lHalf.z;
+				let lDelta = shape - clamp( shape, lCenter - lExtent, lCenter + lExtent );
 
-				// determine the order in world space
-				let worldCenter = ( toWorld * vec4f( center, 1.0 ) ).xyz;
-				let worldAxis = normalize( toWorld[ splitAxis ].xyz );
-				return dot( shape - worldCenter, worldAxis ) <= 0.0;
+				let rMin = vec3f( node.rightBounds.min[ 0 ], node.rightBounds.min[ 1 ], node.rightBounds.min[ 2 ] );
+				let rMax = vec3f( node.rightBounds.max[ 0 ], node.rightBounds.max[ 1 ], node.rightBounds.max[ 2 ] );
+				let rHalf = ( rMax - rMin ) * 0.5;
+				let rCenter = ( toWorld * vec4f( ( rMin + rMax ) * 0.5, 1.0 ) ).xyz;
+				let rExtent = absX * rHalf.x + absY * rHalf.y + absZ * rHalf.z;
+				let rDelta = shape - clamp( shape, rCenter - rExtent, rCenter + rExtent );
+
+				// the nearer child is traversed first
+				return dot( lDelta, lDelta ) <= dot( rDelta, rDelta );
 
 			}
 		`,intersectsBoundsFn:h`
@@ -663,7 +683,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 					let b = ( toWorld * vec4f( ${t}[ i1 ].position.xyz, 1.0 ) ).xyz;
 					let c = ( toWorld * vec4f( ${t}[ i2 ].position.xyz, 1.0 ) ).xyz;
 
-					let barycoord = ${Si}( shape, a, b, c );
+					let barycoord = ${Ii}( shape, a, b, c );
 					let closestPoint = barycoord.x * a + barycoord.y * b + barycoord.z * c;
 					let delta = shape - closestPoint;
 					let distSq = dot( delta, delta );
@@ -715,7 +735,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 				result.objectIndex = objectIndex;
 
 			}
-		`})}import{Matrix4 as la,Box3 as rn}from"three";var st=24,sa=(1<<st)-1,Di=31-st,an=(1<<Di)-1,oa=new la,na=new rn,it=new la,$t=class extends Xa{constructor(e,t){super(),t={getBVH:(i,n)=>{throw new Error("ClusteredBVH: getBVH callback must be provided ")},shouldCluster:i=>i.isSkinnedMesh||i.isInstancedMesh||i.isBatchedMesh,primitiveLimit:64,matrixWorld:Array.isArray(e)?new la:e.matrixWorld,includeInstances:!0,_strictLeafSize:1,...t};let r=Array.from(_i(e)),a=Math.ceil(Math.log2(r.length)),s=(1<<a)-1;this.objects=r,this.getBVH=t.getBVH,this.shouldCluster=t.shouldCluster,this.includeInstances=t.includeInstances,this.primitiveLimit=t.primitiveLimit,this.matrixWorld=t.matrixWorld,this.bvhMap=new WeakMap,this.idBits=a,this.idMask=s,this.primitiveBufferStride=2,this.init(t)}init(e){let t=0,{objects:r,bvhMap:a,matrixWorld:s}=this;oa.copy(s).invert(),r.forEach(i=>{let n=[];for(let o=0,u=this._getInstanceCount(i);o<u;o++){let l=this.getBVH(i,o);n.push(l),l&&(t+=this.shouldCluster(i)?l._roots.length:this._countRelevantLeafNodes(l))}a.set(i,n)}),this.primitiveBuffer=new Uint32Array(t*2),this._fillPrimitiveBuffer(this.primitiveBuffer),super.init(e)}getRootRanges(){return[{offset:0,count:this.primitiveBuffer.length/this.primitiveBufferStride}]}refit(...e){oa.copy(this.matrixWorld).invert(),super.refit(...e)}writePrimitiveBounds(e,t,r){let{primitiveBuffer:a,bvhMap:s,objects:i}=this,n=a[2*e+0],o=a[2*e+1],u=i[this.getObjectId(n)],l=this.getInstanceId(n),f=s.get(u)[l],p=this.getBVHRootIndex(o),m=this.getBVHNodeIndex(o);u.isInstancedMesh||u.isBatchedMesh?(u.getMatrixAt(l,it),it.premultiply(u.matrixWorld)):it.copy(u.matrixWorld),it.premultiply(oa),Qa(m,new Float32Array(f._roots[p]),na),na.applyMatrix4(it);let{min:d,max:g}=na;t[r+0]=d.x,t[r+1]=d.y,t[r+2]=d.z,t[r+3]=g.x,t[r+4]=g.y,t[r+5]=g.z}getInstanceId(e){let{idMask:t,idBits:r}=this;return(e&~t)>>>r}getObjectId(e){let{idMask:t}=this;return e&t}getBVHRootIndex(e){return e>>>st}getBVHNodeIndex(e){return(e&sa)*8}_getInstanceCount(e){let{includeInstances:t}=this;return e.isInstancedMesh&&t?e.count:e.isBatchedMesh&&t?e.instanceCount:1}_fillPrimitiveBuffer(e){let{objects:t,bvhMap:r,idBits:a,primitiveLimit:s}=this,i=0,n=(o,u,l,f)=>{if(f>sa)throw new Error(`ClusteredBVH: cluster node index ${f} exceeds the ${st}-bit packing limit and cannot be represented.`);if(l>an)throw new Error(`ClusteredBVH: bvh root index ${l} exceeds the ${Di}-bit packing limit and cannot be represented.`);e[2*i+0]=o<<a|u,e[2*i+1]=l<<st|f&sa,i++};t.forEach((o,u)=>{r.get(o).forEach((l,f)=>{if(l)if(this.shouldCluster(o))for(let p=0,m=l._roots.length;p<m;p++)n(f,u,p,0);else Ri(l,s,(p,m)=>{n(f,u,p,m/8)})})})}_countRelevantLeafNodes(e){let{primitiveLimit:t}=this,r=0;return Ri(e,t,(a,s,i,n)=>{r++,n&&i>=t&&console.warn(`ClusteredBVH: a leaf node with ${i} primitives exceeds the cluster primitive limit of ${t} and cannot be subdivided further.`)}),r}};function Ri(c,e,t){let r=c._roots.length;for(let a=0;a<r;a++)_e.setBVH(c,a),_e.traverseBuffer((s,i,n)=>{let o=_e.getRangeStart(n),l=_e.getRangeEnd(n)-o;return l<e||i?(t(a,n,l,i),!0):!1});_e.reset()}function _i(c,e=new Set){return Array.isArray(c)?c.forEach(t=>_i(t,e)):c.traverse(t=>{t.isMesh&&e.add(t)}),e}var ge=new $i,Pt=new $i,nn={start:0,count:0,vertexStart:0,vertexCount:0};function ln(c){let e=c;for(;e;){if(e.visible===!1)return!1;e=e.parent}return!0}function Ci(c){return c._roots.reduce((e,t)=>e+t.byteLength,0)}function Fi(c,e){return`${c}_${e}`}var At=class{constructor(e,t={}){let{attributes:r={position:"vec4f"},autogenerateBvh:a=!0}=t;Array.isArray(e)||(e=[e]),e=e.map(s=>{if(s.isObject3D)return s;if(s.isBufferGeometry)return new Mt(s);if(s instanceof Kr){let i=new Mt;return i.geometry.boundsTree=s,i}}),this._bvhCache=new Map,this.autogenerateBvh=a,this.attributes=r,this.objects=e,this.bvh=null,this.storage=new ot,this.structs=new ot({transform:oi}),this.fns=new ot({raycastFirstHit:wi(this),closestPointToPoint:Ii(this),sampleTrianglePoint:null},w)}getRootObject(){let{objects:e}=this;if(e.isObject3D)return e;Array.isArray(e)||(e=[e]),e=e.map(r=>{if(r.isObject3D)return r;if(r.isBufferGeometry)return new Mt(r);if(r instanceof Kr){let a=new Mt;return a.geometry.boundsTree=r,a}});let t=new sn;return t.children=e,t}getShapecastFn(e){return bi(this,e)}update(){let e=this.getRootObject(),t=0;e.traverse(S=>{S.isMesh&&t++}),this.bvh=new $t(e,{strategy:2,getBVH:(S,Gr)=>this.getBVH(S,Gr,nn),primitiveLimit:t<3?1/0:64}),this.dispose();let{attributes:r,structs:a,bvh:s}=this,i=[],n=[],o=new Map,u=Ci(s),l=0,f=0,p=[],m=0,d=this._getTransformMap(s),{primitiveBuffer:g,primitiveBufferStride:x}=s;for(let S=0,Gr=g.length;S<Gr;S+=x){let Qr=g[S],Ua=g[S+1],Wo=s.objects[s.getObjectId(Qr)],Uo=s.getInstanceId(Qr),qa={start:0,count:0,vertexStart:0,vertexCount:0},Xe=this.getBVH(Wo,Uo,qa);if(!Xe)throw new Error("BVHComputeData: BVH not found.");let he=i.find(It=>It.bvh===Xe);he||(he={index:i.length,bvh:Xe,range:qa,geometryOffset:0},l+=he.range.count,f+=he.range.vertexCount,i.push(he));let Ye=s.getBVHRootIndex(Ua),Tt=s.getBVHNodeIndex(Ua)/8,Ga=`${he.index}_${Ye}_${Tt}`,Ze=o.get(Ga);if(Ze===void 0){let It=hi(Xe._roots[Ye],Tt);Ze={data:he,root:Ye,node:Tt,size:It,base:0},o.set(Ga,Ze),n.push(Ze),u+=It*32,m=Math.max(m,ea(Xe._roots[Ye],Tt))}p.push({transformSlot:d.get(Fi(Qr,Ye)).slot,subtree:Ze})}if(ea(s._roots[0])+m-1>at.value)throw new Error("BVHComputeData: BVH depth overruns the compute stack depth.");let D=Math.max(d.size,2);l=Math.max(l,2),f=Math.max(f,2);let y=new on(r,"bvh_GeometryStruct"),C=0,L=0,ce=new Uint32Array(l),ue=new ArrayBuffer(f*y.getLength()*4),de=new ArrayBuffer(u);i.forEach(S=>{S.geometryOffset=L/3,S.bvh.indirect||(S.geometryOffset-=S.range.start/3),mi(S.bvh,S.range,C,L,ce),gi(S.bvh,S.range,C,ue,y,this),L+=S.range.count,C+=S.range.vertexCount});let Y=Ci(s)/32;n.forEach(S=>{S.base=Y,pi(S.data.bvh._roots[S.root],S.node,S.size,S.data.geometryOffset,Y,de),Y+=S.size}),p.forEach(S=>S.nodeOffset=S.subtree.base),Jr(s,p,0,de);let wt=new ArrayBuffer(a.transform.getLength()*D*4),qr=Bt(new Nt(new Uint32Array(de),1),B).toReadOnly().setName("bvh_nodes"),ko=new Nt(new Uint32Array(wt),1),Ho=Bt(ko,a.transform).toReadOnly().setName("bvh_transforms"),Vo=Bt(new Nt(ce,1),"uint").toReadOnly().setName("bvh_index"),Oo=Bt(new Nt(new Uint32Array(ue),y.getLength()),y).toReadOnly().setName("bvh_attributes");this.storage.transforms=Ho,this.storage.nodes=qr,this.storage.index=Vo,this.storage.attributes=Oo,this.structs.attributes=y,Pt.copy(s.matrixWorld).invert(),d.forEach(S=>{this.writeTransformData(S,Pt,S.slot,wt)}),this.fns.sampleTrianglePoint=Ti(this),this._bvhCache.clear()}updateTransforms(){let{bvh:e,storage:t}=this;e.refit();let r=t.nodes.proxyNode.value;Jr(e,null,0,r.array.buffer),r.needsUpdate=!0;let a=t.transforms.proxyNode.value,s=a.array.buffer;Pt.copy(e.matrixWorld).invert(),this._getTransformMap(e).forEach(i=>{this.writeTransformData(i,Pt,i.slot,s)}),a.needsUpdate=!0}writeTransformData(e,t,r,a){let{structs:s}=this,i=new Float32Array(a),n=new Uint32Array(a),{object:o,instanceId:u}=e;o.isInstancedMesh||o.isBatchedMesh?(o.getMatrixAt(u,ge),ge.premultiply(o.matrixWorld)):ge.copy(o.matrixWorld),ge.premultiply(t),ge.toArray(i,r*s.transform.getLength()),ge.invert(),ge.toArray(i,r*s.transform.getLength()+16);let l=ln(o);o.isBatchedMesh&&(l=l&&o.getVisibleAt(u)),n[r*s.transform.getLength()+32]=l?1:0}getBVH(e,t,r){let{autogenerateBvh:a,_bvhCache:s}=this,i=null;if(e.boundsTree||e.isSkinnedMesh){let n=e.geometry;if(r.count=n.index?n.index.count:n.attributes.position.count,r.vertexCount=n.attributes.position.count,i=e.boundsTree||null,i===null&&a){let o=e.uuid;i=s.get(o)||new te(e),s.set(o,i)}}else if(e.isBatchedMesh){let n=e.getGeometryIdAt(t),o=e.getGeometryRangeAt(n);if(Object.assign(r,o),i=e.boundsTrees[n]||null,i===null&&a){let u=`batched_${e.geometry.uuid}_${o.start}_${o.count}`;i=s.get(u)||new fe(e.geometry,{range:{...r}}),s.set(u,i)}}else{let n=e.geometry;if(r.count=n.index?n.index.count:n.attributes.position.count,r.vertexCount=n.attributes.position.count,i=e.geometry.boundsTree||null,i===null&&a){let o=n.uuid;i=s.get(o)||new fe(n),s.set(o,i)}}return i}getDefaultAttributeValue(e,t){switch(e){case"position":case"color":t.set(1,1,1,1);break;default:t.set(0,0,0,0)}return t}dispose(){let{storage:e}=this;for(let t in e)e[t].value?.dispose()}_getTransformMap(e){let{primitiveBuffer:t,primitiveBufferStride:r}=e,a=new Map;for(let s=0,i=t.length;s<i;s+=r){let n=t[s],o=e.getBVHRootIndex(t[s+1]),u=Fi(n,o);if(a.has(u))continue;let l=a.size,f=e.objects[e.getObjectId(n)],p=e.getInstanceId(n);a.set(u,{object:f,instanceId:p,compositeId:n,root:o,slot:l})}return a}},ot=class{constructor(e={},t=R){let r={};return new Proxy({...e},{get(a,s){return r[s]||(r[s]=t(s,a)),r[s]},set(a,s,i){return a[s]=i,!0}})}};import{FullScreenQuad as Or}from"three/examples/jsm/postprocessing/Pass.js";import{MeshBasicNodeMaterial as cn,NoToneMapping as un,StorageTexture as Mi}from"three/webgpu";import{uv as dn,varying as hn,texture as Ni,vec4 as fn,toneMapping as pn,uniform as mn,wgslFn as gn}from"three/tsl";var Lt=gn(`
+		`})}import{Matrix4 as la,Box3 as ln}from"three";var st=24,sa=(1<<st)-1,Fi=31-st,cn=(1<<Fi)-1,oa=new la,na=new ln,it=new la,$t=class extends Xa{constructor(e,t){super(),t={getBVH:(i,o)=>{throw new Error("ClusteredBVH: getBVH callback must be provided ")},shouldCluster:i=>i.isSkinnedMesh||i.isInstancedMesh||i.isBatchedMesh,primitiveLimit:64,matrixWorld:Array.isArray(e)?new la:e.matrixWorld,includeInstances:!0,_strictLeafSize:1,...t};let r=Array.from($i(e)),a=Math.ceil(Math.log2(r.length)),s=(1<<a)-1;this.objects=r,this.getBVH=t.getBVH,this.shouldCluster=t.shouldCluster,this.includeInstances=t.includeInstances,this.primitiveLimit=t.primitiveLimit,this.matrixWorld=t.matrixWorld,this.bvhMap=new WeakMap,this.idBits=a,this.idMask=s,this.primitiveBufferStride=2,this.init(t)}init(e){let t=0,{objects:r,bvhMap:a,matrixWorld:s}=this;oa.copy(s).invert(),r.forEach(i=>{let o=[];for(let n=0,u=this._getInstanceCount(i);n<u;n++){let l=this.getBVH(i,n);o.push(l),l&&(t+=this.shouldCluster(i)?l._roots.length:this._countRelevantLeafNodes(l))}a.set(i,o)}),this.primitiveBuffer=new Uint32Array(t*2),this._fillPrimitiveBuffer(this.primitiveBuffer),super.init(e)}getRootRanges(){return[{offset:0,count:this.primitiveBuffer.length/this.primitiveBufferStride}]}refit(...e){oa.copy(this.matrixWorld).invert(),super.refit(...e)}writePrimitiveBounds(e,t,r){let{primitiveBuffer:a,bvhMap:s,objects:i}=this,o=a[2*e+0],n=a[2*e+1],u=i[this.getObjectId(o)],l=this.getInstanceId(o),f=s.get(u)[l],p=this.getBVHRootIndex(n),m=this.getBVHNodeIndex(n);u.isInstancedMesh||u.isBatchedMesh?(u.getMatrixAt(l,it),it.premultiply(u.matrixWorld)):it.copy(u.matrixWorld),it.premultiply(oa),Qa(m,new Float32Array(f._roots[p]),na),na.applyMatrix4(it);let{min:d,max:g}=na;t[r+0]=d.x,t[r+1]=d.y,t[r+2]=d.z,t[r+3]=g.x,t[r+4]=g.y,t[r+5]=g.z}getInstanceId(e){let{idMask:t,idBits:r}=this;return(e&~t)>>>r}getObjectId(e){let{idMask:t}=this;return e&t}getBVHRootIndex(e){return e>>>st}getBVHNodeIndex(e){return(e&sa)*8}_getInstanceCount(e){let{includeInstances:t}=this;return e.isInstancedMesh&&t?e.count:e.isBatchedMesh&&t?e.instanceCount:1}_fillPrimitiveBuffer(e){let{objects:t,bvhMap:r,idBits:a,primitiveLimit:s}=this,i=0,o=(n,u,l,f)=>{if(f>sa)throw new Error(`ClusteredBVH: cluster node index ${f} exceeds the ${st}-bit packing limit and cannot be represented.`);if(l>cn)throw new Error(`ClusteredBVH: bvh root index ${l} exceeds the ${Fi}-bit packing limit and cannot be represented.`);e[2*i+0]=n<<a|u,e[2*i+1]=l<<st|f&sa,i++};t.forEach((n,u)=>{r.get(n).forEach((l,f)=>{if(l)if(this.shouldCluster(n))for(let p=0,m=l._roots.length;p<m;p++)o(f,u,p,0);else Ci(l,s,(p,m)=>{o(f,u,p,m/8)})})})}_countRelevantLeafNodes(e){let{primitiveLimit:t}=this,r=0;return Ci(e,t,(a,s,i,o)=>{r++,o&&i>=t&&console.warn(`ClusteredBVH: a leaf node with ${i} primitives exceeds the cluster primitive limit of ${t} and cannot be subdivided further.`)}),r}};function Ci(c,e,t){let r=c._roots.length;for(let a=0;a<r;a++)De.setBVH(c,a),De.traverseBuffer((s,i,o)=>{let n=De.getRangeStart(o),l=De.getRangeEnd(o)-n;return l<e||i?(t(a,o,l,i),!0):!1});De.reset()}function $i(c,e=new Set){return Array.isArray(c)?c.forEach(t=>$i(t,e)):c.traverse(t=>{t.isMesh&&e.add(t)}),e}var ge=new Pi,Pt=new Pi,Mi={start:0,count:0,vertexStart:0,vertexCount:0};function hn(c){let e=c;for(;e;){if(e.visible===!1)return!1;e=e.parent}return!0}function Ni(c){return c._roots.reduce((e,t)=>e+t.byteLength/32,0)}function Bi(c,e){return`${c}_${e}`}var At=class{constructor(e,t={}){let{attributes:r={position:"vec4f"},autogenerateBvh:a=!0}=t;Array.isArray(e)||(e=[e]),e=e.map(s=>{if(s.isObject3D)return s;if(s.isBufferGeometry)return new Mt(s);if(s instanceof Kr){let i=new Mt;return i.geometry.boundsTree=s,i}}),this._bvhCache=new Map,this.autogenerateBvh=a,this.attributes=r,this.objects=e,this.bvh=null,this.storage=new ot,this.structs=new ot({transform:oi}),this.fns=new ot({raycastFirstHit:Ri(this),closestPointToPoint:Di(this),sampleTrianglePoint:null},w)}getRootObject(){let{objects:e}=this;if(e.isObject3D)return e;Array.isArray(e)||(e=[e]),e=e.map(r=>{if(r.isObject3D)return r;if(r.isBufferGeometry)return new Mt(r);if(r instanceof Kr){let a=new Mt;return a.geometry.boundsTree=r,a}});let t=new un;return t.children=e,t}getShapecastFn(e){return Ti(this,e)}update(){let e=this.getRootObject(),t=0;e.traverse(S=>{S.isMesh&&t++}),this.bvh=new $t(e,{strategy:2,getBVH:(S,Gr)=>this._getBVHSync(S,Gr,Mi),primitiveLimit:t<3?1/0:64}),this.dispose();let{attributes:r,structs:a,bvh:s}=this,i=[],o=[],n=new Map,u=Ni(s)*Ct,l=0,f=0,p=[],m=0,d=this._getTransformMap(s),{primitiveBuffer:g,primitiveBufferStride:x}=s;for(let S=0,Gr=g.length;S<Gr;S+=x){let Qr=g[S],Ua=g[S+1],Qo=s.objects[s.getObjectId(Qr)],jo=s.getInstanceId(Qr),qa={start:0,count:0,vertexStart:0,vertexCount:0},Xe=this._getBVHSync(Qo,jo,qa);if(!Xe)throw new Error("BVHComputeData: BVH not found.");let he=i.find(It=>It.bvh===Xe);he||(he={index:i.length,bvh:Xe,range:qa,geometryOffset:0},l+=he.range.count,f+=he.range.vertexCount,i.push(he));let Ye=s.getBVHRootIndex(Ua),Tt=s.getBVHNodeIndex(Ua)/8,Ga=`${he.index}_${Ye}_${Tt}`,Ze=n.get(Ga);if(Ze===void 0){let It=mi(Xe._roots[Ye],Tt);Ze={data:he,root:Ye,node:Tt,size:It,base:0},n.set(Ga,Ze),o.push(Ze),u+=It*Ct,m=Math.max(m,ea(Xe._roots[Ye],Tt))}p.push({transformSlot:d.get(Bi(Qr,Ye)).slot,subtree:Ze})}if(ea(s._roots[0])+m-1>at.value)throw new Error("BVHComputeData: BVH depth overruns the compute stack depth.");let D=Math.max(d.size,2);l=Math.max(l,2),f=Math.max(f,2);let y=new dn(r,"bvh_GeometryStruct"),$=0,L=0,ce=new Uint32Array(l),ue=new ArrayBuffer(f*y.getLength()*4),de=new ArrayBuffer(u);i.forEach(S=>{S.geometryOffset=L/3,S.bvh.indirect||(S.geometryOffset-=S.range.start/3),vi(S.bvh,S.range,$,L,ce),yi(S.bvh,S.range,$,ue,y,this),L+=S.range.count,$+=S.range.vertexCount});let Y=Ni(s);o.forEach(S=>{S.base=Y,xi(S.data.bvh._roots[S.root],S.node,S.size,S.data.geometryOffset,Y,de),Y+=S.size}),p.forEach(S=>S.nodeOffset=S.subtree.base),Jr(s,p,0,de);let wt=new ArrayBuffer(a.transform.getLength()*D*4),qr=Bt(new Nt(new Uint32Array(de),1),B).toReadOnly().setName("bvh_nodes"),Wo=new Nt(new Uint32Array(wt),1),Uo=Bt(Wo,a.transform).toReadOnly().setName("bvh_transforms"),qo=Bt(new Nt(ce,1),"uint").toReadOnly().setName("bvh_index"),Go=Bt(new Nt(new Uint32Array(ue),y.getLength()),y).toReadOnly().setName("bvh_attributes");this.storage.transforms=Uo,this.storage.nodes=qr,this.storage.index=qo,this.storage.attributes=Go,this.structs.attributes=y,Pt.copy(s.matrixWorld).invert(),d.forEach(S=>{this.writeTransformData(S,Pt,S.slot,wt)}),this.fns.sampleTrianglePoint=_i(this),this._bvhCache.clear()}async updateAsync(){let e=[];this.getRootObject().traverse(t=>{if(!t.isMesh)return;let r=1;t.isInstancedMesh?r=t.count:t.isBatchedMesh&&(r=t.instanceCount);for(let a=0;a<r;a++)e.push(this.getBVH(t,a,Mi))}),await Promise.all(e),this.update()}updateTransforms(){let{bvh:e,storage:t}=this;e.refit();let r=t.nodes.proxyNode.value;Jr(e,null,0,r.array.buffer),r.needsUpdate=!0;let a=t.transforms.proxyNode.value,s=a.array.buffer;Pt.copy(e.matrixWorld).invert(),this._getTransformMap(e).forEach(i=>{this.writeTransformData(i,Pt,i.slot,s)}),a.needsUpdate=!0}writeTransformData(e,t,r,a){let{structs:s}=this,i=new Float32Array(a),o=new Uint32Array(a),{object:n,instanceId:u}=e;n.isInstancedMesh||n.isBatchedMesh?(n.getMatrixAt(u,ge),ge.premultiply(n.matrixWorld)):ge.copy(n.matrixWorld),ge.premultiply(t),ge.toArray(i,r*s.transform.getLength()),ge.invert(),ge.toArray(i,r*s.transform.getLength()+16);let l=hn(n);n.isBatchedMesh&&(l=l&&n.getVisibleAt(u)),o[r*s.transform.getLength()+32]=l?1:0}getBVH(e,t,r){let{autogenerateBvh:a,_bvhCache:s}=this,i=null;if(e.boundsTree||e.isSkinnedMesh){let o=e.geometry;if(r.count=o.index?o.index.count:o.attributes.position.count,r.vertexCount=o.attributes.position.count,i=e.boundsTree||null,i===null&&a){let n=e.uuid;i=s.get(n)||new te(e),s.set(n,i)}}else if(e.isBatchedMesh){let o=e.getGeometryIdAt(t),n=e.getGeometryRangeAt(o);if(Object.assign(r,n),i=e.boundsTrees[o]||null,i===null&&a){let u=`batched_${e.geometry.uuid}_${n.start}_${n.count}`;i=s.get(u)||new fe(e.geometry,{range:{...r}}),s.set(u,i)}}else{let o=e.geometry;if(r.count=o.index?o.index.count:o.attributes.position.count,r.vertexCount=o.attributes.position.count,i=e.geometry.boundsTree||null,i===null&&a){let n=o.uuid;i=s.get(n)||new fe(o),s.set(n,i)}}return i}getDefaultAttributeValue(e,t){switch(e){case"position":case"color":t.set(1,1,1,1);break;default:t.set(0,0,0,0)}return t}dispose(){let{storage:e}=this;for(let t in e)e[t].value?.dispose()}_getBVHSync(e,t,r){let a=this.getBVH(e,t,r);if(a instanceof Promise)throw new Error('BVHComputeData: "getBVH" returned a promise. Use "updateAsync" instead.');return a}_getTransformMap(e){let{primitiveBuffer:t,primitiveBufferStride:r}=e,a=new Map;for(let s=0,i=t.length;s<i;s+=r){let o=t[s],n=e.getBVHRootIndex(t[s+1]),u=Bi(o,n);if(a.has(u))continue;let l=a.size,f=e.objects[e.getObjectId(o)],p=e.getInstanceId(o);a.set(u,{object:f,instanceId:p,compositeId:o,root:n,slot:l})}return a}},ot=class{constructor(e={},t=I){let r={};return new Proxy({...e},{get(a,s){return r[s]||(r[s]=t(s,a)),r[s]},set(a,s,i){return a[s]=i,!0}})}};import{FullScreenQuad as Or}from"three/examples/jsm/postprocessing/Pass.js";import{MeshBasicNodeMaterial as fn,NoToneMapping as pn,StorageTexture as Ai}from"three/webgpu";import{uv as mn,varying as gn,texture as Li,vec4 as xn,toneMapping as vn,uniform as yn,wgslFn as bn}from"three/tsl";var Lt=bn(`
 	fn sampleTexel( tex: texture_2d<f32>, coord: vec2f ) -> vec4f {
 
 		// Manual bilinear filtering using textureLoad to support filterable float32 textures
@@ -741,7 +761,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 		return mix( y0, y1, fr.y );
 
 	}
-`),Et=class extends cn{get texture(){return this._texNode.value}set texture(e){this._texNode.value=e}get fromTexture(){return this._fromTexNode.value}set fromTexture(e){this._fromTexNode.value=e}get toneMapping(){return this._toneMapping.toneMapping}set toneMapping(e){this._toneMapping.setToneMapping(e)}get transition(){return this._transitionUniform.value}set transition(e){this._transitionUniform.value=e}get exposure(){return this._toneMapping.exposureNode.value}set exposure(e){this._toneMapping.exposureNode.value=e}constructor(e){super();let t=Ni(new Mi);this._texNode=t;let r=Ni(new Mi);this._fromTexNode=r;let a=hn(dn()),s=mn(1);this._transitionUniform=s;let i=h`
+`),Et=class extends fn{get texture(){return this._texNode.value}set texture(e){this._texNode.value=e}get fromTexture(){return this._fromTexNode.value}set fromTexture(e){this._fromTexNode.value=e}get toneMapping(){return this._toneMapping.toneMapping}set toneMapping(e){this._toneMapping.setToneMapping(e)}get transition(){return this._transitionUniform.value}set transition(e){this._transitionUniform.value=e}get exposure(){return this._toneMapping.exposureNode.value}set exposure(e){this._toneMapping.exposureNode.value=e}constructor(e){super();let t=Li(new Ai);this._texNode=t;let r=Li(new Ai);this._fromTexNode=r;let a=gn(mn()),s=yn(1);this._transitionUniform=s;let i=h`
 			fn fade( uv: vec2f ) -> vec4f {
 
 				if ( ${s} <= 0.0 ) {
@@ -761,7 +781,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 				}
 
 			}
-		`,n=pn(un,1,i(a));this._toneMapping=n,this.transparent=!0,this.colorNode=fn(n.rgb,n.a),this.setValues(e)}};import{Matrix4 as Bi,StructTypeNode as xn}from"three/webgpu";import{uniform as $e,uint as vn,float as Pi}from"three/tsl";var ca=h`
+		`,o=vn(pn,1,i(a));this._toneMapping=o,this.transparent=!0,this.colorNode=xn(o.rgb,o.a),this.setValues(e)}};import{Matrix4 as Ei,StructTypeNode as Sn}from"three/webgpu";import{uniform as $e,uint as wn,float as zi}from"three/tsl";var ca=h`
 	fn debugHeatColor( t: f32 ) -> vec3f {
 
 		let r = clamp( 1.5 - abs( 4.0 * t - 3.0 ), 0.0, 1.0 );
@@ -770,7 +790,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 		return vec3f( r, g, b );
 
 	}
-`,zt=new xn({tlasCount:"uint",blasCount:"uint",didHit:"bool",dist:"float"},"DebugBoundsResult");function Ai(c){let{transforms:e,index:t,attributes:r,materials:a}=c.storage,s=$e(new Bi),i=$e(new Bi),n=$e(1),o=$e(1),u=$e(0),l=$e(64),f=vn(0).toVar("bvh_debugBoundsLevel"),p=Pi(1).toVar("bvh_debugRayScalar"),m=Pi(0).toVar("bvh_debugMaterialSide"),d=h`
+`,zt=new Sn({tlasCount:"uint",blasCount:"uint",didHit:"bool",dist:"float"},"DebugBoundsResult");function ki(c){let{transforms:e,index:t,attributes:r,materials:a}=c.storage,s=$e(new Ei),i=$e(new Ei),o=$e(1),n=$e(1),u=$e(0),l=$e(64),f=wn(0).toVar("bvh_debugBoundsLevel"),p=zi(1).toVar("bvh_debugRayScalar"),m=zi(0).toVar("bvh_debugMaterialSide"),d=h`
 		fn debugGetBoundsOrder( ray: ${v}, splitAxis: u32, node: ${B} ) -> bool {
 
 			return ray.direction[ splitAxis ] >= 0.0;
@@ -856,7 +876,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 			return didHit;
 
 		}
-	`,I=h`
+	`,_=h`
 		fn debugTransformRay( ray: ptr<function, ${v}>, objectIndex: u32 ) -> void {
 
 			let object = ${e}[ objectIndex ];
@@ -879,7 +899,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 			${f} = 0u;
 
 		}
-	`,D=c.getShapecastFn({name:"debugBoundsCount",shapeStruct:v,resultStruct:zt,boundsOrderFn:d,intersectsBoundsFn:g,intersectRangeFn:x,transformShapeFn:I,resetShapeFn:b}),y=h`
+	`,D=c.getShapecastFn({name:"debugBoundsCount",shapeStruct:v,resultStruct:zt,boundsOrderFn:d,intersectsBoundsFn:g,intersectRangeFn:x,transformShapeFn:_,resetShapeFn:b}),y=h`
 		fn debugBounds( vUv: vec2f ) -> vec4f {
 
 			let ndc = vUv * 2.0 - vec2f( 1.0 );
@@ -890,8 +910,8 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 			var result: ${zt};
 			${D}( ray, &result );
 
-			let tlas = select( 0u, result.tlasCount, ${n} > 0.5 );
-			let blas = select( 0u, result.blasCount, ${o} > 0.5 );
+			let tlas = select( 0u, result.tlasCount, ${o} > 0.5 );
+			let blas = select( 0u, result.blasCount, ${n} > 0.5 );
 			let count = tlas + blas;
 
 			let t = clamp( f32( count ) / max( ${l}, 1.0 ), 0.0, 1.0 );
@@ -899,7 +919,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 			return vec4f( ${ca}( t ), 1.0 );
 
 		}
-	`;return y.uniforms={cameraToModelMatrix:s,inverseProjectionMatrix:i,displayTLAS:n,displayBLAS:o,stopAtSurface:u,saturationCount:l},y}import{Matrix4 as Ms,Vector2 as Ns}from"three/webgpu";import{DataTexture as xs,Vector2 as vs,StorageTexture as _a}from"three/webgpu";var _=class{get computeNode(){return this.kernel.computeNode}get workgroupSize(){return this.kernel.workgroupSize}set needsUpdate(e){this.setWorkgroupSize(...this.workgroupSize)}constructor(e,t={}){let{workgroupSize:r=[64],context:a={}}=t;this._fn=e,this.kernel=null,this.context=a,this.setWorkgroupSize(...r)}defineUniformAccessors(e){for(let t in e){if(t in this)throw new Error(`ComputeNode: Uniform name ${t} is already defined.`);"value"in e[t]&&Object.defineProperty(this,t,{get(){return e[t].value},set(a){e[t].value=a}})}}setWorkgroupSize(e=64,t=1,r=1){let a=this._fn.context(this.context);return a.parameters=this._fn.parameters,this.kernel?.dispose(),this.kernel=a.computeKernel([e,t,r]),this}dispose(){this.kernel?.dispose(),this.kernel=null}getDispatchSize(e=1,t=1,r=1,a=[]){let[s,i,n]=this.workgroupSize;return a.length=3,a[0]=Math.ceil(e/s),a[1]=Math.ceil(t/i),a[2]=Math.ceil(r/n),a}};import{texture as Xn,sampler as Yn,uniform as W,globalId as Zn,textureStore as Ca}from"three/tsl";var Ot={};jr(Ot,{rand1:()=>da,rand2:()=>ha,rand3:()=>fa,rand4:()=>lt,rngInit:()=>ct,rngNextBounce:()=>ut});import{uint as Ht,float as yn,wgsl as bn,wgslFn as nt}from"three/tsl";var Li=Ht(256*256),zi=yn(1/16777216),Sn=bn(`
+	`;return y.uniforms={cameraToModelMatrix:s,inverseProjectionMatrix:i,displayTLAS:o,displayBLAS:n,stopAtSurface:u,saturationCount:l},y}import{Matrix4 as As,Vector2 as Ls}from"three/webgpu";import{DataTexture as Ss,Vector2 as ws,StorageTexture as Da}from"three/webgpu";var R=class{get computeNode(){return this.kernel.computeNode}get workgroupSize(){return this.kernel.workgroupSize}set needsUpdate(e){this.setWorkgroupSize(...this.workgroupSize)}constructor(e,t={}){let{workgroupSize:r=[64],context:a={}}=t;this._fn=e,this.kernel=null,this.context=a,this.setWorkgroupSize(...r)}defineUniformAccessors(e){for(let t in e){if(t in this)throw new Error(`ComputeNode: Uniform name ${t} is already defined.`);"value"in e[t]&&Object.defineProperty(this,t,{get(){return e[t].value},set(a){e[t].value=a}})}}setWorkgroupSize(e=64,t=1,r=1){let a=this._fn.context(this.context);return a.parameters=this._fn.parameters,this.kernel?.dispose(),this.kernel=a.computeKernel([e,t,r]),this}dispose(){this.kernel?.dispose(),this.kernel=null}getDispatchSize(e=1,t=1,r=1,a=[]){let[s,i,o]=this.workgroupSize;return a.length=3,a[0]=Math.ceil(e/s),a[1]=Math.ceil(t/i),a[2]=Math.ceil(r/o),a}};import{texture as el,sampler as tl,uniform as W,globalId as rl,textureStore as Ca}from"three/tsl";var Ot={};jr(Ot,{rand1:()=>da,rand2:()=>ha,rand3:()=>fa,rand4:()=>lt,rngInit:()=>ct,rngNextBounce:()=>ut});import{uint as Ht,float as Tn,wgsl as In,wgslFn as nt}from"three/tsl";var Hi=Ht(256*256),Oi=Tn(1/16777216),Rn=In(`
 
 	const SOBOL_DIRECTIONS_1 = array<u32, 32>(
 		0x80000000u, 0xc0000000u, 0xa0000000u, 0xf0000000u,
@@ -945,7 +965,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 		0x800228f8u, 0x400b3cdcu, 0x200fb67au, 0xb00ddb9du
 	);
 
-`),ki=Ht(0).toVar("sobolPixelIndex"),Hi=Ht(0).toVar("sobolPathIndex"),ua=Ht(0).toVar("sobolBounceIndex"),kt=nt(`
+`),Wi=Ht(0).toVar("sobolPixelIndex"),Ui=Ht(0).toVar("sobolPathIndex"),ua=Ht(0).toVar("sobolBounceIndex"),kt=nt(`
 	fn getMaskedSobol( index: u32, directions: array<u32, 32> ) -> u32 {
 
 		var X = 0u;
@@ -958,7 +978,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 		return X;
 
 	}
-`),wn=(c=1)=>{if(c<=0)return;let e=c>1?`vec${c}u`:"u32",t=nt(`
+`),_n=(c=1)=>{if(c<=0)return;let e=c>1?`vec${c}u`:"u32",t=nt(`
 		fn sobolReverseBits_${e}( in: ${e} ) -> ${e} {
 
 			var x = in;
@@ -995,14 +1015,14 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 			return res;
 
 		}
-	`;return{reverseBits:t,hashCombine:r,lkPermutation:a,scramble:s}},H=Array.from({length:5},(c,e)=>wn(e)),Tn=h`
-  	${[Sn]}
+	`;return{reverseBits:t,hashCombine:r,lkPermutation:a,scramble:s}},H=Array.from({length:5},(c,e)=>_n(e)),Dn=h`
+  	${[Rn]}
 	fn generateSobolPoint( id: u32 ) -> vec4f {
 
 		var index = id;
-		if ( index >= ${Li} ) {
+		if ( index >= ${Hi} ) {
 
-			index = index % ${Li};
+			index = index % ${Hi};
 			// return vec4( 0.0 );
 
 		}
@@ -1014,10 +1034,10 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 		let z = ${H[1].reverseBits}( ${kt}( index, SOBOL_DIRECTIONS_3 ) ) & 0x00ffffffu;
 		let w = ${H[1].reverseBits}( ${kt}( index, SOBOL_DIRECTIONS_4 ) ) & 0x00ffffffu;
 
-		return vec4( f32( x ), f32( y ), f32( z ), f32( w ) ) * ${zi};
+		return vec4( f32( x ), f32( y ), f32( z ), f32( w ) ) * ${Oi};
 
 	}
-`,Ei=nt(`
+`,Vi=nt(`
 	fn sobolHash( in: u32 ) -> u32 {
 
 		var x = in;
@@ -1030,25 +1050,25 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 		return x;
 
 	}
-`),In=h`
+`),Cn=h`
 	fn sobolGetSeed( effect: u32 ) -> u32 {
 
-		return ${Ei}(
+		return ${Vi}(
 			${H[1].hashCombine}(
 				${H[1].hashCombine}(
-					${Ei}( ${ua} ),
-					${ki}
+					${Vi}( ${ua} ),
+					${Wi}
 				),
 				effect
 			)
 		);
 
 	}
-`,Vt=(c=1,e=Tn)=>{if(c<=0)return;let t=c>1?`vec${c}u`:"u32",r=c>1?`vec${c}f`:"f32",a=".r",s="1u";return c===2?(a=".rg",s="vec2( 1u, 2u )"):c===3?(a=".rgb",s="vec3( 1u, 2u, 3u )"):c===4&&(a="",s="vec4( 1u, 2u, 3u, 4u )"),h`
+`,Vt=(c=1,e=Dn)=>{if(c<=0)return;let t=c>1?`vec${c}u`:"u32",r=c>1?`vec${c}f`:"f32",a=".r",s="1u";return c===2?(a=".rg",s="vec2( 1u, 2u )"):c===3?(a=".rgb",s="vec3( 1u, 2u, 3u )"):c===4&&(a="",s="vec4( 1u, 2u, 3u, 4u )"),h`
 		fn sobol${c}( effect: u32 ) -> ${r} {
 
-			let seed = ${In}( effect );
-			let index = ${Hi};
+			let seed = ${Cn}( effect );
+			let index = ${Ui};
 
 			let shuffle_seed = ${H[1].hashCombine}( seed, 0u );
 			let shuffled_index = ${H[1].scramble}( ${H[1].reverseBits}( index ), shuffle_seed );
@@ -1058,14 +1078,14 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 			let seed2 = ${H[c].hashCombine}( seed, ${s} );
 			result = ${H[c].scramble}( result, seed2 );
 
-			return ${zi} * ${r}( result >> ${t}( 8 ) );
+			return ${Oi} * ${r}( result >> ${t}( 8 ) );
 
 		}
 	`},da=Vt(1),ha=Vt(2),fa=Vt(3),lt=Vt(4),ct=h`
 	fn sobolInit( pixel: vec2u, pathIndex: u32, bounceIndex: u32 ) -> void {
 
-		${ki} = ( pixel.x << 16 ) | pixel.y;
-		${Hi} = pathIndex;
+		${Wi} = ( pixel.x << 16 ) | pixel.y;
+		${Ui} = pathIndex;
 		${ua} = bounceIndex;
 
 	}
@@ -1075,14 +1095,14 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 		${ua}++;
 
 	}
-`;var Wt=0,Ut=1,Vi=2,qt=3,Oi=4,Gt=5,Qt=6,jt=7,Kt=50,V=pe("random.rngInit",ct),pa=pe("random.rngNextBounce",ut),q=pe("random.rand1",da),O=pe("random.rand2",ha),Me=pe("random.rand3",fa),eh=pe("random.rand4",lt);import{wgslFn as j}from"three/tsl";import{wgsl as Rn}from"three/tsl";import{StructTypeNode as G}from"three/webgpu";var T=Rn(`
+`;var Wt=0,Ut=1,qi=2,qt=3,Gi=4,Gt=5,Qt=6,jt=7,Kt=50,V=pe("random.rngInit",ct),pa=pe("random.rngNextBounce",ut),q=pe("random.rand1",da),O=pe("random.rand2",ha),Me=pe("random.rand3",fa),ih=pe("random.rand4",lt);import{wgslFn as j}from"three/tsl";import{wgsl as Fn}from"three/tsl";import{StructTypeNode as G}from"three/webgpu";var T=Fn(`
 
 	const PI: f32 = 3.141592653589793;
 	const EPSILON: f32 = 1e-5;
 	const MIN_ROUGHNESS: f32 = 1e-3;
 	const MIN_INCIDENT_COS: f32 = 1e-3;
 
-`),J=new G({color:"vec3f",isTransmissive:"bool",direction:"vec3f",pdf:"float"},"ScatterRecord"),ma=new G({reflectance:"vec3f",transmittance:"vec3f",reflectProbability:"float"},"TransmissionFresnel"),Wi=new G({color:"vec3",map:"int",metalness:"float",metalnessMap:"int",roughness:"float",roughnessMap:"int",ior:"float",transmission:"float",transmissionMap:"int",emissiveIntensity:"float",emissive:"vec3",emissiveMap:"int",normalMap:"int",normalScale:"vec2",clearcoat:"float",clearcoatMap:"int",clearcoatNormalMap:"int",clearcoatNormalScale:"vec2",clearcoatRoughness:"float",clearcoatRoughnessMap:"int",iridescenceMap:"int",iridescenceThicknessMap:"int",iridescence:"float",iridescenceIor:"float",iridescenceThicknessMinimum:"float",iridescenceThicknessMaximum:"float",diffuseRoughness:"float",dispersion:"float",specularColor:"vec3",specularColorMap:"int",specularIntensity:"float",specularIntensityMap:"int",thinWall:"int",attenuationColor:"vec3",attenuationDistance:"float",alphaMap:"int",castShadow:"int",opacity:"float",alphaTest:"float",side:"float",matte:"int",sheen:"float",sheenColor:"vec3",sheenColorMap:"int",sheenRoughness:"float",sheenRoughnessMap:"int",vertexColors:"int",flatShading:"int",transparent:"int",fogVolume:"int",anisotropy:"float",anisotropyRotation:"float",anisotropyMap:"int",mapTransform:"mat3",metalnessMapTransform:"mat3",roughnessMapTransform:"mat3",transmissionMapTransform:"mat3",emissiveMapTransform:"mat3",normalMapTransform:"mat3",clearcoatMapTransform:"mat3",clearcoatNormalMapTransform:"mat3",clearcoatRoughnessMapTransform:"mat3",sheenColorMapTransform:"mat3",sheenRoughnessMapTransform:"mat3",iridescenceMapTransform:"mat3",iridescenceThicknessMapTransform:"mat3",specularColorMapTransform:"mat3",specularIntensityMapTransform:"mat3",alphaMapTransform:"mat3",anisotropyMapTransform:"mat3"},"Material"),M=new G({volumeParticle:"bool",faceNormal:"vec3f",frontFace:"bool",normal:"vec3f",normalBasis:"mat3x3f",normalInvBasis:"mat3x3f",eta:"f32",f0:"f32",roughness:"f32",diffuseRoughness:"f32",metalness:"f32",anisotropy:"f32",color:"vec3f",emission:"vec3f",opacity:"f32",ior:"f32",transmission:"f32",thinWall:"bool",attenuationColor:"vec3f",attenuationDistance:" f32",clearcoatNormal:"vec3f",clearcoatBasis:"mat3x3f",clearcoatInvBasis:"mat3x3f",clearcoat:"f32",clearcoatRoughness:"f32",sheen:"f32",sheenColor:"vec3f",sheenRoughness:"f32",iridescence:"f32",iridescenceIor:"f32",iridescenceThickness:"f32",specularColor:"vec3f",specularIntensity:"f32"},"SurfaceRecord"),ih=new G({rotation:"mat3x3f",intensity:"float",blur:"float",totalSum:"float"},"EnvironmentInfo"),ga=new G({color:"vec3f",direction:"vec3f",pdf:"float"},"EnvironmentSample"),ee=new G({position:"vec3f",lightType:"int",color:"vec3f",intensity:"float",u:"vec3f",visibleToCameraRays:"int",v:"vec3f",area:"float",radius:"float",decay:"float",distance:"float",coneCos:"float",penumbraCos:"float",iesProfile:"int"},"Light"),P=new G({dist:"float",direction:"vec3f",pdf:"float",emission:"vec3f",lightType:"int"},"LightRecord"),Ui=new G({diffuse:"float",specular:"float",transmission:"float",clearcoat:"float"},"LobeWeights"),xa=new G({V:"vec3f",L:"vec3f",H:"vec3f",VdotH:"float"},"BxDFContext");import{wgslFn as F}from"three/tsl";var Gi=F(`
+`),J=new G({color:"vec3f",isTransmissive:"bool",direction:"vec3f",pdf:"float"},"ScatterRecord"),ma=new G({reflectance:"vec3f",transmittance:"vec3f",reflectProbability:"float"},"TransmissionFresnel"),Qi=new G({color:"vec3",map:"int",metalness:"float",metalnessMap:"int",roughness:"float",roughnessMap:"int",ior:"float",transmission:"float",transmissionMap:"int",emissiveIntensity:"float",emissive:"vec3",emissiveMap:"int",normalMap:"int",normalScale:"vec2",clearcoat:"float",clearcoatMap:"int",clearcoatNormalMap:"int",clearcoatNormalScale:"vec2",clearcoatRoughness:"float",clearcoatRoughnessMap:"int",iridescenceMap:"int",iridescenceThicknessMap:"int",iridescence:"float",iridescenceIor:"float",iridescenceThicknessMinimum:"float",iridescenceThicknessMaximum:"float",diffuseRoughness:"float",dispersion:"float",specularColor:"vec3",specularColorMap:"int",specularIntensity:"float",specularIntensityMap:"int",thinWall:"int",attenuationColor:"vec3",attenuationDistance:"float",alphaMap:"int",castShadow:"int",opacity:"float",alphaTest:"float",side:"float",matte:"int",sheen:"float",sheenColor:"vec3",sheenColorMap:"int",sheenRoughness:"float",sheenRoughnessMap:"int",vertexColors:"int",flatShading:"int",transparent:"int",fogVolume:"int",anisotropy:"float",anisotropyRotation:"float",anisotropyMap:"int",mapTransform:"mat3",metalnessMapTransform:"mat3",roughnessMapTransform:"mat3",transmissionMapTransform:"mat3",emissiveMapTransform:"mat3",normalMapTransform:"mat3",clearcoatMapTransform:"mat3",clearcoatNormalMapTransform:"mat3",clearcoatRoughnessMapTransform:"mat3",sheenColorMapTransform:"mat3",sheenRoughnessMapTransform:"mat3",iridescenceMapTransform:"mat3",iridescenceThicknessMapTransform:"mat3",specularColorMapTransform:"mat3",specularIntensityMapTransform:"mat3",alphaMapTransform:"mat3",anisotropyMapTransform:"mat3"},"Material"),M=new G({volumeParticle:"bool",faceNormal:"vec3f",frontFace:"bool",normal:"vec3f",normalBasis:"mat3x3f",normalInvBasis:"mat3x3f",eta:"f32",f0:"f32",roughness:"f32",diffuseRoughness:"f32",metalness:"f32",anisotropy:"f32",color:"vec3f",emission:"vec3f",opacity:"f32",ior:"f32",transmission:"f32",thinWall:"bool",attenuationColor:"vec3f",attenuationDistance:" f32",clearcoatNormal:"vec3f",clearcoatBasis:"mat3x3f",clearcoatInvBasis:"mat3x3f",clearcoat:"f32",clearcoatRoughness:"f32",sheen:"f32",sheenColor:"vec3f",sheenRoughness:"f32",iridescence:"f32",iridescenceIor:"f32",iridescenceThickness:"f32",specularColor:"vec3f",specularIntensity:"f32"},"SurfaceRecord"),lh=new G({rotation:"mat3x3f",intensity:"float",blur:"float",totalSum:"float"},"EnvironmentInfo"),ga=new G({color:"vec3f",direction:"vec3f",pdf:"float"},"EnvironmentSample"),ee=new G({position:"vec3f",lightType:"int",color:"vec3f",intensity:"float",u:"vec3f",visibleToCameraRays:"int",v:"vec3f",area:"float",radius:"float",decay:"float",distance:"float",coneCos:"float",penumbraCos:"float",iesProfile:"int"},"Light"),P=new G({dist:"float",direction:"vec3f",pdf:"float",emission:"vec3f",lightType:"int"},"LightRecord"),ji=new G({diffuse:"float",specular:"float",transmission:"float",clearcoat:"float"},"LobeWeights"),xa=new G({V:"vec3f",L:"vec3f",H:"vec3f",VdotH:"float"},"BxDFContext");import{wgslFn as C}from"three/tsl";var Xi=C(`
 
 	fn inverse(m: mat3x3f) -> mat3x3f {
 		var adj: mat3x3f;
@@ -1103,7 +1123,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 		return adj * ( 1.0 / det );
 	}
 
-`),Qi=F(`
+`),Yi=C(`
 
 	fn getBasisFromNormal( normal: vec3f ) -> mat3x3f {
 
@@ -1124,13 +1144,13 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`),A=F(`
+`),A=C(`
 
 	fn iorToF0( ior: f32 ) -> f32 {
 		return pow( ( 1 - ior ) / ( 1 + ior ), 2 );
 	}
 
-`),ji=F(`
+`),Zi=C(`
 
 	fn iorToF0General( transmittedIor: f32, incidentIor: f32 ) -> f32 {
 
@@ -1138,7 +1158,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`),Ki=F(`
+`),Ji=C(`
 
 	fn iorToF0GeneralVec( transmittedIor: vec3f, incidentIor: vec3f ) -> vec3f {
 
@@ -1147,7 +1167,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`),Xi=F(`
+`),es=C(`
 
 	fn fresnel0ToIor( f0: vec3f ) -> vec3f {
 
@@ -1156,7 +1176,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`),Q=F(`
+`),Q=C(`
 
 	fn schlickFresnel( cosine: f32, f0: f32 ) -> f32 {
 
@@ -1164,7 +1184,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`),Ne=F(`
+`),Ne=C(`
 
 	fn schlickFresnelVec( cosine: f32, f0: vec3f, f90: vec3f ) -> vec3f {
 
@@ -1172,7 +1192,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`),Yt=F(`
+`),Yt=C(`
 
 	fn totalInternalReflection( cosTheta: f32, eta: f32 ) -> bool {
 
@@ -1181,7 +1201,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`),Yi=F(`
+`),ts=C(`
 
 	fn totalInternalReflectionVec( cosTheta: f32, eta: vec3f ) -> vec3<bool> {
 
@@ -1190,7 +1210,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`),ch=F(`
+`),fh=C(`
 
 	fn evaluateFresnel( cosine: f32, eta: f32, f0: vec3f, f90: vec3f ) -> vec3f {
 
@@ -1203,7 +1223,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 		return f0 + ( f90 - f0 ) * pow( 1.0 - cosine, 5.0 );
 	}
 
-`,[Yt]),xe=F(`
+`,[Yt]),xe=C(`
 
 	fn dielectricFresnel( cosThetaI: f32, eta: f32 ) -> f32 {
 
@@ -1228,7 +1248,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`),Zi=F(`
+`),rs=C(`
 
 	fn disneyFresnel( wo: vec3f, wi: vec3f, wh: vec3f, f0: f32, eta: f32, metalness: f32 ) -> f32 {
 
@@ -1247,7 +1267,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,[Yt,xe,Q]),Be=F(`
+`,[Yt,xe,Q]),Be=C(`
 
 	fn isTerminatingScatter( scatterRec: ScatterRecord ) -> bool {
 
@@ -1255,7 +1275,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,[J]),$=F(`
+`,[J]),F=C(`
 
 	fn clampPathContribution( contribution: vec3f, pathDepth: u32, clampDirect: f32, clampIndirect: f32 ) -> vec3f {
 
@@ -1277,7 +1297,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`),qi=F(`
+`),Ki=C(`
 
 	fn applyWrap( v: f32, wrapMode: i32 ) -> f32 {
 
@@ -1303,7 +1323,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`),se=F(`
+`),se=C(`
 
 	fn offsetRayOrigin( point: vec3f, direction: vec3f, geometricNormal: vec3f ) -> vec3f {
 
@@ -1319,7 +1339,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`),Xt=F(`
+`),Xt=C(`
 
 	fn wrapTexelIndex( i: i32, size: i32, wrapMode: i32 ) -> i32 {
 
@@ -1353,8 +1373,8 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 		// wrap is applied on the logical uv first, then remapped into the tile
 		let wrappedUv = vec2f(
-			${qi}( uv.x, wrapS ),
-			${qi}( uv.y, wrapT ),
+			${Ki}( uv.x, wrapS ),
+			${Ki}( uv.y, wrapT ),
 		);
 
 		if ( nearest == 1 ) {
@@ -1393,7 +1413,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 		}
 
 	}
-`;var Dn=j(`
+`;var $n=j(`
 
 	fn sampleSphere( uv: vec2f ) -> vec3f {
 
@@ -1405,7 +1425,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,[T]),Ji=j(`
+`,[T]),as=j(`
 
 	fn diffuseDirection( wo: vec3f, uv: vec2f ) -> vec3f {
 
@@ -1417,7 +1437,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,[Dn]),va=j(`
+`,[$n]),va=j(`
 
 	fn getLobeWeights( wo: vec3f, wi: vec3f, woClearcoat: vec3f, wh: vec3f, clearcoatIor: f32, surf: SurfaceRecord ) -> LobeWeights {
 
@@ -1444,7 +1464,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,[Zi,Q,A,Ui,T]),Pe=j(`
+`,[rs,Q,A,ji,T]),Pe=j(`
 
 	fn equirectDirectionToUv(direction: vec3f) -> vec2f {
 
@@ -1459,7 +1479,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`),es=j(`
+`),is=j(`
 
 	fn sampleHemisphere( n: vec3f, uv: vec2f ) -> vec3f {
 
@@ -1497,7 +1517,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`),ts=j(`
+`),ss=j(`
 
 	fn equirectUvToDirection( uvIn: vec2f ) -> vec3f {
 
@@ -1514,7 +1534,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,[T]),ph=j(`
+`,[T]),vh=j(`
 
 	fn equirectDirectionPdf( direction: vec3f ) -> f32 {
 
@@ -1584,7 +1604,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,[T]),rs=oe(`
+`,[T]),os=oe(`
 
 	fn intersectsRectangle( center: vec3f, normal: vec3f, u: vec3f, v: vec3f, rayOrigin: vec3f, rayDirection: vec3f ) -> f32 {
 
@@ -1612,7 +1632,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,[T]),as=oe(`
+`,[T]),ns=oe(`
 
 	fn intersectsCircle( position: vec3f, normal: vec3f, u: vec3f, v: vec3f, rayOrigin: vec3f, rayDirection: vec3f ) -> f32 {
 
@@ -1636,7 +1656,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,[T]),is=oe(`
+`,[T]),ls=oe(`
 
 	fn randomAreaLightSample( light: Light, rayOrigin: vec3f, ruv: vec2f ) -> LightRecord {
 
@@ -1681,7 +1701,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,[ee,P,T]),ss=oe(`
+`,[ee,P,T]),cs=oe(`
 
 	fn randomSpotLightSample( light: Light, rayOrigin: vec3f, ruv: vec2f ) -> LightRecord {
 
@@ -1717,7 +1737,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,[ee,P,T,ir]),os=oe(`
+`,[ee,P,T,ir]),us=oe(`
 
 	fn getSpotLightNearest( light: Light, position: vec3f ) -> vec2f {
 
@@ -1733,7 +1753,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,[ee,T]);import{wgslFn as N,mat3 as Cn}from"three/tsl";import{wgslFn as ve}from"three/tsl";var ye=ve(`
+`,[ee,T]);import{wgslFn as N,mat3 as Nn}from"three/tsl";import{wgslFn as ve}from"three/tsl";var ye=ve(`
 
 	fn ggxDirection( incidentDir: vec3f, alpha: vec2f, uv: vec2f ) -> vec3f {
 
@@ -1787,7 +1807,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,[T]),_n=ve(`
+`,[T]),Mn=ve(`
 
 	fn ggxLambda( V: vec3f, alpha: vec2f ) -> f32 {
 
@@ -1812,7 +1832,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,[_n]),ns=ve(`
+`,[Mn]),ds=ve(`
 
 	fn ggxSmithVisibility( V: vec3f, L: vec3f, alpha: vec2f ) -> f32 {
 
@@ -1880,7 +1900,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 		return D * G1 * abs( HdotV ) * abs( HdotL ) / ( NdotV * denom * denom );
 
 	}
-`,[ft,sr]);var Fn=h`
+`,[ft,sr]);var Bn=h`
 
 	fn ensureValidReflectionNormal( n: vec3f, ng: vec3f, i: vec3f ) -> vec3f {
 
@@ -1935,7 +1955,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,$n=h`
+`,Pn=h`
 
 	fn ensureValidViewNormal( n: vec3f, ng: vec3f, view: vec3f ) -> vec3f {
 
@@ -1971,7 +1991,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,nr=3402823466e29,ls=(c,e,t)=>N(`
+`,nr=3402823466e29,hs=(c,e,t)=>N(`
 
 	fn getSurfaceRecord(
 		material: Material,
@@ -2286,7 +2306,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 		return surf;
 	}
 
-`,[Gi,A,Qi,c,e,t,M,T,Fn,$n]),_h=N(`
+`,[Xi,A,Yi,c,e,t,M,T,Bn,Pn]),Mh=N(`
 
 	fn diffuseBrdf( NdotV: f32, NdotL: f32, VdotH: f32, surf: SurfaceRecord ) -> vec3f {
 
@@ -2310,7 +2330,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,[T,Q,M]),Ch=N(`
+`,[T,Q,M]),Nh=N(`
 
 	fn lambertBrdf( NdotV: f32, NdotL: f32, VdotH: f32, surf: SurfaceRecord ) -> vec3f {
 
@@ -2332,7 +2352,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,[ns,ft]),Ae=N(`
+`,[ds,ft]),Ae=N(`
 
 	fn isMatchedIor( eta: f32 ) -> bool {
 
@@ -2389,7 +2409,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`),Le=360,Ee=830,Mn=N(`
+`),Le=360,Ee=830,An=N(`
 
 	fn dispersionIor( ior: f32, dispersion: f32, wavelength: f32 ) -> f32 {
 
@@ -2404,7 +2424,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	fn applyDispersion( surf: ptr<function, ${M}>, dispersion: f32, wavelength: f32 ) -> void {
 
-		surf.ior = ${Mn}( surf.ior, dispersion, wavelength );
+		surf.ior = ${An}( surf.ior, dispersion, wavelength );
 		surf.eta = select( surf.ior, 1.0 / surf.ior, surf.thinWall || surf.frontFace );
 		surf.f0 = ${A}( surf.eta );
 
@@ -2439,7 +2459,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`),cs=N(`
+`),fs=N(`
 
 	fn fresnelMix( VdotH: f32, f0Color: vec3f, ior: f32, eta: f32, weight: f32, base: vec3f, layer: vec3f ) -> vec3f {
 
@@ -2460,7 +2480,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,[Ne,A,Yt]),Nn=Cn(3.2404542,-.969266,.0556434,-1.5371385,1.8760108,-.2040259,-.4985314,.041556,1.0572252),Bn=h`
+`,[Ne,A,Yt]),Ln=Nn(3.2404542,-.969266,.0556434,-1.5371385,1.8760108,-.2040259,-.4985314,.041556,1.0572252),En=h`
 
 	fn evalSensitivity( OPD: f32, shift: vec3f ) -> vec3f {
 
@@ -2473,7 +2493,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 		xyz.x += 9.7470e-14 * sqrt(2.0 * ${Math.PI} * 4.5282e+09) * cos(2.2399e+06 * phase + shift.x) * exp(-4.5282e+09 * phase * phase);
 		xyz /= 1.0685e-7;
 
-		let rgb = ${Nn} * xyz;
+		let rgb = ${Ln} * xyz;
 		return rgb;
 
 	}
@@ -2543,7 +2563,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,[ji,Ki,Q,Xi,Bn,Yi]),us=(c=Ra)=>h`
+`,[Zi,Ji,Q,es,En,ts]),ps=(c=Ra)=>h`
 
 	fn transmissionFresnel( cosTheta: f32, surf: ${M} ) -> ${ma} {
 
@@ -2605,7 +2625,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,ds=N(`
+`,ms=N(`
 
 	fn conductorFresnel( VdotH: f32, f0: vec3f, specular: vec3f ) -> vec3f {
 
@@ -2613,7 +2633,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,[Ne]),hs=N(`
+`,[Ne]),gs=N(`
 
 	fn fresnelCoat( VdotNc: f32, ior: f32, base: vec3f, layer: vec3f, weight: f32 ) -> vec3f {
 
@@ -2624,7 +2644,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,[A,Q]),fs=c=>h`
+`,[A,Q]),xs=c=>h`
 
 	fn albedo(
 		eta: f32,
@@ -2727,7 +2747,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`;var Da={};jr(Da,{rand1:()=>Ln,rand2:()=>En,rand3:()=>zn,rand4:()=>kn,rngInit:()=>An,rngNextBounce:()=>Hn});import{wgsl as Pn,wgslFn as Se}from"three/tsl";var pt=Pn(`
+`;var _a={};jr(_a,{rand1:()=>Hn,rand2:()=>Vn,rand3:()=>On,rand4:()=>Wn,rngInit:()=>kn,rngNextBounce:()=>Un});import{wgsl as zn,wgslFn as Se}from"three/tsl";var pt=zn(`
 
 	struct PcgState {
 		s0: vec4u,
@@ -2735,7 +2755,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 	};
 
 	var<private> g_state: PcgState;
-`),An=Se(`
+`),kn=Se(`
 	fn pcgInitialize( pixel: vec2u, pathIndex: u32, bounceIndex: u32 ) -> void {
 
 		// white noise seed
@@ -2753,43 +2773,43 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 		*v = *v ^ ( *v >> vec4u( 16u ) );
 		*v = *v + v.yzxy * v.wxyz;
 	}
-`),Ln=Se(`
+`),Hn=Se(`
 	fn pcgRand( _id: u32 ) -> f32 {
 
 		pcg4d( &g_state.s0 );
 		return abs( f32( g_state.s0.x ) / f32( 0xffffffffu ) );
 
 	}
-`,[hr,pt]),En=Se(`
+`,[hr,pt]),Vn=Se(`
 	fn pcgRand2( _id: u32 ) -> vec2f {
 
 		pcg4d( &g_state.s0 );
 		return abs( vec2f( g_state.s0.xy ) / f32( 0xffffffffu ) );
 
 	}
-`,[hr,pt]),zn=Se(`
+`,[hr,pt]),On=Se(`
 	fn pcgRand3( _id: u32 ) -> vec3f {
 
 		pcg4d( &g_state.s0 );
 		return abs( vec3f( g_state.s0.xyz ) / f32( 0xffffffffu ) );
 
 	}
-`,[hr,pt]),kn=Se(`
+`,[hr,pt]),Wn=Se(`
 	fn pcgRand4( _id: u32 ) -> vec4f {
 
 		pcg4d( &g_state.s0 );
 		return abs( vec4f( g_state.s0 ) / f32( 0xffffffffu ) );
 
 	}
-`,[hr,pt]),Hn=Se("fn noop() -> void {}");var mt={};jr(mt,{rand1:()=>Kn,rand2:()=>jn,rand3:()=>Qn,rand4:()=>fr,rngInit:()=>qn,rngNextBounce:()=>Gn});import{texture as Vn,vec4 as On}from"three/tsl";var ps=64,Wn=new ai(ps,1),Un=Vn(Wn),ms=On(0).toVar("blueDitherSeed"),qn=h`
+`,[hr,pt]),Un=Se("fn noop() -> void {}");var mt={};jr(mt,{rand1:()=>Jn,rand2:()=>Zn,rand3:()=>Yn,rand4:()=>fr,rngInit:()=>Kn,rngNextBounce:()=>Xn});import{texture as qn,vec4 as Gn}from"three/tsl";var vs=64,Qn=new ai(vs,1),jn=qn(Qn),ys=Gn(0).toVar("blueDitherSeed"),Kn=h`
 	fn blueDitherInitialize( pixel: vec2u, pathIndex: u32, bounceIndex: u32 ) -> void {
 
-		let coord = vec2i( pixel % vec2u( ${ps}u ) );
-		${ms} = textureLoad( ${Un}, coord, 0 );
+		let coord = vec2i( pixel % vec2u( ${vs}u ) );
+		${ys} = textureLoad( ${jn}, coord, 0 );
 		${ct}( vec2u( 0 ), pathIndex, bounceIndex );
 
 	}
-`,Gn=h`
+`,Xn=h`
 	fn blueDitherNextBounce() -> void {
 
 		${ut}();
@@ -2802,28 +2822,28 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 		let stratifiedSample = ${lt}( effect );
 
 		// offset it by the blue noise seed and dimension rotation
-		return fract( stratifiedSample + ${ms}.r );
+		return fract( stratifiedSample + ${ys}.r );
 
 	}
-`,Qn=h`
+`,Yn=h`
 	fn blueDitherRand3( effect: u32 ) -> vec3f {
 
 		return ${fr}( effect ).xyz;
 
 	}
-`,jn=h`
+`,Zn=h`
 	fn blueDitherRand2( effect: u32 ) -> vec2f {
 
 		return ${fr}( effect ).xy;
 
 	}
-`,Kn=h`
+`,Jn=h`
 	fn blueDitherRand1( effect: u32 ) -> f32 {
 
 		return ${fr}( effect ).x;
 
 	}
-`;var Ah=Da,Lh=Ot,Eh=mt,pr=0,ze=1,mr=2,gs=2147483648,ke=1073741824,le=1073741823;var gr=class extends _{constructor(){let e={bvhData:{value:null},material:{value:null},envInfo:{value:null},lightsInfo:{value:null},prevOutputTarget:Ca(new _a(1,1)).toReadOnly(),outputTarget:Ca(new _a(1,1)).toWriteOnly(),sampleCountTarget:Ca(new _a(1,1)).toReadWrite(),offset:W(new vs),tileSize:W(new vs),seed:W(0),maxBounces:W(5),maxTransparentBounces:W(5,"uint"),misEnabled:W(1,"uint"),maxSamples:W(0,"uint"),filterGlossy:W(1),clampDirect:W(0),clampIndirect:W(10),backgroundInfo:{value:null},transmissiveBackground:W(ze),textures:Xn(new xs),textureSampler:Yn(new xs),globalId:Zn},t=R("bvhData.value.fns.raycastFirstHit.outputType",e),r=w("bvhData.value.fns.raycastFirstHit",e),a=w("bvhData.value.fns.raycastShadow",e),s=w("bvhData.value.fns.sampleTrianglePoint",e),i=w("bvhData.value.fns.getSurfaceRecord",e),n=w("bvhData.value.fns.getCameraRay",e),o=w("material.value.bsdfSample",e),u=w("material.value.bsdfEvalPdf",e),l=R("envInfo.value.totalSumNode",e),f=R("envInfo.value.intensityNode",e),p=R("envInfo.value.sampleColor",e),m=R("envInfo.value.sampleDir",e),d=R("envInfo.value.getDirPdf",e),g=R("envInfo.value.getWeight",e),x=R("backgroundInfo.value.sampleColor",e),I=R("lightsInfo.value.countNode",e),b=w("lightsInfo.value.randomLightSample",e),D=w("lightsInfo.value.intersectLightAtIndex",e),y=w("lightsInfo.value.getLightWeight",e),C=w("lightsInfo.value.getLightsWeight",e),L=w("lightsInfo.value.selectLight",e),ce=w("lightsInfo.value.isLightVisibleToCamera",e),ue=h`
+`;var kh=_a,Hh=Ot,Vh=mt,pr=0,ze=1,mr=2,bs=2147483648,ke=1073741824,le=1073741823;var gr=class extends R{constructor(){let e={bvhData:{value:null},material:{value:null},envInfo:{value:null},lightsInfo:{value:null},prevOutputTarget:Ca(new Da(1,1)).toReadOnly(),outputTarget:Ca(new Da(1,1)).toWriteOnly(),sampleCountTarget:Ca(new Da(1,1)).toReadWrite(),offset:W(new ws),tileSize:W(new ws),seed:W(0),maxBounces:W(5),maxTransparentBounces:W(5,"uint"),misEnabled:W(1,"uint"),maxSamples:W(0,"uint"),filterGlossy:W(1),clampDirect:W(0),clampIndirect:W(10),backgroundInfo:{value:null},transmissiveBackground:W(ze),textures:el(new Ss),textureSampler:tl(new Ss),globalId:rl},t=I("bvhData.value.fns.raycastFirstHit.outputType",e),r=w("bvhData.value.fns.raycastFirstHit",e),a=w("bvhData.value.fns.raycastShadow",e),s=w("bvhData.value.fns.sampleTrianglePoint",e),i=w("bvhData.value.fns.getSurfaceRecord",e),o=w("bvhData.value.fns.getCameraRay",e),n=w("material.value.bsdfSample",e),u=w("material.value.bsdfEvalPdf",e),l=I("envInfo.value.totalSumNode",e),f=I("envInfo.value.intensityNode",e),p=I("envInfo.value.sampleColor",e),m=I("envInfo.value.sampleDir",e),d=I("envInfo.value.getDirPdf",e),g=I("envInfo.value.getWeight",e),x=I("backgroundInfo.value.sampleColor",e),_=I("lightsInfo.value.countNode",e),b=w("lightsInfo.value.randomLightSample",e),D=w("lightsInfo.value.intersectLightAtIndex",e),y=w("lightsInfo.value.getLightWeight",e),$=w("lightsInfo.value.getLightsWeight",e),L=w("lightsInfo.value.selectLight",e),ce=w("lightsInfo.value.isLightVisibleToCamera",e),ue=h`
 
 			fn compute(
 
@@ -2848,8 +2868,8 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 			) -> void {
 
-				let transforms = &${R("bvhData.value.storage.transforms",e)};
-				let materials = &${R("bvhData.value.storage.materials",e)};
+				let transforms = &${I("bvhData.value.storage.transforms",e)};
+				let materials = &${I("bvhData.value.storage.materials",e)};
 
 				// make sure we don't bleed over the edge of our tile
 				if ( globalId.x >= tileSize.x || globalId.y >= tileSize.y ) {
@@ -2881,7 +2901,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 				// scene ray
 				let jitteredUv = uv + ${O}( ${Wt} ) / vec2f( targetDimensions );
 				var ray: ${v};
-				if ( ! ${n}( jitteredUv, vec2f( targetDimensions ), &ray ) ) {
+				if ( ! ${o}( jitteredUv, vec2f( targetDimensions ), &ray ) ) {
 
 					return;
 
@@ -2900,7 +2920,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 				// one-sample NEE chooses between the analytic lights and the environment
 				let envActive = ${l} > 0.0 && ${f} > 0.0;
-				let lightsCount = ${I};
+				let lightsCount = ${_};
 				var envWeight = 0.0;
 				if ( envActive ) {
 
@@ -2923,7 +2943,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 					var lightTotalWeight = 0.0;
 					if ( isMISWeighted ) {
 
-						lightTotalWeight = ${C}( ray.origin ) + envWeight;
+						lightTotalWeight = ${$}( ray.origin ) + envWeight;
 
 					}
 
@@ -2947,7 +2967,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 							}
 
-							lightHits += ${$}( lightRec.emission * throughputColor * misWeight, bounce, clampDirect, clampIndirect );
+							lightHits += ${F}( lightRec.emission * throughputColor * misWeight, bounce, clampDirect, clampIndirect );
 							cameraHitLight = cameraHitLight || bounce == 0u;
 
 						}
@@ -3025,7 +3045,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 						}
 
 						// emission, clamped at the depth of the segment that found it, as in Cycles
-						let emission = ${$}( throughputColor * surface.emission, bounce, clampDirect, clampIndirect );
+						let emission = ${F}( throughputColor * surface.emission, bounce, clampDirect, clampIndirect );
 						resultColor += vec4f( emission, 0.0 );
 
 						// next event estimation: choose one light or the environment by its estimated
@@ -3078,7 +3098,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 											let isMISWeighted = ${ar}( lightRec.lightType ) && ! shadowHit.forwardBlocked;
 											let misWeight = select( 1.0, ${K}( lightPdf, evalRec.pdf ), isMISWeighted );
 											let directLight = throughputColor * lightRec.emission * evalRec.color * misWeight / lightPdf;
-											let contribution = ${$}( directLight, bounce + 1u, clampDirect, clampIndirect );
+											let contribution = ${F}( directLight, bounce + 1u, clampDirect, clampIndirect );
 											resultColor += vec4f( contribution, 0.0 );
 
 										}
@@ -3091,7 +3111,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 						}
 
-						let scatterRec = ${o}( view, surface );
+						let scatterRec = ${n}( view, surface );
 						if ( ${Be}( scatterRec ) ) {
 
 							break;
@@ -3148,7 +3168,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 							}
 
 							let environment = ${p}( ray.direction ).rgb * throughputColor * misWeight;
-							let contribution = ${$}( environment, bounce, clampDirect, clampIndirect );
+							let contribution = ${F}( environment, bounce, clampDirect, clampIndirect );
 							resultColor += vec4f( contribution, 0.0 );
 
 						} else {
@@ -3160,7 +3180,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 							if ( bounce == 0u ) {
 
 								// sample the background directly if this is the primary ray
-								let background = ${$}( bg.a * bg.rgb, bounce, clampDirect, clampIndirect );
+								let background = ${F}( bg.a * bg.rgb, bounce, clampDirect, clampIndirect );
 								resultColor = vec4f( background, bg.a );
 
 							} else {
@@ -3180,7 +3200,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 								if ( transmissiveBackground == ${pr}u ) {
 
 									// display the env map through transmissive surfaces
-									let background = ${$}( env.rgb * throughputColor * envMisWeight, bounce, clampDirect, clampIndirect );
+									let background = ${F}( env.rgb * throughputColor * envMisWeight, bounce, clampDirect, clampIndirect );
 									resultColor = vec4f(
 										resultColor.rgb + background,
 										1.0,
@@ -3189,7 +3209,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 								} else if ( transmissiveBackground == ${mr}u ) {
 
 									// fade the background by the throughput color average
-									let background = ${$}( bg.a * bg.rgb * throughputColor * envMisWeight, bounce, clampDirect, clampIndirect );
+									let background = ${F}( bg.a * bg.rgb * throughputColor * envMisWeight, bounce, clampDirect, clampIndirect );
 									resultColor = vec4f(
 										resultColor.rgb + background,
 										1.0 - transparency,
@@ -3199,7 +3219,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 									// fade the background by the throughput color average, mixing in env lighting
 									var light = mix( env.rgb, bg.rgb, bg.a ) * envMisWeight;
-									let background = ${$}( light * throughputColor, bounce, clampDirect, clampIndirect );
+									let background = ${F}( light * throughputColor, bounce, clampDirect, clampIndirect );
 									resultColor = vec4f(
 										resultColor.rgb + background,
 										1.0 - transparency,
@@ -3236,7 +3256,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 				textureStore( ${e.sampleCountTarget}, indexUV, vec4( nextSampleCount ) );
 				textureStore( ${e.outputTarget}, colorIndex, blendedColor );
 
-			}`;super(ue(e)),this.defineUniformAccessors(e)}};import{Matrix3 as Jn}from"three/webgpu";import{texture as Fa,sampler as $a,uniform as Ma,wgslFn as el,PI as ys}from"three/tsl";var bs=el(`
+			}`;super(ue(e)),this.defineUniformAccessors(e)}};import{Matrix3 as al}from"three/webgpu";import{texture as Fa,sampler as $a,uniform as Ma,wgslFn as il,PI as Ts}from"three/tsl";var Is=il(`
 
 	fn equirectLuminancePdf( luminance: f32, totalWeight: f32, resolution: vec2u ) -> f32 {
 
@@ -3244,10 +3264,10 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,[T]),He=class extends Ja{constructor(){super(),this.mapNode=Fa(this.map),this.mapSampler=$a(this.mapNode),this.marginalNode=Fa(this.marginalWeights),this.marginalSampler=$a(this.marginalNode),this.conditionalNode=Fa(this.conditionalWeights),this.conditionalSampler=$a(this.conditionalNode),this.rotationNode=Ma(new Jn),this.intensityNode=Ma(1),this.totalSumNode=Ma(this.totalSum),this._initFns()}getPixelWeight(e,t,r,a,s){let i=Math.PI*(a+.5)/s;return super.getPixelWeight(e,t,r)*Math.sin(i)}updateFrom(e){super.updateFrom(e);let{mapNode:t,marginalNode:r,conditionalNode:a,totalSumNode:s}=this;t.value=this.map,r.value=this.marginalWeights,a.value=this.conditionalWeights,s.value=this.totalSum}_initFns(){let{mapNode:e,mapSampler:t,marginalNode:r,marginalSampler:a,conditionalNode:s,conditionalSampler:i,totalSumNode:n,rotationNode:o,intensityNode:u}=this;this.sampleColor=h`
+`,[T]),He=class extends Ja{constructor(){super(),this.mapNode=Fa(this.map),this.mapSampler=$a(this.mapNode),this.marginalNode=Fa(this.marginalWeights),this.marginalSampler=$a(this.marginalNode),this.conditionalNode=Fa(this.conditionalWeights),this.conditionalSampler=$a(this.conditionalNode),this.rotationNode=Ma(new al),this.intensityNode=Ma(1),this.totalSumNode=Ma(this.totalSum),this._initFns()}getPixelWeight(e,t,r,a,s){let i=Math.PI*(a+.5)/s;return super.getPixelWeight(e,t,r)*Math.sin(i)}updateFrom(e){super.updateFrom(e);let{mapNode:t,marginalNode:r,conditionalNode:a,totalSumNode:s}=this;t.value=this.map,r.value=this.marginalWeights,a.value=this.conditionalWeights,s.value=this.totalSum}_initFns(){let{mapNode:e,mapSampler:t,marginalNode:r,marginalSampler:a,conditionalNode:s,conditionalSampler:i,totalSumNode:o,rotationNode:n,intensityNode:u}=this;this.sampleColor=h`
 			fn sampleEnv( direction: vec3f ) -> vec4f {
 
-				let sampleDir = ${o} * direction;
+				let sampleDir = ${n} * direction;
 				let mapUv = ${Pe}( sampleDir );
 				let col = textureSampleLevel( ${e}, ${t}, mapUv, 0 );
 
@@ -3263,19 +3283,19 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 				let v = textureSampleLevel( ${r}, ${a}, vec2f( r.x, 0.0 ), 0 ).x;
 				let u = textureSampleLevel( ${s}, ${i}, vec2f( r.y, v ), 0 ).x;
 				let uv = vec2f( u, v );
-				let totalSum = ${n};
+				let totalSum = ${o};
 
-				let direction = ${ts}( uv );
+				let direction = ${ss}( uv );
 				let color = textureSampleLevel( ${e}, ${t}, uv, 0 ).rgb;
 
-				result.direction = transpose( ${o} ) * direction;
+				result.direction = transpose( ${n} ) * direction;
 				result.color = color * ${u};
 
 				if ( totalSum != 0.0 ) {
 
 					let lum = ${dt}( color );
 					let resolution = textureDimensions( ${e} );
-					result.pdf = ${bs}( lum, totalSum, resolution );
+					result.pdf = ${Is}( lum, totalSum, resolution );
 
 				} else {
 
@@ -3290,32 +3310,32 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 			fn getEnvWeight() -> f32 {
 
 				let resolution = textureDimensions( ${e} );
-				return ${u} * ${ys} * ${ys} * ${n} / ( 2.0 * f32( resolution.x * resolution.y ) );
+				return ${u} * ${Ts} * ${Ts} * ${o} / ( 2.0 * f32( resolution.x * resolution.y ) );
 
 			}
 		`,this.getDirPdf=h`
 			fn getEnvDirPdf( direction: vec3f ) -> f32 {
 
-				if ( ${n} == 0.0 ) {
+				if ( ${o} == 0.0 ) {
 
 					return 0.0;
 
 				}
 
-				let rotatedDir = ${o} * direction;
+				let rotatedDir = ${n} * direction;
 				let mapUv = ${Pe}( rotatedDir );
 				let color = textureSampleLevel( ${e}, ${t}, mapUv, 0 ).rgb;
 				let lum = ${dt}( color );
 				let resolution = textureDimensions( ${e} );
 
-				return ${bs}( lum, ${n}, resolution );
+				return ${Is}( lum, ${o}, resolution );
 
 			}
-		`}};import{DataTexture as tl,LinearFilter as Ss,Matrix4 as rl,RGBAFormat as al,RepeatWrapping as ws}from"three";import{sampler as il,texture as sl,uniform as Na}from"three/tsl";var Ve=class{get map(){return this.mapNode.value}set map(e){this.mapNode.value=e}get blur(){return this.blurNode.value}set blur(e){this.blurNode.value=e}get rotation(){return this.rotationNode.value}get intensity(){return this.intensityNode.value}set intensity(e){this.intensityNode.value=e}constructor(){let e=new tl(new Uint8Array([0,0,0,255]),1,1,al);e.minFilter=Ss,e.magFilter=Ss,e.wrapS=ws,e.wrapT=ws,e.generateMipmaps=!1,e.needsUpdate=!0,this.mapNode=sl(e),this.mapSampler=il(this.mapNode),this.blurNode=Na(0),this.rotationNode=Na(new rl),this.intensityNode=Na(1),this._initFns()}dispose(){this.map.dispose()}_initFns(){let{mapNode:e,mapSampler:t,blurNode:r,rotationNode:a,intensityNode:s}=this;this.sampleColor=h`
+		`}};import{DataTexture as sl,LinearFilter as Rs,Matrix4 as ol,RGBAFormat as nl,RepeatWrapping as _s}from"three";import{sampler as ll,texture as cl,uniform as Na}from"three/tsl";var Ve=class{get map(){return this.mapNode.value}set map(e){this.mapNode.value=e}get blur(){return this.blurNode.value}set blur(e){this.blurNode.value=e}get rotation(){return this.rotationNode.value}get intensity(){return this.intensityNode.value}set intensity(e){this.intensityNode.value=e}constructor(){let e=new sl(new Uint8Array([0,0,0,255]),1,1,nl);e.minFilter=Rs,e.magFilter=Rs,e.wrapS=_s,e.wrapT=_s,e.generateMipmaps=!1,e.needsUpdate=!0,this.mapNode=cl(e),this.mapSampler=ll(this.mapNode),this.blurNode=Na(0),this.rotationNode=Na(new ol),this.intensityNode=Na(1),this._initFns()}dispose(){this.map.dispose()}_initFns(){let{mapNode:e,mapSampler:t,blurNode:r,rotationNode:a,intensityNode:s}=this;this.sampleColor=h`
 			fn sampleBackground( direction: vec3f, uv: vec2f ) -> vec4f {
 
 				let rotatedDir = ( ${a} * vec4f( direction, 0.0 ) ).xyz;
-				let offsetDir = ${es}( rotatedDir, uv ) * 0.5 * ${r};
+				let offsetDir = ${is}( rotatedDir, uv ) * 0.5 * ${r};
 				let sampleDir = normalize( rotatedDir + offsetDir );
 
 				let mapUv = ${Pe}( sampleDir );
@@ -3324,7 +3344,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 				return vec4f( ${s} * col.rgb, col.a );
 
 			}
-		`}};import{storage as gl,uniform as xl,uniformArray as vl,texture as yl}from"three/tsl";import{StorageBufferAttribute as _s,HalfFloatType as bl}from"three/webgpu";import{MeshBasicMaterial as ol,RenderTarget as nl,NoToneMapping as ll,QuadMesh as cl,NoBlending as ul,Color as dl,Vector4 as Ba,Matrix3 as hl}from"three/webgpu";var fl=4096,Ts=new dl,Is=new hl;function Rs(c){return`${c.source.uuid}:${c.source.version}`}function pl(c,e,t,r){if(c[e].x+t>r)return-1;let s=t,i=0,n=e;for(;s>0;){if(n>=c.length)return-1;i=Math.max(i,c[n].y),s-=c[n].width,n++}return i}function ml(c,e,t,r){let a=e+r,s=[],i=!1;for(let n=0;n<c.length;n++){let o=c[n],u=o.x+o.width;u<=e?s.push(o):o.x>=a?(i||(s.push({x:e,y:t,width:r}),i=!0),s.push(o)):(i||(s.push({x:e,y:t,width:r}),i=!0),u>a&&s.push({x:a,y:o.y,width:u-a}))}i||s.push({x:e,y:t,width:r}),c.length=0;for(let n=0;n<s.length;n++){let o=s[n],u=c[c.length-1];u&&u.y===o.y&&u.x+u.width===o.x?u.width+=o.width:c.push(o)}}function Ds(c,e,t,r,a){let s=1/0,i=0,n=-1;for(let o=0;o<c.length;o++){let u=pl(c,o,e,r);u>=0&&u+t<=a&&u<s&&(s=u,i=c[o].x,n=o)}return n===-1?null:(ml(c,i,s+t,e),{x:i,y:s})}var Oe=class{get width(){return this.renderTarget.width}get height(){return this.renderTarget.height}get pageCount(){return this.renderTarget.depth}get texture(){return this.renderTarget.texture}constructor(e={}){this.renderTarget=new nl(1,1,{depthBuffer:!1,depth:1,...e}),this.texture.isArrayTexture=!0,this.textureInfo=[new Ba],this.hashes=[],this.placements=[],this.quadMesh=new cl(new ol),this.quadMesh.material.blending=ul}setTextures(e,t){let r=t.map((f,p)=>p);if(r.sort((f,p)=>t[f].source.uuid<t[p].source.uuid?-1:1),t=r.map(f=>t[f]),this._hashesMatch(t)){this._buildCallerTextureInfo(r);return}let a=t.reduce((f,p)=>Math.max(f,p.width,p.height),1);a=Math.min(fl,a);let s=a,i=a,{renderTarget:n}=this,{placements:o,pageCount:u}=this._packTextures(t,s,i);n.setSize(s,i,u),this.texture.isArrayTexture=!0,this._renderTextures(e,t,o),this.placements=o;let l=new Array(t.length);for(let f=0,p=t.length;f<p;f++){let m=Rs(t[f]);l[f]=m}this.hashes=l,this._buildCallerTextureInfo(r)}_buildCallerTextureInfo(e){let t=new Array(e.length);for(let r=0,a=e.length;r<a;r++)t[e[r]]=this.placements[r];this._buildTextureInfo(t)}dispose(){this.renderTarget.dispose(),this.quadMesh.material.dispose()}_hashesMatch(e){let t=this.hashes;if(t.length!==e.length)return!1;for(let r=0,a=e.length;r<a;r++)if(t[r]!==Rs(e[r]))return!1;return!0}_packTextures(e,t,r){let a=[];for(let o=0,u=e.length;o<u;o++){let l=e[o];a.push({index:o,w:Math.min(l.width,t),h:Math.min(l.height,r)})}let s=a.sort((o,u)=>u.h-o.h),i=new Array(e.length),n=[];for(let o=0,u=s.length;o<u;o++){let l=s[o],f=null,p=-1;for(let m=0;m<n.length;m++)if(f=Ds(n[m],l.w,l.h,t,r),f){p=m;break}if(!f){let m=[{x:0,y:0,width:t}];f=Ds(m,l.w,l.h,t,r),n.push(m),p=n.length-1}i[l.index]={x:f.x,y:f.y,w:l.w,h:l.h,page:p}}return{placements:i,pageCount:Math.max(n.length,1)}}_buildTextureInfo(e){let t=this.textureInfo;t.length=0;for(let r=0,a=e.length;r<a;r++){let{x:s,y:i,w:n,h:o,page:u}=e[r],l=new Ba;l.x=s&65535|(i&65535)<<16,l.y=n&65535|(o&65535)<<16,l.z=u&65535,l.w=0,t.push(l)}t.length===0&&t.push(new Ba(0,0,0,0))}_renderTextures(e,t,r){let{quadMesh:a,renderTarget:s,width:i,height:n}=this,o=e.getRenderTarget(),u=e.toneMapping,l=e.autoClear,f=e.getScissorTest(),p=e.getClearAlpha();e.getClearColor(Ts),e.toneMapping=ll,e.autoClear=!1,e.setScissorTest(!0),e.setClearColor(0,0);for(let m=0,d=s.depth;m<d;m++)s.viewport.set(0,0,i,n),s.scissor.set(0,0,i,n),e.setRenderTarget(s,m),e.clear();for(let m=0,d=t.length;m<d;m++){let{x:g,y:x,w:I,h:b,page:D}=r[m],y=t[m];if(s.viewport.set(g,x,I,b),s.scissor.set(g,x,I,b),e.setRenderTarget(s,D),y.isRenderTargetTexture){let C=y.matrixAutoUpdate;Is.copy(y.matrix),y.matrix.identity(),y.matrixAutoUpdate=!1,a.material.map=y,a.render(e),y.matrixAutoUpdate=C,y.matrix.copy(Is)}else{let C=y.clone();C.matrixAutoUpdate=!1,C.matrix.identity(),a.material.map=C,a.render(e),C.dispose()}}s.viewport.set(0,0,i,n),s.scissor.set(0,0,i,n),a.material.map=null,e.setClearColor(Ts,p),e.setScissorTest(f),e.autoClear=l,e.setRenderTarget(o),e.toneMapping=u}};var We=class extends ei{constructor(){super(),this.countNode=xl(this.count,"uint"),this.buffer=new _s(new Float32Array(2*ee.getLength()),ee.getLength()),this.bufferNode=gl(this.buffer,ee).toReadOnly().setName("lights"),this.iesAtlas=new Oe({type:bl}),this.iesProfilesNode=yl(this.iesAtlas.texture),this.iesInfoNode=vl(this.iesAtlas.textureInfo,"uvec4"),this._initFns()}updateFrom(e,t){let r=Array.from(new Set(t.map(l=>l.iesMap).filter(l=>l))),a=super.updateFrom(t,r);this.iesAtlas.setTextures(e,r),this.iesProfilesNode.value=this.iesAtlas.texture;let s=ee.getLength(),i=this.count,n=Math.max(i,2);this.buffer.array.length!==n*s&&(this.buffer.dispose(),this.buffer=new _s(new Float32Array(n*s),s),this.bufferNode.value=this.buffer);let o=this.tex.image.data;this.buffer.array.set(o.subarray(0,i*s));let u=new Int32Array(this.buffer.array.buffer);for(let l=0;l<i;l++){let f=l*s;u[f+3]=Math.round(o[f+3]),u[f+11]=Math.round(o[f+11]),u[f+21]=Math.round(o[f+21])}return this.buffer.needsUpdate=!0,this.countNode.value=this.count,a}_initFns(){let{bufferNode:e,countNode:t,iesProfilesNode:r,iesInfoNode:a}=this,s=Zt(a,r,"sampleIesTexel");this.isLightVisibleToCamera=h`
+		`}};import{storage as bl,uniform as Sl,uniformArray as wl,texture as Tl}from"three/tsl";import{StorageBufferAttribute as Ms,HalfFloatType as Il}from"three/webgpu";import{MeshBasicMaterial as ul,RenderTarget as dl,NoToneMapping as hl,QuadMesh as fl,NoBlending as pl,Color as ml,Vector4 as Ba,Matrix3 as gl}from"three/webgpu";var xl=4096,Ds=new ml,Cs=new gl;function Fs(c){return`${c.source.uuid}:${c.source.version}`}function vl(c,e,t,r){if(c[e].x+t>r)return-1;let s=t,i=0,o=e;for(;s>0;){if(o>=c.length)return-1;i=Math.max(i,c[o].y),s-=c[o].width,o++}return i}function yl(c,e,t,r){let a=e+r,s=[],i=!1;for(let o=0;o<c.length;o++){let n=c[o],u=n.x+n.width;u<=e?s.push(n):n.x>=a?(i||(s.push({x:e,y:t,width:r}),i=!0),s.push(n)):(i||(s.push({x:e,y:t,width:r}),i=!0),u>a&&s.push({x:a,y:n.y,width:u-a}))}i||s.push({x:e,y:t,width:r}),c.length=0;for(let o=0;o<s.length;o++){let n=s[o],u=c[c.length-1];u&&u.y===n.y&&u.x+u.width===n.x?u.width+=n.width:c.push(n)}}function $s(c,e,t,r,a){let s=1/0,i=0,o=-1;for(let n=0;n<c.length;n++){let u=vl(c,n,e,r);u>=0&&u+t<=a&&u<s&&(s=u,i=c[n].x,o=n)}return o===-1?null:(yl(c,i,s+t,e),{x:i,y:s})}var Oe=class{get width(){return this.renderTarget.width}get height(){return this.renderTarget.height}get pageCount(){return this.renderTarget.depth}get texture(){return this.renderTarget.texture}constructor(e={}){this.renderTarget=new dl(1,1,{depthBuffer:!1,depth:1,...e}),this.texture.isArrayTexture=!0,this.textureInfo=[new Ba],this.hashes=[],this.placements=[],this.quadMesh=new fl(new ul),this.quadMesh.material.blending=pl}setTextures(e,t){let r=t.map((f,p)=>p);if(r.sort((f,p)=>t[f].source.uuid<t[p].source.uuid?-1:1),t=r.map(f=>t[f]),this._hashesMatch(t)){this._buildCallerTextureInfo(r);return}let a=t.reduce((f,p)=>Math.max(f,p.width,p.height),1);a=Math.min(xl,a);let s=a,i=a,{renderTarget:o}=this,{placements:n,pageCount:u}=this._packTextures(t,s,i);o.setSize(s,i,u),this.texture.isArrayTexture=!0,this._renderTextures(e,t,n),this.placements=n;let l=new Array(t.length);for(let f=0,p=t.length;f<p;f++){let m=Fs(t[f]);l[f]=m}this.hashes=l,this._buildCallerTextureInfo(r)}_buildCallerTextureInfo(e){let t=new Array(e.length);for(let r=0,a=e.length;r<a;r++)t[e[r]]=this.placements[r];this._buildTextureInfo(t)}dispose(){this.renderTarget.dispose(),this.quadMesh.material.dispose()}_hashesMatch(e){let t=this.hashes;if(t.length!==e.length)return!1;for(let r=0,a=e.length;r<a;r++)if(t[r]!==Fs(e[r]))return!1;return!0}_packTextures(e,t,r){let a=[];for(let n=0,u=e.length;n<u;n++){let l=e[n];a.push({index:n,w:Math.min(l.width,t),h:Math.min(l.height,r)})}let s=a.sort((n,u)=>u.h-n.h),i=new Array(e.length),o=[];for(let n=0,u=s.length;n<u;n++){let l=s[n],f=null,p=-1;for(let m=0;m<o.length;m++)if(f=$s(o[m],l.w,l.h,t,r),f){p=m;break}if(!f){let m=[{x:0,y:0,width:t}];f=$s(m,l.w,l.h,t,r),o.push(m),p=o.length-1}i[l.index]={x:f.x,y:f.y,w:l.w,h:l.h,page:p}}return{placements:i,pageCount:Math.max(o.length,1)}}_buildTextureInfo(e){let t=this.textureInfo;t.length=0;for(let r=0,a=e.length;r<a;r++){let{x:s,y:i,w:o,h:n,page:u}=e[r],l=new Ba;l.x=s&65535|(i&65535)<<16,l.y=o&65535|(n&65535)<<16,l.z=u&65535,l.w=0,t.push(l)}t.length===0&&t.push(new Ba(0,0,0,0))}_renderTextures(e,t,r){let{quadMesh:a,renderTarget:s,width:i,height:o}=this,n=e.getRenderTarget(),u=e.toneMapping,l=e.autoClear,f=e.getScissorTest(),p=e.getClearAlpha();e.getClearColor(Ds),e.toneMapping=hl,e.autoClear=!1,e.setScissorTest(!0),e.setClearColor(0,0);for(let m=0,d=s.depth;m<d;m++)s.viewport.set(0,0,i,o),s.scissor.set(0,0,i,o),e.setRenderTarget(s,m),e.clear();for(let m=0,d=t.length;m<d;m++){let{x:g,y:x,w:_,h:b,page:D}=r[m],y=t[m];if(s.viewport.set(g,x,_,b),s.scissor.set(g,x,_,b),e.setRenderTarget(s,D),y.isRenderTargetTexture){let $=y.matrixAutoUpdate;Cs.copy(y.matrix),y.matrix.identity(),y.matrixAutoUpdate=!1,a.material.map=y,a.render(e),y.matrixAutoUpdate=$,y.matrix.copy(Cs)}else{let $=y.clone();$.matrixAutoUpdate=!1,$.matrix.identity(),a.material.map=$,a.render(e),$.dispose()}}s.viewport.set(0,0,i,o),s.scissor.set(0,0,i,o),a.material.map=null,e.setClearColor(Ds,p),e.setScissorTest(f),e.autoClear=l,e.setRenderTarget(n),e.toneMapping=u}};var We=class extends ei{constructor(){super(),this.countNode=Sl(this.count,"uint"),this.buffer=new Ms(new Float32Array(2*ee.getLength()),ee.getLength()),this.bufferNode=bl(this.buffer,ee).toReadOnly().setName("lights"),this.iesAtlas=new Oe({type:Il}),this.iesProfilesNode=Tl(this.iesAtlas.texture),this.iesInfoNode=wl(this.iesAtlas.textureInfo,"uvec4"),this._initFns()}updateFrom(e,t){let r=Array.from(new Set(t.map(l=>l.iesMap).filter(l=>l))),a=super.updateFrom(t,r);this.iesAtlas.setTextures(e,r),this.iesProfilesNode.value=this.iesAtlas.texture;let s=ee.getLength(),i=this.count,o=Math.max(i,2);this.buffer.array.length!==o*s&&(this.buffer.dispose(),this.buffer=new Ms(new Float32Array(o*s),s),this.bufferNode.value=this.buffer);let n=this.tex.image.data;this.buffer.array.set(n.subarray(0,i*s));let u=new Int32Array(this.buffer.array.buffer);for(let l=0;l<i;l++){let f=l*s;u[f+3]=Math.round(n[f+3]),u[f+11]=Math.round(n[f+11]),u[f+21]=Math.round(n[f+21])}return this.buffer.needsUpdate=!0,this.countNode.value=this.count,a}_initFns(){let{bufferNode:e,countNode:t,iesProfilesNode:r,iesInfoNode:a}=this,s=Zt(a,r,"sampleIesTexel");this.isLightVisibleToCamera=h`
 			fn isLightVisibleToCamera( index: u32 ) -> bool {
 
 				return ${e}[ index ].visibleToCameraRays != 0;
@@ -3339,7 +3359,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 					// the most any point on the spot's disc lights the position. Ies profiles are not
 					// evaluated here
-					let nearest = ${os}( light, position );
+					let nearest = ${us}( light, position );
 					var attenuation = 1.0;
 					if ( light.iesProfile < 0 ) {
 
@@ -3452,7 +3472,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 				var result: ${P};
 				if ( light.lightType == ${ya} ) {
 
-					result = ${ss}( light, rayOrigin, ruv );
+					result = ${cs}( light, rayOrigin, ruv );
 
 					let spotNormal = normalize( cross( light.u, light.v ) );
 					let cosTheta = dot( result.direction, spotNormal );
@@ -3508,7 +3528,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 				} else {
 
-					result = ${is}( light, rayOrigin, ruv );
+					result = ${ls}( light, rayOrigin, ruv );
 
 				}
 
@@ -3533,11 +3553,11 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 					var dist = - 1.0;
 					if ( light.lightType == ${er} ) {
 
-						dist = ${rs}( light.position, normal, u, v, rayOrigin, rayDirection );
+						dist = ${os}( light.position, normal, u, v, rayOrigin, rayDirection );
 
 					} else if ( light.lightType == ${tr} ) {
 
-						dist = ${as}( light.position, normal, u, v, rayOrigin, rayDirection );
+						dist = ${ns}( light.position, normal, u, v, rayOrigin, rayDirection );
 
 					}
 
@@ -3558,13 +3578,13 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 				return false;
 
 			}
-		`}dispose(){this.tex.dispose(),this.buffer.dispose(),this.iesAtlas.dispose()}};import{ColorManagement as Cs,FloatType as Fs,RGBAFormat as $s}from"three";import{RedIntegerFormat as Il,StorageTexture as Pa,UnsignedIntType as Rl}from"three/webgpu";import{StorageTexture as Sl}from"three/webgpu";import{textureStore as wl,globalId as Tl}from"three/tsl";var gt=class extends _{constructor(){let e={globalId:Tl,outputTarget:wl(new Sl(1,1)).toWriteOnly()},t=h`
+		`}dispose(){this.tex.dispose(),this.buffer.dispose(),this.iesAtlas.dispose()}};import{ColorManagement as Ns,FloatType as Bs,RGBAFormat as Ps}from"three";import{RedIntegerFormat as Cl,StorageTexture as Pa,UnsignedIntType as Fl}from"three/webgpu";import{StorageTexture as Rl}from"three/webgpu";import{textureStore as _l,globalId as Dl}from"three/tsl";var gt=class extends R{constructor(){let e={globalId:Dl,outputTarget:_l(new Rl(1,1)).toWriteOnly()},t=h`
 			fn compute( globalId: vec3u ) -> void {
 
 				textureStore( ${e.outputTarget}, globalId.xy, vec4( 0, 0, 0, 1 ) );
 
 			}
-		`;super(t(e)),this.defineUniformAccessors({target:e.outputTarget})}};var Ue=class{constructor(e){this.renderer=e,this.maxBounces=15,this.frameBudget=25e4,this.maxTransparentBounces=15,this.lowResMode=!1,this.maxSamples=0,this._renderTask=null,this.outputTarget=new Pa(1,1),this.outputTarget.format=$s,this.outputTarget.type=Fs,this.outputTarget.colorSpace=Cs.workingColorSpace,this.outputTarget.name="Output #0",this.outputTarget.generateMipmaps=!1,this.prevOutputTarget=new Pa(1,1),this.prevOutputTarget.format=$s,this.prevOutputTarget.type=Fs,this.prevOutputTarget.colorSpace=Cs.workingColorSpace,this.prevOutputTarget.name="Output #1",this.prevOutputTarget.generateMipmaps=!1,this.sampleCountTarget=new Pa(1,1),this.sampleCountTarget.format=Il,this.sampleCountTarget.type=Rl,this.sampleCountTarget.name="Sample Count",this.sampleCountTarget.generateMipmaps=!1,this.sampleCountClearKernel=new gt().setWorkgroupSize(8,8,1),this.outputTargetClearKernel=new gt().setWorkgroupSize(8,8,1)}setRandom(e){}setBVHData(e){}setTextures(e){}setMaterial(e){}setFilterGlossy(e){}setClamping(e,t){}setEnvironment(e,t,r){}setLights(e){}setBackground(e,t,r,a){}rebuild(){this._renderTask=null}setSize(e,t){e=Math.ceil(e),t=Math.ceil(t);let{width:r,height:a}=this.outputTarget;return r===e&&a===t?!1:(this.outputTarget.dispose(),this.prevOutputTarget.dispose(),this.sampleCountTarget.dispose(),this.outputTarget=this.outputTarget.clone(),this.prevOutputTarget=this.outputTarget.clone(),this.sampleCountTarget=this.sampleCountTarget.clone(),this.outputTarget.setSize(e,t),this.prevOutputTarget.setSize(e,t),this.sampleCountTarget.setSize(e,t),this.reset(),!0)}getSize(e){let{width:t,height:r}=this.outputTarget;return e.x=t,e.y=r,e}update(){let{renderer:e}=this;e.initialized&&(this._renderTask||(this._renderTask=this.createRenderTask()),this._renderTask.next())}*createRenderTask(){}async getSampleCountsAsync(){return{min:0,max:0,avg:0}}resetSeed(){}reset(){let{renderer:e,outputTargetClearKernel:t,sampleCountClearKernel:r,outputTarget:a,prevOutputTarget:s,sampleCountTarget:i}=this;if(!e.initialized)return;let{width:n,height:o}=a,u=t.getDispatchSize(n,o);t.target=a,e.compute(t.kernel,u),t.target=s,e.compute(t.kernel,u),r.target=i,e.compute(r.kernel,u),this._renderTask=null}dispose(){this.outputTarget.dispose(),this.prevOutputTarget.dispose(),this.sampleCountTarget.dispose(),this.sampleCountClearKernel.dispose(),this.outputTargetClearKernel.dispose(),this._renderTask=null}};var Aa=new Ns,xr=class extends Ue{constructor(e){super(e),this.envInfo=new He,this._completedSamples=0,this._tileProgress=0,this.kernel=new gr().setWorkgroupSize(8,8,1),this.kernel.envInfo=this.envInfo,this.backgroundInfo=new Ve,this.kernel.backgroundInfo=this.backgroundInfo,this.lightsInfo=new We,this.kernel.lightsInfo=this.lightsInfo}resetSeed(){this.kernel.seed=0}reset(){super.reset(),this._completedSamples=0,this._tileProgress=0}async getSampleCountsAsync(){if(this.lowResMode)return{min:0,max:0,avg:0};let e=this._completedSamples,t=this._tileProgress;return{min:t===1?e+1:e,max:e+1,avg:e+t}}setBVHData(e){this.kernel.bvhData=e,this.rebuild()}rebuild(){super.rebuild(),this.kernel.needsUpdate=!0,this.reset()}setRandom(e){this.kernel.context.random=e,this.kernel.needsUpdate=!0,this.reset()}setMaterial(e){this.kernel.material=e.getData(),this.kernel.needsUpdate=!0,this.reset()}setFilterGlossy(e){this.kernel.filterGlossy=e===0?nr:1/e,this.reset()}setClamping(e,t){this.kernel.clampDirect=e,this.kernel.clampIndirect=t,this.reset()}setEnvironment(e){this.envInfo.updateFrom(e)}setLights(e){this.lightsInfo.updateFrom(this.renderer,e),this.reset()}setMultipleImportanceSampling(e){this.kernel.misEnabled=e?1:0,this.reset()}setEnvironmentParams(e,t){let{envInfo:r}=this,a=new Ms().makeRotationFromEuler(t).invert();r.rotationNode.value.setFromMatrix4(a),r.intensityNode.value=e}setBackground(e){let{backgroundInfo:t}=this;t.dispose(),t.map=e}setBackgroundParams(e,t,r){let{backgroundInfo:a}=this,s=new Ms().makeRotationFromEuler(t).invert();a.rotationNode.value.copy(s),a.intensity=e,a.blur=r}setTransmissiveBackground(e){this.kernel.transmissiveBackground=e,this.reset()}*createRenderTask(){let{renderer:e,kernel:t,maxBounces:r,maxTransparentBounces:a,outputTarget:s,sampleCountTarget:i,lowResMode:n}=this,o=new Ns;t.outputTarget=s,t.sampleCountTarget=i,t.maxBounces=r,t.maxTransparentBounces=a;let u=0;for(;;){if(t.maxSamples=this.maxSamples,this.maxSamples!==0&&u>=this.maxSamples){yield;continue}this.getSize(Aa);let l=Math.max(1,Math.ceil(Aa.x*Aa.y/this.frameBudget));o.x=Math.ceil(Math.sqrt(l)),o.y=Math.ceil(l/o.x);let f=this.lowResMode?1:o.x*o.y,p=0,m=t.tileSize;n?this.getSize(m):this.getSize(m).divide(o).ceil();let d=t.getDispatchSize(m.x,m.y);t.seed+=1,e.copyTextureToTexture(this.outputTarget,this.prevOutputTarget),[this.outputTarget,this.prevOutputTarget]=[this.prevOutputTarget,this.outputTarget],t.prevOutputTarget=this.prevOutputTarget,t.outputTarget=this.outputTarget;for(let g=0;g<o.x;g++)for(let x=0;x<o.y;x++)t.offset.set(g,x).multiply(m),e.compute(t.kernel,d),p=Math.min(p+1,f),this._completedSamples=u,this._tileProgress=p/f,yield;u++}}dispose(){super.dispose(),this.envInfo.dispose(),this.lightsInfo.dispose(),this.kernel.dispose()}};import{Matrix4 as eo,StorageBufferAttribute as Re,Vector2 as Ql}from"three/webgpu";import{Vector2 as Dl}from"three";import{StorageBufferAttribute as Bs}from"three/webgpu";import{uniform as Ps,storage as As,globalId as _l}from"three/tsl";import{StructTypeNode as vr}from"three/webgpu";var qe=class extends vr{constructor(e,t,r=[]){super(e,t),this.dependencies=r}setup(e){for(let t of this.dependencies)t.build(e);super.setup(e)}},z=new vr({throughputColor:"vec3f",currentBounce:"uint",resultColor:"vec4f",emission:"vec3f",scatterPdf:"float",scatterColor:"vec3f",minPdf:"float",origin:"vec3f",isFullyTransmissive:"uint",direction:"vec3f",side:"float",normal:"vec3f",objectIndex:"int",barycoord:"vec3f",pixelIndex:"uint",indices:"vec3u",seed:"uint",lightDirection:"vec3f",lightPdf:"float",lightEmission:"vec3f",lightDist:"float",lightBsdf:"vec3f",lightBsdfPdf:"float",rayIntersectionIndex:"int",shadowRayIntersectionIndex:"int",lightType:"int",dist:"float",alphaDepth:"uint",maxDist:"float",dispersionWavelength:"float"},"RayData"),Ge=new vr({origin:"vec3f",pixelIndex:"uint",direction:"vec3f",currentBounce:"uint",seed:"uint",alphaDepth:"uint",maxDist:"float",_alignment0:"uint"},"TraceQueuedRay"),X=new vr({barycoord:"vec3f",objectIndex:"int",position:"vec3f",dist:"float",normal:"vec3f",side:"float",indices:"vec3u",forwardBlocked:"uint"},"TraceResult"),we=new qe({length:"uint",elements:`array<${Ge.name}>`},"RayQueue",[Ge]);we.getLength=()=>4;var Qe=new qe({length:{type:"uint",atomic:!0},elements:`array<${Ge.name}>`},"RayQueue",[Ge]);Qe.getLength=()=>4;var Te=new qe({current:{type:"uint",atomic:!0},elementCount:{type:"uint",atomic:!0},elements:"array<atomic<u32>>"},"PixelQueue");Te.getLength=()=>2;var La=new qe({current:"uint",elementCount:"uint",elements:"array<u32>"},"PixelQueue");La.getLength=()=>2;var yr=class extends _{constructor(){let e={rayDataStorage:As(new Bs(1,1),z),pixelQueue:As(new Bs(1,1),La),targetDimensions:Ps(new Dl),frameBudget:Ps(0,"uint"),globalId:_l},t=h`
+		`;super(t(e)),this.defineUniformAccessors({target:e.outputTarget})}};var Ue=class{constructor(e){this.renderer=e,this.maxBounces=15,this.frameBudget=25e4,this.maxTransparentBounces=15,this.lowResMode=!1,this.maxSamples=0,this._renderTask=null,this.outputTarget=new Pa(1,1),this.outputTarget.format=Ps,this.outputTarget.type=Bs,this.outputTarget.colorSpace=Ns.workingColorSpace,this.outputTarget.name="Output #0",this.outputTarget.generateMipmaps=!1,this.prevOutputTarget=new Pa(1,1),this.prevOutputTarget.format=Ps,this.prevOutputTarget.type=Bs,this.prevOutputTarget.colorSpace=Ns.workingColorSpace,this.prevOutputTarget.name="Output #1",this.prevOutputTarget.generateMipmaps=!1,this.sampleCountTarget=new Pa(1,1),this.sampleCountTarget.format=Cl,this.sampleCountTarget.type=Fl,this.sampleCountTarget.name="Sample Count",this.sampleCountTarget.generateMipmaps=!1,this.sampleCountClearKernel=new gt().setWorkgroupSize(8,8,1),this.outputTargetClearKernel=new gt().setWorkgroupSize(8,8,1)}setRandom(e){}setBVHData(e){}setTextures(e){}setMaterial(e){}setFilterGlossy(e){}setClamping(e,t){}setEnvironment(e,t,r){}setLights(e){}setBackground(e,t,r,a){}rebuild(){this._renderTask=null}setSize(e,t){e=Math.ceil(e),t=Math.ceil(t);let{width:r,height:a}=this.outputTarget;return r===e&&a===t?!1:(this.outputTarget.dispose(),this.prevOutputTarget.dispose(),this.sampleCountTarget.dispose(),this.outputTarget=this.outputTarget.clone(),this.prevOutputTarget=this.outputTarget.clone(),this.sampleCountTarget=this.sampleCountTarget.clone(),this.outputTarget.setSize(e,t),this.prevOutputTarget.setSize(e,t),this.sampleCountTarget.setSize(e,t),this.reset(),!0)}getSize(e){let{width:t,height:r}=this.outputTarget;return e.x=t,e.y=r,e}update(){let{renderer:e}=this;e.initialized&&(this._renderTask||(this._renderTask=this.createRenderTask()),this._renderTask.next())}*createRenderTask(){}async getSampleCountsAsync(){return{min:0,max:0,avg:0}}resetSeed(){}reset(){let{renderer:e,outputTargetClearKernel:t,sampleCountClearKernel:r,outputTarget:a,prevOutputTarget:s,sampleCountTarget:i}=this;if(!e.initialized)return;let{width:o,height:n}=a,u=t.getDispatchSize(o,n);t.target=a,e.compute(t.kernel,u),t.target=s,e.compute(t.kernel,u),r.target=i,e.compute(r.kernel,u),this._renderTask=null}dispose(){this.outputTarget.dispose(),this.prevOutputTarget.dispose(),this.sampleCountTarget.dispose(),this.sampleCountClearKernel.dispose(),this.outputTargetClearKernel.dispose(),this._renderTask=null}};var Aa=new Ls,xr=class extends Ue{constructor(e){super(e),this.envInfo=new He,this._completedSamples=0,this._tileProgress=0,this.kernel=new gr().setWorkgroupSize(8,8,1),this.kernel.envInfo=this.envInfo,this.backgroundInfo=new Ve,this.kernel.backgroundInfo=this.backgroundInfo,this.lightsInfo=new We,this.kernel.lightsInfo=this.lightsInfo}resetSeed(){this.kernel.seed=0}reset(){super.reset(),this._completedSamples=0,this._tileProgress=0}async getSampleCountsAsync(){if(this.lowResMode)return{min:0,max:0,avg:0};let e=this._completedSamples,t=this._tileProgress;return{min:t===1?e+1:e,max:e+1,avg:e+t}}setBVHData(e){this.kernel.bvhData=e,this.rebuild()}rebuild(){super.rebuild(),this.kernel.needsUpdate=!0,this.reset()}setRandom(e){this.kernel.context.random=e,this.kernel.needsUpdate=!0,this.reset()}setMaterial(e){this.kernel.material=e.getData(),this.kernel.needsUpdate=!0,this.reset()}setFilterGlossy(e){this.kernel.filterGlossy=e===0?nr:1/e,this.reset()}setClamping(e,t){this.kernel.clampDirect=e,this.kernel.clampIndirect=t,this.reset()}setEnvironment(e){this.envInfo.updateFrom(e)}setLights(e){this.lightsInfo.updateFrom(this.renderer,e),this.reset()}setMultipleImportanceSampling(e){this.kernel.misEnabled=e?1:0,this.reset()}setEnvironmentParams(e,t){let{envInfo:r}=this,a=new As().makeRotationFromEuler(t).invert();r.rotationNode.value.setFromMatrix4(a),r.intensityNode.value=e}setBackground(e){let{backgroundInfo:t}=this;t.dispose(),t.map=e}setBackgroundParams(e,t,r){let{backgroundInfo:a}=this,s=new As().makeRotationFromEuler(t).invert();a.rotationNode.value.copy(s),a.intensity=e,a.blur=r}setTransmissiveBackground(e){this.kernel.transmissiveBackground=e,this.reset()}*createRenderTask(){let{renderer:e,kernel:t,maxBounces:r,maxTransparentBounces:a,outputTarget:s,sampleCountTarget:i,lowResMode:o}=this,n=new Ls;t.outputTarget=s,t.sampleCountTarget=i,t.maxBounces=r,t.maxTransparentBounces=a;let u=0;for(;;){if(t.maxSamples=this.maxSamples,this.maxSamples!==0&&u>=this.maxSamples){yield;continue}this.getSize(Aa);let l=Math.max(1,Math.ceil(Aa.x*Aa.y/this.frameBudget));n.x=Math.ceil(Math.sqrt(l)),n.y=Math.ceil(l/n.x);let f=this.lowResMode?1:n.x*n.y,p=0,m=t.tileSize;o?this.getSize(m):this.getSize(m).divide(n).ceil();let d=t.getDispatchSize(m.x,m.y);t.seed+=1,e.copyTextureToTexture(this.outputTarget,this.prevOutputTarget),[this.outputTarget,this.prevOutputTarget]=[this.prevOutputTarget,this.outputTarget],t.prevOutputTarget=this.prevOutputTarget,t.outputTarget=this.outputTarget;for(let g=0;g<n.x;g++)for(let x=0;x<n.y;x++)t.offset.set(g,x).multiply(m),e.compute(t.kernel,d),p=Math.min(p+1,f),this._completedSamples=u,this._tileProgress=p/f,yield;u++}}dispose(){super.dispose(),this.envInfo.dispose(),this.lightsInfo.dispose(),this.kernel.dispose()}};import{Matrix4 as io,StorageBufferAttribute as Re,Vector2 as Yl}from"three/webgpu";import{Vector2 as $l}from"three";import{StorageBufferAttribute as Es}from"three/webgpu";import{uniform as zs,storage as ks,globalId as Ml}from"three/tsl";import{StructTypeNode as vr}from"three/webgpu";var qe=class extends vr{constructor(e,t,r=[]){super(e,t),this.dependencies=r}setup(e){for(let t of this.dependencies)t.build(e);super.setup(e)}},z=new vr({throughputColor:"vec3f",currentBounce:"uint",resultColor:"vec4f",emission:"vec3f",scatterPdf:"float",scatterColor:"vec3f",minPdf:"float",origin:"vec3f",isFullyTransmissive:"uint",direction:"vec3f",side:"float",normal:"vec3f",objectIndex:"int",barycoord:"vec3f",pixelIndex:"uint",indices:"vec3u",seed:"uint",lightDirection:"vec3f",lightPdf:"float",lightEmission:"vec3f",lightDist:"float",lightBsdf:"vec3f",lightBsdfPdf:"float",rayIntersectionIndex:"int",shadowRayIntersectionIndex:"int",lightType:"int",dist:"float",alphaDepth:"uint",maxDist:"float",dispersionWavelength:"float"},"RayData"),Ge=new vr({origin:"vec3f",pixelIndex:"uint",direction:"vec3f",currentBounce:"uint",seed:"uint",alphaDepth:"uint",maxDist:"float",_alignment0:"uint"},"TraceQueuedRay"),X=new vr({barycoord:"vec3f",objectIndex:"int",position:"vec3f",dist:"float",normal:"vec3f",side:"float",indices:"vec3u",forwardBlocked:"uint"},"TraceResult"),we=new qe({length:"uint",elements:`array<${Ge.name}>`},"RayQueue",[Ge]);we.getLength=()=>4;var Qe=new qe({length:{type:"uint",atomic:!0},elements:`array<${Ge.name}>`},"RayQueue",[Ge]);Qe.getLength=()=>4;var Te=new qe({current:{type:"uint",atomic:!0},elementCount:{type:"uint",atomic:!0},elements:"array<atomic<u32>>"},"PixelQueue");Te.getLength=()=>2;var La=new qe({current:"uint",elementCount:"uint",elements:"array<u32>"},"PixelQueue");La.getLength=()=>2;var yr=class extends R{constructor(){let e={rayDataStorage:ks(new Es(1,1),z),pixelQueue:ks(new Es(1,1),La),targetDimensions:zs(new $l),frameBudget:zs(0,"uint"),globalId:Ml},t=h`
 			fn compute( targetDimensions: vec2u, frameBudget: u32, globalId: vec3u ) -> void {
 
 				let rayDataStorage = &${e.rayDataStorage};
@@ -3604,7 +3624,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 				}
 
 			}
-		`;super(t(e)),this.defineUniformAccessors(e)}};import{StorageBufferAttribute as Ea,StorageTexture as za}from"three/webgpu";import{uniform as je,storage as ka,textureStore as Ha,globalId as Cl}from"three/tsl";var br=class extends _{constructor(){let e={envInfo:{value:null},backgroundInfo:{value:null},lightsInfo:{value:null},prevOutputTarget:Ha(new za(1,1)).toReadOnly(),outputTarget:Ha(new za(1,1)).toWriteOnly(),sampleCountTarget:Ha(new za(1,1)).toReadWrite(),misEnabled:je(1,"uint"),rayCount:je(0,"uint"),maxBounces:je(5,"uint"),clampDirect:je(0),clampIndirect:je(10),transmissiveBackground:je(ze),rayDataStorage:ka(new Ea(1,1),z),rayIntersectionsStorage:ka(new Ea(1,1),X),shadowRayIntersectionsStorage:ka(new Ea(1,1),X),globalId:Cl},t=R("envInfo.value.totalSumNode",e),r=R("envInfo.value.intensityNode",e),a=R("envInfo.value.sampleColor",e),s=R("envInfo.value.sampleDir",e),i=R("envInfo.value.getDirPdf",e),n=R("envInfo.value.getWeight",e),o=R("backgroundInfo.value.sampleColor",e),u=R("lightsInfo.value.countNode",e),l=w("lightsInfo.value.randomLightSample",e),f=w("lightsInfo.value.intersectLightAtIndex",e),p=w("lightsInfo.value.getLightWeight",e),m=w("lightsInfo.value.getLightsWeight",e),d=w("lightsInfo.value.selectLight",e),g=w("lightsInfo.value.isLightVisibleToCamera",e),x=h`
+		`;super(t(e)),this.defineUniformAccessors(e)}};import{StorageBufferAttribute as Ea,StorageTexture as za}from"three/webgpu";import{uniform as je,storage as ka,textureStore as Ha,globalId as Nl}from"three/tsl";var br=class extends R{constructor(){let e={envInfo:{value:null},backgroundInfo:{value:null},lightsInfo:{value:null},prevOutputTarget:Ha(new za(1,1)).toReadOnly(),outputTarget:Ha(new za(1,1)).toWriteOnly(),sampleCountTarget:Ha(new za(1,1)).toReadWrite(),misEnabled:je(1,"uint"),rayCount:je(0,"uint"),maxBounces:je(5,"uint"),clampDirect:je(0),clampIndirect:je(10),transmissiveBackground:je(ze),rayDataStorage:ka(new Ea(1,1),z),rayIntersectionsStorage:ka(new Ea(1,1),X),shadowRayIntersectionsStorage:ka(new Ea(1,1),X),globalId:Nl},t=I("envInfo.value.totalSumNode",e),r=I("envInfo.value.intensityNode",e),a=I("envInfo.value.sampleColor",e),s=I("envInfo.value.sampleDir",e),i=I("envInfo.value.getDirPdf",e),o=I("envInfo.value.getWeight",e),n=I("backgroundInfo.value.sampleColor",e),u=I("lightsInfo.value.countNode",e),l=w("lightsInfo.value.randomLightSample",e),f=w("lightsInfo.value.intersectLightAtIndex",e),p=w("lightsInfo.value.getLightWeight",e),m=w("lightsInfo.value.getLightsWeight",e),d=w("lightsInfo.value.selectLight",e),g=w("lightsInfo.value.isLightVisibleToCamera",e),x=h`
 
 			fn compute(
 				// settings
@@ -3648,7 +3668,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 				var envWeight = 0.0;
 				if ( envActive ) {
 
-					envWeight = ${n}();
+					envWeight = ${o}();
 
 				}
 
@@ -3672,7 +3692,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 						let isMISWeighted = ${ar}( input.lightType ) && shadowHit.forwardBlocked == 0u;
 						let misWeight = select( 1.0, ${K}( input.lightPdf, input.lightBsdfPdf ), isMISWeighted );
 						let directLight = throughputColor * input.lightEmission * input.lightBsdf * misWeight / input.lightPdf;
-						let contribution = ${$}( directLight, input.currentBounce, clampDirect, clampIndirect );
+						let contribution = ${F}( directLight, input.currentBounce, clampDirect, clampIndirect );
 						resultColor += vec4f( contribution, 0.0 );
 
 					}
@@ -3681,7 +3701,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 				// emission gathered at the previous surface (pre-scatter throughput). Found light clamps
 				// at the depth of the segment that found it, as in Cycles, so one less than the current
-				let emission = ${$}( throughputColor * input.emission, max( input.currentBounce, 1u ) - 1u, clampDirect, clampIndirect );
+				let emission = ${F}( throughputColor * input.emission, max( input.currentBounce, 1u ) - 1u, clampDirect, clampIndirect );
 				resultColor += vec4f( emission, 0.0 );
 
 				// reconstruct the scatter record staged by MaterialKernel
@@ -3731,7 +3751,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 							}
 
-							lightHits += ${$}( lightRec.emission * throughputColor * misWeight, input.currentBounce, clampDirect, clampIndirect );
+							lightHits += ${F}( lightRec.emission * throughputColor * misWeight, input.currentBounce, clampDirect, clampIndirect );
 							cameraHitLight = cameraHitLight || input.currentBounce == 0u;
 
 						}
@@ -3803,7 +3823,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 							}
 
 							let environment = ${a}( input.direction ).rgb * throughputColor * misWeight;
-							let contribution = ${$}( environment, input.currentBounce, clampDirect, clampIndirect );
+							let contribution = ${F}( environment, input.currentBounce, clampDirect, clampIndirect );
 							resultColor += vec4f( contribution, 0.0 );
 
 						} else {
@@ -3811,11 +3831,11 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 							// hit the background
 							// support multiple transparent background blending techniques
 							let rng = ${O}( ${Ut} );
-							let bg = ${o}( input.direction, rng );
+							let bg = ${n}( input.direction, rng );
 							if ( input.currentBounce == 0u ) {
 
 								// sample the background directly if this is the primary ray
-								let background = ${$}( bg.a * bg.rgb, input.currentBounce, clampDirect, clampIndirect );
+								let background = ${F}( bg.a * bg.rgb, input.currentBounce, clampDirect, clampIndirect );
 								resultColor = vec4f( background, bg.a );
 
 							} else {
@@ -3836,7 +3856,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 								if ( transmissiveBackground == ${pr}u ) {
 
 									// display the env map through transmissive surfaces
-									let background = ${$}( env.rgb * throughputColor * misWeight, input.currentBounce, clampDirect, clampIndirect );
+									let background = ${F}( env.rgb * throughputColor * misWeight, input.currentBounce, clampDirect, clampIndirect );
 									resultColor = vec4f(
 										resultColor.rgb + background,
 										1.0,
@@ -3845,7 +3865,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 								} else if ( transmissiveBackground == ${mr}u ) {
 
 									// fade the background by the throughput color average
-									let background = ${$}( bg.a * bg.rgb * throughputColor * misWeight, input.currentBounce, clampDirect, clampIndirect );
+									let background = ${F}( bg.a * bg.rgb * throughputColor * misWeight, input.currentBounce, clampDirect, clampIndirect );
 									resultColor = vec4f(
 										resultColor.rgb + background,
 										1.0 - transparency,
@@ -3855,7 +3875,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 									// fade the background by the throughput color average, mixing in env lighting
 									var light = mix( env.rgb, bg.rgb, bg.a ) * misWeight;
-									let background = ${$}( light * throughputColor, input.currentBounce, clampDirect, clampIndirect );
+									let background = ${F}( light * throughputColor, input.currentBounce, clampDirect, clampIndirect );
 									resultColor = vec4f(
 										resultColor.rgb + background,
 										1.0 - transparency,
@@ -3911,7 +3931,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 				}
 
 			}
-		`;super(x(e)),this.defineUniformAccessors(e)}};import{Vector2 as Fl}from"three";import{StorageBufferAttribute as Sr,StorageTexture as $l}from"three/webgpu";import{uniform as Ie,storage as wr,textureStore as Ml,globalId as Nl}from"three/tsl";var Tr=class extends _{constructor(){let e={bvhData:{value:null},material:{value:null},seed:Ie(0,"uint"),targetDimensions:Ie(new Fl),maxSamples:Ie(0,"uint"),rayCount:Ie(0,"uint"),filterGlossy:Ie(1),maxTransparentBounces:Ie(5,"uint"),maxBounces:Ie(5,"uint"),sampleCountTarget:Ml(new $l(1,1)).toReadWrite(),rayDataStorage:wr(new Sr(1,1),z),rayQueue:wr(new Sr(1,1),Qe),shadowRayQueue:wr(new Sr(1,1),Qe),pixelQueue:wr(new Sr(1,1),Te),globalId:Nl},t=w("bvhData.value.fns.getCameraRay",e),r=w("bvhData.value.fns.sampleTrianglePoint",e),a=w("bvhData.value.fns.getSurfaceRecord",e),s=w("material.value.bsdfSample",e),i=w("material.value.bsdfEvalPdf",e),n=h`
+		`;super(x(e)),this.defineUniformAccessors(e)}};import{Vector2 as Bl}from"three";import{StorageBufferAttribute as Sr,StorageTexture as Pl}from"three/webgpu";import{uniform as Ie,storage as wr,textureStore as Al,globalId as Ll}from"three/tsl";var Tr=class extends R{constructor(){let e={bvhData:{value:null},material:{value:null},seed:Ie(0,"uint"),targetDimensions:Ie(new Bl),maxSamples:Ie(0,"uint"),rayCount:Ie(0,"uint"),filterGlossy:Ie(1),maxTransparentBounces:Ie(5,"uint"),maxBounces:Ie(5,"uint"),sampleCountTarget:Al(new Pl(1,1)).toReadWrite(),rayDataStorage:wr(new Sr(1,1),z),rayQueue:wr(new Sr(1,1),Qe),shadowRayQueue:wr(new Sr(1,1),Qe),pixelQueue:wr(new Sr(1,1),Te),globalId:Ll},t=w("bvhData.value.fns.getCameraRay",e),r=w("bvhData.value.fns.sampleTrianglePoint",e),a=w("bvhData.value.fns.getSurfaceRecord",e),s=w("material.value.bsdfSample",e),i=w("material.value.bsdfEvalPdf",e),o=h`
 
 			fn compute(
 				seed: u32,
@@ -3930,8 +3950,8 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 				let shadowRayQueue = &${e.shadowRayQueue};
 				let pixelQueue = &${e.pixelQueue};
 
-				let materials = &${R("bvhData.value.storage.materials",e)};
-				let transforms = &${R("bvhData.value.storage.transforms",e)};
+				let materials = &${I("bvhData.value.storage.materials",e)};
+				let transforms = &${I("bvhData.value.storage.transforms",e)};
 
 				// bound by "rayCount" rather than the pool length. The dispatch rounds up to the
 				// workgroup size and those extra slots hold a zeroed pixel index
@@ -4023,7 +4043,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 					rayDataStorage[ index ].dispersionWavelength = - mix( ${Le}.0, ${Ee}.0, ${q}( ${jt} ) );
 
 					// write the active params & dispatched flag
-					textureStore( ${e.sampleCountTarget}, indexUV, vec4( ${gs}u | ${ke}u | samples ) );
+					textureStore( ${e.sampleCountTarget}, indexUV, vec4( ${bs}u | ${ke}u | samples ) );
 
 				} else {
 
@@ -4226,7 +4246,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 				}
 
 			}
-		`;super(n(e)),this.defineUniformAccessors(e)}};import{StorageBufferAttribute as Ls}from"three/webgpu";import{storage as Es,globalId as Bl}from"three/tsl";var Ir=class extends _{constructor(){let e={bvhData:{value:null},rayQueue:Es(new Ls(1,1),we),rayIntersectionsStorage:Es(new Ls(1,1),X),globalId:Bl},t=R("bvhData.value.fns.raycastFirstHit.outputType",e),r=R("bvhData.value.fns.raycastFirstHit",e),a=h`
+		`;super(o(e)),this.defineUniformAccessors(e)}};import{StorageBufferAttribute as Hs}from"three/webgpu";import{storage as Vs,globalId as El}from"three/tsl";var Ir=class extends R{constructor(){let e={bvhData:{value:null},rayQueue:Vs(new Hs(1,1),we),rayIntersectionsStorage:Vs(new Hs(1,1),X),globalId:El},t=I("bvhData.value.fns.raycastFirstHit.outputType",e),r=I("bvhData.value.fns.raycastFirstHit",e),a=h`
 
 			fn compute( globalId: vec3u ) -> void {
 
@@ -4263,7 +4283,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 				}
 
 			}
-		`;super(a(e)),this.defineUniformAccessors(e)}};import{StorageBufferAttribute as zs}from"three/webgpu";import{storage as ks,globalId as Pl}from"three/tsl";var Rr=class extends _{constructor(){let e={bvhData:{value:null},shadowRayQueue:ks(new zs(1,1),we),shadowRayIntersectionsStorage:ks(new zs(1,1),X),globalId:Pl},t=R("bvhData.value.fns.raycastFirstHit.outputType",e),r=R("bvhData.value.fns.raycastShadow",e),a=h`
+		`;super(a(e)),this.defineUniformAccessors(e)}};import{StorageBufferAttribute as Os}from"three/webgpu";import{storage as Ws,globalId as zl}from"three/tsl";var Rr=class extends R{constructor(){let e={bvhData:{value:null},shadowRayQueue:Ws(new Os(1,1),we),shadowRayIntersectionsStorage:Ws(new Os(1,1),X),globalId:zl},t=I("bvhData.value.fns.raycastFirstHit.outputType",e),r=I("bvhData.value.fns.raycastShadow",e),a=h`
 
 			fn compute( globalId: vec3u ) -> void {
 
@@ -4297,7 +4317,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 				shadowRayIntersectionsStorage[ index ].forwardBlocked = u32( hitResult.forwardBlocked );
 
 			}
-		`;super(a(e)),this.defineUniformAccessors(e)}};import{IndirectStorageBufferAttribute as Al,StorageBufferAttribute as Ll}from"three/webgpu";import{storage as Hs}from"three/tsl";var xt=class extends _{constructor(e=Qe,t=64){let r={queue:Hs(new Ll(1,1),e),outputDispatch:Hs(new Al(3,1),"u32").setName("outputDispatch")},a=h`
+		`;super(a(e)),this.defineUniformAccessors(e)}};import{IndirectStorageBufferAttribute as kl,StorageBufferAttribute as Hl}from"three/webgpu";import{storage as Us}from"three/tsl";var xt=class extends R{constructor(e=Qe,t=64){let r={queue:Us(new Hl(1,1),e),outputDispatch:Us(new kl(3,1),"u32").setName("outputDispatch")},a=h`
 			fn compute() -> void {
 
 				let queue = &${r.queue};
@@ -4309,7 +4329,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 				outputDispatch[ 2 ] = 1u;
 
 			}
-		`;super(a(r)),this.defineUniformAccessors(r)}};import{StorageBufferAttribute as Vs}from"three/webgpu";import{uniform as Va,storage as Os,globalId as El}from"three/tsl";var Dr=class extends _{constructor(){let e={rayDataStorage:Os(new Vs(1,1),z),pixelQueue:Os(new Vs(1,1),Te),start:Va(0,"uint"),end:Va(0,"uint"),addingSlots:Va(0,"uint"),globalId:El},t=h`
+		`;super(a(r)),this.defineUniformAccessors(r)}};import{StorageBufferAttribute as qs}from"three/webgpu";import{uniform as Va,storage as Gs,globalId as Vl}from"three/tsl";var _r=class extends R{constructor(){let e={rayDataStorage:Gs(new qs(1,1),z),pixelQueue:Gs(new qs(1,1),Te),start:Va(0,"uint"),end:Va(0,"uint"),addingSlots:Va(0,"uint"),globalId:Vl},t=h`
 			fn compute( start: u32, end: u32, addingSlots: u32, globalId: vec3u ) -> void {
 
 				let rayDataStorage = &${e.rayDataStorage};
@@ -4343,13 +4363,13 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 				}
 
 			}
-		`;super(t(e)),this.defineUniformAccessors(e)}};import{IndirectStorageBufferAttribute as zl}from"three/webgpu";import{storage as kl,globalId as Hl}from"three/tsl";var _r=class extends _{constructor(e={}){let{type:t="u32"}=e,r={globalId:Hl,outputTarget:kl(new zl(1,1),t)},a=h`
+		`;super(t(e)),this.defineUniformAccessors(e)}};import{IndirectStorageBufferAttribute as Ol}from"three/webgpu";import{storage as Wl,globalId as Ul}from"three/tsl";var Dr=class extends R{constructor(e={}){let{type:t="u32"}=e,r={globalId:Ul,outputTarget:Wl(new Ol(1,1),t)},a=h`
 			fn compute( globalId: vec3u ) -> void {
 
 				${r.outputTarget}[ globalId.x ] = 0;
 
 			}
-		`;super(a(r)),this.defineUniformAccessors({target:r.outputTarget})}};import{StorageBufferAttribute as Ws}from"three/webgpu";import{uniform as Vl,storage as Us,globalId as Ol}from"three/tsl";var Cr=class extends _{constructor(e){let t={source:Us(new Ws(1,1),e).toReadOnly(),target:Us(new Ws(1,1),e),count:Vl(0,"uint"),globalId:Ol},r=h`
+		`;super(a(r)),this.defineUniformAccessors({target:r.outputTarget})}};import{StorageBufferAttribute as Qs}from"three/webgpu";import{uniform as ql,storage as js,globalId as Gl}from"three/tsl";var Cr=class extends R{constructor(e){let t={source:js(new Qs(1,1),e).toReadOnly(),target:js(new Qs(1,1),e),count:ql(0,"uint"),globalId:Gl},r=h`
 			fn compute( count: u32, globalId: vec3u ) -> void {
 
 				let index = globalId.x;
@@ -4362,7 +4382,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 				${t.target}[ index ] = ${t.source}[ index ];
 
 			}
-		`;super(r(t)),this.defineUniformAccessors(t)}};import{StorageBufferAttribute as qs,StorageTexture as Wl,StructTypeNode as Ul}from"three/webgpu";import{storage as Gs,textureStore as ql,globalId as Gl}from"three/tsl";var Qs=0,js=1,Ks=2,Xs=3,Ys=4,Oa=5,Zs=4294967296,Js=new Ul({minSamples:{type:"uint",atomic:!0},maxSamples:{type:"uint",atomic:!0},totalLo:{type:"uint",atomic:!0},totalHi:{type:"uint",atomic:!0},pixelCount:{type:"uint",atomic:!0}},"SampleCounters"),Fr=class extends _{constructor(){let e={counters:Gs(new qs(1,1),Js)},t=h`
+		`;super(r(t)),this.defineUniformAccessors(t)}};import{StorageBufferAttribute as Ks,StorageTexture as Ql,StructTypeNode as jl}from"three/webgpu";import{storage as Xs,textureStore as Kl,globalId as Xl}from"three/tsl";var Ys=0,Zs=1,Js=2,eo=3,to=4,Oa=5,ro=4294967296,ao=new jl({minSamples:{type:"uint",atomic:!0},maxSamples:{type:"uint",atomic:!0},totalLo:{type:"uint",atomic:!0},totalHi:{type:"uint",atomic:!0},pixelCount:{type:"uint",atomic:!0}},"SampleCounters"),Fr=class extends R{constructor(){let e={counters:Xs(new Ks(1,1),ao)},t=h`
 			fn compute() -> void {
 
 				atomicStore( &${e.counters}.minSamples, 0xFFFFFFFFu );
@@ -4372,7 +4392,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 				atomicStore( &${e.counters}.pixelCount, 0u );
 
 			}
-		`;super(t(e)),this.defineUniformAccessors(e)}},$r=class extends _{constructor(){let e={globalId:Gl,counters:Gs(new qs(1,1),Js),sampleCountTarget:ql(new Wl(1,1)).toReadOnly()},t=h`
+		`;super(t(e)),this.defineUniformAccessors(e)}},$r=class extends R{constructor(){let e={globalId:Xl,counters:Xs(new Ks(1,1),ao),sampleCountTarget:Kl(new Ql(1,1)).toReadOnly()},t=h`
 			fn compute( globalId: vec3u ) -> void {
 
 				let targetDimensions = textureDimensions( ${e.sampleCountTarget} );
@@ -4406,7 +4426,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 				}
 
 			}
-		`;super(t(e)),this.defineUniformAccessors(e)}};var jl=134217728,Kl=Math.floor(jl/(z.getLength()*4)),Xl=5,vt=class extends Ue{constructor(e){super(e),this.seed=0,this.envInfo=new He,this.backgroundInfo=new Ve,this.lightsInfo=new We,this.rayCount=0,this.rayDataStorage=null,this.rayQueue=null,this.shadowRayQueue=null,this.rayIntersectionsStorage=null,this.shadowRayIntersectionsStorage=null,this.pixelQueue=null,this.sampleCountersStorage=new Re(new Uint32Array(Oa),Oa),this.sampleCountersStorage.name="Sample Counters",this._samplesPromise=null,this.populatePixelIndicesKernel=new yr().setWorkgroupSize(8,8,1),this.logicKernel=new br().setWorkgroupSize(64,1,1),this.materialKernel=new Tr().setWorkgroupSize(64,1,1),this.traceRayKernel=new Ir().setWorkgroupSize(64,1,1),this.traceShadowRayKernel=new Rr().setWorkgroupSize(64,1,1),this.rayDispatchConverter=new xt().setWorkgroupSize(1,1,1),this.shadowDispatchConverter=new xt().setWorkgroupSize(1,1,1),this.primeSampleCountersKernel=new Fr().setWorkgroupSize(1,1,1),this.tallySampleCountsKernel=new $r().setWorkgroupSize(8,8,1),this.resetSlotsKernel=new Dr().setWorkgroupSize(64,1,1),this.copyRayDataKernel=new Cr(z).setWorkgroupSize(64,1,1),this.logicKernel.envInfo=this.envInfo,this.logicKernel.backgroundInfo=this.backgroundInfo,this.logicKernel.lightsInfo=this.lightsInfo,this.zeroDispatchKernel=new _r().setWorkgroupSize(1,1,1),this.volumeKernel=null}resetSeed(){this.seed=0}reset(){super.reset(),this._samplesPromise=null}setBVHData(e){this.materialKernel.bvhData=e,this.materialKernel.needsUpdate=!0,this.traceRayKernel.bvhData=e,this.traceRayKernel.needsUpdate=!0,this.traceShadowRayKernel.bvhData=e,this.traceShadowRayKernel.needsUpdate=!0,this.reset()}rebuild(){super.rebuild(),this.materialKernel.needsUpdate=!0,this.reset()}setRandom(e){this.logicKernel.context.random=e,this.logicKernel.needsUpdate=!0,this.materialKernel.context.random=e,this.materialKernel.needsUpdate=!0,this.traceRayKernel.context.random=e,this.traceRayKernel.needsUpdate=!0,this.traceShadowRayKernel.context.random=e,this.traceShadowRayKernel.needsUpdate=!0,this.reset()}setMaterial(e){this.materialKernel.material=e.getData(),this.materialKernel.needsUpdate=!0,this.reset()}setFilterGlossy(e){this.materialKernel.filterGlossy=e===0?nr:1/e,this.reset()}setClamping(e,t){this.logicKernel.clampDirect=e,this.logicKernel.clampIndirect=t,this.reset()}setTransmissiveBackground(e){this.logicKernel.transmissiveBackground=e,this.reset()}setEnvironment(e){this.envInfo.updateFrom(e)}setLights(e){this.lightsInfo.updateFrom(this.renderer,e),this.reset()}setEnvironmentParams(e,t){let{envInfo:r}=this,a=new eo().makeRotationFromEuler(t).invert();r.rotationNode.value.setFromMatrix4(a),r.intensityNode.value=e}setMultipleImportanceSampling(e){this.logicKernel.misEnabled=e?1:0,this.reset()}setBackground(e){let{backgroundInfo:t}=this;t.dispose(),t.map=e}setBackgroundParams(e,t,r){let{backgroundInfo:a}=this,s=new eo().makeRotationFromEuler(t).invert();a.rotationNode.value.copy(s),a.intensity=e,a.blur=r}dispose(){super.dispose(),this.envInfo.dispose(),this.lightsInfo.dispose(),this.rayDataStorage?.dispose(),this.rayQueue?.dispose(),this.shadowRayQueue?.dispose(),this.rayIntersectionsStorage?.dispose(),this.shadowRayIntersectionsStorage?.dispose(),this.sampleCountersStorage.dispose(),this.pixelQueue?.dispose(),this.rayDispatchConverter.outputDispatch.dispose(),this.shadowDispatchConverter.outputDispatch.dispose(),this.populatePixelIndicesKernel.dispose(),this.logicKernel.dispose(),this.materialKernel.dispose(),this.traceRayKernel.dispose(),this.traceShadowRayKernel.dispose(),this.rayDispatchConverter.dispose(),this.shadowDispatchConverter.dispose(),this.primeSampleCountersKernel.dispose(),this.tallySampleCountsKernel.dispose(),this.resetSlotsKernel.dispose(),this.copyRayDataKernel.dispose(),this.zeroDispatchKernel.dispose()}_updatePixelQueue(e,t){let r=Te.getLength()+Math.max(e*t,1);(!this.pixelQueue||this.pixelQueue.array.length<r)&&(this.pixelQueue?.dispose(),this.pixelQueue=new Re(new Float32Array(r),r),this.pixelQueue.name="Pixel Queue",this.materialKernel.pixelQueue=this.pixelQueue,this.materialKernel.needsUpdate=!0,this.populatePixelIndicesKernel.pixelQueue=this.pixelQueue,this.populatePixelIndicesKernel.needsUpdate=!0,this.resetSlotsKernel.pixelQueue=this.pixelQueue,this.resetSlotsKernel.needsUpdate=!0)}_resizePool(e){let{renderer:t,resetSlotsKernel:r,copyRayDataKernel:a}=this,s=this.rayCount;r.pixelQueue=this.pixelQueue,e<s&&(r.rayDataStorage=this.rayDataStorage,r.start=e,r.end=s,r.addingSlots=!1,t.compute(r.kernel,r.getDispatchSize(s-e,1,1)));let i=new Re(e,z.getLength());i.name="Ray Data";let n=we.getLength()+e*Ge.getLength(),o=new Re(new Float32Array(n),n);o.name="Ray Queue";let u=new Re(new Float32Array(n),n);u.name="Shadow Ray Queue";let l=new Re(e,X.getLength());l.name="Ray Intersections";let f=new Re(e,X.getLength());f.name="Shadow Ray Intersections";let p=Math.min(e,s);p>0&&(a.source=this.rayDataStorage,a.target=i,a.count=p,t.compute(a.kernel,a.getDispatchSize(p,1,1))),this.rayDataStorage?.dispose(),this.rayQueue?.dispose(),this.shadowRayQueue?.dispose(),this.rayIntersectionsStorage?.dispose(),this.shadowRayIntersectionsStorage?.dispose(),this.rayDataStorage=i,this.rayQueue=o,this.shadowRayQueue=u,this.rayIntersectionsStorage=l,this.shadowRayIntersectionsStorage=f,this.rayCount=e,this.logicKernel.needsUpdate=!0,this.materialKernel.needsUpdate=!0,this.traceRayKernel.needsUpdate=!0,this.traceShadowRayKernel.needsUpdate=!0,this.populatePixelIndicesKernel.needsUpdate=!0,this.resetSlotsKernel.needsUpdate=!0,e>s&&(r.rayDataStorage=i,r.start=s,r.end=e,r.addingSlots=!0,t.compute(r.kernel,r.getDispatchSize(e-s,1,1)))}_getRequestedSlotCount(e){return Math.min(Kl,e,Math.max(1,Math.floor(this.frameBudget)))}_applyBudget(e){let t=this._getRequestedSlotCount(e);t!==this.rayCount&&this._resizePool(t)}*createRenderTask(){let{renderer:e,maxTransparentBounces:t,logicKernel:r,materialKernel:a,traceRayKernel:s,traceShadowRayKernel:i,rayDispatchConverter:n,shadowDispatchConverter:o,zeroDispatchKernel:u,populatePixelIndicesKernel:l}=this,f=new Ql;this.getSize(f),this._updatePixelQueue(f.x,f.y);let p=f.x*f.y;for(this._applyBudget(p),u.target=this.rayQueue,e.compute(u.kernel,[1]),u.target=this.shadowRayQueue,e.compute(u.kernel,[1]),l.rayDataStorage=this.rayDataStorage,l.pixelQueue=this.pixelQueue,l.frameBudget=this.rayCount,l.targetDimensions.copy(f),e.compute(l.kernel,l.getDispatchSize(f.x,f.y,1)),this.seed++;;){let m=this.lowResMode?Math.min(this.maxBounces,Xl):1;for(let d=0;d<m;d++){e.copyTextureToTexture(this.outputTarget,this.prevOutputTarget),[this.outputTarget,this.prevOutputTarget]=[this.prevOutputTarget,this.outputTarget],r.prevOutputTarget=this.prevOutputTarget,r.outputTarget=this.outputTarget,r.sampleCountTarget=this.sampleCountTarget,r.rayDataStorage=this.rayDataStorage,r.rayIntersectionsStorage=this.rayIntersectionsStorage,r.shadowRayIntersectionsStorage=this.shadowRayIntersectionsStorage,r.maxBounces=this.maxBounces,r.rayCount=this.rayCount,e.compute(r.kernel,r.getDispatchSize(this.rayCount,1,1)),this._applyBudget(p);let{rayDataStorage:g,rayQueue:x,shadowRayQueue:I,rayIntersectionsStorage:b,shadowRayIntersectionsStorage:D,rayCount:y}=this;u.target=x,e.compute(u.kernel,[1]),u.target=I,e.compute(u.kernel,[1]),a.rayDataStorage=g,a.rayQueue=x,a.shadowRayQueue=I,a.pixelQueue=this.pixelQueue,a.sampleCountTarget=this.sampleCountTarget,a.seed=this.seed,a.maxSamples=this.maxSamples,a.rayCount=y,a.maxTransparentBounces=t,a.maxBounces=this.maxBounces,a.targetDimensions.copy(f),e.compute(a.kernel,a.getDispatchSize(y,1,1)),n.queue=x,e.compute(n.kernel,[1,1,1]),s.rayQueue=x,s.rayIntersectionsStorage=b,e.compute(s.kernel,n.outputDispatch),o.queue=I,e.compute(o.kernel,[1,1,1]),i.shadowRayQueue=I,i.shadowRayIntersectionsStorage=D,e.compute(i.kernel,o.outputDispatch)}yield}}getSampleCountsAsync(){if(this._samplesPromise===null){let e=this._measureSampleCounts().finally(()=>{this._samplesPromise===e&&(this._samplesPromise=null)});this._samplesPromise=e}return this._samplesPromise}async _measureSampleCounts(){let{renderer:e,sampleCountTarget:t,sampleCountersStorage:r,primeSampleCountersKernel:a,tallySampleCountsKernel:s}=this;if(!e.initialized||this.lowResMode)return{min:0,max:0,avg:0};a.counters=r,e.compute(a.kernel,[1,1,1]),s.counters=r,s.sampleCountTarget=t,e.compute(s.kernel,s.getDispatchSize(t.width,t.height));let i=await e.getArrayBufferAsync(r),n=new Uint32Array(i),o=n[Ys];if(o===0)return{min:0,max:0,avg:0};let u=n[Xs]*Zs+n[Ks];return{min:n[Qs],max:n[js],avg:u/o}}};import{BackSide as Yl,FrontSide as Zl,DoubleSide as Jl,BufferAttribute as ec,BufferGeometry as tc,StorageBufferAttribute as to,StructTypeNode as io,Vector4 as rc,SkinnedMesh as ac,RepeatWrapping as ic,ClampToEdgeWrapping as sc,MirroredRepeatWrapping as oc,NearestFilter as nc}from"three/webgpu";import{storage as lc,float as ro,bool as ao,texture as cc,uniformArray as uc,uint as dc}from"three/tsl";var yt=new rc,Mr=new io({matrixWorld:"mat4x4f",inverseMatrixWorld:"mat4x4f",visible:"uint",materialIndex:"uint",visibleToShadowRays:"uint",_alignment0:"uint",color:"vec4f"},"TransformStruct"),Nr=new io({indices:"vec4u",normal:"vec3f",didHit:"bool",barycoord:"vec3f",objectIndex:"uint",side:"float",dist:"float",forwardBlocked:"bool"},"PathTracerIntersectionResult"),Br=class extends At{constructor(e,t={}){super(e,{attributes:{position:"vec4f",normal:"vec4f",tangent:"vec4f",color:"vec4f",uv:"vec4f"},...t}),this.structs.transform=Mr,this.structs.material=Wi,this.storage.materials=null,this.materialsMap=new Map,this.materials=[],this.bvhMap=new Map,this.textureAtlas=new Oe}updateUvAttributesFromScene(){let{attributes:e}=this,t=new Set(["color"]);for(let r=0;r<8;r++){let a=r===0?"uv":"uv"+r;delete e[a],t.add(a)}this.getRootObject().traverse(r=>{if(r.geometry)for(let a in r.geometry.attributes)t.has(a)&&(e[a]="vec4f")})}updateUvSampleFunction(){let{structs:e,fns:t}=this,r=[],a=null;e.attributes.membersLayout.forEach(({name:s})=>{if(/^uv/.test(s)){let i=s==="uv"?0:Number(s.replace(/^uv/,""));r.push(`
+		`;super(t(e)),this.defineUniformAccessors(e)}};var Zl=134217728,Jl=Math.floor(Zl/(z.getLength()*4)),ec=5,vt=class extends Ue{constructor(e){super(e),this.seed=0,this.envInfo=new He,this.backgroundInfo=new Ve,this.lightsInfo=new We,this.rayCount=0,this.rayDataStorage=null,this.rayQueue=null,this.shadowRayQueue=null,this.rayIntersectionsStorage=null,this.shadowRayIntersectionsStorage=null,this.pixelQueue=null,this.sampleCountersStorage=new Re(new Uint32Array(Oa),Oa),this.sampleCountersStorage.name="Sample Counters",this._samplesPromise=null,this.populatePixelIndicesKernel=new yr().setWorkgroupSize(8,8,1),this.logicKernel=new br().setWorkgroupSize(64,1,1),this.materialKernel=new Tr().setWorkgroupSize(64,1,1),this.traceRayKernel=new Ir().setWorkgroupSize(64,1,1),this.traceShadowRayKernel=new Rr().setWorkgroupSize(64,1,1),this.rayDispatchConverter=new xt().setWorkgroupSize(1,1,1),this.shadowDispatchConverter=new xt().setWorkgroupSize(1,1,1),this.primeSampleCountersKernel=new Fr().setWorkgroupSize(1,1,1),this.tallySampleCountsKernel=new $r().setWorkgroupSize(8,8,1),this.resetSlotsKernel=new _r().setWorkgroupSize(64,1,1),this.copyRayDataKernel=new Cr(z).setWorkgroupSize(64,1,1),this.logicKernel.envInfo=this.envInfo,this.logicKernel.backgroundInfo=this.backgroundInfo,this.logicKernel.lightsInfo=this.lightsInfo,this.zeroDispatchKernel=new Dr().setWorkgroupSize(1,1,1),this.volumeKernel=null}resetSeed(){this.seed=0}reset(){super.reset(),this._samplesPromise=null}setBVHData(e){this.materialKernel.bvhData=e,this.materialKernel.needsUpdate=!0,this.traceRayKernel.bvhData=e,this.traceRayKernel.needsUpdate=!0,this.traceShadowRayKernel.bvhData=e,this.traceShadowRayKernel.needsUpdate=!0,this.reset()}rebuild(){super.rebuild(),this.materialKernel.needsUpdate=!0,this.reset()}setRandom(e){this.logicKernel.context.random=e,this.logicKernel.needsUpdate=!0,this.materialKernel.context.random=e,this.materialKernel.needsUpdate=!0,this.traceRayKernel.context.random=e,this.traceRayKernel.needsUpdate=!0,this.traceShadowRayKernel.context.random=e,this.traceShadowRayKernel.needsUpdate=!0,this.reset()}setMaterial(e){this.materialKernel.material=e.getData(),this.materialKernel.needsUpdate=!0,this.reset()}setFilterGlossy(e){this.materialKernel.filterGlossy=e===0?nr:1/e,this.reset()}setClamping(e,t){this.logicKernel.clampDirect=e,this.logicKernel.clampIndirect=t,this.reset()}setTransmissiveBackground(e){this.logicKernel.transmissiveBackground=e,this.reset()}setEnvironment(e){this.envInfo.updateFrom(e)}setLights(e){this.lightsInfo.updateFrom(this.renderer,e),this.reset()}setEnvironmentParams(e,t){let{envInfo:r}=this,a=new io().makeRotationFromEuler(t).invert();r.rotationNode.value.setFromMatrix4(a),r.intensityNode.value=e}setMultipleImportanceSampling(e){this.logicKernel.misEnabled=e?1:0,this.reset()}setBackground(e){let{backgroundInfo:t}=this;t.dispose(),t.map=e}setBackgroundParams(e,t,r){let{backgroundInfo:a}=this,s=new io().makeRotationFromEuler(t).invert();a.rotationNode.value.copy(s),a.intensity=e,a.blur=r}dispose(){super.dispose(),this.envInfo.dispose(),this.lightsInfo.dispose(),this.rayDataStorage?.dispose(),this.rayQueue?.dispose(),this.shadowRayQueue?.dispose(),this.rayIntersectionsStorage?.dispose(),this.shadowRayIntersectionsStorage?.dispose(),this.sampleCountersStorage.dispose(),this.pixelQueue?.dispose(),this.rayDispatchConverter.outputDispatch.dispose(),this.shadowDispatchConverter.outputDispatch.dispose(),this.populatePixelIndicesKernel.dispose(),this.logicKernel.dispose(),this.materialKernel.dispose(),this.traceRayKernel.dispose(),this.traceShadowRayKernel.dispose(),this.rayDispatchConverter.dispose(),this.shadowDispatchConverter.dispose(),this.primeSampleCountersKernel.dispose(),this.tallySampleCountsKernel.dispose(),this.resetSlotsKernel.dispose(),this.copyRayDataKernel.dispose(),this.zeroDispatchKernel.dispose()}_updatePixelQueue(e,t){let r=Te.getLength()+Math.max(e*t,1);(!this.pixelQueue||this.pixelQueue.array.length<r)&&(this.pixelQueue?.dispose(),this.pixelQueue=new Re(new Float32Array(r),r),this.pixelQueue.name="Pixel Queue",this.materialKernel.pixelQueue=this.pixelQueue,this.materialKernel.needsUpdate=!0,this.populatePixelIndicesKernel.pixelQueue=this.pixelQueue,this.populatePixelIndicesKernel.needsUpdate=!0,this.resetSlotsKernel.pixelQueue=this.pixelQueue,this.resetSlotsKernel.needsUpdate=!0)}_resizePool(e){let{renderer:t,resetSlotsKernel:r,copyRayDataKernel:a}=this,s=this.rayCount;r.pixelQueue=this.pixelQueue,e<s&&(r.rayDataStorage=this.rayDataStorage,r.start=e,r.end=s,r.addingSlots=!1,t.compute(r.kernel,r.getDispatchSize(s-e,1,1)));let i=new Re(e,z.getLength());i.name="Ray Data";let o=we.getLength()+e*Ge.getLength(),n=new Re(new Float32Array(o),o);n.name="Ray Queue";let u=new Re(new Float32Array(o),o);u.name="Shadow Ray Queue";let l=new Re(e,X.getLength());l.name="Ray Intersections";let f=new Re(e,X.getLength());f.name="Shadow Ray Intersections";let p=Math.min(e,s);p>0&&(a.source=this.rayDataStorage,a.target=i,a.count=p,t.compute(a.kernel,a.getDispatchSize(p,1,1))),this.rayDataStorage?.dispose(),this.rayQueue?.dispose(),this.shadowRayQueue?.dispose(),this.rayIntersectionsStorage?.dispose(),this.shadowRayIntersectionsStorage?.dispose(),this.rayDataStorage=i,this.rayQueue=n,this.shadowRayQueue=u,this.rayIntersectionsStorage=l,this.shadowRayIntersectionsStorage=f,this.rayCount=e,this.logicKernel.needsUpdate=!0,this.materialKernel.needsUpdate=!0,this.traceRayKernel.needsUpdate=!0,this.traceShadowRayKernel.needsUpdate=!0,this.populatePixelIndicesKernel.needsUpdate=!0,this.resetSlotsKernel.needsUpdate=!0,e>s&&(r.rayDataStorage=i,r.start=s,r.end=e,r.addingSlots=!0,t.compute(r.kernel,r.getDispatchSize(e-s,1,1)))}_getRequestedSlotCount(e){return Math.min(Jl,e,Math.max(1,Math.floor(this.frameBudget)))}_applyBudget(e){let t=this._getRequestedSlotCount(e);t!==this.rayCount&&this._resizePool(t)}*createRenderTask(){let{renderer:e,maxTransparentBounces:t,logicKernel:r,materialKernel:a,traceRayKernel:s,traceShadowRayKernel:i,rayDispatchConverter:o,shadowDispatchConverter:n,zeroDispatchKernel:u,populatePixelIndicesKernel:l}=this,f=new Yl;this.getSize(f),this._updatePixelQueue(f.x,f.y);let p=f.x*f.y;for(this._applyBudget(p),u.target=this.rayQueue,e.compute(u.kernel,[1]),u.target=this.shadowRayQueue,e.compute(u.kernel,[1]),l.rayDataStorage=this.rayDataStorage,l.pixelQueue=this.pixelQueue,l.frameBudget=this.rayCount,l.targetDimensions.copy(f),e.compute(l.kernel,l.getDispatchSize(f.x,f.y,1)),this.seed++;;){let m=this.lowResMode?Math.min(this.maxBounces,ec):1;for(let d=0;d<m;d++){e.copyTextureToTexture(this.outputTarget,this.prevOutputTarget),[this.outputTarget,this.prevOutputTarget]=[this.prevOutputTarget,this.outputTarget],r.prevOutputTarget=this.prevOutputTarget,r.outputTarget=this.outputTarget,r.sampleCountTarget=this.sampleCountTarget,r.rayDataStorage=this.rayDataStorage,r.rayIntersectionsStorage=this.rayIntersectionsStorage,r.shadowRayIntersectionsStorage=this.shadowRayIntersectionsStorage,r.maxBounces=this.maxBounces,r.rayCount=this.rayCount,e.compute(r.kernel,r.getDispatchSize(this.rayCount,1,1)),this._applyBudget(p);let{rayDataStorage:g,rayQueue:x,shadowRayQueue:_,rayIntersectionsStorage:b,shadowRayIntersectionsStorage:D,rayCount:y}=this;u.target=x,e.compute(u.kernel,[1]),u.target=_,e.compute(u.kernel,[1]),a.rayDataStorage=g,a.rayQueue=x,a.shadowRayQueue=_,a.pixelQueue=this.pixelQueue,a.sampleCountTarget=this.sampleCountTarget,a.seed=this.seed,a.maxSamples=this.maxSamples,a.rayCount=y,a.maxTransparentBounces=t,a.maxBounces=this.maxBounces,a.targetDimensions.copy(f),e.compute(a.kernel,a.getDispatchSize(y,1,1)),o.queue=x,e.compute(o.kernel,[1,1,1]),s.rayQueue=x,s.rayIntersectionsStorage=b,e.compute(s.kernel,o.outputDispatch),n.queue=_,e.compute(n.kernel,[1,1,1]),i.shadowRayQueue=_,i.shadowRayIntersectionsStorage=D,e.compute(i.kernel,n.outputDispatch)}yield}}getSampleCountsAsync(){if(this._samplesPromise===null){let e=this._measureSampleCounts().finally(()=>{this._samplesPromise===e&&(this._samplesPromise=null)});this._samplesPromise=e}return this._samplesPromise}async _measureSampleCounts(){let{renderer:e,sampleCountTarget:t,sampleCountersStorage:r,primeSampleCountersKernel:a,tallySampleCountsKernel:s}=this;if(!e.initialized||this.lowResMode)return{min:0,max:0,avg:0};a.counters=r,e.compute(a.kernel,[1,1,1]),s.counters=r,s.sampleCountTarget=t,e.compute(s.kernel,s.getDispatchSize(t.width,t.height));let i=await e.getArrayBufferAsync(r),o=new Uint32Array(i),n=o[to];if(n===0)return{min:0,max:0,avg:0};let u=o[eo]*ro+o[Js];return{min:o[Ys],max:o[Zs],avg:u/n}}};import{BackSide as tc,FrontSide as rc,DoubleSide as ac,BufferAttribute as ic,BufferGeometry as sc,StorageBufferAttribute as so,StructTypeNode as lo,Vector4 as oc,SkinnedMesh as nc,RepeatWrapping as lc,ClampToEdgeWrapping as cc,MirroredRepeatWrapping as uc,NearestFilter as dc}from"three/webgpu";import{storage as hc,float as oo,bool as no,texture as fc,uniformArray as pc,uint as mc}from"three/tsl";var yt=new oc,Mr=new lo({matrixWorld:"mat4x4f",inverseMatrixWorld:"mat4x4f",visible:"uint",materialIndex:"uint",visibleToShadowRays:"uint",_alignment0:"uint",color:"vec4f"},"TransformStruct"),Nr=new lo({indices:"vec4u",normal:"vec3f",didHit:"bool",barycoord:"vec3f",objectIndex:"uint",side:"float",dist:"float",forwardBlocked:"bool"},"PathTracerIntersectionResult"),Br=class extends At{constructor(e,t={}){super(e,{attributes:{position:"vec4f",normal:"vec4f",tangent:"vec4f",color:"vec4f",uv:"vec4f"},...t}),this.structs.transform=Mr,this.structs.material=Qi,this.storage.materials=null,this.materialsMap=new Map,this.materials=[],this.bvhMap=new Map,this.textureAtlas=new Oe}updateUvAttributesFromScene(){let{attributes:e}=this,t=new Set(["color"]);for(let r=0;r<8;r++){let a=r===0?"uv":"uv"+r;delete e[a],t.add(a)}this.getRootObject().traverse(r=>{if(r.geometry)for(let a in r.geometry.attributes)t.has(a)&&(e[a]="vec4f")})}updateUvSampleFunction(){let{structs:e,fns:t}=this,r=[],a=null;e.attributes.membersLayout.forEach(({name:s})=>{if(/^uv/.test(s)){let i=s==="uv"?0:Number(s.replace(/^uv/,""));r.push(`
 					case ${i}u: {
 
 						return vertexData.${s}.xy;
@@ -4442,7 +4462,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 					return vec4f( 1.0 );
 
 				}
-			`}useTransparencyRaycastFn(){let{textureAtlas:e,storage:t,fns:r}=this,a=e.texture,s=uc(e.textureInfo,"uvec4"),i=Zt(s,cc(a));r.getSurfaceRecord=ls(i,r.getUvFromChannel,r.getColor);let n=dc().toVar("bvh_materialIndex"),o=ro(1).toVar("bvh_rayScalar"),u=ro(1).toVar("bvh_baseOpacity"),l=ao(!1).toVar("bvh_isShadowRay"),f=ao(!1).toVar("bvh_skipShadowObject"),p={shapeStruct:v,resultStruct:Nr,boundsOrderFn:h`
+			`}useTransparencyRaycastFn(){let{textureAtlas:e,storage:t,fns:r}=this,a=e.texture,s=pc(e.textureInfo,"uvec4"),i=Zt(s,fc(a));r.getSurfaceRecord=hs(i,r.getUvFromChannel,r.getColor);let o=mc().toVar("bvh_materialIndex"),n=oo(1).toVar("bvh_rayScalar"),u=oo(1).toVar("bvh_baseOpacity"),l=no(!1).toVar("bvh_isShadowRay"),f=no(!1).toVar("bvh_skipShadowObject"),p={shapeStruct:v,resultStruct:Nr,boundsOrderFn:h`
 				fn getBoundsOrder( ray: ${v}, splitAxis: u32, node: ${B} ) -> bool {
 
 					return ray.direction[ splitAxis ] >= 0.0;
@@ -4476,11 +4496,11 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 						return 0u;
 
-					} else if ( ray.maxDist > 0.0 && dist * ${o} >= ray.maxDist ) {
+					} else if ( ray.maxDist > 0.0 && dist * ${n} >= ray.maxDist ) {
 
 						return 0u;
 
-					} else if ( result.didHit && dist * ${o} >= result.dist ) {
+					} else if ( result.didHit && dist * ${n} >= result.dist ) {
 
 						return 0u;
 
@@ -4507,10 +4527,10 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 						let c = ${t.attributes}[ i2 ].position.xyz;
 
 						var triResult = ${Ft}( ray, a, b, c, 0.0 );
-						triResult.dist *= ${o};
+						triResult.dist *= ${n};
 						if ( triResult.didHit && ( ray.maxDist <= 0.0 || triResult.dist < ray.maxDist ) && ( ! result.didHit || triResult.dist < result.dist ) ) {
 
-							let material = ${t.materials}[ ${n} ];
+							let material = ${t.materials}[ ${o} ];
 
 							// TODO: if material is a transmissive volume we may need to assume double-sidedness
 							// shadow rays hit both sides
@@ -4618,10 +4638,10 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 					let len = length( ray.direction );
 					ray.direction /= len;
-					${o} = 1.0 / len;
+					${n} = 1.0 / len;
 
 					let object = ${t.transforms}[ objectIndex ];
-					${n} = object.materialIndex;
+					${o} = object.materialIndex;
 
 					let material = ${t.materials}[ object.materialIndex ];
 					if ( material.transparent == 1 ) {
@@ -4648,7 +4668,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 			`,resetShapeFn:h`
 				fn resetRayScalar( objectIndex: u32 ) -> void {
 
-					${o} = 1.0;
+					${n} = 1.0;
 					${u} = 1.0;
 
 				}
@@ -4664,7 +4684,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 					${l} = true;
 
 				}
-			`})}update(){let{structs:e}=this,t=new to(new Uint8Array,e.material.getLength());this.storage.materials=lc(t,e.material).toReadOnly().setName("bvh_materials"),this.updateUvAttributesFromScene(),this.updateMaterialsMap(),super.update(),this.updateUvSampleFunction(),this.updateColorSampleFn(),this.updateMaterials(),this.bvhMap.clear(),this.useTransparencyRaycastFn()}updateMaterialsMap(){let{materials:e,materialsMap:t}=this;t.clear(),e.length=0,this.getRootObject().traverse(a=>{a.material&&(Array.isArray(a.material)?a.material.forEach(s=>s&&r(s)):r(a.material))}),e.sort((a,s)=>a.uuid<s.uuid?1:-1).forEach((a,s)=>{t.set(a,s)});function r(a){t.has(a)||(e.push(a),t.set(a,-1))}}updateMaterials(){this.updateMaterialsMap();let{materials:e,storage:t,structs:r,bvh:a}=this,{materialData:s,textures:i}=this.writeMaterialsBuffer(e),n=t.materials.proxyNode,o=t.transforms.proxyNode,u=s.length/r.material.getLength();n.value.count<u&&(n.value.dispose(),n.value=new to(s,r.material.getLength())),n.value.array.set(s),n.value.needsUpdate=!0,this._getTransformMap(a).forEach(l=>{this.writeMaterialData(l,l.slot,o.value.array.buffer)}),o.value.needsUpdate=!0,this.textures=i}writeMaterialsBuffer(e){function t(p){switch(p){case ic:return 0;case sc:return 1;case oc:return 2;default:return 0}}function r(p,m){if(m in p&&p[m]){let d=p[m],g=ti(d);n.has(g)||(n.set(g,n.size),o.push(d));let x=n.get(g),I=d.channel&7,b=t(d.wrapS),D=t(d.wrapT);return(d.magFilter===nc?1:0)<<30|D<<28|b<<26|I<<23|x&8388607}else return-1}function a(p,m,d){return m in p?p[m]:d}function s(p,m,d,g){let x=p[m]&&p[m].isTexture?p[m]:null;if(x){x.matrixAutoUpdate&&x.updateMatrix();let I=x.matrix.elements;for(let b=0;b<3;b++)d[g+4*b+0]=I[3*b+0],d[g+4*b+1]=I[3*b+1],d[g+4*b+2]=I[3*b+2],d[g+4*b+3]=0}return 12}let i=0,n=new Map,o=[],u=Math.max(e.length,2),l=new Float32Array(u*this.structs.material.getLength()),f=new Int32Array(l.buffer);for(let p=0,m=e.length;p<m;p++){let d=e[p];l[i++]=d.color.r,l[i++]=d.color.g,l[i++]=d.color.b,f[i++]=r(d,"map"),l[i++]=a(d,"metalness",0),f[i++]=r(d,"metalnessMap"),l[i++]=a(d,"roughness",0),f[i++]=r(d,"roughnessMap"),l[i++]=a(d,"ior",1.5),l[i++]=a(d,"transmission",0),f[i++]=r(d,"transmissionMap"),l[i++]=a(d,"emissiveIntensity",0),"emissive"in d?(l[i++]=d.emissive.r,l[i++]=d.emissive.g,l[i++]=d.emissive.b):(l[i++]=0,l[i++]=0,l[i++]=0),f[i++]=r(d,"emissiveMap"),f[i++]=r(d,"normalMap"),i++,"normalScale"in d?(l[i++]=d.normalScale.x,l[i++]=d.normalScale.y):(l[i++]=1,l[i++]=1),l[i++]=a(d,"clearcoat",0),f[i++]=r(d,"clearcoatMap"),f[i++]=r(d,"clearcoatNormalMap"),i++,"clearcoatNormalScale"in d?(l[i++]=d.clearcoatNormalScale.x,l[i++]=d.clearcoatNormalScale.y):(l[i++]=1,l[i++]=1),l[i++]=a(d,"clearcoatRoughness",0),f[i++]=r(d,"clearcoatRoughnessMap"),f[i++]=r(d,"iridescenceMap"),f[i++]=r(d,"iridescenceThicknessMap"),l[i++]=a(d,"iridescence",0),l[i++]=a(d,"iridescenceIOR",1.3);let g=a(d,"iridescenceThicknessRange",[100,400]);l[i++]=g[0],l[i++]=g[1],l[i++]=a(d,"diffuseRoughness",0),l[i++]=a(d,"dispersion",0),"specularColor"in d?(l[i++]=d.specularColor.r,l[i++]=d.specularColor.g,l[i++]=d.specularColor.b):(l[i++]=1,l[i++]=1,l[i++]=1),f[i++]=r(d,"specularColorMap"),l[i++]=a(d,"specularIntensity",1),f[i++]=r(d,"specularIntensityMap");let x=a(d,"thickness",0)===0&&a(d,"attenuationDistance",1/0)===1/0;if(f[i++]=Number(x),i++,"attenuationColor"in d?(l[i++]=d.attenuationColor.r,l[i++]=d.attenuationColor.g,l[i++]=d.attenuationColor.b):(l[i++]=1,l[i++]=1,l[i++]=1),l[i++]=a(d,"attenuationDistance",1/0),f[i++]=r(d,"alphaMap"),f[i++]=Number(a(d,"castShadow",!0)),l[i++]=d.opacity,l[i++]=d.alphaTest,!x&&d.transmission>0)l[i++]=0;else switch(d.side){case Zl:l[i++]=1;break;case Yl:l[i++]=-1;break;case Jl:l[i++]=0;break}f[i++]=Number(a(d,"matte",!1)),l[i++]=a(d,"sheen",0),i++,"sheenColor"in d?(l[i++]=d.sheenColor.r,l[i++]=d.sheenColor.g,l[i++]=d.sheenColor.b):(l[i++]=0,l[i++]=0,l[i++]=0),f[i++]=r(d,"sheenColorMap"),l[i++]=a(d,"sheenRoughness",0),f[i++]=r(d,"sheenRoughnessMap"),f[i++]=Number(d.vertexColors),f[i++]=Number(d.flatShading),f[i++]=Number(d.transparent),f[i++]=0,l[i++]=a(d,"anisotropy",0),l[i++]=a(d,"anisotropyRotation",0),f[i++]=r(d,"anisotropyMap"),i++,i++,i++,i+=s(d,"map",l,i),i+=s(d,"metalnessMap",l,i),i+=s(d,"roughnessMap",l,i),i+=s(d,"transmissionMap",l,i),i+=s(d,"emissiveMap",l,i),i+=s(d,"normalMap",l,i),i+=s(d,"clearcoatMap",l,i),i+=s(d,"clearcoatNormalMap",l,i),i+=s(d,"clearcoatRoughnessMap",l,i),i+=s(d,"sheenColorMap",l,i),i+=s(d,"sheenRoughnessMap",l,i),i+=s(d,"iridescenceMap",l,i),i+=s(d,"iridescenceThicknessMap",l,i),i+=s(d,"specularColorMap",l,i),i+=s(d,"specularIntensityMap",l,i),i+=s(d,"alphaMap",l,i),i+=s(d,"anisotropyMap",l,i)}return{materialData:f,textures:o}}writeMaterialData(e,t,r){let{materialsMap:a}=this,{object:s,instanceId:i,root:n}=e,o=s.material;if(Array.isArray(o)){let{materialIndex:p}=s.geometry.groups[n];o=o[p]}let u=new Uint32Array(r),l=a.has(o)?a.get(o):-1;l===-1&&(u[t*Mr.getLength()+32]=0),u[t*Mr.getLength()+33]=l,s.isInstancedMesh&&s.instanceColor?(s.getColorAt(i,yt),yt.w=1):s.isBatchedMesh&&s._colorsTexture?s.getColorAt(i,yt):yt.setScalar(1);let f=new Float32Array(r);yt.toArray(f,t*Mr.getLength()+36)}writeTransformData(e,t,r,a){super.writeTransformData(e,t,r,a),this.writeMaterialData(e,r,a);let s=new Uint32Array(a);s[r*this.structs.transform.getLength()+34]=e.object.visibleToShadowRays===!1?0:1}getBVH(e,t,r){let{bvhMap:a}=this,s=super.getBVH(e,t,r);if(a.has(s)){let i=a.get(s);if(Object.assign(r,i.range),s!==i.bvh&&s instanceof te){let n=s.mesh,o=i.bvh.mesh;o.matrixWorld.copy(n.matrixWorld).decompose(o.position,o.quaternion,o.scale),s.refit(),s.getBoundingBox(o.boundingBox),s.geometry.computeBoundingBox()}return i.bvh}else if(s.indirect){let i=new tc;i.attributes=s.geometry.attributes;let n;if(s.geometry.index)n=s.geometry.index.array.slice(r.start,r.count+r.start);else{let{start:u,count:l}=r;n=new Uint32Array(l);for(let f=0,p=r.count;f<p;f++)n[f]=u+f}i.index=new ec(n,1),r.start=0;let o;if(s instanceof te){let u=s.mesh,l=new ac(i);l.copy(u),l.matrixWorld.copy(u.matrixWorld).decompose(l.position,l.quaternion,l.scale),o=new te(l,{strategy:2,targetLeafSize:5})}else o=new fe(i,{strategy:2,targetLeafSize:5});return a.set(s,{bvh:o,range:{...r}}),o}else return s}dispose(){let{storage:e}=this;for(let t in e)e[t].value?.dispose()}};import{MeshBasicNodeMaterial as hc,DataTexture as fc,NoBlending as pc}from"three/webgpu";import{uv as mc,varying as gc,texture as xc,uniform as vc,wgslFn as yc}from"three/tsl";var Pr=class extends hc{set texture(e){this._texNode.value=e}set layer(e){this._layerUniform.value=e}constructor(){super(),this.blending=pc,this._texNode=xc(new fc),this._layerUniform=vc(0),this.colorNode=yc(`
+			`})}update(){let{structs:e}=this,t=new so(new Uint8Array,e.material.getLength());this.storage.materials=hc(t,e.material).toReadOnly().setName("bvh_materials"),this.updateUvAttributesFromScene(),this.updateMaterialsMap(),super.update(),this.updateUvSampleFunction(),this.updateColorSampleFn(),this.updateMaterials(),this.bvhMap.clear(),this.useTransparencyRaycastFn()}updateMaterialsMap(){let{materials:e,materialsMap:t}=this;t.clear(),e.length=0,this.getRootObject().traverse(a=>{a.material&&(Array.isArray(a.material)?a.material.forEach(s=>s&&r(s)):r(a.material))}),e.sort((a,s)=>a.uuid<s.uuid?1:-1).forEach((a,s)=>{t.set(a,s)});function r(a){t.has(a)||(e.push(a),t.set(a,-1))}}updateMaterials(){this.updateMaterialsMap();let{materials:e,storage:t,structs:r,bvh:a}=this,{materialData:s,textures:i}=this.writeMaterialsBuffer(e),o=t.materials.proxyNode,n=t.transforms.proxyNode,u=s.length/r.material.getLength();o.value.count<u&&(o.value.dispose(),o.value=new so(s,r.material.getLength())),o.value.array.set(s),o.value.needsUpdate=!0,this._getTransformMap(a).forEach(l=>{this.writeMaterialData(l,l.slot,n.value.array.buffer)}),n.value.needsUpdate=!0,this.textures=i}writeMaterialsBuffer(e){function t(p){switch(p){case lc:return 0;case cc:return 1;case uc:return 2;default:return 0}}function r(p,m){if(m in p&&p[m]){let d=p[m],g=ti(d);o.has(g)||(o.set(g,o.size),n.push(d));let x=o.get(g),_=d.channel&7,b=t(d.wrapS),D=t(d.wrapT);return(d.magFilter===dc?1:0)<<30|D<<28|b<<26|_<<23|x&8388607}else return-1}function a(p,m,d){return m in p?p[m]:d}function s(p,m,d,g){let x=p[m]&&p[m].isTexture?p[m]:null;if(x){x.matrixAutoUpdate&&x.updateMatrix();let _=x.matrix.elements;for(let b=0;b<3;b++)d[g+4*b+0]=_[3*b+0],d[g+4*b+1]=_[3*b+1],d[g+4*b+2]=_[3*b+2],d[g+4*b+3]=0}return 12}let i=0,o=new Map,n=[],u=Math.max(e.length,2),l=new Float32Array(u*this.structs.material.getLength()),f=new Int32Array(l.buffer);for(let p=0,m=e.length;p<m;p++){let d=e[p];l[i++]=d.color.r,l[i++]=d.color.g,l[i++]=d.color.b,f[i++]=r(d,"map"),l[i++]=a(d,"metalness",0),f[i++]=r(d,"metalnessMap"),l[i++]=a(d,"roughness",0),f[i++]=r(d,"roughnessMap"),l[i++]=a(d,"ior",1.5),l[i++]=a(d,"transmission",0),f[i++]=r(d,"transmissionMap"),l[i++]=a(d,"emissiveIntensity",0),"emissive"in d?(l[i++]=d.emissive.r,l[i++]=d.emissive.g,l[i++]=d.emissive.b):(l[i++]=0,l[i++]=0,l[i++]=0),f[i++]=r(d,"emissiveMap"),f[i++]=r(d,"normalMap"),i++,"normalScale"in d?(l[i++]=d.normalScale.x,l[i++]=d.normalScale.y):(l[i++]=1,l[i++]=1),l[i++]=a(d,"clearcoat",0),f[i++]=r(d,"clearcoatMap"),f[i++]=r(d,"clearcoatNormalMap"),i++,"clearcoatNormalScale"in d?(l[i++]=d.clearcoatNormalScale.x,l[i++]=d.clearcoatNormalScale.y):(l[i++]=1,l[i++]=1),l[i++]=a(d,"clearcoatRoughness",0),f[i++]=r(d,"clearcoatRoughnessMap"),f[i++]=r(d,"iridescenceMap"),f[i++]=r(d,"iridescenceThicknessMap"),l[i++]=a(d,"iridescence",0),l[i++]=a(d,"iridescenceIOR",1.3);let g=a(d,"iridescenceThicknessRange",[100,400]);l[i++]=g[0],l[i++]=g[1],l[i++]=a(d,"diffuseRoughness",0),l[i++]=a(d,"dispersion",0),"specularColor"in d?(l[i++]=d.specularColor.r,l[i++]=d.specularColor.g,l[i++]=d.specularColor.b):(l[i++]=1,l[i++]=1,l[i++]=1),f[i++]=r(d,"specularColorMap"),l[i++]=a(d,"specularIntensity",1),f[i++]=r(d,"specularIntensityMap");let x=a(d,"thickness",0)===0&&a(d,"attenuationDistance",1/0)===1/0;if(f[i++]=Number(x),i++,"attenuationColor"in d?(l[i++]=d.attenuationColor.r,l[i++]=d.attenuationColor.g,l[i++]=d.attenuationColor.b):(l[i++]=1,l[i++]=1,l[i++]=1),l[i++]=a(d,"attenuationDistance",1/0),f[i++]=r(d,"alphaMap"),f[i++]=Number(a(d,"castShadow",!0)),l[i++]=d.opacity,l[i++]=d.alphaTest,!x&&d.transmission>0)l[i++]=0;else switch(d.side){case rc:l[i++]=1;break;case tc:l[i++]=-1;break;case ac:l[i++]=0;break}f[i++]=Number(a(d,"matte",!1)),l[i++]=a(d,"sheen",0),i++,"sheenColor"in d?(l[i++]=d.sheenColor.r,l[i++]=d.sheenColor.g,l[i++]=d.sheenColor.b):(l[i++]=0,l[i++]=0,l[i++]=0),f[i++]=r(d,"sheenColorMap"),l[i++]=a(d,"sheenRoughness",0),f[i++]=r(d,"sheenRoughnessMap"),f[i++]=Number(d.vertexColors),f[i++]=Number(d.flatShading),f[i++]=Number(d.transparent),f[i++]=0,l[i++]=a(d,"anisotropy",0),l[i++]=a(d,"anisotropyRotation",0),f[i++]=r(d,"anisotropyMap"),i++,i++,i++,i+=s(d,"map",l,i),i+=s(d,"metalnessMap",l,i),i+=s(d,"roughnessMap",l,i),i+=s(d,"transmissionMap",l,i),i+=s(d,"emissiveMap",l,i),i+=s(d,"normalMap",l,i),i+=s(d,"clearcoatMap",l,i),i+=s(d,"clearcoatNormalMap",l,i),i+=s(d,"clearcoatRoughnessMap",l,i),i+=s(d,"sheenColorMap",l,i),i+=s(d,"sheenRoughnessMap",l,i),i+=s(d,"iridescenceMap",l,i),i+=s(d,"iridescenceThicknessMap",l,i),i+=s(d,"specularColorMap",l,i),i+=s(d,"specularIntensityMap",l,i),i+=s(d,"alphaMap",l,i),i+=s(d,"anisotropyMap",l,i)}return{materialData:f,textures:n}}writeMaterialData(e,t,r){let{materialsMap:a}=this,{object:s,instanceId:i,root:o}=e,n=s.material;if(Array.isArray(n)){let{materialIndex:p}=s.geometry.groups[o];n=n[p]}let u=new Uint32Array(r),l=a.has(n)?a.get(n):-1;l===-1&&(u[t*Mr.getLength()+32]=0),u[t*Mr.getLength()+33]=l,s.isInstancedMesh&&s.instanceColor?(s.getColorAt(i,yt),yt.w=1):s.isBatchedMesh&&s._colorsTexture?s.getColorAt(i,yt):yt.setScalar(1);let f=new Float32Array(r);yt.toArray(f,t*Mr.getLength()+36)}writeTransformData(e,t,r,a){super.writeTransformData(e,t,r,a),this.writeMaterialData(e,r,a);let s=new Uint32Array(a);s[r*this.structs.transform.getLength()+34]=e.object.visibleToShadowRays===!1?0:1}getBVH(e,t,r){let{bvhMap:a}=this,s=super.getBVH(e,t,r);if(a.has(s)){let i=a.get(s);if(Object.assign(r,i.range),s!==i.bvh&&s instanceof te){let o=s.mesh,n=i.bvh.mesh;n.matrixWorld.copy(o.matrixWorld).decompose(n.position,n.quaternion,n.scale),s.refit(),s.getBoundingBox(n.boundingBox),s.geometry.computeBoundingBox()}return i.bvh}else if(s.indirect){let i=new sc;i.attributes=s.geometry.attributes;let o;if(s.geometry.index)o=s.geometry.index.array.slice(r.start,r.count+r.start);else{let{start:u,count:l}=r;o=new Uint32Array(l);for(let f=0,p=r.count;f<p;f++)o[f]=u+f}i.index=new ic(o,1),r.start=0;let n;if(s instanceof te){let u=s.mesh,l=new nc(i);l.copy(u),l.matrixWorld.copy(u.matrixWorld).decompose(l.position,l.quaternion,l.scale),n=new te(l,{strategy:2,targetLeafSize:5})}else n=new fe(i,{strategy:2,targetLeafSize:5});return a.set(s,{bvh:n,range:{...r}}),n}else return s}dispose(){let{storage:e}=this;for(let t in e)e[t].value?.dispose()}};import{MeshBasicNodeMaterial as gc,DataTexture as xc,NoBlending as vc}from"three/webgpu";import{uv as yc,varying as bc,texture as Sc,uniform as wc,wgslFn as Tc}from"three/tsl";var Pr=class extends gc{set texture(e){this._texNode.value=e}set layer(e){this._layerUniform.value=e}constructor(){super(),this.blending=vc,this._texNode=Sc(new xc),this._layerUniform=wc(0),this.colorNode=Tc(`
 			fn atlasDebug( tex: texture_2d_array<f32>, coord: vec2f, layer: f32 ) -> vec4f {
 
 				// flip y so texel origin shows at the top-left
@@ -4673,7 +4693,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 				return textureLoad( tex, texel, i32( layer ), 0 );
 
 			}
-		`)(this._texNode,gc(mc()),this._layerUniform)}};import{MeshBasicNodeMaterial as bc,NoBlending as Sc,StorageTexture as wc}from"three/webgpu";import{uv as Tc,varying as Ic,texture as Rc,uniform as so}from"three/tsl";var Ar=class extends bc{set texture(e){this._texNode.value=e}set minCount(e){this._minUniform.value=e}set maxCount(e){this._maxUniform.value=e}constructor(){super(),this.blending=Sc,this._texNode=Rc(new wc(1,1)),this._minUniform=so(0),this._maxUniform=so(1);let e=h`
+		`)(this._texNode,bc(yc()),this._layerUniform)}};import{MeshBasicNodeMaterial as Ic,NoBlending as Rc,StorageTexture as _c}from"three/webgpu";import{uv as Dc,varying as Cc,texture as Fc,uniform as co}from"three/tsl";var Ar=class extends Ic{set texture(e){this._texNode.value=e}set minCount(e){this._minUniform.value=e}set maxCount(e){this._maxUniform.value=e}constructor(){super(),this.blending=Rc,this._texNode=Fc(new _c(1,1)),this._minUniform=co(0),this._maxUniform=co(1);let e=h`
 			fn sampleDensity( tex: texture_2d<u32>, coord: vec2f, minCount: f32, maxCount: f32 ) -> vec4f {
 
 				let dims = vec2f( textureDimensions( tex, 0 ) );
@@ -4690,14 +4710,14 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 				return vec4f( ${ca}( t ), 1.0 );
 
 			}
-		`;this.colorNode=e(this._texNode,Ic(Tc()),this._minUniform,this._maxUniform)}};import{float as wo}from"three/tsl";var Lr=class{init(){}getBsdfNode(){return h`
+		`;this.colorNode=e(this._texNode,Cc(Dc()),this._minUniform,this._maxUniform)}};import{float as _o}from"three/tsl";var Lr=class{init(){}getBsdfNode(){return h`
 
 			fn bsdfSample( worldWo: vec3f, surf: SurfaceRecord ) -> ScatterRecord {
 
 				var record: ScatterRecord;
 
 				let wo = normalize( surf.normalInvBasis * worldWo );
-				let wi = ${Ji}( wo, ${O}( ${qt} ) );
+				let wi = ${as}( wo, ${O}( ${qt} ) );
 				record.color = surf.color * max( wi.z, 0.0 );
 				record.pdf = max( wi.z, 0.0 ) / PI;
 				record.direction = normalize( surf.normalBasis * wi );
@@ -4722,7 +4742,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 			}
 
-		`}getData(){return{bsdfSample:this.getBsdfNode(),bsdfEvalPdf:this.getBsdfEvalPdfNode()}}};import{wgslFn as k}from"three/tsl";var Dc=k(`
+		`}getData(){return{bsdfSample:this.getBsdfNode(),bsdfEvalPdf:this.getBsdfEvalPdfNode()}}};import{wgslFn as k}from"three/tsl";var $c=k(`
 
 	fn eonDirectionalAlbedo( mu: f32, roughness: f32, A: f32 ) -> f32 {
 
@@ -4738,7 +4758,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`),oo=k(`
+`),uo=k(`
 
 	fn fonSingleScatter( NdotV: f32, NdotL: f32, VdotH: f32, roughness: f32, A: f32, rho: vec3f ) -> vec3f {
 
@@ -4750,7 +4770,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,[T]),Xm=k(`
+`,[T]),eg=k(`
 
 	fn fonBrdf( NdotV: f32, NdotL: f32, VdotH: f32, surf: SurfaceRecord ) -> vec3f {
 
@@ -4768,7 +4788,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,[T,M,oo]),no=k(`
+`,[T,M,uo]),ho=k(`
 
 	fn eonBrdf( NdotV: f32, NdotL: f32, VdotH: f32, surf: SurfaceRecord ) -> vec3f {
 
@@ -4798,7 +4818,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,[T,M,Dc,oo]),lo=k(`
+`,[T,M,$c,uo]),fo=k(`
 
 	fn eonLtcCoeffs( mu: f32, roughness: f32 ) -> vec4f {
 
@@ -4818,7 +4838,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`),co=k(`
+`),po=k(`
 
 	fn eonLtcBasis( wo: vec3f ) -> mat3x3f {
 
@@ -4835,7 +4855,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`),_c=k(`
+`),Mc=k(`
 
 	fn eonCltcPdf( wo: vec3f, wi: vec3f, roughness: f32 ) -> f32 {
 
@@ -4861,7 +4881,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,[T,lo,co]),Cc=k(`
+`,[T,fo,po]),Nc=k(`
 
 	fn eonCltcDirection( wo: vec3f, roughness: f32, uv: vec2f ) -> vec3f {
 
@@ -4888,7 +4908,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,[T,lo,co]),Fc=k(`
+`,[T,fo,po]),Bc=k(`
 
 	fn eonUniformHemisphereSample( uv: vec2f ) -> vec3f {
 
@@ -4898,7 +4918,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,[T]),uo=k(`
+`,[T]),mo=k(`
 
 	fn eonUniformProbability( wo: vec3f, roughness: f32 ) -> f32 {
 
@@ -4909,7 +4929,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`),ho=k(`
+`),go=k(`
 
 	fn eonDirection( wo: vec3f, roughness: f32, uv: vec2f ) -> vec3f {
 
@@ -4929,7 +4949,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,[Cc,Fc,uo]),fo=k(`
+`,[Nc,Bc,mo]),xo=k(`
 
 	fn eonPdf( wo: vec3f, wi: vec3f, roughness: f32 ) -> f32 {
 
@@ -4949,7 +4969,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,[T,_c,uo]);var $c=h`
+`,[T,Mc,mo]);var Pc=h`
 
 	fn velvetD( cosThetaH: f32, roughness: f32 ) -> f32 {
 
@@ -4992,7 +5012,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,po=h`
+`,vo=h`
 
 	fn velvetLambda( cosTheta: f32, alpha: f32 ) -> f32 {
 
@@ -5008,18 +5028,18 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,Mc=h`
+`,Ac=h`
 
 	fn velvetG( cosThetaO: f32, cosThetaI: f32, roughness: f32 ) -> f32 {
 
 		var alpha = max( roughness, 0.07 );
 		alpha = alpha * alpha;
 
-		return 1.0 / ( 1.0 + ${po}( cosThetaO, alpha ) + ${po}( cosThetaI, alpha ) );
+		return 1.0 / ( 1.0 + ${vo}( cosThetaO, alpha ) + ${vo}( cosThetaI, alpha ) );
 
 	}
 
-`,mo=h`
+`,yo=h`
 
 	fn directionalAlbedoSheen( cosThetaIn: f32, alpha: f32 ) -> f32 {
 
@@ -5031,7 +5051,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`,go=h`
+`,bo=h`
 
 	fn sheenAlbedoScaling( wo: vec3f, wi: vec3f, surf: ${M} ) -> f32 {
 
@@ -5040,14 +5060,14 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 		let maxSheenColor = max( max( surf.sheenColor.r, surf.sheenColor.g ), surf.sheenColor.b );
 
-		let eWo = ${mo}( clamp( wo.z, 0.001, 1.0 ), alpha );
-		let eWi = ${mo}( clamp( wi.z, 0.001, 1.0 ), alpha );
+		let eWo = ${yo}( clamp( wo.z, 0.001, 1.0 ), alpha );
+		let eWi = ${yo}( clamp( wi.z, 0.001, 1.0 ), alpha );
 
 		return min( 1.0 - maxSheenColor * eWo, 1.0 - maxSheenColor * eWi );
 
 	}
 
-`,xo=h`
+`,So=h`
 
 	fn sheenColor( wo: vec3f, wi: vec3f, wh: vec3f, surf: ${M} ) -> vec3f {
 
@@ -5055,8 +5075,8 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 		let cosThetaI = clamp( wi.z, 0.001, 1.0 );
 		let cosThetaH = wh.z;
 
-		let D = ${$c}( cosThetaH, surf.sheenRoughness );
-		let G = ${Mc}( cosThetaO, cosThetaI, surf.sheenRoughness );
+		let D = ${Pc}( cosThetaH, surf.sheenRoughness );
+		let G = ${Ac}( cosThetaO, cosThetaI, surf.sheenRoughness );
 
 		// See equation (1) in http://www.aconty.com/pdf/s2017_pbs_imageworks_sheen.pdf
 		var color = surf.sheenColor;
@@ -5066,14 +5086,14 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 	}
 
-`;import{Storage3DTexture as Nc,RGBAFormat as Bc,LinearFilter as vo,HalfFloatType as Pc,MathUtils as yo}from"three/webgpu";import{storageTexture3D as Ac,globalId as Lc,uniform as Er,texture3D as Ec,sampler as zc}from"three/tsl";var zr=32,kr=16,Hr=class extends Nc{constructor(){super(zr,zr,31),this.type=Pc,this.format=Bc,this.minFilter=vo,this.magFilter=vo,this.dielectricLayerCount=10,this.transmissiveLayerCount=10,this.minIoR=1,this.maxIoR=2.5,this.sampleConductorFn=w("_sampleConductorFn",this),this.sampleDielectricFn=w("_sampleDielectricFn",this),this.sampleTransmissiveFn=w("_sampleTransmissiveFn",this)}generate(e){let{dielectricLayerCount:t,transmissiveLayerCount:r,minIoR:a,maxIoR:s}=this,i={outputTarget:Ac(this).toWriteOnly(),globalId:Lc,eta:Er(1),layer:Er(0,"uint"),includeFresnel:Er(0),includeRefraction:Er(0)},n=[zr/kr,zr/kr,1],o=new _(fs(i.outputTarget)(i),{workgroupSize:[kr,kr,1]});i.layer.value=0,i.eta.value=1,i.includeFresnel.value=0,i.includeRefraction.value=0,e.compute(o.kernel,n);for(let g=0;g<t;g++)i.layer.value++,i.eta.value=1/yo.mapLinear(g,0,t-1,a,s),i.includeFresnel.value=1,e.compute(o.kernel,n);i.includeFresnel.value=1,i.includeRefraction.value=1;for(let g=0;g<r;g++){let x=yo.mapLinear(g,0,r-1,a,s);i.layer.value=1+t+g,i.eta.value=1/x,e.compute(o.kernel,n),i.layer.value=1+t+r+g,i.eta.value=x,e.compute(o.kernel,n)}o.dispose();let u=h`
+`;import{Storage3DTexture as Lc,RGBAFormat as Ec,LinearFilter as wo,HalfFloatType as zc,MathUtils as To}from"three/webgpu";import{storageTexture3D as kc,globalId as Hc,uniform as Er,texture3D as Vc,sampler as Oc}from"three/tsl";var zr=32,kr=16,Hr=class extends Lc{constructor(){super(zr,zr,31),this.type=zc,this.format=Ec,this.minFilter=wo,this.magFilter=wo,this.dielectricLayerCount=10,this.transmissiveLayerCount=10,this.minIoR=1,this.maxIoR=2.5,this.sampleConductorFn=w("_sampleConductorFn",this),this.sampleDielectricFn=w("_sampleDielectricFn",this),this.sampleTransmissiveFn=w("_sampleTransmissiveFn",this)}generate(e){let{dielectricLayerCount:t,transmissiveLayerCount:r,minIoR:a,maxIoR:s}=this,i={outputTarget:kc(this).toWriteOnly(),globalId:Hc,eta:Er(1),layer:Er(0,"uint"),includeFresnel:Er(0),includeRefraction:Er(0)},o=[zr/kr,zr/kr,1],n=new R(xs(i.outputTarget)(i),{workgroupSize:[kr,kr,1]});i.layer.value=0,i.eta.value=1,i.includeFresnel.value=0,i.includeRefraction.value=0,e.compute(n.kernel,o);for(let g=0;g<t;g++)i.layer.value++,i.eta.value=1/To.mapLinear(g,0,t-1,a,s),i.includeFresnel.value=1,e.compute(n.kernel,o);i.includeFresnel.value=1,i.includeRefraction.value=1;for(let g=0;g<r;g++){let x=To.mapLinear(g,0,r-1,a,s);i.layer.value=1+t+g,i.eta.value=1/x,e.compute(n.kernel,o),i.layer.value=1+t+r+g,i.eta.value=x,e.compute(n.kernel,o)}n.dispose();let u=h`
 			fn mapLinearClamped( v: f32, a0: f32, a1: f32, b0: f32, b1: f32 ) -> f32 {
 
 				let mapped = saturate( ( v - a0 ) / ( a1 - a0 ) );
 				return mix( b0, b1, mapped );
 
 			}
-		`,l=Ec(this).setName("turquinTexture"),f=zc(this).setName("turquinSampler"),p=1/(1+t+2*r);this._sampleConductorFn=h`
+		`,l=Vc(this).setName("turquinTexture"),f=Oc(this).setName("turquinSampler"),p=1/(1+t+2*r);this._sampleConductorFn=h`
 			fn sampleConductor( cosTheta0: f32, roughness: f32 ) -> f32 {
 
 				let layer = 0.5;
@@ -5113,7 +5133,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 				return textureSampleLevel( ${l}, ${f}, uvw, 0 ).r;
 
 			}
-		`}};var bo=wo(1.5),So=wo(1e6),Vr=class extends Lr{constructor(e={}){super();let{specularBrdf:t=Ta,specularBtdf:r=Ia,diffuseBrdf:a=no,fresnelMix:s=cs,conductorFresnel:i=ds,fresnelCoat:n=hs,iridescentFresnel:o=Ra}=e;this.turquinTexture=new Hr,this.specularBrdf=t,this.specularBtdf=r,this.diffuseBrdf=a,this.fresnelMix=s,this.conductorFresnel=i,this.fresnelCoat=n,this.iridescentFresnel=o,this.transmissionFresnel=us(o)}init(e){this.turquinTexture.generate(e)}getBsdfNode(){this._bsdfEvalFunc=h`
+		`}};var Io=_o(1.5),Ro=_o(1e6),Vr=class extends Lr{constructor(e={}){super();let{specularBrdf:t=Ta,specularBtdf:r=Ia,diffuseBrdf:a=ho,fresnelMix:s=fs,conductorFresnel:i=ms,fresnelCoat:o=gs,iridescentFresnel:n=Ra}=e;this.turquinTexture=new Hr,this.specularBrdf=t,this.specularBtdf=r,this.diffuseBrdf=a,this.fresnelMix=s,this.conductorFresnel=i,this.fresnelCoat=o,this.iridescentFresnel=n,this.transmissionFresnel=ps(n)}init(e){this.turquinTexture.generate(e)}getBsdfNode(){this._bsdfEvalFunc=h`
 
 			// The material is organized as one scoped block per lobe in cascade order - clearcoat,
 			// sheen, transmission, specular, diffuse - each accumulating into a shared result and
@@ -5161,8 +5181,8 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 				// sheen
 				if ( NdotL > 0.0 && surf.sheen > 0.0 ) {
 
-					result += attenuation * surf.sheen * ${xo}( ctx.V, ctx.L, ctx.H, surf );
-					attenuation *= mix( 1.0, ${go}( ctx.V, ctx.L, surf ), surf.sheen );
+					result += attenuation * surf.sheen * ${So}( ctx.V, ctx.L, ctx.H, surf );
+					attenuation *= mix( 1.0, ${bo}( ctx.V, ctx.L, surf ), surf.sheen );
 
 				}
 
@@ -5333,14 +5353,14 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 				// reflection and refraction halves
 				// lobe selection weights and cumulative bounds in cascade order:
 				// clearcoat, specular, transmission, diffuse
-				let weights = ${va}( wo, wo, woClearcoat, vec3( 0, 0, 1 ), ${bo}, surf );
+				let weights = ${va}( wo, wo, woClearcoat, vec3( 0, 0, 1 ), ${Io}, surf );
 				let cdfClearcoat = weights.clearcoat;
 				let cdfSpecular = cdfClearcoat + weights.specular;
 				let cdfTransmission = cdfSpecular + weights.transmission;
 				let cdfTotal = cdfTransmission + weights.diffuse;
 
 				// random samples for lobes
-				let lobeSample = ${q}( ${Vi} ) * cdfTotal;
+				let lobeSample = ${q}( ${qi} ) * cdfTotal;
 				let directionUV = ${O}( ${qt} );
 
 				// output
@@ -5455,7 +5475,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 					// diffuse
 					// all diffuse BRDF variants share the EON sampling proposal
-					wi = ${ho}( wo, surf.diffuseRoughness, directionUV );
+					wi = ${go}( wo, surf.diffuseRoughness, directionUV );
 					wh = normalize( wi + wo );
 
 					// reflected rays must leave above the geometry surface - flip rays that land
@@ -5477,9 +5497,9 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 					// Cycles represents a singular event with a large matching BSDF and PDF. Their
 					// ratio preserves throughput while forward MIS correctly gives the event full weight.
 					result.color = ( 1.0 - surf.metalness ) * surf.transmission * surf.color *
-						deltaTransmittance * ${So};
+						deltaTransmittance * ${Ro};
 					result.direction = worldWi;
-					result.pdf = weights.transmission * deltaProbability * ${So};
+					result.pdf = weights.transmission * deltaProbability * ${Ro};
 					result.isTransmissive = dot( worldWi, surf.faceNormal ) < 0.0;
 
 				} else {
@@ -5542,7 +5562,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 				}
 
-				let weights = ${va}( wo, wo, woClearcoat, vec3( 0, 0, 1 ), ${bo}, surf );
+				let weights = ${va}( wo, wo, woClearcoat, vec3( 0, 0, 1 ), ${Io}, surf );
 
 				// TODO: mirror bsdfEval's layer structure - the glass layer should own both its
 				// reflection and refraction halves
@@ -5611,7 +5631,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 				// diffuse
 				if ( weights.diffuse > 0.0 ) {
 
-					result.pdf += weights.diffuse * ${fo}( wo, wi, surf.diffuseRoughness );
+					result.pdf += weights.diffuse * ${xo}( wo, wi, surf.diffuseRoughness );
 
 				}
 
@@ -5634,7 +5654,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 
 			}
 
-		`,this._bsdfEvalPdfNode}};var Ke=new Do,Wr=new Wc,Ur=class{constructor(e,t){this.key=t,this.renderer=e,this.texture=null,this.hash=null;let r=new Hc(new Uint8Array([255,255,255,255]),1,1);r.minFilter=To,r.magFilter=To,this.colorTex=r}dispose(){this.colorTex.dispose(),this.texture?.dispose()}setFromScene(e){let{renderer:t,key:r,colorTex:a}=this,s=e[r],i="";if(s)s.isColor?(a.image.data[0]=s.r*255,a.image.data[1]=s.g*255,a.image.data[2]=s.b*255,a.image.data[3]=255,s=a,i=a.image.data.join(),a.needsUpdate=i!==this.hash):s.isCubeTexture?(i=null,s=new ii(t).generate(s)):(s=s.clone(),i=s.uuid+"_"+s.version);else{let n=t.getClearAlpha();t.getClearColor(Wr),a.image.data[0]=Wr.r*255,a.image.data[1]=Wr.g*255,a.image.data[2]=Wr.b*255,a.image.data[3]=n*255,s=a,i=a.image.data.join(),a.needsUpdate=i!==this.hash}if(i===null)return this.texture?.dispose(),this.texture=s,this.hash=null,!0;{let n=i!==this.hash;return n&&(this.texture?.dispose(),this.texture=s,this.hash=i),n}}},Ro=class{get maxBounces(){return this._pathTracer.maxBounces}set maxBounces(e){this._pathTracer.maxBounces=e,this.reset()}get frameBudget(){return this._pathTracer.frameBudget}set frameBudget(e){this._pathTracer.frameBudget=e}get maxTransparentBounces(){return this._pathTracer.maxTransparentBounces}set maxTransparentBounces(e){this._pathTracer.maxTransparentBounces=e,this.reset()}get maxSamples(){return this._pathTracer.maxSamples}set maxSamples(e){this._pathTracer.maxSamples=e,this._denoiser?.reset()}async getSampleCountsAsync(){let e=this._pathTracer,t=this._lastSampleCounts,r=await e.getSampleCountsAsync();t.min=r.min,t.max=r.max,t.avg=r.avg;let a=this.getRenderTime()/1e3;return t.samplesPerSecond=a>0?t.avg/a:0,{...t}}get transmissiveBackground(){return this._transmissiveBackground}set transmissiveBackground(e){this._transmissiveBackground!==e&&(this._transmissiveBackground=e,this._pathTracer.setTransmissiveBackground(e))}get filterGlossyFactor(){return this._filterGlossyFactor}set filterGlossyFactor(e){this._filterGlossyFactor!==e&&(this._filterGlossyFactor=e,this._pathTracer.setFilterGlossy(e))}get multipleImportanceSampling(){return this._multipleImportanceSampling}set multipleImportanceSampling(e){this._multipleImportanceSampling!==e&&this.setMultipleImportanceSampling(e)}get clampDirect(){return this._clampDirect}set clampDirect(e){e=Math.max(0,e),this._clampDirect!==e&&(this._clampDirect=e,this._pathTracer.setClamping(e,this._clampIndirect))}get clampIndirect(){return this._clampIndirect}set clampIndirect(e){e=Math.max(0,e),this._clampIndirect!==e&&(this._clampIndirect=e,this._pathTracer.setClamping(this._clampDirect,e))}get target(){return this._pathTracer.outputTarget??null}get fadeState(){return this._fadeState}get lowResTarget(){return this._lowResTarget}get lowResMode(){return this._pathTracer.lowResMode}get textureAtlas(){return this._bvhData.textureAtlas}useMegakernel(e){let t=this._pathTracer.maxSamples;this._pathTracer.dispose(),this._pathTracer=e?new xr(this._renderer):new vt(this._renderer),this._pathTracer.maxSamples=t,this._pathTracer.setBVHData(this._bvhData),this._pathTracer.setMaterial(this.material),this._pathTracer.setRandom(this.random),this._pathTracer.setMultipleImportanceSampling(this.multipleImportanceSampling),this._pathTracer.setTransmissiveBackground(this._transmissiveBackground),this._pathTracer.setFilterGlossy(this._filterGlossyFactor),this._pathTracer.setClamping(this._clampDirect,this._clampIndirect),this.setCamera(this.camera),this._pathTracer.setEnvironment(this._environmentCache.texture),this._pathTracer.setBackground(this._backgroundCache.texture),this.updateEnvironment(),this.updateLights()}constructor(e){this._renderer=e,this._timer=new qc,this._environmentCache=new Ur(e,"environment"),this._backgroundCache=new Ur(e,"background"),this._resetTime=-1,this._fadeState=0,this._lastSampleCounts={min:0,max:0,avg:0,samplesPerSecond:0},this._size=new Do,this._blitQuad=new Or(new Et),this._lowResTarget=new Gc(1,1),this._lowResTarget.type=Uc,this._lowResTarget.generateMipmaps=!1,this._pathTracer=new vt(e),this._denoiser=null,this._upscaler=null,this.minSamples=1,this.renderDelay=500,this.fadeDuration=500,this.dynamicLowRes=!0,this.lowResScale=.1,this.renderScale=1,this.synchronizeRenderSize=!0,this.generateMissingAttributes=!0,this.commonAttributes=["normal","tangent"],this.stableNoise=!0,this.pause=!1,this.filterGlossyFactor=1,this._clampDirect=0,this._clampIndirect=10,this.multipleImportanceSampling=!0,this.transmissiveBackground=ze,this.random=mt,this.material=new Vr,this._invViewProjectionMatrix=Yc(new jc),this._cameraRayFnHandle=null,this.setMaterial(this.material),this.setRandom(this.random),this.setScene(new Vc,new Oc)}setMultipleImportanceSampling(e){this._multipleImportanceSampling=e,this._pathTracer.setMultipleImportanceSampling(e),this.reset()}setDenoiser(e){this._denoiser?.reset(),this._denoiser=e,e&&(e.init(this._renderer),e.setScene(this.scene,this.camera))}setUpscaler(e){this._upscaler=e,e&&e.init(this._renderer)}setScene(e,t){e.updateMatrixWorld(!0),t.updateMatrixWorld(),e.traverse(a=>{this.generateMissingAttributes&&a.geometry?.isBufferGeometry&&Ya(a.geometry,this.commonAttributes),a.isSkinnedMesh?(a.boundsTree?a.boundsTree.refit():a.boundsTree=new te(a,{strategy:2,targetLeafSize:5,indirect:!0}),a.boundingBox===null&&(a.boundingBox=new kc),a.boundsTree.getBoundingBox(a.boundingBox)):a.isMesh&&(a.geometry.boundsTree||(a.geometry.boundsTree=new fe(a.geometry,{strategy:2,targetLeafSize:5})))});let r=new Br(e);r.update(),r.textureAtlas.setTextures(this._renderer,r.textures),this._bvhData&&(this._bvhData.dispose(),this._bvhData.textureAtlas.dispose()),this.scene=e,this._bvhData=r,this._pathTracer.setBVHData(r),this.setCamera(t),this.updateEnvironment(),this.updateLights(),this._denoiser?.setScene(e,t)}getMaterial(){return this.material}setMaterial(e){this.material=e,this._pathTracer.setMaterial(e),this.reset()}setRandom(e){this.random=e,this._pathTracer.setRandom(e),this.reset()}setCamera(e){if(this.camera=e,e.getCameraRayFn)this._cameraRayFnHandle=e.getCameraRayFn();else{let t=this._invViewProjectionMatrix;this._cameraRayFnHandle={update:()=>(e.coordinateSystem=Kc,e.updateMatrixWorld(),(e.isOrthographicCamera||e.isPerspectiveCamera)&&e.updateProjectionMatrix(),t.value.multiplyMatrices(e.matrixWorld,e.projectionMatrixInverse),!1),fn:h`
+		`,this._bsdfEvalPdfNode}};var Ke=new $o,Wr=new Qc,Ur=class{constructor(e,t){this.key=t,this.renderer=e,this.texture=null,this.hash=null;let r=new Uc(new Uint8Array([255,255,255,255]),1,1);r.minFilter=Do,r.magFilter=Do,this.colorTex=r}dispose(){this.colorTex.dispose(),this.texture?.dispose()}setFromScene(e){let{renderer:t,key:r,colorTex:a}=this,s=e[r],i="";if(s)s.isColor?(a.image.data[0]=s.r*255,a.image.data[1]=s.g*255,a.image.data[2]=s.b*255,a.image.data[3]=255,s=a,i=a.image.data.join(),a.needsUpdate=i!==this.hash):s.isCubeTexture?(i=null,s=new ii(t).generate(s)):(s=s.clone(),i=s.uuid+"_"+s.version);else{let o=t.getClearAlpha();t.getClearColor(Wr),a.image.data[0]=Wr.r*255,a.image.data[1]=Wr.g*255,a.image.data[2]=Wr.b*255,a.image.data[3]=o*255,s=a,i=a.image.data.join(),a.needsUpdate=i!==this.hash}if(i===null)return this.texture?.dispose(),this.texture=s,this.hash=null,!0;{let o=i!==this.hash;return o&&(this.texture?.dispose(),this.texture=s,this.hash=i),o}}},Fo=class{get maxBounces(){return this._pathTracer.maxBounces}set maxBounces(e){this._pathTracer.maxBounces=e,this.reset()}get frameBudget(){return this._pathTracer.frameBudget}set frameBudget(e){this._pathTracer.frameBudget=e}get maxTransparentBounces(){return this._pathTracer.maxTransparentBounces}set maxTransparentBounces(e){this._pathTracer.maxTransparentBounces=e,this.reset()}get maxSamples(){return this._pathTracer.maxSamples}set maxSamples(e){this._pathTracer.maxSamples=e,this._denoiser?.reset()}async getSampleCountsAsync(){let e=this._pathTracer,t=this._lastSampleCounts,r=await e.getSampleCountsAsync();t.min=r.min,t.max=r.max,t.avg=r.avg;let a=this.getRenderTime()/1e3;return t.samplesPerSecond=a>0?t.avg/a:0,{...t}}get transmissiveBackground(){return this._transmissiveBackground}set transmissiveBackground(e){this._transmissiveBackground!==e&&(this._transmissiveBackground=e,this._pathTracer.setTransmissiveBackground(e))}get filterGlossyFactor(){return this._filterGlossyFactor}set filterGlossyFactor(e){this._filterGlossyFactor!==e&&(this._filterGlossyFactor=e,this._pathTracer.setFilterGlossy(e))}get multipleImportanceSampling(){return this._multipleImportanceSampling}set multipleImportanceSampling(e){this._multipleImportanceSampling!==e&&this.setMultipleImportanceSampling(e)}get clampDirect(){return this._clampDirect}set clampDirect(e){e=Math.max(0,e),this._clampDirect!==e&&(this._clampDirect=e,this._pathTracer.setClamping(e,this._clampIndirect))}get clampIndirect(){return this._clampIndirect}set clampIndirect(e){e=Math.max(0,e),this._clampIndirect!==e&&(this._clampIndirect=e,this._pathTracer.setClamping(this._clampDirect,e))}get target(){return this._pathTracer.outputTarget??null}get fadeState(){return this._fadeState}get lowResTarget(){return this._lowResTarget}get lowResMode(){return this._pathTracer.lowResMode}get textureAtlas(){return this._bvhData.textureAtlas}useMegakernel(e){let t=this._pathTracer.maxSamples;this._pathTracer.dispose(),this._pathTracer=e?new xr(this._renderer):new vt(this._renderer),this._pathTracer.maxSamples=t,this._pathTracer.setBVHData(this._bvhData),this._pathTracer.setMaterial(this.material),this._pathTracer.setRandom(this.random),this._pathTracer.setMultipleImportanceSampling(this.multipleImportanceSampling),this._pathTracer.setTransmissiveBackground(this._transmissiveBackground),this._pathTracer.setFilterGlossy(this._filterGlossyFactor),this._pathTracer.setClamping(this._clampDirect,this._clampIndirect),this.setCamera(this.camera),this._pathTracer.setEnvironment(this._environmentCache.texture),this._pathTracer.setBackground(this._backgroundCache.texture),this.updateEnvironment(),this.updateLights()}constructor(e){this._renderer=e,this._timer=new Kc,this._environmentCache=new Ur(e,"environment"),this._backgroundCache=new Ur(e,"background"),this._resetTime=-1,this._fadeState=0,this._lastSampleCounts={min:0,max:0,avg:0,samplesPerSecond:0},this._size=new $o,this._blitQuad=new Or(new Et),this._lowResTarget=new Xc(1,1),this._lowResTarget.type=jc,this._lowResTarget.generateMipmaps=!1,this._pathTracer=new vt(e),this._denoiser=null,this._upscaler=null,this.minSamples=1,this.renderDelay=500,this.fadeDuration=500,this.dynamicLowRes=!0,this.lowResScale=.1,this.renderScale=1,this.synchronizeRenderSize=!0,this.generateMissingAttributes=!0,this.commonAttributes=["normal","tangent"],this.stableNoise=!0,this.pause=!1,this.filterGlossyFactor=1,this._clampDirect=0,this._clampIndirect=10,this.multipleImportanceSampling=!0,this.transmissiveBackground=ze,this.random=mt,this.material=new Vr,this._invViewProjectionMatrix=tu(new Zc),this._cameraRayFnHandle=null,this.setMaterial(this.material),this.setRandom(this.random),this.setScene(new qc,new Gc)}setMultipleImportanceSampling(e){this._multipleImportanceSampling=e,this._pathTracer.setMultipleImportanceSampling(e),this.reset()}setDenoiser(e){this._denoiser?.reset(),this._denoiser=e,e&&(e.init(this._renderer),e.setScene(this.scene,this.camera))}setUpscaler(e){this._upscaler=e,e&&e.init(this._renderer)}setScene(e,t){e.updateMatrixWorld(!0),t.updateMatrixWorld(),e.traverse(a=>{this.generateMissingAttributes&&a.geometry?.isBufferGeometry&&Ya(a.geometry,this.commonAttributes),a.isSkinnedMesh?(a.boundsTree?a.boundsTree.refit():a.boundsTree=new te(a,{strategy:2,targetLeafSize:5,indirect:!0}),a.boundingBox===null&&(a.boundingBox=new Wc),a.boundsTree.getBoundingBox(a.boundingBox)):a.isMesh&&(a.geometry.boundsTree||(a.geometry.boundsTree=new fe(a.geometry,{strategy:2,targetLeafSize:5})))});let r=new Br(e);r.update(),r.textureAtlas.setTextures(this._renderer,r.textures),this._bvhData&&(this._bvhData.dispose(),this._bvhData.textureAtlas.dispose()),this.scene=e,this._bvhData=r,this._pathTracer.setBVHData(r),this.setCamera(t),this.updateEnvironment(),this.updateLights(),this._denoiser?.setScene(e,t)}getMaterial(){return this.material}setMaterial(e){this.material=e,this._pathTracer.setMaterial(e),this.reset()}setRandom(e){this.random=e,this._pathTracer.setRandom(e),this.reset()}setCamera(e){if(this.camera=e,e.getCameraRayFn)this._cameraRayFnHandle=e.getCameraRayFn();else{let t=this._invViewProjectionMatrix;this._cameraRayFnHandle={update:()=>(e.coordinateSystem=Jc,e.updateMatrixWorld(),(e.isOrthographicCamera||e.isPerspectiveCamera)&&e.updateProjectionMatrix(),t.value.multiplyMatrices(e.matrixWorld,e.projectionMatrixInverse),!1),fn:h`
 					fn getCameraRay( uv: vec2f, resolution: vec2f, ray: ptr<function, ${v}> ) -> bool {
 
 						let ndc = uv * 2.0 - vec2f( 1.0 );
@@ -5642,7 +5662,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 						return true;
 
 					}
-				`}}this._bvhData.fns.getCameraRay=this._cameraRayFnHandle.fn,this._cameraRayFnHandle.update(),this._pathTracer.rebuild(),this.reset()}updateMaterials(){let{_bvhData:e,_renderer:t}=this;e.updateMaterials(),e.textureAtlas.setTextures(t,e.textures),this.reset()}updateTransforms(){this.scene.updateMatrixWorld(!0),this._bvhData.updateTransforms(),this.reset()}updateCamera(){let{_cameraRayFnHandle:e,_pathTracer:t}=this;e.update()&&t.rebuild(),this.reset()}updateEnvironment(){let{_pathTracer:e,scene:t,_environmentCache:r,_backgroundCache:a}=this;r.setFromScene(t)&&e.setEnvironment(r.texture),a.setFromScene(t)&&e.setBackground(a.texture),e.setEnvironmentParams(t.environmentIntensity,t.environmentRotation),e.setBackgroundParams(t.backgroundIntensity,t.backgroundRotation,t.backgroundBlurriness),this.reset()}updateLights(){let{_pathTracer:e,scene:t}=this,r=ri(t);e.setLights(r),this.reset()}setSize(e,t){(this._size.x!==e||this._size.y!==t)&&(this._size.set(e,t),this.reset())}reset(){this._pathTracer.reset(),this._denoiser?.reset(),this._resetTime=-1,this._fadeState=0,this._timer.update(),this._lastSampleCounts={min:0,max:0,avg:0,samplesPerSecond:0},this.stableNoise&&this._pathTracer.resetSeed()}renderSample(){let e=this._renderer,t=this._size,r=this._blitQuad,a=this._pathTracer,s=this._lowResTarget,i=this._timer,{renderDelay:n,dynamicLowRes:o,synchronizeRenderSize:u,renderScale:l,lowResScale:f,minSamples:p,maxSamples:m}=this;if(i.update(),!this._renderer._initialized)return;this.material.initialized||(this.material.init(e),this.material.initialized=!0);let d=1e3*i.getDelta(),g=this._resetTime===-1;g&&(this._resetTime=0,d=0),this._resetTime+=d;let x=e.getRenderTarget(),I=e.autoClear;if(u){e.getDrawingBufferSize(Ke);let wt=Math.floor(l*Ke.x),qr=Math.floor(l*Ke.y);this.setSize(wt,qr)}let{width:b,height:D}=t,y=this._resetTime<n||g&&o&&p!==0;y&&(b=Math.ceil(f*b),D=Math.ceil(f*D)),a.getSize(Ke),(Ke.x!==b||Ke.y!==D)&&(!y&&o&&(s.setSize(Math.ceil(f*b),Math.ceil(f*D)),e.copyTextureToTexture(a.outputTarget,s)),a.setSize(b,D)),!this.pause&&(!y||y&&o)&&(a.lowResMode=y,a.update());let L=this._denoiser,ce=this._upscaler,ue=!!L&&!L.complete&&!L.running&&m>0;y||((this._fadeState<1&&p>0||ue)&&this.getSampleCountsAsync(),this._lastSampleCounts.min>=p&&(this._fadeState+=d/this.fadeDuration,this._fadeState=Math.min(1,this._fadeState)||1));let de=y&&o?1:this._fadeState,Y=a.outputTarget;L&&!y&&(ue&&this._lastSampleCounts.min>=m&&L.update(a.outputTarget),Y=L.texture??Y),ce&&!y&&(Y=ce.upscale(Y,this.camera),e.setRenderTarget(x)),e.autoClear=o?!0:de===1,r.material.transition=o?de:1,r.material.opacity=o?1:de,r.material.fromTexture=s,r.material.texture=Y,r.render(e),e.autoClear=I,e.setRenderTarget(x)}renderDebugBounds(e={}){let{displayTLAS:t=!0,displayBLAS:r=!0,stopAtSurface:a=!1,saturationCount:s=64}=e,i=this._renderer,n=this.camera;if(!i._initialized)return;n.updateMatrixWorld(),(this._debugBoundsQuad===void 0||this._debugBoundsData!==this._bvhData)&&this._buildDebugBoundsQuad();let o=this._debugBoundsUniforms;o.cameraToModelMatrix.value.copy(n.matrixWorld),o.inverseProjectionMatrix.value.copy(n.projectionMatrixInverse),o.displayTLAS.value=t?1:0,o.displayBLAS.value=r?1:0,o.stopAtSurface.value=a?1:0,o.saturationCount.value=s;let u=i.getRenderTarget(),l=i.autoClear,f=i.toneMapping;i.setRenderTarget(null),i.autoClear=!0,i.toneMapping=Io,this._debugBoundsQuad.render(i),i.setRenderTarget(u),i.autoClear=l,i.toneMapping=f}_buildDebugBoundsQuad(){let e=this._bvhData,t=Ai(e),r=new Qc;r.colorNode=t(Zc(Xc())),this._debugBoundsQuad===void 0?this._debugBoundsQuad=new Or(r):(this._debugBoundsQuad.material.dispose(),this._debugBoundsQuad.material=r),this._debugBoundsUniforms=t.uniforms,this._debugBoundsData=e}renderTextureAtlas(e=0){let t=this._renderer;this._atlasDebugQuad||(this._atlasDebugQuad=new Or(new Pr));let r=this._atlasDebugQuad;r.material.texture=this.textureAtlas.texture,r.material.layer=e,t.setRenderTarget(null),r.render(t)}renderSampleDensity(){let e=this._renderer;if(!e._initialized)return;this.getSampleCountsAsync(),this._sampleDensityQuad||(this._sampleDensityQuad=new Or(new Ar));let t=e.toneMapping;e.toneMapping=Io;let r=this._sampleDensityQuad;r.material.texture=this._pathTracer.sampleCountTarget,r.material.minCount=this._lastSampleCounts.min,r.material.maxCount=this._lastSampleCounts.max,e.setRenderTarget(null),r.render(e),e.toneMapping=t}dispose(){this._pathTracer.dispose(),this._denoiser?.dispose(),this._upscaler?.dispose(),this._bvhData.dispose(),this._bvhData.textureAtlas.dispose(),this._environmentCache.dispose(),this._backgroundCache.dispose(),this._lowResTarget.dispose(),this._blitQuad.dispose(),this._blitQuad.material.dispose(),this._atlasDebugQuad?.dispose(),this._atlasDebugQuad?.material.dispose(),this._sampleDensityQuad?.dispose(),this._sampleDensityQuad?.material.dispose(),this._debugBoundsQuad!==void 0&&(this._debugBoundsQuad.dispose(),this._debugBoundsQuad.material.dispose())}getRenderTime(){return this._resetTime}};import{RenderTarget as Jc,FloatType as eu,HalfFloatType as tu,RGBAFormat as _o,DataTexture as ru,DataUtils as au,EquirectangularReflectionMapping as iu,NodeMaterial as su,QuadMesh as ou}from"three/webgpu";import{Fn as nu,pmremTexture as lu,uniform as cu,uv as uu,vec3 as du,float as hu,sin as Co,cos as Fo}from"three/tsl";var $o=Math.PI,fu=nu(([c])=>{let e=c.x.sub(.5),t=hu(1).sub(c.y),r=e.mul(2*$o),a=t.mul($o),s=Co(a);return du(s.mul(Fo(r)),Fo(a),s.mul(Co(r)))}),Mo=class{constructor(e){this.renderer=e,this._blur=cu(0),this._pmremNode=lu(null,fu(uu()),this._blur);let t=new su;t.colorNode=this._pmremNode,t.toneMapped=!1,this.quad=new ou(t),this.renderTarget=new Jc(1,1,{type:eu,format:_o,depthBuffer:!1})}dispose(){this._pmremNode.value=null,this._pmremNode.dispose(),this.quad.material.dispose(),this.renderTarget.dispose()}async generate(e,t=0,r=null,a=null){let{renderTarget:s,quad:i,renderer:n}=this,o=e.clone();r=r??o.image.width,a=a??o.image.height,s.setSize(r,a),s.texture.colorSpace=o.colorSpace,this._pmremNode.value=o,this._blur.value=t;let u=n.getRenderTarget();n.setRenderTarget(s),i.render(n),n.setRenderTarget(u);let l=await n.readRenderTargetPixelsAsync(s,0,0,r,a),f=new Uint16Array(r*a*4);for(let m=0,d=f.length;m<d;m++)f[m]=au.toHalfFloat(l[m]);let p=new ru(f,r,a,_o,tu);return p.minFilter=o.minFilter,p.magFilter=o.magFilter,p.wrapS=o.wrapS,p.wrapT=o.wrapT,p.mapping=iu,p.colorSpace=o.colorSpace,p.needsUpdate=!0,this._pmremNode.value=null,o.dispose(),p}};import{ExternalTexture as pu,NearestFilter as No,NoToneMapping as mu,RenderTarget as gu,UnsignedByteType as xu}from"three/webgpu";import{diffuseColor as vu,mrt as yu,normalView as bu,vec4 as Su}from"three/tsl";var Bo=class{get texture(){return this._texture}get complete(){return this._complete}get running(){return this._running}constructor(e={}){let{initUNetFromURL:t,auxWeightsUrl:r,colorWeightsUrl:a,useAuxiliaryBuffers:s=!0,maxTileSize:i=null,dynamicTile:n=null}=e;if(!t)throw new Error('OIDNDenoiser: "initUNetFromURL" from "oidn-web" must be provided.');this.initUNetFromURL=t,this.auxWeightsUrl=r,this.colorWeightsUrl=a,this.useAuxiliaryBuffers=s,this.maxTileSize=i,this.dynamicTile=n,this.renderer=null,this.scene=null,this.camera=null,this._texture=null,this._running=!1,this._complete=!1,this._abort=null,this._requestId=0,this._unets={aux:null,color:null},this._resultPipeline=null,this._rawTexture=null,this._auxTarget=null}init(e){this.renderer=e}setScene(e,t){this.scene=e,this.camera=t}update(e){if(this._complete||this._running)return this._texture;let t=null,r=null;if(this.useAuxiliaryBuffers){let a=this._renderAuxiliaryBuffers(e.width,e.height);t=a.textures[0],r=a.textures[1]}return this.denoise(e,t,r),this._texture}async denoise(e,t=null,r=null){if(this._complete||this._running)return;this._running=!0;let a=!!(t&&r),s=++this._requestId,i;try{i=await this._initUNet(a)}catch(p){throw this._running=!1,p}if(s!==this._requestId||!this._running)return;let{renderer:n}=this,o=n.backend;n.initTexture(e);let{width:u,height:l}=e,f={color:{data:o.get(e).texture,width:u,height:l},progress:p=>this._copyOutputToTexture(p,u,l),done:p=>{this._copyOutputToTexture(p,u,l),this._running=!1,this._complete=!0,this._abort=null}};a&&(n.initTexture(t),n.initTexture(r),f.albedo={data:o.get(t).texture,width:u,height:l},f.normal={data:o.get(r).texture,width:u,height:l}),this._abort=i.tileExecute(f)}reset(){this._abort?.(),this._abort=null,this._texture?.dispose(),this._texture=null,this._rawTexture?.destroy(),this._rawTexture=null,this._running=!1,this._complete=!1}dispose(){this.reset(),this._auxTarget?.dispose(),this._auxTarget=null;for(let e in this._unets)this._unets[e]?.then(t=>t.dispose()),this._unets[e]=null}_renderAuxiliaryBuffers(e,t){let{renderer:r,scene:a,camera:s}=this;this._auxTarget||(this._auxTarget=new gu(1,1,{count:2,type:xu,minFilter:No,magFilter:No,samples:4}),this._auxTarget.textures[0].name="output",this._auxTarget.textures[1].name="normal");let i=this._auxTarget;i.setSize(e,t);let n=r.getRenderTarget(),o=r.getMRT(),u=r.toneMapping;return r.toneMapping=mu,r.setRenderTarget(i),r.setMRT(yu({output:vu,normal:Su(bu.mul(.5).add(.5),1)})),r.render(a,s),r.setMRT(o),r.setRenderTarget(n),r.toneMapping=u,i}_initUNet(e){let t=e?"aux":"color";return this._unets[t]||(this._unets[t]=(async()=>{let r=this.renderer.backend.device,a=e?this.auxWeightsUrl:this.colorWeightsUrl;if(!a)throw new Error(`OIDNDenoiser: no ${e?"auxWeightsUrl":"colorWeightsUrl"} was provided.`);let s={aux:e,hdr:!0};return this.maxTileSize!==null&&(s.maxTileSize=this.maxTileSize),this.dynamicTile!==null&&(s.dynamicTile=this.dynamicTile),this.initUNetFromURL(a,{device:r,adapterInfo:r.adapterInfo},s)})()),this._unets[t]}_copyOutputToTexture(e,t,r){let a=this.renderer.backend.device;if(!this._resultPipeline){let o=a.createShaderModule({code:`
+				`}}this._bvhData.fns.getCameraRay=this._cameraRayFnHandle.fn,this._cameraRayFnHandle.update(),this._pathTracer.rebuild(),this.reset()}updateMaterials(){let{_bvhData:e,_renderer:t}=this;e.updateMaterials(),e.textureAtlas.setTextures(t,e.textures),this.reset()}updateTransforms(){this.scene.updateMatrixWorld(!0),this._bvhData.updateTransforms(),this.reset()}updateCamera(){let{_cameraRayFnHandle:e,_pathTracer:t}=this;e.update()&&t.rebuild(),this.reset()}updateEnvironment(){let{_pathTracer:e,scene:t,_environmentCache:r,_backgroundCache:a}=this;r.setFromScene(t)&&e.setEnvironment(r.texture),a.setFromScene(t)&&e.setBackground(a.texture),e.setEnvironmentParams(t.environmentIntensity,t.environmentRotation),e.setBackgroundParams(t.backgroundIntensity,t.backgroundRotation,t.backgroundBlurriness),this.reset()}updateLights(){let{_pathTracer:e,scene:t}=this,r=ri(t);e.setLights(r),this.reset()}setSize(e,t){(this._size.x!==e||this._size.y!==t)&&(this._size.set(e,t),this.reset())}reset(){this._pathTracer.reset(),this._denoiser?.reset(),this._resetTime=-1,this._fadeState=0,this._timer.update(),this._lastSampleCounts={min:0,max:0,avg:0,samplesPerSecond:0},this.stableNoise&&this._pathTracer.resetSeed()}renderSample(){let e=this._renderer,t=this._size,r=this._blitQuad,a=this._pathTracer,s=this._lowResTarget,i=this._timer,{renderDelay:o,dynamicLowRes:n,synchronizeRenderSize:u,renderScale:l,lowResScale:f,minSamples:p,maxSamples:m}=this;if(i.update(),!this._renderer._initialized)return;this.material.initialized||(this.material.init(e),this.material.initialized=!0);let d=1e3*i.getDelta(),g=this._resetTime===-1;g&&(this._resetTime=0,d=0),this._resetTime+=d;let x=e.getRenderTarget(),_=e.autoClear;if(u){e.getDrawingBufferSize(Ke);let wt=Math.floor(l*Ke.x),qr=Math.floor(l*Ke.y);this.setSize(wt,qr)}let{width:b,height:D}=t,y=this._resetTime<o||g&&n&&p!==0;y&&(b=Math.ceil(f*b),D=Math.ceil(f*D)),a.getSize(Ke),(Ke.x!==b||Ke.y!==D)&&(!y&&n&&(s.setSize(Math.ceil(f*b),Math.ceil(f*D)),e.copyTextureToTexture(a.outputTarget,s)),a.setSize(b,D)),!this.pause&&(!y||y&&n)&&(a.lowResMode=y,a.update());let L=this._denoiser,ce=this._upscaler,ue=!!L&&!L.complete&&!L.running&&m>0;y||((this._fadeState<1&&p>0||ue)&&this.getSampleCountsAsync(),this._lastSampleCounts.min>=p&&(this._fadeState+=d/this.fadeDuration,this._fadeState=Math.min(1,this._fadeState)||1));let de=y&&n?1:this._fadeState,Y=a.outputTarget;L&&!y&&(ue&&this._lastSampleCounts.min>=m&&L.update(a.outputTarget),Y=L.texture??Y),ce&&!y&&(Y=ce.upscale(Y,this.camera),e.setRenderTarget(x)),e.autoClear=n?!0:de===1,r.material.transition=n?de:1,r.material.opacity=n?1:de,r.material.fromTexture=s,r.material.texture=Y,r.render(e),e.autoClear=_,e.setRenderTarget(x)}renderDebugBounds(e={}){let{displayTLAS:t=!0,displayBLAS:r=!0,stopAtSurface:a=!1,saturationCount:s=64}=e,i=this._renderer,o=this.camera;if(!i._initialized)return;o.updateMatrixWorld(),(this._debugBoundsQuad===void 0||this._debugBoundsData!==this._bvhData)&&this._buildDebugBoundsQuad();let n=this._debugBoundsUniforms;n.cameraToModelMatrix.value.copy(o.matrixWorld),n.inverseProjectionMatrix.value.copy(o.projectionMatrixInverse),n.displayTLAS.value=t?1:0,n.displayBLAS.value=r?1:0,n.stopAtSurface.value=a?1:0,n.saturationCount.value=s;let u=i.getRenderTarget(),l=i.autoClear,f=i.toneMapping;i.setRenderTarget(null),i.autoClear=!0,i.toneMapping=Co,this._debugBoundsQuad.render(i),i.setRenderTarget(u),i.autoClear=l,i.toneMapping=f}_buildDebugBoundsQuad(){let e=this._bvhData,t=ki(e),r=new Yc;r.colorNode=t(ru(eu())),this._debugBoundsQuad===void 0?this._debugBoundsQuad=new Or(r):(this._debugBoundsQuad.material.dispose(),this._debugBoundsQuad.material=r),this._debugBoundsUniforms=t.uniforms,this._debugBoundsData=e}renderTextureAtlas(e=0){let t=this._renderer;this._atlasDebugQuad||(this._atlasDebugQuad=new Or(new Pr));let r=this._atlasDebugQuad;r.material.texture=this.textureAtlas.texture,r.material.layer=e,t.setRenderTarget(null),r.render(t)}renderSampleDensity(){let e=this._renderer;if(!e._initialized)return;this.getSampleCountsAsync(),this._sampleDensityQuad||(this._sampleDensityQuad=new Or(new Ar));let t=e.toneMapping;e.toneMapping=Co;let r=this._sampleDensityQuad;r.material.texture=this._pathTracer.sampleCountTarget,r.material.minCount=this._lastSampleCounts.min,r.material.maxCount=this._lastSampleCounts.max,e.setRenderTarget(null),r.render(e),e.toneMapping=t}dispose(){this._pathTracer.dispose(),this._denoiser?.dispose(),this._upscaler?.dispose(),this._bvhData.dispose(),this._bvhData.textureAtlas.dispose(),this._environmentCache.dispose(),this._backgroundCache.dispose(),this._lowResTarget.dispose(),this._blitQuad.dispose(),this._blitQuad.material.dispose(),this._atlasDebugQuad?.dispose(),this._atlasDebugQuad?.material.dispose(),this._sampleDensityQuad?.dispose(),this._sampleDensityQuad?.material.dispose(),this._debugBoundsQuad!==void 0&&(this._debugBoundsQuad.dispose(),this._debugBoundsQuad.material.dispose())}getRenderTime(){return this._resetTime}};import{RenderTarget as au,FloatType as iu,HalfFloatType as su,RGBAFormat as Mo,DataTexture as ou,DataUtils as nu,EquirectangularReflectionMapping as lu,NodeMaterial as cu,QuadMesh as uu}from"three/webgpu";import{Fn as du,pmremTexture as hu,uniform as fu,uv as pu,vec3 as mu,float as gu,sin as No,cos as Bo}from"three/tsl";var Po=Math.PI,xu=du(([c])=>{let e=c.x.sub(.5),t=gu(1).sub(c.y),r=e.mul(2*Po),a=t.mul(Po),s=No(a);return mu(s.mul(Bo(r)),Bo(a),s.mul(No(r)))}),Ao=class{constructor(e){this.renderer=e,this._blur=fu(0),this._pmremNode=hu(null,xu(pu()),this._blur);let t=new cu;t.colorNode=this._pmremNode,t.toneMapped=!1,this.quad=new uu(t),this.renderTarget=new au(1,1,{type:iu,format:Mo,depthBuffer:!1})}dispose(){this._pmremNode.value=null,this._pmremNode.dispose(),this.quad.material.dispose(),this.renderTarget.dispose()}async generate(e,t=0,r=null,a=null){let{renderTarget:s,quad:i,renderer:o}=this,n=e.clone();r=r??n.image.width,a=a??n.image.height,s.setSize(r,a),s.texture.colorSpace=n.colorSpace,this._pmremNode.value=n,this._blur.value=t;let u=o.getRenderTarget();o.setRenderTarget(s),i.render(o),o.setRenderTarget(u);let l=await o.readRenderTargetPixelsAsync(s,0,0,r,a),f=new Uint16Array(r*a*4);for(let m=0,d=f.length;m<d;m++)f[m]=nu.toHalfFloat(l[m]);let p=new ou(f,r,a,Mo,su);return p.minFilter=n.minFilter,p.magFilter=n.magFilter,p.wrapS=n.wrapS,p.wrapT=n.wrapT,p.mapping=lu,p.colorSpace=n.colorSpace,p.needsUpdate=!0,this._pmremNode.value=null,n.dispose(),p}};import{ExternalTexture as vu,NearestFilter as Lo,NoToneMapping as yu,RenderTarget as bu,UnsignedByteType as Su}from"three/webgpu";import{diffuseColor as wu,mrt as Tu,normalView as Iu,vec4 as Ru}from"three/tsl";var Eo=class{get texture(){return this._texture}get complete(){return this._complete}get running(){return this._running}constructor(e={}){let{initUNetFromURL:t,auxWeightsUrl:r,colorWeightsUrl:a,useAuxiliaryBuffers:s=!0,maxTileSize:i=null,dynamicTile:o=null}=e;if(!t)throw new Error('OIDNDenoiser: "initUNetFromURL" from "oidn-web" must be provided.');this.initUNetFromURL=t,this.auxWeightsUrl=r,this.colorWeightsUrl=a,this.useAuxiliaryBuffers=s,this.maxTileSize=i,this.dynamicTile=o,this.renderer=null,this.scene=null,this.camera=null,this._texture=null,this._running=!1,this._complete=!1,this._abort=null,this._requestId=0,this._unets={aux:null,color:null},this._resultPipeline=null,this._rawTexture=null,this._auxTarget=null}init(e){this.renderer=e}setScene(e,t){this.scene=e,this.camera=t}update(e){if(this._complete||this._running)return this._texture;let t=null,r=null;if(this.useAuxiliaryBuffers){let a=this._renderAuxiliaryBuffers(e.width,e.height);t=a.textures[0],r=a.textures[1]}return this.denoise(e,t,r),this._texture}async denoise(e,t=null,r=null){if(this._complete||this._running)return;this._running=!0;let a=!!(t&&r),s=++this._requestId,i;try{i=await this._initUNet(a)}catch(p){throw this._running=!1,p}if(s!==this._requestId||!this._running)return;let{renderer:o}=this,n=o.backend;o.initTexture(e);let{width:u,height:l}=e,f={color:{data:n.get(e).texture,width:u,height:l},progress:p=>this._copyOutputToTexture(p,u,l),done:p=>{this._copyOutputToTexture(p,u,l),this._running=!1,this._complete=!0,this._abort=null}};a&&(o.initTexture(t),o.initTexture(r),f.albedo={data:n.get(t).texture,width:u,height:l},f.normal={data:n.get(r).texture,width:u,height:l}),this._abort=i.tileExecute(f)}reset(){this._abort?.(),this._abort=null,this._texture?.dispose(),this._texture=null,this._rawTexture?.destroy(),this._rawTexture=null,this._running=!1,this._complete=!1}dispose(){this.reset(),this._auxTarget?.dispose(),this._auxTarget=null;for(let e in this._unets)this._unets[e]?.then(t=>t.dispose()),this._unets[e]=null}_renderAuxiliaryBuffers(e,t){let{renderer:r,scene:a,camera:s}=this;this._auxTarget||(this._auxTarget=new bu(1,1,{count:2,type:Su,minFilter:Lo,magFilter:Lo,samples:4}),this._auxTarget.textures[0].name="output",this._auxTarget.textures[1].name="normal");let i=this._auxTarget;i.setSize(e,t);let o=r.getRenderTarget(),n=r.getMRT(),u=r.toneMapping;return r.toneMapping=yu,r.setRenderTarget(i),r.setMRT(Tu({output:wu,normal:Ru(Iu.mul(.5).add(.5),1)})),r.render(a,s),r.setMRT(n),r.setRenderTarget(o),r.toneMapping=u,i}_initUNet(e){let t=e?"aux":"color";return this._unets[t]||(this._unets[t]=(async()=>{let r=this.renderer.backend.device,a=e?this.auxWeightsUrl:this.colorWeightsUrl;if(!a)throw new Error(`OIDNDenoiser: no ${e?"auxWeightsUrl":"colorWeightsUrl"} was provided.`);let s={aux:e,hdr:!0};return this.maxTileSize!==null&&(s.maxTileSize=this.maxTileSize),this.dynamicTile!==null&&(s.dynamicTile=this.dynamicTile),this.initUNetFromURL(a,{device:r,adapterInfo:r.adapterInfo},s)})()),this._unets[t]}_copyOutputToTexture(e,t,r){let a=this.renderer.backend.device;if(!this._resultPipeline){let n=a.createShaderModule({code:`
 					@group( 0 ) @binding( 0 ) var<storage, read> src : array<vec4f>;
 					@group( 0 ) @binding( 1 ) var dst : texture_storage_2d<rgba16float, write>;
 
@@ -5659,12 +5679,12 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 						textureStore( dst, gid.xy, src[ gid.y * dims.x + gid.x ] );
 
 					}
-				`});this._resultPipeline=a.createComputePipeline({layout:"auto",compute:{module:o,entryPoint:"main"}})}(!this._rawTexture||this._rawTexture.width!==t||this._rawTexture.height!==r)&&(this._rawTexture?.destroy(),this._rawTexture=a.createTexture({size:[t,r],format:"rgba16float",usage:GPUTextureUsage.STORAGE_BINDING|GPUTextureUsage.TEXTURE_BINDING}),this._texture?.dispose(),this._texture=new pu(this._rawTexture),this._texture.image={width:t,height:r});let s=a.createBindGroup({layout:this._resultPipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:e.data}},{binding:1,resource:this._rawTexture.createView()}]}),i=a.createCommandEncoder(),n=i.beginComputePass();n.setPipeline(this._resultPipeline),n.setBindGroup(0,s),n.dispatchWorkgroups(Math.ceil(t/8),Math.ceil(r/8)),n.end(),a.queue.submit([i.finish()])}};import{Vector2 as wu}from"three/webgpu";var St=new wu,Po=class{constructor(e={}){let{Upscaler:t,sharpness:r=1}=e;if(!t)throw new Error('FSRUpscaler: the "Upscaler" class from "@pmndrs/upscaler" must be provided.');this.Upscaler=t,this.sharpness=r,this.renderer=null,this._upscaler=null}init(e){this.renderer=e,this._upscaler?.dispose(),this._upscaler=new this.Upscaler({renderer:e}),this._upscaler.init()}upscale(e,t){let{renderer:r,_upscaler:a}=this;return r.initTexture(e),r.getDrawingBufferSize(St),(a.displayWidth!==St.x||a.displayHeight!==St.y||a.renderWidth!==e.width||a.renderHeight!==e.height)&&a.configure({displayWidth:St.x,displayHeight:St.y,renderWidth:e.width,renderHeight:e.height,path:"spatial"}),a.settings.sharpness=this.sharpness,a.dispatch({color:e},t),a.outputTexture}dispose(){this._upscaler?.dispose(),this._upscaler=null}};import{Matrix4 as Tu}from"three";import{uniform as Iu,PI as Ao}from"three/tsl";si.prototype.getCameraRayFn=function(){let e=Iu(new Tu);return{fn:h`
+				`});this._resultPipeline=a.createComputePipeline({layout:"auto",compute:{module:n,entryPoint:"main"}})}(!this._rawTexture||this._rawTexture.width!==t||this._rawTexture.height!==r)&&(this._rawTexture?.destroy(),this._rawTexture=a.createTexture({size:[t,r],format:"rgba16float",usage:GPUTextureUsage.STORAGE_BINDING|GPUTextureUsage.TEXTURE_BINDING}),this._texture?.dispose(),this._texture=new vu(this._rawTexture),this._texture.image={width:t,height:r});let s=a.createBindGroup({layout:this._resultPipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:e.data}},{binding:1,resource:this._rawTexture.createView()}]}),i=a.createCommandEncoder(),o=i.beginComputePass();o.setPipeline(this._resultPipeline),o.setBindGroup(0,s),o.dispatchWorkgroups(Math.ceil(t/8),Math.ceil(r/8)),o.end(),a.queue.submit([i.finish()])}};import{Vector2 as _u}from"three/webgpu";var St=new _u,zo=class{constructor(e={}){let{Upscaler:t,sharpness:r=1}=e;if(!t)throw new Error('FSRUpscaler: the "Upscaler" class from "@pmndrs/upscaler" must be provided.');this.Upscaler=t,this.sharpness=r,this.renderer=null,this._upscaler=null}init(e){this.renderer=e,this._upscaler?.dispose(),this._upscaler=new this.Upscaler({renderer:e}),this._upscaler.init()}upscale(e,t){let{renderer:r,_upscaler:a}=this;return r.initTexture(e),r.getDrawingBufferSize(St),(a.displayWidth!==St.x||a.displayHeight!==St.y||a.renderWidth!==e.width||a.renderHeight!==e.height)&&a.configure({displayWidth:St.x,displayHeight:St.y,renderWidth:e.width,renderHeight:e.height,path:"spatial"}),a.settings.sharpness=this.sharpness,a.dispatch({color:e},t),a.outputTexture}dispose(){this._upscaler?.dispose(),this._upscaler=null}};import{Matrix4 as Du}from"three";import{uniform as Cu,PI as ko}from"three/tsl";si.prototype.getCameraRayFn=function(){let e=Cu(new Du);return{fn:h`
 		fn getCameraRay( uv: vec2f, resolution: vec2f, ray: ptr<function, ${v}> ) -> bool {
 
 			// screen uv to spherical direction, matching three.js' equirect orientation
-			let theta = ( uv.x - 0.5 ) * 2.0 * ${Ao};
-			let phi = ( 1.0 - uv.y ) * ${Ao};
+			let theta = ( uv.x - 0.5 ) * 2.0 * ${ko};
+			let phi = ( 1.0 - uv.y ) * ${ko};
 			let sinPhi = sin( phi );
 			let direction = vec3f( sinPhi * cos( theta ), cos( phi ), sinPhi * sin( theta ) );
 
@@ -5676,15 +5696,15 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 			return true;
 
 		}
-	`,update:()=>(e.value.copy(this.matrixWorld),!1)}};import{Matrix4 as Lo,WebGPUCoordinateSystem as Ru}from"three";import{uniform as De,PI as Eo}from"three/tsl";var Du=h`
+	`,update:()=>(e.value.copy(this.matrixWorld),!1)}};import{Matrix4 as Ho,WebGPUCoordinateSystem as Fu}from"three";import{uniform as _e,PI as Vo}from"three/tsl";var $u=h`
 	fn sampleCircle( uv: vec2f ) -> vec2f {
 
-		let angle = 2.0 * ${Eo} * uv.x;
+		let angle = 2.0 * ${Vo} * uv.x;
 		let radius = sqrt( uv.y );
 		return vec2f( cos( angle ), sin( angle ) ) * radius;
 
 	}
-`,_u=h`
+`,Mu=h`
 	fn sampleTriangle( a: vec2f, b: vec2f, c: vec2f, rIn: vec2f ) -> vec2f {
 
 		let e1 = a - b;
@@ -5700,11 +5720,11 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 		return e1 * r.x + e2 * r.y;
 
 	}
-`,Cu=h`
+`,Nu=h`
 	fn sampleRegularPolygon( sidesIn: i32, uvw: vec3f ) -> vec2f {
 
 		let sides = max( sidesIn, 3 );
-		let anglePerSegment = 2.0 * ${Eo} / f32( sides );
+		let anglePerSegment = 2.0 * ${Vo} / f32( sides );
 		let segment = floor( f32( sides ) * uvw.x );
 
 		let angle1 = anglePerSegment * segment;
@@ -5713,24 +5733,24 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 		let b = vec2f( 0.0, 0.0 );
 		let c = vec2f( sin( angle2 ), cos( angle2 ) );
 
-		return ${_u}( a, b, c, uvw.yz );
+		return ${Mu}( a, b, c, uvw.yz );
 
 	}
-`,Fu=h`
+`,Bu=h`
 	fn sampleAperture( blades: i32, uvw: vec3f ) -> vec2f {
 
 		if ( blades == 0 ) {
 
-			return ${Du}( uvw.xy );
+			return ${$u}( uvw.xy );
 
 		} else {
 
-			return ${Cu}( blades, uvw );
+			return ${Nu}( blades, uvw );
 
 		}
 
 	}
-`,$u=h`
+`,Pu=h`
 	fn rotateVector( v: vec2f, t: f32 ) -> vec2f {
 
 		let vc = cos( t );
@@ -5738,7 +5758,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 		return vec2f( v.x * vc - v.y * vs, v.x * vs + v.y * vc );
 
 	}
-`;Za.prototype.getCameraRayFn=function(){let e=De(new Lo),t=De(new Lo),r=De(0),a=De(0),s=De(0,"int"),i=De(0),n=De(1);return{fn:h`
+`;Za.prototype.getCameraRayFn=function(){let e=_e(new Ho),t=_e(new Ho),r=_e(0),a=_e(0),s=_e(0,"int"),i=_e(0),o=_e(1);return{fn:h`
 		fn getCameraRay( uv: vec2f, resolution: vec2f, ray: ptr<function, ${v}> ) -> bool {
 
 			// base ray
@@ -5756,14 +5776,14 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 			let nearDistance = dot( ray.origin - cameraOrigin, forward );
 
 			// sample the aperture shape
-			let shapeUVW = ${Me}( ${Oi} );
-			var apertureSample = ${Fu}( ${s}, shapeUVW );
+			let shapeUVW = ${Me}( ${Gi} );
+			var apertureSample = ${Bu}( ${s}, shapeUVW );
 			apertureSample *= ${a} * 0.5 * 1e-3;
 
 			// rotate + squash the sample for anamorphic apertures
 			apertureSample =
-				${$u}( apertureSample, ${i} )
-				* vec2f( ${n}, 1.0 / ${n} );
+				${Pu}( apertureSample, ${i} )
+				* vec2f( ${o}, 1.0 / ${o} );
 
 			// aim from the aperture through the focal point, starting on the near plane like the base ray
 			ray.origin = cameraOrigin + ( ${t} * vec4f( apertureSample, 0.0, 0.0 ) ).xyz;
@@ -5773,7 +5793,7 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 			return true;
 
 		}
-	`,update:()=>(this.coordinateSystem=Ru,this.updateMatrixWorld(),this.updateProjectionMatrix(),e.value.multiplyMatrices(this.matrixWorld,this.projectionMatrixInverse),t.value.copy(this.matrixWorld),r.value=this.focusDistance,a.value=this.bokehSize,s.value=this.apertureBlades,i.value=this.apertureRotation,n.value=this.anamorphicRatio,!1)}};import{ArrayCamera as Mu,Matrix4 as Nu,Vector4 as Bu,WebGPUCoordinateSystem as Pu}from"three";import{uniformArray as zo,int as Au}from"three/tsl";Mu.prototype.getCameraRayFn=function(){let e={fn:null,update:null},t=Au(0),r=zo([],"mat4"),a=zo([],"vec4");return e.fn=h`
+	`,update:()=>(this.coordinateSystem=Fu,this.updateMatrixWorld(),this.updateProjectionMatrix(),e.value.multiplyMatrices(this.matrixWorld,this.projectionMatrixInverse),t.value.copy(this.matrixWorld),r.value=this.focusDistance,a.value=this.bokehSize,s.value=this.apertureBlades,i.value=this.apertureRotation,o.value=this.anamorphicRatio,!1)}};import{ArrayCamera as Au,Matrix4 as Lu,Vector4 as Eu,WebGPUCoordinateSystem as zu}from"three";import{uniformArray as Oo,int as ku}from"three/tsl";Au.prototype.getCameraRayFn=function(){let e={fn:null,update:null},t=ku(0),r=Oo([],"mat4"),a=Oo([],"vec4");return e.fn=h`
 		fn getCameraRay( uv: vec2f, resolution: vec2f, ray: ptr<function, ${v}> ) -> bool {
 
 			let pixel = uv * resolution;
@@ -5796,4 +5816,4 @@ import{A as si,a as Qa,b as Je,c as ja,d as Ka,e as _e,f as Xa,g as Kr,h as fe,i
 			return false;
 
 		}
-	`,e.update=()=>{let{cameras:s}=this,i=t.node.value!==s.length;for(t.node.value=s.length;a.array.length<s.length;)a.array.push(new Bu),r.array.push(new Nu);r.array.length=s.length,a.array.length=s.length;for(let n=0;n<s.length;n++){let o=s[n],u=o.viewport;o.coordinateSystem=Pu,o.updateMatrixWorld(),o.updateProjectionMatrix(),r.array[n].multiplyMatrices(o.matrixWorld,o.projectionMatrixInverse),a.array[n].copy(u)}return i},e};export{Mo as BlurredEnvMapGenerator,Po as FSRUpscaler,Bo as OIDNDenoiser,Eh as RANDOM_BLUE_DITHER,Ah as RANDOM_PCG,Lh as RANDOM_SOBOL,Et as RenderToScreenNodeMaterial,gs as SAMPLE_ACTIVE_FLAG,le as SAMPLE_COUNT_MASK,ke as SAMPLE_DISPATCHED_FLAG,pr as TRANSMISSIVE_BACKGROUND_ENVIRONMENT,ze as TRANSMISSIVE_BACKGROUND_OVERLAY,mr as TRANSMISSIVE_BACKGROUND_TRANSPARENT,Ro as WebGPUPathTracer};
+	`,e.update=()=>{let{cameras:s}=this,i=t.node.value!==s.length;for(t.node.value=s.length;a.array.length<s.length;)a.array.push(new Eu),r.array.push(new Lu);r.array.length=s.length,a.array.length=s.length;for(let o=0;o<s.length;o++){let n=s[o],u=n.viewport;n.coordinateSystem=zu,n.updateMatrixWorld(),n.updateProjectionMatrix(),r.array[o].multiplyMatrices(n.matrixWorld,n.projectionMatrixInverse),a.array[o].copy(u)}return i},e};export{Ao as BlurredEnvMapGenerator,zo as FSRUpscaler,Eo as OIDNDenoiser,Vh as RANDOM_BLUE_DITHER,kh as RANDOM_PCG,Hh as RANDOM_SOBOL,Et as RenderToScreenNodeMaterial,bs as SAMPLE_ACTIVE_FLAG,le as SAMPLE_COUNT_MASK,ke as SAMPLE_DISPATCHED_FLAG,pr as TRANSMISSIVE_BACKGROUND_ENVIRONMENT,ze as TRANSMISSIVE_BACKGROUND_OVERLAY,mr as TRANSMISSIVE_BACKGROUND_TRANSPARENT,Fo as WebGPUPathTracer};

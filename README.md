@@ -15,6 +15,8 @@ Browser experiments with MIDI, piano and violin rendering, synthesis and audio a
 
 ## Pianist and piano
 
+- [#050 Engraved Score](050_sheet_engraved.html) - #045's pianist with the score engraved by nwc-viewer over her: systems scroll in, the cursor goes from note to note and note heads light as they sound; in videos too ([notes](sheet/README.md), [details](CHANGELOG.md#1-nov-2026))
+- [#049 Score Scan](049_sheet_scan.html) - #045's pianist with the printed page (Bach-Gesellschaft, 1853) sliced into systems over her, bars and barlines found in the scan; in videos too ([notes](sheet/README.md), [details](CHANGELOG.md#1-nov-2026))
 - [#047 Wardrobe](047_wardrobe.html) - try hair, dresses, fabrics, shoes and colours on the pianist in one click each; realistic, stylized or cel-shaded, path-traced stills ([notes](wardrobe/README.md), [details](CHANGELOG.md#22-oct-2026))
 - [#045 Path-traced Pianist](045_pathtracer.html) - #032 path traced: three-gpu-pathtracer and MuTracer, stills and video, against the page's own picture ([notes](pathtrace/README.md), [details](CHANGELOG.md#21-oct-2026))
 - [#032 Pianist](032_pianist.html) - a pianist at a concert grand playing any MIDI file, filmed by an automatic director; [character notes](pianist/README.md), [liner notes](liner/README.md) ([details](CHANGELOG.md#19-oct-2026)) and [YouTube Shorts](pianist/README.md#youtube-shorts) ([details](CHANGELOG.md#20-oct-2026))

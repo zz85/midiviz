@@ -1,7 +1,7 @@
 // bun test pathtrace/test — the snapshot cache (pathtrace/snapshot.js) on a small made-up stage.
-// Needs three.js r185 on disk (the page gets it from a CDN):
-//   mkdir -p /tmp/three && curl -so /tmp/three/three.module.js https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js
-//   curl -so /tmp/three/three.core.js https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.core.js
+// Needs three.js r187 on disk (the page gets it from a CDN):
+//   mkdir -p /tmp/three && curl -so /tmp/three/three.module.js https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js
+//   curl -so /tmp/three/three.core.js https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.core.js
 // (or THREE=<path to three.module.js>)
 import { test, expect, mock } from 'bun:test'
 const THREE_JS = process.env.THREE || '/tmp/three/three.module.js'

@@ -1,6 +1,6 @@
-// bun test pianist/three-tests — pages' helpers that need the real three.js r185, on disk:
+// bun test pianist/three-tests — pages' helpers that need the real three.js r187, on disk:
 // THREE=<path to three.module.js>, default /tmp/three/three.module.js
-//   mkdir -p /tmp/three && for f in three.module.js three.core.js; do curl -so /tmp/three/$f https://cdn.jsdelivr.net/npm/three@0.185.1/build/$f; done
+//   mkdir -p /tmp/three && for f in three.module.js three.core.js; do curl -so /tmp/three/$f https://cdn.jsdelivr.net/npm/three@0.187.0/build/$f; done
 // (Kept apart from pianist/test, which mocks three with a small stand-in: one bun process
 // has one 'three'. Each file mocks it with a module object it has already imported, never
 // a factory that calls import(): that hangs bun 1.3 once another test file has mocked it.

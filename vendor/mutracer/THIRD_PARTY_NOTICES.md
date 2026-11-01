@@ -4,13 +4,21 @@ MuTracer is released under the MIT License (see [`LICENSE`](./LICENSE)). It
 includes or adapts the following third-party work. License texts are in
 [`LICENSES/`](./LICENSES) unless noted otherwise.
 
+## gl-matrix numeric functions
+
+The internal vector and matrix functions in `src/math/` are adapted from
+[gl-matrix 3.4.4](https://github.com/toji/gl-matrix/tree/v3.4.4/src).
+
+Copyright (c) 2015-2025 Brandon Jones and Colin MacKenzie IV. MIT License
+([`LICENSES/GlMatrix-MIT.txt`](./LICENSES/GlMatrix-MIT.txt)).
+
 ## TinyBVH
 
 The WebAssembly BVH builder (`src/tinybvh/`) wraps
 [jbikker/tinybvh](https://github.com/jbikker/tinybvh) at commit
-`0e4584287823252cf83f0e9cd072848bec5f79c5`. The JavaScript binned SAH builder
+`c9be3103cc9693b456b0a0353927c11cac7d710f` (TinyBVH 1.9.1). The JavaScript binned SAH builder
 (`src/renderer/binnedSahBvh.ts`) is ported from TinyBVH's reference builder
-(`BVH::Build`) at the same commit.
+(`BVH::Build`) at commit `0e4584287823252cf83f0e9cd072848bec5f79c5`.
 
 Copyright (c) 2024-2026 Jacco Bikker / Breda University of Applied Sciences.
 MIT License. The license text is at
@@ -98,7 +106,7 @@ with standard/small included in mutracer. They are trained weights from
 
 Copyright Intel Corporation. Apache License 2.0
 ([`oidn/weights/LICENSE.txt`](./oidn/weights/LICENSE.txt)). Denoising runs
-through the [`oidn-web`](https://www.npmjs.com/package/oidn-web) package, which
+through the [`oidn-webgpu`](https://github.com/pissang/oidn-webgpu) package, which
 carries its own license.
 
 ## pbrt-v4 ZSobol
@@ -132,7 +140,7 @@ The adapted files under `src/renderer/` include:
 
 - `TileRender.ts`, `envMapDistribution.ts`,
   `mergeMeshesToGeometry.ts`, `envMapCreation.ts`, `MaterialTable.ts`,
-  `texturesFromMaterials.ts`, `util.ts`, and parts of
+  `texturesFromMaterials.ts`, `materialTextures.ts`, `materialParams.ts`, `util.ts`, and parts of
   `WGPURenderingPipeline.ts` / `WebGLRenderingPipeline.ts`.
 - `glsl/chunks/{intersect,envMap,rayTraceCore,materialBuffer,textureLinear,common,sampleShadowCatcher}.glsl.ts`,
   `glsl/rayTrace.frag.ts`, and `glsl/shadowCatcher.frag.ts`.
@@ -144,13 +152,10 @@ The adapted files under `src/renderer/` include:
 The standalone `dist/mutracer.{es,umd}.js` builds and their chunks bundle these
 MIT-licensed dependencies. The `lib/` ESM modules keep npm dependency imports.
 
-- [gl-matrix](https://github.com/toji/gl-matrix): Copyright (c) 2015-2025,
-  Brandon Jones, Colin MacKenzie IV.
-  [`LICENSES/GlMatrix-MIT.txt`](./LICENSES/GlMatrix-MIT.txt).
 - [webgpu-utils](https://github.com/greggman/webgpu-utils): Copyright (c) 2022
   Gregg Tavares.
   [`LICENSES/WebGPUUtils-MIT.txt`](./LICENSES/WebGPUUtils-MIT.txt).
-- [oidn-web](https://github.com/pissang/oidn-web): Copyright (c) 2024 pissang.
+- [oidn-webgpu](https://github.com/pissang/oidn-webgpu): Copyright (c) 2024 pissang.
   [`LICENSES/OIDNWeb-MIT.txt`](./LICENSES/OIDNWeb-MIT.txt).
 
 The optional TinyBVH wasm is inlined in the standalone build. Its copyright

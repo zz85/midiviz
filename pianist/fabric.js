@@ -196,6 +196,11 @@ function lace() {
   return (laceTiles = { normal: tex(cn), rough: tex(cr), mask: tex(cc), S, cover, shade })
 }
 function smoothstep(x, a, b) { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t) }
+// the thin film's thickness range in nm: r187 holds it as iridescenceThicknessMinimum / Maximum
+// (iridescenceThicknessRange warns there), earlier releases as iridescenceThicknessRange
+const thicknessOf = m => 'iridescenceThicknessMinimum' in m ? [m.iridescenceThicknessMinimum, m.iridescenceThicknessMaximum] : [...m.iridescenceThicknessRange]
+const setThickness = (m, [a, b]) => { if ('iridescenceThicknessMinimum' in m) { m.iridescenceThicknessMinimum = a; m.iridescenceThicknessMaximum = b } else m.iridescenceThicknessRange = [a, b] }
+
 // the lining colour, shared by every lace garment
 export const laceLining = { value: new THREE.Color('#d6a88f') }
 export function setLaceLining(c) { laceLining.value.set(c); bakeEpoch++ }
@@ -335,12 +340,12 @@ export const traceMapOf = m => STATE.get(m)?.trace?.() || null
 export function applyFabric(mats, kind = 'made') {
   for (const { material: m, scale = 1, around = null, center = [0, 0] } of mats) {
     const st = state(m)
-    const o = (st.orig ||= { ...Object.fromEntries(KEYS.map(k => [k, m[k]])), normalMap: m.normalMap, normalScale: m.normalScale.clone(), roughnessMap: m.roughnessMap, iridescenceThicknessRange: [...m.iridescenceThicknessRange], onBeforeCompile: m.onBeforeCompile, customProgramCacheKey: m.customProgramCacheKey })
+    const o = (st.orig ||= { ...Object.fromEntries(KEYS.map(k => [k, m[k]])), normalMap: m.normalMap, normalScale: m.normalScale.clone(), roughnessMap: m.roughnessMap, iridescenceThickness: thicknessOf(m), onBeforeCompile: m.onBeforeCompile, customProgramCacheKey: m.customProgramCacheKey })
     for (const k of KEYS) m[k] = o[k]
     if (m.normalMap !== o.normalMap) m.normalMap?.dispose()
     if (m.roughnessMap !== o.roughnessMap) m.roughnessMap?.dispose()
     m.normalMap = o.normalMap; m.normalScale.copy(o.normalScale); m.roughnessMap = o.roughnessMap
-    m.iridescenceThicknessRange = [...o.iridescenceThicknessRange]
+    setThickness(m, o.iridescenceThickness)
     // what an earlier fabric added beyond plain values: a map, a shader, a bake
     if (st.map) { if (m.map === st.map) m.map = st.mapBase; st.map.dispose(); st.map = st.mapBase = null }
     if (m.userData.fabricShader) { m.onBeforeCompile = o.onBeforeCompile; m.customProgramCacheKey = o.customProgramCacheKey; delete m.userData.fabricShader }
@@ -366,7 +371,7 @@ export function applyFabric(mats, kind = 'made') {
     if (kind === 'silk') { m.roughness = 0.2; m.sheen = 0.6; m.sheenRoughness = 0.2; m.specularIntensity = 1; m.anisotropy = 0.7; m.anisotropyRotation = Math.PI / 2; m.normalScale.multiplyScalar(0.15) }
     if (kind === 'chiffon') { m.roughness = 0.78; m.sheen = 0.7; m.sheenRoughness = 0.45; m.specularIntensity = 0.45; m.normalScale.set(0.35, 0.35) }
     if (kind === 'crepe') { m.roughness = 0.93; m.sheen = 0.25; m.sheenRoughness = 0.7; m.specularIntensity = 0.35; m.normalScale.set(0.6, 0.6) }
-    if (kind === 'taffeta') { m.roughness = 0.34; m.sheen = 0.5; m.sheenRoughness = 0.3; m.specularIntensity = 0.9; m.iridescence = 0.55; m.iridescenceIOR = 1.6; m.iridescenceThicknessRange = [250, 600]; m.normalScale.set(0.3, 0.3) }
+    if (kind === 'taffeta') { m.roughness = 0.34; m.sheen = 0.5; m.sheenRoughness = 0.3; m.specularIntensity = 0.9; m.iridescence = 0.55; m.iridescenceIOR = 1.6; setThickness(m, [250, 600]); m.normalScale.set(0.3, 0.3) }
     if (kind === 'damask') { m.roughness = 1; m.sheen = 0.5; m.sheenRoughness = 0.35; m.specularIntensity = 0.9; m.normalScale.set(0.45, 0.45) }
     if (kind === 'lame') { m.metalness = 1; m.roughness = 0.32; m.sheen = 0; m.specularIntensity = 1; m.anisotropy = 0.4; m.normalScale.set(0.7, 0.7) }
     if (kind === 'glitter') { m.metalness = 0.85; m.roughness = 0.18; m.sheen = 0.1; m.clearcoat = 0.3; m.clearcoatRoughness = 0.15; m.specularIntensity = 1; m.normalScale.set(1, 1) }

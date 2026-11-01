@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Pianist">
+  <link rel="apple-touch-icon" href="pianist/icon-180.png">
+  <title>Experiment #050 - Engraved Score</title>
+  <!--
+    Experiment #050 - Engraved Score: the #045 path-traced pianist with the
+    score over her, engraved in the page by nwc-viewer (../nwc-viewer/, the
+    engine #025 uses) from the score's own notes (for the Goldberg Aria, from
+    Mutopia's LilyPond; for any other MIDI file, from the file), wrapped into
+    systems, each note head glowing as it is played. In exported videos too.
+    See sheet/README.md.
+  -->
+  <script src="playback_controls.js"></script>
+  <script type="importmap">
+    { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/",
+      "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/",
+      "three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.webgpu.js",
+      "three/tsl": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.tsl.js",
+      "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.5.5/lib/three-vrm.module.min.js"
+    } }
+  </script>
+  <link rel="stylesheet" href="pathtrace/app.css">
+</head>
+<body>
+  <script src="tonejs-midi.js"></script>
+  <script type="module">
+    import { boot } from './pathtrace/app.js'
+    import { sheetPlugin } from './sheet/plugin.js'
+    import { engravedBuilder } from './sheet/engrave.js'
+    boot(sheetPlugin({ title: '#050 · Engraved Score', defaultSong: 'midis/bach_goldberg_aria.mid', build: engravedBuilder(), about: 'engraved by nwc-viewer' }))
+  </script>
+</body>
+</html>

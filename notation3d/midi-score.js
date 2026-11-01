@@ -147,7 +147,7 @@ function grandStaff(name, notes, channel, program) {
 	]
 }
 
-function assignStaves(midi, mode = 'auto') {
+function assignStaves(midi, mode = 'auto', clefs = null) {
 	const tracks = midi.tracks.filter(t => t.notes.length && t.channel !== 9)
 	// Tag notes with their source track so a piano reduction can keep per-track colours
 	tracks.forEach((t, ti) => { for (const n of t.notes) n._trk = ti })
@@ -168,7 +168,7 @@ function assignStaves(midi, mode = 'auto') {
 			} else {
 				const sorted = notes.map(n => n.midi).sort((a, b) => a - b)
 				const median = sorted[sorted.length >> 1]
-				staves.push({ name, clef: median < 57 ? 'bass' : 'treble', notes, channel: t.channel, program, brace: false })
+				staves.push({ name, clef: clefs?.[staves.length] || (median < 57 ? 'bass' : 'treble'), notes, channel: t.channel, program, brace: false })
 			}
 		}
 		if (mode === 'tracks' || staves.length <= MAX_AUTO_STAVES) return staves
@@ -306,7 +306,8 @@ function buildStaffTokens(st, ctx) {
  * @param {string} title
  * @returns {{ data, staffMeta, ppq }}
  */
-export function midiToScore(midi, title = 'MIDI', { staffMode = 'auto' } = {}) {
+export function midiToScore(midi, title = 'MIDI', { staffMode = 'auto', clefs = null } = {}) {
+	// clefs: a clef for each track's staff ('treble' / 'bass'), in place of the one its notes suggest
 	const ppq = midi.header.ppq
 	const grid = ppq / 4 // 16th-note grid
 	const ts = midi.header.timeSignatures?.[0]?.timeSignature || [4, 4]
@@ -320,7 +321,7 @@ export function midiToScore(midi, title = 'MIDI', { staffMode = 'auto' } = {}) {
 	for (const n of all) totalTicks = Math.max(totalTicks, n.ticks + n.durationTicks)
 	totalTicks = Math.ceil(Math.round(totalTicks / grid) * grid / barTicks) * barTicks || barTicks
 
-	const plan = assignStaves(midi, staffMode)
+	const plan = assignStaves(midi, staffMode, clefs)
 	if (!plan.length) throw new Error('MIDI file has no pitched notes to engrave')
 	const ctx = { ppq, grid, barTicks, beatTicks, table: makeDurationTable(ppq), key, timeSig, bpm, totalTicks }
 

@@ -10,7 +10,7 @@
 // (what a still costs), and runs never share GPU state with the page.
 //
 // Engines
-//  gpt-webgpu  three-gpu-pathtracer's WebGPUPathTracer on three/webgpu (r185)
+//  gpt-webgpu  three-gpu-pathtracer's WebGPUPathTracer on three/webgpu (r187)
 //  gpt-webgl   three-gpu-pathtracer's WebGLPathTracer (deprecated upstream)
 //  mu-webgpu   MuTracer on WebGPU
 //  mu-webgl    MuTracer's WebGL 2 fallback
@@ -241,14 +241,12 @@ async function mutracer({ width, height, bounces, toneMapping, denoise }, backen
     async frame({ scene, camera, samples, exposure, onProgress, signal, dof = null }) {
       const times = {}
       let t = performance.now()
-      // MuTracer reads an equirect's first row as the zenith (theta = acos(y)), three.js
-      // a DataTexture's first row as the nadir (v = asin(y) / pi + 0.5): hand it the rows
-      // upside down, or the stage is lit from the floor
-      const env = scene.environment
-      if (env?.isDataTexture && !env.flipY) scene.environment = flipRows(env)
-      let muScene
-      try { muScene = MU.fromTHREEScene(scene, { convertLight: l => l.isSpotLight ? muSpot(MU, l) : undefined }) }
-      finally { if (scene.environment !== env) { scene.environment.dispose(); scene.environment = env } }
+      // (MuTracer 0.2.0's fromTHREEScene turns a three.js equirect's rows to its own order,
+      // zenith first, itself: 0.1.3 left that to us, and lit the stage from the floor without it)
+      // Spots: 0.2.0 fades them as three.js does, smoothstep(cos(outer), cos(inner), cos θ), and reads
+      // `userData.mutracerRadius`; 0.1.3 added 1 - inner/outer to cos(outer) instead, so a soft spot
+      // never reached full strength, and a light of our own (muSpot) undid it
+      const muScene = MU.fromTHREEScene(scene)
       // the BVH, built in workers, ahead of the first update
       await engine.prepare(muScene)
       engine.scene = muScene
@@ -280,35 +278,4 @@ async function mutracer({ width, height, bounces, toneMapping, denoise }, backen
     },
     dispose() { try { last?.dispose?.() } catch { /* engine.dispose takes it */ } engine.dispose() },
   }
-}
-
-// MuTracer 0.1.3 fades a spot as smoothstep(cos(outer), cos(outer) + (1 − inner/outer), cos θ)
-// (lightsUtil.js packs 1 − inner/outer, rayTraceCore's spot falloff adds it to the cosine),
-// three.js as smoothstep(cos(outer), cos(inner), cos θ). Its own conversion sets
-// inner = outer·(1 − penumbra), so a soft spot never reaches full strength: the stage's key
-// light (angle 0.3, penumbra 0.8) peaks at about 1 %. Choosing inner so that 1 − inner/outer
-// = cos(inner₃) − cos(outer) gives three's curve exactly.
-function muSpot(MU, l) {
-  const cosOuter = Math.cos(l.angle), cosInner = Math.cos(l.angle * (1 - l.penumbra))
-  const outer = l.angle * 180 / Math.PI
-  const light = new MU.SpotLight({
-    color: l.color.toArray(), intensity: l.intensity, radius: l.userData.mutracerRadius ?? 0.01,
-    outerAngle: outer, innerAngle: outer * (1 - Math.min(1, cosInner - cosOuter)),
-  })
-  light.transform = Array.from(light.transform)
-  light.position = l.getWorldPosition(new THREE.Vector3()).toArray()
-  light.lookAt(l.target.getWorldPosition(new THREE.Vector3()).toArray())
-  return light
-}
-
-const flipped = new WeakMap()
-function flipRows(tex) {
-  if (flipped.has(tex)) return flipped.get(tex).clone()
-  const { data, width: w, height: h } = tex.image, c = data.length / (w * h), out = new data.constructor(data.length)
-  for (let j = 0; j < h; j++) out.set(data.subarray(j * w * c, (j + 1) * w * c), (h - 1 - j) * w * c)
-  const t = new THREE.DataTexture(out, w, h, tex.format, tex.type)
-  Object.assign(t, { mapping: tex.mapping, colorSpace: tex.colorSpace, minFilter: tex.minFilter, magFilter: tex.magFilter, generateMipmaps: false })
-  t.needsUpdate = true
-  flipped.set(tex, t)
-  return t.clone()
 }

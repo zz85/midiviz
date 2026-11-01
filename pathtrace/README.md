@@ -3,9 +3,11 @@
 [045_pathtracer.html](../045_pathtracer.html) is [#032 Pianist](../032_pianist.html) with two GPU path tracers for three.js, rendering the same frame the page draws so the pictures can be compared:
 
 - [three-gpu-pathtracer](https://github.com/gkjohnson/three-gpu-pathtracer) 0.0.27 (Garrett Johnson, MIT): its WebGPU tracer (`WebGPUPathTracer`, compute shaders on three/webgpu) and its older WebGL tracer (`WebGLPathTracer`, deprecated upstream)
-- [MuTracer](https://github.com/pissang/mutracer) 0.1.3 (`@meimu/mutracer`, Yi Shen, MIT): WebGPU, with a WebGL 2 fallback
+- [MuTracer](https://github.com/pissang/mutracer) 0.2.0 (`@meimu/mutracer`, Yi Shen, MIT): WebGPU, with a WebGL 2 fallback
 
-The page moved from three.js r170 to r185, which three-gpu-pathtracer's WebGPU tracer needs. Its raster picture is unchanged.
+The page moved from three.js r170 to r185, which three-gpu-pathtracer's WebGPU tracer needs, and then to r187 (1 Nov 2026). Its raster picture is unchanged by either: a still of the stage at r187 has the same mean brightness as at r185 (85.2 against 85.4).
+
+The page's code is [app.js](app.js) (markup in shell.js, styles in app.css), which #049 and #050 boot with a plugin that draws the score over it ([sheet/README.md](../sheet/README.md#the-shared-pianist-app)).
 
 ## Using it
 
@@ -29,17 +31,17 @@ Neither tracer runs the page's own shaders, so [snapshot.js](snapshot.js) freeze
 
 ## Making MuTracer match
 
-The first MuTracer stills were much darker than three-gpu-pathtracer's and the hair was white. Three causes, all in MuTracer 0.1.3 and all worked around in `engines.js` and `hair.js`, each with a test scene in [test/mini.html](test/mini.html):
+The first MuTracer stills were much darker than three-gpu-pathtracer's and the hair was white. Three causes, all in MuTracer 0.1.3, each with a test scene in [test/mini.html](test/mini.html). MuTracer 0.2.0 fixes the first two itself, so `engines.js` no longer works around them: on SwiftShader `?test=spot` gives 63 with 0.2.0 and its own spot conversion (65 with 0.1.3 and ours, three-gpu-pathtracer 62), and `?test=sky` gives 184 (183 before). The third is still worked around in `hair.js`.
 
 | Cause | Effect on the stage | Workaround | Test (centre pixel, sRGB) |
 | --- | --- | --- | --- |
-| A spot fades as `smoothstep(cos outer, cos outer + (1 − inner/outer), cos θ)`, adding a ratio of angles to a cosine; three.js fades to `cos inner` | The stage's soft spots (penumbra 0.8–1) peaked at 0.4–4 % of their strength; the key light at about 0.9 % | Spots converted here, with the inner angle chosen so the fade follows three's curve | `?test=spot`: MuTracer 13 → 65, three-gpu-pathtracer 77 |
-| The environment map's first row is read as the zenith; three.js reads a `DataTexture`'s first row (`flipY` false) as the nadir, and `flipY` is ignored | The panels above the stage lit it from below | MuTracer gets a copy with the rows flipped | `?test=sky`: 1 → 183, three-gpu-pathtracer 189 |
+| A spot fades as `smoothstep(cos outer, cos outer + (1 − inner/outer), cos θ)`, adding a ratio of angles to a cosine; three.js fades to `cos inner` | The stage's soft spots (penumbra 0.8–1) peaked at 0.4–4 % of their strength; the key light at about 0.9 % | Spots converted here, with the inner angle chosen so the fade follows three's curve; fixed in 0.2.0 | `?test=spot`: MuTracer 13 → 65, three-gpu-pathtracer 77 |
+| The environment map's first row is read as the zenith; three.js reads a `DataTexture`'s first row (`flipY` false) as the nadir, and `flipY` is ignored | The panels above the stage lit it from below | MuTracer gets a copy with the rows flipped; 0.2.0's converter flips them itself | `?test=sky`: 1 → 183, three-gpu-pathtracer 189 |
 | The three.js converter copies position, normal, tangent and uv but not vertex colours, though the renderer supports them | The hair, coloured per vertex on a white material, came out white | Hair colour also baked into a texture | `?test=map`: 159,66,66 against 169,67,67; `?test=vcolor` still white |
 
 After these fixes the two tracers' WebGPU stills look close on a desktop GPU, hair included (compared by eye at 1280×720 and 1920×1080; no pixel comparison yet). The test scenes also check light units (`?test=down`, `?test=rect`: a white floor 2 m under a spot or area light, the tracers within 2 % and 6 %) and a uniform sky (`?test=env`: 176 against 197). On `?test=point` MuTracer is brighter (115 against 77); the stage has no point lights.
 
-These are worth reporting upstream; MuTracer asks for issues rather than pull requests.
+The vertex-colour one is worth reporting upstream; MuTracer asks for issues rather than pull requests.
 
 ## Known problems
 
