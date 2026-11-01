@@ -329,7 +329,9 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     let lead = 0
     const st = a.drv.stroke
     if (st && state.elbowLead > 0) {
-      const tm = state.songT + hands.lead, y1 = st.at(tm)[0], y2 = st.at(tm + 0.08)[0]
+      // (the arm's own lift: a bounce from the wrist, repeated chords and
+      // octaves, moves the hand alone, not the elbow)
+      const tm = state.songT + hands.lead, y1 = st.at(tm)[3], y2 = st.at(tm + 0.08)[3]
       lead = clamp(0.045 * state.elbowLead * (y2 - y1), -0.12, 0.35)
       if (lead) {
         // which way round raises the elbow
@@ -437,7 +439,7 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
       // a moment earlier (and comes down earlier), carrying the elbow, so the
       // hand follows the arm (state.elbowLead)
       const st = am.drv.visible && state.elbowLead > 0 ? am.drv.stroke : null
-      const up = st ? Math.min(2.5, 0.14 * state.elbowLead * st.at(state.songT + hands.lead + 0.1)[0]) : 0
+      const up = st ? Math.min(2.5, 0.14 * state.elbowLead * st.at(state.songT + hands.lead + 0.1)[3]) : 0
       am.shoulderUp = up
       if (up) tmpQ.premultiply(_q.setFromAxisAngle(v3(0, 0, 1).applyQuaternion(wQ[SPINE[4]]), (sd === '.L' ? 1 : -1) * -up / am.clavLen))
       if (am.protract) tmpQ.premultiply(_q.setFromAxisAngle(Y, (sd === '.L' ? -1 : 1) * am.protract / am.clavLen))

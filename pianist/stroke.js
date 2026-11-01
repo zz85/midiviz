@@ -53,7 +53,7 @@ const fall = u => (u <= 0 ? 1 : u >= 1 ? 0 : 1 - (0.4 * u * u + 0.6 * smooth(u))
  * velRange: [quiet, loud] velocities of the piece (default: from these notes).
  * MIDI files differ in how loud their velocities run, so a note's loudness is
  * judged half against the piece's own range and half absolutely.
- * Returns { at(t) → [lift, tilt], t0, h, n, lift, tilt, windows }; each
+ * Returns { at(t) → [lift, tilt, roll, the arm's own lift (lift less the wrist strokes)], t0, h, n, lift, tilt, windows }; each
  * window says what played it: kind 'arm' | 'wrist' (repeat / octave) | 'leap' | 'run'.
  */
 export function velocityRange(notes) {
@@ -208,7 +208,10 @@ export function planStrokes(notes, { armWeight = 1, flex = 1, liftOff = 1, heigh
     tilt[i] = y
   }
   // the wrist strokes on top: the knuckles rise, the wrist stays put (the
-  // hand pivots about it), with no low-pass, they are quick
+  // hand pivots about it), with no low-pass, they are quick. armLift keeps
+  // the lift without them: what the arm itself does, which the elbow and
+  // shoulder follow (a fast bounce from the wrist doesn't move the elbow)
+  const armLift = lift.slice()
   for (let i = 0; i < N; i++) if (wk[i] > 0) { lift[i] += wk[i]; tilt[i] -= Math.asin(Math.min(0.9, wk[i] / STROKE.WRIST_LEN)) }
 
   // ── Forearm rotation ──
@@ -249,14 +252,15 @@ export function planStrokes(notes, { armWeight = 1, flex = 1, liftOff = 1, heigh
     }
   }
 
-  const out = [0, 0, 0]
+  const out = [0, 0, 0, 0]
   function at(t) {
     const u = (t - t0) / h, i = Math.floor(u)
-    if (!(i >= 0 && i < N - 1)) { out[0] = i >= N - 1 ? lift[N - 1] : 0; out[1] = 0; out[2] = 0; return out }
+    if (!(i >= 0 && i < N - 1)) { out[0] = out[3] = i >= N - 1 ? lift[N - 1] : 0; out[1] = 0; out[2] = 0; return out }
     const w = u - i
     out[0] = lift[i] + (lift[i + 1] - lift[i]) * w
     out[1] = tilt[i] + (tilt[i + 1] - tilt[i]) * w
     out[2] = roll[i] + (roll[i + 1] - roll[i]) * w
+    out[3] = armLift[i] + (armLift[i + 1] - armLift[i]) * w
     return out
   }
   return { at, t0, h, n: N, lift, tilt, roll, windows }

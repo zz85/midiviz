@@ -614,6 +614,19 @@ export function markCrossings(notes) {
 export function fingerPiece(notes, options = {}) {
   const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now()
   const model = createModel(options)
+  // The same key struck twice at once (two voices on one note, or the empty
+  // note a doubled note-on leaves): one finger plays it. The fingering sees
+  // the longest of them alone; the others take its hand and finger after.
+  const all = notes, dups = new Map()
+  {
+    const byPitch = new Map()
+    for (const n of [...notes].sort((a, b) => a.on - b.on || (b.off - b.on) - (a.off - a.on))) {
+      const k = byPitch.get(n.pitch)
+      if (k && n.on - k.on < model.opts.chordTolerance) { dups.set(n, k); if (n.hand && !k.hand) k.hand = n.hand }
+      else byPitch.set(n.pitch, n)
+    }
+    if (dups.size) notes = notes.filter(n => !dups.has(n))
+  }
   if (options.splitHands !== false) splitHands(notes, model.opts)
   if (model.W.crossHand) markCrossings(notes)
   const out = {}
@@ -627,8 +640,9 @@ export function fingerPiece(notes, options = {}) {
       if (n.release != null && n.release < n.off) n.src.release = n.release; else delete n.src.release
     }
   }
+  for (const [n, k] of dups) { n.hand = k.hand; n.finger = k.finger; n.cross = k.cross; if (k.release != null) n.release = Math.min(k.release, n.off); else delete n.release }
   const t1 = typeof performance !== 'undefined' ? performance.now() : Date.now()
-  return { notes, cost: out.R.cost + out.L.cost, ms: t1 - t0, hands: out }
+  return { notes: all, cost: out.R.cost + out.L.cost, ms: t1 - t0, hands: out }
 }
 
 // ── Helpers for tests and the UI ───────────────────────────────────────────
