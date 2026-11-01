@@ -2,6 +2,13 @@
 
 What each experiment does and how, newest first. The short list is in the [README](README.md).
 
+## 1 Nov 2026
+
+[Experiment #032 - Pianist](032_pianist.html): hands at rest on the community outfits' dresses (shared by #038, #045 and #047)
+- The rig rests her hands on what she wears (`state.restCover`, the page's `dress.object`), but a community garment (the long gown, the shift, the bob outfits and every other MakeHuman community dress) is skinned to her body and lives there, so `dress.object` was an empty group: the rig saw no dress, laid the hands 1.2 cm over her skin, and they sank into the gown. [pianist/community.js](pianist/community.js) now points the group at its garment (`userData.cover`) and [pianist/rig.js](pianist/rig.js) reads it; the cloth may lie up to 14 cm off the skin (was 8: a gown's skirt across the lap lies further out), and a sleeve, the vertices an arm bone carries, doesn't count as the lap.
+- `pianist/test/rest.mjs` reads the garment the same way, so it checks those outfits at all. In lap mode all 13 outfits now keep the hands out of her and the dress, on One More Time, One More Chance and Prelude1 (long gown: 0.8 cm into the skirt before, 0.2 cm clear after; the cocktail dress: 3.4 cm into it before). Left: the cocktail dress's left hand rests 5.5 cm above its skirt in lap mode, and the long-sleeved updo gown's clasped hands go 0.65 cm into the dress (0.5 allowed).
+- `wrist.mjs` and `rest.mjs` take `GL=llvmpipe`: Mesa's llvmpipe through ANGLE's GL-EGL backend, which runs the wrist suite in 44 s on this 64-core machine where SwiftShader took over half an hour.
+
 ## 28 Oct 2026
 
 [Experiment #046 - Score fingering](046_score_fingering.html): 🎼 Stand mode, for a laptop turned on its side as a music stand ([notes](score-fingering/README.md#reading-playing-and-writing-on-the-score))

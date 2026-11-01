@@ -197,6 +197,9 @@ export async function createCommunity(ch, key, { color = null } = {}) {
 
   const object = new THREE.Group()
   object.name = key
+  // (the garment itself is skinned to her and lives with the body, not under
+  // object: what rests on it finds it here, rig.js state.restCover)
+  if (!hair) object.userData.cover = mesh
   // hair: simulated like a piece of cloth pinned at the scalp (hair-cloth.js)
   const cloth = hair ? createHairCloth(ch, mesh) : null
   return {

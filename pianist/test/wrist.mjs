@@ -51,7 +51,12 @@ const MISSES = { 'entertainer.mid': { L: 0.19, R: 0.37 }, 'rush_e_real.mid': { L
 
 const { chromium } = await import(PW)
 const songs = process.argv.slice(2).length ? process.argv.slice(2) : DEFAULT
-const browser = await chromium.launch({ executablePath: CHROME, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] })
+// GL=llvmpipe: Mesa's llvmpipe through ANGLE's GL-EGL backend, much faster than
+// SwiftShader on a many-core machine (needs Mesa's EGL and gallium drivers)
+const LLVMPIPE = process.env.GL === 'llvmpipe'
+const browser = await chromium.launch({ executablePath: CHROME,
+  args: LLVMPIPE ? ['--use-gl=angle', '--use-angle=gl-egl', '--ignore-gpu-blocklist'] : ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
+  env: LLVMPIPE ? { ...process.env, GALLIUM_DRIVER: 'llvmpipe', LIBGL_ALWAYS_SOFTWARE: '1', EGL_PLATFORM: 'surfaceless' } : process.env })
 let failed = 0
 // (a hung page never hangs the run: each piece has PIECE_TIMEOUT ms, default 10 min)
 const PIECE_TIMEOUT = +(process.env.PIECE_TIMEOUT || 600000)

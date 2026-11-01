@@ -867,18 +867,32 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     // page): per bin, the layer of it nearest the thigh, within 8 cm of the
     // skin (single-layer cloth, so a skirt simulated over her lap is where it
     // lies now; the furthest out would be the skirt across the other thigh)
+    // (within COVER_MAX cm of the skin: a gown's skirt can lie well out over the lap)
+    const COVER_MAX = 14
     L.cover ||= new Map(); L.cover.clear()
     const C = state.restCover
     if (C?.visible) {
       C.updateMatrixWorld(true)
-      C.traverse(o => {
+      // (and each garment a group points to, userData.cover: community.js)
+      // (a sleeve isn't what she rests on: vertices carried by an arm bone are
+      // left out, community garments being skinned to her own bones)
+      const armVert = (o, i) => {
+        const si = o.isSkinnedMesh && o.geometry.attributes.skinIndex, sw = o.geometry.attributes.skinWeight
+        if (!si || !sw) return false
+        let best = 0, bw = -1
+        for (let k = 0; k < 4; k++) { const w = sw.getComponent(i, k); if (w > bw) { bw = w; best = si.getComponent(i, k) } }
+        return ARM_BONE.test(o.skeleton.bones[best]?.name || '')
+      }
+      const each = fn => C.traverse(o => { fn(o); const g = o.userData?.cover; if (g && g !== o) { g.updateMatrixWorld(true); fn(g) } })
+      each(o => {
         if (!o.isMesh || !o.visible || !o.geometry?.attributes.position) return
         for (let i = 0, n = o.geometry.attributes.position.count; i < n; i++) {
+          if (armVert(o, i)) continue
           o.getVertexPosition(i, v).applyMatrix4(o.matrixWorld)
           q.subVectors(v, f.H); const u = q.dot(f.T); if (u < 0 || u > f.len) continue
           q.addScaledVector(f.T, -u)
           const key = binKey(u, Math.atan2(q.dot(f.S), q.dot(f.U))), r = q.length(), skin = binNear(L.grid, key)
-          if (skin == null || r < skin - 0.5 || r > skin + 8) continue
+          if (skin == null || r < skin - 0.5 || r > skin + COVER_MAX) continue
           if (!(L.cover.get(key) <= r)) L.cover.set(key, r)
         }
       })
@@ -890,6 +904,7 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
   // toward her outside), with what covers it: the skin plus PAD (a dress the
   // rig cannot see), or the dress itself where it can (state.restCover) and a
   // few millimetres for the cloth's own thickness
+  const ARM_BONE = /arm|wrist|hand|finger|metacarpal|clavicle|shoulder/i
   function liveRadius(sd, u, a) {
     const L = liveThigh(sd); if (!L) return null
     const k = binKey(u, a), near = g => binNear(g, k)

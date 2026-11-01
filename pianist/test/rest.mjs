@@ -30,7 +30,11 @@ const MODES = (process.env.MODES || 'lap,clasp,sides').split(',')
 const songs = process.argv.slice(2).length ? process.argv.slice(2) : ['Prelude1.mid', 'midis/maestro_bach_850.mid']
 
 const { chromium } = await import(PW)
-const browser = await chromium.launch({ executablePath: CHROME, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] })
+// GL=llvmpipe: Mesa's llvmpipe through ANGLE's GL-EGL backend, as wrist.mjs
+const LLVMPIPE = process.env.GL === 'llvmpipe'
+const browser = await chromium.launch({ executablePath: CHROME,
+  args: LLVMPIPE ? ['--use-gl=angle', '--use-angle=gl-egl', '--ignore-gpu-blocklist'] : ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
+  env: LLVMPIPE ? { ...process.env, GALLIUM_DRIVER: 'llvmpipe', LIBGL_ALWAYS_SOFTWARE: '1', EGL_PLATFORM: 'surfaceless' } : process.env })
 let failed = false
 for (const song of songs) {
   const page = await browser.newPage({ viewport: { width: 480, height: 270 } })
@@ -82,9 +86,15 @@ for (const song of songs) {
           // the skirt over it: per bin, its layer nearest the thigh (single-layer
           // cloth; the furthest out would be the skirt across the other thigh)
           fr.dress = new Map()
-          if (window.__pianist.dress?.object?.visible) window.__pianist.dress.object.traverse(o => {
+          // (a community garment is skinned to her, not under the dress's
+          // object, which points to it: userData.cover)
+          const eachCover = fn => window.__pianist.dress.object.traverse(o => { fn(o); const g = o.userData?.cover; if (g && g !== o) fn(g) })
+          if (window.__pianist.dress?.object?.visible) eachCover(o => {
             if (!o.isMesh || !o.visible || !o.geometry?.attributes.position) return
+            const si = o.isSkinnedMesh && o.geometry.attributes.skinIndex, sw = o.geometry.attributes.skinWeight
             for (let i = 0, n = o.geometry.attributes.position.count; i < n; i++) {
+              // (a sleeve isn't the dress over her thighs: vertices an arm bone carries)
+              if (si && sw) { let b = 0, bw = -1; for (let k = 0; k < 4; k++) { const w = sw.getComponent(i, k); if (w > bw) { bw = w; b = si.getComponent(i, k) } } if (/arm|wrist|hand|finger|metacarpal|clavicle|shoulder/i.test(o.skeleton.bones[b]?.name || '')) continue }
               o.getVertexPosition(i, v).applyMatrix4(o.matrixWorld)
               q.subVectors(v, fr.H); const u = q.dot(fr.T); if (u < 0 || u > len) continue
               q.addScaledVector(fr.T, -u); const r = q.length()
