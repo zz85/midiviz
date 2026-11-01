@@ -20,8 +20,8 @@
 // its end) whose finger's tip isn't on it, off the key's width by more than
 // 0.3 cm or more than 1 cm over its top, on at most 5 % of the frames
 // (MISSES: more where the fingering asks for more than a hand can reach:
-// Chopin's 15th prelude's right hand, 7.7 %, most of it on chords wider than
-// a ninth; The Entertainer's right hand 5.8 %).
+// Chopin's 15th prelude's right hand, 6.7 %, most of it on chords wider than
+// a ninth).
 const BASE = process.env.BASE || 'http://127.0.0.1:8000/midiviz/'
 const PW = process.env.PLAYWRIGHT || '/tmp/pw/node_modules/playwright-core/index.mjs'
 const CHROME = process.env.CHROME || `${process.env.HOME}/.cache/ms-playwright/chromium-1134/chrome-linux/chrome`   // (aarch64: ~/.local/share/ms-playwright/chromium-1248/chrome-linux-arm64/chrome)
@@ -47,7 +47,7 @@ const HANDS_PEN = 1, HANDS_SHARE = 0.15
 const HANDS_SHARES = { 'rush_e_real.mid': 0.9 }
 // over/under swaps inside a passage (Goldberg Var. 5-6: 39 before, 0 after)
 const MAX_SWAPS = 2
-const MISSES = { 'chpn-p15.mid': { R: 0.085 }, 'entertainer.mid': { R: 0.07 } }
+const MISSES = { 'chpn-p15.mid': { R: 0.08 } }
 
 const { chromium } = await import(PW)
 const songs = process.argv.slice(2).length ? process.argv.slice(2) : DEFAULT

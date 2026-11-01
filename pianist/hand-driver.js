@@ -68,6 +68,9 @@ function chainReach(L, k, p) {
  * place at rest, in front of the key fronts when > 0).
  */
 const THUMB_Z = -0.8, LITTLE_Z = -1.1
+// the hand's move in over the keys for an octave: OCT_IN cm, from keys
+// OCT_FROM cm apart (an octave's centres are 16.5 cm apart) to 3 cm more
+const OCT_IN = 3, OCT_FROM = 12
 export function handDepths(dims) {
   const { FINGERS, KNUCKLE_Y } = dims
   const nat = [0]
@@ -263,7 +266,7 @@ export function createHandDriver(side, dims) {
   // smoothed hand placement: middle knuckle (x, z), yaw, plus a reach slide
   const hand = { x: s * 12, z: KNUCKLE_Z, yaw: 0, init: false }
   const slide = v3(), slideGoal = v3()
-  const diag = { splay: [0, 0, 0, 0, 0], err: [0, 0, 0, 0, 0], press: [0, 0, 0, 0, 0] }
+  const diag = { splay: [0, 0, 0, 0, 0], err: [0, 0, 0, 0, 0], press: [0, 0, 0, 0, 0], target: [v3(), v3(), v3(), v3(), v3()] }
   // rotate a hand-frame (x, z) offset by the yaw; θ > 0 turns the fingers toward +x
   const rot = (x, z, th) => { const c = Math.cos(th), n = Math.sin(th); return [x * c - z * n, x * n + z * c] }
 
@@ -309,7 +312,14 @@ export function createHandDriver(side, dims) {
     const armYaw = Math.atan2(qx - SHOULDER.x, -(qz - SHOULDER.z))
     yaw = THREE.MathUtils.clamp(0.75 * yaw + 0.3 * armYaw, -0.4, 0.4)
     const [rx, rz] = rot(px, pz, yaw)
-    return { x: qx - rx, z: THREE.MathUtils.clamp(qz - rz, KNUCKLE_Z - 6.5, KNUCKLE_Z + 4), yaw, y: KEY_TOP + KNUCKLE_Y + 1.2 * anchor.idle, px, pz }
+    // An octave (the keys it presses an octave or so apart): the hand goes
+    // in over the keys, up to OCT_IN cm. Its fingers can't spread wider, and
+    // there the thumb, whose base lies well behind the knuckles, reaches
+    // sideways rather than forward; the little finger plays further in.
+    let lo = Infinity, hi = -Infinity
+    for (let i = 0; i < 5; i++) if (tips[i].press > 0.2) { lo = Math.min(lo, tips[i].x); hi = Math.max(hi, tips[i].x) }
+    const wide = hi > lo ? OCT_IN * smooth(OCT_FROM, OCT_FROM + 3, hi - lo) : 0
+    return { x: qx - rx, z: THREE.MathUtils.clamp(qz - rz - wide, KNUCKLE_Z - 6.5, KNUCKLE_Z + 4), yaw, y: KEY_TOP + KNUCKLE_Y + 1.2 * anchor.idle, px, pz }
   }
 
   function basePos(f, out) {
@@ -325,15 +335,40 @@ export function createHandDriver(side, dims) {
 
   // What the fit cannot cover, a slide does (and it relaxes back to zero):
   // a held key out of reach, or so far sideways the finger would splay.
+  // how far the worst pressed finger is out of reach (or splayed past its
+  // limit) with the hand as it is and slide as it is set
+  function worstOf(tips, spread) {
+    let worst = 0
+    for (const f of [1, 2, 3, 4, 5]) {
+      const d = FINGERS[f], t = tips[f - 1]
+      if (!(t.press > 0.2)) continue
+      basePos(f, base)
+      tip.set(t.x, KEY_TOP + t.y + d.rad[2] * 0.9, t.z)
+      _b.subVectors(tip, base)
+      worst = Math.max(worst, _b.length() - chainReach(d.len, d.k, 0.3))
+      const [nx, nz] = rot(NEUTRAL[f - 1][0], NEUTRAL[f - 1][1], hand.yaw)
+      const ang = Math.atan2(nx * _b.z - nz * _b.x, nx * _b.x + nz * _b.z), over = Math.abs(ang) - (SPLAY.held[f] + spread * (SPLAY.max[f] - SPLAY.held[f]))
+      if (over > 0) worst = Math.max(worst, Math.hypot(_b.x, _b.z) * Math.sin(over))
+    }
+    return worst
+  }
   function computeSlideGoal(tips) {
     slideGoal.set(0, 0, 0)
     let worst = 0
     const saved = slide.clone(); slide.set(0, 0, 0)
+    // (while two keys or more are held, a free finger doesn't pull the hand
+    // after it: the held keys say where the hand is)
+    const pressing2 = tips.filter(t => t.press > 0.2).length >= 2
+    // (an octave spreads the hand as wide as it goes: the thumb and the
+    // little finger to their limits, SPLAY.max, rather than SPLAY.held)
+    let lo = Infinity, hi = -Infinity
+    for (const t of tips) if (t.press > 0.2) { lo = Math.min(lo, t.x); hi = Math.max(hi, t.x) }
+    const spread = hi > lo ? smooth(OCT_FROM, OCT_FROM + 3, hi - lo) : 0
     for (const f of [1, 2, 3, 4, 5]) {
       const d = FINGERS[f], t = tips[f - 1]
       // (a free finger only when it is about to land: one resting near the
       // keys, as the 'fall' touch holds them, is not reaching for anything)
-      if (!(t.press > 0.2 || (t.y < 0.6 && (t.rest ?? 0) < 0.3))) continue
+      if (!(t.press > 0.2 || (!pressing2 && t.y < 0.6 && (t.rest ?? 0) < 0.3))) continue
       basePos(f, base)
       tip.set(t.x, KEY_TOP + t.y + d.rad[2] * 0.9, t.z)
       _a.subVectors(tip, base)
@@ -343,7 +378,7 @@ export function createHandDriver(side, dims) {
       const e = _a.length() - chainReach(d.len, d.k, 0.3)
       if (e > worst) { worst = e; slideGoal.copy(_a).setLength(e) }
       const [nx, nz] = rot(NEUTRAL[f - 1][0], NEUTRAL[f - 1][1], hand.yaw)
-      const ang = Math.atan2(nx * _a.z - nz * _a.x, nx * _a.x + nz * _a.z), over = Math.abs(ang) - SPLAY.held[f]
+      const ang = Math.atan2(nx * _a.z - nz * _a.x, nx * _a.x + nz * _a.z), over = Math.abs(ang) - (SPLAY.held[f] + spread * (SPLAY.max[f] - SPLAY.held[f]))
       if (over > 0) {
         const h = Math.hypot(_a.x, _a.z), e2 = h * Math.sin(over)
         if (e2 > worst) { worst = e2; slideGoal.set(_a.x, 0, _a.z).setLength(e2) }
@@ -352,6 +387,16 @@ export function createHandDriver(side, dims) {
     slideGoal.y = THREE.MathUtils.clamp(slideGoal.y, -2, 1.5)
     // ...but never forward over the keys: that only hooks every finger
     slideGoal.z = THREE.MathUtils.clamp(slideGoal.z, -4.5, 2)
+    // Slid all the way for the worst finger, another pressed one may come up
+    // short instead (an octave: the hand slid toward the little finger leaves
+    // the thumb out of reach): as far along it as leaves the worst of them
+    // least out of reach
+    if (worst > 0 && pressing2) {
+      const full = slideGoal.clone(), need = lam => { slide.copy(full).multiplyScalar(lam); return worstOf(tips, spread) }
+      let a = 0, b = 1
+      for (let it = 0; it < 10; it++) { const m1 = a + (b - a) / 3, m2 = b - (b - a) / 3; if (need(m1) <= need(m2)) b = m2; else a = m1 }
+      slideGoal.copy(full).multiplyScalar((a + b) / 2)
+    }
     slide.copy(saved)
     return slideGoal
   }
@@ -681,6 +726,7 @@ export function createHandDriver(side, dims) {
       const floor = () => KEY_TOP + keySurface(tip.x, tip.z) + d.rad[2] * 0.9 + 0.15
       if (!held[i]) tip.y = Math.max(tip.y, floor())
       else if (offKey[i]) tip.y = floor() - 0.15
+      diag.target[i].copy(tip)
       diag.err[i] = solveFinger(P[0].clone(), tip, d.len, d.k, P, f === 1 ? thumbCurl : null)
       // knuckle limit: a finger may not bend back more than ~14° at the MCP.
       // A free finger's target is lowered until it doesn't, down to the keys;
@@ -711,7 +757,7 @@ export function createHandDriver(side, dims) {
     J.R.subVectors(J.fingers[5][0], J.fingers[2][0]).multiplyScalar(s).normalize()
     armIK(J.W, J.E)
   }
-  return { update, bakeTrack, letGoTimes, clearTrack, wristAt, setEnding: f => { ending = f }, setPitch: p => { pitchGoal = p }, setDepth: d => { depthGoal = d }, setLift: h => { riseGoal = h }, get crossLift() { return rise },
+  return { update, bakeTrack, letGoTimes, clearTrack, wristAt, get slide() { return slide }, setEnding: f => { ending = f }, setPitch: p => { pitchGoal = p }, setDepth: d => { depthGoal = d }, setLift: h => { riseGoal = h }, get crossLift() { return rise },
     /** where the elbow is (the rig's arm; null: unknown): the wrist is kept within WRIST_RANGE of straight on the forearm */
     setElbow: v => { if (!v) { elbow = null; return } elbow = (elbow || v3()).copy(v); elbowOff.subVectors(v, J.E) },
     /** how far (radians) the wrist is bent past WRIST_RANGE on a forearm from elbow E to this frame's wrist */
@@ -737,7 +783,9 @@ export const ENDING = [0.1, 2.2]
 
 export function createHandsDriver(dims) {
   const L = createHandDriver('L', dims), R = createHandDriver('R', dims)
-  let motion = buildMotion([]), own = [], endT = Infinity, letGo = 0
+  let motion = buildMotion([]), own = [], endT = Infinity, letGo = 0, detached = 0
+  // (repeated chords and octaves: the share of the time to the next one the hand is off the keys)
+  const DETACH = 0.4
   const written = new WeakMap()   // each note's release as the fingering gave it
   // 0 while she plays, rising to 1 as the hands lift off the last chord
   // (the lift-off takes ~2.4 s, stroke.js): she comes back to the middle
@@ -818,6 +866,30 @@ export function createHandsDriver(dims) {
         }
         if (letGo) motion = buildMotion(own, motionOpts)
       }
+      // Repeated chords and rows of octaves are played from the wrist: the
+      // hand comes off the keys between them and drops onto the next (the
+      // stroke planner bounces it there, stroke.js 'wrist', but only in a
+      // gap the hand holds nothing in). Written legato, each one touching the
+      // next, they left no gap. So every key the hand holds is let go DETACH
+      // of the time to the next one before it (40-150 ms), the sound unchanged.
+      detached = 0
+      for (const side of ['L', 'R']) {
+        const mine = own.filter(m => m.hand === side).sort((a, b) => a.on - b.on), groups = []
+        for (const m of mine) { const g = groups[groups.length - 1]; if (g && m.on - g.t < 0.04) g.ps.push(m.pitch); else groups.push({ t: m.on, ps: [m.pitch], i: mine.indexOf(m) }) }
+        for (const g of groups) g.ps.sort((a, b) => a - b)
+        const same = (a, b) => a.ps.length > 1 && a.ps.length === b.ps.length && a.ps.every((p, k) => p === b.ps[k])
+        const octave = g => g.ps.length >= 2 && g.ps.length <= 3 && g.ps[g.ps.length - 1] - g.ps[0] >= 11 && g.ps[g.ps.length - 1] - g.ps[0] <= 14
+        for (let k = 0; k + 1 < groups.length; k++) {
+          const g = groups[k], q = groups[k + 1], ioi = q.t - g.t
+          if (ioi >= 0.6 || !(same(g, q) || (octave(g) && octave(q)))) continue
+          const at = q.t - Math.min(0.15, Math.max(0.04, DETACH * ioi))
+          for (let i = q.i - 1; i >= 0 && mine[i].on > q.t - 8; i--) {
+            const m = mine[i]
+            if (m.on < at - 0.05 && (m.release ?? m.off) > at) { m.release = at; detached++ }
+          }
+        }
+      }
+      if (detached) motion = buildMotion(own, motionOpts)
       plan()
       // the piece's end: the last key let go (its release, else its off)
       endT = own.reduce((e, m) => Math.max(e, m.release ?? m.off), -Infinity)
@@ -835,6 +907,8 @@ export function createHandsDriver(dims) {
     get endT() { return endT },
     /** how many held keys the hands let go of early (letGoTimes) */
     get letGo() { return letGo },
+    /** how many keys the hands let go of before a repeated chord or the next octave */
+    get detached() { return detached },
     /** 0..1: how much hand side ('L' | 'R') is playing across the other at song time t (it goes over) */
     crossAt: (side, t) => crossAt(side, t + PRESS_LEAD),
     lead: PRESS_LEAD,
