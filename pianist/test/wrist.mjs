@@ -16,12 +16,12 @@
 //   (hand-driver.js), each on 99 % of the frames to within 3°, and never more
 //   than 10° past (FAR: the hand bent sideways off the arm, as reported in
 //   a #032 still, was ~60–70°);
-// and that keeping the wrist did not cost the keys: a pressed fingertip more
-// than 1 cm short of its target on at most 5 % of the frames (MISSES: more
-// where the fingering already asks for more than a hand can reach, as
-// measured before the wrist was kept: The Entertainer's left hand 17 % and
-// right 35 %, Rush E's 7 and 8 %; the Goldberg's right hand over Variations 5
-// and 6, 5.6 %).
+// and that the hands still play the keys: a key held down (its release, else
+// its end) whose finger's tip isn't on it, off the key's width by more than
+// 0.3 cm or more than 1 cm over its top, on at most 5 % of the frames
+// (MISSES: more where the fingering asks for more than a hand can reach:
+// Chopin's 15th prelude's right hand, 7.7 %, most of it on chords wider than
+// a ninth; The Entertainer's right hand 5.8 %).
 const BASE = process.env.BASE || 'http://127.0.0.1:8000/midiviz/'
 const PW = process.env.PLAYWRIGHT || '/tmp/pw/node_modules/playwright-core/index.mjs'
 const CHROME = process.env.CHROME || `${process.env.HOME}/.cache/ms-playwright/chromium-1134/chrome-linux/chrome`   // (aarch64: ~/.local/share/ms-playwright/chromium-1248/chrome-linux-arm64/chrome)
@@ -47,7 +47,7 @@ const HANDS_PEN = 1, HANDS_SHARE = 0.15
 const HANDS_SHARES = { 'rush_e_real.mid': 0.9 }
 // over/under swaps inside a passage (Goldberg Var. 5-6: 39 before, 0 after)
 const MAX_SWAPS = 2
-const MISSES = { 'entertainer.mid': { L: 0.19, R: 0.37 }, 'rush_e_real.mid': { L: 0.09, R: 0.1 }, 'midis/bach_goldberg.mid': { R: 0.065 } }
+const MISSES = { 'chpn-p15.mid': { R: 0.085 }, 'entertainer.mid': { R: 0.07 } }
 
 const { chromium } = await import(PW)
 const songs = process.argv.slice(2).length ? process.argv.slice(2) : DEFAULT
@@ -79,6 +79,7 @@ async function runPiece(run) {
   await page.evaluate(() => window.__shot())
   const r = await page.evaluate(async ([SECONDS, FPS, START]) => {
     const { WRIST_RANGE } = await import('./pianist/hand-driver.js')
+    const { keyX, isBlack } = await import('./fingering/keyboard.js')
     const { ch, rig } = window.__pianist
     const V = ch.group.position.constructor, DEG = 180 / Math.PI
     const wp = n => ch.byName[n].getWorldPosition(new V())
@@ -127,7 +128,15 @@ async function runPiece(run) {
       for (const sd of ['L', 'R']) {
         const d = rig.hands[sd]; if (!d.visible) continue
         const S = '.' + sd, [u, e] = bend(wp('lowerarm01' + S), wp('wrist' + S), wp('finger3-1' + S), wp('finger2-1' + S), wp('finger5-1' + S), sd === 'R' ? 1 : -1)
-        const miss = d.diag.err.some((x, i) => d.diag.press[i] > 0.2 && x > 1)
+        // a key held down (as the hands play it: its release, else its end)
+        // whose finger's tip isn't on it: off the key's width by more than
+        // 0.3 cm, or more than 1 cm over its top. (The solver's own error
+        // missed a finger its splay limit had turned off the key.)
+        const tm = t + rig.hands.lead
+        const miss = rig.hands.notes.some(n => n.hand === sd && n.on <= tm - 0.02 && (n.release ?? n.off) > tm + 0.02 && (() => {
+          const T = d.joints.fingers[n.finger][3], black = isBlack(n.pitch)
+          return Math.abs(T.x - keyX(n.pitch)) > (black ? 0.65 : 1.17) + 0.3 || T.y > 73 + (black ? 1.2 : 0) + 1.9
+        })())
         out[sd].push([t, u - rest[sd][0], e - rest[sd][1], miss])
       }
     }

@@ -84,17 +84,73 @@ function poreNormalMap(size = 512, seed = 7) {
   return t
 }
 
+// How much longer her thumbs are than the MakeHuman model's: its thumb is
+// 8.6 cm from the base of the metacarpal to the tip against a 17.1 cm hand
+// (wrist to the middle fingertip), where a woman's of that hand length is
+// about 10 cm (a hand's thumb ray is ~0.58 of its length; Greiner, Hand
+// Anthropometry of U.S. Army Personnel, 1991). Short, it fell up to 3.5 cm
+// short of its key in an ordinary 1-2-3-5 arpeggio and its octaves.
+export const THUMB = 1.17
+
+// Lengthen each thumb's three bones (finger1-1, -2, -3 of each hand) by k
+// about the base of the first, in the model's own frame, before anything is
+// built from it: each bone's head and the joints move out along the chain,
+// and every vertex the thumb carries is stretched along the bone that
+// carries it (a skin-weighted blend of the three bones' stretches: nothing
+// moves before a bone's head, a vertex past its tail moves with its tail).
+// The skin grows longer, not thicker. Returns the vertex edit for each
+// part's positions (meta frame), given its skin indices and weights.
+function lengthenThumbs(meta, k) {
+  if (!k || k === 1) return pos => pos
+  const idx = Object.fromEntries(meta.bones.map((b, i) => [b.name, i]))
+  const J = meta.joints, v = a => a.slice(), sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+  const add = (a, b, s = 1) => [a[0] + s * b[0], a[1] + s * b[1], a[2] + s * b[2]], dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+  const edits = new Map()   // bone index → { head (old), shift, axis, len }
+  for (const S of ['L', 'R']) {
+    const names = [1, 2, 3].map(i => `finger1-${i}.${S}`)
+    if (!names.every(n => n in idx)) continue
+    const P = [J[names[0] + '____head'], ...names.map(n => J[n + '____tail'])].map(v)
+    const Q = [P[0]]
+    for (let i = 1; i < 4; i++) Q.push(add(Q[i - 1], sub(P[i], P[i - 1]), k))
+    names.forEach((n, i) => {
+      const d = sub(P[i + 1], P[i]), len = Math.hypot(...d)
+      edits.set(idx[n], { head: P[i], shift: sub(Q[i], P[i]), axis: d.map(x => x / len), len })
+      J[n + '____head'] = Q[i]; J[n + '____tail'] = Q[i + 1]
+      meta.bones[idx[n]].head = Q[i]
+    })
+  }
+  const edit = (e, x, y, z) => {
+    const s = Math.min(e.len, Math.max(0, (x - e.head[0]) * e.axis[0] + (y - e.head[1]) * e.axis[1] + (z - e.head[2]) * e.axis[2])) * (k - 1)
+    return [e.shift[0] + s * e.axis[0], e.shift[1] + s * e.axis[1], e.shift[2] + s * e.axis[2]]
+  }
+  return (pos, si, sw) => {
+    for (let i = 0, n = pos.length / 3; i < n; i++) {
+      let dx = 0, dy = 0, dz = 0
+      for (let c = 0; c < 4; c++) {
+        const w = sw[i * 4 + c], e = w && edits.get(si[i * 4 + c]); if (!e) continue
+        const d = edit(e, pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2])
+        dx += w * d[0]; dy += w * d[1]; dz += w * d[2]
+      }
+      pos[i * 3] += dx; pos[i * 3 + 1] += dy; pos[i * 3 + 2] += dz
+    }
+    return pos
+  }
+}
+
 const flip = (a, n = 3) => { for (let i = 0; i < a.length; i += n) { a[i] = -a[i]; a[i + 2] = -a[i + 2] } return a }
 
 /**
  * Load the character. base: URL of the assets folder.
  * Returns { group, skeleton, bones, byName, meshes, materials, meta, parts }.
  */
-export async function loadCharacter(base = new URL('./assets/', import.meta.url).href, { hairColor = 0x4a3324 } = {}) {
+export async function loadCharacter(base = new URL('./assets/', import.meta.url).href, { hairColor = 0x4a3324, thumb = THUMB } = {}) {
   const [meta, bin] = await Promise.all([
     fetch(base + 'character.json').then(r => r.json()),
     fetch(base + 'character.bin').then(r => r.arrayBuffer()),
   ])
+  // her thumbs a little longer than MakeHuman's (THUMB): before the
+  // skeleton is made, so every part skins to them and the rig measures them
+  const thumbEdit = lengthenThumbs(meta, thumb)
   // community parts live in their own .bin files, fetched on demand (ensurePart)
   const bins = {}
   const arr = (T, ref, name) => new T(bins[name] || bin, ref.offset, ref.length)
@@ -143,10 +199,11 @@ export async function loadCharacter(base = new URL('./assets/', import.meta.url)
     const p = meta.parts[name]
     const g = new THREE.BufferGeometry()
     const a = (T, ref) => arr(T, ref, name).slice()
-    g.setAttribute('position', new THREE.BufferAttribute(flip(a(Float32Array, p.position)), 3))
+    const skinIndex = a(Uint16Array, p.skinIndex), skinWeight = a(Float32Array, p.skinWeight)
+    g.setAttribute('position', new THREE.BufferAttribute(flip(thumbEdit(a(Float32Array, p.position), skinIndex, skinWeight)), 3))
     g.setAttribute('uv', new THREE.BufferAttribute(a(Float32Array, p.uv), 2))
-    g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(a(Uint16Array, p.skinIndex), 4))
-    g.setAttribute('skinWeight', new THREE.BufferAttribute(a(Float32Array, p.skinWeight), 4))
+    g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(skinIndex, 4))
+    g.setAttribute('skinWeight', new THREE.BufferAttribute(skinWeight, 4))
     g.setIndex(new THREE.BufferAttribute(p.indexType === 'u32' ? a(Uint32Array, p.index) : a(Uint16Array, p.index), 1))
     // smooth normals across UV seams: average by position
     g.computeVertexNormals()

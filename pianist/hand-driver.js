@@ -67,7 +67,7 @@ function chainReach(L, k, p) {
  * Returns { whiteZ: [, z1..z5], deepZ, knuckleZ } (knuckleZ: the middle knuckle's
  * place at rest, in front of the key fronts when > 0).
  */
-const THUMB_Z = -0.8
+const THUMB_Z = -0.8, LITTLE_Z = -1.1
 export function handDepths(dims) {
   const { FINGERS, KNUCKLE_Y } = dims
   const nat = [0]
@@ -77,10 +77,20 @@ export function handDepths(dims) {
   }
   // (no deeper than the black keys start, -5.1 less a fingertip: a finger
   // on a white key there would land on the black key beside it)
-  const whiteZ = nat.map((z, f) => (f ? Math.min(-0.6, Math.max(-4.6, THUMB_Z + z - nat[1])) : 0))
+  // The hand goes as far in as its most demanding finger needs: the thumb
+  // just inside its key's front edge, or the little finger LITTLE_Z inside
+  // its own, whichever brings the knuckles further in. (A long thumb lands
+  // far forward of the knuckles; placed by the thumb alone, it held the
+  // hand so far out that the little finger's natural landing was in front
+  // of the keys. The thumb still plays by the front edge, a little more
+  // bent: there it is nearest its own base, which lies well behind the
+  // knuckles, so it reaches furthest along the keys.)
+  const knuckleZ = Math.min(THUMB_Z - nat[1], LITTLE_Z - nat[5])
+  const at = (z, f, deepest) => f === 1 ? Math.max(THUMB_Z, knuckleZ + z) : Math.min(-0.6, Math.max(deepest, knuckleZ + z))
+  const whiteZ = nat.map((z, f) => (f ? at(z, f, -4.6) : 0))
   // ...except on a key clear of the black keys (D, G, A: deepZ)
-  const deepZ = nat.map((z, f) => (f ? Math.min(-0.6, Math.max(-9, THUMB_Z + z - nat[1])) : 0))
-  return { whiteZ, deepZ, knuckleZ: THUMB_Z - nat[1] }
+  const deepZ = nat.map((z, f) => (f ? at(z, f, -9) : 0))
+  return { whiteZ, deepZ, knuckleZ }
 }
 
 /** Orthonormal frame: forward f, up as close to hint as possible, side = f × up. */
@@ -344,6 +354,50 @@ export function createHandDriver(side, dims) {
     slideGoal.z = THREE.MathUtils.clamp(slideGoal.z, -4.5, 2)
     slide.copy(saved)
     return slideGoal
+  }
+
+  // Keys held down longer than the hand can keep them (a pianist lets go of
+  // them, the pedal or the sound carrying on): at each sample, the hand is
+  // placed and slid for the notes it is striking now, as if the older keys
+  // it still holds (struck at least LET_GO_MIN s before the newest it
+  // presses) were already up; each of those older keys now more than LET_GO
+  // cm past its finger's reach (near straight, 0.15 rad a joint) is let go
+  // there. (Placed for every key it holds, the slide reaches for whichever
+  // is furthest, and a newly struck key could be the one left short.)
+  // Returns Map(pitch@on -> time) of those keys. The written notes are as
+  // they were: only the hand lets go.
+  const LET_GO = 0.5, LET_GO_MIN = 0.1
+  function letGoTimes(poseAt, t0, n, h) {
+    const keep = { ...hand }, keepSlide = slide.clone(), keepP = ptot, keepR = hroll
+    ptot = 0; hroll = 0
+    const out = new Map()
+    for (let i = 0; i < n; i++) {
+      const t = t0 + i * h, pose = poseAt(t); if (!pose) continue
+      const tips = pose.fingers
+      let newest = -Infinity, count = 0
+      for (const x of tips) if (x.press > 0.2 && x.on != null) { count++; newest = Math.max(newest, x.on) }
+      if (count < 2) continue
+      const old = x => x.press > 0.2 && x.on != null && x.on <= newest - 0.03 && t - x.on >= LET_GO_MIN
+      if (!tips.some(old)) continue
+      const now = tips.map(x => old(x) ? { ...x, press: 0 } : x)
+      for (const set of [tips, now]) {
+        const f = bakeWrist(fitHand(set, pose.anchor))
+        hand.x = f.x; hand.z = f.z; hand.yaw = f.yaw; hand.y = KEY_TOP + KNUCKLE_Y + 1.2 * pose.anchor.idle
+        slide.copy(computeSlideGoal(set))
+        for (let k = 0; k < 5; k++) {
+          const x = tips[k]
+          if (!old(x)) continue
+          const key = x.pitch + '@' + x.on
+          if (out.has(key)) continue
+          const d = FINGERS[k + 1]
+          basePos(k + 1, base)
+          tip.set(x.x, KEY_TOP + x.y + d.rad[2] * 0.9, x.z)
+          if (base.distanceTo(tip) - chainReach(d.len, d.k, 0.15) > LET_GO) out.set(key, t)
+        }
+      }
+    }
+    Object.assign(hand, keep); slide.copy(keepSlide); ptot = keepP; hroll = keepR
+    return out
   }
 
   // The hand's placement and slide, baked over the whole song ahead of time.
@@ -657,7 +711,7 @@ export function createHandDriver(side, dims) {
     J.R.subVectors(J.fingers[5][0], J.fingers[2][0]).multiplyScalar(s).normalize()
     armIK(J.W, J.E)
   }
-  return { update, bakeTrack, clearTrack, wristAt, setEnding: f => { ending = f }, setPitch: p => { pitchGoal = p }, setDepth: d => { depthGoal = d }, setLift: h => { riseGoal = h }, get crossLift() { return rise },
+  return { update, bakeTrack, letGoTimes, clearTrack, wristAt, setEnding: f => { ending = f }, setPitch: p => { pitchGoal = p }, setDepth: d => { depthGoal = d }, setLift: h => { riseGoal = h }, get crossLift() { return rise },
     /** where the elbow is (the rig's arm; null: unknown): the wrist is kept within WRIST_RANGE of straight on the forearm */
     setElbow: v => { if (!v) { elbow = null; return } elbow = (elbow || v3()).copy(v); elbowOff.subVectors(v, J.E) },
     /** how far (radians) the wrist is bent past WRIST_RANGE on a forearm from elbow E to this frame's wrist */
@@ -683,7 +737,8 @@ export const ENDING = [0.1, 2.2]
 
 export function createHandsDriver(dims) {
   const L = createHandDriver('L', dims), R = createHandDriver('R', dims)
-  let motion = buildMotion([]), own = [], endT = Infinity
+  let motion = buildMotion([]), own = [], endT = Infinity, letGo = 0
+  const written = new WeakMap()   // each note's release as the fingering gave it
   // 0 while she plays, rising to 1 as the hands lift off the last chord
   // (the lift-off takes ~2.4 s, stroke.js): she comes back to the middle
   const endingAt = t => THREE.MathUtils.smootherstep(t, endT + ENDING[0], endT + ENDING[1])
@@ -741,15 +796,33 @@ export function createHandsDriver(dims) {
         crossing[h] = c.filter((n, i) => (c[i - 1] && n.on - c[i - 1].on < 2) || (c[i + 1] && c[i + 1].on - n.on < 2))
       }
       // fingers fall onto the keys, each in its own way (motion.js TOUCH)
-      motion = buildMotion(own, { touch: this.touch, ...handDepths(dims) })
-      plan()
-      // bake the hands' placement over the song (60 Hz, interpolated)
-      if (!own.length) { L.clearTrack(); R.clearTrack(); endT = Infinity; return }
-      // the piece's end: the last key let go (its release, else its off)
-      endT = own.reduce((e, m) => Math.max(e, m.release ?? m.off), -Infinity)
-      const h = 1 / 60
+      const motionOpts = { touch: this.touch, ...handDepths(dims) }
+      // (each note's release as the fingering left it: setNotes again starts there)
+      for (const m of own) { if (!written.has(m)) written.set(m, m.release); else if (written.get(m) === undefined) delete m.release; else m.release = written.get(m) }
+      motion = buildMotion(own, motionOpts)
+      letGo = 0
+      if (!own.length) { plan(); L.clearTrack(); R.clearTrack(); endT = Infinity; return }
       let t0 = Infinity, t1 = -Infinity
       for (const m of own) { t0 = Math.min(t0, m.on - 2); t1 = Math.max(t1, m.off + 6) }   // (to the end of the final lift-off)
+      // the held keys each hand can't keep down let go early (letGoTimes,
+      // at 30 Hz), and the motion made again with them
+      {
+        const hp = 1 / 30, np = Math.ceil((t1 - t0) / hp) + 1, ps = []
+        for (let i = 0; i < np; i++) ps.push(motion.poseAt(t0 + i * hp))
+        for (const d of [L, R]) {
+          const at = d.letGoTimes(t => ps[Math.round((t - t0) / hp)]?.[d.side], t0, np, hp)
+          for (const m of own) {
+            const tl = m.hand === d.side ? at.get(m.pitch + '@' + m.on) : undefined
+            if (tl != null && tl < (m.release ?? m.off)) { m.release = tl; letGo++ }
+          }
+        }
+        if (letGo) motion = buildMotion(own, motionOpts)
+      }
+      plan()
+      // the piece's end: the last key let go (its release, else its off)
+      endT = own.reduce((e, m) => Math.max(e, m.release ?? m.off), -Infinity)
+      // bake the hands' placement over the song (60 Hz, interpolated)
+      const h = 1 / 60
       const n = Math.ceil((t1 - t0) / h) + 1, poses = []
       for (let i = 0; i < n; i++) poses.push(motion.poseAt(t0 + i * h))
       L.bakeTrack(t => poses[Math.round((t - t0) / h)]?.L, t0, n, h)
@@ -760,6 +833,8 @@ export function createHandsDriver(dims) {
     endingAt,
     /** song time of the last key let go (Infinity with no notes) */
     get endT() { return endT },
+    /** how many held keys the hands let go of early (letGoTimes) */
+    get letGo() { return letGo },
     /** 0..1: how much hand side ('L' | 'R') is playing across the other at song time t (it goes over) */
     crossAt: (side, t) => crossAt(side, t + PRESS_LEAD),
     lead: PRESS_LEAD,
