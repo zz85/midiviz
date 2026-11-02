@@ -1137,6 +1137,12 @@ export async function boot(plug = {}) {
     }
     // with the title as an intertitle the director's opening comes up from black
     // more slowly, under it (half the hold, 3–8 s); else its usual 2.5 s
+    // the title as it shows: the screen's, held for Title hold when set
+    const titleShown = () => { const x = songTitleScreen(), hold = +$('exHold').value; return x && hold ? { ...x, hold } : x }
+    // Lead-in: Automatic is 3 s with the title as an intertitle (it is all but in when the first
+    // note sounds: it fades in over 2.5 s) and 2 s without it; the picture comes up from black
+    // over it, the music waits
+    const leadSecs = () => $('exLead').value === 'auto' ? ($('exTitle').value === 'intertitle' && liner.mode === 'intertitles' ? 3 : 2) : +$('exLead').value
     function applyTitle() {
       const on = $('exTitle').value === 'intertitle', x = on ? songTitleScreen() : null, hold = +$('exHold').value
       $('exHoldV').textContent = hold ? hold + ' s' : 'auto (' + (x ? titleSecs(x).toFixed(1) + ' s' : '7–11 s') + ')'
@@ -1407,7 +1413,7 @@ export async function boot(plug = {}) {
       ['sf', 'sf'], ['avsync', 'avsync'],
       ['dofamt', 'dofAmt'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
       ['vol', 'vol'], ['room', 'room'], ['seat', 'seat'], ['rv', 'rvAmt'], ['decay', 'rvDecay'], ['tone', 'rvTone'], ['boost', 'boost'], ['amb', 'amb'], ['applause', 'applause'],
-      ['exformat', 'exFormat'], ['exlayout', 'exLayout'], ['exsplit', 'exSplit'], ['exhands', 'exHandsHalf'], ['exlview', 'exLessonView'], ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exfps', 'exFps'], ['extail', 'exTail'], ['exsub', 'exSub'], ['excard', 'exCard'], ['excaps', 'exCaps'], ['exvtt', 'exVtt'], ['exlen', 'exLen'], ['exhold', 'exHold'],
+      ['exformat', 'exFormat'], ['exlayout', 'exLayout'], ['exsplit', 'exSplit'], ['exhands', 'exHandsHalf'], ['exlview', 'exLessonView'], ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exfps', 'exFps'], ['extail', 'exTail'], ['exlead', 'exLead'], ['exsub', 'exSub'], ['excard', 'exCard'], ['excaps', 'exCaps'], ['exvtt', 'exVtt'], ['exlen', 'exLen'], ['exhold', 'exHold'],
       ['notes', 'linerMode'], ['itstyle', 'itStyle'], ['itstylea', 'itStyleA'], ['itcol', 'itTheme'], ['itpos', 'itPos'], ['itheads', 'itHeads'], ['extitle', 'exTitle'], ['expt', 'exPt'], ['ptengine', 'ptEngine'], ['ptspp', 'ptSpp'], ['ptbounces', 'ptBounces'], ['pthair', 'ptHair'], ['ptdn', 'ptDenoise'], ['ptfx', 'ptFx'], ['ptsize', 'ptSize'],
     ].filter(([, id]) => $(id))
     const OUTFIT_KEYS = { dress: 'dress', slit: 'slit', fabric: 'fabric', dcol: 'color', shoes: 'shoes', hair: 'hair', hcol: 'hairColor' }
@@ -1512,7 +1518,7 @@ export async function boot(plug = {}) {
       shortTick()
     }
     // offline: the export drives song time and the keys itself (see stageAdapter)
-    function step(dt, t, offline) {
+    function step(dt, t, offline, dirT = t) {
       if (offline || (fixedT == null && song && scheduler?.playing)) driveKeys(t + KEY_LEAD)
       fxT += dt
       dust.material.uniforms.uTime.value = fxT
@@ -1536,7 +1542,7 @@ export async function boot(plug = {}) {
       if (view === 'player') playerView(handsC, dt)
       setPov(view === 'player' && !userCam)
       if (povOn && hair?.object.visible) hair.object.visible = false
-      const dirShot = view === 'auto' ? director.update(song ? t : null, dt, live) : null   // runs even while dragged, so the subjects stay tracked
+      const dirShot = view === 'auto' ? director.update(song ? dirT : null, dt, live) : null   // runs even while dragged, so the subjects stay tracked
       let driven = null
       if (dirShot && !userCam) {
         driven = dirShot
@@ -1719,7 +1725,8 @@ export async function boot(plug = {}) {
         clock.getDelta()
         renderer.setAnimationLoop(frame)
       },
-      update(t, dt) { step(dt, Math.max(0, t), true) },
+      // (before the first note, in a lead-in: she holds the pose of the first note, the camera and its fade run on)
+      update(t, dt) { step(dt, Math.max(0, t), true, t) },
     }
     // title-card fonts: [title family, weight, subtitle family, subtitle style]
     const TITLE_FONTS = {
@@ -1784,6 +1791,9 @@ export async function boot(plug = {}) {
       // a Short: the clip from the strip
       const asShort = isShort()
       const tailS = $('exTail').value === 'auto' ? (asShort ? 0.6 : 2) : +$('exTail').value
+      // the lead-in (Render → Lead-in): picture and silence before the first note, from the
+      // piece's start alone; a clip from later in the piece, or a Short, starts on the music
+      const leadS = clipA > 0 || asShort ? null : leadSecs()
       if (asShort) { if (!(short.b > short.a)) clipFresh(); clipA = short.a; clipB = short.b }
       const clip = clipA > 0 || clipB < song.duration
       const name = (song.title || 'pianist').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_') + (asShort ? '_short' : '') + (clip ? `_${Math.floor(clipA)}-${Math.ceil(clipB)}s` : '') + (ptKey ? `_${ptKey}_${$('ptSpp').value}spp` : '') + `_${height}p${fps}.mp4`
@@ -1799,7 +1809,9 @@ export async function boot(plug = {}) {
       if (titleMode === 'card') await loadTitleFont($('exFont').value)
       // what is on screen: the intertitles (with the title, when it is one) or every note as a caption
       const linerMode = liner.mode, itOpts = { style: liner.style, analysisStyle: liner.analysisStyle, theme: liner.theme, kickers: liner.kickers }
-      const linerTl = linerMode === 'notes' ? liner.timeline : liner.screenTimeline
+      // (in a lead-in the title comes up with the picture, before the music: laid out from its start)
+      const leadTitle = leadS && linerMode === 'intertitles' && titleMode === 'intertitle' ? titleShown() : null
+      const linerTl = linerMode === 'notes' ? liner.timeline : leadTitle ? withTitle(liner.timeline, leadTitle, { start: -leadS, seed: liner.seed }) : liner.screenTimeline
       const burnCaps = $('exCaps').checked && linerTl && linerMode !== 'off'
       const shortTlx = asShort ? shortTimeline(clipA, clipB) : null
       if (asShort) await shortFonts()
@@ -1810,6 +1822,8 @@ export async function boot(plug = {}) {
       let songZero = 0
       exAbort = new AbortController()
       exporting = true
+      const fadeFrom0 = director.opts.fadeFrom
+      if (leadS) director.opts.fadeFrom = -leadS
       $('exStart').disabled = true
       const programs = new Map(); for (let ch = 0; ch < 16; ch++) if (ch !== 9) programs.set(ch, 0)
       const ptv = ptKey ? pathTracedFrames(ptStage, {
@@ -1824,7 +1838,7 @@ export async function boot(plug = {}) {
           width, height, fps, start: clipA,
           // a Short: on the music from the first frame, the room rings 0.6 s past the out point while it fades
           // the tail (Render → Tail after the end): past the piece's end, or a handle past a clip's out point
-          end: asShort || $('exTail').value !== 'auto' ? Math.min(song.duration, clipB + tailS) : clipB, tail: tailS, ...(asShort ? { preroll: 0.1 } : {}),
+          end: asShort || $('exTail').value !== 'auto' ? Math.min(song.duration, clipB + tailS) : clipB, tail: tailS, ...(asShort ? { preroll: 0.1 } : leadS ? { preroll: leadS } : {}),
           bitrate: defaultBitrate(width, height, fps),
           audio: $('exAudio').checked,
           audioOpts: { vendorPath, soundfonts: [$('sf').value], volume: 1, convertSF3: engine._backend?._convertSF3 ? d => engine._backend._convertSF3(d) : null },
@@ -1858,7 +1872,7 @@ export async function boot(plug = {}) {
           const ts = songTitleScreen()
           saveText(name.replace(/\.mp4$/, '-short.txt'), shortDescription({ composer: ts?.kicker, title: ts?.text || song.title, bars: `${fmt(clipA)}–${fmt(clipB)} of the piece`, full: $('exFullUrl').value.trim() }) + '\n')
         } else if ($('exVtt').checked) {
-          const vtt = { offset: songZero, start: clipA, end: clipB }, its = liner.screenTimeline, notes = liner.timeline
+          const vtt = { offset: songZero, start: clip ? clipA : -Infinity, end: clipB }, its = leadTitle ? linerTl : liner.screenTimeline, notes = liner.timeline
           if (its?.intertitles.length) saveText(name.replace(/\.mp4$/, '.vtt'), toVTT(its, { ...vtt, from: 'intertitles' }))
           if (notes?.moments.length) saveText(name.replace(/\.mp4$/, '.notes.vtt'), toVTT(notes, { ...vtt, from: 'moments' }))
           const ch = !clip && liner.timeline && toChapters(liner.timeline, { offset: songZero })
@@ -1870,7 +1884,7 @@ export async function boot(plug = {}) {
         $('exStatus').textContent = e.name === 'AbortError' ? 'Cancelled' : 'Failed: ' + e.message
       } finally {
         ptv?.dispose()
-        exporting = false; exAbort = null
+        exporting = false; exAbort = null; director.opts.fadeFrom = fadeFrom0
         $('exStart').disabled = false
       }
     }
