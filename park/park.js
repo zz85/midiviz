@@ -4,7 +4,7 @@
 // The two scenes keep their own units: the park in metres, the duo in centimetres. They
 // are drawn with two cameras that are the same camera at two scales (the park's at the
 // duo camera's place, turned and moved onto the lawn, its near and far planes 1/100 of
-// the duo camera's), so a point of either lands on the same pixel at the same depth and
+// the duo camera's, or scale/100 with `scale`), so a point of either lands on the same pixel at the same depth and
 // both draw into one image and one depth buffer, which the post chain then paints over:
 // grass in front of a foot hides it, the piano hides the hill behind it.
 // The duo casts into the park's sun shadow map (grass and ground darken under the
@@ -17,6 +17,7 @@ import * as THREE from 'three';
 import { makeShared } from './glsl.js';
 import { makeSky } from './sky.js';
 import { makeTerrain, makeMountains, makePoles, heightAt, LAWN } from './world.js';
+const LAWN_R = LAWN.r, LAWN_BLEND = LAWN.blend;
 import { makeTree, TREE_STYLES, mulberry32 } from './tree.js';
 import { makeGrass } from './grass.js';
 import { makePost } from './post.js';
@@ -24,8 +25,8 @@ import { makeBirds } from './birds.js';
 import { makeLiveAudio } from './audio.js';
 
 export { TREE_STYLES };
-// the duo's centimetres to the park's metres
-const CM = 0.01;
+// the duo's centimetres to the park's metres, at scale 1 (see createPark's `scale`)
+const CM1 = 0.01;
 
 // time-of-day keyframes, Sorairo's (main.js), colours in sRGB
 const C = (hex, k = 1) => new THREE.Color(hex).multiplyScalar(k);
@@ -53,7 +54,13 @@ function samplePreset(t) {
 const SUMMER_GROUND = ['#1f4a2a', '#4e9a3c', '#98c54e', '#24502b', '#4f8f34'].map((h) => C(h));
 const DIRT = C('#b49a74');
 
-export async function createPark(renderer, { time = 1.4, style = 'summer', azimuth = 55, clouds = 0.5, wind = 1.2, seed = 7, grassCount = 120000, paint = 2.5 } = {}) {
+export async function createPark(renderer, { time = 1.4, style = 'summer', azimuth = 55, clouds = 0.5, wind = 1.2, seed = 7, grassCount = 120000, paint = 2.5, scale = 1 } = {}) {
+  // `scale`: the park's size against the duo's. At 0.5 the tree, hill, grass and poles are
+  // half as big around the two as they are, who stay as they are: the park is drawn as it
+  // is in its metres and the duo is mapped into it at 1/scale (2 cm of the park a cm), its
+  // lawn and its place on it widened with it.
+  const CM = CM1 / scale;
+  LAWN.r = LAWN_R / scale; LAWN.blend = LAWN_BLEND / scale;
   const S = { time, style, azimuth, clouds, towers: 1, wind, windDir: 30, paint, bloom: 0.55, birds: true, contrail: true, ambience: 0.7 };
   const shared = makeShared();
   const scene = new THREE.Scene();
@@ -80,7 +87,7 @@ export async function createPark(renderer, { time = 1.4, style = 'summer', azimu
   const yaw = Math.atan2(away.x, away.y);
   // (the piano is upstage on his right, its middle about 1 m left of him and 0.8 m behind:
   // the lawn centred between them)
-  const origin = new THREE.Vector3(LAWN.x, LAWN.y, LAWN.z).add(new THREE.Vector3(1.0, 0, 0.8).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw));
+  const origin = new THREE.Vector3(LAWN.x, LAWN.y, LAWN.z).add(new THREE.Vector3(1.0, 0, 0.8).divideScalar(scale).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw));
   const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw), qYawInv = qYaw.clone().invert();
   /** A point of the duo's frame (cm) in the park (m), and back. */
   const toPark = (v, out = new THREE.Vector3()) => out.copy(v).multiplyScalar(CM).applyQuaternion(qYaw).add(origin);
@@ -91,7 +98,7 @@ export async function createPark(renderer, { time = 1.4, style = 'summer', azimu
   const SHADOW_RES = 2048;
   const shadowRT = new THREE.WebGLRenderTarget(SHADOW_RES, SHADOW_RES, { depthTexture: new THREE.DepthTexture(SHADOW_RES, SHADOW_RES, THREE.FloatType), depthBuffer: true });
   const shadowCam = new THREE.OrthographicCamera(-26, 26, 26, -26, 1, 110);
-  const duoShadowCam = new THREE.OrthographicCamera(-2600, 2600, 2600, -2600, 100, 11000);
+  const duoShadowCam = new THREE.OrthographicCamera(-26 / CM, 26 / CM, 26 / CM, -26 / CM, 1 / CM, 110 / CM);
   const shadowBasic = new THREE.MeshBasicMaterial();
   shared.uShadowMap.value = shadowRT.depthTexture;
   function renderShadow(duoScene) {
@@ -258,7 +265,7 @@ export async function createPark(renderer, { time = 1.4, style = 'summer', azimu
   }
   applyLook()
   return {
-    scene, camera, shared, S, sun, origin, yaw, LAWN, toPark, toDuo, heightAt,
+    scene, camera, shared, S, sun, origin, yaw, LAWN, toPark, toDuo, heightAt, scale, CM,
     setTime(t) { S.time = t; applyLook() },
     setStyle(s) { S.style = s; tree.setStyle(s) },
     setSize, update, render, sound, tree, grass,

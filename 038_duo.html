@@ -86,6 +86,7 @@
       <option value="free">Free</option>
     </select>
     <select id="venue" title="Where they play: the concert hall, or outdoors on Sorairo's hillside (park/, from random-sketches/vibes/sorairo: the tree, wind in the grass, the sky, birds and a painterly finish). Changing it reloads the page"><option value="hall">Venue: concert hall</option><option value="park">Venue: the park</option></select>
+    <select id="pscale" hidden title="The park's size around the two, who stay as they are: the tree, hill and grass at 3/4 or 1/2 of Sorairo's. Changing it reloads the page"><option value="1">Park: full size</option><option value="0.75">Park: 3/4 size</option><option value="0.5">Park: 1/2 size</option></select>
     <select id="tod" hidden title="Time of day in the park"></select>
     <select id="tstyle" hidden title="The tree in the park"><option value="summer">Tree: summer</option><option value="sakura">Tree: cherry blossom</option><option value="autumn">Tree: autumn</option><option value="maple">Tree: maple</option></select>
     <label id="ambBox" hidden title="Wind, songbirds and insects in the park (Sorairo's ambience)"><input type="checkbox" id="amb" checked> Birds</label>
@@ -215,15 +216,18 @@
     if (PARK) {
       for (const o of stageParts) o.visible = false
       scene.background = null; scene.fog = null
-      // the park's camera is this one at 1/100: its 0.1-8000 m, here in cm
-      camera.near = 10; camera.far = 800000; camera.updateProjectionMatrix()
+      if ([...$('pscale').options].some(o => o.value === Q.get('pscale'))) $('pscale').value = Q.get('pscale')
+      const pscale = +$('pscale').value
+      $('pscale').onchange = () => { const p = new URLSearchParams(location.search); if ($('pscale').value === '1') p.delete('pscale'); else p.set('pscale', $('pscale').value); location.search = p.toString() }
+      // the park's camera is this one at scale/100: its 0.1-8000 m, here in cm
+      camera.near = 10 / pscale; camera.far = 800000 / pscale; camera.updateProjectionMatrix()
       for (const [i, n] of TIMES) $('tod').add(new Option('Time: ' + n.toLowerCase(), i))
       $('tod').value = TIMES.some(([i]) => String(i) === Q.get('tod')) ? Q.get('tod') : '1'
       if ([...$('tstyle').options].some(o => o.value === Q.get('tree'))) $('tstyle').value = Q.get('tree')
-      $('tod').hidden = $('tstyle').hidden = $('ambBox').hidden = false
+      $('tod').hidden = $('tstyle').hidden = $('ambBox').hidden = $('pscale').hidden = false
       if (Q.get('amb') === '0') $('amb').checked = false
       setStatus('Growing the park…')
-      park = await createPark(renderer, { time: +$('tod').value + 0.4, style: $('tstyle').value })
+      park = await createPark(renderer, { time: +$('tod').value + 0.4, style: $('tstyle').value, scale: pscale })
       $('tod').onchange = () => { park.setTime(+$('tod').value + 0.4); saveUrl() }
       $('tstyle').onchange = () => { park.setStyle($('tstyle').value); saveUrl() }
       $('amb').onchange = () => { park.sound.setOn($('amb').checked); saveUrl() }
@@ -1108,7 +1112,7 @@
       // low in the grass in front of them, the tree and the sky behind
       VIEWS.tree = () => [v3(-120, 70, 1500), v3(-100, 360, -300), 36]
       // from Sorairo's hillside shot, down the slope: the two on the lawn, the tree beyond
-      VIEWS.hill = () => { const p = park.toDuo(v3(-26, 0, 17)); p.y = park.toDuo(v3(-26, park.heightAt(-26, 17) + 1.6, 17)).y; return [p, S.mid.clone().lerp(park.treeAt, 0.3).setY(260), 40] }
+      VIEWS.hill = () => { const p = park.toDuo(v3(-26, 0, 17)); p.y = park.toDuo(v3(-26, park.heightAt(-26, 17) + 1.6 / park.scale, 17)).y; return [p, S.mid.clone().lerp(park.treeAt, 0.3).setY(260), 40] }
       for (const [v, label] of [['tree', 'In the grass, the tree behind'], ['hill', 'From the hillside']]) $('cam').insertBefore(new Option(label, v), $('cam').options[1])
       if (['tree', 'hill'].includes(Q.get('view'))) $('cam').value = Q.get('view')
     }
@@ -1187,7 +1191,7 @@
       if ($('vdress').value !== 'wine') p.set('vdress', $('vdress').value)
       if ($('hands').value !== 'pianist') p.set('hands', $('hands').value)
       if ($('room').value !== (PARK ? 'dry' : 'hall')) p.set('room', $('room').value)
-      if (PARK) { p.set('stage', 'park'); if ($('tod').value !== '1') p.set('tod', $('tod').value); if ($('tstyle').value !== 'summer') p.set('tree', $('tstyle').value); if (!$('amb').checked) p.set('amb', '0') }
+      if (PARK) { p.set('stage', 'park'); if ($('tod').value !== '1') p.set('tod', $('tod').value); if ($('tstyle').value !== 'summer') p.set('tree', $('tstyle').value); if (!$('amb').checked) p.set('amb', '0'); if ($('pscale').value !== '1') p.set('pscale', $('pscale').value) }
       if (hybrid.on) p.set('violin', hybrid.name)
       if (levels.violin || levels.piano) p.set('vol', `${levels.violin},${levels.piano}`)
       if ($('psynth').value !== 'oxisynth') p.set('psynth', $('psynth').value)
