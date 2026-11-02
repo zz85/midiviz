@@ -30,6 +30,7 @@ Browser experiments with MIDI, piano and violin rendering, synthesis and audio a
 
 ## Violin and strings
 
+- [#051 Duo in the Park](038_duo.html?stage=park) - #038's duo on the lawn under the tree of Sorairo's hillside: sky, grass, wind, birds and painterly post, at any hour ([details](CHANGELOG.md#2-nov-2026))
 - [#048 Bowed Violin](048_bowed_violin.html) - play a physical bowed-string model with pressure, bow position, vibrato, body responses, room sound and Web MIDI ([notes](physical-violin/README.md))
 - [#046 Score Fingering](046_score_fingering.html) - photograph or open a PDF of printed music, auto-detect violin/viola, choose among ranked fingerings, edit the reading, read it as a score with playback, metronome, page turns and pen ink, and export annotated pages ([notes](score-fingering/README.md), [details](CHANGELOG.md#21-oct-2026))
 - [#038 Duo](038_duo.html) - the violinist and the pianist on one stage, from the score, with expression modelled on recordings; or from any MIDI file you open ([details](CHANGELOG.md#18-oct-2026), [score and expression](CHANGELOG.md#21-oct-2026), [your MIDI files](CHANGELOG.md#1-nov-2026))

@@ -85,6 +85,10 @@
       <option value="overHim">Past him, to her</option>
       <option value="free">Free</option>
     </select>
+    <select id="venue" title="Where they play: the concert hall, or outdoors on Sorairo's hillside (park/, from random-sketches/vibes/sorairo: the tree, wind in the grass, the sky, birds and a painterly finish). Changing it reloads the page"><option value="hall">Venue: concert hall</option><option value="park">Venue: the park</option></select>
+    <select id="tod" hidden title="Time of day in the park"></select>
+    <select id="tstyle" hidden title="The tree in the park"><option value="summer">Tree: summer</option><option value="sakura">Tree: cherry blossom</option><option value="autumn">Tree: autumn</option><option value="maple">Tree: maple</option></select>
+    <label id="ambBox" hidden title="Wind, songbirds and insects in the park (Sorairo's ambience)"><input type="checkbox" id="amb" checked> Birds</label>
     <select id="room" title="Room"></select>
     <select id="bowing" title="Which notes share a bow. Score: the slurs, marks and bowings of the Mutopia LilyPond source the MIDI was made from (violinist/scores). Inferred: slurs guessed from the music (strings/articulation.js). Fixed rule: up to 4 fast notes per bow"><option value="score">Bowing: score (Mutopia)</option><option value="infer">Bowing: inferred</option><option value="fixed">Bowing: fixed rule</option></select>
     <select id="source" hidden title="What they play from. Score (the default): the Mutopia LilyPond source itself (violinist/scores, read by strings/lilypond.js): its notes, grace notes, slurs and marks, its dynamics and hairpins, and the piano or orchestral staves for her. MIDI file: the MIDI LilyPond made from that source (violinist/midis), as before; the bowing still comes from the score"><option value="score">Notes: score (Mutopia source)</option><option value="midi">Notes: MIDI file</option></select>
@@ -142,12 +146,18 @@
     import { loadAltCharacter } from './pianist/alt-model.js'
     import { createRig as createPianistRig } from './pianist/rig.js'
     import { graftPianistHands } from './pianist/hand-graft.js'
+    import { createPark, TIMES } from './park/park.js'
     import { createLinerLibrary, clockOfMidi, buildTimeline } from './liner/liner.js'
     import { createLinerOverlay } from './liner/overlay.js'
 
     const $ = id => document.getElementById(id)
     const Q = new URLSearchParams(location.search)
     const SHOT = Q.has('shot')
+    // #051: the park (park/park.js) in place of the concert hall
+    const PARK = Q.get('stage') === 'park'
+    $('venue').value = PARK ? 'park' : 'hall'
+    $('venue').onchange = () => { const p = new URLSearchParams(location.search); if ($('venue').value === 'park') p.set('stage', 'park'); else p.delete('stage'); location.search = p.toString() }
+    if (PARK) { $('title').textContent = '#051 Duo in the Park'; document.title = '#051 Duo in the Park' }
     const v3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z)
     const setStatus = (msg, ms = 0) => { $('status').textContent = msg; $('status').style.display = msg ? 'block' : 'none'; if (ms) setTimeout(() => setStatus(''), ms) }
     for (const [f, l] of Object.entries(VIOLINISTS)) $('model').add(new Option(l, f))
@@ -181,12 +191,15 @@
     pianoSide.updateMatrixWorld(true)
     const P = (x, y, z) => pianoSide.localToWorld(v3(x, y, z))
     const HER = P(0, 98, 46), KEYS = P(0, 76, 2), MID = HER.clone().lerp(v3(0, 140, 0), 0.5)
+    const before = new Set(scene.children)
     const stage = buildStage(scene, renderer, { target: [MID.x, 100, MID.z], angle: 0.36, pool: [MID.x, MID.z + 40], poolSize: 620 })
+    const stageParts = scene.children.filter(o => !before.has(o))
     // a warm spot of her own, from the hall side
     const herSpot = new THREE.SpotLight(0xffe0b8, 2.6, 0, 0.2, 0.7, 0)
     herSpot.position.set(HER.x - 120, 640, HER.z + 620); herSpot.target.position.copy(HER).setY(80)
     herSpot.castShadow = true; herSpot.shadow.mapSize.set(1024, 1024); herSpot.shadow.bias = -0.0004; herSpot.shadow.normalBias = 0.6
     scene.add(herSpot, herSpot.target)
+    stageParts.push(herSpot)
     // the piano's lacquer and plate need something to reflect (as #032)
     {
       const pmrem = new THREE.PMREMGenerator(renderer), s = new THREE.Scene()
@@ -195,6 +208,54 @@
       box(260, 260, [-200, 640, 300], 6, 0xffcf9a); box(900, 140, [0, 650, -150], 0.6, 0xffd7a8); box(700, 220, [150, 420, 900], 1.2, 0xffe2c0)
       scene.environment = pmrem.fromScene(s, 0.015, 1, 6000).texture
       scene.environmentIntensity = 0.45
+    }
+
+    // ── The park (#051): Sorairo's hillside around them, drawn with their scene (park/park.js) ──
+    let park = null, sunLight = null, skyLight = null, envFor = -1
+    if (PARK) {
+      for (const o of stageParts) o.visible = false
+      scene.background = null; scene.fog = null
+      // the park's camera is this one at 1/100: its 0.1-8000 m, here in cm
+      camera.near = 10; camera.far = 800000; camera.updateProjectionMatrix()
+      for (const [i, n] of TIMES) $('tod').add(new Option('Time: ' + n.toLowerCase(), i))
+      $('tod').value = TIMES.some(([i]) => String(i) === Q.get('tod')) ? Q.get('tod') : '1'
+      if ([...$('tstyle').options].some(o => o.value === Q.get('tree'))) $('tstyle').value = Q.get('tree')
+      $('tod').hidden = $('tstyle').hidden = $('ambBox').hidden = false
+      if (Q.get('amb') === '0') $('amb').checked = false
+      setStatus('Growing the park…')
+      park = await createPark(renderer, { time: +$('tod').value + 0.4, style: $('tstyle').value })
+      $('tod').onchange = () => { park.setTime(+$('tod').value + 0.4); saveUrl() }
+      $('tstyle').onchange = () => { park.setStyle($('tstyle').value); saveUrl() }
+      $('amb').onchange = () => { park.sound.setOn($('amb').checked); saveUrl() }
+      // the sun (and moon) and the sky's light, from the park's, for their own materials;
+      // three.js divides diffuse light by pi, Sorairo's cel light doesn't: hence the pi
+      sunLight = new THREE.DirectionalLight(0xffffff, 1)
+      sunLight.castShadow = true; sunLight.shadow.mapSize.set(2048, 2048)
+      Object.assign(sunLight.shadow.camera, { left: -450, right: 450, top: 450, bottom: -450, near: 10, far: 3000 })
+      sunLight.shadow.bias = -0.0004; sunLight.shadow.normalBias = 0.6
+      sunLight.target.position.copy(MID).setY(80)
+      skyLight = new THREE.HemisphereLight(0xffffff, 0x446633, 1)
+      scene.add(sunLight, sunLight.target, skyLight)
+    }
+    const LIGHT_K = +(Q.get('lightk') || 0.75)
+    function parkLights() {
+      const s = park.sun
+      sunLight.position.copy(sunLight.target.position).addScaledVector(s.dir, 1500)
+      sunLight.color.copy(s.color); sunLight.intensity = Math.PI * LIGHT_K
+      skyLight.color.copy(s.ambient); skyLight.groundColor.copy(s.ground).multiplyScalar(1 / Math.max(1e-3, s.ambient.r)); skyLight.intensity = Math.PI * LIGHT_K
+      // the lacquer and the violin's varnish reflect the sky (once per change of the hour)
+      if (envFor !== s.changed) {
+        envFor = s.changed
+        const pm = new THREE.PMREMGenerator(renderer), es = new THREE.Scene()
+        const g = new THREE.SphereGeometry(100, 32, 16), col = []
+        const P = g.attributes.position
+        for (let i = 0; i < P.count; i++) { const y = P.getY(i) / 100; const c = y > 0 ? s.horizon.clone().lerp(s.sky, Math.sqrt(y)) : s.ground.clone().multiplyScalar(0.6); col.push(c.r, c.g, c.b) }
+        g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3))
+        es.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })))
+        scene.environment?.dispose?.()
+        scene.environment = pm.fromScene(es, 0.02).texture; scene.environmentIntensity = 0.6
+        pm.dispose(); g.dispose()
+      }
     }
 
     // ── The piano and the pianist (#032) ───────────────────────────────────
@@ -891,6 +952,7 @@
     }
     $('room').onchange = () => { applyHall(); saveUrl() }
     if (Q.get('room') && ROOMS[Q.get('room')]) $('room').value = Q.get('room')
+    else if (PARK) $('room').value = 'dry'            // (outdoors: no hall)
     applyHall()
     let scheduler = null
     const target = {
@@ -919,6 +981,8 @@
     }
     async function play() {
       if (audioCtx.state !== 'running') audioCtx.resume().catch(() => {})
+      // (the park's birds and wind start with the first play, a gesture, and stay on)
+      if (park && $('amb').checked && !park.sound.on) park.sound.setOn(true)
       await ensureSound()
       if (hybrid.on) await hybrid.ensure()
       if (!scheduler) {
@@ -1031,6 +1095,23 @@
       overHer: () => [S.herHead.clone().add(v3(-38, 16, 24)), S.hisHead.clone().add(v3(0, -25, 0)), 34],
       overHim: () => [S.hisHead.clone().add(v3(38, 14, -62)), S.herHead.clone().add(v3(0, -15, 0)), 34],
     }
+    if (PARK) {
+      // Sorairo's bloom takes anything brighter than 1.35 (the sun, backlit cloud rims). The duo's
+      // materials in full sun reach 2 on white keys, shirt cuffs and the lacquer's highlights,
+      // which bloomed into glares; a soft knee above 1 keeps them under it.
+      const KNEE = 'gl_FragColor.rgb *= min(1.0, (1.0 + 0.3 * max(max(gl_FragColor.r, gl_FragColor.g), gl_FragColor.b) - 0.3) / max(1e-4, max(max(gl_FragColor.r, gl_FragColor.g), gl_FragColor.b)));\n'
+      scene.traverse(o => { for (const m of [o.material].flat()) if (m && !m.userData.knee) {
+        m.userData.knee = true; const prev = m.onBeforeCompile
+        m.onBeforeCompile = (sh, r) => { prev?.call(m, sh, r); const k = sh.fragmentShader.lastIndexOf('}'); sh.fragmentShader = sh.fragmentShader.slice(0, k) + KNEE + sh.fragmentShader.slice(k) }
+        m.customProgramCacheKey = () => 'knee' + (m.constructor.prototype.customProgramCacheKey?.call(m) ?? '')
+        m.needsUpdate = true } })
+      // low in the grass in front of them, the tree and the sky behind
+      VIEWS.tree = () => [v3(-120, 70, 1500), v3(-100, 360, -300), 36]
+      // from Sorairo's hillside shot, down the slope: the two on the lawn, the tree beyond
+      VIEWS.hill = () => { const p = park.toDuo(v3(-26, 0, 17)); p.y = park.toDuo(v3(-26, park.heightAt(-26, 17) + 1.6, 17)).y; return [p, S.mid.clone().lerp(park.treeAt, 0.3).setY(260), 40] }
+      for (const [v, label] of [['tree', 'In the grass, the tree behind'], ['hill', 'From the hillside']]) $('cam').insertBefore(new Option(label, v), $('cam').options[1])
+      if (['tree', 'hill'].includes(Q.get('view'))) $('cam').value = Q.get('view')
+    }
     let tween = null
     function setView(v, cut = false) {
       if (!VIEWS[v] || !him) return
@@ -1044,7 +1125,7 @@
     // starts, every 5-11 s, favouring whoever is busier (notes per second
     // over the next few seconds), never the same view twice in a row, back to
     // the two of them every fourth take, and opening wide.
-    const TAKES = { violin: ['him', 'hisFace', 'bow', 'overHer'], piano: ['her', 'herFace', 'keys', 'overHim'], both: ['front', 'wide', 'front'], duet: ['duo', 'front', 'duoLow', 'overHer', 'overHim', 'duo'] }
+    const TAKES = { violin: ['him', 'hisFace', 'bow', 'overHer'], piano: ['her', 'herFace', 'keys', 'overHim'], both: PARK ? ['front', 'tree', 'hill'] : ['front', 'wide', 'front'], duet: ['duo', 'front', 'duoLow', 'overHer', 'overHim', 'duo'] }
     const director = {
       plan: [],
       reset() {
@@ -1062,7 +1143,7 @@
           // far ahead): the two of them in one frame
           const duet = dv > 0.6 && dp > 0.6 && dv < dp * 1.6 && dp < dv * 1.6
           let pool = duet ? TAKES.duet : count % 4 === 0 ? TAKES.both : dv > dp * 1.4 ? TAKES.violin : dp > dv * 1.4 ? TAKES.piano : [...TAKES.violin, ...TAKES.piano]
-          if (count === 0) pool = ['wide']
+          if (count === 0) pool = [PARK ? 'tree' : 'wide']
           pool = pool.filter(v => v !== last)
           const v = pool[(seed * 31 + 7) % pool.length]
           let len = 5 + ((seed * 17) % 60) / 10
@@ -1092,7 +1173,7 @@
       const tip = her.group.localToWorld((h.joints.M || h.joints.W).clone())
       const tg = w.clone().lerp(tip, 0.5)
       camera.position.copy(her.group.localToWorld(her.group.worldToLocal(tg.clone()).add(v3(...off)))); controls.target.copy(tg); camera.fov = 30; camera.updateProjectionMatrix()
-    }, her, pRig }
+    }, her, pRig, cut(v) { $('cam').value = v; setView(v, true) }, get park() { return park }, scene, camera }
 
     function saveUrl() {
       if (SHOT) return
@@ -1105,7 +1186,8 @@
       if ($('source').value === 'midi') p.set('src', 'midi')
       if ($('vdress').value !== 'wine') p.set('vdress', $('vdress').value)
       if ($('hands').value !== 'pianist') p.set('hands', $('hands').value)
-      if ($('room').value !== 'hall') p.set('room', $('room').value)
+      if ($('room').value !== (PARK ? 'dry' : 'hall')) p.set('room', $('room').value)
+      if (PARK) { p.set('stage', 'park'); if ($('tod').value !== '1') p.set('tod', $('tod').value); if ($('tstyle').value !== 'summer') p.set('tree', $('tstyle').value); if (!$('amb').checked) p.set('amb', '0') }
       if (hybrid.on) p.set('violin', hybrid.name)
       if (levels.violin || levels.piano) p.set('vol', `${levels.violin},${levels.piano}`)
       if ($('psynth').value !== 'oxisynth') p.set('psynth', $('psynth').value)
@@ -1153,7 +1235,7 @@
     // ── Loop ───────────────────────────────────────────────────────────────
     let idleT = performance.now()
     addEventListener('pointermove', () => { idleT = performance.now(); document.body.classList.remove('idle') })
-    addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight) })
+    addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); park?.setSize() })
     function frame(t, dt) {
       const I = t < 0.4 ? introPose(t) : null
       const standing = !!I?.standing
@@ -1202,7 +1284,7 @@
       if ($('cam').value !== 'auto') setView(camStart(), true)
       controls.update()
       camera.lookAt(controls.target)
-      renderer.render(scene, camera)
+      if (park) { park.update(0, camera); parkLights(); park.render(scene, camera) } else renderer.render(scene, camera)
       window.__dbg = { director, THREE, scene, camera, renderer, him, her, vRig, pRig, V, bow, piano, pianoSide, song, frame, subjects, S, songDuration: song.duration }
       window.__info = { t, take: director.at(t)?.v, violin: song.violin.length, piano: song.piano.length }
       window.__done = true
@@ -1220,7 +1302,7 @@
         if (clock.playing && t > song.duration + 1.5) { pause(); clock.t = 0; t = 0 }
         frame(t, dt)
         controls.update()
-        renderer.render(scene, camera)
+        if (park) { camera.updateMatrixWorld(); park.update(dt, camera); parkLights(); park.render(scene, camera) } else renderer.render(scene, camera)
         liner.update(t)
         if (document.activeElement !== $('seek')) $('seek').value = Math.max(0, Math.min(1, t / song.duration))
         $('time').textContent = `${fmt(Math.max(0, Math.min(t, song.duration)))} / ${fmt(song.duration)}`
