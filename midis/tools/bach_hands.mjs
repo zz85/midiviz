@@ -22,8 +22,9 @@
 // for the player's own split (splitting it by voice, tenor and bass to the
 // left, missed keys on 11 % of the left hand's frames, against 6.5 %).
 // A note the score does not have (the notes of a realized ornament,
-// a cadence trill) takes the hand of the written note it decorates: a matched
-// note sounding then, nearest in pitch.
+// a cadence trill) takes the hand of the written note it decorates: as
+// bach_ornaments.mjs passes it (known), else a matched note sounding then,
+// nearest in pitch.
 //
 // Reads and rewrites the files in place (the tracks are merged first, so it can
 // run again); onsets, durations, pitches and velocities are untouched.
@@ -65,7 +66,7 @@ function handsOfScore(score) {
   return null
 }
 
-export async function handsFor(file, midi) {
+export async function handsFor(file, midi, { known = null } = {}) {
   const notes = midi.tracks.flatMap(t => t.notes)
   const dirs = dirsOf(file)
   const segments = splitSegments(notes, dirs.length)
@@ -79,7 +80,9 @@ export async function handsFor(file, midi) {
     if (!handOf) { for (const n of seg) n.hand = null; report.push({ dir, notes: seg.length, matched: 0, crossings: 0, unknown: true }); continue }
     const hit = []
     for (const [i, j] of pairs) { seg[j].hand = handOf(score[i]); hit.push(seg[j]) }
-    for (const n of seg) if (!n.hand) n.hand = nearestHand(n, hit)
+    // the notes bach_ornaments.mjs wrote (ornaments, grace notes) come with the hand of the
+    // note they decorate; any other, the nearest
+    for (const n of seg) if (!n.hand) n.hand = known?.get(n.ticks + ':' + n.midi) ?? nearestHand(n, hit)
     matched += pairs.length; written += score.length
     report.push({ dir, notes: seg.length, matched: pairs.length, crossings: crossings(seg) })
   }
@@ -88,10 +91,10 @@ export async function handsFor(file, midi) {
   return { notes, report, matched, written }
 }
 
-export async function writeHands(file, { dry = false } = {}) {
+export async function writeHands(file, { dry = false, known = null } = {}) {
   const path = `${root}midis/${file}.mid`
   const midi = new Midi(readFileSync(path))
-  const { notes, report, matched, written } = await handsFor(file, midi)
+  const { notes, report, matched, written } = await handsFor(file, midi, { known })
   const proto = midi.tracks.find(t => t.notes.length) ?? midi.tracks[0]
   const channel = proto.channel, instrument = proto.instrument.number
   midi.tracks.splice(0)

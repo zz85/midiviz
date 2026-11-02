@@ -25,7 +25,7 @@
 // notes, unless opts.graces: then kept, squeezed at the main note, with
 // art.grace = the command, art.graceAt = the main note's onset and
 // art.graceDur = the written length, both in quarters), ornaments
-// (\trill, \prall, \mordent, \turn … kept as art.orn, not played), \partial, \time, \tempo, \midi tempos, variables, \include (as
+// (\trill, \prall, \mordent, \turn … kept as art.orn, not played), \arpeggio (art.arp), \partial, \time, \tempo, \midi tempos, variables, \include (as
 // text), \new / \context Staff / Voice / groups, << \\ >> voices, \with,
 // \header. Scheme expressions, markup, \override / \set / \tweak and layout
 // blocks are skipped; lyrics, chord names and figured bass are ignored.
@@ -405,6 +405,7 @@ class Parser {
     else if (name === 'upbow') art.techs.push('up-bow')
     else if (name === 'downbow') art.techs.push('down-bow')
     else if (name === 'glissando') art.gliss = true
+    else if (name === 'arpeggio' || name === 'arpeggioArrowUp') art.arp = true
     else if (ORN.has(name)) art.orns.push(name === 'startTrillSpan' ? 'trill' : name)
     else if (/fermata$/i.test(name)) art.fermata = true
     else if (name === 'rest') { if (ev) ev.kind = 'rest' }
@@ -816,6 +817,7 @@ function perform(score, { graces = false } = {}) {
       const own = (src === ev ? ev.perNote[k] : null)
       const arts = own ? [...art.arts, ...own.arts] : art.arts
       const orns = own ? [...art.orns, ...(own.orns || [])] : art.orns
+      const arp = art.arp || own?.arp
       const tie = art.tie || own?.tie
       const prev = vs.ties.get(pitch)
       if (prev && Math.abs(prev.end - cx.t) < EPS) {
@@ -824,7 +826,7 @@ function perform(score, { graces = false } = {}) {
         return
       }
       const e = { pitch, start: cx.t, end: cx.t + dur, voice: cx.voiceNo, accent: accentGain(arts),
-        art: { slur, stroke: strokeOf(arts), bow, source: 'score', vk: vk, ...(port ? { port: true } : {}), ...(orns.length ? { orn: orns } : {}), ...(art.fermata || own?.fermata ? { fermata: true } : {}),
+        art: { slur, stroke: strokeOf(arts), bow, source: 'score', vk: vk, ...(port ? { port: true } : {}), ...(orns.length ? { orn: orns } : {}), ...(arp ? { arp: true } : {}), ...(art.fermata || own?.fermata ? { fermata: true } : {}),
           ...(cx.grace ? { grace: cx.grace.kind, graceAt: cx.grace.at, graceDur: dur / GRACE_K } : {}) } }
       staff.events.push(e)
       if (tie) vs.ties.set(pitch, e); else vs.ties.delete(pitch)

@@ -4,6 +4,11 @@ What each experiment does and how, newest first. The short list is in the [READM
 
 ## 2 Nov 2026
 
+Songs: spread chords in the engraved Bach files ([notes](midis/README.md#sources--credits))
+- A chord marked `\arpeggio` in the score (the wavy line, as in the Goldberg Aria's bar 11 at 0:30) was struck as a block: [strings/lilypond.js](strings/lilypond.js) now keeps the mark (`art.arp`), and [midis/tools/bach_ornaments.mjs](midis/tools/bach_ornaments.mjs) rolls the chord from the bottom up, both hands' notes together where both are marked, 7 % of a quarter between notes (30-70 ms; 70 ms in the Aria), the roll at most a third of the shortest note, each note held to its written end. 1 in the Aria, 1 in Var. 16, 5 in WTC I No. 4's prelude, 45 in No. 8's prelude
+- The notes of realized ornaments and grace notes now carry the hand of the note they decorate into [midis/tools/bach_hands.mjs](midis/tools/bach_hands.mjs) (it guessed from the nearest written note, and the main note having been replaced, a trill sometimes went to the other hand: the Aria's bar 11 trill ended in the left hand, as did right-hand trills in WTC I No. 11's prelude); the Aria now has 1 left-hand note above the right, from 4
+- bach_ornaments.mjs no longer awaits its top-level main: with bach_hands.mjs importing it, the run never finished
+
 [#049 Score Scan](049_sheet_scan.html) and [#050 Engraved Score](050_sheet_engraved.html): the score stays in one place
 - Automatic no longer moves the panel as the shots change. It picks one place for the song from a survey of the director's planned shots (120 moments; pathtrace/app.js `surveyFrame`), measured as the intertitles are (pianist/frame-space.js), and keeps it. It picks again only for another song, director setting, view or liner-notes setting. It no longer moves up for the controls either.
 - The liner notes are part of the choice. A place also costs half of what the intertitles would cover of her in the best place it leaves them. A fixed intertitle place, or captions at the bottom, rules out a panel place over it. Automatic intertitles now keep off any place the panel overlaps at all (they kept off only those it covered 15 % of, and the bottom ones could touch it). On the Aria with the automatic camera the panel goes top right and the intertitles bottom left.

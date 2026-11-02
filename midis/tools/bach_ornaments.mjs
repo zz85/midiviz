@@ -25,6 +25,7 @@
 //                          its written length when shorter; leaning on it, the main note softer
 //   \grace, \acciaccatura  short notes (about 70 ms) on the beat, the main note after
 //   \afterGrace            at the end of the main note
+//   \arpeggio              the chord rolled from the bottom, 30-70 ms a note, each held to its end
 //
 // Two more sources of signs, for the Well-Tempered Clavier (--no-kern, --no-subjects
 // turn them off):
@@ -423,6 +424,9 @@ function segment(src, fn, log) {
       }
     }
   }
+  // the hand of each note this writes, from its staff, for bach_hands.mjs (a source in one part: none)
+  const twoParts = new Set(ly.map(n => n.staff)).size > 1
+  const handOf = st => twoParts ? (st === 0 ? 'R' : 'L') : null
   const out = []           // new notes: { midi, time, duration, velocity }
   const drop = new Set(extra)   // file notes replaced
   let nOrn = 0, nGrace = 0
@@ -462,8 +466,8 @@ function segment(src, fn, log) {
       // at the end of the note, quick, leading into the next
       const u = Math.min(SHORT, mainLen / (steps.length + 2))
       const t0 = main.time + main.duration - u * steps.length
-      steps.forEach((st, s) => { for (const g of st) out.push({ midi: g.pitch, time: t0 + s * u, duration: u, velocity: Math.min(1, v * 0.78) }) })
-      a.end = u * steps.length
+      steps.forEach((st, s) => { for (const g of st) out.push({ midi: g.pitch, time: t0 + s * u, duration: u, velocity: Math.min(1, v * 0.78), hand: handOf(g.staff) }) })
+      a.end = u * steps.length; a.staff = ly[mi].staff
       continue
     }
     const lean = g0.art.grace === 'appoggiatura' && steps.length === 1
@@ -473,8 +477,8 @@ function segment(src, fn, log) {
     const total = lean ? Math.min(mainLen * (isDotted(ly[mi].len) ? 2 / 3 : 1 / 2), Math.max(writtenSec, mainLen / 4))
       : Math.min(mainLen / 2, SHORT * steps.length)
     const u = total / steps.length
-    steps.forEach((st, s) => { for (const g of st) out.push({ midi: g.pitch, time: main.time + s * u, duration: lean ? u : u - 0.005, velocity: Math.min(1, v * (lean ? 1.05 : 0.8)) }) })
-    a.start = total; a.lean = lean; a.last = steps[steps.length - 1][0].pitch
+    steps.forEach((st, s) => { for (const g of st) out.push({ midi: g.pitch, time: main.time + s * u, duration: lean ? u : u - 0.005, velocity: Math.min(1, v * (lean ? 1.05 : 0.8)), hand: handOf(g.staff) }) })
+    a.start = total; a.lean = lean; a.last = steps[steps.length - 1][0].pitch; a.staff = ly[mi].staff
   }
   // the main notes moved by a grace, without an ornament of their own
   const ornamented = new Set(); for (const [i, n] of ly.entries()) if (n.art.orn?.length && lyToF.has(i)) ornamented.add(lyToF.get(i))
@@ -482,7 +486,7 @@ function segment(src, fn, log) {
     if (ornamented.has(j)) continue
     const f = fn[j]
     drop.add(j)
-    out.push({ midi: f.midi, time: f.time + a.start, duration: Math.max(0.02, f.duration - a.start - a.end), velocity: Math.min(1, f.velocity * (a.lean ? 0.85 : 1)) })
+    out.push({ midi: f.midi, time: f.time + a.start, duration: Math.max(0.02, f.duration - a.start - a.end), velocity: Math.min(1, f.velocity * (a.lean ? 0.85 : 1)), hand: handOf(a.staff ?? -1) })
   }
 
   // ornament signs
@@ -517,9 +521,27 @@ function segment(src, fn, log) {
     if (!notes) { unknown.set(kind, (unknown.get(kind) || 0) + 1); continue }
     drop.add(j); nOrn++
     const vk = a?.lean ? 0.85 : 1
-    for (const [midi, t0, t1, v] of notes) out.push({ midi, time: t0, duration: t1 - t0, velocity: Math.min(1, f.velocity * v * vk) })
+    for (const [midi, t0, t1, v] of notes) out.push({ midi, time: t0, duration: t1 - t0, velocity: Math.min(1, f.velocity * v * vk), hand: handOf(n.staff) })
   }
 
+  // spread chords (\arpeggio): the notes marked at one onset, in both hands where both are
+  // marked (connectArpeggios), rolled from the bottom up, each held to its written end.
+  // One step is 7 % of a quarter, between 30 and 70 ms, the whole roll at most a third of
+  // the shortest note; notes already moved by an ornament or a grace keep their place
+  let nArp = 0
+  const arps = new Map()
+  for (const [i, n] of ly.entries()) if (n.art.arp) { const k = n.q.toFixed(5); if (!arps.has(k)) arps.set(k, []); arps.get(k).push(i) }
+  for (const is of arps.values()) {
+    const js = is.map(i => lyToF.get(i)).filter(j => j != null && !drop.has(j))
+    if (js.length < 2) continue
+    js.sort((a, b) => fn[a].midi - fn[b].midi)
+    const q = ly[is[0]].q
+    const shortest = Math.min(...js.map(j => fn[j].duration))
+    const step = Math.min(Math.max(0.03, Math.min(0.07, 0.07 * secPerQAt(q))), shortest / 3 / (js.length - 1))
+    js.forEach((j, k) => { const f = fn[j], end = f.time + f.duration; f.time += k * step; f.duration = end - f.time })
+    nArp++
+  }
+  if (nArp) log.push(`  spread chords: ${nArp}`)
   if (unknown.size) log.push('  not realized: ' + [...unknown].map(([k, c]) => `${k}×${c}`).join(' '))
   const kept = fn.filter((_, j) => !drop.has(j)).map(f => ({ midi: f.midi, time: f.time, duration: f.duration, velocity: f.velocity }))
   return { notes: [...kept, ...out], stats: { ly: ly.length, file: fn.length, matched: pairs.length, extra: extra.length, ornaments: nOrn, graces: nGrace } }
@@ -582,11 +604,16 @@ async function main() {
     }
     track.notes = []
     for (const n of all) track.addNote({ midi: n.midi, time: n.time, duration: n.duration, velocity: n.velocity })
+    // the hands of the notes written here, by their tick and key as the file keeps them
+    const known = new Map()
+    for (const n of all) if (n.hand) known.set(midi.header.secondsToTicks(n.time) + ':' + n.midi, n.hand)
     console.log(`${file}: ${total.ornaments} ornaments, ${total.graces} grace groups; score ${total.ly} notes, file ${total.file}, matched ${total.matched}, LilyPond graces removed ${total.extra}; notes now ${all.length}`)
     for (const l of log) console.log(l)
     if (!dry) writeFileSync(root + `midis/${file}.mid`, Buffer.from(midi.toArray()))
     // then each note's hand, from the score, as a right- and a left-hand track
-    if (!dry) await (await import('./bach_hands.mjs')).writeHands(file)
+    if (!dry) await (await import('./bach_hands.mjs')).writeHands(file, { known })
   }
 }
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) await main()
+// not awaited: main imports bach_hands.mjs, which imports this module, and a top-level
+// await here would hold that import until main ends, so neither would finish
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main().catch(e => { console.error(e); process.exit(1) })
