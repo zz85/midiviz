@@ -65,8 +65,14 @@ export function createSheetOverlay(layout, timeline, opts = {}) {
     return { x, y, w, h, k, rowH, rows }
   }
 
+  // (o.start: the first note's time; before it, in a video's lead-in, the panel waits, and comes up
+  // over the APPEAR seconds before the note so it is whole as the music starts)
+  const APPEAR = 0.5
   function draw(g, W, H, t, { bottom = 0, top = 0, box: b = null } = {}) {
-    const at = timeline.at(t), p = at && place(layout, at)
+    const start = o.start ?? 0
+    if (t < start - APPEAR) return
+    const appear = Math.min(1, (t - (start - APPEAR)) / APPEAR)
+    const at = timeline.at(Math.max(t, start)), p = at && place(layout, at)
     if (!p) return
     const st = STYLES[o.style] || STYLES.glass
     const bb = box(W, H, o.position === 'auto' ? 'bottom' : o.position, { bottom, top })
@@ -76,7 +82,7 @@ export function createSheetOverlay(layout, timeline, opts = {}) {
     const next = upcoming(at.i, rows + 1), lead = Math.min(0.7, (at.t1 - at.t0) * 0.5)
     const sp = next[0] ? ease(1 - (next[0].t - t) / lead) : 0
     g.save()
-    g.globalAlpha = o.opacity
+    g.globalAlpha = o.opacity * appear
     if (st.panel) {
       g.fillStyle = st.panel
       round(g, px - 10, py - 6, pw + 20, ph + 12, Math.min(14, rowH * 0.12)); g.fill()
@@ -90,7 +96,7 @@ export function createSheetOverlay(layout, timeline, opts = {}) {
       const s = layout.systems[it.system], sw = s.w * k, sx = px + (pw - sw) / 2, sy = y + (rowH - s.h * k) / 2
       const X = v => sx + (v - s.x) * k, Y = v => sy + (v - s.y) * k
       // in one row, the system leaving dims as the next comes up
-      g.globalAlpha = o.opacity * (rows > 1 ? 1 : r === 0 ? 1 - sp * 0.6 : Math.max(0.15, sp))
+      g.globalAlpha = o.opacity * appear * (rows > 1 ? 1 : r === 0 ? 1 - sp * 0.6 : Math.max(0.15, sp))
       if (r === 0 && o.highlight !== 'none' && o.highlight !== 'cursor') {
         const e = p.entry, a = layout.space
         g.fillStyle = st.bar

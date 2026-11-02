@@ -26,6 +26,10 @@ Songs: spread chords in the engraved Bach files ([notes](midis/README.md#sources
 [#045 Path-traced Pianist](045_pathtracer.html) and the pages that boot it (#049, #050): a fade to black at the end
 - Render → **The end**: Fade to black (the default) or Cut. The picture, the score panel and the captions fade to black over the last three quarters of the tail, 2 s at most (1.5 s on the automatic 2 s tail), and the last frame is black. The sound fades with it on an equal-power curve, after the hall's reverb, so the ring fades too. It applies only where the video ends with the piece: a clip that ends earlier keeps its handle as it is, for editing, and a Short keeps its own fades. notation3d/video-export.js `exportVideo` takes the fade as `fadeOut` (seconds); other pages don't pass it, so their videos end as before. On the Aria's last 5 s, the picture's mean luma goes from 51 to 16 (black) over the last 1.5 s.
 
+Fade length, and the score waits for the music (#045, #049, #050)
+- Render → **Fade length**, beside The end: Automatic (three quarters of the tail, 2 s at most, as before), or 0.5, 1, 1.5, 2, 3, 4 or 6 s. A fade longer than the tail starts before the last note. On the Aria's last 5 s with 4 s, the picture starts to darken 4 s from the end.
+- In a video's lead-in, the score panel stays off until the music: it comes up over the half second before the first note and is whole as it sounds (sheet/overlay.js `start`, the song's first note). In a 5 s test render of the Aria with the 3 s lead-in, it shows from 2.5 s and is whole at 3.0 s, where the audio starts.
+
 ## 1 Nov 2026
 
 [Experiment #038 - Duo](038_duo.html): One More Time, One More Chance, and MIDI files of your own

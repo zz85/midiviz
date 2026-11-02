@@ -5,7 +5,7 @@ Two ways to show the score while the [#045 path-traced pianist](../045_pathtrace
 - [#049 Score Scan](../049_sheet_scan.html): a scan of the printed page, cut into systems. The page is the Bach-Gesellschaft edition, Band 3, p. 263 (Leipzig, 1853), the same edition as IMSLP's #00823. IMSLP's downloads sit behind a bot check, so the page image comes from the Bayerische Staatsbibliothek's IIIF server, which serves the same volume (bsb11131414, page 285) without one.
 - [#050 Engraved Score](../050_sheet_engraved.html): the score engraved in the page by [nwc-viewer](https://github.com/zz85/nwc-viewer) (`../nwc-viewer/`, the engine #025 uses), from the score's own notes.
 
-Both draw the system being played in a panel over the picture, light the bar being played, and scroll the next system up into the panel over the last 0.7 s before the music reaches it. The same drawing goes into every frame a video export makes (Render). It is drawn after the frame source, so path-traced videos get it too.
+Both draw the system being played in a panel over the picture, light the bar being played, and scroll the next system up into the panel over the last 0.7 s before the music reaches it. The same drawing goes into every frame a video export makes (Render). In a video's lead-in (Render → Lead-in before the music) the panel waits for the music: it comes up over the half second before the first note. It is drawn after the frame source, so path-traced videos get it too.
 
 ## Using it
 

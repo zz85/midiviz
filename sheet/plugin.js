@@ -72,7 +72,8 @@ export function sheetPlugin({ title, href = 'sheet/README.md', defaultSong, buil
         const r = await build(song, midi, file, app)
         if (my !== job) return
         if (!r) { note = 'No score for this song'; ov = null }
-        else { ov = createSheetOverlay(r.layout, r.timeline, { ...settings(), inkFrom: r.inkFrom || 'luma' }); placer = newPlacer(ov); note = r.note || '' }
+        // (start: the first note, so a video's lead-in shows no score until the music begins)
+        else { ov = createSheetOverlay(r.layout, r.timeline, { ...settings(), inkFrom: r.inkFrom || 'luma', start: song.notes.reduce((m, n) => Math.min(m, n.time), Infinity) || 0 }); placer = newPlacer(ov); note = r.note || '' }
       } catch (e) { console.error(e); note = 'Score: ' + e.message; app.setStatus(note, true, 5000) }
       const el = opt('sNote'); if (el) el.textContent = note || about
     },

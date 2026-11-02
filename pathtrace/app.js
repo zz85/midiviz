@@ -1152,6 +1152,9 @@ export async function boot(plug = {}) {
     }
     $('exTitle').addEventListener('change', applyTitle)
     $('exHold').addEventListener('input', () => { applyTitle(); drawPreview() })
+    // (Fade length only means something with Fade to black)
+    const applyEnd = () => { $('exFadeLen').disabled = $('exEnd').value !== 'fade' }
+    $('exEnd').addEventListener('change', applyEnd); applyEnd()
     applyTitle()
     $('exSub').addEventListener('input', applyTitle)
     let linerSeq = 0
@@ -1413,7 +1416,7 @@ export async function boot(plug = {}) {
       ['sf', 'sf'], ['avsync', 'avsync'],
       ['dofamt', 'dofAmt'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
       ['vol', 'vol'], ['room', 'room'], ['seat', 'seat'], ['rv', 'rvAmt'], ['decay', 'rvDecay'], ['tone', 'rvTone'], ['boost', 'boost'], ['amb', 'amb'], ['applause', 'applause'],
-      ['exformat', 'exFormat'], ['exlayout', 'exLayout'], ['exsplit', 'exSplit'], ['exhands', 'exHandsHalf'], ['exlview', 'exLessonView'], ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exfps', 'exFps'], ['extail', 'exTail'], ['exlead', 'exLead'], ['exend', 'exEnd'], ['exsub', 'exSub'], ['excard', 'exCard'], ['excaps', 'exCaps'], ['exvtt', 'exVtt'], ['exlen', 'exLen'], ['exhold', 'exHold'],
+      ['exformat', 'exFormat'], ['exlayout', 'exLayout'], ['exsplit', 'exSplit'], ['exhands', 'exHandsHalf'], ['exlview', 'exLessonView'], ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exfps', 'exFps'], ['extail', 'exTail'], ['exlead', 'exLead'], ['exend', 'exEnd'], ['exfadelen', 'exFadeLen'], ['exsub', 'exSub'], ['excard', 'exCard'], ['excaps', 'exCaps'], ['exvtt', 'exVtt'], ['exlen', 'exLen'], ['exhold', 'exHold'],
       ['notes', 'linerMode'], ['itstyle', 'itStyle'], ['itstylea', 'itStyleA'], ['itcol', 'itTheme'], ['itpos', 'itPos'], ['itheads', 'itHeads'], ['extitle', 'exTitle'], ['expt', 'exPt'], ['ptengine', 'ptEngine'], ['ptspp', 'ptSpp'], ['ptbounces', 'ptBounces'], ['pthair', 'ptHair'], ['ptdn', 'ptDenoise'], ['ptfx', 'ptFx'], ['ptsize', 'ptSize'],
     ].filter(([, id]) => $(id))
     const OUTFIT_KEYS = { dress: 'dress', slit: 'slit', fabric: 'fabric', dcol: 'color', shoes: 'shoes', hair: 'hair', hcol: 'hairColor' }
@@ -1797,7 +1800,9 @@ export async function boot(plug = {}) {
       // the fade to black (Render → The end): over the last three quarters of the tail, 2 s at most
       // (1.5 s on the automatic 2 s tail), where the video ends with the piece; a clip that ends
       // before it keeps its handle as it is, for editing, and a Short has its own fades
-      const fadeS = asShort || clipB < song.duration || $('exEnd').value !== 'fade' ? 0 : Math.min(2, tailS * 0.75)
+      // (Fade length: Automatic is three quarters of the tail, 2 s at most; a set length can reach back
+      // past the last note, and is cut to the video's length)
+      const fadeS = asShort || clipB < song.duration || $('exEnd').value !== 'fade' ? 0 : $('exFadeLen').value === 'auto' ? Math.min(2, tailS * 0.75) : +$('exFadeLen').value
       if (asShort) { if (!(short.b > short.a)) clipFresh(); clipA = short.a; clipB = short.b }
       const clip = clipA > 0 || clipB < song.duration
       const name = (song.title || 'pianist').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_') + (asShort ? '_short' : '') + (clip ? `_${Math.floor(clipA)}-${Math.ceil(clipB)}s` : '') + (ptKey ? `_${ptKey}_${$('ptSpp').value}spp` : '') + `_${height}p${fps}.mp4`

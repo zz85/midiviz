@@ -120,3 +120,27 @@ test('placer: the panel leaves the liner notes their room', async () => {
   // no liner notes: her alone decides
   assert.equal(choosePlace(rects, { scores: { bottom: 0.1, top: 0.6 }, intertitles: { on: false } }).place, 'bottom')
 })
+
+test('overlay: no score before the first note; it comes up over the half second before it', async () => {
+  const { createSheetOverlay } = await import('../overlay.js')
+  const { createTimeline } = await import('../timeline.js')
+  // a stand-in page and a 2D context that only counts what is drawn
+  const page = { width: 100, height: 40 }
+  const layout = { page, space: 2, systems: [{ x: 0, y: 0, w: 100, h: 40, staffTop: 10, staffBottom: 30, bars: [1] }], bars: new Map([[1, { system: 0, x0: 0, x1: 100, start: 5, end: 95, onsets: null }]]) }
+  const tl = createTimeline({ ppq: 480, ticksToSeconds: k => k / 480, endTick: 4 * 480 }, { meter: [4, 4], played: 1 })
+  const ov = createSheetOverlay(layout, tl, { start: 2, style: 'ink', highlight: 'none' })
+  const seen = []
+  const g = new Proxy({}, { get: (o, k) => k === 'drawImage' ? () => seen.push(g.globalAlpha) : k in o ? o[k] : () => {}, set: (o, k, v) => { o[k] = v; return true } })
+  globalThis.OffscreenCanvas = OffscreenCanvasStub
+  ov.draw(g, 1000, 600, 1, { box: { x: 0, y: 0, w: 500, h: 100 } })
+  assert.equal(seen.length, 0, 'nothing a second before the first note')
+  ov.draw(g, 1000, 600, 1.75, { box: { x: 0, y: 0, w: 500, h: 100 } })
+  assert.ok(seen.at(-1) > 0.4 && seen.at(-1) < 0.6, 'half in a quarter second before it: ' + seen.at(-1))
+  ov.draw(g, 1000, 600, 2, { box: { x: 0, y: 0, w: 500, h: 100 } })
+  assert.equal(seen.at(-1), 1, 'whole as the music starts')
+})
+// (a canvas for inkOf in node: getImageData of transparent pixels)
+class OffscreenCanvasStub {
+  constructor(w = 1, h = 1) { this.width = w; this.height = h }
+  getContext() { const c = this; return { drawImage() {}, getImageData: () => ({ data: new Uint8ClampedArray(c.width * c.height * 4) }), putImageData() {}, fillRect() {}, set globalCompositeOperation(v) {}, set fillStyle(v) {} } }
+}
