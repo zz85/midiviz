@@ -1,0 +1,29 @@
+<!doctype html><html><head><style>html,body{margin:0;background:#111}</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/","@pixiv/three-vrm":"https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.5.5/lib/three-vrm.module.min.js"}}</script></head><body>
+<script type="module">
+// The MakeHuman hand in its rest pose, seen from the back of the hand, as the reference photos
+import * as THREE from 'three'
+import { loadCharacter } from '../character.js'
+const Q = new URLSearchParams(location.search)
+const fk = +(Q.get('fingers') || 1), tk = Q.get('thumb') ? +Q.get('thumb') : undefined
+const mh = await loadCharacter('../assets/', { fingers: { 2: fk, 3: fk, 4: fk, 5: fk }, ...(tk ? { thumb: tk } : {}) })
+const renderer = new THREE.WebGLRenderer({ antialias: true }); renderer.setSize(500, 700); document.body.appendChild(renderer.domElement)
+renderer.outputColorSpace = THREE.SRGBColorSpace
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x111111)
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 2.2)); const dl = new THREE.DirectionalLight(0xffffff, 1.5); dl.position.set(0, 50, 100); scene.add(dl)
+scene.add(mh.group)
+for (const [k, m] of Object.entries(mh.meshes)) if (k !== 'body') m.visible = false
+mh.group.updateMatrixWorld(true)
+const d = '.' + (Q.get('side') || 'R'), J = mh.joints
+const W = J['wrist' + d + '____head'], M = J['finger3-1' + d + '____head'], tip = J['finger3-3' + d + '____tail']
+const I = J['finger2-1' + d + '____head'], L = J['finger5-1' + d + '____head']
+const y = tip.clone().sub(W).normalize(), across = L.clone().sub(I)
+const x = across.clone().addScaledVector(y, -across.dot(y)).normalize(), z = new THREE.Vector3().crossVectors(x, y)
+// camera on the back of the hand (−z or +z: the side away from the palm)
+const back = Q.get('flip') ? z.clone().negate() : z.clone()
+const c = W.clone().lerp(tip, 0.4)
+const cam = new THREE.OrthographicCamera(-8, 8, 11.2, -11.2, 1, 500)
+cam.position.copy(c).addScaledVector(back, 80); cam.up.copy(y); cam.lookAt(c)
+renderer.render(scene, cam)
+window.__done = true
+</script></body></html>

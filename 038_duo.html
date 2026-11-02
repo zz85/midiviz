@@ -26,8 +26,18 @@
     .bar { position: fixed; left: 0; right: 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 12px; z-index: 5; transition: opacity 0.6s; }
     #top { top: 0; background: linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0)); }
     #bottom { bottom: 0; background: linear-gradient(rgba(0,0,0,0), rgba(0,0,0,0.6)); }
-    #balanceBox { font-size: 12px; color: #bbb; white-space: nowrap; display: flex; align-items: center; gap: 4px; }
-    #balance { width: 90px; }
+    #mixer { position: fixed; right: 12px; bottom: 48px; z-index: 7; width: 340px; max-height: calc(100vh - 120px); overflow-y: auto; padding: 10px 12px; border-radius: 8px;
+      background: rgba(14,14,18,0.92); border: 1px solid rgba(255,255,255,0.15); font-size: 12px; color: #ccc; }
+    #mixer[hidden] { display: none; }
+    #mixer h4 { margin: 8px 0 4px; font-size: 12px; font-weight: 600; color: #fc9; }
+    #mixer h4:first-child { margin-top: 0; }
+    #mixer .row { display: grid; grid-template-columns: 1fr 120px 46px; gap: 6px; align-items: center; margin: 2px 0; }
+    #mixer .row.sub { padding-left: 12px; color: #aaa; }
+    #mixer .row span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #mixer .row input { width: 100%; padding: 0; }
+    #mixer .row span:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+    #mixer select { width: 100%; margin: 2px 0; }
+    #mixer .note { color: #888; font-size: 11px; margin: 4px 0 0; }
     body.idle .bar, body.idle #credit { opacity: 0; pointer-events: none; }
     select, button, input { font: inherit; color: #eee; background: rgba(30,30,36,0.8); border: 1px solid rgba(255,255,255,0.18); border-radius: 6px; padding: 4px 8px; }
     button { cursor: pointer; }
@@ -51,9 +61,14 @@
     <a href="README.md" title="Experiments">◀</a>
     <span id="title">#038 Duo</span>
     <select id="song" title="Piece"></select>
+    <button id="open" title="Open a MIDI file of your own (or drop one on the page): the violin plays one of its tracks, the pianist the piano tracks or everything else">Open MIDI…</button>
+    <input type="file" id="file" accept=".mid,.midi,audio/midi,audio/x-midi" hidden>
+    <select id="vpart" hidden style="max-width: 230px" title="Which track of the MIDI file the violinist plays (moved by octaves into the violin's range)"></select>
+    <select id="ppart" hidden title="What the pianist plays: the file's piano tracks, or every other track but the drums"><option value="piano">Her part: the piano tracks</option><option value="all">Her part: everything else</option></select>
     <select id="model" title="Violinist"></select>
     <select id="outfit" title="His outfit"></select>
     <select id="vdress" title="Her dress"><option value="wine">Wine dress</option><option value="black">Black dress</option><option value="navy">Navy dress</option><option value="emerald">Emerald dress</option><option value="rose">Rose dress</option><option value="white">White dress</option><option value="off">Casual: her cardigan</option></select>
+    <select id="hands" title="Her hands. Pianist's: #032's pianist's own hands (the MakeHuman woman, fingers lengthened to a woman's proportions), on her wrists and played by the same fingering (pianist/hand-graft.js): cel-shaded in her skin's colour with the ink outline, or in #032's realistic skin. Anime: the VRoid model's own. Changing it reloads the page"><option value="pianist">Hands: the pianist's, cel-shaded</option><option value="real">Hands: the pianist's, realistic skin</option><option value="model">Hands: anime (the model's)</option></select>
     <select id="cam" title="Camera">
       <option value="auto">Director (auto)</option>
       <option value="front">The two, from the hall</option>
@@ -74,7 +89,7 @@
     <select id="bowing" title="Which notes share a bow. Score: the slurs, marks and bowings of the Mutopia LilyPond source the MIDI was made from (violinist/scores). Inferred: slurs guessed from the music (strings/articulation.js). Fixed rule: up to 4 fast notes per bow"><option value="score">Bowing: score (Mutopia)</option><option value="infer">Bowing: inferred</option><option value="fixed">Bowing: fixed rule</option></select>
     <select id="source" hidden title="What they play from. Score (the default): the Mutopia LilyPond source itself (violinist/scores, read by strings/lilypond.js): its notes, grace notes, slurs and marks, its dynamics and hairpins, and the piano or orchestral staves for her. MIDI file: the MIDI LilyPond made from that source (violinist/midis), as before; the bowing still comes from the score"><option value="score">Notes: score (Mutopia source)</option><option value="midi">Notes: MIDI file</option></select>
     <select id="performer" hidden title="Play it as a real violinist did: the timing and dynamics of their recording and, on #034's engines, each note's pitch (vibrato, intonation) too (violinist/performances: the Bach Violin Dataset, and public-domain and CC recordings aligned to the score). The piano follows his tempo. Modelled (the default): the timing and dynamics a model predicts from the score, fitted on those recordings (strings/expression-model.js), for any piece. As written: the score's own timing. With a recording of a concerto or the double concerto only the timing is taken"></select>
-    <select id="vsound" title="Violin sound (#034's engines; the piano is the Full Grand Piano soundfont)"><option value="gm">Violin: GM soundfont</option><option value="hybrid">Violin: hybrid sampler (#034)</option><option value="waveguide">Violin: bowed waveguide (#034)</option><option value="source">Violin: Helmholtz source-filter (#034)</option></select>
+    <select id="vsound" title="Violin sound (#034's engines; the piano's sound is in the Mixer)"><option value="gm">Violin: GM soundfont</option><option value="hybrid">Violin: hybrid sampler (#034)</option><option value="waveguide">Violin: bowed waveguide (#034)</option><option value="source">Violin: Helmholtz source-filter (#034)</option></select>
     <label title="Ink outlines"><input type="checkbox" id="outline" checked> Ink</label>
     <label title="They bow to the hall, then he gives her a nod to start"><input type="checkbox" id="intro" checked> Bow</label>
     <select id="notes" title="Liner notes on screen while it plays, for pieces that have them (ⓘ in the list). Press I for all the notes"><option value="intertitles">Notes: intertitles</option><option value="notes">Notes: every note</option><option value="off">Notes: none on screen</option></select>
@@ -84,8 +99,20 @@
     <div id="seekBox"><input type="range" id="seek" min="0" max="1" step="0.0001" value="0"></div>
     <span id="time">0:00 / 0:00</span>
     <span id="notesAt"></span>
-    <label id="balanceBox" title="Balance between the violin and the piano (the other one is turned down, up to 12 dB). Double-click to centre">Piano <input type="range" id="balance" min="-12" max="12" step="0.5" value="0"> Violin</label>
+    <button id="mixerBtn" title="Mixer: a level for the violin, the piano and each of the piano's tracks, and the piano's synth, soundfont and preset (M)">Mixer</button>
     <select id="speed" title="Speed"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option></select>
+  </div>
+  <div id="mixer" hidden>
+    <h4>Levels</h4>
+    <div id="levels"></div>
+    <p class="note">Double-click a slider for 0 dB; all the way left is off.</p>
+    <h4>Piano sound</h4>
+    <select id="psynth" title="The synthesizer that plays her part (soundfont-engine): OxiSynth (Rust, WebAssembly, the default), SpessaSynth (JavaScript, AudioWorklet), RustySynth (Rust, WebAssembly) or the built-in wavetable piano (no soundfont)">
+      <option value="oxisynth">Synth: OxiSynth (WASM, AudioWorklet)</option><option value="spessasynth">Synth: SpessaSynth (AudioWorklet)</option><option value="rustysynth">Synth: RustySynth (WASM)</option><option value="wavetable">Synth: wavetable piano (built in)</option>
+    </select>
+    <select id="psf" title="The soundfont the piano plays from"></select>
+    <select id="pprog" title="The soundfont's preset (program) she plays"></select>
+    <p class="note" id="pnote"></p>
   </div>
   <div id="credit"></div>
   <div id="status"></div>
@@ -111,6 +138,7 @@
     import { loadViolinist, disposeVRM, setOutline, MODELS as VIOLINISTS, OUTFITS } from './violinist/character.js'
     import { loadAltCharacter } from './pianist/alt-model.js'
     import { createRig as createPianistRig } from './pianist/rig.js'
+    import { graftPianistHands } from './pianist/hand-graft.js'
     import { createLinerLibrary, clockOfMidi, buildTimeline } from './liner/liner.js'
     import { createLinerOverlay } from './liner/overlay.js'
 
@@ -175,6 +203,12 @@
     setStatus('Loading the pianist…')
     const her = await loadAltCharacter('vroida', new URL('./pianist/assets/', import.meta.url).href)
     pianoSide.add(her.group)
+    // her hands: #032's pianist's, fitted to hers (pianist/hand-graft.js), or the model's own
+    if (['model', 'real'].includes(Q.get('hands'))) $('hands').value = Q.get('hands')
+    // (before the rig is made: it moves her skeleton's fingers to the new hands' joints)
+    if ($('hands').value !== 'model') await graftPianistHands(her, { base: new URL('./pianist/assets/', import.meta.url).href, look: $('hands').value === 'real' ? 'real' : 'toon' }).catch(e => { console.warn('hands:', e.message); $('hands').value = 'model'; $('hands').disabled = true })
+    // (the rig is made on one skeleton or the other: a change reloads the page)
+    $('hands').onchange = () => { saveUrl(); location.reload() }
     const pRig = createPianistRig(her, { seat: v3(0, SEAT_Y + 8.6, 44) })
     her.attachRig?.(pRig)
     pRig.state.gazeMode = 'music'
@@ -213,8 +247,29 @@
       applyOutline()
       setStatus('')
     }
+    // The models' MToon ink is authored in metres (VRoid: 0.75 mm, in 'world coordinates')
+    // and they stand here scaled to centimetres, where three-vrm's world-coordinate
+    // outline keeps its width in world units: 0.0075 mm, too thin to draw. Scaled by
+    // each model's own scale (×100, metres to cm), once per material, it is the
+    // 0.75 mm line it was made with
+    const inked = new WeakSet()
+    function inkToScale(vrm) {
+      if (!vrm) return
+      vrm.scene.updateMatrixWorld(true)
+      const k = vrm.scene.getWorldScale(v3()).x
+      vrm.scene.traverse(o => {
+        if (!o.isMesh) return
+        for (const m of [].concat(o.material)) {
+          if (!m.isMToonMaterial || m.outlineWidthMode !== 'worldCoordinates' || inked.has(m)) continue
+          inked.add(m)
+          m.userData.ow = (m.userData.ow ?? m.outlineWidthFactor) * k
+          if (m.outlineWidthFactor) m.outlineWidthFactor = m.userData.ow
+        }
+      })
+    }
     function applyOutline() {
       const on = $('outline').checked
+      inkToScale(him); inkToScale(her.vrm)
       inkInstrument.forEach(o => { o.visible = on })
       setOutline(him, on); setOutline(her.vrm, on)
     }
@@ -234,9 +289,13 @@
       ['Bach – Sonatas & Partitas (violin alone)', index.filter(e => e.group === 'bach-solo')],
       ['Paganini – Caprices (violin alone)', index.filter(e => e.file.startsWith('paganini_caprice_'))],
     ]
+    // arrangements in duo/midis (no Mutopia score: the bowing is inferred), and MIDI files opened here
+    const extra = await (await fetch('duo/midis/index.json')).json()
+    groups.splice(2, 0, ['Arrangements', extra])
+    const local = []
     for (const [label, list] of groups) {
       const og = document.createElement('optgroup'); og.label = label
-      for (const e of list) og.appendChild(new Option(`${e.composer.replace('J. S. ', '').replace('L. van ', '')} – ${e.title.replace(/^.*?(BWV|Op\.|K\.|HWV|No\.|RV|Ave)/, '$1')}`, e.file))
+      for (const e of list) og.appendChild(new Option(e.short || `${e.composer.replace('J. S. ', '').replace('L. van ', '')} – ${e.title.replace(/^.*?(BWV|Op\.|K\.|HWV|No\.|RV|Ave)/, '$1')}`, e.file))
       $('song').appendChild(og)
     }
     $('song').value = Q.get('song') && [...$('song').options].some(o => o.value === Q.get('song')) ? Q.get('song') : 'beethoven_kreutzer_3_presto.mid'
@@ -258,19 +317,80 @@
         fingerWorker.postMessage(notes.map(n => ({ pitch: n.pitch, on: n.on, off: n.off, velocity: n.velocity, ...(n.hand ? { hand: n.hand } : {}) })))
       })
     }
+    const entryOf = file => index.find(x => x.file === file) || extra.find(x => x.file === file) || local.find(x => x.file === file) || index[0]
+    const isDrums = t => t.channel === 9 || t.instrument.percussion
+    /** A MIDI file with no index entry: the violin is the track most like a violin melody
+     *  (a violin or string program, a melody's name, one note at a time), the piano its piano programs. */
+    function guessParts(midi) {
+      const all = midi.tracks.map((t, i) => ({ t, i })).filter(({ t }) => t.notes.length && !isDrums(t))
+      const total = all.reduce((a, x) => a + x.t.notes.length, 0)
+      const tracks = all.filter(x => x.t.notes.length >= Math.min(40, 0.03 * total))
+      const held = ({ t }) => { let h = 0; for (let j = 1; j < t.notes.length; j++) if (t.notes[j].time < t.notes[j - 1].time + t.notes[j - 1].duration - 0.02) h++; return h / t.notes.length }
+      const mean = ({ t }) => t.notes.reduce((a, n) => a + n.midi, 0) / t.notes.length
+      const rate = x => {
+        const p = x.t.instrument.number
+        return (p === 40 ? 150 : p >= 41 && p <= 44 || p === 110 ? 60 : p >= 80 && p <= 87 || p >= 52 && p <= 54 ? 30 : p >= 48 && p <= 51 ? 20 : 0)
+          + (/violin|vln|solo|melody|lead|vocal|voice/i.test(x.t.name) ? 40 : 0) + Math.min(30, x.t.notes.length / 20) - Math.max(0, 55 - mean(x))
+      }
+      // a melody: a track of its own, not a keyboard, one note at a time (a violin or viola part whatever it holds)
+      const melodic = tracks.filter(x => x.t.instrument.number >= 8 && (held(x) < 0.25 || x.t.instrument.number >= 40 && x.t.instrument.number <= 41)).sort((a, b) => rate(b) - rate(a))
+      // else (only keyboards): he plays the top line of the highest big one, she the rest of it
+      const best = melodic[0] || tracks.slice().sort((a, b) => b.t.notes.length * Math.max(0, mean(b) - 48) - a.t.notes.length * Math.max(0, mean(a) - 48))[0]
+      const piano = all.filter(x => x !== best && x.t.instrument.number < 8).map(x => x.i)
+      return { violinTracks: best ? [best.i] : [], pianoTracks: piano, violinTop: !!best && !melodic[0] }
+    }
+    /** The top line of a keyboard part: at each onset the highest note from middle C up, if it sounds over the notes before it. */
+    function topLine(notes) {
+      const out = [], ns = notes.slice().sort((a, b) => a.time - b.time || b.midi - a.midi)
+      let lastOff = -1, lastPitch = 0
+      for (let i = 0; i < ns.length;) {
+        let j = i; while (j < ns.length && ns[j].time - ns[i].time < 0.03) j++
+        const n = ns[i]
+        if (n.midi >= 60 && (n.time >= lastOff - 0.05 || n.midi > lastPitch)) { if (out.length && lastOff > n.time) out.at(-1).cut = n.time; out.push(n); lastOff = n.time + n.duration; lastPitch = n.midi }
+        i = j
+      }
+      return out
+    }
+    /** The octaves that put a melody in the violin's range (G3 up), most of it at least. */
+    function violinOctaves(pitches) {
+      const s = pitches.slice().sort((a, b) => a - b), lo = s[Math.floor(s.length * 0.03)] ?? 55
+      let o = 0
+      while (lo + 12 * o < 55) o++
+      while (o > -3 && lo + 12 * (o - 1) >= 55 && s.at(-1) + 12 * o > 100) o--
+      return o
+    }
+    /** The parts menus of a piece that isn't from a score: the violin's track, and what she plays. */
+    function showParts(e, midi) {
+      $('vpart').hidden = $('ppart').hidden = !!e.score
+      if (e.score) return
+      $('vpart').innerHTML = midi.tracks.map((t, i) => {
+        if (!t.notes.length || isDrums(t)) return ''
+        const name = `${i}. ${(t.name || t.instrument.name).replace(/[<&]/g, '')} (${t.instrument.name}, ${t.notes.length})`
+        return `<option value="${i}">Violin: ${name}</option><option value="${i}:top">Violin: the top line of ${name}</option>`
+      }).join('')
+      $('vpart').value = e.violinTracks[0] + (e.violinTop ? ':top' : '')
+      $('ppart').value = e.herAll || !e.pianoTracks?.length ? 'all' : 'piano'
+      $('ppart').options[0].disabled = !e.pianoTracks?.length
+    }
     async function loadSong(file) {
-      const e = index.find(x => x.file === file) || index[0]
+      const e = entryOf(file)
       setStatus('Fingering…')
-      const midi = new Midi(await (await fetch('violinist/midis/' + e.file)).arrayBuffer())
+      const midi = new Midi(e.buf || await (await fetch(e.url || 'violinist/midis/' + e.file)).arrayBuffer())
+      if (!e.score && !e.violinTracks) Object.assign(e, guessParts(midi))
+      showParts(e, midi)
       const k = e.suggestedBpm && e.bpm ? e.bpm / e.suggestedBpm : 1
       // the violin: by its note count (tonejs splits a track at a program change)
-      let solo = midi.tracks.filter(t => t.notes.length === e.violinNotes)
-      if (solo.length !== 1) {
+      let solo = e.violinTracks ? e.violinTracks.map(i => midi.tracks[i]).filter(Boolean) : midi.tracks.filter(t => t.notes.length === e.violinNotes)
+      if (!e.violinTracks && solo.length !== 1) {
         const ch = [...new Set(midi.tracks.map(t => t.channel))].find(c => midi.tracks.filter(t => t.channel === c).reduce((a, t) => a + t.notes.length, 0) === e.violinNotes)
         solo = ch != null ? midi.tracks.filter(t => t.channel === ch) : [midi.tracks[e.violinTrack]]
       }
       const ppq = midi.header.ppq
-      const midiNotes = solo.flatMap(t => t.notes).map(n => ({ pitch: n.midi, on: n.time * k, off: (n.time + Math.max(0.04, n.duration)) * k, velocity: n.velocity, q: n.ticks / ppq, dq: n.durationTicks / ppq }))
+      // (a melody from another instrument, such as a voice, moved by octaves to where a violin plays it; a note still below G3 up an octave)
+      const oct = e.score ? 0 : 12 * violinOctaves((e.violinTop ? topLine(solo.flatMap(t => t.notes)) : solo.flatMap(t => t.notes)).map(n => n.midi))
+      const vp = p => { p += oct; while (!e.score && p < 55) p += 12; while (!e.score && p > 103) p -= 12; return p }
+      const top = !e.score && e.violinTop ? new Set(topLine(solo.flatMap(t => t.notes))) : null
+      const midiNotes = (top ? [...top] : solo.flatMap(t => t.notes)).map(n => ({ pitch: vp(n.midi), on: n.time * k, off: (Math.min(n.cut ?? Infinity, n.time + Math.max(0.04, n.duration))) * k, velocity: n.velocity, q: n.ticks / ppq, dq: n.durationTicks / ppq }))
         .sort((a, b) => a.on - b.on || a.pitch - b.pitch)
       // the score itself (violinist/score-play.js) unless the MIDI file is asked for
       $('source').hidden = !e.score
@@ -278,11 +398,12 @@
       const scale = n => ({ ...n, on: n.on * k, off: n.off * k })
       const violin = piece ? piece.violin.map(scale) : midiNotes
       // the piano: every other track (or staff of the score); two of them are the hands (the higher one the right)
-      const others = midi.tracks.filter(t => !solo.includes(t) && t.notes.length && t.channel !== 9)
+      const herTracks = !e.score && e.pianoTracks?.length && !e.herAll ? [...e.pianoTracks.map(i => midi.tracks[i]), ...(top ? solo : [])] : null
+      const others = midi.tracks.filter(t => (top || !solo.includes(t)) && t.notes.length && !isDrums(t) && (!herTracks || herTracks.includes(t)))
       const mean = ns => ns.reduce((a, n) => a + n, 0) / ns.length
       let parts = piece
         ? piece.others.map(p => ({ name: p.name, notes: p.notes.map(n => ({ ...scale(n), pitch: n.pitch })) }))
-        : others.map(t => ({ name: t.name, notes: t.notes.map(n => ({ pitch: n.midi, q: n.ticks / ppq, dq: n.durationTicks / ppq, on: n.time * k, off: (n.time + Math.max(0.04, n.duration)) * k, velocity: n.velocity })) }))
+        : others.map(t => ({ name: t.name || t.instrument.name, notes: t.notes.filter(n => !top?.has(n)).map(n => ({ pitch: n.midi, q: n.ticks / ppq, dq: n.durationTicks / ppq, on: n.time * k, off: (n.time + Math.max(0.04, n.duration)) * k, velocity: n.velocity })) }))
       parts = parts.filter(p => p.notes.length)
       const accNotes = parts.flatMap(p => p.notes)
       // a recorded performer (violinist/performer.js): his timing, dynamics and pitch; the piano follows his tempo
@@ -309,7 +430,7 @@
       const means = parts.map(p => mean(p.notes.map(n => n.pitch)))
       const hands = parts.length === 2 ? new Map([[parts[0], means[0] >= means[1] ? 'R' : 'L'], [parts[1], means[0] >= means[1] ? 'L' : 'R']]) : null
       // (a recorded or modelled performer retimed accNotes in place, along his tempo)
-      let piano0 = parts.flatMap(p => p.notes.map(n => ({ pitch: n.pitch, on: n.on, off: Math.max(n.on + 0.04, n.off), velocity: Math.min(1, (n.velocity ?? 0.7) * 0.9), ...(hands ? { hand: hands.get(p) } : {}) })))
+      let piano0 = parts.flatMap((p, pi) => p.notes.map(n => ({ part: pi, pitch: n.pitch, on: n.on, off: Math.max(n.on + 0.04, n.off), velocity: Math.min(1, (n.velocity ?? 0.7) * 0.9), ...(hands ? { hand: hands.get(p) } : {}) })))
         .filter(n => n.pitch >= LOW && n.pitch <= HIGH).sort((a, b) => a.on - b.on || a.pitch - b.pitch)
       // an orchestra on the piano: the same note in several parts is struck once
       if (parts.length > 2) {
@@ -327,6 +448,8 @@
       if (song.performer?.expression) ex = song.performer.expression.recorded || !ex ? song.performer.expression : { ...ex, timing: true }
       if (song.modelled) ex = song.modelled.expression
       const playerViolin = onePlayerNotes(violin)
+      // her tracks, for the mixer: each with its own synth channel (more than there are share one)
+      song.parts = parts.map((p, i) => ({ name: (p.name || '').trim() || `Part ${i + 1}`, key: `${i}:${p.name}`, hand: hands?.get(p), notes: pianoNotes.filter(n => n.part === i).length })).map((p, i) => ({ ...p, channel: PIANO_CH[i % PIANO_CH.length] }))
       Object.assign(song, { expr:ex, entry:e, violin:playerViolin, piano:pianoNotes, pedal, motion:buildMotion(playerViolin, { instrument:'violin' }) })
       song.duration = Math.max(1, ...playerViolin.map(n => n.off), ...pianoNotes.map(n => n.off))
       song.drive = drivers(playerViolin)
@@ -337,13 +460,17 @@
       pRig.clear(); pRig.setNotes(pianoNotes)
       keys.reset()
       const b = song.bowing
-      const src = piece ? `Notes: the Mutopia score, read from its LilyPond source (${e.credit?.replace(/^Mutopia Project,?\s*/, '') || 'Mutopia Project'}), ${e.licence}` : `MIDI: ${e.credit || 'Mutopia Project'}, ${e.licence}`
-      $('credit').innerHTML = `${e.composer} – ${e.title}<br>${src} · VRoid Project models (pixiv)${b && b.mode !== 'fixed' ? `<br>Bowing: ${b.mode === 'score' ? 'the Mutopia score' : 'inferred'} (${b.slurs} slurred notes)` : ''}${song.performer ? '<br>Played as ' + performerCredit(song.performer.rec, { pitch: hybrid.on }) : song.modelled ? '<br>Played as ' + modelledCredit(song.modelled.model) : ''}`
-      $('startSong').textContent = `${e.composer} – ${e.title}`
+      const src = piece ? `Notes: the Mutopia score, read from its LilyPond source (${e.credit?.replace(/^Mutopia Project,?\s*/, '') || 'Mutopia Project'}), ${e.licence}`
+        : e.score ? `MIDI: ${e.credit || 'Mutopia Project'}, ${e.licence}`
+        : `MIDI: ${e.local ? 'opened here' : e.credit}${oct ? `, the violin ${Math.abs(oct / 12)} octave${Math.abs(oct) > 12 ? 's' : ''} ${oct > 0 ? 'up' : 'down'}` : ''}`
+      const name = [e.composer, e.title].filter(Boolean).join(' – ')
+      $('credit').innerHTML = `${name.replace(/[<&]/g, '')}<br>${src} · VRoid Project models (pixiv)${b && b.mode !== 'fixed' ? `<br>Bowing: ${b.mode === 'score' ? 'the Mutopia score' : 'inferred'} (${b.slurs} slurred notes)` : ''}${song.performer ? '<br>Played as ' + performerCredit(song.performer.rec, { pitch: hybrid.on }) : song.modelled ? '<br>Played as ' + modelledCredit(song.modelled.model) : ''}`
+      $('startSong').textContent = name
+      showMixerParts()
       clock.t = 0
       setStatus('')
       if (scheduler) loadSchedule()
-      attachLiner(midi, 'violinist/midis/' + e.file, T)
+      attachLiner(midi, e.score ? 'violinist/midis/' + e.file : 'none', T)
     }
 
     // ── Liner notes (liner/): intertitles, the notes panel (I), sections on the seek bar ──
@@ -507,13 +634,82 @@
     // physical models (real time, in an AudioWorklet, from the same curves) ──
     const hall = installAcoustics()
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
-    const engine = new SoundFontEngine({ backend: 'oxisynth', vendorPath: new URL('./vendor', import.meta.url).href, audioContext: audioCtx })
-    const pianoEngine = new SoundFontEngine({ backend: 'oxisynth', vendorPath: new URL('./vendor', import.meta.url).href, audioContext: audioCtx })
-    const synthFor = c => (c === 1 ? pianoEngine : engine)
-    let soundReady = false, soundLoading = null
-    const programs = () => { engine.programChange(0, 40); pianoEngine.programChange(1, 0) }
-    const ensureSound = () => (soundLoading ??= Promise.all([engine.loadSoundFont('soundfonts/Creative(emu10k1)8MBGMSFX.sf2'), pianoEngine.loadSoundFont('soundfonts/Full Grand Piano.sf2')])
-      .then(() => { soundReady = true; programs(); applyBalance() })
+    // (OxiSynth in an AudioWorklet on the hall's context, 'oxisynth-worklet', so it plays
+    // through the hall: the plain 'oxisynth' backend opens a context of its own)
+    const engine = new SoundFontEngine({ backend: 'oxisynth-worklet', vendorPath: new URL('./vendor', import.meta.url).href, audioContext: audioCtx })
+    // her synth, one engine per synth chosen in the Mixer, each kept once made (a backend's
+    // dispose isn't safe while its audio runs: OxiSynth's output keeps calling the freed synth)
+    const pianoEngines = {}
+    const BACKEND = { oxisynth: 'oxisynth-worklet' }
+    const pianoEngineOf = synth => (pianoEngines[synth] ??= new SoundFontEngine({ backend: BACKEND[synth] || synth, vendorPath: new URL('./vendor', import.meta.url).href, audioContext: audioCtx }))
+    let pianoEngine = pianoEngineOf('oxisynth')
+    const synthFor = c => (c === 0 ? engine : pianoEngine)
+    // her tracks each get a channel of their own on the piano's synth, so each has its own level (CC7)
+    const PIANO_CH = [1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15]
+    const pianoChannels = () => [...new Set((song.parts?.length ? song.parts : [{ channel: 1 }]).map(p => p.channel))]
+    // the piano's sound (Mixer): synth, soundfont and preset. The default is what it was:
+    // OxiSynth playing Full Grand Piano.sf2, preset 0 (Grand), 4 dB down (its trim)
+    const PIANO_FONTS = [
+      { file: 'Full Grand Piano.sf2', label: 'Full Grand Piano (17 MB)', trim: -4 },
+      { file: 'Full Grand Piano.sf3', label: 'Full Grand Piano, compressed (3 MB)', trim: -4 },
+      { file: 'Motif_ES6_Concert_Piano.sf2', label: 'Yamaha Motif ES6 Concert Piano (13 MB)', trim: 0 },
+      { file: 'Roland_Super_XP-80.sf2', label: 'Roland Super XP-80 piano (2 MB)', trim: 0 },
+      { file: 'Creative(emu10k1)8MBGMSFX.sf2', label: 'Creative 8 MB GM (the violin\'s font)', trim: 0 },
+      { file: 'FluidR3.sf3', label: 'FluidR3 GM (20 MB)', trim: 0 },
+      { file: 'JClive21.sf2', label: 'JClive21 GM (52 MB)', trim: 0 },
+    ]
+    for (const f of PIANO_FONTS) $('psf').appendChild(new Option('Soundfont: ' + f.label, f.file))
+    const pianoFont = () => PIANO_FONTS.find(f => f.file === $('psf').value) || PIANO_FONTS[0]
+    if ([...$('psynth').options].some(o => o.value === Q.get('psynth'))) $('psynth').value = Q.get('psynth')
+    $('psf').value = PIANO_FONTS.some(f => f.file === Q.get('psf')) ? Q.get('psf') : PIANO_FONTS[0].file
+    const wantProg = Q.get('pprog') != null && isFinite(+Q.get('pprog')) ? +Q.get('pprog') : 0
+    /** The presets of a soundfont (bank 0), read from its phdr chunk (SF2 and SF3 alike). */
+    async function presetsOf(file) {
+      const buf = new Uint8Array(await (await fetch('soundfonts/' + file)).arrayBuffer())
+      const dv = new DataView(buf.buffer), out = new Map()
+      for (let i = 12; i + 8 <= buf.length;) {
+        const id = String.fromCharCode(...buf.subarray(i, i + 4)), size = dv.getUint32(i + 4, true)
+        if (id === 'LIST') { i += 12; continue }
+        if (id === 'phdr') {
+          for (let k = i + 8; k + 38 <= i + 8 + size - 38; k += 38) {
+            const name = String.fromCharCode(...buf.subarray(k, k + 20)).split('\0')[0].trim(), prog = dv.getUint16(k + 20, true), bank = dv.getUint16(k + 22, true)
+            if (bank === 0 && prog < 128 && !out.has(prog)) out.set(prog, name)
+          }
+          break
+        }
+        i += 8 + size + (size & 1)
+      }
+      return [...out].sort((a, b) => a[0] - b[0])
+    }
+    async function showPresets() {
+      const want = $('pprog').options.length ? +$('pprog').value : wantProg
+      if ($('psynth').value === 'wavetable') { $('pprog').innerHTML = '<option value="0">Preset: the wavetable piano</option>'; $('psf').disabled = $('pprog').disabled = true; return }
+      $('psf').disabled = $('pprog').disabled = false
+      let list = []
+      try { list = await presetsOf($('psf').value) } catch (err) { console.warn('presets:', err.message) }
+      // (a GM font: the pianos first, 0-7)
+      $('pprog').innerHTML = (list.length ? list : [[0, 'Piano']]).map(([p, n]) => `<option value="${p}">Preset ${p}: ${n.replace(/[<&]/g, '')}</option>`).join('')
+      $('pprog').value = list.some(([p]) => p === want) ? want : list[0]?.[0] ?? 0
+    }
+    let soundReady = false, soundLoading = null, pianoReady = false, pianoLoading = null
+    const programs = () => {
+      engine.programChange(0, 40)
+      if (pianoReady) for (const c of pianoChannels()) pianoEngine.programChange(c, +$('pprog').value || 0)
+    }
+    /** (Re)load her synth and soundfont; a change of synth makes a new backend on the same audio context. */
+    function loadPiano() {
+      pianoReady = false
+      const synth = $('psynth').value
+      if (pianoEngine !== pianoEngineOf(synth)) { pianoEngine.allSoundOff?.(); pianoEngine = pianoEngineOf(synth); window.__mixer.pianoEngine = pianoEngine }
+      pianoEngine.backendName = synth
+      setStatus('Loading the piano…')
+      const p = (synth === 'wavetable' ? pianoEngine._backend.init() : pianoEngine.loadSoundFont('soundfonts/' + $('psf').value))
+        .then(() => { if (pianoLoading !== p) return; pianoReady = true; setStatus(''); programs(); applyBalance(); showPianoNote() })
+        .catch(e => { console.error(e); setStatus('Piano failed to load: ' + e.message, 4000) })
+      return (pianoLoading = p)
+    }
+    const ensureSound = () => (soundLoading ??= Promise.all([engine.loadSoundFont('soundfonts/Creative(emu10k1)8MBGMSFX.sf2').then(() => { soundReady = true }), pianoLoading || loadPiano()])
+      .then(() => { programs(); applyBalance() })
       .catch(e => { console.error(e); setStatus('Sound failed to load: ' + e.message, 4000) }))
     const applyHall = () => { const p = acousticParams({ room: $('room').value, seat: 'mid' }); hall.set(p); hybrid.lab?.setHall(p) }
     // levels while sounding, measured on the Kreutzer finale: the GM violin 0.107
@@ -521,16 +717,78 @@
     // keep the old balance); #034's Lab out of its hall at unity: the hybrid
     // 0.047, the waveguide 0.061, the source-filter 0.090
     const LAB_LEVEL = { hybrid: 2.1, waveguide: 1.6, source: 1.1 }
-    const PIANO_TRIM = -4
-    // balance (dB, + = violin): the other part is turned down by that much,
-    // the soundfont through CC7 (GM volume, 40·log10: 0 dB at 100), the hybrid by its gain
-    const balance = () => { const b = +$('balance').value; return { v: Math.min(0, b), p: Math.min(0, -b) } }
-    const cc7 = dB => Math.max(0, Math.min(127, Math.round(100 * Math.pow(10, dB / 40))))
-    function applyBalance() {
-      const { v, p } = balance()
-      if (soundReady) { engine.controlChange(0, 7, cc7(v)); pianoEngine.controlChange(1, 7, cc7(p + PIANO_TRIM)) }
-      if (hybrid.on) hybrid.lab?.setVolume(LAB_LEVEL[hybrid.name] * Math.pow(10, v / 20))
+    // ── Mixer: a level (dB) for the violin, the piano and each of her tracks ──
+    // through CC7 (GM volume, 40·log10: 0 dB at 100, +4 dB at 127) on the synths that
+    // take it, else (RustySynth, the wavetable piano) by each note's velocity; the
+    // #034 violin engines by their gain. At the slider's left end a part is off
+    const OFF = -40
+    const levels = { violin: 0, piano: 0, parts: new Map() }      // parts: by her track's place and name, kept from piece to piece
+    {
+      const v = (Q.get('vol') || '').split(',').map(Number)
+      if (isFinite(v[0])) levels.violin = v[0]
+      if (isFinite(v[1])) levels.piano = v[1]
+      // (the old balance, +: the piano down, -: the violin down)
+      if (!Q.get('vol') && isFinite(+Q.get('bal')) && +Q.get('bal')) { const b = +Q.get('bal'); levels.violin = Math.min(0, b); levels.piano = Math.min(0, -b) }
     }
+    const lin = dB => dB <= OFF ? 0 : Math.pow(10, dB / 20)
+    const cc7 = dB => dB <= OFF ? 0 : Math.max(0, Math.min(127, Math.round(100 * Math.pow(10, dB / 40))))
+    const partDb = c => { const p = song.parts?.find(x => x.channel === c); return p ? levels.parts.get(p.key) ?? 0 : 0 }
+    const channelDb = c => c === 0 ? levels.violin : levels.piano <= OFF || partDb(c) <= OFF ? OFF : levels.piano + partDb(c) + pianoFont().trim * ($('psynth').value !== 'wavetable')
+    const pianoCC = () => pianoEngine.capabilities?.controlChange
+    function applyBalance() {
+      if (soundReady) engine.controlChange(0, 7, cc7(levels.violin))
+      if (pianoReady && pianoCC()) for (const c of pianoChannels()) pianoEngine.controlChange(c, 7, cc7(channelDb(c)))
+      if (hybrid.on) hybrid.lab?.setVolume(LAB_LEVEL[hybrid.name] * lin(levels.violin))
+    }
+    const fmtDb = dB => dB <= OFF ? 'off' : (dB > 0 ? '+' : '') + dB.toFixed(1)
+    function levelRow(label, get, set, sub, title) {
+      const row = document.createElement('div'); row.className = 'row' + (sub ? ' sub' : '')
+      row.innerHTML = `<span></span><input type="range" min="${OFF}" max="6" step="0.5"><span></span>`
+      const [name, input, val] = row.children
+      name.textContent = label; name.title = title || label
+      input.value = get(); val.textContent = fmtDb(get())
+      input.oninput = () => { set(+input.value); val.textContent = fmtDb(+input.value); applyBalance() }
+      input.onchange = () => saveUrl()
+      input.ondblclick = () => { input.value = 0; input.oninput(); saveUrl() }
+      return row
+    }
+    function showMixerParts() {
+      const box = $('levels'); box.innerHTML = ''
+      box.append(levelRow('Violin', () => levels.violin, v => { levels.violin = v }, false, 'The violin'),
+        levelRow('Piano', () => levels.piano, v => { levels.piano = v }, false, 'The whole piano part'))
+      // her tracks (two hands, staves, or the tracks of a MIDI file), by channel
+      const byCh = new Map()
+      for (const p of song.parts || []) (byCh.get(p.channel) || byCh.set(p.channel, []).get(p.channel)).push(p)
+      if (byCh.size > 1) for (const [c, ps] of byCh) {
+        const label = ps.map(p => p.hand ? `${p.hand === 'R' ? 'Right' : 'Left'} hand` : p.name).join(' + ')
+        const notes = ps.reduce((a, p) => a + p.notes, 0)
+        box.append(levelRow(label, () => levels.parts.get(ps[0].key) ?? 0, v => { for (const p of ps) levels.parts.set(p.key, v) }, true, `${label}${ps[0].hand ? ` (${ps[0].name})` : ''}: ${notes} notes, channel ${c + 1}`))
+      }
+      applyBalance()
+    }
+    function showPianoNote() {
+      const s = $('psynth').value
+      $('pnote').textContent = s === 'wavetable' ? 'The built-in wavetable piano: oscillators, no samples. Levels set the notes\' velocity; no pedal.'
+        : s === 'rustysynth' ? 'RustySynth takes no controllers: levels set the notes\' velocity (new notes only) and the sustain pedal is ignored. It plays on an audio context of its own, so the hall and the master limiter don\'t reach it.'
+        : `Now: ${$('psynth').selectedOptions[0].text.replace('Synth: ', '')}, ${pianoFont().label}, preset ${$('pprog').value}.`
+    }
+    $('mixerBtn').onclick = () => { $('mixer').hidden = !$('mixer').hidden; $('mixerBtn').classList.toggle('on', !$('mixer').hidden) }
+    addEventListener('keydown', e => { if (e.key === 'm' && !/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) $('mixerBtn').onclick() })
+    // (a second change while the first loads keeps the first's wish to go on playing)
+    let resumeAfter = false
+    const repiano = async () => {
+      resumeAfter ||= clock.playing; if (clock.playing) pause()
+      const p = loadPiano(); await p
+      if (p !== pianoLoading) return
+      if (scheduler) loadSchedule()
+      if (resumeAfter) { resumeAfter = false; play() }
+      saveUrl()
+    }
+    $('psynth').onchange = async () => { await showPresets(); repiano() }
+    $('psf').onchange = async () => { await showPresets(); repiano() }
+    $('pprog').onchange = () => { programs(); showPianoNote(); saveUrl() }
+    showPresets().then(showPianoNote)
+    window.__mixer = { levels, engine, pianoEngine, ready: () => soundReady && pianoReady, channelDb }
     const hybrid = {
       lab: null, P: null, perfFor: null, speed: 0, using: null,
       get name() { return $('vsound').value },
@@ -568,9 +826,14 @@
     let scheduler = null
     const target = {
       audioContext: audioCtx, resume: () => audioCtx.resume(),
-      noteOn(m, v, c) { if (soundReady) synthFor(c).noteOn(m, v, c) },
+      noteOn(m, v, c) {
+        if (c === 0) { if (soundReady) engine.noteOn(m, v, c); return }
+        if (!pianoReady) return
+        if (!pianoCC()) { const g = lin(channelDb(c)); if (!g) return; v = Math.min(1, v * g) }
+        pianoEngine.noteOn(m, v, c)
+      },
       noteOff(m, c) { synthFor(c).noteOff(m, c) },
-      controlChange(c, cc, v) { synthFor(c).controlChange(c, cc, v) },
+      controlChange(c, cc, v) { if (c === 0 || pianoReady && pianoCC()) synthFor(c).controlChange(c, cc, v) },
       allSoundOff() { engine.allNotesOff?.(); pianoEngine.allNotesOff?.() },
     }
     const clock = { playing: false, t: 0, wall: 0, speed: 1 }
@@ -579,9 +842,10 @@
     function loadSchedule() {
       const notes = [
         ...onePlayerNotes(hybrid.on ? [] : song.violin).map(n => ({ midi: n.pitch, time: n.on, duration: n.off - n.on, velocity: n.velocity ?? 0.75, channel: 0 })),
-        ...song.piano.map(n => ({ midi: n.pitch, time: n.on, duration: n.off - n.on, velocity: n.velocity ?? 0.7, channel: 1 })),
+        ...song.piano.map(n => ({ midi: n.pitch, time: n.on, duration: n.off - n.on, velocity: n.velocity ?? 0.7, channel: song.parts[n.part]?.channel ?? 1 })),
       ].sort((a, b) => a.time - b.time)
-      scheduler.load({ notes, controlChanges: song.pedal.map(p => ({ time: p.t, channel: 1, controller: 64, value: p.on ? 127 : 0 })) })
+      const chans = pianoChannels()
+      scheduler.load({ notes, controlChanges: song.pedal.flatMap(p => chans.map(c => ({ time: p.t, channel: c, controller: 64, value: p.on ? 127 : 0 }))) })
       if (soundReady) { programs(); applyBalance() }
     }
     async function play() {
@@ -625,10 +889,6 @@
       saveUrl()
     }
     if ([...$('vsound').options].some(o => o.value === Q.get('violin'))) $('vsound').value = Q.get('violin')
-    if (Q.get('bal') != null && isFinite(+Q.get('bal'))) $('balance').value = Q.get('bal')
-    $('balance').oninput = () => applyBalance()
-    $('balance').onchange = () => saveUrl()
-    $('balance').ondblclick = () => { $('balance').value = 0; applyBalance(); saveUrl() }
     function seekTo(t) { clock.t = Math.max(0, Math.min(t, song.duration)); clock.wall = performance.now(); if (clock.playing) { target.allSoundOff(); scheduler.seek(clock.t); if (clock.pending) { clock.pending = false; scheduler.play() } if (hybrid.on) hybrid.start(clock.t) } }
     $('seek').oninput = () => seekTo(+$('seek').value * song.duration)
     $('bowing').value = ['infer', 'fixed'].includes(Q.get('bowing')) ? Q.get('bowing') : 'score'
@@ -647,6 +907,27 @@
     $('source').onchange = async () => { const was = clock.playing; pause(); await loadSong($('song').value); director.reset(); clock.t = 0; if (hybrid.on && hybrid.lab) hybrid.ensure(); if (was) play(); saveUrl() }
     $('performer').onchange = async () => { const was = clock.playing; pause(); await loadSong($('song').value); director.reset(); clock.t = 0; if (hybrid.on && hybrid.lab) hybrid.ensure(); if (was) play(); saveUrl() }
     $('bowing').onchange = async () => { const was = clock.playing, t = clock.t; pause(); await loadSong($('song').value); clock.t = t; if (hybrid.on && hybrid.lab) hybrid.ensure(); if (was) play(); saveUrl() }
+    // the parts of a piece not from a score, and MIDI files opened here (Open MIDI…, or dropped on the page)
+    const reloadParts = async () => { const was = clock.playing; pause(); await loadSong($('song').value); director.reset(); clock.t = 0; if (hybrid.on && hybrid.lab) hybrid.ensure(); if (was) play() }
+    $('vpart').onchange = () => { const e = entryOf($('song').value), [i, top] = $('vpart').value.split(':'); e.violinTracks = [+i]; e.violinTop = !!top; if (!top) e.pianoTracks = (e.pianoTracks || []).filter(j => j !== +i); reloadParts() }
+    $('ppart').onchange = () => { entryOf($('song').value).herAll = $('ppart').value === 'all'; reloadParts() }
+    async function openMidi(f) {
+      if (!f) return
+      const buf = await f.arrayBuffer()
+      try { new Midi(buf) } catch (err) { setStatus(`${f.name}: not a MIDI file`); setTimeout(() => setStatus(''), 3000); return }
+      const e = { file: 'local:' + local.length, local: true, composer: '', title: f.name.replace(/\.(mid|midi)$/i, ''), buf }
+      local.push(e)
+      let og = $('song').querySelector('optgroup[data-local]')
+      if (!og) { og = document.createElement('optgroup'); og.label = 'Opened here'; og.dataset.local = ''; $('song').prepend(og) }
+      og.appendChild(new Option(e.title, e.file))
+      $('song').value = e.file
+      $('start').classList.add('gone')
+      await $('song').onchange()
+    }
+    $('open').onclick = () => $('file').click()
+    $('file').onchange = () => { openMidi($('file').files[0]); $('file').value = '' }
+    addEventListener('dragover', ev => { if ([...ev.dataTransfer.types].includes('Files')) ev.preventDefault() })
+    addEventListener('drop', ev => { const f = ev.dataTransfer.files[0]; if (f) { ev.preventDefault(); openMidi(f) } })
     $('song').onchange = async () => { const was = clock.playing; pause(); await loadSong($('song').value); director.reset(); if (hybrid.on && hybrid.lab) hybrid.ensure(); if (was) play(); saveUrl() }
     $('start').onclick = () => { $('start').classList.add('gone'); play() }
     addEventListener('keydown', e => { if (e.code === 'Space' && e.target === document.body) { e.preventDefault(); $('start').classList.add('gone'); clock.playing ? pause() : play() } })
@@ -735,20 +1016,32 @@
     }
     $('cam').onchange = () => { if ($('cam').value !== 'auto') setView($('cam').value); saveUrl() }
     controls.addEventListener('start', () => { tween = null; if ($('cam').value !== 'free') $('cam').value = 'free' })
+    // (for tests: the camera close on one of her hands, offset in her frame, cm)
+    window.__duo = { lookAtHand(side, off) {
+      $('cam').value = 'free'; tween = null
+      const h = pRig.hands[side], w = her.group.localToWorld(h.joints.W.clone())
+      const tip = her.group.localToWorld((h.joints.M || h.joints.W).clone())
+      const tg = w.clone().lerp(tip, 0.5)
+      camera.position.copy(her.group.localToWorld(her.group.worldToLocal(tg.clone()).add(v3(...off)))); controls.target.copy(tg); camera.fov = 30; camera.updateProjectionMatrix()
+    }, her, pRig }
 
     function saveUrl() {
       if (SHOT) return
       const p = new URLSearchParams()
-      if ($('song').value !== 'beethoven_kreutzer_3_presto.mid') p.set('song', $('song').value)
+      if ($('song').value !== 'beethoven_kreutzer_3_presto.mid' && !$('song').value.startsWith('local:')) p.set('song', $('song').value)
       if ($('model').selectedIndex) p.set('model', $('model').value)
       if ($('outfit').value !== 'concert') p.set('outfit', $('outfit').value)
       if ($('bowing').value !== 'score') p.set('bowing', $('bowing').value)
       if ($('performer').value !== MODELLED) p.set('performer', $('performer').value || 'none')
       if ($('source').value === 'midi') p.set('src', 'midi')
       if ($('vdress').value !== 'wine') p.set('vdress', $('vdress').value)
+      if ($('hands').value !== 'pianist') p.set('hands', $('hands').value)
       if ($('room').value !== 'hall') p.set('room', $('room').value)
       if (hybrid.on) p.set('violin', hybrid.name)
-      if (+$('balance').value) p.set('bal', $('balance').value)
+      if (levels.violin || levels.piano) p.set('vol', `${levels.violin},${levels.piano}`)
+      if ($('psynth').value !== 'oxisynth') p.set('psynth', $('psynth').value)
+      if ($('psf').value !== PIANO_FONTS[0].file) p.set('psf', $('psf').value)
+      if (+$('pprog').value) p.set('pprog', $('pprog').value)
       if ($('cam').value !== 'auto') p.set('view', $('cam').value)
       if (!$('intro').checked) p.set('intro', '0')
       if ($('notes').value !== 'intertitles') p.set('notes', $('notes').value)

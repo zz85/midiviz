@@ -11,7 +11,7 @@
 // skirt stays), 'hair'.
 
 import * as THREE from 'three'
-import { bodyIndex, hideBody, underGarment } from './shell.js'
+import { bodyIndex, hideBody, underGarment, coveredBy, coverBody, keepSkin } from './shell.js'
 import { hairCap } from './hair.js'
 import { createHairCloth } from './hair-cloth.js'
 import { applyFabric } from './fabric.js'
@@ -171,9 +171,16 @@ export async function createCommunity(ch, key, { color = null } = {}) {
   if (!hair) {
     // (some assets ship no delete group: then only what lies under the fabric)
     const del = new Set(delVerts || [])
-    const src = ch.parts.body.source, idx = bodyIndex(ch), tris = []
-    if (del.size) for (let t = 0; t < idx.length; t += 3) if (del.has(src[idx[t]]) || del.has(src[idx[t + 1]]) || del.has(src[idx[t + 2]])) tris.push(t)
-    hideBody(ch, hideKey, [...new Set([...tris, ...underGarment(ch, mesh.geometry, tris)])]); hidden = true
+    const src = ch.parts.body.source, idx = bodyIndex(ch), marked = []
+    if (del.size) for (let t = 0; t < idx.length; t += 3) if (del.has(src[idx[t]]) || del.has(src[idx[t + 1]]) || del.has(src[idx[t + 2]])) marked.push(t)
+    // the skin the fabric lies over (the author's group and what lies near
+    // the fabric): kept and sunk under it (shell.js coverBody), or with
+    // ?skin=hide hidden, as before (only what the fabric covers: coveredBy)
+    const near = [...new Set([...marked, ...underGarment(ch, mesh.geometry, marked)])]
+    // (and up to its edges: the rays decide what it covers)
+    if (keepSkin()) coverBody(ch, hideKey, mesh.geometry, [...new Set([...near, ...underGarment(ch, mesh.geometry, near, { rings: 0, reach: 2.5 })])])
+    else hideBody(ch, hideKey, coveredBy(ch, mesh.geometry, near))
+    hidden = true
   }
   const cap = hair ? hairCap(ch, undefined, mesh.geometry, alpha ? map : null) : null
 
@@ -211,7 +218,7 @@ export async function createCommunity(ch, key, { color = null } = {}) {
     update(dt = 1 / 60) { if (cloth) cloth.update(dt, object.visible); else mesh.visible = object.visible; if (cap) cap.visible = object.visible },
     dispose() {
       cloth?.dispose()
-      if (hidden) hideBody(ch, hideKey, null)
+      if (hidden) { hideBody(ch, hideKey, null); coverBody(ch, hideKey, null) }
       for (const m of [mesh, cap]) if (m) { m.removeFromParent(); m.geometry.dispose() }
       cap?.material.dispose(); mat.dispose(); map?.dispose(); normalMap?.dispose(); grey?.dispose()
     },

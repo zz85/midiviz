@@ -4,4 +4,4 @@ Vendored by pathtrace/tools/vendor.mjs for Experiment #045:
 - three-mesh-bvh 0.9.17
 - @meimu/mutracer 0.2.0
 - three 0.187.0
-- oidn-web 0.4.0
+- oidn-web 0.5.0

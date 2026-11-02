@@ -1,5 +1,6 @@
 import { EventEmitter } from './events.js';
 import { OxiSynthBackend } from './backends/oxisynth.js';
+import { OxiSynthWorkletBackend } from './backends/oxisynth-worklet.js';
 import { SpessaSynthBackend } from './backends/spessasynth.js';
 import { RustySynthBackend } from './backends/rustysynth.js';
 import { WavetablePianoBackend } from './backends/wavetable.js';
@@ -7,6 +8,7 @@ import { WavetablePianoBackend } from './backends/wavetable.js';
 /** Backend name -> constructor mapping */
 const BACKENDS = {
   oxisynth: OxiSynthBackend,
+  'oxisynth-worklet': OxiSynthWorkletBackend,
   spessasynth: SpessaSynthBackend,
   rustysynth: RustySynthBackend,
   wavetable: WavetablePianoBackend,
@@ -37,7 +39,7 @@ const BACKENDS = {
 export class SoundFontEngine extends EventEmitter {
   /**
    * @param {object} [options]
-   * @param {string|object} [options.backend] - Backend name ('oxisynth', 'spessasynth', 'rustysynth', 'wavetable') or a backend instance. Defaults to 'wavetable'.
+   * @param {string|object} [options.backend] - Backend name ('oxisynth', 'oxisynth-worklet' (OxiSynth in an AudioWorklet on the given context, so it plays through the page's own audio graph), 'spessasynth', 'rustysynth', 'wavetable') or a backend instance. Defaults to 'wavetable'.
    * @param {AudioContext} [options.audioContext] - Existing AudioContext to reuse
    * @param {string} [options.vendorPath] - Base path to vendor directory containing WASM files and libs
    */

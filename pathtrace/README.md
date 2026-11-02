@@ -5,7 +5,7 @@
 - [three-gpu-pathtracer](https://github.com/gkjohnson/three-gpu-pathtracer) 0.0.27 (Garrett Johnson, MIT): its WebGPU tracer (`WebGPUPathTracer`, compute shaders on three/webgpu) and its older WebGL tracer (`WebGLPathTracer`, deprecated upstream)
 - [MuTracer](https://github.com/pissang/mutracer) 0.2.0 (`@meimu/mutracer`, Yi Shen, MIT): WebGPU, with a WebGL 2 fallback
 
-The page moved from three.js r170 to r185, which three-gpu-pathtracer's WebGPU tracer needs, and then to r187 (1 Nov 2026). Its raster picture is unchanged by either: a still of the stage at r187 has the same mean brightness as at r185 (85.2 against 85.4).
+The page moved from three.js r170 to r185, which three-gpu-pathtracer's WebGPU tracer needs, and on 1 Nov 2026 to r187 (with MuTracer 0.2.0 and oidn-web 0.5.0). From r17x three.js keeps a soft (VSM) shadow map's depths in half floats, too coarse for the key light's 250-1000 cm range: the shadows drew dark contour bands across her skin. The page uses PCF shadows instead (`?shadows=vsm` brings VSM back to compare).
 
 The page's code is [app.js](app.js) (markup in shell.js, styles in app.css), which #049 and #050 boot with a plugin that draws the score over it ([sheet/README.md](../sheet/README.md#the-shared-pianist-app)).
 
@@ -42,6 +42,14 @@ The first MuTracer stills were much darker than three-gpu-pathtracer's and the h
 After these fixes the two tracers' WebGPU stills look close on a desktop GPU, hair included (compared by eye at 1280×720 and 1920×1080; no pixel comparison yet). The test scenes also check light units (`?test=down`, `?test=rect`: a white floor 2 m under a spot or area light, the tracers within 2 % and 6 %) and a uniform sky (`?test=env`: 176 against 197). On `?test=point` MuTracer is brighter (115 against 77); the stage has no point lights.
 
 The vertex-colour one is worth reporting upstream; MuTracer asks for issues rather than pull requests.
+
+MuTracer 0.2.0 fixes all three: its converter fades spots as three.js does, turns a three.js equirect's rows itself and copies vertex colours. The spot and row workarounds are gone from `engines.js`; the hair's colour texture stays (it is still right). On SwiftShader WebGL, `?test=spot` reads 63 (three-gpu-pathtracer 60), `?test=sky` 184 (170) and `?test=vcolor` 161,64,64 (148,60,60).
+
+## Garments over the skin
+
+The raster page draws a garment over the skin it lies on with a polygon offset: the fabric wins depth ties within a few millimetres. A path tracer has no depth test, so the skin under a fabric's edge, a halter's collar and the shoes' rims poked through in patches. [snapshot.js](snapshot.js) lifts each skinned mesh drawn with a negative polygon offset off the body along its normals, by `FABRIC_LIFT` (0.3 cm): posed, c806 (the red evening gown) sits a median 0.23 cm off her skin. Not yet checked on a GPU.
+
+The skin under a garment isn't hidden: it is sunk into the body (0.8 cm under community garments, 2 cm under the built-in dresses, fading to nothing at the edge; `pianist/shell.js` `coverBody`), so a gap in the fabric shows skin. `?skin=hide` hides it as before, for comparison.
 
 ## Known problems
 

@@ -100,27 +100,30 @@ export const THUMB = 1.17
 // moves before a bone's head, a vertex past its tail moves with its tail).
 // The skin grows longer, not thicker. Returns the vertex edit for each
 // part's positions (meta frame), given its skin indices and weights.
-function lengthenThumbs(meta, k) {
-  if (!k || k === 1) return pos => pos
+// fingers: { 2: k, …, 5: k } lengthens those fingers' three phalanges the same way
+// (pianist/hand-graft.js: the MakeHuman fingers are short for the palm)
+function lengthenThumbs(meta, thumb, fingers = {}) {
+  const chains = Object.entries({ 1: thumb, ...fingers }).filter(([, k]) => k && k !== 1)
+  if (!chains.length) return pos => pos
   const idx = Object.fromEntries(meta.bones.map((b, i) => [b.name, i]))
   const J = meta.joints, v = a => a.slice(), sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
   const add = (a, b, s = 1) => [a[0] + s * b[0], a[1] + s * b[1], a[2] + s * b[2]], dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
   const edits = new Map()   // bone index → { head (old), shift, axis, len }
-  for (const S of ['L', 'R']) {
-    const names = [1, 2, 3].map(i => `finger1-${i}.${S}`)
+  for (const S of ['L', 'R']) for (const [f, k] of chains) {
+    const names = [1, 2, 3].map(i => `finger${f}-${i}.${S}`)
     if (!names.every(n => n in idx)) continue
     const P = [J[names[0] + '____head'], ...names.map(n => J[n + '____tail'])].map(v)
     const Q = [P[0]]
     for (let i = 1; i < 4; i++) Q.push(add(Q[i - 1], sub(P[i], P[i - 1]), k))
     names.forEach((n, i) => {
       const d = sub(P[i + 1], P[i]), len = Math.hypot(...d)
-      edits.set(idx[n], { head: P[i], shift: sub(Q[i], P[i]), axis: d.map(x => x / len), len })
+      edits.set(idx[n], { head: P[i], shift: sub(Q[i], P[i]), axis: d.map(x => x / len), len, k })
       J[n + '____head'] = Q[i]; J[n + '____tail'] = Q[i + 1]
       meta.bones[idx[n]].head = Q[i]
     })
   }
   const edit = (e, x, y, z) => {
-    const s = Math.min(e.len, Math.max(0, (x - e.head[0]) * e.axis[0] + (y - e.head[1]) * e.axis[1] + (z - e.head[2]) * e.axis[2])) * (k - 1)
+    const s = Math.min(e.len, Math.max(0, (x - e.head[0]) * e.axis[0] + (y - e.head[1]) * e.axis[1] + (z - e.head[2]) * e.axis[2])) * (e.k - 1)
     return [e.shift[0] + s * e.axis[0], e.shift[1] + s * e.axis[1], e.shift[2] + s * e.axis[2]]
   }
   return (pos, si, sw) => {
@@ -143,14 +146,14 @@ const flip = (a, n = 3) => { for (let i = 0; i < a.length; i += n) { a[i] = -a[i
  * Load the character. base: URL of the assets folder.
  * Returns { group, skeleton, bones, byName, meshes, materials, meta, parts }.
  */
-export async function loadCharacter(base = new URL('./assets/', import.meta.url).href, { hairColor = 0x4a3324, thumb = THUMB } = {}) {
+export async function loadCharacter(base = new URL('./assets/', import.meta.url).href, { hairColor = 0x4a3324, thumb = THUMB, fingers } = {}) {
   const [meta, bin] = await Promise.all([
     fetch(base + 'character.json').then(r => r.json()),
     fetch(base + 'character.bin').then(r => r.arrayBuffer()),
   ])
   // her thumbs a little longer than MakeHuman's (THUMB): before the
   // skeleton is made, so every part skins to them and the rig measures them
-  const thumbEdit = lengthenThumbs(meta, thumb)
+  const thumbEdit = lengthenThumbs(meta, thumb, fingers)
   // community parts live in their own .bin files, fetched on demand (ensurePart)
   const bins = {}
   const arr = (T, ref, name) => new T(bins[name] || bin, ref.offset, ref.length)
@@ -191,8 +194,11 @@ export async function loadCharacter(base = new URL('./assets/', import.meta.url)
       const { index: I, delta: D } = m
       for (let j = 0; j < I.length; j++) { const i = I[j] * 3; a[i] += w * D[j * 3]; a[i + 1] += w * D[j * 3 + 1]; a[i + 2] += w * D[j * 3 + 2] }
     }
-    g.attributes.position.needsUpdate = true
+    // (the skin sunk under a garment: pianist/shell.js coverBody; normals as modelled)
+    const sink = g.userData.sinkDelta
     g.computeVertexNormals(); weldNormals(g)
+    if (sink) for (let i = 0; i < a.length; i++) a[i] += sink[i]
+    g.attributes.position.needsUpdate = true
     g.computeBoundingSphere()
   }
   function geometry(name) {

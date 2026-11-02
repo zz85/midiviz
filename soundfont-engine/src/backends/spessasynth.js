@@ -47,6 +47,8 @@ export class SpessaSynthBackend extends BaseBackend {
         `${this.vendorPath}/spessasynth/spessasynth_lib.bundle.js`
       );
       const processorPath = `${this.vendorPath}/spessasynth/spessasynth_processor.min.js`;
+      // (older Chromium refuses its processor class and has no TextDecoder in an AudioWorklet)
+      await ctx.audioWorklet.addModule(new URL('./worklet-compat.js', import.meta.url).href);
       await ctx.audioWorklet.addModule(processorPath);
       this._synth = new WorkletSynthesizer(ctx);
       this._synth.connect(ctx.destination);

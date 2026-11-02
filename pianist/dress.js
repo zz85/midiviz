@@ -26,7 +26,7 @@
 // Units: centimetres in the piano's frame.
 
 import * as THREE from 'three'
-import { cutShell, piping, skinned, hideBody, underGarment } from './shell.js'
+import { cutShell, piping, skinned, hideBody, underGarment, coverBody, keepSkin } from './shell.js'
 import { applyFabric, fabricMapOf } from './fabric.js'
 
 let serial = 0   // each dress hides the body under it under its own key (two can overlap while switching)
@@ -157,7 +157,9 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
   // and the hidden skin agree (the old ring of edge triangles could show
   // through as a gap where the smoothed edge pulls in)
   const underTop = qipao || !roundNeck ? underGarment(ch, bodiceShell.geometry, [], { rings: 0, reach: 2.5 }) : null
-  hideBody(ch, HIDE_KEY, withBodice ? [...new Set([...(roundNeck ? under.coveredAll : [...under.covered, ...armRing, ...underTop]), ...underWaist.covered])] : underWaist.covered)
+  const underTris = withBodice ? [...new Set([...(roundNeck ? under.coveredAll : [...under.covered, ...armRing, ...underTop]), ...underWaist.covered])] : underWaist.covered
+  // kept and sunk under the fabric once the skirt is made (shell.js coverBody), or hidden with ?skin=hide
+  if (!keepSkin()) hideBody(ch, HIDE_KEY, underTris)
 
   const tex = knitTextures()
   const base = new THREE.MeshPhysicalMaterial({
@@ -349,6 +351,7 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
   sg.computeVertexNormals()
   const skirtMat = withRepeat(1)
   const fitted = skinned(ch, sg, skirtMat)
+  if (keepSkin()) coverBody(ch, HIDE_KEY, withBodice ? [bodiceShell.geometry, sg] : [sg], underTris, { rays: false, fade: 1, depth: 2 })
 
   // the same skirt as cloth
   const cg = new THREE.BufferGeometry()
@@ -578,7 +581,7 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
       upload()
     },
     dispose() {
-      hideBody(ch, HIDE_KEY, null)
+      hideBody(ch, HIDE_KEY, null); coverBody(ch, HIDE_KEY, null)
       for (const m of [bodice, hem, fitted, trim]) if (m) { m.removeFromParent(); m.geometry.dispose() }
       trimMat?.dispose()
       object.removeFromParent(); cg.dispose()

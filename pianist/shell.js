@@ -463,3 +463,124 @@ export function underGarment(ch, gg, already = [], { rings = 2, reach = 2 } = {}
   for (let t = 0; t < idx.length; t += 3) if (!have.has(t) && under[idx[t]] && under[idx[t + 1]] && under[idx[t + 2]]) out.push(t)
   return out
 }
+
+// Of a garment's delete group (the base-mesh triangles its author marked as
+// covered), the triangles it really covers on this body: a ray out of the
+// skin along its normal, from the triangle's centre or one of its corners,
+// meets the garment within `reach` cm. An author's group can take in skin
+// the garment leaves bare, as c806's open back just under the clasp of its
+// halter: hidden, that patch showed as a black hole into her.
+export function coveredBy(ch, gg, tris, { reach = 12 } = {}) {
+  if (!tris.length) return tris
+  const BP = ch.parts.body.geometry.attributes.position.array, BN = ch.parts.body.geometry.attributes.normal.array
+  const idx = bodyIndex(ch)
+  const mesh = new THREE.Mesh(gg, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }))
+  mesh.updateMatrixWorld(true)
+  const ray = new THREE.Raycaster(); ray.far = reach
+  const o = new THREE.Vector3(), d = new THREE.Vector3(), hits = []
+  const cast = () => { hits.length = 0; ray.set(o, d); return ray.intersectObject(mesh, false, hits).length > 0 }
+  const out = []
+  for (const t of tris) {
+    const a = idx[t] * 3, b = idx[t + 1] * 3, c = idx[t + 2] * 3
+    let hit = false
+    for (let k = 0; k < 4 && !hit; k++) {
+      if (k < 3) { const v = [a, b, c][k]; o.set(BP[v], BP[v + 1], BP[v + 2]); d.set(BN[v], BN[v + 1], BN[v + 2]) }
+      else { o.set((BP[a] + BP[b] + BP[c]) / 3, (BP[a + 1] + BP[b + 1] + BP[c + 1]) / 3, (BP[a + 2] + BP[b + 2] + BP[c + 2]) / 3); d.set(BN[a] + BN[b] + BN[c], BN[a + 1] + BN[b + 1] + BN[c + 1], BN[a + 2] + BN[b + 2] + BN[c + 2]) }
+      if (d.lengthSq() < 1e-12) continue
+      d.normalize(); o.addScaledVector(d, -0.05)   // (from just inside the skin: a garment that touches it counts)
+      hit = cast()
+    }
+    if (hit) out.push(t)
+  }
+  return out
+}
+
+// ── Skin kept under a garment, sunk a little ────────────────────────────
+// In place of hiding the skin a garment covers (hideBody), the skin stays
+// and the part the garment lies over sinks SINK_CM into the body along its
+// normals: the fabric has that much room before the skin can poke through it,
+// and wherever the fabric leaves a gap (a collar off the neck, a bodice's
+// edge, a gap between a garment's own panels, an author's cut-out), what
+// shows is skin, not the inside of an empty body.
+// Each vertex of the body is tested once a garment: a ray out along its
+// normal must meet the garment within `reach` cm, on a face that looks the
+// same way (the garment's outside, not the torso seen from an arm). Copies of
+// a vertex along a UV seam move together, so the skin never cracks. The
+// sink fades over `fade` rings to nothing at the garment's edge.
+// Positions are moved on the CPU, before skinning, so every material, look,
+// outline and the path tracers' snapshot see the same skin, and the smooth
+// (subdivided) body follows.
+export const SINK_CM = 0.8
+export const keepSkin = () => typeof location === 'undefined' || new URLSearchParams(location.search).get('skin') !== 'hide'
+export function coverBody(ch, key, gg, tris, { reach = 4, depth = SINK_CM, fade = 2, rays = true } = {}) {
+  const g = ch.parts.body.geometry, P = g.attributes.position.array, N = g.attributes.normal.array, NV = P.length / 3
+  const sinks = (ch.parts.body.sinks ||= new Map())
+  if (!gg) { sinks.delete(key); return applySinks(ch) }
+  const idx = bodyIndex(ch), d = g.userData.sinkDelta
+  // rest positions (without the sink applied so far): rays start from the skin as modelled
+  const at = (v, k) => P[v * 3 + k] - (d ? d[v * 3 + k] : 0)
+  // weld the UV seams' copies; a group's normal is the mean of theirs
+  const wid = new Int32Array(NV), ids = new Map(), groups = []
+  for (let v = 0; v < NV; v++) {
+    const k = `${Math.round(at(v, 0) * 200)},${Math.round(at(v, 1) * 200)},${Math.round(at(v, 2) * 200)}`
+    let w = ids.get(k); if (w === undefined) { ids.set(k, w = groups.length); groups.push([]) }
+    wid[v] = w; groups[w].push(v)
+  }
+  // candidates: the corners of the triangles the caller found under the garment
+  const cand = new Set(); for (const t of tris) for (let k = 0; k < 3; k++) cand.add(wid[idx[t + k]])
+  // one geometry or several (a dress's bodice and skirt); `out` turns a face
+  // the right way where a geometry is wound inside out
+  const meshes = [].concat(gg).map(geo => {
+    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })); m.updateMatrixWorld(true)
+    if (!geo.boundingSphere) geo.computeBoundingSphere()
+    if (!geo.attributes.normal) geo.computeVertexNormals()
+    const p = geo.attributes.position.array, n = geo.attributes.normal.array, c = geo.boundingSphere.center
+    let s = 0; for (let i = 0; i < p.length; i += 3) s += (p[i] - c.x) * n[i] + (p[i + 2] - c.z) * n[i + 2]
+    m.userData.out = s < 0 ? -1 : 1
+    return m
+  })
+  const ray = new THREE.Raycaster(); ray.far = reach
+  const o = new THREE.Vector3(), dir = new THREE.Vector3(), hits = []
+  const depthOf = new Float32Array(groups.length), dirs = new Float32Array(groups.length * 3)
+  for (const w of cand) {
+    dir.set(0, 0, 0)
+    for (const v of groups[w]) dir.x += N[v * 3], dir.y += N[v * 3 + 1], dir.z += N[v * 3 + 2]
+    if (dir.lengthSq() < 1e-12) continue
+    dir.normalize(); dirs.set([dir.x, dir.y, dir.z], w * 3)
+    if (!rays) { depthOf[w] = depth; continue }   // the caller's triangles are covered as they are
+    const v = groups[w][0]
+    o.set(at(v, 0), at(v, 1), at(v, 2)).addScaledVector(dir, -0.05)
+    hits.length = 0; ray.set(o, dir); ray.intersectObjects(meshes, false, hits)
+    if (hits.some(h => h.face && h.face.normal.dot(dir) * h.object.userData.out > 0.2)) depthOf[w] = depth
+  }
+  // fade to the garment's edge: each pass takes a vertex down to the mean of
+  // its neighbours where that is lower, so the dip has no step at its rim
+  const nb = Array.from({ length: groups.length }, () => new Set())
+  for (let t = 0; t < idx.length; t += 3) for (let k = 0; k < 3; k++) { const a = wid[idx[t + k]], b = wid[idx[t + (k + 1) % 3]]; if (a !== b) { nb[a].add(b); nb[b].add(a) } }
+  for (let pass = 0; pass < fade; pass++) {
+    const next = depthOf.slice()
+    for (let w = 0; w < groups.length; w++) { if (!depthOf[w]) continue; let s = 0; for (const u of nb[w]) s += depthOf[u]; const m = s / (nb[w].size || 1); if (m < next[w]) next[w] = m }
+    depthOf.set(next)
+  }
+  const delta = new Float32Array(NV * 3)
+  for (let w = 0; w < groups.length; w++) if (depthOf[w]) for (const v of groups[w]) for (let k = 0; k < 3; k++) delta[v * 3 + k] = -dirs[w * 3 + k] * depthOf[w]
+  sinks.set(key, delta)
+  return applySinks(ch)
+}
+// the deepest sink of the garments worn, written into the body's positions
+// (character.js morphGeometry adds g.userData.sinkDelta after the face morphs)
+function applySinks(ch) {
+  const g = ch.parts.body.geometry, P = g.attributes.position.array
+  const old = g.userData.sinkDelta, next = new Float32Array(P.length)
+  for (const s of ch.parts.body.sinks.values()) for (let i = 0; i < P.length; i += 3) {
+    if (s[i] * s[i] + s[i + 1] * s[i + 1] + s[i + 2] * s[i + 2] > next[i] * next[i] + next[i + 1] * next[i + 1] + next[i + 2] * next[i + 2]) { next[i] = s[i]; next[i + 1] = s[i + 1]; next[i + 2] = s[i + 2] }
+  }
+  let n = 0
+  for (let i = 0; i < P.length; i++) { P[i] += next[i] - (old ? old[i] : 0); if (next[i]) n++ }
+  g.userData.sinkDelta = next
+  g.attributes.position.needsUpdate = true
+  g.computeBoundingSphere()
+  const sm = ch.parts.body.smooth
+  if (sm) sm.update(P, g.attributes.normal.array)
+  return n / 3
+}

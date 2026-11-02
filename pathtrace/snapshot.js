@@ -46,6 +46,7 @@ function deform(mesh, pos = null, nor = null) {
   const bones = skinned && mesh.skeleton.boneMatrices
   const skin = new THREE.Matrix4(), bm = new THREE.Matrix4(), tmp = new THREE.Matrix4()
   const bind = mesh.bindMatrix, bindInv = mesh.bindMatrixInverse
+  const lift = liftOf(mesh)
   for (let i = 0; i < n; i++) {
     _v.fromBufferAttribute(P, i)
     if (Nn) _n.fromBufferAttribute(Nn, i)
@@ -76,10 +77,27 @@ function deform(mesh, pos = null, nor = null) {
       _v.applyMatrix4(tmp)
       if (Nn) _n.applyMatrix3(_m3.setFromMatrix4(tmp))
     }
+    if (Nn) _n.normalize()
+    if (lift && Nn) _v.addScaledVector(_n, lift)
     _v.toArray(pos, i * 3)
-    if (Nn) _n.normalize().toArray(nor, i * 3)
+    if (Nn) _n.toArray(nor, i * 3)
   }
   return { pos, nor }
+}
+
+// The raster page draws a garment over the skin it lies on with a polygon
+// offset (pianist/community.js, dress.js: fabric wins depth ties within a
+// few millimetres). A path tracer has no depth test, so there the skin under
+// the fabric's edge, the collar of a halter and the shoes' rims pokes through
+// in patches. Its copy is lifted off the body along its normals instead, by
+// FABRIC_LIFT cm: posed, the community gowns sit a median 0.23 cm off the skin
+// (c806, measured), so a 0.3 cm lift clears every vertex but a few
+// (and the triangles between them).
+export const FABRIC_LIFT = 0.3
+function liftOf(mesh) {
+  if (!mesh.isSkinnedMesh) return 0
+  const m = [].concat(mesh.material)[0]
+  return m?.polygonOffset && m.polygonOffsetFactor < 0 ? FABRIC_LIFT / (mesh.matrixWorld.getMaxScaleOnAxis() || 1) : 0
 }
 
 /** a plain geometry with only what a path tracer reads */

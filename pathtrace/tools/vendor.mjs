@@ -19,7 +19,7 @@ import path from 'node:path'
 import os from 'node:os'
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../..')
-const VERSIONS = { 'three-gpu-pathtracer': '0.0.27', 'three-mesh-bvh': '0.9.17', '@meimu/mutracer': '0.2.0', three: '0.187.0', 'oidn-web': '0.4.0' }
+const VERSIONS = { 'three-gpu-pathtracer': '0.0.27', 'three-mesh-bvh': '0.9.17', '@meimu/mutracer': '0.2.0', three: '0.187.0', 'oidn-web': '0.5.0' }
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pt-vendor-'))
 const sh = (cmd, cwd = tmp) => execSync(cmd, { cwd, stdio: 'inherit' })
 fs.writeFileSync(path.join(tmp, 'package.json'), '{"private":true,"type":"module"}')

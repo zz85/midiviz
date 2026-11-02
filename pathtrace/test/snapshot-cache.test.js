@@ -81,3 +81,14 @@ test('without a cache, everything is the frame\'s own and freed', () => {
   disposeSnapshot(snap)
   expect(freed).toBe(4)
 })
+
+test('a garment drawn over the skin with a polygon offset is lifted off it along its normals', async () => {
+  const { FABRIC_LIFT } = await import('../snapshot.js')
+  const radius = snap => { let r = 0; snap.scene.traverse(o => { if (o.isMesh && o.material?.color?.getHex?.() === 0x00ff00) { const P = o.geometry.attributes.position; for (let i = 0; i < P.count; i++) r = Math.max(r, Math.hypot(P.getX(i), P.getZ(i))) } }); return r }  // (the side's ring; its caps lie inside it)
+  const S = stage()
+  const plain = radius(snapshotScene(S.scene, { camera: cam }))
+  S.sk.material.polygonOffset = true; S.sk.material.polygonOffsetFactor = -1; S.sk.material.polygonOffsetUnits = -2
+  const lifted = radius(snapshotScene(S.scene, { camera: cam }))
+  expect(plain).toBeCloseTo(1, 3)
+  expect(lifted).toBeCloseTo(1 + FABRIC_LIFT, 2)
+})

@@ -91,7 +91,12 @@ export async function boot(plug = {}) {
     renderer.setSize(innerWidth, innerHeight)
     renderer.toneMapping = THREE.AgXToneMapping
     renderer.shadowMap.enabled = true
-    renderer.shadowMap.type = THREE.VSMShadowMap
+    // PCF, not VSM: from r17x three.js keeps a VSM's depth and depth squared in
+    // half floats, which is too coarse for the spot's 250-1000 cm depth range: the
+    // variance test then draws dark contour bands across her skin and specks on
+    // the plate. #032 (r170) packed them into 8-bit RGBA at full precision.
+    // ?shadows=vsm brings it back to compare.
+    renderer.shadowMap.type = new URLSearchParams(location.search).get('shadows') === 'vsm' ? THREE.VSMShadowMap : THREE.PCFShadowMap
     document.body.prepend(renderer.domElement)
     RectAreaLightUniformsLib.init()
     const scene = new THREE.Scene()
