@@ -1,7 +1,7 @@
 // Find the systems, staves and barlines on a scanned page of piano music, so a
 // slice of the page can follow the music (sheet/README.md, approach 1, #049).
 //
-//   const page = detectPage({ data, width, height }, { stavesPerSystem: 2 })
+//   const page = detectPage({ data, width, height })     ({ stavesPerSystem: 2 } groups staves by count)
 //   page.space                      staff-line spacing in pixels
 //   page.systems[i].staves[j]       { top, bottom, x0, x1, lines: [y, ...] }
 //   page.systems[i].barlines        [{ x, w }, ...] left to right, the system's
@@ -12,7 +12,7 @@
 //  1. ink: Otsu's threshold on luma
 //  2. staff lines: rows dark across most of the page's ink width; a staff is a
 //     run of 5 lines at one spacing (the space)
-//  3. systems: staves grouped stavesPerSystem at a time, top to bottom
+//  3. systems: staves joined by the system's opening line at their left, top to bottom
 //  4. barlines: columns dark over the whole height of every staff of the
 //     system (a stem spans one staff at most, and seldom the whole of it) and
 //     light just outside each staff (a long stem runs on past it); neighbouring
@@ -80,6 +80,37 @@ function spaceOf(lines) {
   return best
 }
 
+// the row profile of a strip (share of dark pixels in each row), and the staves in it: for
+// each row y, the worst of the five rows y + k·space (k = 0..4, each the darkest within a pixel)
+// against the mean of the four rows halfway between them; peaks of that, a staff apart
+function combStaves(ink, width, height, xa, xb, space) {
+  const P = new Float32Array(height), w = xb - xa
+  for (let y = 0; y < height; y++) { let n = 0; for (let x = xa, o = y * width; x < xb; x++) n += ink[o + x]; P[y] = n / w }
+  const at = (y, f) => { const i = Math.round(y); return i < 1 || i >= height - 1 ? 0 : f(P[i - 1], P[i], P[i + 1]) }
+  const hi = y => at(y, Math.max), lo = y => at(y, Math.min)
+  const score = new Float32Array(height), lines = []
+  for (let y = 1; y + 4 * space < height - 1; y++) {
+    let mn = 1, mid = 0
+    for (let k = 0; k < 5; k++) mn = Math.min(mn, hi(y + k * space))
+    for (let k = 0; k < 4; k++) mid += lo(y + (k + 0.5) * space) / 4
+    score[y] = mn >= 0.45 ? mn - mid : 0
+  }
+  const out = []
+  for (let y = 1; y < height - 1; y++) {
+    if (score[y] < 0.25) continue
+    // (the best within half a space either way)
+    let best = true
+    for (let d = -Math.round(space * 0.5); d <= Math.round(space * 0.5) && best; d++) if (d && score[y + d] > score[y]) best = false
+    if (!best) continue
+    // each line at its own darkest row near where the comb put it
+    const ys = []
+    for (let k = 0; k < 5; k++) { let b = Math.round(y + k * space); for (let d = -2; d <= 2; d++) { const r = Math.round(y + k * space) + d; if (r > 0 && r < height && P[r] > P[b]) b = r } ys.push(b) }
+    if (out.length && ys[0] - out.at(-1)[0] < space * 3) { if (score[y] > out.at(-1).s) out[out.length - 1] = Object.assign(ys, { s: score[y] }); continue }
+    out.push(Object.assign(ys, { s: score[y] }))
+  }
+  return out
+}
+
 const lerpAt = (pts, x, k) => {
   if (pts.length === 1) return pts[0][k]
   let i = 0
@@ -102,17 +133,21 @@ function findStaves(ink, width, height, { strips = 16, frac = 0.5 } = {}) {
   // staff lines are thin: a beam (half a space thick) lying along the strip isn't one
   const lineH = median(per.flatMap(p => p.lines.map(l => l.h)))
   for (const p of per) p.lines = p.lines.filter(l => l.h <= Math.max(3, lineH * 1.8, space * 0.25))
-  for (const p of per) p.staves = fiveLines(p.lines, space).map(ys => ({ x: p.x, top: ys[0], bottom: ys[4], lines: ys }))
-  const ref = per.reduce((b, p) => p.staves.length > b.staves.length ? p : b, per[0]), ri = per.indexOf(ref)
-  const staves = ref.staves.map(st => {
-    const pts = [st]
-    for (const dir of [-1, 1]) {
-      let last = st
-      for (let i = ri + dir; i >= 0 && i < per.length; i += dir) {
-        const m = per[i].staves.find(o => Math.abs(o.top - last.top) < space * 1.5 && Math.abs(o.bottom - last.bottom) < space * 1.5)
-        if (m) { pts.push(m); last = m }
-      }
-    }
+  // the staves in each strip: five rows one space apart, each dark across most of the strip,
+  // with lighter rows between them (combStaves); a beam lying over the lines merges with
+  // them into one thick dark run, which the runs above leave out but the comb still reads
+  for (let s = 0; s < strips; s++) per[s].staves = combStaves(ink, width, height, s * sw, (s + 1) * sw, space).map(ys => ({ x: per[s].x, top: ys[0], bottom: ys[4], lines: ys }))
+  // a staff is a run of strips that found five lines at about the same height (a strip
+  // can miss one under a beam, a slur or the brace): each strip's staves joined to the
+  // nearest staff found so far, across the page from left to right
+  const tracks = []
+  for (const p of per) for (const st of p.staves) {
+    let best = null, d = space * 1.5
+    for (const tr of tracks) { const l = tr.at(-1), e = Math.abs(l.top - st.top) + Math.abs(l.bottom - st.bottom); if (l.x < st.x && e < d) { d = e; best = tr } }
+    if (best) best.push(st); else tracks.push([st])
+  }
+  const staves = tracks.filter(tr => tr.length >= Math.max(3, strips * 0.25)).map(tr => {
+    const pts = [...tr]
     pts.sort((a, b) => a.x - b.x)
     // keep the strips that agree on one straight staff (a strip can mistake a
     // ledger line for the top line, and so read the staff a space off)
@@ -125,7 +160,7 @@ function findStaves(ink, width, height, { strips = 16, frac = 0.5 } = {}) {
     }
     if (pts.length > 2) pts.splice(0, pts.length, ...best)
     return { pts, topAt: x => lerpAt(pts, x, 'top'), bottomAt: x => lerpAt(pts, x, 'bottom') }
-  })
+  }).sort((a, b) => a.topAt(width / 2) - b.topAt(width / 2))
   return { space, staves }
 }
 
@@ -141,7 +176,7 @@ function staffExtent(ink, width, staff, space) {
   return best
 }
 
-export function detectPage(img, { stavesPerSystem = 2, threshold } = {}) {
+export function detectPage(img, { stavesPerSystem = 0, threshold } = {}) {
   const { width, height } = img
   const g = luma(img), t = threshold ?? otsu(g)
   const ink = new Uint8Array(g.length)
@@ -152,13 +187,42 @@ export function detectPage(img, { stavesPerSystem = 2, threshold } = {}) {
     const mid = (x0 + x1) / 2
     return { top: st.topAt(mid), bottom: st.bottomAt(mid), x0, x1, topAt: st.topAt, bottomAt: st.bottomAt, pts: st.pts.map(p => [p.x, p.top, p.bottom]) }
   })
+  // systems: staves joined by the line at their left (the system's opening barline, which
+  // runs through the gap between its staves), so a system of three staves (the Goldberg's
+  // hand-crossing variations) reads as one; `stavesPerSystem` groups by count instead
+  const groups = [], opens = []
+  if (stavesPerSystem) for (let i = 0; i + stavesPerSystem <= staves.length; i += stavesPerSystem) groups.push(staves.slice(i, i + stavesPerSystem))
+  else for (const st of staves) {
+    const last = groups.at(-1)?.at(-1)
+    const x = last ? joined(ink, width, height, last, st, space) : -1
+    if (x >= 0) { groups.at(-1).push(st); opens[groups.length - 1] ??= x }
+    else groups.push([st])
+  }
   const systems = []
-  for (let i = 0; i + stavesPerSystem <= staves.length; i += stavesPerSystem) {
-    const st = staves.slice(i, i + stavesPerSystem)
-    const x0 = Math.min(...st.map(s => s.x0)), x1 = Math.max(...st.map(s => s.x1))
+  for (const [gi, st] of groups.entries()) {
+    // (a lone staff is a stray: a heading's rule, an ossia; every system here has two staves or more)
+    if (st.length < 2) continue
+    // where the opening line was found it is the system's left end (a staff's ink run can
+    // reach past it, into a pencil mark in the margin)
+    const x0 = opens[gi] ?? Math.min(...st.map(s => s.x0)), x1 = Math.max(...st.map(s => s.x1))
     systems.push({ staves: st, x0, x1, top: st[0].top, bottom: st[st.length - 1].bottom, barlines: barlines(ink, width, height, st, x0, x1, space) })
   }
   return { width, height, threshold: t, space, systems, staves }
+}
+
+// is staff b in the same system as staff a, above it: a column near their left ends dark
+// through most of the gap between them
+function joined(ink, width, height, a, b, space) {
+  const at = (x, y) => ink[Math.round(y) * width + x]
+  const lo = Math.min(a.x0, b.x0) - Math.round(space * 1.2), hi = Math.max(a.x0, b.x0) + Math.round(space * 5)
+  for (let x = Math.max(0, lo); x <= Math.min(width - 1, hi); x++) {
+    const y0 = a.bottomAt(x), y1 = b.topAt(x)
+    if (!(y1 > y0)) continue
+    let n = 0, m = 0
+    for (let y = Math.ceil(y0); y <= Math.floor(y1); y++, m++) n += at(x, y) | (x > 0 ? at(x - 1, y) : 0) | (x < width - 1 ? at(x + 1, y) : 0)
+    if (m && n / m >= 0.85) return x
+  }
+  return -1
 }
 
 function barlines(ink, width, height, staves, x0, x1, space) {
