@@ -60,6 +60,8 @@ export async function boot(plug = {}) {
       // `places` ({ name: { u0, v0, u1, v1 } }, frame fractions) they fill least, `prefer` unless another is
       // emptier by `margin`; the scores of every place beside it
       pickPlace: (places, prefer, margin) => frameSpace.pick(camera, places, prefer, margin),
+      // the same, over the whole song (surveyFrame below); surveyKey() changes when its answer would
+      get planReady() { return !song || fingered }, surveyKey: () => surveyKey(), surveyFrame: (places, o) => surveyFrame(places, o),
       // hold a part of the frame (fractions) so intertitles placed automatically keep off it; null frees it
       reserve: r => { reserved = r },
       songNow: () => songNow(), seekTo: t => seekTo(t), setStatus: (...a) => setStatus(...a), closePops: () => closePops(),
@@ -1064,8 +1066,44 @@ export async function boot(plug = {}) {
     const overlaps = (a, b) => Math.max(0, Math.min(a.u1, b.u1) - Math.max(a.u0, b.u0)) * Math.max(0, Math.min(a.v1, b.v1) - Math.max(a.v0, b.v0)) / ((a.u1 - a.u0) * (a.v1 - a.v0))
     const freePlaces = () => {
       if (!reserved) return LANDSCAPE_PLACES
-      const free = Object.fromEntries(Object.entries(LANDSCAPE_PLACES).filter(([, r]) => overlaps(r, reserved) < 0.15))
+      // (any real overlap: an intertitle's block reaches the edge of its place)
+      const free = Object.fromEntries(Object.entries(LANDSCAPE_PLACES).filter(([, r]) => overlaps(r, reserved) < 0.02))
       return Object.keys(free).length ? free : LANDSCAPE_PLACES
+    }
+    // Where a plugin's panel (the score) should stay for a whole song: each place of `places`
+    // (frame fractions) scored by how much the pianist and the piano fill it, averaged over
+    // `samples` moments of the director's plan for the song (a copy of the director, so the
+    // camera on screen isn't touched), or, on a fixed view, from the camera as it is. Beside
+    // them the intertitles' places scored the same way, and what the liner notes put on the
+    // screen: { scores, intertitles: { on, fixed, rects, scores } }.
+    const IT_RECTS = { ...LANDSCAPE_PLACES, 'bottom-center': { u0: 0.2, v0: 0.56, u1: 0.8, v1: 0.82 }, 'top-center': { u0: 0.2, v0: 0.12, u1: 0.8, v1: 0.38 } }
+    const CAPTION_RECT = { u0: 0.2, v0: 0.68, u1: 0.8, v1: 0.93 }   // (liner/overlay.js drawLinerCaption: 8.5 % up)
+    const surveyKey = () => `${view}|${camera.aspect.toFixed(2)}|${liner.mode}|${liner.position}|${!!liner.screenTimeline?.intertitles?.length}|` + (view === 'auto' ? surveyId(director.shots) : '')
+    const surveyIds = new WeakMap(); let surveyN = 0
+    const surveyId = o => { if (!surveyIds.has(o)) surveyIds.set(o, ++surveyN); return surveyIds.get(o) }
+    function surveyFrame(places, { samples = 120 } = {}) {
+      const all = { ...places }
+      for (const [k, r] of Object.entries(LANDSCAPE_PLACES)) all['it:' + k] = r
+      const sum = Object.fromEntries(Object.keys(all).map(k => [k, 0]))
+      let n = 0
+      const add = cam => { frameSpace.measure(cam); for (const k in all) sum[k] += frameSpace.cover(all[k]); n++ }
+      if (view === 'auto' && song && dirSource) {
+        const d = createDirector({ ...director.opts }); d.setSong(dirSource)
+        const cam = camera.clone(), live = { head: rig.pos('head').clone(), hands: new THREE.Vector3() }
+        for (const h of [rig.hands.L, rig.hands.R]) live.hands.add(h.joints.W)
+        live.hands.multiplyScalar(0.5)
+        const T = song.duration || 60
+        for (let i = 0; i < samples; i++) {
+          const c = d.update((i + 0.5) / samples * T, T / samples, live)
+          cam.position.copy(c.pos); cam.fov = c.fov; cam.lookAt(c.target); cam.updateProjectionMatrix(); cam.updateMatrixWorld()
+          add(cam)
+        }
+      } else add(camera)
+      const scores = {}, its = {}
+      for (const k in all) (k.startsWith('it:') ? its : scores)[k.replace(/^it:/, '')] = sum[k] / n
+      const on = liner.mode === 'notes' ? !!liner.timeline : liner.mode === 'intertitles' && !!liner.screenTimeline?.intertitles?.length
+      const fixed = liner.mode === 'notes' ? 'caption' : liner.position !== 'auto' ? liner.position : null
+      return { scores, samples: n, intertitles: { on, fixed, rects: { ...IT_RECTS, caption: CAPTION_RECT }, scores: its } }
     }
     const autoPosition = () => {
       const places = freePlaces(), prefer = awayFromHer() in places ? awayFromHer() : Object.keys(places)[0]

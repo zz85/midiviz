@@ -1,64 +1,75 @@
-// Automatic placement of the score panel: the part of the frame the pianist
-// and the piano fill least, as #045 places its intertitles (pianist/frame-space.js),
-// and steady, so the panel doesn't wander while she plays.
+// Automatic placement of the score panel: one place for the whole song, the
+// part of the frame the pianist and the piano fill least over the director's
+// shots (pathtrace/app.js surveyFrame, with pianist/frame-space.js, the measure
+// #045 places its intertitles by), keeping clear of the liner notes.
 //
-//   const placer = createPlacer(ov, { pick, reserve })
-//   const box = placer(w, h, now, { bottom, top })     box: where to draw the panel, px
+//   const placer = createPlacer(ov, { survey, key })
+//   const box = placer(w, h, inset)     where to draw the panel, px
 //
-// pick(places, prefer, margin): app.pickPlace, the emptiest place; reserve(rect):
-// app.reserve, so intertitles placed automatically keep off the panel.
-// `now` is seconds on any clock that runs forward: the wall clock on the page,
-// the song's time in an export (a placer per export, so a video places the
-// panel the same way every time it is made).
+// survey(places): app.surveyFrame; key(): app.surveyKey, which changes when
+// the answer would (another song or director plan, another view, the liner
+// notes arriving or set otherwise). The place is chosen again only then: the
+// panel never moves while a song plays.
 //
-// Every CHECK seconds the places are scored afresh. The panel moves where it
-// has stayed at least DWELL seconds and another place is emptier by MARGIN,
-// and glides there over GLIDE seconds; or it jumps where she now fills its
-// place by URGENT more than the best (a cut to a shot that puts her there).
+// The liner notes and the panel share the frame. Where the intertitles are
+// placed automatically, a panel place costs what it covers of her, plus half
+// of what the intertitles would cover in the emptiest place it leaves them
+// (they keep off the panel: app.reserve); where they have a fixed place (or
+// every note shows as a caption at the bottom), a panel place over it is out.
 
 import { PLACES } from './overlay.js'
 
-export const CHECK = 0.5, DWELL = 3, MARGIN = 0.06, URGENT = 0.25, GLIDE = 0.6
+export const IT_WEIGHT = 0.5
 
-export function createPlacer(ov, { pick, reserve = () => {} }) {
-  let cur = null, since = 0, checked = -Infinity, from = null, glideAt = 0, last = null
-  const ease = x => x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x)
-  return function placeAt(W, H, now, inset = {}) {
-    const mode = ov.opts.position
-    if (mode !== 'auto') { cur = null; return finish(ov.box(W, H, mode, inset), W, H) }
-    // (a clock that went back, as an export starting or a seek: choose afresh)
-    if (now < checked) { cur = null; checked = -Infinity; from = null }
-    if (cur == null || now - checked >= CHECK) {
-      checked = now
-      const boxes = {}, places = {}
-      for (const p of PLACES) {
-        const b = ov.box(W, H, p, inset)
-        // the corners only where the panel leaves a third of the width beside it
-        if (p.includes('-') && b.w > W * 0.66) continue
-        boxes[p] = b
-        places[p] = { u0: b.x / W, v0: b.y / H, u1: (b.x + b.w) / W, v1: (b.y + b.h) / H }
-      }
-      let r = null
-      try { r = pick(places, cur || 'bottom', MARGIN) } catch (e) { console.warn(e) }
-      const best = r?.place || cur || 'bottom'
-      if (cur == null || !(cur in places)) { cur = best; since = now; from = null }
-      else if (best !== cur) {
-        const worse = (r.scores[cur] ?? 0) - (r.scores[best] ?? 0)
-        // (after a cut it jumps, as the picture did; else it glides)
-        if (worse > URGENT) { from = null; cur = best; since = now }
-        else if (now - since >= DWELL) { from = last; glideAt = now; cur = best; since = now }
-      }
+const overlap = (a, b) => Math.max(0, Math.min(a.u1, b.u1) - Math.max(a.u0, b.u0)) * Math.max(0, Math.min(a.v1, b.v1) - Math.max(a.v0, b.v0)) / ((a.u1 - a.u0) * (a.v1 - a.v0))
+export const clashes = (it, panel) => overlap(it, panel) > 0.02
+
+/**
+ * The place for the panel: rects { place: { u0, v0, u1, v1 } } (frame fractions),
+ * survey { scores: { place: cover }, intertitles: { on, fixed, rects, scores } }.
+ * Returns { place, cost } with each place's cost.
+ */
+export function choosePlace(rects, survey) {
+  const it = survey.intertitles || {}, cost = {}
+  for (const [p, r] of Object.entries(rects)) {
+    let c = survey.scores[p] ?? 0
+    if (it.on && it.fixed) { if (it.rects[it.fixed] && clashes(it.rects[it.fixed], r)) c += 100 }
+    else if (it.on) {
+      const free = Object.entries(it.rects).filter(([k, q]) => k in (it.scores || {}) && !clashes(q, r)).map(([k]) => it.scores[k])
+      c += IT_WEIGHT * (free.length ? Math.min(...free) : 100)
     }
-    let b = ov.box(W, H, cur, inset)
-    if (from) {
-      const k = ease((now - glideAt) / GLIDE)
-      if (k >= 1) from = null
-      else b = { ...b, x: from.x + (b.x - from.x) * k, y: from.y + (b.y - from.y) * k }
-    }
-    return finish(b, W, H)
+    cost[p] = c
   }
-  function finish(b, W, H) {
-    last = b
+  let place = null
+  for (const p in cost) if (place == null || cost[p] < cost[place] - 1e-9) place = p
+  return { place, cost }
+}
+
+export function createPlacer(ov, { survey, key = () => '', reserve = () => {} }) {
+  let cur = null, curKey = null, size = ''
+  return function placeAt(W, H, inset = {}) {
+    const mode = ov.opts.position
+    let b
+    if (mode !== 'auto') b = ov.box(W, H, mode, inset)
+    else {
+      // (the panel's size and the frame's shape change the places' rects)
+      const k = key(), sz = `${ov.opts.size}|${ov.opts.rows}|${(W / H).toFixed(2)}`
+      if (cur == null || k !== curKey || sz !== size) {
+        const boxes = {}, rects = {}
+        for (const p of PLACES) {
+          const r = ov.box(W, H, p, inset)
+          // the corners only where the panel leaves a third of the width beside it
+          if (p.includes('-') && r.w > W * 0.66) continue
+          boxes[p] = r
+          rects[p] = { u0: r.x / W, v0: r.y / H, u1: (r.x + r.w) / W, v1: (r.y + r.h) / H }
+        }
+        let s = null
+        try { s = survey(rects) } catch (e) { console.warn(e) }
+        cur = s ? choosePlace(rects, s).place : 'bottom'
+        curKey = k; size = sz
+      }
+      b = ov.box(W, H, cur, inset)
+    }
     reserve({ u0: b.x / W, v0: b.y / H, u1: (b.x + b.w) / W, v1: (b.y + b.h) / H })
     return b
   }

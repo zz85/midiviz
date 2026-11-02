@@ -2,6 +2,12 @@
 
 What each experiment does and how, newest first. The short list is in the [README](README.md).
 
+## 2 Nov 2026
+
+[#049 Score Scan](049_sheet_scan.html) and [#050 Engraved Score](050_sheet_engraved.html): the score stays in one place
+- Automatic no longer moves the panel as the shots change. It picks one place for the song from a survey of the director's planned shots (120 moments; pathtrace/app.js `surveyFrame`), measured as the intertitles are (pianist/frame-space.js), and keeps it. It picks again only for another song, director setting, view or liner-notes setting. It no longer moves up for the controls either.
+- The liner notes are part of the choice. A place also costs half of what the intertitles would cover of her in the best place it leaves them. A fixed intertitle place, or captions at the bottom, rules out a panel place over it. Automatic intertitles now keep off any place the panel overlaps at all (they kept off only those it covered 15 % of, and the bottom ones could touch it). On the Aria with the automatic camera the panel goes top right and the intertitles bottom left.
+
 ## 1 Nov 2026
 
 [Experiment #038 - Duo](038_duo.html): One More Time, One More Chance, and MIDI files of your own

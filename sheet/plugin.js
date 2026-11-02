@@ -15,7 +15,7 @@ import { createPlacer } from './placer.js'
 
 export function sheetPlugin({ title, href = 'sheet/README.md', defaultSong, build, about = '' }) {
   let app = null, ov = null, canvas = null, g = null, note = '', job = 0, placer = null
-  const newPlacer = o => createPlacer(o, { pick: (...a) => app.pickPlace(...a), reserve: r => app.reserve(r) })
+  const newPlacer = o => createPlacer(o, { survey: r => app.surveyFrame(r), key: () => app.surveyKey(), reserve: r => app.reserve(r) })
   const opt = id => app.$(id)
   const settings = () => ({ style: opt('sStyle').value, position: opt('sPos').value, rows: +opt('sRows').value, size: +opt('sSize').value, highlight: opt('sHl').value })
   function resize() {
@@ -29,13 +29,10 @@ export function sheetPlugin({ title, href = 'sheet/README.md', defaultSong, buil
     g.clearRect(0, 0, canvas.width, canvas.height)
     if (!shown()) { app.reserve(null); return }
     if (app.exporting) return
-    const k = canvas.width / innerWidth
-    // keep clear of the bottom bar while it shows
-    const bar = document.getElementById('bottom') || document.querySelector('.bottom, #controls')
-    const idle = document.body.classList.contains('idle') || document.body.classList.contains('hideui')
-    const clear = !idle && bar ? Math.max(0, innerHeight - bar.getBoundingClientRect().top) : 0
-    const inset = { bottom: clear * k, top: idle ? 0 : 52 * k }
-    ov.draw(g, canvas.width, canvas.height, t, { ...inset, box: (fresh ? newPlacer(ov) : placer)(canvas.width, canvas.height, performance.now() / 1000, inset) })
+    // (not until the director's plan for the song is made: the place is chosen from it, once)
+    if (!app.planReady) return
+    // where a video would have it: the bar and buttons pass over it while they show, and it doesn't move for them
+    ov.draw(g, canvas.width, canvas.height, t, { box: (fresh ? newPlacer(ov) : placer)(canvas.width, canvas.height) })
   }
   return {
     title, href, defaultSong,
@@ -50,7 +47,7 @@ export function sheetPlugin({ title, href = 'sheet/README.md', defaultSong, buil
       app.addVisuals(`<div class="sect">Score <small id="sNote">${about}</small></div>
         <label class="chk" title="The score's system over the picture as it plays (S)"><input type="checkbox" id="sOn" checked> Show the score</label>
         <div class="field"><label>Style</label>${sel('sStyle', STYLES, 'glass')}</div>
-        <div class="field" title="Automatic: the part of the frame the pianist and the piano fill least, chosen as the shots change (it moves at most every 3 s, gliding, unless a cut puts her behind it); liner-note intertitles placed automatically keep off it"><label>Position</label>${sel('sPos', POSITIONS, 'auto')}</div>
+        <div class="field" title="Automatic: one place for the whole song, the part of the frame the pianist and the piano fill least over the director's shots, leaving room for the liner notes (automatic intertitles keep off it; a fixed intertitle place or the captions keep it off theirs). It doesn't move while the song plays"><label>Position</label>${sel('sPos', POSITIONS, 'auto')}</div>
         <div class="field" title="Systems in view: the one being played, and the ones after it"><label>Systems shown</label><select id="sRows"><option value="1" selected>1</option><option value="2">2</option></select></div>
         <div class="field"><label>Size <span class="val" id="sSizeV"></span></label><input type="range" id="sSize" min="0.1" max="0.4" step="0.01" value="0.2"></div>
         <div class="field"><label>Follow with</label>${sel('sHl', HIGHLIGHTS, 'bar')}</div>
@@ -83,9 +80,9 @@ export function sheetPlugin({ title, href = 'sheet/README.md', defaultSong, buil
     onFrame(t, a, o) { frame(t, !!o?.shot) },
     overlay() {
       if (!ov || !opt('sOn').checked || !opt('sVideo').checked) return null
-      // a placer of its own, on the song's clock: the camera is the frame's own here
+      // a placer of its own for the video's frame (its shape), chosen on its first frame
       const o = ov, pl = newPlacer(o)
-      return (g2, w, h, t) => o.draw(g2, w, h, t, { box: pl(w, h, t) })
+      return (g2, w, h, t) => o.draw(g2, w, h, t, { box: pl(w, h) })
     },
   }
 }

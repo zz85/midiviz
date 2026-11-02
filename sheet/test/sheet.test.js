@@ -90,25 +90,33 @@ test('hands: from the tracks where they name both hands, else automatic', () => 
   assert.equal(handModeOf('auto'), 'auto'); assert.equal(handModeOf('x'), 'tracks'); assert.equal(handModeOf(null), 'tracks')
 })
 
-test('placer: automatic placement stays put, then moves; a cut moves it at once', async () => {
-  const { createPlacer, DWELL } = await import('../placer.js')
-  const ov = { opts: { position: 'auto' }, box: (W, H, p) => ({ x: p.endsWith('left') ? 10 : p.endsWith('right') ? W - 310 : (W - 300) / 2, y: p.startsWith('top') ? 10 : H - 110, w: 300, h: 100 }) }
-  let scores = { bottom: 0.2, top: 0.1, 'bottom-left': 0.3, 'bottom-right': 0.3, 'top-left': 0.3, 'top-right': 0.3 }, reserved = null
-  const pick = (places, prefer, margin) => {
-    let best = null; for (const k in places) if (best == null || scores[k] < scores[best]) best = k
-    if (prefer in places && scores[prefer] <= scores[best] + margin) best = prefer
-    return { place: best, scores }
-  }
-  const place = createPlacer(ov, { pick, reserve: r => { reserved = r } })
-  assert.equal(place(1000, 600, 0).y, 10, 'starts at the emptiest place, the top')
-  assert.ok(reserved.v0 < 0.1, 'and holds it for the intertitles')
-  scores = { ...scores, top: 0.3, bottom: 0.1 }
-  assert.equal(place(1000, 600, 1).y, 10, 'stays: not there DWELL seconds yet')
-  place(1000, 600, DWELL + 0.1)
-  assert.equal(place(1000, 600, DWELL + 0.1 + 1).y, 490, 'then moves to the bottom (gliding there)')
-  scores = { ...scores, top: 0.1, bottom: 0.9 }
-  place(1000, 600, DWELL + 2)
-  assert.equal(place(1000, 600, DWELL + 2.6).y, 10, 'a cut that puts her behind it moves it at once')
+test('placer: one place for the song, chosen again only when the survey would change', async () => {
+  const { createPlacer } = await import('../placer.js')
+  const ov = { opts: { position: 'auto', size: 0.2, rows: 1 }, box: (W, H, p) => ({ x: p.endsWith('left') ? 10 : p.endsWith('right') ? W - 310 : (W - 300) / 2, y: p.startsWith('top') ? 10 : H - 110, w: 300, h: 100 }) }
+  let scores = { bottom: 0.2, top: 0.1, 'bottom-left': 0.3, 'bottom-right': 0.3, 'top-left': 0.3, 'top-right': 0.3 }, key = 'song A', surveys = 0, reserved = null
+  const place = createPlacer(ov, { survey: () => { surveys++; return { scores } }, key: () => key, reserve: r => { reserved = r } })
+  assert.equal(place(1000, 600).y, 10, 'the emptiest place over the song, the top')
+  assert.ok(reserved.v0 < 0.1, 'held for the intertitles')
+  scores = { ...scores, top: 0.9 }
+  for (let i = 0; i < 50; i++) assert.equal(place(1000, 600).y, 10, 'and kept while the song plays')
+  assert.equal(surveys, 1)
+  key = 'song B'
+  assert.equal(place(1000, 600).y, 490, 'another song: chosen again')
   ov.opts.position = 'bottom-right'
-  assert.equal(place(1000, 600, 9).x, 690, 'a chosen place is kept')
+  assert.equal(place(1000, 600).x, 690, 'a chosen place is kept')
+})
+
+test('placer: the panel leaves the liner notes their room', async () => {
+  const { choosePlace } = await import('../placer.js')
+  const rects = { bottom: { u0: 0.2, v0: 0.76, u1: 0.8, v1: 0.97 }, top: { u0: 0.2, v0: 0.03, u1: 0.8, v1: 0.24 } }
+  const itRects = { 'bottom-left': { u0: 0.03, v0: 0.56, u1: 0.5, v1: 0.82 }, 'bottom-right': { u0: 0.5, v0: 0.56, u1: 0.97, v1: 0.82 }, 'top-left': { u0: 0.03, v0: 0.12, u1: 0.5, v1: 0.38 }, 'top-right': { u0: 0.5, v0: 0.12, u1: 0.97, v1: 0.38 }, caption: { u0: 0.2, v0: 0.68, u1: 0.8, v1: 0.93 } }
+  const itScores = { 'bottom-left': 0.9, 'bottom-right': 0.9, 'top-left': 0.05, 'top-right': 0.1 }
+  // she fills the bottom a little more, but the top is where the intertitles have room
+  const base = { scores: { bottom: 0.3, top: 0.25 } }
+  assert.equal(choosePlace(rects, base).place, 'top')
+  assert.equal(choosePlace(rects, { ...base, intertitles: { on: true, fixed: null, rects: itRects, scores: itScores } }).place, 'bottom')
+  // captions at the bottom keep the panel off it
+  assert.equal(choosePlace(rects, { scores: { bottom: 0.1, top: 0.6 }, intertitles: { on: true, fixed: 'caption', rects: itRects, scores: itScores } }).place, 'top')
+  // no liner notes: her alone decides
+  assert.equal(choosePlace(rects, { scores: { bottom: 0.1, top: 0.6 }, intertitles: { on: false } }).place, 'bottom')
 })
