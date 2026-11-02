@@ -113,6 +113,9 @@
     <select id="psf" title="The soundfont the piano plays from"></select>
     <select id="pprog" title="The soundfont's preset (program) she plays"></select>
     <p class="note" id="pnote"></p>
+    <h4>Violin sound</h4>
+    <div style="display:flex; gap:6px"><input id="vsIn" placeholder="Paste a #034 Violin Sound Lab link or its settings" style="flex:1; min-width:0" title="A link to 034_violin_sound.html, or the part after its ?: the engine, fingering, room and seat, the expression and humanize sliders, Take, and the bowing, left-hand and timbre options. Duo plays them on the same engines"><button id="vsApply">Apply</button><button id="vsClear" title="The violin's sound settings back to Duo's defaults">Clear</button></div>
+    <p class="note" id="vsNote"></p>
   </div>
   <div id="credit"></div>
   <div id="status"></div>
@@ -122,7 +125,7 @@
     import * as THREE from 'three'
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
     import { SoundFontEngine, MidiScheduler } from './soundfont-engine/src/index.js'
-    import { installAcoustics, acousticParams, ROOMS } from './concertstage/acoustics.js'
+    import { installAcoustics, acousticParams, ROOMS, SEATS } from './concertstage/acoustics.js'
     import { buildGrandPiano, LOW, HIGH } from './concertstage/concert-grand.js'
     import { fingerLine, onePlayerNotes } from './strings/fingering.js'
     import { buildMotion } from './strings/motion.js'
@@ -426,7 +429,7 @@
       // song time of a file time (s): the file's, × k, or along the recording's (or the model's) tempo
       const tmap = song.modelled?.tmap ?? (song.performer ? tempoMapOf(song.performer.rec, midiNotes) : null)
       const T = tmap ? sec => tmap(midi.header.secondsToTicks(sec) / ppq, sec * k) : sec => sec * k
-      fingerLine(violin, { instrument: 'violin' })
+      fingerLine(violin, { instrument: 'violin', mode: vs.mode })
       const means = parts.map(p => mean(p.notes.map(n => n.pitch)))
       const hands = parts.length === 2 ? new Map([[parts[0], means[0] >= means[1] ? 'R' : 'L'], [parts[1], means[0] >= means[1] ? 'L' : 'R']]) : null
       // (a recorded or modelled performer retimed accNotes in place, along his tempo)
@@ -711,12 +714,76 @@
     const ensureSound = () => (soundLoading ??= Promise.all([engine.loadSoundFont('soundfonts/Creative(emu10k1)8MBGMSFX.sf2').then(() => { soundReady = true }), pianoLoading || loadPiano()])
       .then(() => { programs(); applyBalance() })
       .catch(e => { console.error(e); setStatus('Sound failed to load: ' + e.message, 4000) }))
-    const applyHall = () => { const p = acousticParams({ room: $('room').value, seat: 'mid' }); hall.set(p); hybrid.lab?.setHall(p) }
+    const applyHall = () => { const p = acousticParams({ room: $('room').value, seat: vs.seat }); hall.set(p); hybrid.lab?.setHall(p) }
     // levels while sounding, measured on the Kreutzer finale: the GM violin 0.107
     // RMS, the GM piano 0.145 and the Full Grand 0.230 (so it plays 4 dB down to
     // keep the old balance); #034's Lab out of its hall at unity: the hybrid
     // 0.047, the waveguide 0.061, the source-filter 0.090
     const LAB_LEVEL = { hybrid: 2.1, waveguide: 1.6, source: 1.1 }
+    // ── The violin's sound settings, imported from #034 (034_violin_sound.html's URL) ──
+    // engine → Violin menu, mode → the left hand's fingering, room / seat → the hall;
+    // the expression and humanize sliders (performance.js STYLE), Take (the seed) and
+    // the bowing / left-hand / timbre options go to #034's engines as #034 sends them.
+    // Kept in Duo's URL as vs= (the imported settings, as #034 writes them)
+    const VS = {
+      style: ['vibrato', 'vibratoRate', 'portamento', 'portato', 'dynamics', 'phrasing', 'bowSpeed', 'pressure', 'contact', 'attack', 'legato', 'autoBow', 'timing', 'intonation', 'variance'],
+      // options #034 turns into style (applyOpts there)
+      styleOpt: { bowStart: Number, keepBow: v => v === '1', bowLift: String, crossMute: Number, tremolo: String, tremoloMode: String, tremoloMin: Number, harmonics: v => v === 'auto' ? 'auto' : +v },
+      // and into the engines' parameters
+      labOpt: { bowPress: v => v === 'on', rosin: Number, resonance: Number, body: String, wgPress: Number, wgPos: Number, wgLimits: v => v !== 'off' },
+      // what Duo has its own controls or no counterpart for
+      skip: { song: 'the piece', track: 'the track', demo: 'the piece', typed: 'the piece', performer: 'Performer', speed: 'Speed', instrument: 'the instrument (a violin here)', art: 'Bowing', repeats: 'Bowing', expr: 'Performer' },
+      ENGINES: ['gm', 'hybrid', 'waveguide', 'source'], MODES: ['standard', 'expressive', 'beginner', 'nearest'],
+    }
+    const vs = { style: {}, lab: {}, sordino: false, mode: 'standard', seat: 'mid', seed: 7, query: '', version: 0 }
+    /** Read #034's settings from a link or a query string; apply what Duo plays, say what it doesn't. */
+    function importViolinSound(text, { quiet = false } = {}) {
+      text = (text || '').trim()
+      const q = new URLSearchParams(text.includes('?') ? text.slice(text.indexOf('?') + 1) : text.replace(/^#/, ''))
+      const style = {}, lab = {}, used = [], ignored = [], bad = []
+      let mode = 'standard', seat = 'mid', seed = 7, sordino = false
+      const num = v => v !== '' && isFinite(+v)
+      for (const [k, v] of q) {
+        if (VS.style.includes(k)) { if (num(v)) { style[k] = +v; used.push(k) } else bad.push(k) }
+        else if (k in VS.styleOpt) { const x = VS.styleOpt[k](v); if (typeof x !== 'number' || isFinite(x)) { style[k] = x; used.push(k) } else bad.push(k) }
+        else if (k in VS.labOpt) { const x = VS.labOpt[k](v); if (typeof x !== 'number' || isFinite(x)) { lab[k] = x; used.push(k) } else bad.push(k) }
+        else if (k === 'sordino') { sordino = v === '1'; used.push(k) }
+        else if (k === 'take') { if (num(v)) { seed = 7 + 1000 * (+v - 1); used.push(k) } else bad.push(k) }   // #034's seed for take n
+        else if (k === 'mode') { if (VS.MODES.includes(v)) { mode = v; used.push(k) } else bad.push(k) }
+        else if (k === 'seat') { if (SEATS[v]) { seat = v; used.push(k) } else bad.push(k) }
+        else if (k === 'room') { if (ROOMS[v]) { $('room').value = v; used.push(k) } else bad.push(k) }
+        else if (k === 'engine') { if (VS.ENGINES.includes(v)) { $('vsound').value = v; used.push(k) } else ignored.push(`engine ${v} (Duo has GM, hybrid, waveguide, Helmholtz)`) }
+        else if (k in VS.skip) ignored.push(`${k} (${VS.skip[k]})`)
+        else ignored.push(k)
+      }
+      // what Duo keeps in its own controls (engine, room) is saved by them; the rest as vs=
+      const keep = new URLSearchParams([...q].filter(([k]) => used.includes(k) && k !== 'engine' && k !== 'room'))
+      Object.assign(vs, { style, lab, sordino, mode, seat, seed, query: keep.toString(), version: vs.version + 1 })
+      const n = Object.keys(style).length + Object.keys(lab).length
+      $('vsNote').textContent = !text ? '' : [
+        used.length ? `Applied ${used.length}: ${used.join(', ')}.` : 'Nothing to apply.',
+        bad.length ? `Not a value it takes: ${bad.join(', ')}.` : '',
+        ignored.length ? `Left out: ${ignored.join(', ')}.` : '',
+        'phrasing' in style && $('performer').value ? 'Phrasing: the performer chosen shapes the phrases (Performer: as written for the slider\'s).' : '',
+        n && $('vsound').value === 'gm' ? 'The expression, bowing and timbre settings play on #034\'s engines: choose one in the Violin menu (the GM soundfont plays the notes as they are).' : '',
+      ].filter(Boolean).join(' ')
+      if (!quiet) setStatus(used.length ? `Violin: ${used.length} settings from #034` : 'Violin: no #034 settings found', 3000)
+      return used.length
+    }
+    $('vsIn').onkeydown = e => { if (e.key === 'Enter') $('vsApply').onclick() }
+    $('vsApply').onclick = async () => {
+      importViolinSound($('vsIn').value)
+      const was = clock.playing, t = clock.t; if (was) pause()
+      applyHall()
+      // the fingering (mode) changes the strings: the piece again; the rest re-renders the violin
+      await loadSong($('song').value); clock.t = t
+      if (hybrid.on) await hybrid.ensure(); else applyBalance()
+      if (scheduler) loadSchedule()
+      if (was) play()
+      saveUrl()
+    }
+    $('vsClear').onclick = () => { $('vsIn').value = ''; $('vsApply').onclick() }
+    if (Q.get('vs')) { $('vsIn').value = Q.get('vs'); importViolinSound(Q.get('vs'), { quiet: true }) }
     // ── Mixer: a level (dB) for the violin, the piano and each of her tracks ──
     // through CC7 (GM volume, 40·log10: 0 dB at 100, +4 dB at 127) on the synths that
     // take it, else (RustySynth, the wavetable piano) by each note's velocity; the
@@ -788,9 +855,9 @@
     $('psf').onchange = async () => { await showPresets(); repiano() }
     $('pprog').onchange = () => { programs(); showPianoNote(); saveUrl() }
     showPresets().then(showPianoNote)
-    window.__mixer = { levels, engine, pianoEngine, ready: () => soundReady && pianoReady, channelDb }
+    window.__mixer = { levels, engine, pianoEngine, ready: () => soundReady && pianoReady, channelDb, get hybrid() { return hybrid }, vs }
     const hybrid = {
-      lab: null, P: null, perfFor: null, speed: 0, using: null,
+      lab: null, P: null, perfFor: null, speed: 0, using: null, vsVersion: -1, labVersion: -1,
       get name() { return $('vsound').value },
       get on() { return this.name in LAB_LEVEL },
       async ensure() {
@@ -808,11 +875,13 @@
           })
           applyHall()
         }
+        // #034's engine parameters (rosin, resonance, body…) and mute, from the imported settings
+        if (this.labVersion !== vs.version) { this.labVersion = vs.version; this.lab.setParams({ bowPress: true, rosin: 1, resonance: 1, body: 'phil', wgPress: 1, wgPos: 1, wgLimits: true, ...vs.lab }); this.lab.setSordino(vs.sordino) }
         if (this.using !== this.name) { this.using = this.name; await this.lab.use(this.name); applyBalance() }
-        if (this.perfFor !== song.violin || this.speed !== clock.speed) {
-          this.perfFor = song.violin; this.speed = clock.speed
+        if (this.perfFor !== song.violin || this.speed !== clock.speed || this.vsVersion !== vs.version) {
+          this.perfFor = song.violin; this.speed = clock.speed; this.vsVersion = vs.version
           const P = this.P
-          this.lab.setPerformance(P.renderPerformance(P.scaleNotes(song.violin, clock.speed), { instrument: 'violin', expression: P.scaleExpression(song.expr, clock.speed) }))
+          this.lab.setPerformance(P.renderPerformance(P.scaleNotes(song.violin, clock.speed), { instrument: 'violin', style: vs.style, seed: vs.seed, expression: P.scaleExpression(song.expr, clock.speed) }))
         }
       },
       // song time t (the lab runs in performance time, song time / speed)
@@ -1042,6 +1111,7 @@
       if ($('psynth').value !== 'oxisynth') p.set('psynth', $('psynth').value)
       if ($('psf').value !== PIANO_FONTS[0].file) p.set('psf', $('psf').value)
       if (+$('pprog').value) p.set('pprog', $('pprog').value)
+      if (vs.query) p.set('vs', vs.query)
       if ($('cam').value !== 'auto') p.set('view', $('cam').value)
       if (!$('intro').checked) p.set('intro', '0')
       if ($('notes').value !== 'intertitles') p.set('notes', $('notes').value)
@@ -1119,14 +1189,17 @@
         if (tween.t >= 1) tween = null
       }
     }
-    if ($('cam').value !== 'auto' && $('cam').value !== 'free') { frame(0, 1 / 60); setView($('cam').value, true) }
+    // (Free starts from the hall, The two, from the hall: the camera has no place of its own before
+    // a drag, and at the scene's origin it looks at the floor under the piano)
+    const camStart = () => $('cam').value === 'free' ? 'front' : $('cam').value
+    if ($('cam').value !== 'auto') { frame(0, 1 / 60); setView(camStart(), true) }
     if (SHOT) {
       // headless: settle the springs and the skirt over the 1.5 s before t, then draw one frame
       const t = +(Q.get('t') || 5)
       $('start').style.display = 'none'
       document.querySelectorAll('.bar, #credit').forEach(el => { el.style.display = 'none' })
       for (let i = 90; i >= 0; i--) frame(t - i / 60, 1 / 60)
-      if ($('cam').value !== 'auto' && $('cam').value !== 'free') setView($('cam').value, true)
+      if ($('cam').value !== 'auto') setView(camStart(), true)
       controls.update()
       camera.lookAt(controls.target)
       renderer.render(scene, camera)
