@@ -1413,7 +1413,7 @@ export async function boot(plug = {}) {
       ['sf', 'sf'], ['avsync', 'avsync'],
       ['dofamt', 'dofAmt'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
       ['vol', 'vol'], ['room', 'room'], ['seat', 'seat'], ['rv', 'rvAmt'], ['decay', 'rvDecay'], ['tone', 'rvTone'], ['boost', 'boost'], ['amb', 'amb'], ['applause', 'applause'],
-      ['exformat', 'exFormat'], ['exlayout', 'exLayout'], ['exsplit', 'exSplit'], ['exhands', 'exHandsHalf'], ['exlview', 'exLessonView'], ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exfps', 'exFps'], ['extail', 'exTail'], ['exlead', 'exLead'], ['exsub', 'exSub'], ['excard', 'exCard'], ['excaps', 'exCaps'], ['exvtt', 'exVtt'], ['exlen', 'exLen'], ['exhold', 'exHold'],
+      ['exformat', 'exFormat'], ['exlayout', 'exLayout'], ['exsplit', 'exSplit'], ['exhands', 'exHandsHalf'], ['exlview', 'exLessonView'], ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exfps', 'exFps'], ['extail', 'exTail'], ['exlead', 'exLead'], ['exend', 'exEnd'], ['exsub', 'exSub'], ['excard', 'exCard'], ['excaps', 'exCaps'], ['exvtt', 'exVtt'], ['exlen', 'exLen'], ['exhold', 'exHold'],
       ['notes', 'linerMode'], ['itstyle', 'itStyle'], ['itstylea', 'itStyleA'], ['itcol', 'itTheme'], ['itpos', 'itPos'], ['itheads', 'itHeads'], ['extitle', 'exTitle'], ['expt', 'exPt'], ['ptengine', 'ptEngine'], ['ptspp', 'ptSpp'], ['ptbounces', 'ptBounces'], ['pthair', 'ptHair'], ['ptdn', 'ptDenoise'], ['ptfx', 'ptFx'], ['ptsize', 'ptSize'],
     ].filter(([, id]) => $(id))
     const OUTFIT_KEYS = { dress: 'dress', slit: 'slit', fabric: 'fabric', dcol: 'color', shoes: 'shoes', hair: 'hair', hcol: 'hairColor' }
@@ -1794,6 +1794,10 @@ export async function boot(plug = {}) {
       // the lead-in (Render → Lead-in): picture and silence before the first note, from the
       // piece's start alone; a clip from later in the piece, or a Short, starts on the music
       const leadS = clipA > 0 || asShort ? null : leadSecs()
+      // the fade to black (Render → The end): over the last three quarters of the tail, 2 s at most
+      // (1.5 s on the automatic 2 s tail), where the video ends with the piece; a clip that ends
+      // before it keeps its handle as it is, for editing, and a Short has its own fades
+      const fadeS = asShort || clipB < song.duration || $('exEnd').value !== 'fade' ? 0 : Math.min(2, tailS * 0.75)
       if (asShort) { if (!(short.b > short.a)) clipFresh(); clipA = short.a; clipB = short.b }
       const clip = clipA > 0 || clipB < song.duration
       const name = (song.title || 'pianist').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_') + (asShort ? '_short' : '') + (clip ? `_${Math.floor(clipA)}-${Math.ceil(clipB)}s` : '') + (ptKey ? `_${ptKey}_${$('ptSpp').value}spp` : '') + `_${height}p${fps}.mp4`
@@ -1840,7 +1844,7 @@ export async function boot(plug = {}) {
           // the tail (Render → Tail after the end): past the piece's end, or a handle past a clip's out point
           end: asShort || $('exTail').value !== 'auto' ? Math.min(song.duration, clipB + tailS) : clipB, tail: tailS, ...(asShort ? { preroll: 0.1 } : leadS ? { preroll: leadS } : {}),
           bitrate: defaultBitrate(width, height, fps),
-          audio: $('exAudio').checked,
+          audio: $('exAudio').checked, fadeOut: fadeS,
           audioOpts: { vendorPath, soundfonts: [$('sf').value], volume: 1, convertSF3: engine._backend?._convertSF3 ? d => engine._backend._convertSF3(d) : null },
           audioFx: (fx => !asShort ? fx : shortFades(fx, clipA - 0.1, Math.min(song.duration + tailS, clipB + tailS)))(offlineHall($('room').value === 'dry' ? null : acousticParams(hallSettings()), 48000, { volume: +$('vol').value })),
           tour: null,

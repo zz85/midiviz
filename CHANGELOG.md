@@ -23,6 +23,9 @@ Songs: spread chords in the engraved Bach files ([notes](midis/README.md#sources
 [#045 Path-traced Pianist](045_pathtracer.html) and the pages that boot it (#049, #050): a lead-in before the music
 - Render → **Lead-in before the music**: picture and silence before the first note of a render from the start of the piece. The scene comes up from black (the director's fade starts at the head of the video, `director.opts.fadeFrom`) while she sits ready at the keys, then the music starts. With the title as the first intertitle, the title comes up with the picture, so it is all but in when the first note sounds. Automatic is 3 s with the title intertitle and 2 s without (it was 1 s of black before). The choices are 1, 2, 3, 4 and 6 s. A clip from later in the piece, or a Short, still starts on the music. The score panel shows the first system during the lead-in, and the subtitle files carry the title from where it shows. In a 5 s test render of the Aria, the audio is silent for the first 3.0 s.
 
+[#045 Path-traced Pianist](045_pathtracer.html) and the pages that boot it (#049, #050): a fade to black at the end
+- Render → **The end**: Fade to black (the default) or Cut. The picture, the score panel and the captions fade to black over the last three quarters of the tail, 2 s at most (1.5 s on the automatic 2 s tail), and the last frame is black. The sound fades with it on an equal-power curve, after the hall's reverb, so the ring fades too. It applies only where the video ends with the piece: a clip that ends earlier keeps its handle as it is, for editing, and a Short keeps its own fades. notation3d/video-export.js `exportVideo` takes the fade as `fadeOut` (seconds); other pages don't pass it, so their videos end as before. On the Aria's last 5 s, the picture's mean luma goes from 51 to 16 (black) over the last 1.5 s.
+
 ## 1 Nov 2026
 
 [Experiment #038 - Duo](038_duo.html): One More Time, One More Chance, and MIDI files of your own

@@ -408,6 +408,8 @@ export function drawOutroCard(g, w, h, k, secs, { title, subtitle, credits = [] 
  * @param {{seconds:number, title:string, subtitle?:string, credits:{role,name}[], music?:'ring'|'fade'}|null} [o.outro]
  *        - credits card; music 'ring' = after the end, 'fade' = overlaps the ending while the music fades out
  * @param {(g:CanvasRenderingContext2D, w:number, h:number, t:number)=>void} [o.overlay] - draws over each music frame (song time t), under the cards
+ * @param {number} [o.fadeOut] - seconds: the picture fades to black over the video's last this-many seconds, and the
+ *        sound (after audioFx, so the hall's ring too) fades out with it on an equal-power curve
  * @param {(canvas:HTMLCanvasElement, t:number, frame:number)=>Promise<CanvasImageSource>} [o.frameSource] - replaces each frame's picture
  *        (after stage.update; gets the stage's canvas, returns a width × height image)
  * @param {({songZero:number, fps:number, frames:number})=>void} [o.onTimeline] - told where song time 0 lands in the video (seconds)
@@ -440,6 +442,9 @@ export async function exportVideo(o) {
 	const fadeA = Math.round(outroStart * SAMPLE_RATE / fps), fadeB = Math.round((outroStart + outroFrames) * SAMPLE_RATE / fps)
 	const intro3D = o.intro?.style === '3d' && stage.titleMesh
 	const introSamples = Math.round(musicStart * SAMPLE_RATE / fps)
+	// the fade to black at the very end (o.fadeOut), in frames and in samples
+	const endFadeFrames = o.fadeOut > 0 ? Math.min(frames, Math.round(o.fadeOut * fps)) : 0
+	const endFadeA = Math.round((frames - endFadeFrames) * SAMPLE_RATE / fps), endFadeB = Math.round(frames * SAMPLE_RATE / fps)
 	// where song time 0 lands in the video (for captions written alongside it)
 	o.onTimeline?.({ songZero: musicStart / fps - t0, fps, frames })
 
@@ -476,7 +481,7 @@ export async function exportVideo(o) {
 	if (o.transition) stage.opts.transition = o.transition
 	// 2D canvas for compositing the title card over the WebGL frame
 	let card = null
-	if (introFrames || outroFrames || o.overlay) {
+	if (introFrames || outroFrames || o.overlay || endFadeFrames) {
 		card = document.createElement('canvas')
 		card.width = width; card.height = height
 		card.g = card.getContext('2d')
@@ -501,13 +506,16 @@ export async function exportVideo(o) {
 			let src = stage.renderer.domElement
 			// (a caller's own picture of this frame, e.g. path traced: may take a while)
 			if (o.frameSource) src = await o.frameSource(src, t, i)
-			if (inIntro || inOutro || o.overlay) {
+			const endK = endFadeFrames ? clamp01((i + 1 - (frames - endFadeFrames)) / endFadeFrames) : 0
+			if (inIntro || inOutro || o.overlay || endK > 0) {
 				const g = card.g
 				g.drawImage(src, 0, 0, width, height)
 				// (a caller's overlay, e.g. captions, while the music runs: under the cards)
 				if (o.overlay && i >= musicStart) o.overlay(g, width, height, t)
 				if (inIntro) drawTitleCard(g, width, height, introK, o.intro.seconds, { ...o.intro, style: intro3D ? '3d' : '2d' })
 				else if (inOutro) drawOutroCard(g, width, height, (outroI + 0.5) / outroFrames, o.outro.seconds, o.outro)
+				// the fade to black over everything, the captions and cards too (the last frame black)
+				if (endK > 0) { g.fillStyle = `rgba(0,0,0,${easeInOut(endK)})`; g.fillRect(0, 0, width, height) }
 				src = card
 			}
 			const frame = new VideoFrame(src, { timestamp: Math.round(i * 1e6 / fps), duration: Math.round(1e6 / fps) })
@@ -544,6 +552,13 @@ export async function exportVideo(o) {
 						}
 					}
 					if (o.audioFx) o.audioFx(data, n, SAMPLE_RATE) // optional post-processing (e.g. room reverb), planar in place
+					// the sound fades with the picture at the end (equal-power cosine), the room's ring included
+					if (endFadeFrames && audioTs + n > endFadeA) {
+						for (let j = 0; j < n; j++) {
+							const gn = Math.cos(clamp01((audioTs + j - endFadeA) / Math.max(1, endFadeB - endFadeA)) * Math.PI / 2)
+							data[j] *= gn; data[n + j] *= gn
+						}
+					}
 					const ad = new AudioData({ format: 'f32-planar', sampleRate: SAMPLE_RATE, numberOfFrames: n, numberOfChannels: 2, timestamp: Math.round(audioTs * 1e6 / SAMPLE_RATE), data })
 					aenc.encode(ad)
 					ad.close()
