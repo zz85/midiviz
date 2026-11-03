@@ -159,7 +159,8 @@ async function gptWebGPU({ width, height, bounces, toneMapping, denoise }) {
   renderer.setPixelRatio(1); renderer.setSize(width, height, false)
   renderer.toneMapping = toneOf(toneMapping)
   const pt = new WebGPUPathTracer(renderer)
-  Object.assign(pt, { renderDelay: 0, fadeDuration: 0, minSamples: 0, dynamicLowRes: false, maxBounces: bounces })
+  // (adaptiveFrameBudget would retune frameBudget toward 16 ms frames, and needs timestamp queries)
+  Object.assign(pt, { renderDelay: 0, fadeDuration: 0, minSamples: 0, dynamicLowRes: false, adaptiveFrameBudget: false, adaptiveDynamicRes: false, maxBounces: bounces })
   // frameBudget: path slots per renderSample() (the wavefront tracer's pool,
   // 250 000 by default, sized to keep an interactive page at 60 fps). Offline
   // there is no frame rate to keep: one slot per pixel, so a sample is one
@@ -169,7 +170,7 @@ async function gptWebGPU({ width, height, bounces, toneMapping, denoise }) {
   pt.frameBudget = want > 0 ? want : width * height
   let den = null
   if (denoise) {
-    const { initUNetFromURL } = await import(VENDOR + 'three-gpu-pathtracer/oidn-web.js')
+    const { initUNetFromURL } = await import(VENDOR + 'three-gpu-pathtracer/oidn-webgpu.js')
     den = new OIDNDenoiser({ initUNetFromURL, auxWeightsUrl: VENDOR + 'mutracer/oidn/weights/rt_hdr_alb_nrm.tza' })
     pt.setDenoiser(den)
   }

@@ -8,7 +8,7 @@
 //    or megakernel compute on three/webgpu) and the deprecated WebGL one
 //    (WebGLPathTracer, the main entry), code-split so three-mesh-bvh is
 //    shared; `three` and its subpaths stay external (the page's import map,
-//    r187). oidn-web beside them for its OIDN denoiser.
+//    r187). oidn-webgpu beside them for its OIDN denoiser.
 //  • MuTracer (@meimu/mutracer, Yi Shen, MIT): the whole library with
 //    gl-matrix and oidn-web inlined, code-split so OIDN loads only when used;
 //    its BVH worker and TinyBVH WASM beside it, the OIDN weights at ../oidn/
@@ -19,7 +19,12 @@ import path from 'node:path'
 import os from 'node:os'
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../..')
-const VERSIONS = { 'three-gpu-pathtracer': '0.0.27', 'three-mesh-bvh': '0.9.17', '@meimu/mutracer': '0.2.0', three: '0.187.0', 'oidn-web': '0.5.0' }
+// three-gpu-pathtracer from GitHub: 0.0.27, the last release, predates three r187, which binds every
+// storage buffer as an array, so its WebGPU kernels fail to compile on r187 ("cannot index into
+// expression of type 'array<SampleCounters>'"). main has the fix (PR #911); this is main on 2 Nov 2026.
+const GPT_COMMIT = 'ec19f7c93035ae9e98554db1e99f7d5c39b57902'
+const VERSIONS = { 'three-gpu-pathtracer': `https://codeload.github.com/gkjohnson/three-gpu-pathtracer/tar.gz/${GPT_COMMIT}`, 'three-mesh-bvh': '0.9.17', '@meimu/mutracer': '0.2.0', three: '0.187.0', 'oidn-webgpu': '0.6.0', 'xatlas-web': '0.1.0' }
+
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pt-vendor-'))
 const sh = (cmd, cwd = tmp) => execSync(cmd, { cwd, stdio: 'inherit' })
 fs.writeFileSync(path.join(tmp, 'package.json'), '{"private":true,"type":"module"}')
@@ -32,8 +37,8 @@ const gptOut = path.join(ROOT, 'vendor/three-gpu-pathtracer')
 fs.rmSync(gptOut, { recursive: true, force: true }); fs.mkdirSync(gptOut, { recursive: true })
 fs.writeFileSync(path.join(tmp, 'three-gpu-pathtracer.js'), "export * from 'three-gpu-pathtracer'\n")
 fs.writeFileSync(path.join(tmp, 'webgpu.js'), "export * from 'three-gpu-pathtracer/webgpu'\n")
-fs.writeFileSync(path.join(tmp, 'oidn-web.js'), "export * from 'oidn-web'\n")
-sh(`${esbuild} three-gpu-pathtracer.js webgpu.js oidn-web.js --bundle --format=esm --splitting --external:three --external:'three/*' --minify --legal-comments=eof --outdir=${gptOut} --chunk-names=chunk-[hash]`)
+fs.writeFileSync(path.join(tmp, 'oidn-webgpu.js'), "export * from 'oidn-webgpu'\n")
+sh(`${esbuild} three-gpu-pathtracer.js webgpu.js oidn-webgpu.js --bundle --format=esm --splitting --external:three --external:'three/*' --minify --legal-comments=eof --outdir=${gptOut} --chunk-names=chunk-[hash]`)
 fs.copyFileSync(nm('three-gpu-pathtracer/LICENSE'), path.join(gptOut, 'LICENSE'))
 fs.copyFileSync(nm('three-mesh-bvh/LICENSE'), path.join(gptOut, 'LICENSE.three-mesh-bvh'))
 
@@ -48,6 +53,6 @@ fs.cpSync(path.join(mu, 'oidn'), path.join(muOut, 'oidn'), { recursive: true })
 for (const f of ['LICENSE', 'THIRD_PARTY_NOTICES.md']) fs.copyFileSync(path.join(mu, f), path.join(muOut, f))
 fs.cpSync(path.join(mu, 'LICENSES'), path.join(muOut, 'LICENSES'), { recursive: true })
 
-fs.writeFileSync(path.join(ROOT, 'vendor/PATHTRACERS.md'), `Vendored by pathtrace/tools/vendor.mjs for Experiment #045:\n\n${Object.entries(VERSIONS).map(([k, v]) => `- ${k} ${v}`).join('\n')}\n`)
+fs.writeFileSync(path.join(ROOT, 'vendor/PATHTRACERS.md'), `Vendored by pathtrace/tools/vendor.mjs for Experiment #045:\n\n${Object.entries(VERSIONS).map(([k, v]) => `- ${k} ${v.startsWith('https:') ? 'main @ ' + GPT_COMMIT.slice(0, 7) : v}`).join('\n')}\n`)
 fs.rmSync(tmp, { recursive: true, force: true })
 console.log('vendored into', gptOut, 'and', muOut)
