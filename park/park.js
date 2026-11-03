@@ -54,7 +54,7 @@ function samplePreset(t) {
 const SUMMER_GROUND = ['#1f4a2a', '#4e9a3c', '#98c54e', '#24502b', '#4f8f34'].map((h) => C(h));
 const DIRT = C('#b49a74');
 
-export async function createPark(renderer, { time = 1.4, style = 'summer', azimuth = 55, clouds = 0.5, wind = 1.2, seed = 7, grassCount = 120000, paint = 2.5, scale = 1 } = {}) {
+export async function createPark(renderer, { time = 1.4, style = 'summer', azimuth = 55, clouds = 0.5, wind = 1.2, seed = 7, grassCount = 120000, paint = 2.5, scale = 1, layout = 'keys' } = {}) {
   // `scale`: the park's size against the duo's. At 0.5 the tree, hill, grass and poles are
   // half as big around the two as they are, who stay as they are: the park is drawn as it
   // is in its metres and the duo is mapped into it at 1/scale (2 cm of the park a cm), its
@@ -85,9 +85,10 @@ export async function createPark(renderer, { time = 1.4, style = 'summer', azimu
   // little forward, its +z (toward the audience) away from the tree, toward the hillside view
   const away = new THREE.Vector2(LAWN.x, LAWN.z).normalize();
   const yaw = Math.atan2(away.x, away.y);
-  // (the piano is upstage on his right, its middle about 1 m left of him and 0.8 m behind:
-  // the lawn centred between them)
-  const origin = new THREE.Vector3(LAWN.x, LAWN.y, LAWN.z).add(new THREE.Vector3(1.0, 0, 0.8).divideScalar(scale).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw));
+  // (the lawn centred between him and the piano's middle: with layout 'curve' the piano is
+  // about 1 m on his right and 0.8 m behind him, with 'keys' about 2.6 m on his left and 0.7 m behind)
+  const off = layout === 'curve' ? new THREE.Vector3(1.0, 0, 0.8) : new THREE.Vector3(-1.3, 0, 0.35)
+  const origin = new THREE.Vector3(LAWN.x, LAWN.y, LAWN.z).add(off.divideScalar(scale).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw));
   const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw), qYawInv = qYaw.clone().invert();
   /** A point of the duo's frame (cm) in the park (m), and back. */
   const toPark = (v, out = new THREE.Vector3()) => out.copy(v).multiplyScalar(CM).applyQuaternion(qYaw).add(origin);

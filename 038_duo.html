@@ -86,6 +86,7 @@
       <option value="free">Free</option>
     </select>
     <select id="venue" title="Where they play: the concert hall, or outdoors on Sorairo's hillside (park/, from random-sketches/vibes/sorairo: the tree, wind in the grass, the sky, birds and a painterly finish). Changing it reloads the page"><option value="hall">Venue: concert hall</option><option value="park">Venue: the park</option></select>
+    <select id="layout" title="Where he stands: beside the keyboard end, about a metre to her left and a little in front (the usual recital layout), or in front of the piano's curve. Changing it reloads the page"><option value="keys">Layout: by the keyboard</option><option value="curve">Layout: by the curve</option></select>
     <select id="pscale" hidden title="The park's size around the two, who stay as they are: the tree, hill and grass at 3/4 or 1/2 of Sorairo's. Changing it reloads the page"><option value="1">Park: full size</option><option value="0.75">Park: 3/4 size</option><option value="0.5">Park: 1/2 size</option></select>
     <select id="tod" hidden title="Time of day in the park"></select>
     <select id="tstyle" hidden title="The tree in the park"><option value="summer">Tree: summer</option><option value="sakura">Tree: cherry blossom</option><option value="autumn">Tree: autumn</option><option value="maple">Tree: maple</option></select>
@@ -187,7 +188,15 @@
     const pianoSide = new THREE.Group()
     pianoSide.name = 'piano side'
     pianoSide.rotation.y = -1.38              // the lid (treble side) toward the hall, a little open to it
-    pianoSide.position.set(-185, 0, -150)
+    // Where the piano stands (?layout=): 'keys', the recital layout (he stands downstage of
+    // the keyboard end, about 1 m to her left and a little in front, the piano's tail away
+    // from him on his left; most violin-piano recitals), or 'curve' (he stands in front of
+    // the piano's bent side, the keyboard upstage on his right; #038's first layout)
+    const LAYOUT = Q.get('layout') === 'curve' ? 'curve' : 'keys'
+    $('layout').value = LAYOUT
+    $('layout').onchange = () => { const p = new URLSearchParams(location.search); if ($('layout').value === 'curve') p.set('layout', 'curve'); else p.delete('layout'); location.search = p.toString() }
+    if (LAYOUT === 'curve') pianoSide.position.set(-185, 0, -150)
+    else pianoSide.position.set(150, 0, -72)   // her seat at about (105, -63)
     scene.add(pianoSide)
     pianoSide.updateMatrixWorld(true)
     const P = (x, y, z) => pianoSide.localToWorld(v3(x, y, z))
@@ -227,7 +236,7 @@
       $('tod').hidden = $('tstyle').hidden = $('ambBox').hidden = $('pscale').hidden = false
       if (Q.get('amb') === '0') $('amb').checked = false
       setStatus('Growing the park…')
-      park = await createPark(renderer, { time: +$('tod').value + 0.4, style: $('tstyle').value, scale: pscale })
+      park = await createPark(renderer, { time: +$('tod').value + 0.4, style: $('tstyle').value, scale: pscale, layout: LAYOUT })
       $('tod').onchange = () => { park.setTime(+$('tod').value + 0.4); saveUrl() }
       $('tstyle').onchange = () => { park.setStyle($('tstyle').value); saveUrl() }
       $('amb').onchange = () => { park.sound.setOn($('amb').checked); saveUrl() }
@@ -298,7 +307,7 @@
     bowHand.hand.visible = false; bowHand.arm.visible = false
     const inkInstrument = toonify([V.group, bow.group])
     let him = null, vRig = null
-    const TURN = +(Q.get('turn') ?? -0.38)
+    const TURN = +(Q.get('turn') ?? (LAYOUT === 'curve' ? -0.38 : 0.3))
     async function loadHim() {
       setStatus('Loading the violinist…')
       const next = await loadViolinist($('model').value, { base: 'violinist/assets/models/', outfit: $('outfit').value })
@@ -644,7 +653,7 @@
     const nodCurve = t => { const d = (t - NOD) / 0.28; return 0.16 * Math.exp(-d * d) - 0.05 * Math.exp(-(((t - NOD - 0.45) / 0.25) ** 2)) }
     // where she stands for the bow: downstage of the piano, at his right hand
     // (stage view: to his left), facing the hall
-    const STAND_AT = v3(-118, 0, 22)
+    const STAND_AT = LAYOUT === 'curve' ? v3(-118, 0, 22) : v3(95, 0, 34)
     const herHome = { pos: null, rotY: 0 }
     let wasStanding = false
     function introPose(t) {
@@ -1086,8 +1095,8 @@
     }
     // [camera position, look-at, fov] from the subjects (he faces +z, she faces about +x)
     const VIEWS = {
-      front: () => [v3(-60, 175, 520), S.mid.clone().add(v3(15, 0, 40)), 30],
-      wide: () => [v3(-40, 330, 1250), S.mid.clone().setY(100), 24],
+      front: () => [v3(S.mid.x + 55, 175, 520), S.mid.clone().add(v3(15, 0, 40)), 30],
+      wide: () => [v3(S.mid.x + (LAYOUT === 'curve' ? 75 : 40), 330, 1250), S.mid.clone().setY(100), 24],
       duo: () => [S.mid.clone().add(v3(150, 25, 400)), S.mid.clone().add(v3(5, -10, 0)), 30],
       duoLow: () => [S.mid.clone().add(v3(70, -75, 340)), S.mid.clone().add(v3(-5, 5, 0)), 34],
       him: () => [S.hisHead.clone().add(v3(-70, -20, 260)), S.hisHead.clone().add(v3(10, -35, 0)), 28],
@@ -1096,8 +1105,10 @@
       her: () => [S.herHead.clone().add(v3(25, -10, 235)), S.herHead.clone().add(v3(25, -25, 0)), 30],
       herFace: () => [S.herHead.clone().add(v3(62, -14, 52)), S.herHead.clone().add(v3(0, -2, 0)), 30],
       keys: () => [S.hands.clone().add(v3(-15, 40, 75)), S.hands.clone(), 34],
-      overHer: () => [S.herHead.clone().add(v3(-38, 16, 24)), S.hisHead.clone().add(v3(0, -25, 0)), 34],
-      overHim: () => [S.hisHead.clone().add(v3(38, 14, -62)), S.herHead.clone().add(v3(0, -15, 0)), 34],
+      overHer: LAYOUT === 'curve' ? () => [S.herHead.clone().add(v3(-38, 16, 24)), S.hisHead.clone().add(v3(0, -25, 0)), 34]
+        : () => [S.herHead.clone().add(v3(10, 24, -62)), S.hisHead.clone().add(v3(0, -25, 0)), 34],
+      overHim: LAYOUT === 'curve' ? () => [S.hisHead.clone().add(v3(38, 14, -62)), S.herHead.clone().add(v3(0, -15, 0)), 34]
+        : () => [S.hisHead.clone().add(v3(-85, 18, 95)), S.herHead.clone().add(v3(0, -15, 0)), 34],
     }
     if (PARK) {
       // Sorairo's bloom takes anything brighter than 1.35 (the sun, backlit cloud rims). The duo's
@@ -1110,7 +1121,7 @@
         m.customProgramCacheKey = () => 'knee' + (m.constructor.prototype.customProgramCacheKey?.call(m) ?? '')
         m.needsUpdate = true } })
       // low in the grass in front of them, the tree and the sky behind
-      VIEWS.tree = () => [v3(-120, 70, 1500), v3(-100, 360, -300), 36]
+      VIEWS.tree = () => [v3(S.mid.x - 5, 70, 1500), v3(S.mid.x + 15, 360, -300), 36]
       // from Sorairo's hillside shot, down the slope: the two on the lawn, the tree beyond
       VIEWS.hill = () => { const p = park.toDuo(v3(-26, 0, 17)); p.y = park.toDuo(v3(-26, park.heightAt(-26, 17) + 1.6 / park.scale, 17)).y; return [p, S.mid.clone().lerp(park.treeAt, 0.3).setY(260), 40] }
       for (const [v, label] of [['tree', 'In the grass, the tree behind'], ['hill', 'From the hillside']]) $('cam').insertBefore(new Option(label, v), $('cam').options[1])
@@ -1191,6 +1202,7 @@
       if ($('vdress').value !== 'wine') p.set('vdress', $('vdress').value)
       if ($('hands').value !== 'pianist') p.set('hands', $('hands').value)
       if ($('room').value !== (PARK ? 'dry' : 'hall')) p.set('room', $('room').value)
+      if (LAYOUT === 'curve') p.set('layout', 'curve')
       if (PARK) { p.set('stage', 'park'); if ($('tod').value !== '1') p.set('tod', $('tod').value); if ($('tstyle').value !== 'summer') p.set('tree', $('tstyle').value); if (!$('amb').checked) p.set('amb', '0'); if ($('pscale').value !== '1') p.set('pscale', $('pscale').value) }
       if (hybrid.on) p.set('violin', hybrid.name)
       if (levels.violin || levels.piano) p.set('vol', `${levels.violin},${levels.piano}`)
