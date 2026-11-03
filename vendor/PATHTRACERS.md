@@ -1,6 +1,6 @@
 Vendored by pathtrace/tools/vendor.mjs for Experiment #045:
 
-- three-gpu-pathtracer main @ ec19f7c
+- three-gpu-pathtracer 0.0.28
 - three-mesh-bvh 0.9.17
 - @meimu/mutracer 0.3.0
 - three 0.187.0

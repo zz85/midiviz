@@ -19,11 +19,9 @@ import path from 'node:path'
 import os from 'node:os'
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../..')
-// three-gpu-pathtracer from GitHub: 0.0.27, the last release, predates three r187, which binds every
-// storage buffer as an array, so its WebGPU kernels fail to compile on r187 ("cannot index into
-// expression of type 'array<SampleCounters>'"). main has the fix (PR #911); this is main on 2 Nov 2026.
-const GPT_COMMIT = 'ec19f7c93035ae9e98554db1e99f7d5c39b57902'
-const VERSIONS = { 'three-gpu-pathtracer': `https://codeload.github.com/gkjohnson/three-gpu-pathtracer/tar.gz/${GPT_COMMIT}`, 'three-mesh-bvh': '0.9.17', '@meimu/mutracer': '0.3.0', three: '0.187.0', 'oidn-webgpu': '0.6.0', 'xatlas-web': '0.1.0' }
+// three-gpu-pathtracer 0.0.28 or later: 0.0.27's WebGPU kernels don't compile on three r187, which
+// binds every storage buffer as an array (fixed upstream in PR #911, released in 0.0.28).
+const VERSIONS = { 'three-gpu-pathtracer': '0.0.28', 'three-mesh-bvh': '0.9.17', '@meimu/mutracer': '0.3.0', three: '0.187.0', 'oidn-webgpu': '0.6.0', 'xatlas-web': '0.1.0' }
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pt-vendor-'))
 const sh = (cmd, cwd = tmp) => execSync(cmd, { cwd, stdio: 'inherit' })
@@ -64,6 +62,6 @@ fs.cpSync(path.join(mu, 'oidn'), path.join(muOut, 'oidn'), { recursive: true })
 for (const f of ['LICENSE', 'THIRD_PARTY_NOTICES.md']) fs.copyFileSync(path.join(mu, f), path.join(muOut, f))
 fs.cpSync(path.join(mu, 'LICENSES'), path.join(muOut, 'LICENSES'), { recursive: true })
 
-fs.writeFileSync(path.join(ROOT, 'vendor/PATHTRACERS.md'), `Vendored by pathtrace/tools/vendor.mjs for Experiment #045:\n\n${Object.entries(VERSIONS).map(([k, v]) => `- ${k} ${v.startsWith('https:') ? 'main @ ' + GPT_COMMIT.slice(0, 7) : v}`).join('\n')}\n`)
+fs.writeFileSync(path.join(ROOT, 'vendor/PATHTRACERS.md'), `Vendored by pathtrace/tools/vendor.mjs for Experiment #045:\n\n${Object.entries(VERSIONS).map(([k, v]) => `- ${k} ${v}`).join('\n')}\n`)
 fs.rmSync(tmp, { recursive: true, force: true })
 console.log('vendored into', gptOut, 'and', muOut)

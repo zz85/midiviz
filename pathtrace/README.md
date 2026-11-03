@@ -2,7 +2,7 @@
 
 [045_pathtracer.html](../045_pathtracer.html) is [#032 Pianist](../032_pianist.html) with two GPU path tracers for three.js, rendering the same frame the page draws so the pictures can be compared:
 
-- [three-gpu-pathtracer](https://github.com/gkjohnson/three-gpu-pathtracer) GitHub main at `ec19f7c` (2 Nov 2026; 0.0.27, the last release, doesn't compile on r187) (Garrett Johnson, MIT): its WebGPU tracer (`WebGPUPathTracer`, compute shaders on three/webgpu) and its older WebGL tracer (`WebGLPathTracer`, deprecated upstream)
+- [three-gpu-pathtracer](https://github.com/gkjohnson/three-gpu-pathtracer) 0.0.28 (2 Nov 2026; 0.0.27 doesn't compile on r187) (Garrett Johnson, MIT): its WebGPU tracer (`WebGPUPathTracer`, compute shaders on three/webgpu) and its older WebGL tracer (`WebGLPathTracer`, deprecated upstream)
 - [MuTracer](https://github.com/pissang/mutracer) 0.3.0 (`@meimu/mutracer`, Yi Shen, MIT): WebGPU, with a WebGL 2 fallback
 
 The page moved from three.js r170 to r185, which three-gpu-pathtracer's WebGPU tracer needs, and on 1 Nov 2026 to r187 (with MuTracer 0.2.0 and oidn-web 0.5.0). From r17x three.js keeps a soft (VSM) shadow map's depths in half floats, too coarse for the key light's 250-1000 cm range: the shadows drew dark contour bands across her skin. The page uses PCF shadows instead (`?shadows=vsm` brings VSM back to compare).

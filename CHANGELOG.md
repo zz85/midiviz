@@ -16,6 +16,9 @@ Songs: spread chords in the engraved Bach files ([notes](midis/README.md#sources
 - The notes of realized ornaments and grace notes now carry the hand of the note they decorate into [midis/tools/bach_hands.mjs](midis/tools/bach_hands.mjs) (it guessed from the nearest written note, and the main note having been replaced, a trill sometimes went to the other hand: the Aria's bar 11 trill ended in the left hand, as did right-hand trills in WTC I No. 11's prelude); the Aria now has 1 left-hand note above the right, from 4
 - bach_ornaments.mjs no longer awaits its top-level main: with bach_hands.mjs importing it, the run never finished
 
+[#045 Path-traced Pianist](045_pathtracer.html): three-gpu-pathtracer 0.0.28
+- 0.0.28, released on 2 Nov with the r187 fix, takes the place of GitHub main at ec19f7c in pathtrace/tools/vendor.mjs, so vendor/ comes from a release again. Since ec19f7c it adds a "progress" event and stops measuring sample counts once a render has finished; engines.js reads the counts itself and needs no change. A 320x180, 16 spp WebGPU still traces with no WebGPU errors and looks as before, with and without OIDN (llvmpipe).
+
 [#045 Path-traced Pianist](045_pathtracer.html): MuTracer 0.3.0
 - vendor/ moves to @meimu/mutracer 0.3.0 (from 0.2.0). engines.js asks for `batchSamples`, the name 0.3.0 gives `allowMultipleSamplesPerFrame`.
 - 0.3.0's WebGL sphere-light sampler doesn't compile in a scene that also holds an emissive mesh ("'randomSampleValue' : undeclared identifier"), the stage among them: pathtrace/tools/vendor.mjs takes out the stray emissive branch as it vendors.
