@@ -33,6 +33,13 @@ Fade length, and the score waits for the music (#045, #049, #050)
 - Render → **Fade length**, beside The end: Automatic (three quarters of the tail, 2 s at most, as before), or 0.5, 1, 1.5, 2, 3, 4 or 6 s. A fade longer than the tail starts before the last note. On the Aria's last 5 s with 4 s, the picture starts to darken 4 s from the end.
 - In a video's lead-in, the score panel stays off until the music: it comes up over the half second before the first note and is whole as it sounds (sheet/overlay.js `start`, the song's first note). In a 5 s test render of the Aria with the 3 s lead-in, it shows from 2.5 s and is whole at 3.0 s, where the audio starts.
 
+[#049 Score Scan](049_sheet_scan.html) and [#050 Engraved Score](050_sheet_engraved.html): the complete Goldberg Variations
+- Both follow `midis/bach_goldberg.mid` (the Aria, 30 variations and the da capo, 44 min) as they follow the Aria. #049 shows the Bach-Gesellschaft's pp. 263-308 (BSB IIIF, 46 pages, 14 MB, sheet/scores/bga988/). #050 engraves each movement as it is needed (about 0.75 s each), the one at the time asked for first.
+- [sheet/tools/goldberg.mjs](sheet/tools/goldberg.mjs) maps the 31 movements' 956 bars to the 271 systems. A movement starts on an indented system. Each system's bar count adds up to the movement's count, from the barlines found and the system's width. 6 systems in Var. 14 and Var. 24 take barlines read by eye ([sheet/scores/bach_goldberg.fixes.json](sheet/scores/bach_goldberg.fixes.json)).
+- scan.js finds a system's opening line up to 5 spaces in, so a pencil mark in the margin no longer hides a movement's first system (Var. 10 and Var. 26 were missed).
+- [sheet/timeline.js](sheet/timeline.js) `createMovementTimeline` finds each movement by the silence before it and numbers the bars through the score: the da capo plays on the Aria's systems, and between movements the panel holds the last bar. Every bar start lands on an onset of the file (Var. 16 within 0.125 s). [sheet/layout.js](sheet/layout.js) `scanLayoutPages` loads each page as its systems first show, and a still or a video loads the ones it opens on first.
+- Tests: 2 more unit tests (10), and a still of each page at 1330 s (Var. 16, bar 2) in sheet/test/browser.mjs.
+
 ## 1 Nov 2026
 
 [Experiment #038 - Duo](038_duo.html): One More Time, One More Chance, and MIDI files of your own

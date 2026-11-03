@@ -35,19 +35,62 @@ export function createTimeline({ ppq, ticksToSeconds, endTick }, { meter = [4, 4
     bars.push({ i, bar: order[i], tick0: a, ticks: b - a, t0: ticksToSeconds(a), t1: ticksToSeconds(b) })
   }
   const mismatch = form && order.length !== starts.length ? { performed: starts.length, form: order.length } : null
+  const at = seeker(bars)
+  return { at, bars, barTicks, meter, mismatch }
+}
+
+// the bar at song time t: the last one begun by then (between movements, the last bar of the
+// one before, held at its end), and the place in it
+function seeker(bars) {
   let last = 0
-  function at(t) {
+  return function at(t) {
     if (!bars.length) return null
     // (the last bar found, then a step either way: playback moves on a little at a time)
     let i = Math.min(last, bars.length - 1)
     while (i > 0 && t < bars[i].t0) i--
-    while (i < bars.length - 1 && t >= bars[i].t1) i++
+    while (i < bars.length - 1 && t >= bars[i + 1].t0) i++
     last = i
     const b = bars[i], f = Math.max(0, Math.min(1, (t - b.t0) / (b.t1 - b.t0 || 1)))
     // ticks by time within the bar (one tempo a bar, as the files here have)
-    return { i, bar: b.bar, tick: f * b.ticks, frac: f, t0: b.t0, t1: b.t1, ticks: b.ticks }
+    return { i, bar: b.bar, tick: f * b.ticks, frac: f, t0: b.t0, t1: b.t1, ticks: b.ticks, movement: b.movement }
   }
-  return { at, bars, barTicks, meter, mismatch }
+}
+
+/**
+ * A timeline for a work of many movements, from its manifest (sheet/tools/goldberg.mjs):
+ * `movements` [{ id, bars, starts (s, from the movement's start), end }] and `sequence`, the
+ * movements' ids in the order the file plays them (the Goldberg's Aria twice). The file plays
+ * them one after another with a silence between (1.5 s or more), which finds where each starts.
+ * A bar's key is its place in the whole score, movement by movement as `movements` lists them,
+ * from 1, so a movement played twice (the da capo) is on the same bars both times.
+ * `notes`: [{ time, duration }] in seconds.
+ */
+export function createMovementTimeline(notes, { movements, sequence }, { gap = 1.5 } = {}) {
+  const segs = []
+  let end = -Infinity
+  for (const n of [...notes].sort((a, b) => a.time - b.time)) {
+    if (!segs.length || n.time - end >= gap) segs.push(n.time)
+    end = Math.max(end, n.time + n.duration)
+  }
+  const byId = new Map(), base = new Map()
+  let key = 0
+  for (const m of movements) { byId.set(m.id, m); base.set(m.id, key); key += m.starts.length }
+  const bars = [], spans = []
+  sequence.slice(0, segs.length).forEach((id, k) => {
+    const m = byId.get(id), t = segs[k] - m.starts[0]
+    m.starts.forEach((s, j) => {
+      const t1 = t + (j + 1 < m.starts.length ? m.starts[j + 1] : m.end)
+      bars.push({ i: bars.length, bar: base.get(id) + j + 1, movement: id, n: j + 1, tick0: 0, ticks: 1, t0: t + s, t1 })
+    })
+    spans.push({ id, title: m.title, t0: t + m.starts[0], t1: t + m.end })
+  })
+  const mismatch = segs.length !== sequence.length ? { performed: segs.length, form: sequence.length } : null
+  return { at: seeker(bars), bars, movements: spans, meter: null, mismatch }
+}
+
+/** createMovementTimeline for a tonejs Midi. */
+export function timelineOfMovements(midi, manifest, opts) {
+  return createMovementTimeline(midi.tracks.flatMap(t => t.notes), manifest, opts)
 }
 
 /** createTimeline for a tonejs Midi. */

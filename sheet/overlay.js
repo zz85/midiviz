@@ -25,22 +25,37 @@ import { place, inkOf } from './layout.js'
 
 export function createSheetOverlay(layout, timeline, opts = {}) {
   const o = { style: 'glass', rows: 1, size: 0.2, position: 'bottom', highlight: 'bar', heads: true, opacity: 1, inkFrom: 'luma', ...opts }
-  const masks = new Map(), tints = new Map()
-  const maskOf = si => {
-    if (!masks.has(si)) masks.set(si, inkOf(layout.page, layout.systems[si], { from: o.inkFrom }))
-    return masks.get(si)
+  // (each system's ink, tinted, made as it first shows: kept for the last few systems alone, as a
+  // score of many pages would hold hundreds of them)
+  const masks = new Map(), tints = new Map(), KEEP = 12
+  const pageOf = si => layout.pageOf ? layout.pageOf(si) : layout.page
+  const keep = (map, key, make) => {
+    if (map.has(key)) { const v = map.get(key); map.delete(key); map.set(key, v); return v }
+    const v = make()
+    if (v == null) return null
+    map.set(key, v)
+    while (map.size > KEEP * (map === tints ? 3 : 1)) map.delete(map.keys().next().value)
+    return v
   }
+  const maskOf = si => keep(masks, si, () => { const pg = pageOf(si); return pg ? inkOf(pg, layout.systems[si], { from: o.inkFrom }) : null })
   function tinted(si, color) {
-    const key = si + color
-    if (!tints.has(key)) {
-      const m = maskOf(si).canvas, c = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(m.width, m.height) : Object.assign(document.createElement('canvas'), { width: m.width, height: m.height })
+    return keep(tints, si + color, () => {
+      const m = maskOf(si)?.canvas
+      if (!m) return null
+      const c = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(m.width, m.height) : Object.assign(document.createElement('canvas'), { width: m.width, height: m.height })
       const g = c.getContext('2d')
       g.drawImage(m, 0, 0); g.globalCompositeOperation = 'source-in'; g.fillStyle = color; g.fillRect(0, 0, c.width, c.height)
-      tints.set(key, c)
-    }
-    return tints.get(key)
+      return c
+    })
   }
-  const maxW = Math.max(...layout.systems.map(s => s.w)), maxH = Math.max(...layout.systems.map(s => s.h))
+  // (the widest and the tallest system: again as a layout that grows, engraved a movement at a time, adds systems)
+  let maxW = 0, maxH = 0, seen = 0
+  // (or the size the layout fixes, `layout.size` { w, h }, so the panel doesn't grow as it does)
+  const measure = () => {
+    if (layout.size) { maxW = layout.size.w; maxH = layout.size.h; return }
+    for (; seen < layout.systems.length; seen++) { maxW = Math.max(maxW, layout.systems[seen].w); maxH = Math.max(maxH, layout.systems[seen].h) }
+  }
+  measure()
   // the systems played after performed bar i, each with the time it starts: [{ system, t }]
   function upcoming(i, count) {
     const out = [], bars = timeline.bars
@@ -54,6 +69,7 @@ export function createSheetOverlay(layout, timeline, opts = {}) {
   const ease = x => x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x)
 
   function box(W, H, place = o.position, { bottom = 0, top = 0 } = {}) {
+    measure()
     const rows = Math.max(1, Math.min(3, o.rows | 0))
     const k = Math.min(H * o.size / maxH, W * 0.94 / maxW)
     const rowH = maxH * k, w = maxW * k, h = rowH * rows
@@ -97,13 +113,15 @@ export function createSheetOverlay(layout, timeline, opts = {}) {
       const X = v => sx + (v - s.x) * k, Y = v => sy + (v - s.y) * k
       // in one row, the system leaving dims as the next comes up
       g.globalAlpha = o.opacity * appear * (rows > 1 ? 1 : r === 0 ? 1 - sp * 0.6 : Math.max(0.15, sp))
+      const ink = tinted(it.system, st.ink)
+      if (!ink) return
       if (r === 0 && o.highlight !== 'none' && o.highlight !== 'cursor') {
-        const e = p.entry, a = layout.space
+        const e = p.entry, a = s.space ?? layout.space
         g.fillStyle = st.bar
         g.fillRect(X(e.x0), Y(s.staffTop - a * 1.6), (e.x1 - e.x0) * k, (s.staffBottom - s.staffTop + a * 3.2) * k)
       }
       if (st.shadow) { g.shadowColor = st.shadow; g.shadowBlur = Math.max(2, rowH * 0.03) }
-      g.drawImage(tinted(it.system, st.ink), X(s.x), Y(s.y), s.w * k, s.h * k)
+      g.drawImage(ink, X(s.x), Y(s.y), s.w * k, s.h * k)
       g.shadowBlur = 0
       if (r !== 0) return
       // the notes just played glow, and fade over a third of a second (engraved scores know their heads)
@@ -121,7 +139,7 @@ export function createSheetOverlay(layout, timeline, opts = {}) {
         }
       }
       if (o.highlight === 'both' || o.highlight === 'cursor') {
-        const a = layout.space, cx = X(p.x)
+        const a = s.space ?? layout.space, cx = X(p.x)
         g.strokeStyle = st.cursor; g.lineWidth = Math.max(1.5, rowH * 0.012)
         g.shadowColor = st.cursor; g.shadowBlur = Math.max(4, rowH * 0.05)
         g.beginPath(); g.moveTo(cx, Y(s.staffTop - a * 1.4)); g.lineTo(cx, Y(s.staffBottom + a * 1.4)); g.stroke()

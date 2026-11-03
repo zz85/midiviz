@@ -1,7 +1,7 @@
 // #049 / #050 in a headless Chromium: the page boots on pathtrace/app.js, the
 // score loads for the Goldberg Aria, the overlay is drawn on the page's canvas
 // where it should be (bar and cursor), and an exported video carries it.
-//   node sheet/test/browser.mjs [out dir]      (EXPORT=0 skips the video)
+//   node sheet/test/browser.mjs [out dir]      (EXPORT=0 skips the video, FULL=0 the complete Goldberg)
 // Needs the parent folder served (BASE, default http://127.0.0.1:8000/midiviz/),
 // playwright-core (PLAYWRIGHT), a Chromium (CHROME) and, for the video, ffmpeg.
 import { mkdirSync, writeFileSync, existsSync } from 'node:fs'
@@ -48,6 +48,38 @@ for (const [file, kind] of [['049_sheet_scan.html', 'scan'], ['050_sheet_engrave
     return timelineOfMidi(midi, { meter: [3, 4], played: 32 }).at(16.4)
   })
   check(at.bar === 6 && Math.abs(at.frac - 0.4667) < 0.01, `${kind}: 16.4 s is bar ${at.bar}, ${(at.frac * 100).toFixed(0)} % in`)
+  await page.close()
+}
+
+// the complete Goldberg (FULL=0 skips it): a still in Var. 16, 5.5 s in (bar 2 of the Ouverture,
+// on p. 284's first system); the score drawn, from the page it is on or as engraved
+if (process.env.FULL !== '0') for (const [file, kind] of [['049_sheet_scan.html', 'scan'], ['050_sheet_engraved.html', 'engraved']]) {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
+  const errors = []
+  page.on('pageerror', e => errors.push(e.message))
+  page.setDefaultTimeout(0)
+  await page.goto(`${BASE}${file}?shot&q=low&hairsim=0&clothsim=0&view=back&song=midis/bach_goldberg.mid&t=1330`)
+  await page.waitForFunction(() => window.__shot, null, { timeout: 300000 })
+  await page.evaluate(() => window.__shot())
+  await page.screenshot({ path: `${out}/${kind}_full.png` })
+  const r = await page.evaluate(() => {
+    const c = document.getElementById('sheetCanvas'), g = c.getContext('2d')
+    const d = g.getImageData(0, 0, c.width, c.height).data
+    let ink = 0
+    for (let y = 0; y < c.height; y += 2) for (let x = 0; x < c.width; x += 2) if (d[(y * c.width + x) * 4 + 3] > 200) ink++
+    return { ink, note: document.getElementById('sNote')?.textContent }
+  })
+  const at = await page.evaluate(async () => {
+    const { timelineOfMovements } = await import('./sheet/timeline.js')
+    const m = await (await fetch('sheet/scores/bach_goldberg.json')).json()
+    const midi = new Midi(await (await fetch('midis/bach_goldberg.mid')).arrayBuffer())
+    const tl = timelineOfMovements(midi, m), a = tl.at(1330)
+    return { movement: a.movement, n: tl.bars[a.i].n, mismatch: tl.mismatch, da: tl.at(2600).bar }
+  })
+  check(!errors.length, `${kind} full: no page errors ${errors.join(' | ')}`)
+  check(/31 movements/.test(r.note), `${kind} full: ${r.note}`)
+  check(r.ink > 1000, `${kind} full: the score drawn at 1330 s (${r.ink} px of ink)`)
+  if (kind === 'scan') check(at.movement === 'v16' && at.n === 2 && !at.mismatch && at.da === 10, `full: 1330 s is Var. 16 bar ${at.n} (${at.movement}); 2600 s is the Aria's bar ${at.da} again`)
   await page.close()
 }
 

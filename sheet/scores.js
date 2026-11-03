@@ -7,6 +7,7 @@
 
 export const SCORES = {
   'midis/bach_goldberg_aria.mid': 'sheet/scores/bach_goldberg_aria.json',
+  'midis/bach_goldberg.mid': 'sheet/scores/bach_goldberg.json',
 }
 
 const ROOT = new URL('../', import.meta.url).href

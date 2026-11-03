@@ -3,8 +3,8 @@
 // placement in a bar, the page reader on a drawn page, and the hands option.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createTimeline, expandForm } from '../timeline.js'
-import { place, scanLayout } from '../layout.js'
+import { createTimeline, expandForm, createMovementTimeline } from '../timeline.js'
+import { place, scanLayout, scanLayoutPages } from '../layout.js'
 import { detectPage, barsOf } from '../scan.js'
 import { assignHands, handOfTrackName, handModeOf } from '../../fingering/hands.js'
 
@@ -144,3 +144,55 @@ class OffscreenCanvasStub {
   constructor(w = 1, h = 1) { this.width = w; this.height = h }
   getContext() { const c = this; return { drawImage() {}, getImageData: () => ({ data: new Uint8ClampedArray(c.width * c.height * 4) }), putImageData() {}, fillRect() {}, set globalCompositeOperation(v) {}, set fillStyle(v) {} } }
 }
+
+// two movements, the first played again after the second (a da capo), 2.5 s apart
+const MOVES = {
+  movements: [
+    { id: 'a', title: 'A', bars: 3, starts: [0, 2, 4], end: 6, barAt: [[0, 100, 300], [0, 300, 500], [1, 100, 500]] },
+    { id: 'b', title: 'B', bars: 2, starts: [0, 1.5], end: 3, barAt: [[2, 120, 400], [2, 400, 700]] },
+  ],
+  sequence: ['a', 'b', 'a'],
+}
+const notesOf = (t0, starts, end) => starts.map((s, i) => ({ time: t0 + s, duration: (starts[i + 1] ?? end) - s }))
+
+test('movements: each found by the silence before it, the da capo on the same bars', () => {
+  const notes = [...notesOf(0, [0, 2, 4], 6), ...notesOf(8.5, [0, 1.5], 3), ...notesOf(14, [0, 2, 4], 6)]
+  const tl = createMovementTimeline(notes, MOVES)
+  assert.equal(tl.mismatch, null)
+  assert.deepEqual(tl.bars.map(b => b.bar), [1, 2, 3, 4, 5, 1, 2, 3])
+  assert.deepEqual(tl.movements.map(m => [m.id, m.t0]), [['a', 0], ['b', 8.5], ['a', 14]])
+  assert.equal(tl.at(9).bar, 4)
+  assert.ok(Math.abs(tl.at(9).frac - 1 / 3) < 1e-9)
+  // in the silence between two movements: the last bar, held at its end
+  const gap = tl.at(7.2)
+  assert.equal(gap.bar, 3); assert.equal(gap.frac, 1)
+  assert.equal(tl.at(16.5).bar, 2); assert.equal(tl.at(16.5).movement, 'a')
+  // (and back, as a seek goes)
+  assert.equal(tl.at(1).bar, 1)
+  // a file that plays fewer movements than the sequence lists says so
+  assert.deepEqual(createMovementTimeline(notes.slice(0, 5), MOVES).mismatch, { performed: 2, form: 3 })
+})
+
+test('pages: systems through every page, bars keyed through every movement', () => {
+  const sys = (top, x0 = 100, x1 = 700) => ({ x0, x1, staves: [{ top, bottom: top + 40 }, { top: top + 100, bottom: top + 140 }] })
+  const pages = [{ width: 800, height: 1000, space: 10, systems: [sys(100), sys(300)] }, { width: 800, height: 1000, space: 12, systems: [sys(150)] }]
+  const asked = []
+  const L = scanLayoutPages(pages, MOVES.movements, { pageOf: (pi, si) => { asked.push([pi, si]); return pi === 0 ? 'page0' : null }, header: 5, firstHeader: 7.5 })
+  assert.equal(L.systems.length, 3)
+  assert.deepEqual(L.systems.map(s => s.pageIndex), [0, 0, 1])
+  assert.deepEqual(L.systems.map(s => s.bars), [[1, 2], [3], [4, 5]])
+  assert.equal(L.systems[2].space, 12)
+  // a slice stops halfway to the next system on its page, and at the page's own top
+  assert.equal(L.systems[0].y + L.systems[0].h, (240 + 300) / 2)
+  assert.equal(L.systems[2].y, 150 - 4.5 * 12)
+  // the cursor starts past the opening: the time signature on a movement's first bar, the clef and key on a system's first
+  assert.equal(L.bars.get(1).start, 100 + 7.5 * 10)
+  assert.equal(L.bars.get(3).start, 100 + 5 * 10)
+  assert.equal(L.bars.get(2).start, 300 + 0.9 * 10)
+  assert.equal(L.bars.get(4).start, 120 + 7.5 * 12)
+  assert.equal(L.bars.get(5).system, 2)
+  assert.equal(L.pageOf(1), 'page0'); assert.equal(L.pageOf(2), null)
+  assert.deepEqual(asked, [[0, 1], [1, 2]])
+  const p = place(L, { bar: 4, frac: 0 })
+  assert.equal(p.system, 2)
+})

@@ -14,7 +14,7 @@ import { createSheetOverlay, STYLES, POSITIONS, HIGHLIGHTS } from './overlay.js'
 import { createPlacer } from './placer.js'
 
 export function sheetPlugin({ title, href = 'sheet/README.md', defaultSong, build, about = '' }) {
-  let app = null, ov = null, canvas = null, g = null, note = '', job = 0, placer = null
+  let app = null, ov = null, canvas = null, g = null, note = '', job = 0, placer = null, ready = null
   const newPlacer = o => createPlacer(o, { survey: r => app.surveyFrame(r), key: () => app.surveyKey(), reserve: r => app.reserve(r) })
   const opt = id => app.$(id)
   const settings = () => ({ style: opt('sStyle').value, position: opt('sPos').value, rows: +opt('sRows').value, size: +opt('sSize').value, highlight: opt('sHl').value })
@@ -70,7 +70,10 @@ export function sheetPlugin({ title, href = 'sheet/README.md', defaultSong, buil
       const file = app.songFile || app.params.get('song') || ''
       try {
         const r = await build(song, midi, file, app)
+        // (a score of many pages: the ones for the time it opens at, before the first frame)
+        await r?.ready?.(+app.params.get('t') || 0)
         if (my !== job) return
+        ready = r?.ready || null
         if (!r) { note = 'No score for this song'; ov = null }
         // (start: the first note, so a video's lead-in shows no score until the music begins)
         else { ov = createSheetOverlay(r.layout, r.timeline, { ...settings(), inkFrom: r.inkFrom || 'luma', start: song.notes.reduce((m, n) => Math.min(m, n.time), Infinity) || 0 }); placer = newPlacer(ov); note = r.note || '' }
@@ -83,6 +86,8 @@ export function sheetPlugin({ title, href = 'sheet/README.md', defaultSong, buil
       if (!ov || !opt('sOn').checked || !opt('sVideo').checked) return null
       // a placer of its own for the video's frame (its shape), chosen on its first frame
       const o = ov, pl = newPlacer(o)
+      // (a score of many pages: the export starts here, or at the start)
+      ready?.(app.songNow?.() ?? 0); ready?.(0)
       return (g2, w, h, t) => o.draw(g2, w, h, t, { box: pl(w, h) })
     },
   }

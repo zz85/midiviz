@@ -82,6 +82,15 @@ if (has('--detect') || !old?.scan?.pages) {
   const { detectPages } = await import('./detect-pages.mjs')
   pages = (await detectPages(PAGES.map(pagePath), { marked: opt('--marked') })).map((d, i) => ({ image: pagePath(PAGES[i]), page: PAGES[i], ...d }))
 } else pages = old.scan.pages
+// barlines read by eye, where detection missed or added one
+const FIXES = root + 'sheet/scores/bach_goldberg.fixes.json'
+if (existsSync(FIXES)) for (const [key, xs] of Object.entries(JSON.parse(readFileSync(FIXES, 'utf8')).systems)) {
+  const [pg, j] = key.split('.').map(Number), sy = pages.find(p => p.page === pg)?.systems[j]
+  if (!sy) throw new Error(`fixes: no system ${key}`)
+  const ends = [sy.x0, ...xs, sy.x1]
+  sy.bars = ends.slice(1).map((x, i) => [i + 1, ends[i], x])
+  sy.fixed = true
+}
 
 // ── 3. movements onto systems ──
 const systems = pages.flatMap((p, pi) => p.systems.map((s, si) => ({ page: pi, index: si, s, n: s.bars.length })))
@@ -122,6 +131,7 @@ movements.forEach((m, i) => {
   // in line; it joins its narrower neighbour)
   const kept = run.map(r => {
     const b = r.s.bars.map(([, x0, x1]) => ({ x0, x1 })), w = q => b[q].x1 - b[q].x0
+    if (r.s.fixed) return b
     for (let q; b.length > 1 && (q = b.findIndex((_, i) => w(i) < mean * 0.3)) >= 0;) {
       const n = q === 0 ? 1 : q === b.length - 1 ? q - 1 : w(q - 1) < w(q + 1) ? q - 1 : q + 1
       const [a, c] = [Math.min(q, n), Math.max(q, n)]
@@ -139,7 +149,7 @@ movements.forEach((m, i) => {
   let dp = new Map([[0, { c: 0, ks: [] }]])
   for (let j = 0; j < run.length; j++) {
     const next = new Map()
-    for (const [sum, { c, ks }] of dp) for (let q = 1; q <= KMAX && sum + q <= m.bars; q++) {
+    for (const [sum, { c, ks }] of dp) for (let q = run[j].s.fixed ? kept[j].length : 1; q <= (run[j].s.fixed ? kept[j].length : KMAX) && sum + q <= m.bars; q++) {
       const v = c + cst(j, q), o = next.get(sum + q)
       if (!o || v < o.c) next.set(sum + q, { c: v, ks: [...ks, q] })
     }

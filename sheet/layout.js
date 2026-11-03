@@ -3,10 +3,11 @@
 // where the engraver says, each onset's note heads.
 //
 //   layout = {
-//     page,                                   the image or canvas
+//     page,                                   the image or canvas (or pageOf(system) → it, or null
+//                                             while it loads, for a score of many pages)
 //     systems: [{ x, y, w, h,                 the slice of the page, page px
 //                 staffTop, staffBottom,       the top line of the first staff, the bottom line of the last
-//                 bars: [3, 4, 5] }],
+//                 bars: [3, 4, 5], space }],      (space: the staff space on its page)
 //     bars: Map(bar → { system, x0, x1, start, end, onsets: [{ frac, x, heads: [{ x, y, r }] }] | null  (frac: the onset's place in the bar, 0..1) }),
 //     space,                                   staff space, page px
 //   }
@@ -39,26 +40,56 @@ export function place(layout, at) {
  * signature), in staff spaces, so the cursor starts on the first note.
  */
 export function scanLayout(page, det, { header = 5, firstHeader = 7.5, pad = 0.9, scale = 1 } = {}) {
-  const S = v => v * scale, sp = S(det.space)
+  const sp = det.space * scale
   const systems = [], bars = new Map()
   det.systems.forEach((s, si) => {
-    const top = S(s.staves[0].top), bottom = S(s.staves[s.staves.length - 1].bottom)
-    // the slice: the staves with four spaces above and below for the notes above and below them,
-    // stopping halfway to the next system
-    const prev = det.systems[si - 1], next = det.systems[si + 1]
-    const y0 = Math.max(prev ? (S(prev.staves.at(-1).bottom) + top) / 2 : 0, top - 4.5 * sp)
-    const y1 = Math.min(next ? (bottom + S(next.staves[0].top)) / 2 : page.height ?? Infinity, bottom + 4.5 * sp)
-    const x0 = S(s.x0) - 1.6 * sp, x1 = S(s.x1) + 0.8 * sp
-    const nums = []
+    const sys = sliceOf(det, si, scale, page.height)
     s.bars.forEach(([bar, a, b], k) => {
-      a = S(a); b = S(b)
-      const head = k === 0 ? (si === 0 ? firstHeader : header) * sp : pad * sp
-      bars.set(bar, { system: si, x0: a, x1: b, start: Math.min(a + head, (a + b) / 2), end: b - pad * sp, onsets: null })
-      nums.push(bar)
+      bars.set(bar, barEntry(si, a * scale, b * scale, (k === 0 ? (si === 0 ? firstHeader : header) : 0) * sp, pad * sp))
+      sys.bars.push(bar)
     })
-    systems.push({ x: x0, y: y0, w: x1 - x0, h: y1 - y0, staffTop: top, staffBottom: bottom, bars: nums })
+    systems.push(sys)
   })
   return { page, systems, bars, space: sp }
+}
+
+// a system's slice of its page: the staves with four spaces above and below for the notes above
+// and below them, stopping halfway to the next system
+function sliceOf(det, si, scale, height = Infinity) {
+  const S = v => v * scale, sp = S(det.space), s = det.systems[si]
+  const top = S(s.staves[0].top), bottom = S(s.staves[s.staves.length - 1].bottom)
+  const prev = det.systems[si - 1], next = det.systems[si + 1]
+  const y0 = Math.max(prev ? (S(prev.staves.at(-1).bottom) + top) / 2 : 0, top - 4.5 * sp)
+  const y1 = Math.min(next ? (bottom + S(next.staves[0].top)) / 2 : height ?? Infinity, bottom + 4.5 * sp)
+  const x0 = S(s.x0) - 1.6 * sp, x1 = S(s.x1) + 0.8 * sp
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0, staffTop: top, staffBottom: bottom, bars: [], space: sp }
+}
+// (the cursor starts past the clef, the key and the time signature on a system's first bar)
+const barEntry = (system, a, b, head, pad) => ({ system, x0: a, x1: b, start: Math.min(a + Math.max(head, pad), (a + b) / 2), end: b - pad, onsets: null })
+
+/**
+ * A score of many pages and movements, from a manifest of sheet/tools/goldberg.mjs:
+ * `pages` [{ width, height, space, systems }] as scan.pages keeps them, and `movements`
+ * [{ id, barAt: [[system, x0, x1]] }], the systems numbered through every page. A bar's key is
+ * its place in the whole score (as createMovementTimeline numbers it). `pageOf(i)` gives page
+ * i's image, or null while it loads (the overlay skips the system till then); `scales[i]`, the
+ * image's width over the page's.
+ */
+export function scanLayoutPages(pages, movements, { pageOf, scales = [], header = 5, firstHeader = 7.5, pad = 0.9 } = {}) {
+  const systems = []
+  pages.forEach((p, pi) => p.systems.forEach((_, si) => systems.push({ ...sliceOf(p, si, scales[pi] ?? 1, p.height * (scales[pi] ?? 1)), pageIndex: pi })))
+  const bars = new Map()
+  let key = 0
+  for (const m of movements) {
+    m.barAt.forEach(([si, a, b], j) => {
+      const s = systems[si], k = scales[s.pageIndex] ?? 1, first = j === 0 || m.barAt[j - 1][0] !== si
+      bars.set(key + j + 1, barEntry(si, a * k, b * k, first ? (j === 0 ? firstHeader : header) * s.space : 0, pad * s.space))
+      s.bars.push(key + j + 1)
+    })
+    key += m.barAt.length
+  }
+  const spaces = systems.map(s => s.space).sort((a, b) => a - b)
+  return { pages, pageOf: si => pageOf?.(systems[si].pageIndex, si) ?? null, systems, bars, space: spaces[spaces.length >> 1] }
 }
 
 /**

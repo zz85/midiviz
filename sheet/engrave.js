@@ -14,7 +14,7 @@
 
 import { loadNotationEngine, engrave } from '../notation3d/nwc-bridge.js'
 import { midiToScore } from '../notation3d/midi-score.js'
-import { timelineOfMidi } from './timeline.js'
+import { timelineOfMidi, timelineOfMovements } from './timeline.js'
 import { manifestFor } from './scores.js'
 
 let engine = null
@@ -24,7 +24,7 @@ const engineReady = () => engine ??= loadNotationEngine()
  * Engrave a tonejs Midi and cut it into a layout (layout.js).
  * @returns {{ layout, barTicks, bars }}
  */
-export async function engraveLayout(midi, { pageWidth = 1300, scale = 2, meter } = {}) {
+export async function engraveLayout(midi, { pageWidth = 1300, scale = 2, meter, keepPage = true } = {}) {
   const eng = await engineReady()
   // voices of one staff ("<staff> · voice <n>") share the clef their notes suggest together
   const tracks = midi.tracks.filter(t => t.notes.length && t.channel !== 9), group = tracks.map(t => (t.name || '').split(' · voice ')[0])
@@ -51,12 +51,17 @@ export async function engraveLayout(midi, { pageWidth = 1300, scale = 2, meter }
   }
   const sysOf = y => { let best = 0, d = Infinity; sys.forEach((s, i) => { const e = y < s.top ? s.top - y : y > s.bottom ? y - s.bottom : 0; if (e < d) { d = e; best = i } }); return best }
   // the page: every element drawn as nwc-viewer draws it, onto a canvas `scale` px a unit
+  // (drawPage draws it again, for a score of many movements that keeps only a few pages)
   const H = (sys.at(-1)?.bottom ?? 200) + space * 10, W = pageWidth + r.fontSize * 2
-  const page = Object.assign(document.createElement('canvas'), { width: Math.ceil(W * scale), height: Math.ceil(H * scale) })
-  const g = page.getContext('2d')
-  g.scale(scale, scale)
-  g.font = `${r.fontSize}px BravuraText`; g.textBaseline = 'alphabetic'; g.fillStyle = g.strokeStyle = '#000'
-  for (const el of r.elements) eng.drawing.Drawing._draw(g, el, 1e7, -1e6, 1e7, -1e6)
+  const drawPage = () => {
+    const page = Object.assign(document.createElement('canvas'), { width: Math.ceil(W * scale), height: Math.ceil(H * scale) })
+    const g = page.getContext('2d')
+    g.scale(scale, scale)
+    g.font = `${r.fontSize}px BravuraText`; g.textBaseline = 'alphabetic'; g.fillStyle = g.strokeStyle = '#000'
+    for (const el of r.elements) eng.drawing.Drawing._draw(g, el, 1e7, -1e6, 1e7, -1e6)
+    return page
+  }
+  const page = keepPage ? drawPage() : null
   // barlines on each system's first staff, left to right
   const lines = sys.map(() => [])
   for (const el of r.elements) if (el.constructor?.name === 'Barline') {
@@ -101,7 +106,7 @@ export async function engraveLayout(midi, { pageWidth = 1300, scale = 2, meter }
     })
     systems[si].bars.push(bar)
   }
-  return { layout: { page, systems, bars, space: S(space) }, barTicks, bars: Math.max(0, ...bars.keys()) }
+  return { layout: { page, systems, bars, space: S(space) }, drawPage, barTicks, bars: Math.max(0, ...bars.keys()) }
 }
 
 /**
@@ -142,6 +147,10 @@ export function engravedBuilder({ pageWidth = 1300 } = {}) {
   const cache = new Map()
   return async (song, midi, file) => {
     const m = await manifestFor(file)
+    if (m?.movements) {
+      if (!cache.has(m)) cache.set(m, movementsBuild(m, pageWidth))
+      return cache.get(m)(midi)
+    }
     const key = m?.engraved ? m.base + m.engraved.score : file || song.title
     if (!cache.has(key)) cache.set(key, (async () => {
       const score = m?.engraved ? new Midi(await (await fetch(m.base + m.engraved.score)).arrayBuffer()) : midi
@@ -150,5 +159,60 @@ export function engravedBuilder({ pageWidth = 1300 } = {}) {
     const e = await cache.get(key)
     const timeline = timelineOfMidi(midi, m ? { meter: m.meter, form: m.form, played: m.played || m.bars } : { meter: midi.header.timeSignatures?.[0]?.timeSignature || [4, 4] })
     return { layout: e.layout, timeline, inkFrom: 'alpha', note: `${e.layout.systems.length} systems, ${e.layout.bars.size} bars${m?.engraved ? ' (the score)' : ' (from the MIDI file)'}` }
+  }
+}
+
+// a work of many movements (the complete Goldberg, sheet/tools/goldberg.mjs): each movement's
+// score MIDI (`engrave`: [{ score, firstBar, bars }], Var. 16 in two, for its two meters)
+// engraved as it is needed, the one played at the time asked for (`ready(t)`) first, then the
+// others one at a time; the layout grows as they come. A bar's key is its place in the whole
+// score, as createMovementTimeline numbers it. Each movement's page is drawn again when one
+// of its systems first shows, and a few kept.
+function movementsBuild(m, pageWidth) {
+  const parts = []
+  let key = 0
+  for (const mv of m.movements) {
+    for (const e of mv.engrave) parts.push({ id: mv.id, score: m.base + e.score, base: key + e.firstBar - 1, job: null, drawPage: null })
+    key += mv.bars
+  }
+  const pages = new Map(), KEEP = 3
+  const layout = { systems: [], bars: new Map(), space: 0, pageOf: si => {
+    const pi = layout.systems[si]?.pageIndex, part = parts[pi]
+    if (!part?.drawPage) return null
+    if (!pages.has(pi)) { pages.set(pi, part.drawPage()); while (pages.size > KEEP) pages.delete(pages.keys().next().value) }
+    const pg = pages.get(pi); pages.delete(pi); pages.set(pi, pg)
+    return pg
+  } }
+  function engravePart(pi) {
+    const part = parts[pi]
+    return part.job ??= (async () => {
+      const score = new Midi(await (await fetch(part.score)).arrayBuffer())
+      const e = await engraveLayout(score, { pageWidth, keepPage: false })
+      const off = layout.systems.length
+      for (const s of e.layout.systems) layout.systems.push({ ...s, pageIndex: pi, space: e.layout.space, bars: s.bars.map(b => part.base + b) })
+      for (const [b, entry] of e.layout.bars) layout.bars.set(part.base + b, { ...entry, system: off + entry.system })
+      layout.space ||= e.layout.space
+      // (the panel's size, from the first movement engraved: the width they all have, and a little
+      // more than its tallest system, which a later movement's taller one is drawn in, cut)
+      layout.size ??= { w: Math.max(...e.layout.systems.map(s => s.w)), h: Math.max(...e.layout.systems.map(s => s.h)) * 1.1 }
+      part.drawPage = e.drawPage
+    })()
+  }
+  let timeline = null, rest = null
+  // the parts of the movement played at t (the next one, in a silence between two)
+  const partsAt = t => {
+    const sp = timeline.movements, k = Math.max(0, sp.findIndex(s => s.t1 > t))
+    const id = sp[k]?.id ?? parts[0].id
+    return parts.map((p, i) => p.id === id ? i : -1).filter(i => i >= 0)
+  }
+  const ready = async t => {
+    const first = partsAt(t)
+    await Promise.all(first.map(engravePart))
+    // then the rest, from there on and then from the start
+    rest ??= (async () => { for (const i of [...parts.keys()].sort((a, b) => (a < first[0]) - (b < first[0]) || a - b)) await engravePart(i) })()
+  }
+  return midi => {
+    timeline = timelineOfMovements(midi, m)
+    return { layout, timeline, ready, inkFrom: 'alpha', note: `${m.movements.length} movements, ${parts.length} scores, engraved as they are needed (${m.movements.reduce((s, v) => s + v.bars, 0)} bars)` }
   }
 }

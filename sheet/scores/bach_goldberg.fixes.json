@@ -1,0 +1,11 @@
+{
+  "about": "Barlines read by eye where detection misses or adds one: for each system, by page and its index on the page from 0, the x of each barline inside it, in the page image's pixels. sheet/tools/goldberg.mjs takes these in place of the barlines found.",
+  "systems": {
+    "280.0": [977.5, 1469.5],
+    "280.1": [749.5, 1141.5, 1535.5],
+    "281.1": [625, 1013, 1431.5],
+    "296.1": [810, 1304],
+    "297.0": [831, 1291],
+    "297.3": [629, 979, 1344]
+  }
+}
