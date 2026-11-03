@@ -254,7 +254,7 @@ async function mutracer({ width, height, bounces, toneMapping, denoise }, backen
       engine.camera = MU.fromTHREECamera(camera, muLens(camera, dof))
       Object.assign(engine.display, { toneMapping, toneMappingExposure: exposure })
       last?.dispose?.()
-      const render = last = new MU.Render(engine, { width, height, bounces, maxSamples: samples, allowMultipleSamplesPerFrame: true })
+      const render = last = new MU.Render(engine, { width, height, bounces, maxSamples: samples, batchSamples: true })
       if (denoise) await render.setDenoiser(info.backend === 'webgpu' ? { type: 'oidn', model: 'standard' } : { type: 'jnlm' })
       engine.update()
       times.setup = Math.round(performance.now() - t); t = performance.now()

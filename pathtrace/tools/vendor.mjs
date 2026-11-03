@@ -23,7 +23,7 @@ const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../.
 // storage buffer as an array, so its WebGPU kernels fail to compile on r187 ("cannot index into
 // expression of type 'array<SampleCounters>'"). main has the fix (PR #911); this is main on 2 Nov 2026.
 const GPT_COMMIT = 'ec19f7c93035ae9e98554db1e99f7d5c39b57902'
-const VERSIONS = { 'three-gpu-pathtracer': `https://codeload.github.com/gkjohnson/three-gpu-pathtracer/tar.gz/${GPT_COMMIT}`, 'three-mesh-bvh': '0.9.17', '@meimu/mutracer': '0.2.0', three: '0.187.0', 'oidn-webgpu': '0.6.0', 'xatlas-web': '0.1.0' }
+const VERSIONS = { 'three-gpu-pathtracer': `https://codeload.github.com/gkjohnson/three-gpu-pathtracer/tar.gz/${GPT_COMMIT}`, 'three-mesh-bvh': '0.9.17', '@meimu/mutracer': '0.3.0', three: '0.187.0', 'oidn-webgpu': '0.6.0', 'xatlas-web': '0.1.0' }
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pt-vendor-'))
 const sh = (cmd, cwd = tmp) => execSync(cmd, { cwd, stdio: 'inherit' })
@@ -46,6 +46,17 @@ fs.copyFileSync(nm('three-mesh-bvh/LICENSE'), path.join(gptOut, 'LICENSE.three-m
 const muOut = path.join(ROOT, 'vendor/mutracer')
 fs.rmSync(muOut, { recursive: true, force: true }); fs.mkdirSync(path.join(muOut, 'lib'), { recursive: true })
 const mu = nm('@meimu/mutracer')
+// MuTracer 0.3.0's WebGL sphere-light sampler (eH) holds a copy of sampleLight's emissive branch,
+// jb(shadingPoint, randomSampleValue, result), with no randomSampleValue in scope: any scene with
+// both a sphere light and an emissive mesh (the stage) fails to compile ("'randomSampleValue' :
+// undeclared identifier"). Take the copy out, which leaves eH as 0.2.0 had it; stop if it changed.
+{
+  const f = path.join(mu, 'lib/renderer/glsl/chunks/sampleLight.glsl.js')
+  const bad = 'float radius = max(light.radius, 1e-6);\n#ifdef HAS_EMISSIVE_LIGHTS\njb(shadingPoint,randomSampleValue,result);return;\n#endif\n'
+  const src = fs.readFileSync(f, 'utf8')
+  if (src.includes(bad)) fs.writeFileSync(f, src.replace(bad, 'float radius = max(light.radius, 1e-6);\n'))
+  else if (VERSIONS['@meimu/mutracer'] === '0.3.0') throw new Error('MuTracer 0.3.0 sampleLight.glsl.js is not as expected: check the eH patch')
+}
 sh(`${esbuild} ${mu}/lib/main.js --bundle --format=esm --splitting --minify --legal-comments=eof --outdir=${muOut}/lib --entry-names=mutracer --chunk-names=chunk-[hash]`)
 sh(`${esbuild} ${mu}/lib/renderer/bvh.worker.js --bundle --format=esm --minify --legal-comments=eof --outfile=${muOut}/lib/bvh.worker.js`)
 fs.copyFileSync(path.join(mu, 'lib/tinybvh/tinybvh.wasm'), path.join(muOut, 'lib/tinybvh.wasm'))

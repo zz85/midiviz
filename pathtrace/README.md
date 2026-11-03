@@ -2,8 +2,8 @@
 
 [045_pathtracer.html](../045_pathtracer.html) is [#032 Pianist](../032_pianist.html) with two GPU path tracers for three.js, rendering the same frame the page draws so the pictures can be compared:
 
-- [three-gpu-pathtracer](https://github.com/gkjohnson/three-gpu-pathtracer) 0.0.27 (Garrett Johnson, MIT): its WebGPU tracer (`WebGPUPathTracer`, compute shaders on three/webgpu) and its older WebGL tracer (`WebGLPathTracer`, deprecated upstream)
-- [MuTracer](https://github.com/pissang/mutracer) 0.2.0 (`@meimu/mutracer`, Yi Shen, MIT): WebGPU, with a WebGL 2 fallback
+- [three-gpu-pathtracer](https://github.com/gkjohnson/three-gpu-pathtracer) GitHub main at `ec19f7c` (2 Nov 2026; 0.0.27, the last release, doesn't compile on r187) (Garrett Johnson, MIT): its WebGPU tracer (`WebGPUPathTracer`, compute shaders on three/webgpu) and its older WebGL tracer (`WebGLPathTracer`, deprecated upstream)
+- [MuTracer](https://github.com/pissang/mutracer) 0.3.0 (`@meimu/mutracer`, Yi Shen, MIT): WebGPU, with a WebGL 2 fallback
 
 The page moved from three.js r170 to r185, which three-gpu-pathtracer's WebGPU tracer needs, and on 1 Nov 2026 to r187 (with MuTracer 0.2.0 and oidn-web 0.5.0). From r17x three.js keeps a soft (VSM) shadow map's depths in half floats, too coarse for the key light's 250-1000 cm range: the shadows drew dark contour bands across her skin. The page uses PCF shadows instead (`?shadows=vsm` brings VSM back to compare).
 
@@ -44,6 +44,13 @@ After these fixes the two tracers' WebGPU stills look close on a desktop GPU, ha
 The vertex-colour one is worth reporting upstream; MuTracer asks for issues rather than pull requests.
 
 MuTracer 0.2.0 fixes all three: its converter fades spots as three.js does, turns a three.js equirect's rows itself and copies vertex colours. The spot and row workarounds are gone from `engines.js`; the hair's colour texture stays (it is still right). On SwiftShader WebGL, `?test=spot` reads 63 (three-gpu-pathtracer 60), `?test=sky` 184 (170) and `?test=vcolor` 161,64,64 (148,60,60).
+
+MuTracer 0.3.0 (released 2 Nov 2026) needed two changes:
+
+- **A shader that didn't compile.** Its WebGL sphere-light sampler holds a copy of the emissive-light branch that uses a variable it doesn't declare, so a scene with both a sphere light and an emissive mesh, as the stage has, fails with `'randomSampleValue' : undeclared identifier`. [tools/vendor.mjs](tools/vendor.mjs) takes the copy out as it vendors, which leaves that function as 0.2.0 had it, and stops if the file isn't as expected.
+- **Emissive meshes as lights.** 0.3.0 samples every emissive triangle as a light. The grand's 88 hammer felts glow a little in the raster picture (emissive 0x5a5a56, a stand-in for light under the lid), and as lights they made a 640x360, 32-sample still trace in 59 s instead of 6.7 s, with the same picture. A material marked `userData.rasterEmissive` (the felts, in concertstage/concert-grand.js) loses its emission in [snapshot.js](snapshot.js), for both tracers.
+
+With both, the stage traces in 6.7 s on lavapipe WebGL, as on 0.2.0, and looks the same. On the test scenes, at 16 samples, WebGL reads 141,119,95 plain and 183 with `?test=env`, as on 0.2.0; `?test=spot` reads 72, where 0.2.0's WebGL read 60, now near its WebGPU tracer's 69 (73 on 0.2.0).
 
 ## Garments over the skin
 

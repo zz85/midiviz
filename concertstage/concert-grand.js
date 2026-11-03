@@ -340,6 +340,8 @@ function makeMaterials() {
   m.felt = new THREE.MeshPhysicalMaterial({ color: 0x6a0610, roughness: 1, sheen: 0.5, sheenRoughness: 0.6, sheenColor: new THREE.Color(0xa01c28) })
   m.damperFelt = new THREE.MeshPhysicalMaterial({ color: 0xe9e3d6, roughness: 1, sheen: 1, sheenRoughness: 0.7, sheenColor: 0xffffff })
   m.hammerFelt = new THREE.MeshPhysicalMaterial({ color: 0xffffff, emissive: 0x5a5a56, roughness: 1, sheen: 1, sheenRoughness: 0.6, sheenColor: 0xffffff })
+  // (the glow stands in for the light under the lid in the raster picture; a path tracer lights the felt itself)
+  m.hammerFelt.userData.rasterEmissive = true
   const ivoryRough = noiseTexture(17, 70, 110); ivoryRough.repeat.set(1 / 3, 1 / 3)
   m.whiteKey = new THREE.MeshPhysicalMaterial({ color: 0xf3efe6, roughness: 0.85, roughnessMap: ivoryRough, clearcoat: 0.7, clearcoatRoughness: 0.08, sheen: 0.25, sheenColor: 0xfff8e8 })
   m.whiteKeySide = new THREE.MeshPhysicalMaterial({ color: 0xcfc8ba, roughness: 0.5, clearcoat: 0.4 })

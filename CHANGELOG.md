@@ -16,6 +16,11 @@ Songs: spread chords in the engraved Bach files ([notes](midis/README.md#sources
 - The notes of realized ornaments and grace notes now carry the hand of the note they decorate into [midis/tools/bach_hands.mjs](midis/tools/bach_hands.mjs) (it guessed from the nearest written note, and the main note having been replaced, a trill sometimes went to the other hand: the Aria's bar 11 trill ended in the left hand, as did right-hand trills in WTC I No. 11's prelude); the Aria now has 1 left-hand note above the right, from 4
 - bach_ornaments.mjs no longer awaits its top-level main: with bach_hands.mjs importing it, the run never finished
 
+[#045 Path-traced Pianist](045_pathtracer.html): MuTracer 0.3.0
+- vendor/ moves to @meimu/mutracer 0.3.0 (from 0.2.0). engines.js asks for `batchSamples`, the name 0.3.0 gives `allowMultipleSamplesPerFrame`.
+- 0.3.0's WebGL sphere-light sampler doesn't compile in a scene that also holds an emissive mesh ("'randomSampleValue' : undeclared identifier"), the stage among them: pathtrace/tools/vendor.mjs takes out the stray emissive branch as it vendors.
+- 0.3.0 samples emissive meshes as lights, and the grand's 88 hammer felts glow faintly for the raster picture: a 640x360, 32 spp still took 59 s to trace, against 6.7 s. Their material is marked `userData.rasterEmissive`, and pathtrace/snapshot.js gives the tracers such a material without emission. The still is back to 6.7 s, the same picture as 0.2.0's (lavapipe, MuTracer WebGL).
+
 [#045 Path-traced Pianist](045_pathtracer.html): three-gpu-pathtracer's WebGPU tracer on three.js r187
 - 0.0.27, the last release, failed on r187: r187 binds every storage buffer as an array, and the tracer's compute shaders no longer compiled ("cannot index into expression of type 'array<SampleCounters>'"), so each frame logged invalid compute pipelines and nothing traced. vendor/ now holds three-gpu-pathtracer from GitHub main at ec19f7c (2 Nov), which has the fix (PR #911), with oidn-webgpu 0.6.0, the renamed oidn-web, for its OIDN denoiser (pathtrace/tools/vendor.mjs). engines.js turns off main's new adaptiveFrameBudget and adaptiveDynamicRes, which would retune the frame budget toward 16 ms frames. A 320x180, 16 spp still traces with no WebGPU errors, with and without OIDN (Electron, llvmpipe and SwiftShader WebGPU).
 

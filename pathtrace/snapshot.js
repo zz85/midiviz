@@ -127,6 +127,9 @@ function convertMaterial(m, seen, skipped, keep = null) {
     out = prev?.type === m.type ? prev.copy(m) : m.clone()
     out.onBeforeCompile = () => {}; out.customProgramCacheKey = () => ''
     out.defines = {}
+    // emission a raster page fakes, such as the hammer felts' glow: a path tracer would make each
+    // such mesh a light (MuTracer 0.3 samples every emissive triangle, 88 felts on the grand)
+    if (m.userData.rasterEmissive) { out.emissive.setRGB(0, 0, 0); out.emissiveMap = null }
   } else if (m.isMeshBasicMaterial) {
     out = prev?.isMeshStandardMaterial ? prev : new THREE.MeshStandardMaterial()
     out.setValues({ color: 0x000000, emissive: m.color, emissiveMap: m.map, emissiveIntensity: 1, roughness: 1, metalness: 0,
