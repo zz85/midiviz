@@ -544,8 +544,21 @@ export function splitHands(notes, { handSize = 1, beam = 32, chordTolerance = 0.
     return c
   }
   const pos = ns => ns.length ? { p: ns.reduce((s, n) => s + n.p, 0) / ns.length, lo: ns[0].p, hi: ns[ns.length - 1].p } : null
+  // notes given a hand already (fingering/hands.js) are where that hand is: each hypothesis
+  // takes them as its hand's last place as their time comes, so the split around a passage
+  // given to the tracks carries on from where each hand left it
+  const pinned = notes.filter(n => n.hand === 'L' || n.hand === 'R').sort((a, b) => a.on - b.on)
+  let pi = 0
   let hyps = [{ cost: 0, L: null, R: null, parent: null, cut: 0, slice: null }]
   for (const sl of slices) {
+    if (pi < pinned.length && pinned[pi].on <= sl.on + chordTolerance) {
+      const at = { L: null, R: null }
+      for (; pi < pinned.length && pinned[pi].on <= sl.on + chordTolerance; pi++) {
+        const n = pinned[pi], o = at[n.hand]
+        if (o && Math.abs(o.t - n.on) < chordTolerance) { o.sum += n.pitch; o.k++ } else at[n.hand] = { t: n.on, sum: n.pitch, k: 1 }
+      }
+      for (const h of hyps) for (const side of ['L', 'R']) if (at[side]) h[side] = { p: at[side].sum / at[side].k, t: at[side].t }
+    }
     const k = sl.notes.length
     const next = []
     for (const h of hyps) for (let cut = 0; cut <= k; cut++) {

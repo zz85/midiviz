@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import { createTimeline, expandForm, createMovementTimeline } from '../timeline.js'
 import { place, scanLayout, scanLayoutPages } from '../layout.js'
 import { detectPage, barsOf } from '../scan.js'
-import { assignHands, handOfTrackName, handModeOf } from '../../fingering/hands.js'
+import { assignHands, handOfTrackName, handModeOf, crossings } from '../../fingering/hands.js'
 
 const clock = (ppq, bpm) => k => k / ppq * 60 / bpm
 
@@ -195,4 +195,32 @@ test('pages: systems through every page, bars keyed through every movement', () 
   assert.deepEqual(asked, [[0, 1], [1, 2]])
   const p = place(L, { bar: 4, frac: 0 })
   assert.equal(p.system, 2)
+})
+
+test('hands: automatic, with the tracks where they cross', async () => {
+  const { fingerPiece } = await import('../../fingering/fingering.js')
+  // 0-4 s: the hands apart; 4-6 s: the left hand reaches over the right, 6 times; 6-10 s: apart
+  // again; and at 8 s a held tenor note under one brief low treble note (once: no crossing)
+  const notes = []
+  for (let i = 0; i < 40; i++) {
+    const t = i * 0.25, over = t >= 4 && t < 5.5
+    notes.push({ midi: over ? 62 : 72 + (i % 5), time: t, duration: 0.25, track: 0 })
+    if (i % 2 === 0) notes.push({ midi: over ? 76 + (i % 3) : 48 + (i % 4), time: t, duration: 0.5, track: 1 })
+  }
+  notes.push({ midi: 58, time: 8, duration: 1, track: 1 }, { midi: 57, time: 8.1, duration: 0.1, track: 0 })
+  const names = ['Right hand', 'Left hand']
+  const hand = names.map(handOfTrackName)
+  const ps = crossings(notes, hand)
+  assert.equal(ps.length, 1)
+  assert.ok(Math.abs(ps[0][0] - 3) < 1e-9 && Math.abs(ps[0][1] - 6.25) < 1e-9, JSON.stringify(ps))
+  const r = assignHands(notes, names, 'crossings')
+  assert.equal(r.source, 'crossings')
+  // the tracks' hands from 3 to 6.25 s, none elsewhere (the fingering's)
+  for (const n of notes) assert.equal(n.hand, n.time >= 3 && n.time <= 6.25 ? hand[n.track] : undefined)
+  const f = fingerPiece(notes.map(n => ({ pitch: n.midi, on: n.time, off: n.time + n.duration, ...(n.hand ? { hand: n.hand } : {}) })))
+  f.notes.forEach((n, i) => { if (notes[i].time >= 4 && notes[i].time < 5.5) assert.equal(n.hand, hand[notes[i].track]) })
+  // a file whose tracks never cross: automatic throughout
+  const apart = notes.filter(n => n.time < 4)
+  assert.deepEqual(assignHands(apart, names, 'crossings'), { source: 'auto', named: 0, passages: [] })
+  assert.equal(handModeOf('crossings'), 'crossings')
 })

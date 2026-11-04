@@ -1280,12 +1280,14 @@ export async function boot(plug = {}) {
       return notes.map(n => ({ pitch: n.midi, on: n.time, off: n.time + n.duration, hand: n.midi < 60 ? 'L' : 'R', finger: 0, velocity: n.velocity }))
     }
     // Hands (fingering/hands.js): the file's own split where its tracks name the
-    // hands (Performance > Hands, ?hands=tracks), or the fingering's (?hands=auto)
+    // hands (Performance > Hands, ?hands=tracks), the fingering's (?hands=auto), or the
+    // fingering's except where the tracks cross (?hands=crossings)
     let handsSource = 'auto'
     function fingerInWorker(notes) {
       const job = ++fingerJob
-      handsSource = assignHands(notes, song?.trackNames, $('hands').value).source
-      $('handsV') && ($('handsV').textContent = handsSource === 'tracks' ? 'from the tracks' : 'automatic')
+      const hr = assignHands(notes, song?.trackNames, $('hands').value)
+      handsSource = hr.source
+      $('handsV') && ($('handsV').textContent = handsSource === 'tracks' ? 'from the tracks' : handsSource === 'crossings' ? `${hr.passages.length} crossing${hr.passages.length === 1 ? '' : 's'} from the tracks` : 'automatic')
       fingerWorker?.terminate()
       const url = new URL('../fingering/fingering.js', import.meta.url).href
       const src = `import { fingerPiece, CHOPIN } from ${JSON.stringify(url)}

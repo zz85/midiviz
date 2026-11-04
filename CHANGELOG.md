@@ -2,6 +2,14 @@
 
 What each experiment does and how, newest first. The short list is in the [README](README.md).
 
+## 3 Nov 2026
+
+Hands: automatic, with the tracks' hand crossings (#032, #045, #049, #050)
+- Performance > Hands has a third mode, **Automatic, with the tracks' hand crossings** (`?hands=crossings`). It is the automatic split (the one fingering.js finds easiest) except where the file's tracks cross: where the left hand's track plays above the right hand's, at least 4 times with less than 2 s between, the tracks' split holds from a second before to a second after. The label beside Hands says how many passages it found.
+- On the complete Goldberg it finds 53 passages (5.6 of the 44 minutes): 49 in the variations for two manuals, 3 in Var. 1 and 1 in Var. 25, and none in the Aria, whose few left-above-right moments are a held tenor note under a brief low treble note. In those passages 99.6 % of the notes take the tracks' hand (Automatic: 49 %, as it uncrosses the hands); outside them it agrees with Automatic on 99.8 %.
+- fingering.js `splitHands` now takes the notes that already have a hand as where that hand is, so the split after a passage carries on from where each hand left it. Automatic is unchanged; From the tracks changes only for a file with tracks that name no hand.
+- Test: the crossings on a made-up passage, the hands set in and out of it, and a file whose tracks never cross (sheet/test/sheet.test.js, 11).
+
 ## 2 Nov 2026
 
 [#051 Duo in the Park](038_duo.html?stage=park): #038 outdoors, in the scene of Sorairo (random-sketches/vibes/sorairo)
