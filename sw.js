@@ -1,20 +1,22 @@
 // Service worker for the midiviz experiments (registered by 032_pianist.html,
 // scope: this folder).
 //
-// • Assets (soundfonts, the pianist's models and textures, MIDI files, the
-//   synth's WASM, three.js from the CDN) are cache-first: fetched once, then
+// • Assets (soundfonts, the pianist's models and textures, the synth's WASM,
+//   three.js from the CDN) are cache-first: fetched once, then
 //   served from the cache, so a second visit downloads almost nothing even
 //   though GitHub Pages re-stamps every file on each deploy. Bump ASSETS
 //   when one of them really changes.
-// • Pages and code (HTML, JS, CSS, JSON) are network-first, so updates show
-//   at once; the cached copy is the offline fallback.
+// • Pages, code and songs (HTML, JS, CSS, JSON, MIDI files) are network-first, so
+//   updates show at once; the cached copy is the offline fallback. (A MIDI file
+//   is small, and the score and liner notes that follow it are JSON: a cached old
+//   copy of a song played against new notes of it goes out of step.)
 //   A cached asset is checked once per worker lifetime with a HEAD request
 //   and fetched again if its size changed.
 // Range requests and non-GET requests go straight to the network.
 
 const ASSETS = 'midiviz-assets-v2'   // (the same name keeps what's cached; bump to drop it. v2: #047 rebuilt pianist/assets/character.bin, and a cached old .bin with the new .json fails to load)
 const CODE = 'midiviz-code-v1'
-const ASSET_RE = /\.(sf2|sf3|mid|midi|bin|glb|gltf|vrm|png|jpe?g|webp|ktx2|wasm|hdr|exr|ogg|mp3|wav|woff2?)$/i
+const ASSET_RE = /\.(sf2|sf3|bin|glb|gltf|vrm|png|jpe?g|webp|ktx2|wasm|hdr|exr|ogg|mp3|wav|woff2?)$/i
 const CDN_RE = /^https:\/\/cdn\.jsdelivr\.net\/npm\/[^/]+@\d/   // versioned: immutable
 
 self.addEventListener('install', () => self.skipWaiting())

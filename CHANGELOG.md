@@ -4,6 +4,10 @@ What each experiment does and how, newest first. The short list is in the [READM
 
 ## 5 Nov 2026
 
+The score in step with an older copy of the Goldberg (#049, #050, every page's songs)
+- After the change of the Goldberg's endings, a browser that had the old midis/bach_goldberg.mid cached played it against the new score manifest, which leaves out the first endings: the bars ran one or two ahead from the first ending on in Var. 2, 4, 6, 16 and 25. The service worker served MIDI files from its cache first, and noticed a change only later, by size. It now fetches them from the network first, as it does pages and code (sw.js), so a song and the score and liner notes that follow it come from the same deploy; the cached copy is kept for offline.
+- sheet/timeline.js checks each movement's length against the file: where it isn't the order given, it takes the form that has it (as printed, or the other file's). The old file now follows the score with 988 bars played, the new one with 974; every bar starts on a note of its file (Var. 16 within 0.125 s).
+
 Goldberg Variations: the second endings, and a version with the repeats (midis/, #049, #050)
 - `midis/bach_goldberg.mid` played both endings of every half that has two (Var. 2, 4, 6, 16 and 25), one after the other: LilyPond's MIDI plays a repeat as printed. It now plays the second alone, as a performance without repeats does: 121 notes and 14 bars fewer, 44.0 min. Every movement from Var. 3 on starts earlier, by up to 26 s at the da capo.
 - New `midis/bach_goldberg_repeats.mid`, 85 min: each half twice, the first ending the first time and the second the second; the Aria da capo without its repeats. In the song menus of every page.

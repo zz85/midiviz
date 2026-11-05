@@ -66,12 +66,13 @@ function seeker(bars) {
  * each time. `performance`: the file's own order of the bars (a manifest's `performances`).
  * `notes`: [{ time, duration }] in seconds.
  */
-export function createMovementTimeline(notes, { movements, sequence }, { gap = 1.5, performance = null } = {}) {
+export function createMovementTimeline(notes, { movements, sequence, performances = {} }, { gap = 1.5, performance = null } = {}) {
   const segs = []
   let end = -Infinity
   for (const n of [...notes].sort((a, b) => a.time - b.time)) {
-    if (!segs.length || n.time - end >= gap) segs.push(n.time)
+    if (!segs.length || n.time - end >= gap) segs.push({ t0: n.time, t1: 0 })
     end = Math.max(end, n.time + n.duration)
+    segs.at(-1).t1 = end
   }
   const byId = new Map(), base = new Map()
   let key = 0
@@ -80,14 +81,28 @@ export function createMovementTimeline(notes, { movements, sequence }, { gap = 1
   // (`performance`: a file's own order of the printed bars, movement by movement, as
   // [{ id, played: [[bar from 0, t0, t1]], end }], where it plays repeats or leaves out
   // an ending; else each movement's bars once each, as printed)
-  const order = performance ?? sequence.map(id => { const m = byId.get(id); return { id, played: m.starts.map((s, j) => [j, s, j + 1 < m.starts.length ? m.starts[j + 1] : m.end]), end: m.end } })
-  order.slice(0, segs.length).forEach(({ id, played, end }, k) => {
-    const m = byId.get(id), t = segs[k] - played[0][1]
+  const printed = sequence.map(id => { const m = byId.get(id); return { id, played: m.starts.map((s, j) => [j, s, j + 1 < m.starts.length ? m.starts[j + 1] : m.end]), end: m.end } })
+  const order = performance ?? printed
+  // Each movement as the file plays it: where its length isn't the order's, the order of
+  // another form that has its length, as printed or another file's (a cached copy of an
+  // older version of the file, say, before its repeats changed), so the bars follow the
+  // notes the file holds
+  const forms = [order, ...Object.values(performances), printed]
+  const fitted = []
+  const length = f => f.end - f.played[0][1]
+  order.slice(0, segs.length).forEach((want, k) => {
+    const len = segs[k].t1 - segs[k].t0
+    let f = want
+    if (Math.abs(length(want) - len) > 0.5) {
+      const best = forms.map(o => o[k]).filter(o => o?.id === want.id).sort((a, b) => Math.abs(length(a) - len) - Math.abs(length(b) - len))[0]
+      if (best && Math.abs(length(best) - len) < Math.abs(length(want) - len)) { f = best; fitted.push({ place: k, id: want.id, length: len, wanted: length(want) }) }
+    }
+    const { id, played } = f, m = byId.get(id), t = segs[k].t0 - played[0][1]
     for (const [j, a, b] of played) bars.push({ i: bars.length, bar: base.get(id) + j + 1, movement: id, n: j + 1, tick0: 0, ticks: 1, t0: t + a, t1: t + b })
-    spans.push({ id, title: m.title, t0: t + played[0][1], t1: t + end })
+    spans.push({ id, title: m.title, t0: t + played[0][1], t1: t + f.end })
   })
   const mismatch = segs.length !== order.length ? { performed: segs.length, form: order.length } : null
-  return { at: seeker(bars), bars, movements: spans, meter: null, mismatch }
+  return { at: seeker(bars), bars, movements: spans, meter: null, mismatch, fitted }
 }
 
 /** createMovementTimeline for a tonejs Midi. */

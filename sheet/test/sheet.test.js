@@ -246,3 +246,15 @@ test('movements: a file\'s own order of the bars, a repeat on the same bars', ()
   assert.equal(tl.at(7).bar, 1); assert.equal(tl.at(7).frac, 0.5)
   assert.equal(tl.at(15).bar, 4); assert.equal(tl.movements[1].t0, 14.5)
 })
+
+test('movements: a file of another form than the one given is followed as it plays', () => {
+  // the file plays a's three bars once and b (as printed); the form given repeats a
+  const notes = [...notesOf(0, [0, 2, 4], 6), ...notesOf(8.5, [0, 1.5], 3)]
+  const repeats = [{ id: 'a', played: [[0, 0, 2], [1, 2, 4], [2, 4, 6], [0, 6, 8], [1, 8, 10], [2, 10, 12]], end: 12 }, { id: 'b', played: [[0, 0, 1.5], [1, 1.5, 3]], end: 3 }]
+  const tl = createMovementTimeline(notes, MOVES, { performance: repeats })
+  assert.deepEqual(tl.bars.map(b => b.bar), [1, 2, 3, 4, 5])
+  assert.deepEqual(tl.fitted.map(f => f.id), ['a'])
+  assert.equal(tl.at(9).bar, 4)
+  // the form that fits is kept as it is
+  assert.deepEqual(createMovementTimeline([...notesOf(0, [0, 2, 4, 6, 8, 10], 12), ...notesOf(14.5, [0, 1.5], 3)], MOVES, { performance: repeats }).fitted, [])
+})
