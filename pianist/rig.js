@@ -283,6 +283,7 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
   }
   const _E2 = v3()
   const PHIS = Array.from({ length: 25 }, (_, i) => (i - 12) * 0.1)
+  const PHI_RATE = 5
   const _bn = v3(), _p0 = v3(), _E = v3()
   /** Swing the elbow (pole0 ⟂ n) round n until the arm clears the torso. */
   function steerElbow(a, S, W, n, U, cosA, sinA, pole0, dt) {
@@ -318,7 +319,10 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
         + liftCost * Math.max(0, _E.y - y0) + 0.3 * Math.abs(phi) + 0.5 * Math.abs(phi - a.phi)
       if (cost < bestCost) { bestCost = cost; best = phi }
     }
-    a.phi += (best - a.phi) * (dt > 0 ? 1 - Math.exp(-dt / 0.06) : 1)
+    // (and no faster than PHI_RATE rad/s: the elbow swings round, it doesn't
+    // flip from one side of the arm to the other in a frame)
+    const dphi = (best - a.phi) * (dt > 0 ? 1 - Math.exp(-dt / 0.06) : 1)
+    a.phi += dt > 0 && dt < 0.2 ? clamp(dphi, -PHI_RATE * dt, PHI_RATE * dt) : dphi
     a.sink = armSink(a, S, elbow(a.phi, _E), W, nc)
     a.over = overlapUnder(a, S, _E, W)
     a.drv.lift = _E.y - y0   // how far the steering raised the elbow (cm)
@@ -345,7 +349,11 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     // back into the next frame's clavicle (pose)
     if (a.sink > CONTACT) a.protract = Math.min(7, a.protract + dt * 25 * (a.sink - CONTACT))
     else if (a.sink < 0) a.protract = Math.max(0, a.protract - dt * 4)
-    const ph = a.phi + lead
+    // (the lead too: which way round raises the elbow can flip as the arm
+    // turns, and the swing it adds must not)
+    const goal = a.phi + lead
+    a.ph = a.ph == null || !(dt > 0 && dt < 0.2) ? goal : a.ph + clamp(goal - a.ph, -PHI_RATE * dt, PHI_RATE * dt)
+    const ph = a.ph
     return _p0.copy(pole0).multiplyScalar(Math.cos(ph)).addScaledVector(_bn, Math.sin(ph))
   }
 

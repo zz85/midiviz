@@ -140,6 +140,7 @@ export function createHandDriver(side, dims) {
   // (and the one under a little lower: < 0)
   let rise = 0, riseGoal = 0
   const RISE_IN = 5
+  const riseIn = { x: 0, z: 0 }   // the move in over the keys, as it eases
   // the end of the piece: as the hands lift off the last chord they come in
   // to the middle, square to the keys, a hand's width either side of her
   // (ending(t) → 0..1, from the hands driver; null: never)
@@ -572,6 +573,7 @@ export function createHandDriver(side, dims) {
     // forward, so the hand moves in over its keys (by up to RISE_IN cm, as a
     // crossing hand comes down onto them from above, fingers steep), and
     // what that cannot make up comes off the height
+    let eased = false
     if (rise > 0) for (let pass = 0; pass < 2; pass++) {
       let need = 0, nx = 0, nz = 0, over = 0
       for (const f of [1, 2, 3, 4, 5]) {
@@ -583,12 +585,27 @@ export function createHandDriver(side, dims) {
         if (h - hMax > need) { need = h - hMax; nx = dx / (h || 1); nz = dz / (h || 1) }
         over = Math.max(over, dy - Math.sqrt(Math.max(0, R * R - h * h)))
       }
-      if (need <= 0) break
-      if (pass === 0) { const m = Math.min(need, RISE_IN); hand.x += nx * m; hand.z += nz * m; continue }
-      if (over > 0) hand.y -= Math.min(rise, over)
+      // (eased, from frame to frame: the keys it reaches for change as they
+      // are struck and let go, and the hand would jump with them)
+      if (pass === 0) {
+        const m = Math.max(0, Math.min(need, RISE_IN)), k = Math.min(1, dt / 0.06)
+        riseIn.x += (nx * m - riseIn.x) * k; riseIn.z += (nz * m - riseIn.z) * k
+        hand.x += riseIn.x; hand.z += riseIn.z; eased = true; continue
+      }
+      if (need > 0 && over > 0) hand.y -= Math.min(rise, over)
+    }
+    // (and back out the same way once it isn't needed)
+    if (!eased && (riseIn.x || riseIn.z)) {
+      const k = Math.min(1, dt / 0.06)
+      riseIn.x -= riseIn.x * k; riseIn.z -= riseIn.z * k
+      if (Math.abs(riseIn.x) + Math.abs(riseIn.z) < 0.01) riseIn.x = riseIn.z = 0
+      hand.x += riseIn.x; hand.z += riseIn.z
     }
     // fingertip targets in the hand frame (lx toward the little finger = s·x)
     const lx = [], lz = [], held = [], ty = []
+    // the motion's own target of each free finger (hand frame), and how far it
+    // is from settled (fingering/motion.js rest: 0 on its key, 1 settled)
+    const rawX = [], rawZ = [], rawY = [], unsettled = []
     for (const f of [1, 2, 3, 4, 5]) {
       const d = FINGERS[f]
       let t = tips[f - 1]
@@ -615,6 +632,7 @@ export function createHandDriver(side, dims) {
       }
       let x = s * ax, z = az
       held.push(t.press > 0.2)
+      rawX.push(x); rawZ.push(z); rawY.push(KEY_TOP + t.y + d.rad[2] * 0.9); unsettled.push(held[f - 1] ? 0 : 1 - Math.min(1, Math.max(0, t.rest ?? 1)))
       if (!held[f - 1]) {
         // a free finger moves with the hand: keep it near its relaxed place
         // (the thumb may tuck under toward the fingers)
@@ -725,6 +743,16 @@ export function createHandDriver(side, dims) {
       ty[i] += 1.2 * squeeze[i]
       lz[i] = Math.max(lz[i], FINGERS[i + 1].base[2] - REACH[i + 1] + 1.5 * squeeze[i])
     }
+    // A free finger leaving its key, or on its way to the next one, follows
+    // the motion's own path there, from the key or onto it, and only settles
+    // into its place in the hand as it gets there (rest): the place in the
+    // hand alone would snap it off the key it has just let go, or onto the
+    // one it is about to strike, in a frame (a legato key held while the
+    // hand moved on: 6 cm in one frame)
+    for (let i = 0; i < 5; i++) if (!held[i] && unsettled[i] > 0) {
+      const w = unsettled[i]
+      lx[i] += (rawX[i] - lx[i]) * w; lz[i] += (rawZ[i] - lz[i]) * w; ty[i] += (rawY[i] - ty[i]) * w
+    }
     // joint IK per finger
     for (const f of [1, 2, 3, 4, 5]) {
       const d = FINGERS[f], P = J.fingers[f], i = f - 1
@@ -800,6 +828,9 @@ export function createHandsDriver(dims) {
   // held and reached together; LEAP_FREE s of free time for the jump
   // beyond its own, at most LEAP_SHARE of the time since the last onset)
   const LEAP_SPAN = 20, LEAP_FREE = 0.04, LEAP_SHARE = 0.45
+  // (a held key let go once the hand has moved SHIFT cm on: after MIN_HOLD s,
+  // and HOLD_SHARE of its written length, at least)
+  const SHIFT = 3, MIN_HOLD = 0.1, HOLD_SHARE = 0.4
   // (repeated chords and octaves: the share of the time to the next one the hand is off the keys)
   const DETACH = 0.4
   const written = new WeakMap()   // each note's release as the fingering gave it
@@ -900,6 +931,24 @@ export function createHandsDriver(dims) {
             const tl = m.hand === d.side ? at.get(m.pitch + '@' + m.on) : undefined
             if (tl != null && tl < (m.release ?? m.off)) { m.release = tl; letGo++ }
           }
+          // A finger needn't stay on its key for the note's whole length: the
+          // sound is struck, and the hand moves on. Once the hand has moved
+          // SHIFT cm from where it struck the key (its anchor, as the motion
+          // carries it), the finger lets go there, after MIN_HOLD s at least
+          // (and at least HOLD_SHARE of the note): held on, the finger
+          // stretched after the key and then flew back to the hand in a few
+          // frames (the sound unchanged)
+          for (const m of own) {
+            if (m.hand !== d.side) continue
+            const end = m.release ?? m.off, from = m.on + Math.max(MIN_HOLD, HOLD_SHARE * (end - m.on))
+            if (from >= end) continue
+            const i0 = Math.round((m.on - t0) / hp), x0 = ps[i0]?.[d.side]?.anchor.x
+            if (x0 == null) continue
+            for (let i = Math.round((from - t0) / hp); i < np && t0 + i * hp < end; i++) {
+              const x = ps[i]?.[d.side]?.anchor.x
+              if (x != null && Math.abs(x - x0) > SHIFT) { m.release = Math.max(from, t0 + i * hp); letGo++; break }
+            }
+          }
         }
         if (letGo) motion = buildMotion(own, motionOpts)
       }
@@ -943,9 +992,14 @@ export function createHandsDriver(dims) {
           const held = mine.filter(m => m.on < b.t - 0.02 && (m.release ?? m.off) > b.t - 0.01 && m.on > b.t - 8)
           if (!held.length) continue
           const xs = [...held, ...b.ns].map(m => keyX(m.pitch)), span = Math.max(...xs) - Math.min(...xs)
-          if (span <= LEAP_SPAN) continue
           const cx = ns => ns.reduce((s, m) => s + keyX(m.pitch), 0) / ns.length, dx = Math.abs(cx(b.ns) - cx(held))
-          const need = Math.min(LEAP_FREE + LEAP.T0 + LEAP.TV * dx + LEAP.ARRIVE + LEAP.LIFT_OFF, LEAP_SHARE * (b.t - prevT))
+          // (or a move of the hand that, in the time left after the keys,
+          // would be faster than LEAP.VMAX at its fastest: a smoothstep
+          // peaks at 1.5x its mean speed)
+          const quick = LEAP.ARRIVE + LEAP.LIFT_OFF + 1.5 * dx / LEAP.VMAX
+          const free = b.t - Math.max(...held.map(m => m.release ?? m.off))
+          if (span <= LEAP_SPAN && !(dx >= LEAP.FULL && free < quick)) continue
+          const need = Math.min(Math.max(quick, LEAP_FREE + LEAP.T0 + LEAP.TV * dx + LEAP.ARRIVE + LEAP.LIFT_OFF), LEAP_SHARE * (b.t - prevT))
           for (const m of held) {
             const at = Math.max(m.on + 0.5 * (b.t - m.on), b.t - need)
             if (at < (m.release ?? m.off)) { m.release = at; leapDetached++ }

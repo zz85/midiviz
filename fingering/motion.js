@@ -80,8 +80,10 @@ export const TOUCH = {
 // cm when there is time; it starts LIFT_OFF s after the hand's last key is
 // up, or later where that would land it more than EARLY s ahead, and ends
 // ARRIVE s before the onset, so the fingers fall onto the keys from above
-// them. Where the free time is shorter it all happens in that time, quicker.
-export const LEAP = { MIN: 4, FULL: 8, T0: 0.08, TV: 0.005, LIFT_OFF: 0.03, EARLY: 0.4, ARRIVE: 0.06 }
+// them. Where the free time is shorter it all happens in that time, quicker
+// (the hands driver lets go early enough that it needn't be faster than VMAX
+// cm/s at its fastest, where the notes leave time for that).
+export const LEAP = { MIN: 4, FULL: 8, T0: 0.08, TV: 0.005, LIFT_OFF: 0.03, EARLY: 0.4, ARRIVE: 0.06, VMAX: 200 }
 
 export function buildMotion(notes, { approach = 0.09, release = 0.03, travel = 0.004, glide = false, touch = 'press', whiteZ = KEY.WHITE_Z, deepZ = null, leaps = false } = {}) {
   const hands = {}
@@ -126,8 +128,8 @@ export function buildMotion(notes, { approach = 0.09, release = 0.03, travel = 0
         const r = Math.min(up0, b.t), arrive = b.t - LEAP.ARRIVE, w = arrive - r
         if (w < 0.05) continue
         const T = LEAP.T0 + LEAP.TV * dx
-        const depart = w >= T ? Math.max(r + LEAP.LIFT_OFF, arrive - T - LEAP.EARLY) : r
-        b.move = { depart, end: w >= T ? depart + T : arrive, w: smooth((dx - LEAP.MIN) / (LEAP.FULL - LEAP.MIN)), r, x0: a.x, x1: b.x }
+        const depart = w >= T ? Math.max(r + LEAP.LIFT_OFF, arrive - T - LEAP.EARLY) : r, end = w >= T ? depart + T : arrive
+        b.move = { depart, end, w: smooth((dx - LEAP.MIN) / (LEAP.FULL - LEAP.MIN)), r, x0: a.x, x1: b.x }
       }
     }
     hands[hand] = { hand, fingers, keys, ptr: fingers.map(() => 0), kptr: 0 }
