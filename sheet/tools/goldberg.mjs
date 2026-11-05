@@ -23,6 +23,8 @@
 //    bars than the movement (a repeat sign or a pickup read as a bar), the
 //    narrowest neighbours are joined; fewer, the widest bars are split.
 //    The Aria da capo is played from the Aria's systems.
+// 5. The performances: the order each file plays the printed bars in, without
+//    and with the repeats (midis/tools/bach_goldberg_form.mjs).
 // 4. The score MIDI of each movement for the engraver: the notes as printed (no
 //    ornaments realized, no grace notes), a track a voice, its time signature
 //    (Var. 16: its two parts, the ouverture in 2/2 and the fugue in 3/8, as
@@ -32,6 +34,7 @@ import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { readSource } from '../../midis/tools/bach_ornaments.mjs'
+import { goldbergForms } from '../../midis/tools/bach_goldberg_form.mjs'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const { Midi } = createRequire(import.meta.url)(root + 'tonejs-midi.js')
@@ -212,13 +215,29 @@ for (const m of movements) {
   }
 }
 
-// ── the manifest ──
+// ── the performances: each file's order of the printed bars ──
+// midis/bach_goldberg.mid plays each half once and the second of two endings;
+// midis/bach_goldberg_repeats.mid each half twice, with each pass's ending
+// (midis/tools/bach_goldberg_form.mjs). For each file, by place in its sequence,
+// `played`: [[the printed bar (from 0), its start, its end]] in seconds from the
+// movement's start as played, and `end`, the movement's length as played.
 const r3 = v => Math.round(v * 1000) / 1000
+const performances = {}
+for (const [file, forms] of Object.entries(goldbergForms())) performances[file] = forms.map(f => {
+  const mv = movements.find(m => m.id === f.id), played = []
+  for (const c of f.chunks) mv.starts.forEach((st, j) => { if (st >= c.a - 1e-3 && st < c.b - 1e-3) played.push([j, r3(c.t + st - c.a)]) })
+  played.forEach((p, i) => p.push(i + 1 < played.length ? played[i + 1][1] : r3(f.end)))
+  return { id: f.id, played, end: r3(f.end) }
+})
+console.error(Object.entries(performances).map(([f, p]) => `${f}: ${p.reduce((s, x) => s + x.played.length, 0)} bars played`).join(', '))
+
+// ── the manifest ──
 const manifest = {
   title: 'Bach - Goldberg Variations BWV 988 (complete)',
   midi: 'midis/bach_goldberg.mid',
   // the MIDI plays each movement in turn (the Aria, the 30 variations, the Aria again), 2.5 s apart
   sequence: [...IDS, 'aria'],
+  performances,
   movements: movements.map(m => ({ id: m.id, title: m.title, meter: m.meter, bars: m.bars, starts: m.starts, end: m.end, systems: m.systems, barAt: m.barAt.map(([s, a, b]) => [s, r3(a), r3(b)]), engrave: m.engrave })),
   scan: {
     edition: 'Bach-Gesellschaft Ausgabe, Band 3, pp. 263-308 (Leipzig: Breitkopf und Haertel, 1853), ed. Carl Ferdinand Becker',

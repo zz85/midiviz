@@ -8,14 +8,14 @@
 import { scanLayout, scanLayoutPages } from './layout.js'
 import { detectPage, barsOf } from './scan.js'
 import { timelineOfMidi, timelineOfMovements } from './timeline.js'
-import { manifestFor } from './scores.js'
+import { manifestFor, performanceFor } from './scores.js'
 
 export function scanBuilder() {
   const pages = new Map()
   return async (song, midi, file) => {
     const m = await manifestFor(file)
     if (!m?.scan) return null
-    if (m.scan.pages) return pagesBuild(m, midi)
+    if (m.scan.pages) return pagesBuild(m, midi, file)
     const url = m.base + m.scan.image
     if (!pages.has(url)) pages.set(url, (async () => { const im = new Image(); im.src = url; await im.decode(); return im })())
     const img = await pages.get(url)
@@ -30,7 +30,7 @@ export function scanBuilder() {
 
 // a work of many pages (the complete Goldberg, sheet/tools/goldberg.mjs): each page's image
 // loaded as a system on it first shows, with the page after it, and a few kept
-function pagesBuild(m, midi) {
+function pagesBuild(m, midi, file) {
   const imgs = new Map(), KEEP = 6, pages = m.scan.pages
   function load(pi) {
     if (pi < 0 || pi >= pages.length) return null
@@ -48,7 +48,7 @@ function pagesBuild(m, midi) {
   const decoded = pi => { load(pi); const e = imgs.get(pi); return e ? e.im.decode().catch(() => {}) : null }
   const pageOf = pi => { const im = load(pi); load(pi + 1); return im }
   const layout = scanLayoutPages(pages, m.movements, { pageOf, header: m.scan.header, firstHeader: m.scan.firstHeader })
-  const timeline = timelineOfMovements(midi, m)
+  const timeline = timelineOfMovements(midi, m, { performance: performanceFor(m, file) })
   // the pages the score shows at song time t, and the one after: loaded before a still, and as
   // a video starts
   const ready = t => {
@@ -57,7 +57,7 @@ function pagesBuild(m, midi) {
     return Promise.all([decoded(pi), decoded(pi + 1)])
   }
   const n = m.movements.length, bars = layout.bars.size
-  return { layout, timeline, ready, inkFrom: 'luma', note: `${m.scan.edition.split(',')[0]}: ${n} movements, ${pages.length} pages, ${bars} bars${timeline.mismatch ? ` (the file plays ${timeline.mismatch.performed} movements of ${timeline.mismatch.form})` : ''}` }
+  return { layout, timeline, ready, inkFrom: 'luma', note: `${m.scan.edition.split(',')[0]}: ${n} movements, ${pages.length} pages, ${bars} bars, ${timeline.bars.length} played${timeline.mismatch ? ` (the file plays ${timeline.mismatch.performed} movements of ${timeline.mismatch.form})` : ''}` }
 }
 
 function detectIn(img) {

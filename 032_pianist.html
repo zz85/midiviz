@@ -363,7 +363,7 @@
     <div class="sect">Fingers<small>Chopin: let each finger fall, in its own way</small></div>
     <div class="field" title="Fall: each finger rises in the free time before its note (higher for louder notes) and falls onto the key, each in its own way: the thumb low from the base of the hand, the 2nd light and quick, the 3rd steady, the 4th rising a little with the 3rd, the 5th firm. Press: every finger the same, pushed down as in #029 / #030"><label>Finger touch</label><select id="touch"><option value="fall" selected>Fall (each its own way)</option><option value="press">Press (all alike)</option></select></div>
     <div class="field" title="Chopin: the 4th finger is not avoided, the 5th takes the outer voice of a chord (the top in the right hand, the bass in the left), the 3rd sings long melody notes. Standard: the usual textbook rules"><label>Fingering</label><select id="fingering"><option value="standard" selected>Standard</option><option value="chopin">Chopin</option></select></div>
-    <div class="field" title="Which hand plays each note. From the score's tracks: where the MIDI names its tracks for the hands (Right hand / Left hand, RH / LH, treble / bass), the edition's own split, hand crossings included; other files fall back to automatic. Automatic: the fingering chooses the split that its fingers play most easily. Automatic, with the tracks' hand crossings: automatic, except in the passages where the tracks cross (the left hand's track above the right's, as in the Goldberg's variations for two manuals), which keep the tracks' split"><label>Hands <small id="handsV"></small></label><select id="hands"></select></div>
+    <div class="field" title="Which hand plays each note. Automatic, with the tracks' hand crossings (the default): the fingering's own split, except in the passages where the MIDI's hand tracks cross (the left hand's track above the right's, as in the Goldberg's variations for two manuals), which keep the tracks' split. From the score's tracks: where the MIDI names its tracks for the hands (Right hand / Left hand, RH / LH, treble / bass), the edition's own split, hand crossings included; other files fall back to automatic. Automatic: the fingering chooses the split that its fingers play most easily."><label>Hands <small id="handsV"></small></label><select id="hands"></select></div>
     <div class="sect">Hands and arms<small>wrist strokes: lifts, drops, bounces</small></div>
     <div class="field" title="How much loudness comes from the arm: before a loud note the hand lifts in the time it has and falls into the key (0 = fingers only, the hand stays on the keys)"><label>Arm weight</label><input type="range" id="armw" min="0" max="2" step="0.1" value="1"><span id="armwV">1×</span></div>
     <div class="field" title="How high the hands go above the keys: scales every lift (preparation, bounce and lift-off) after the time limits, so at 2× even fast passages come off the keys"><label>Lift height</label><input type="range" id="lifth" min="0" max="2.5" step="0.1" value="1"><span id="lifthV">1×</span></div>
@@ -470,7 +470,7 @@
     import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
     import { SoundFontEngine, MidiScheduler } from './soundfont-engine/src/index.js'
     import { midiToSchedule } from './notation3d/midi-score.js'
-    import { assignHands, handModeOf, HAND_MODES } from './fingering/hands.js'
+    import { assignHands, handModeOf, HAND_MODES, DEFAULT_HAND_MODE } from './fingering/hands.js'
     import { exportVideo, exportSupported, defaultBitrate } from './notation3d/video-export.js'
     import { installAcoustics, offlineHall, acousticParams, rt60Of, ROOMS, SEATS } from './concertstage/acoustics.js'
     import { buildGrandPiano, LOW, HIGH, DIM } from './concertstage/concert-grand.js'
@@ -932,7 +932,7 @@
     rig.hands.touch = $('touch').value
     $('touch').onchange = () => { rig.hands.touch = $('touch').value; if (song) fingerInWorker(song.notes) }
     $('fingering').onchange = () => { if (song) fingerInWorker(song.notes) }
-    for (const [k, l] of Object.entries(HAND_MODES)) $('hands').add(new Option(l, k))
+    for (const [k, l] of Object.entries(HAND_MODES)) $('hands').add(new Option(l, k, k === DEFAULT_HAND_MODE))
     $('hands').value = handModeOf(params.get('hands'))
     $('hands').onchange = () => { if (song) fingerInWorker(song.notes) }
     $('hairColor').oninput = () => hair.setColor($('hairColor').value)
@@ -1554,9 +1554,9 @@
       // until the fingering arrives: split at middle C, fingers by position
       return notes.map(n => ({ pitch: n.midi, on: n.time, off: n.time + n.duration, hand: n.midi < 60 ? 'L' : 'R', finger: 0, velocity: n.velocity }))
     }
-    // Hands (fingering/hands.js): the file's own split where its tracks name the
-    // hands (Performance > Hands, ?hands=tracks), the fingering's (?hands=auto), or the
-    // fingering's except where the tracks cross (?hands=crossings)
+    // Hands (fingering/hands.js): the fingering's split except where the tracks cross
+    // (Performance > Hands, the default, ?hands=crossings), the file's own split where its
+    // tracks name the hands (?hands=tracks), or the fingering's throughout (?hands=auto)
     let handsSource = 'auto'
     function fingerInWorker(notes) {
       const job = ++fingerJob

@@ -15,7 +15,7 @@
 import { loadNotationEngine, engrave } from '../notation3d/nwc-bridge.js'
 import { midiToScore } from '../notation3d/midi-score.js'
 import { timelineOfMidi, timelineOfMovements } from './timeline.js'
-import { manifestFor } from './scores.js'
+import { manifestFor, performanceFor } from './scores.js'
 
 let engine = null
 const engineReady = () => engine ??= loadNotationEngine()
@@ -149,7 +149,7 @@ export function engravedBuilder({ pageWidth = 1300 } = {}) {
     const m = await manifestFor(file)
     if (m?.movements) {
       if (!cache.has(m)) cache.set(m, movementsBuild(m, pageWidth))
-      return cache.get(m)(midi)
+      return cache.get(m)(midi, file)
     }
     const key = m?.engraved ? m.base + m.engraved.score : file || song.title
     if (!cache.has(key)) cache.set(key, (async () => {
@@ -211,8 +211,8 @@ function movementsBuild(m, pageWidth) {
     // then the rest, from there on and then from the start
     rest ??= (async () => { for (const i of [...parts.keys()].sort((a, b) => (a < first[0]) - (b < first[0]) || a - b)) await engravePart(i) })()
   }
-  return midi => {
-    timeline = timelineOfMovements(midi, m)
-    return { layout, timeline, ready, inkFrom: 'alpha', note: `${m.movements.length} movements, ${parts.length} scores, engraved as they are needed (${m.movements.reduce((s, v) => s + v.bars, 0)} bars)` }
+  return (midi, file) => {
+    timeline = timelineOfMovements(midi, m, { performance: performanceFor(m, file) })
+    return { layout, timeline, ready, inkFrom: 'alpha', note: `${m.movements.length} movements, ${parts.length} scores, engraved as they are needed (${m.movements.reduce((s, v) => s + v.bars, 0)} bars, ${timeline.bars.length} played)` }
   }
 }

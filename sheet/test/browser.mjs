@@ -52,13 +52,14 @@ for (const [file, kind] of [['049_sheet_scan.html', 'scan'], ['050_sheet_engrave
 }
 
 // the complete Goldberg (FULL=0 skips it): a still in Var. 16, 5.5 s in (bar 2 of the Ouverture,
-// on p. 284's first system); the score drawn, from the page it is on or as engraved
+// on p. 284's first system), the score drawn, from the page it is on or as engraved; and the order
+// the repeats file plays the bars in
 if (process.env.FULL !== '0') for (const [file, kind] of [['049_sheet_scan.html', 'scan'], ['050_sheet_engraved.html', 'engraved']]) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
   const errors = []
   page.on('pageerror', e => errors.push(e.message))
   page.setDefaultTimeout(0)
-  await page.goto(`${BASE}${file}?shot&q=low&hairsim=0&clothsim=0&view=back&song=midis/bach_goldberg.mid&t=1330`)
+  await page.goto(`${BASE}${file}?shot&q=low&hairsim=0&clothsim=0&view=back&song=midis/bach_goldberg.mid&t=1317`)
   await page.waitForFunction(() => window.__shot, null, { timeout: 300000 })
   await page.evaluate(() => window.__shot())
   await page.screenshot({ path: `${out}/${kind}_full.png` })
@@ -73,13 +74,18 @@ if (process.env.FULL !== '0') for (const [file, kind] of [['049_sheet_scan.html'
     const { timelineOfMovements } = await import('./sheet/timeline.js')
     const m = await (await fetch('sheet/scores/bach_goldberg.json')).json()
     const midi = new Midi(await (await fetch('midis/bach_goldberg.mid')).arrayBuffer())
-    const tl = timelineOfMovements(midi, m), a = tl.at(1330)
-    return { movement: a.movement, n: tl.bars[a.i].n, mismatch: tl.mismatch, da: tl.at(2600).bar }
+    const tl = timelineOfMovements(midi, m, { performance: m.performances['midis/bach_goldberg.mid'] }), a = tl.at(1317)
+    return { movement: a.movement, n: tl.bars[a.i].n, mismatch: tl.mismatch, da: tl.at(2574).bar, rep: await (async () => { const r = new Midi(await (await fetch('midis/bach_goldberg_repeats.mid')).arrayBuffer()), t2 = timelineOfMovements(r, m, { performance: m.performances['midis/bach_goldberg_repeats.mid'] }); return { bars: t2.bars.length, mismatch: t2.mismatch, v02: t2.bars.filter(b => b.movement === 'v02').map(b => b.n) } })() }
   })
   check(!errors.length, `${kind} full: no page errors ${errors.join(' | ')}`)
   check(/31 movements/.test(r.note), `${kind} full: ${r.note}`)
-  check(r.ink > 1000, `${kind} full: the score drawn at 1330 s (${r.ink} px of ink)`)
-  if (kind === 'scan') check(at.movement === 'v16' && at.n === 2 && !at.mismatch && at.da === 10, `full: 1330 s is Var. 16 bar ${at.n} (${at.movement}); 2600 s is the Aria's bar ${at.da} again`)
+  check(r.ink > 1000, `${kind} full: the score drawn at 1317 s (${r.ink} px of ink)`)
+  if (kind === 'scan') {
+    check(at.movement === 'v16' && at.n === 2 && !at.mismatch && at.da === 10, `full: 1317 s is Var. 16 bar ${at.n} (${at.movement}); 2574 s is the Aria's bar ${at.da} again`)
+    // with the repeats: every half twice, Var. 2's first ending (bar 16) the first time and its second (17) the second
+    const v = at.rep.v02, ok = !at.rep.mismatch && v.length === 64 && v[15] === 16 && v[16] === 1 && v[31] === 17
+    check(ok, `full: the repeats file plays ${at.rep.bars} bars; Var. 2 ${v.slice(14, 18).join(' ')} ... ${v.slice(30, 33).join(' ')}`)
+  }
   await page.close()
 }
 

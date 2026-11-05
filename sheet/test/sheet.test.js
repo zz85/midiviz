@@ -77,7 +77,7 @@ test('scan: staves, systems and barlines of a drawn page, slanted', () => {
   assert.equal(L.bars.get(5).system, 1)
 })
 
-test('hands: from the tracks where they name both hands, else automatic', () => {
+test('hands: from the tracks where they name both hands, else automatic; crossings by default', () => {
   assert.equal(handOfTrackName('Right hand'), 'R'); assert.equal(handOfTrackName('Piano LH'), 'L'); assert.equal(handOfTrackName('Left hand · voice 2'), 'L'); assert.equal(handOfTrackName('Piano'), null)
   const notes = [{ midi: 70, track: 0 }, { midi: 50, track: 1 }, { midi: 60, track: 2 }]
   assert.deepEqual(assignHands(notes, ['Right hand', 'Left hand', 'Pedal'], 'tracks'), { source: 'tracks', named: 2 })
@@ -87,7 +87,7 @@ test('hands: from the tracks where they name both hands, else automatic', () => 
   assert.deepEqual(notes.map(n => n.hand), [undefined, undefined, undefined])
   // one hand named isn't a split
   assert.equal(assignHands(notes, ['Right hand', 'Piano'], 'tracks').source, 'auto')
-  assert.equal(handModeOf('auto'), 'auto'); assert.equal(handModeOf('x'), 'tracks'); assert.equal(handModeOf(null), 'tracks')
+  assert.equal(handModeOf('auto'), 'auto'); assert.equal(handModeOf('tracks'), 'tracks'); assert.equal(handModeOf('x'), 'crossings'); assert.equal(handModeOf(null), 'crossings')
 })
 
 test('placer: one place for the song, chosen again only when the survey would change', async () => {
@@ -223,4 +223,26 @@ test('hands: automatic, with the tracks where they cross', async () => {
   const apart = notes.filter(n => n.time < 4)
   assert.deepEqual(assignHands(apart, names, 'crossings'), { source: 'auto', named: 0, passages: [] })
   assert.equal(handModeOf('crossings'), 'crossings')
+})
+
+test('repeats: each half once with the second ending, or twice with each pass its own', async () => {
+  const { formOf } = await import('../../midis/tools/bach_goldberg_form.mjs')
+  // two halves of 8 quarters; the second has two endings of 2 quarters each
+  const src = { repeats: [{ from: 0, to: 8, alts: [], times: 2 }, { from: 8, to: 14, alts: [[14, 16], [16, 18]], times: 2 }], endQ: 18 }
+  assert.deepEqual(formOf(src, 'printed'), [[0, 18]])
+  assert.deepEqual(formOf(src, 'plain'), [[0, 14], [16, 18]])
+  assert.deepEqual(formOf(src, 'repeats'), [[0, 8], [0, 16], [8, 14], [16, 18]])
+  // a bar before the first repeat sign (Var. 6) is played once
+  assert.deepEqual(formOf({ repeats: [{ from: 1.5, to: 6, alts: [], times: 2 }], endQ: 6 }, 'repeats'), [[0, 6], [1.5, 6]])
+})
+
+test('movements: a file\'s own order of the bars, a repeat on the same bars', () => {
+  const notes = [...notesOf(0, [0, 2, 4, 6, 8, 10], 12), ...notesOf(14.5, [0, 1.5], 3)]
+  // movement a with its repeat: bars 1-3 twice; b once
+  const performance = [{ id: 'a', played: [[0, 0, 2], [1, 2, 4], [2, 4, 6], [0, 6, 8], [1, 8, 10], [2, 10, 12]], end: 12 }, { id: 'b', played: [[0, 0, 1.5], [1, 1.5, 3]], end: 3 }]
+  const tl = createMovementTimeline(notes, MOVES, { performance })
+  assert.equal(tl.mismatch, null)
+  assert.deepEqual(tl.bars.map(b => b.bar), [1, 2, 3, 1, 2, 3, 4, 5])
+  assert.equal(tl.at(7).bar, 1); assert.equal(tl.at(7).frac, 0.5)
+  assert.equal(tl.at(15).bar, 4); assert.equal(tl.movements[1].t0, 14.5)
 })

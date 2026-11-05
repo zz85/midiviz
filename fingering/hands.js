@@ -25,7 +25,10 @@
 // Used by pathtrace/app.js (#045, #049, #050) and 032_pianist.html.
 
 
-export const HAND_MODES = { tracks: 'From the score\'s tracks (when named)', auto: 'Automatic (best fit for the fingers)', crossings: 'Automatic, with the tracks\' hand crossings' }
+export const HAND_MODES = { crossings: 'Automatic, with the tracks\' hand crossings', tracks: 'From the score\'s tracks (when named)', auto: 'Automatic (best fit for the fingers)' }
+// the default: the fingering's split, and the file's own where its tracks cross (a file whose
+// tracks don't name the hands is automatic in every mode)
+export const DEFAULT_HAND_MODE = 'crossings'
 
 const RIGHT = /\b(right|rh|r\.?h\.?|treble|upper)\b/i
 const LEFT = /\b(left|lh|l\.?h\.?|bass|lower)\b/i
@@ -42,7 +45,7 @@ export function tracksNameHands(notes, trackNames = []) {
   return [...used].some(t => hand[t] === 'R') && [...used].some(t => hand[t] === 'L')
 }
 
-export function assignHands(notes, trackNames = [], mode = 'tracks', opts = {}) {
+export function assignHands(notes, trackNames = [], mode = DEFAULT_HAND_MODE, opts = {}) {
   for (const n of notes) delete n.hand
   if (mode === 'auto' || !tracksNameHands(notes, trackNames)) return { source: 'auto', named: 0 }
   const hand = trackNames.map(handOfTrackName)
@@ -91,5 +94,5 @@ export function crossings(notes, hand, { gap = 2, pad = 1, least = 4 } = {}) {
   return out
 }
 
-/** ?hands=auto|tracks, else 'tracks'. */
-export const handModeOf = v => (v in HAND_MODES ? v : 'tracks')
+/** ?hands=crossings|tracks|auto, else the default, 'crossings'. */
+export const handModeOf = v => (v in HAND_MODES ? v : DEFAULT_HAND_MODE)

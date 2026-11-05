@@ -62,10 +62,11 @@ function seeker(bars) {
  * movements' ids in the order the file plays them (the Goldberg's Aria twice). The file plays
  * them one after another with a silence between (1.5 s or more), which finds where each starts.
  * A bar's key is its place in the whole score, movement by movement as `movements` lists them,
- * from 1, so a movement played twice (the da capo) is on the same bars both times.
+ * from 1, so a movement played twice (the da capo), or a half repeated, is on the same bars
+ * each time. `performance`: the file's own order of the bars (a manifest's `performances`).
  * `notes`: [{ time, duration }] in seconds.
  */
-export function createMovementTimeline(notes, { movements, sequence }, { gap = 1.5 } = {}) {
+export function createMovementTimeline(notes, { movements, sequence }, { gap = 1.5, performance = null } = {}) {
   const segs = []
   let end = -Infinity
   for (const n of [...notes].sort((a, b) => a.time - b.time)) {
@@ -76,15 +77,16 @@ export function createMovementTimeline(notes, { movements, sequence }, { gap = 1
   let key = 0
   for (const m of movements) { byId.set(m.id, m); base.set(m.id, key); key += m.starts.length }
   const bars = [], spans = []
-  sequence.slice(0, segs.length).forEach((id, k) => {
-    const m = byId.get(id), t = segs[k] - m.starts[0]
-    m.starts.forEach((s, j) => {
-      const t1 = t + (j + 1 < m.starts.length ? m.starts[j + 1] : m.end)
-      bars.push({ i: bars.length, bar: base.get(id) + j + 1, movement: id, n: j + 1, tick0: 0, ticks: 1, t0: t + s, t1 })
-    })
-    spans.push({ id, title: m.title, t0: t + m.starts[0], t1: t + m.end })
+  // (`performance`: a file's own order of the printed bars, movement by movement, as
+  // [{ id, played: [[bar from 0, t0, t1]], end }], where it plays repeats or leaves out
+  // an ending; else each movement's bars once each, as printed)
+  const order = performance ?? sequence.map(id => { const m = byId.get(id); return { id, played: m.starts.map((s, j) => [j, s, j + 1 < m.starts.length ? m.starts[j + 1] : m.end]), end: m.end } })
+  order.slice(0, segs.length).forEach(({ id, played, end }, k) => {
+    const m = byId.get(id), t = segs[k] - played[0][1]
+    for (const [j, a, b] of played) bars.push({ i: bars.length, bar: base.get(id) + j + 1, movement: id, n: j + 1, tick0: 0, ticks: 1, t0: t + a, t1: t + b })
+    spans.push({ id, title: m.title, t0: t + played[0][1], t1: t + end })
   })
-  const mismatch = segs.length !== sequence.length ? { performed: segs.length, form: sequence.length } : null
+  const mismatch = segs.length !== order.length ? { performed: segs.length, form: order.length } : null
   return { at: seeker(bars), bars, movements: spans, meter: null, mismatch }
 }
 

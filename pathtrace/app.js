@@ -45,7 +45,7 @@ import { createFocusPuller, SHOT_DOF } from '../pianist/focus-puller.js'
 import { createLinerLibrary, clockOfMidi, buildTimeline, toVTT, toChapters, titleScreen, withTitle, titleSecs, layoutClip } from '../liner/liner.js'
 import { createLinerOverlay, drawLinerCaption, drawIntertitle, loadIntertitleFonts, INTERTITLE_STYLES, INTERTITLE_THEMES, INTERTITLE_POSITIONS } from '../liner/overlay.js'
 import { SHELL } from './shell.js'
-import { assignHands, handModeOf, HAND_MODES } from '../fingering/hands.js'
+import { assignHands, handModeOf, HAND_MODES, DEFAULT_HAND_MODE } from '../fingering/hands.js'
 
 export async function boot(plug = {}) {
     document.body.insertAdjacentHTML('afterbegin', SHELL)
@@ -585,7 +585,7 @@ export async function boot(plug = {}) {
     rig.hands.touch = $('touch').value
     $('touch').onchange = () => { rig.hands.touch = $('touch').value; if (song) fingerInWorker(song.notes) }
     $('fingering').onchange = () => { if (song) fingerInWorker(song.notes) }
-    for (const [k, l] of Object.entries(HAND_MODES)) $('hands').add(new Option(l, k))
+    for (const [k, l] of Object.entries(HAND_MODES)) $('hands').add(new Option(l, k, k === DEFAULT_HAND_MODE))
     $('hands').value = handModeOf(params.get('hands'))
     $('hands').onchange = () => { if (song) fingerInWorker(song.notes) }
     $('hairColor').oninput = () => hair.setColor($('hairColor').value)
@@ -1279,9 +1279,9 @@ export async function boot(plug = {}) {
       // until the fingering arrives: split at middle C, fingers by position
       return notes.map(n => ({ pitch: n.midi, on: n.time, off: n.time + n.duration, hand: n.midi < 60 ? 'L' : 'R', finger: 0, velocity: n.velocity }))
     }
-    // Hands (fingering/hands.js): the file's own split where its tracks name the
-    // hands (Performance > Hands, ?hands=tracks), the fingering's (?hands=auto), or the
-    // fingering's except where the tracks cross (?hands=crossings)
+    // Hands (fingering/hands.js): the fingering's split except where the tracks cross
+    // (Performance > Hands, the default, ?hands=crossings), the file's own split where its
+    // tracks name the hands (?hands=tracks), or the fingering's throughout (?hands=auto)
     let handsSource = 'auto'
     function fingerInWorker(notes) {
       const job = ++fingerJob

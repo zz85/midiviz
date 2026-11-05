@@ -91,8 +91,7 @@ export async function handsFor(file, midi, { known = null } = {}) {
   return { notes, report, matched, written }
 }
 
-export async function writeHands(file, { dry = false, known = null } = {}) {
-  const path = `${root}midis/${file}.mid`
+export async function writeHands(file, { dry = false, known = null, path = `${root}midis/${file}.mid` } = {}) {
   const midi = new Midi(readFileSync(path))
   const { notes, report, matched, written } = await handsFor(file, midi, { known })
   const proto = midi.tracks.find(t => t.notes.length) ?? midi.tracks[0]
@@ -128,7 +127,13 @@ const dirsOf = file => PIECES[file] ?? EXTRA[file]
 async function main() {
   const args = process.argv.slice(2), dry = args.includes('--dry')
   const only = args.includes('--only') ? args[args.indexOf('--only') + 1] : null
-  for (const file of [...Object.keys(PIECES), ...Object.keys(EXTRA)]) if (!only || file === only) await writeHands(file, { dry })
+  for (const file of [...Object.keys(PIECES), ...Object.keys(EXTRA)]) {
+    if (only && file !== only) continue
+    // (midis/bach_goldberg.mid is no longer as printed, which the hands are read against:
+    // bach_goldberg_voicing.mjs rebuilds it, its hands and its repeats)
+    if (file === 'bach_goldberg') { console.log('bach_goldberg: rebuilt by bach_goldberg_voicing.mjs (its repeats: bach_goldberg_form.mjs)'); continue }
+    await writeHands(file, { dry })
+  }
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) await main()

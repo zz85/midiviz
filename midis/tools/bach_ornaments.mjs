@@ -45,7 +45,8 @@
 // the note carrying the ornament, so the existing dynamics are kept. The input
 // is the committed file at --from (default 04b619f, the dynamics commit), so a
 // rerun gives the same files.
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
@@ -609,9 +610,13 @@ async function main() {
     for (const n of all) if (n.hand) known.set(midi.header.secondsToTicks(n.time) + ':' + n.midi, n.hand)
     console.log(`${file}: ${total.ornaments} ornaments, ${total.graces} grace groups; score ${total.ly} notes, file ${total.file}, matched ${total.matched}, LilyPond graces removed ${total.extra}; notes now ${all.length}`)
     for (const l of log) console.log(l)
-    if (!dry) writeFileSync(root + `midis/${file}.mid`, Buffer.from(midi.toArray()))
+    // (the complete Goldberg as printed, both endings of each half, goes on to
+    // bach_goldberg_form.mjs, which writes it without and with its repeats)
+    const path = file === 'bach_goldberg' ? tmpdir() + `/bach_goldberg_printed_${process.pid}.mid` : root + `midis/${file}.mid`
+    if (!dry) writeFileSync(path, Buffer.from(midi.toArray()))
     // then each note's hand, from the score, as a right- and a left-hand track
-    if (!dry) await (await import('./bach_hands.mjs')).writeHands(file, { known })
+    if (!dry) await (await import('./bach_hands.mjs')).writeHands(file, { known, path })
+    if (!dry && file === 'bach_goldberg') { (await import('./bach_goldberg_form.mjs')).writeForms(path); rmSync(path) }
   }
 }
 // not awaited: main imports bach_hands.mjs, which imports this module, and a top-level
