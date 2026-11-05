@@ -5,8 +5,8 @@
 // time and key signatures. midis/'s files are performances (repeats written
 // out, trills played as notes), which would engrave as 64 bars of 32nds.
 //   node sheet/tools/score_midi.mjs [mutopia dir] [out.mid] [--key G] [--meter 3/4]
-// Defaults: the Goldberg Aria, midis/tools/mutopia/BWV988/bwv-988-aria/ (fetched by
-// midis/tools/bach_ornaments.mjs), to sheet/scores/bach_goldberg_aria.score.mid.
+// Defaults: the Goldberg Aria, midis/tools/mutopia/BWV988/bwv-988-aria/ (Mutopia's,
+// kept in the repo), to sheet/scores/bach_goldberg_aria.score.mid.
 import { writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'

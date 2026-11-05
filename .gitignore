@@ -1,2 +1,3 @@
 violinist/assets/models/candidates/*.vrm
-midis/tools/mutopia/
+# the CCARH kern encodings bach_ornaments.mjs reads: no licence stated, fetched from GitHub
+midis/tools/mutopia/kern/

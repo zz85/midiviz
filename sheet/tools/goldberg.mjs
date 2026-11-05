@@ -4,8 +4,8 @@
 //
 //   node sheet/tools/goldberg.mjs [--detect] [--marked /tmp/marked] [--engrave-only]
 //
-// 1. The movements, from Mutopia's LilyPond (midis/tools/mutopia/BWV988/, fetched by
-//    midis/tools/bach_ornaments.mjs): each one's title (its `piece`), its bars and
+// 1. The movements, from Mutopia's LilyPond (midis/tools/mutopia/BWV988/, as
+//    Mutopia publishes it): each one's title (its `piece`), its bars and
 //    where each starts, in seconds from its own start. LilyPond's MIDI, which
 //    midis/bach_goldberg.mid is made from, plays each movement without its repeats,
 //    first and second endings both, so a bar's time in it is the bar's time in the

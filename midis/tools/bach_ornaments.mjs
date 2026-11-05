@@ -5,8 +5,8 @@
 //
 // Mutopia's MIDI is LilyPond's: it plays no trills, mordents or turns, and its
 // grace notes are 55 ms blips that steal time from the note before. This reads
-// the LilyPond sources (fetched from mutopiaproject.org into midis/tools/mutopia/,
-// git-ignored) with strings/lilypond.js, which keeps every ornament sign and grace
+// the LilyPond sources (Mutopia's, unedited, kept in midis/tools/mutopia/; fetched from
+// mutopiaproject.org only where a folder is missing) with strings/lilypond.js, which keeps every ornament sign and grace
 // note, lines the score up note by note with our file, and writes the ornaments
 // out in the way Bach's own table of ornaments (the Explication in the
 // Clavier-Büchlein for W. F. Bach, 1720) and C. P. E. Bach's Versuch describe:
