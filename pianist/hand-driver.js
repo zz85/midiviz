@@ -847,7 +847,7 @@ export function createHandsDriver(dims) {
   // crossing as soon as it is free, as quickly as the time there is asks;
   // at most CROSS_PREP s ahead, at least CROSS_MIN), 1 while it sounds,
   // falling over CROSS_AFTER s after
-  const CROSS_PREP = 0.6, CROSS_MIN = 0.06, CROSS_AFTER = 0.25, CROSS_REACH = 7
+  const CROSS_PREP = 0.6, CROSS_MIN = 0.06, CROSS_AFTER = 0.25, BUSY_WIN = 0.6, MAJ_WIN = 2.5
   let crossing = { L: [], R: [] }
   const crossAt = (side, t) => {
     const a = crossing[side]
@@ -892,24 +892,46 @@ export function createHandsDriver(dims) {
     setNotes(notes) {
       own = notes.filter(n => n.finger >= 1)
       markCrossings(own)
-      // A crossing marks both hands' notes (the left above the right is the
-      // right below the left); the hand going over is the one that has left
-      // its own register for it: the note CROSS_REACH semitones or more past
-      // the middle of what that hand plays around it (±1.5 s) toward the
-      // other. And a crossing is a passage, not one stray note: two or more
-      // within 2 s
+      // (a crossing marks both hands' notes: the left above the right is the
+      // right below the left)
+      // Which hand goes over, as a pianist decides it: the hand that keeps
+      // playing stays down on the keys, underneath, and the one that jumps
+      // across goes over it. So at each crossing note, the hand whose notes
+      // leap further from one to the next around it (the mean of its steps
+      // within BUSY_WIN s, in semitones; a run steps, a hand crossing over
+      // leaps) goes over. And a crossing is a passage, not one stray note:
+      // two or more within 2 s
       crossing = { L: [], R: [] }
-      for (const h of ['L', 'R']) {
-        const mine = own.filter(n => n.hand === h).sort((a, b) => a.on - b.on), sg = h === 'L' ? 1 : -1
-        let lo = 0, hi = 0
-        const reach = n => {
-          while (mine[lo].on < n.on - 1.5) lo++
-          while (hi < mine.length && mine[hi].on <= n.on + 1.5) hi++
-          const ps = mine.slice(lo, hi).map(m => m.pitch).sort((a, b) => a - b)
-          return sg * (n.pitch - ps[ps.length >> 1])
+      {
+        const by = { L: own.filter(n => n.hand === 'L').sort((a, b) => a.on - b.on), R: own.filter(n => n.hand === 'R').sort((a, b) => a.on - b.on) }
+        // each hand's onsets as one pitch each (a chord by its middle)
+        const line = {}
+        for (const h of ['L', 'R']) {
+          const g = []
+          for (const n of by[h]) { const l = g[g.length - 1]; if (l && n.on - l.t < 0.03) l.ps.push(n.pitch); else g.push({ t: n.on, ps: [n.pitch] }) }
+          line[h] = g.map(x => ({ t: x.t, p: x.ps.reduce((a, b) => a + b, 0) / x.ps.length }))
         }
-        const c = mine.filter(n => n.cross && reach(n) >= CROSS_REACH)
-        crossing[h] = c.filter((n, i) => (c[i - 1] && n.on - c[i - 1].on < 2) || (c[i + 1] && c[i + 1].on - n.on < 2))
+        const leap = (h, t) => {
+          let sum = 0, k = 0
+          const L = line[h]
+          for (let i = 1; i < L.length; i++) { if (L[i].t > t + BUSY_WIN) break; if (L[i].t >= t - BUSY_WIN) { sum += Math.abs(L[i].p - L[i - 1].p); k++ } }
+          return k ? sum / k : 0
+        }
+        const overAt = n => leap('L', n.on) > leap('R', n.on) ? 'L' : 'R'
+        // (decided for the passage, not note by note: the majority of the
+        // crossing notes within MAJ_WIN s, so the hands don't trade places in
+        // the middle of one)
+        const cross = own.filter(n => n.cross).sort((a, b) => a.on - b.on), say = cross.map(overAt), over = new Map()
+        for (let i = 0, lo = 0, hi = 0; i < cross.length; i++) {
+          while (cross[lo].on < cross[i].on - MAJ_WIN) lo++
+          while (hi < cross.length && cross[hi].on <= cross[i].on + MAJ_WIN) hi++
+          let l = 0; for (let k = lo; k < hi; k++) if (say[k] === 'L') l++
+          over.set(cross[i], 2 * l === hi - lo ? say[i] : 2 * l > hi - lo ? 'L' : 'R')
+        }
+        for (const h of ['L', 'R']) {
+          const c = by[h].filter(n => n.cross && over.get(n) === h)
+          crossing[h] = c.filter((n, i) => (c[i - 1] && n.on - c[i - 1].on < 2) || (c[i + 1] && c[i + 1].on - n.on < 2))
+        }
       }
       // fingers fall onto the keys, each in its own way (motion.js TOUCH)
       const motionOpts = { touch: this.touch, leaps: true, ...handDepths(dims) }

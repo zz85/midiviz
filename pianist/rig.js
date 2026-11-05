@@ -503,9 +503,12 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
       // note stays under it). A fresh crossing, after a pause: the hand the
       // score sends across (crossAt), else the one lifted for it, else the
       // one further across.
+      // The score's say first (hands.crossAt: the hand that jumps over the one
+      // that keeps playing), which only changes from one passage to the next;
+      // between its notes, the hand that was over stays over
       const kept = state.overArm || (recentOver() ? state.lastOver : null)
       const other = h => (h === 'L' ? 'R' : 'L')
-      const over = kept || (Math.abs(xL - xR) > 0.2 ? (xL > xR ? 'L' : 'R') : state.prepArm || (dA > 0 ? 'L' : 'R')), below = other(over)
+      const over = Math.abs(xL - xR) > 0.2 ? (xL > xR ? 'L' : 'R') : kept || state.prepArm || (dA > 0 ? 'L' : 'R'), below = other(over)
       state.overArm = over; state.lastOver = over; state.overT = state.songT
       order = [below, over]
       armPose(arm[below], dt)
@@ -543,7 +546,7 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
       let up = null, k = clamp((8 - prep) / 10, 0, 1)
       const recent = recentOver() ? state.lastOver : null
       // (inside a passage, the hand that has been over; a fresh one, as above)
-      if (Math.max(xL, xR) > 0.05) { up = arm[recent || (xL > xR ? 'L' : 'R')]; k = Math.max(k, Math.max(xL, xR)) }
+      if (Math.max(xL, xR) > 0.05) { up = arm[Math.abs(xL - xR) > 0.2 ? (xL > xR ? 'L' : 'R') : recent || (xL > xR ? 'L' : 'R')]; k = Math.max(k, Math.max(xL, xR)) }
       else if (prep < 8) up = recent ? arm[recent] : moveL > moveR ? arm.L : arm.R
       state.prepArm = up === arm.L ? 'L' : up === arm.R ? 'R' : null
       for (const a of [arm.L, arm.R]) a.drv.setLift(a === up ? Math.min(CROSS_LIFT_MAX, CROSS_LIFT * k + a.clearLift) : 0)
