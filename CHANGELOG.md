@@ -2,6 +2,15 @@
 
 What each experiment does and how, newest first. The short list is in the [README](README.md).
 
+## 5 Nov 2026
+
+[Experiment #032 - Pianist](032_pianist.html): leaps and crossings prepared ahead (shared by #038, #045, #047)
+- A pianist leaves for a jump as soon as the hand's last keys are up, and gets there early. The hand here moved late and landed on time at best: it stayed until 0.28 s before the onset whatever the free time, and the smoothing of its placement through runs started it before the keys were up and landed it with a long creep. Over the first 90 s of The Entertainer, Rush E, One More Time, One More Chance, Chopin's 15th prelude and Prelude1, an isolated leap of 12 cm or more was half done at 0.56-0.91 of its free time and 90 % done at 0.98-1.03 of it (late).
+- [fingering/motion.js](fingering/motion.js) `leaps` (`LEAP`, the pianist's alone: #029, #030 and RoboPianist are as they were): a move of 4 cm or more leaves 30 ms after every key struck before it is up and takes 0.08 s + 5 ms a cm, landing 60 ms before the onset, or up to 0.4 s earlier where there is time; with less time, the whole free time, quicker. [pianist/hand-driver.js](pianist/hand-driver.js) keeps those moves out of the placement's smoothing (it restarts on either side of each). Now an isolated leap is half done at 0.24-0.51 of its free time and 90 % done at 0.54-0.65, and it doesn't start before the release.
+- A leap written legato, the keys held up to the note it jumps to while the two are further apart than the hand spans (20 cm), had no free time at all: the hand lets go early enough for the jump, the pedal or the sound carrying it (at most 45 % of the time since the last onset; the sound unchanged). The Entertainer's left-hand stride bass: 97 of its 99 leaps have free time, was 42.
+- Her body and arms get ready for it from the same moment: until the hand leaves, the torso doesn't look past the leap (it turned into it while the hand was still playing: Chopin's 15th prelude, its turn done 1.21 of the way at the release, now 0.27), and from then it turns to where the hand lands, ahead of it; the lean in for a key out of reach waits for the hand to leave too. A crossing hand starts to rise for the crossing from its last key up before it (at most 0.6 s ahead, at least 60 ms), not a fixed 0.3 s before.
+- One More Time, One More Chance's right hand misses keys on 9.3 % of the frames (was 10.7 %); the others as they were.
+
 ## 3 Nov 2026
 
 Hands: automatic, with the tracks' hand crossings (#032, #045, #049, #050)

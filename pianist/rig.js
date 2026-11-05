@@ -1553,11 +1553,20 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     for (const d of [L, R]) {
       if (!d.visible) continue
       // where the hands are going: the register a moment ahead (from the
-      // baked placement), so she turns with the music rather than after it
+      // baked placement), so she turns with the music rather than after it.
+      // A leap (hands.moveAt) she gets ready for once the hand is free: until
+      // its last keys are up she doesn't look past it, and from then on she
+      // turns to where it lands, ahead of the hand (the body leads the arm)
       let x = d.joints.W.x
       if (state.playing) {
         let sx = 0, sw = 0
-        for (const tau of [0.12, 0.22, 0.32]) if (d.wristAt(state.songT + hands.lead + tau, _fw)) { sx += _fw.x; sw++ }
+        const tm = state.songT + hands.lead, m = hands.moveAt(d.side, tm)
+        for (const tau of [0.12, 0.22, 0.32]) {
+          let tt = tm + tau
+          if (m && tm < m.depart) tt = Math.min(tt, m.depart)
+          else if (m) tt = Math.max(tt, m.end + 0.02)
+          if (d.wristAt(tt, _fw)) { sx += _fw.x; sw++ }
+        }
         if (sw) x = 0.35 * x + 0.65 * sx / sw
       }
       mx += x; mz += d.joints.W.z; n++
@@ -1576,12 +1585,16 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     // ...and ahead of a wide leap: how far short each arm would be over the
     // next LOOK seconds from where her shoulders are now, nearer moments
     // counting a little more, so she is already forward when it lands
+    // (not past a leap the hand hasn't left for yet: she gets ready for it
+    // once its keys are up, hands.moveAt)
     if (state.playing) for (const a of [arm.L, arm.R]) {
       if (!a.drv.visible) continue
       const S = pos(bones[a.ua1].name), maxL = a.UPPER + a.FORE - 0.05
+      const tm = state.songT + hands.lead, mv = hands.moveAt(a.drv.side, tm)
       for (let j = 1; j <= 12; j++) {
         const tau = LOOK * j / 12
-        if (!a.drv.wristAt(state.songT + hands.lead + tau, _fw)) break
+        if (mv && tm < mv.depart && tm + tau > mv.depart) break
+        if (!a.drv.wristAt(tm + tau, _fw)) break
         const d = _fw.distanceTo(S), sh = d - maxL - 2 * tau / LOOK
         if (sh > short) { short = sh; sd.subVectors(_fw, S).divideScalar(d); shortA = a }
       }

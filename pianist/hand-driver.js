@@ -13,7 +13,7 @@
 
 import * as THREE from 'three'
 import { solveFinger } from '../fingering/hands3d.js'
-import { buildMotion, KEY, restOffset } from '../fingering/motion.js'
+import { buildMotion, KEY, LEAP, restOffset } from '../fingering/motion.js'
 import { planStrokes, velocityRange } from './stroke.js'
 import { keyX, isBlack, LOW, HIGH, WHITE_W } from '../fingering/keyboard.js'
 import { markCrossings } from '../fingering/fingering.js'
@@ -476,8 +476,9 @@ export function createHandDriver(side, dims) {
       }
     }
   }
-  /** poseAt(t) → this hand's pose; samples [t0, t0 + (n-1)·h]. */
-  function bakeTrack(poseAt, t0, n, h) {
+  /** poseAt(t) → this hand's pose; samples [t0, t0 + (n-1)·h]. moves: its
+   * planned leaps (fingering/motion.js LEAP), which keep their own timing */
+  function bakeTrack(poseAt, t0, n, h, moves = []) {
     const X = new Float32Array(n * COLS).fill(NaN)
     const keep = { ...hand }, keepSlide = slide.clone()
     for (let i = 0; i < n; i++) {
@@ -485,7 +486,18 @@ export function createHandDriver(side, dims) {
       const f = bakeWrist(fitHand(pose.fingers, pose.anchor))
       X[i * COLS] = f.x; X[i * COLS + 1] = f.z; X[i * COLS + 2] = f.yaw
     }
+    // (a planned leap is already smooth, and timed: from the release, there
+    // early. The smoothing, which settles the hand through runs, would start
+    // it before the keys are up and land it late, its long tail still
+    // creeping in at the onset. So it is left out of each leap, the fit kept
+    // as it is there, and starts again from it on either side: the gap breaks
+    // the filter, as zeroPhase's NaN does.)
+    const keepRaw = []
+    for (const m of moves) for (let i = Math.max(0, Math.ceil((m.depart - t0) / h)); i < n && t0 + i * h <= m.end; i++) {
+      for (let c = 0; c < 3; c++) { const k = i * COLS + c; keepRaw.push(k, X[k]); X[k] = NaN }
+    }
     zeroPhase(X, n, 0, 3, 1 - Math.exp(-14 * h))
+    for (let j = 0; j < keepRaw.length; j += 2) X[keepRaw[j]] = keepRaw[j + 1]
     for (let i = 0; i < n; i++) {
       if (Number.isNaN(X[i * COLS])) continue
       const pose = poseAt(t0 + i * h)
@@ -783,7 +795,11 @@ export const ENDING = [0.1, 2.2]
 
 export function createHandsDriver(dims) {
   const L = createHandDriver('L', dims), R = createHandDriver('R', dims)
-  let motion = buildMotion([]), own = [], endT = Infinity, letGo = 0, detached = 0
+  let motion = buildMotion([]), own = [], endT = Infinity, letGo = 0, detached = 0, leapDetached = 0
+  // (a leap written legato: keys further apart than LEAP_SPAN cm can't be
+  // held and reached together; LEAP_FREE s of free time for the jump
+  // beyond its own, at most LEAP_SHARE of the time since the last onset)
+  const LEAP_SPAN = 20, LEAP_FREE = 0.04, LEAP_SHARE = 0.45
   // (repeated chords and octaves: the share of the time to the next one the hand is off the keys)
   const DETACH = 0.4
   const written = new WeakMap()   // each note's release as the fingering gave it
@@ -795,22 +811,43 @@ export function createHandsDriver(dims) {
   const strokeOpts = { armWeight: 1, flex: 1, liftOff: 1, height: 1, rotation: 1 }
   // Where each hand plays across the other (fingering.js markCrossings: a
   // right-hand note below a left-hand one, or the other way round): that
-  // hand goes over. crossAt(side, t) 0..1: rising over CROSS_PREP s before
-  // such a note (the hand lifting as it comes over), 1 while it sounds,
+  // hand goes over. crossAt(side, t) 0..1: rising from the moment the hand's
+  // last keys before such a note are up (n.prep: it gets ready for the
+  // crossing as soon as it is free, as quickly as the time there is asks;
+  // at most CROSS_PREP s ahead, at least CROSS_MIN), 1 while it sounds,
   // falling over CROSS_AFTER s after
-  const CROSS_PREP = 0.3, CROSS_AFTER = 0.25, CROSS_REACH = 7
+  const CROSS_PREP = 0.6, CROSS_MIN = 0.06, CROSS_AFTER = 0.25, CROSS_REACH = 7
   let crossing = { L: [], R: [] }
   const crossAt = (side, t) => {
     const a = crossing[side]
     let lo = 0, hi = a.length
     while (lo < hi) { const m = (lo + hi) >> 1; if (a[m].off + CROSS_AFTER < t) lo = m + 1; else hi = m }
     let u = 0
-    for (let i = lo; i < a.length && a[i].on - CROSS_PREP <= t; i++) {
+    for (let i = lo; i < a.length && a[i].prep <= t; i++) {
       const n = a[i]
-      const v = t < n.on ? 1 - (n.on - t) / CROSS_PREP : t <= n.off ? 1 : 1 - (t - n.off) / CROSS_AFTER
+      const v = t < n.on ? (t - n.prep) / (n.on - n.prep) : t <= n.off ? 1 : 1 - (t - n.off) / CROSS_AFTER
       if (v > u) u = v
     }
     return THREE.MathUtils.smoothstep(u, 0, 1)
+  }
+  // (each crossing note's n.prep, from the releases the hand plays with)
+  function prepCrossings() {
+    for (const h of ['L', 'R']) {
+      const mine = own.filter(m => m.hand === h).sort((a, b) => a.on - b.on)
+      let up0 = -Infinity, i = 0
+      for (const n of crossing[h]) {
+        while (i < mine.length && mine[i].on < n.on - 0.02) { up0 = Math.max(up0, mine[i].release ?? mine[i].off); i++ }
+        n.prep = Math.min(n.on - CROSS_MIN, Math.max(Math.min(up0, n.on), n.on - CROSS_PREP))
+      }
+    }
+  }
+  // the planned leaps (fingering/motion.js LEAP), each hand's in time order
+  let moves = { L: [], R: [] }
+  const moveAt = (side, t) => {
+    const a = moves[side]
+    let lo = 0, hi = a.length
+    while (lo < hi) { const m = (lo + hi) >> 1; if (a[m].end <= t) lo = m + 1; else hi = m }
+    return a[lo] || null
   }
   const plan = () => { for (const d of [L, R]) d.setStroke(own.length ? planStrokes(own.filter(n => n.hand === d.side), { ...strokeOpts, velRange: velocityRange(own) }) : null) }
   return {
@@ -844,12 +881,12 @@ export function createHandsDriver(dims) {
         crossing[h] = c.filter((n, i) => (c[i - 1] && n.on - c[i - 1].on < 2) || (c[i + 1] && c[i + 1].on - n.on < 2))
       }
       // fingers fall onto the keys, each in its own way (motion.js TOUCH)
-      const motionOpts = { touch: this.touch, ...handDepths(dims) }
+      const motionOpts = { touch: this.touch, leaps: true, ...handDepths(dims) }
       // (each note's release as the fingering left it: setNotes again starts there)
       for (const m of own) { if (!written.has(m)) written.set(m, m.release); else if (written.get(m) === undefined) delete m.release; else m.release = written.get(m) }
       motion = buildMotion(own, motionOpts)
       letGo = 0
-      if (!own.length) { plan(); L.clearTrack(); R.clearTrack(); endT = Infinity; return }
+      if (!own.length) { moves = { L: [], R: [] }; plan(); L.clearTrack(); R.clearTrack(); endT = Infinity; return }
       let t0 = Infinity, t1 = -Infinity
       for (const m of own) { t0 = Math.min(t0, m.on - 2); t1 = Math.max(t1, m.off + 6) }   // (to the end of the final lift-off)
       // the held keys each hand can't keep down let go early (letGoTimes,
@@ -890,6 +927,34 @@ export function createHandsDriver(dims) {
         }
       }
       if (detached) motion = buildMotion(own, motionOpts)
+      // A leap written legato, the keys held right up to the note it jumps to
+      // while the two are further apart than the hand can span: a pianist
+      // lets go early to get there (the pedal, or a short gap, covers it).
+      // The hand lets go of what it holds LEAP_FREE + the jump's own time
+      // (fingering/motion.js LEAP) before the onset, at most LEAP_SHARE of
+      // the time since the last one, so the leap has time to leave and land
+      // (the sound unchanged).
+      leapDetached = 0
+      for (const side of ['L', 'R']) {
+        const mine = own.filter(m => m.hand === side).sort((a, b) => a.on - b.on), groups = []
+        for (const m of mine) { const g = groups[groups.length - 1]; if (g && m.on - g.t < 0.03) g.ns.push(m); else groups.push({ t: m.on, ns: [m] }) }
+        for (let k = 1; k < groups.length; k++) {
+          const b = groups[k], prevT = groups[k - 1].t
+          const held = mine.filter(m => m.on < b.t - 0.02 && (m.release ?? m.off) > b.t - 0.01 && m.on > b.t - 8)
+          if (!held.length) continue
+          const xs = [...held, ...b.ns].map(m => keyX(m.pitch)), span = Math.max(...xs) - Math.min(...xs)
+          if (span <= LEAP_SPAN) continue
+          const cx = ns => ns.reduce((s, m) => s + keyX(m.pitch), 0) / ns.length, dx = Math.abs(cx(b.ns) - cx(held))
+          const need = Math.min(LEAP_FREE + LEAP.T0 + LEAP.TV * dx + LEAP.ARRIVE + LEAP.LIFT_OFF, LEAP_SHARE * (b.t - prevT))
+          for (const m of held) {
+            const at = Math.max(m.on + 0.5 * (b.t - m.on), b.t - need)
+            if (at < (m.release ?? m.off)) { m.release = at; leapDetached++ }
+          }
+        }
+      }
+      if (leapDetached) motion = buildMotion(own, motionOpts)
+      moves = motion.moves || { L: [], R: [] }
+      prepCrossings()
       plan()
       // the piece's end: the last key let go (its release, else its off)
       endT = own.reduce((e, m) => Math.max(e, m.release ?? m.off), -Infinity)
@@ -897,10 +962,10 @@ export function createHandsDriver(dims) {
       const h = 1 / 60
       const n = Math.ceil((t1 - t0) / h) + 1, poses = []
       for (let i = 0; i < n; i++) poses.push(motion.poseAt(t0 + i * h))
-      L.bakeTrack(t => poses[Math.round((t - t0) / h)]?.L, t0, n, h)
-      R.bakeTrack(t => poses[Math.round((t - t0) / h)]?.R, t0, n, h)
+      L.bakeTrack(t => poses[Math.round((t - t0) / h)]?.L, t0, n, h, moves.L)
+      R.bakeTrack(t => poses[Math.round((t - t0) / h)]?.R, t0, n, h, moves.R)
     },
-    clear() { motion = buildMotion([]); own = []; crossing = { L: [], R: [] }; endT = Infinity; plan(); L.clearTrack(); R.clearTrack() },
+    clear() { motion = buildMotion([]); own = []; crossing = { L: [], R: [] }; moves = { L: [], R: [] }; endT = Infinity; plan(); L.clearTrack(); R.clearTrack() },
     /** 0 while she plays, 1 once she has lifted off the last chord and come back to the middle */
     endingAt,
     /** song time of the last key let go (Infinity with no notes) */
@@ -909,8 +974,12 @@ export function createHandsDriver(dims) {
     get letGo() { return letGo },
     /** how many keys the hands let go of before a repeated chord or the next octave */
     get detached() { return detached },
+    /** how many keys the hands let go of early to leap */
+    get leapDetached() { return leapDetached },
     /** 0..1: how much hand side ('L' | 'R') is playing across the other at song time t (it goes over) */
     crossAt: (side, t) => crossAt(side, t + PRESS_LEAD),
+    /** the planned leap (fingering/motion.js LEAP) under way or next at hands' time t (song time + lead): { t, depart, end, r, x0, x1 } or null */
+    moveAt,
     lead: PRESS_LEAD,
     update(t, dt) { const tm = t + PRESS_LEAD, p = motion.poseAt(tm); L.update(p.L, dt, tm); R.update(p.R, dt, tm) },
   }

@@ -8,6 +8,8 @@
 //  • hand anchor = where the middle finger would be if every finger touching
 //    a key sat at its rest offset; it moves between chords with an ease that
 //    starts as late as it can and arrives a little before the next onset
+//    (with `leaps`, a jump instead leaves once the hand's keys are up and
+//    lands early: LEAP)
 //  • a finger that plays a note is on that key from onset to release; between
 //    notes it lifts, drifts back toward its rest place around the anchor and
 //    flies to its next key just before it is needed
@@ -72,7 +74,16 @@ export const TOUCH = {
  * the same on a white key it can reach between the black keys (D, G, A)
  * Returns { poseAt(t) → { L, R } , hands }.
  */
-export function buildMotion(notes, { approach = 0.09, release = 0.03, travel = 0.004, glide = false, touch = 'press', whiteZ = KEY.WHITE_Z, deepZ = null } = {}) {
+// Leaps planned ahead (buildMotion's `leaps`): the hand leaves as soon as its
+// last keys are up and gets there early, as a pianist prepares a jump. A move
+// of LEAP_MIN cm or more (fully from LEAP_FULL) takes LEAP_T0 + LEAP_TV s a
+// cm when there is time; it starts LIFT_OFF s after the hand's last key is
+// up, or later where that would land it more than EARLY s ahead, and ends
+// ARRIVE s before the onset, so the fingers fall onto the keys from above
+// them. Where the free time is shorter it all happens in that time, quicker.
+export const LEAP = { MIN: 4, FULL: 8, T0: 0.08, TV: 0.005, LIFT_OFF: 0.03, EARLY: 0.4, ARRIVE: 0.06 }
+
+export function buildMotion(notes, { approach = 0.09, release = 0.03, travel = 0.004, glide = false, touch = 'press', whiteZ = KEY.WHITE_Z, deepZ = null, leaps = false } = {}) {
   const hands = {}
   const fall = touch === 'fall'
   // loudness relative to the piece (MIDI files run their velocities at
@@ -104,6 +115,21 @@ export function buildMotion(notes, { approach = 0.09, release = 0.03, travel = 0
       keys.push({ t, x: sx / w, black: sz / w, end: Math.max(...own.slice(i, j).map(up)) })
       i = j
     }
+    // (leaps: when each move between onset groups leaves and lands, from the
+    // moment every key struck before it is up)
+    if (leaps) {
+      let up0 = -Infinity, ni = 0
+      for (let k = 1; k < keys.length; k++) {
+        const a = keys[k - 1], b = keys[k], dx = Math.abs(b.x - a.x)
+        while (ni < own.length && own[ni].on < b.t - 0.02) up0 = Math.max(up0, up(own[ni++]))
+        if (dx < LEAP.MIN) continue
+        const r = Math.min(up0, b.t), arrive = b.t - LEAP.ARRIVE, w = arrive - r
+        if (w < 0.05) continue
+        const T = LEAP.T0 + LEAP.TV * dx
+        const depart = w >= T ? Math.max(r + LEAP.LIFT_OFF, arrive - T - LEAP.EARLY) : r
+        b.move = { depart, end: w >= T ? depart + T : arrive, w: smooth((dx - LEAP.MIN) / (LEAP.FULL - LEAP.MIN)), r, x0: a.x, x1: b.x }
+      }
+    }
     hands[hand] = { hand, fingers, keys, ptr: fingers.map(() => 0), kptr: 0 }
   }
 
@@ -132,7 +158,10 @@ export function buildMotion(notes, { approach = 0.09, release = 0.03, travel = 0
     // (glide: always use the whole gap, for hands slower than a pianist's)
     const dur = glide || gap < 0.3 ? gap : Math.min(0.28, Math.max(0.05, 0.4 * gap))
     const start = b.t - dur
-    const u = smooth((t - start) / dur)
+    let u = smooth((t - start) / dur)
+    // a leap planned ahead: off as soon as the keys are up, there early
+    const m = b.move
+    if (m) u += (smooth((t - m.depart) / (m.end - m.depart)) - u) * m.w
     return { x: a.x + (b.x - a.x) * u, black: a.black + (b.black - a.black) * u, idle: 0 }
   }
 
@@ -244,5 +273,9 @@ export function buildMotion(notes, { approach = 0.09, release = 0.03, travel = 0
     return out
   }
 
-  return { poseAt, hands }
+  // the planned leaps of each hand, in time order: { t (the onset it lands
+  // on), depart, end, r (its last key up), x0, x1 (the anchor, cm) }
+  const moves = {}
+  for (const hand of ['L', 'R']) moves[hand] = hands[hand].keys.filter(k => k.move && k.move.w > 0.5).map(k => ({ t: k.t, ...k.move }))
+  return { poseAt, hands, moves }
 }
