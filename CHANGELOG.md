@@ -2,7 +2,22 @@
 
 What each experiment does and how, newest first. The short list is in the [README](README.md).
 
+## 6 Nov 2026
+
+Goldberg Variations with repeats: 81 intertitles (liner/pieces/bach-goldberg-repeats.md)
+- The 72-minute file had 10 intertitles, 2 % of the screen time (the other pieces' notes run 1.6–3.8 a minute). It now has 79 pinned lines and the 2 floating stories, about one a minute, 16 % of the time: 2–4 a movement, each where a half starts or repeats (what to listen for on the first pass, a story or a technique on the repeat), each with its note in the panel and its source. History (the 1741 print, Goldberg, Keyserlingk, Forkel's goblet, Bach's own copy found in Strasbourg in 1974 with fourteen more canons, the Haussmann portrait), analysis (every canon's interval, the groups of three, the lament bass of Var. 21), technique (the two manuals on one keyboard) and trivia (Landowska 1933, Gould 1955 and 1981, Scarlatti, Diabelli, Hannibal Lecter). No two overlap, none is dropped, with any take.
+
+Director: Still shots, Subjects and Presets (#032, #045, #049, #050)
+- Camera → Director gains **Still shots** (`?dstill=`: the share of shots that hold still after the cut), **Subjects** (`?dmix=`: screen-time targets for the hands and keys, her and the piano, in place of Favour's tilt) and **Preset** (`?dpreset=`: every director setting at once: Automatic, Hands study, Still camera, The pianist), and Pace a Slower step (0.8). pianist/director.js `planShots` takes `still` and `mix`; [pianist/director-menu.js](pianist/director-menu.js) wires the menus on both pages. Without them the director plans as before (its tests pass unchanged).
+- *Hands study* on the Goldberg with repeats: 368 shots of 13 s on average, 82 % still, hands and keys 62 % of the time, her 32 %, the piano 6 %, close and medium only (Automatic: 406 shots, 7 % still, hands 39 %). A 5 s smoke test exports with it from Var. 5.
+
 ## 5 Nov 2026
+
+Goldberg Variations: a tempo for each movement (midis/, #049, #050)
+- 13 movements keep the Mutopia editors' metronome marks (Var. 5, 8, 11, 12, 15, 17, 18, 19, 21, 22, 23, 26, 29). The other 18 have no mark, and LilyPond's MIDI played them at its default, a quarter = 60: the fast variations 40-70 % too slow, the Adagio (Var. 25) almost three times too fast, and the Ouverture's fugue at the Ouverture's tempo. Each now takes a tempo of its character ([midis/tools/bach_goldberg_tempo.mjs](midis/tools/bach_goldberg_tempo.mjs)): the Aria ♩=56, Var. 1, 10, 20 ♩=100, 14 ♩=104, 28 ♩=96, 25 ♪=44, 16 ♩=60 then ♩.=60 from bar 17, and the rest as midis/README.md lists. A choice for these files, not an edition's.
+- bach_goldberg_voicing.mjs retimes each movement before the ornaments are written, so trills keep their speed (73 ornament notes fewer, as the fast movements' trills are shorter). `bach_goldberg.mid` is now 41.0 min (was 44.0), `bach_goldberg_repeats.mid` 79.1 min (was 85.3); Var. 25 is 4.4 min, or 8.7 with its repeats. The standalone Aria keeps ♩=60.
+- The score manifest, both liner notes and the tests follow (every heading within 0.11 s of its movement; every bar starts on a note, within 0.083 s). The crossings mode finds 43 passages (5.0 min), as faster passages join.
+- Then 10 % faster, the whole work: `SPEED` 1.1 in bach_goldberg_tempo.mjs plays every movement 1.1 times its tempo above, the editors' marks too (Var. 5 at ♩=143, the Aria at ♩=62, Var. 25 at ♪=48); the 2.5 s between movements stay. `bach_goldberg.mid` is 37.4 min, `bach_goldberg_repeats.mid` 72.1 min. The score manifest, both liner notes (headings within 0.12 s) and the tests follow; every bar starts on a note, within 0.076 s. Crossings mode: 41 passages (4.8 min).
 
 The score in step with an older copy of the Goldberg (#049, #050, every page's songs)
 - After the change of the Goldberg's endings, a browser that had the old midis/bach_goldberg.mid cached played it against the new score manifest, which leaves out the first endings: the bars ran one or two ahead from the first ending on in Var. 2, 4, 6, 16 and 25. The service worker served MIDI files from its cache first, and noticed a change only later, by size. It now fetches them from the network first, as it does pages and code (sw.js), so a song and the score and liner notes that follow it come from the same deploy; the cached copy is kept for offline.

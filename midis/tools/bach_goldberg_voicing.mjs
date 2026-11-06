@@ -17,13 +17,18 @@
 //   quodlibet 30: its two upper song lines +7
 //   other variations: principal upper line +4, accompaniment -2
 //
-// Onsets, durations, pitches and tempo are untouched. Output is deterministic.
+// Onsets, durations and pitches are untouched, and so is the tempo, but for the
+// complete Goldberg's: each of its movements is then played at the tempo
+// bach_goldberg_tempo.mjs gives it (the editors' marks, or for the 18 movements
+// without one, a tempo of their character), before the ornaments are written, so
+// trills keep their speed. Output is deterministic.
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { PIECES, align, fetchSource, readSource, splitSegments } from './bach_ornaments.mjs'
+import { secondsAt, sourceSpq } from './bach_goldberg_tempo.mjs'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const root = here + '../../'
@@ -121,6 +126,36 @@ export function policyFor(dir, notes) {
   return { movement, principal, entries, delta }
 }
 
+// Each movement at its tempo (bach_goldberg_tempo.mjs): a note's onset and end go
+// where its point of the printed music falls at that tempo; the silence between
+// two movements stays as it was. A note shorter than 80 ms, a grace note
+// LilyPond's MIDI plays as a blip before the beat, keeps its length, for the
+// ornament stage to find and replace.
+async function retime(track, segments, dirs) {
+  const out = []
+  let prevOldEnd = null, prevNewEnd = null
+  const r3 = v => Math.round(v * 1000) / 1000
+  const report = []
+  for (const [k, dir] of dirs.entries()) {
+    const id = dir.split('bwv-988-')[1], src = readSource(await fetchSource(dir)), spq = sourceSpq(src.notes)
+    const seg = segments[k], origin = Math.min(...seg.map(n => n.time)) - Math.min(...src.notes.map(n => n.q)) * spq
+    const oldEnd = Math.max(...seg.map(n => n.time + n.duration))
+    const start = prevOldEnd == null ? origin : prevNewEnd + (origin - prevOldEnd)
+    const at = t => start + secondsAt(id, (t - origin) / spq, spq)
+    let newEnd = start
+    for (const n of seg) {
+      const a = at(n.time), b = n.duration < 0.08 ? a + n.duration : at(n.time + n.duration)
+      out.push({ midi: n.midi, time: a, duration: b - a, velocity: n.velocity })
+      newEnd = Math.max(newEnd, b)
+    }
+    report.push(`${id} ${r3(oldEnd - origin)}->${r3(newEnd - start)} s`)
+    prevOldEnd = oldEnd; prevNewEnd = newEnd
+  }
+  track.notes = []
+  for (const n of out) track.addNote(n)
+  console.log(`bach_goldberg: tempos (${report.join(', ')})`)
+}
+
 async function voiceFile(file, outDir) {
   const buf = execFileSync('git', ['show', `${BASE}:midis/${file}.mid`], { cwd: root, maxBuffer: 1 << 28 })
   const midi = new Midi(buf)
@@ -148,6 +183,7 @@ async function voiceFile(file, outDir) {
     }
   }
   if (matched < 0.97 * scoreNotes) throw new Error(`${file}: only ${matched}/${scoreNotes} score notes aligned`)
+  if (file === 'bach_goldberg') await retime(track, segments, dirs)
   writeFileSync(`${outDir}/${file}.mid`, Buffer.from(midi.toArray()))
   const mean = a => (a.reduce((s, x) => s + x, 0) / a.length).toFixed(1)
   console.log(`${file}: aligned ${matched}/${scoreNotes}; projected ${raised} notes ${mean(beforeRaised)}→${mean(afterRaised)}, accompaniment ${recessed} notes ${mean(beforeOther)}→${mean(afterOther)}`)

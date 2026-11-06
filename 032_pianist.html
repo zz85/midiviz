@@ -244,9 +244,12 @@
     <div id="viewList"></div>
     <div class="field"><label>Move (on a view)</label><select id="camMove"><option value="still">Still</option><option value="orbit">Slow orbit</option><option value="zoomIn">Zoom in</option><option value="zoomOut">Zoom out</option><option value="dollyIn">Push in</option><option value="dollyOut">Pull out</option><option value="dollyZoom">Dolly zoom</option><option value="crane">Crane</option><option value="random">Random</option><option value="cut" selected>Director's cut</option></select></div>
     <div class="sect">Director</div>
-    <div class="field"><label>Pace</label><select id="dirPace"><option value="0.6">Long takes</option><option value="1" selected>Normal</option><option value="1.6">Lively</option></select></div>
+    <div class="field" title="Every director setting at once: pick one, then change any control after it. Automatic is the director as it has always been. Hands study: 80 % of the shots hold still after the cut, mostly the hands and the keyboard, close and medium shots, cuts only, a little slower"><label>Preset</label><select id="dirPreset"></select></div>
+    <div class="field"><label>Pace</label><select id="dirPace"><option value="0.6">Long takes</option><option value="0.8">Slower</option><option value="1" selected>Normal</option><option value="1.6">Lively</option></select></div>
     <div class="field"><label>Favour</label><select id="dirBias"><option value="-0.8">The hands</option><option value="0" selected>Balanced</option><option value="0.8">The pianist</option></select></div>
     <div class="field"><label>Transitions (also Director's cut)</label><select id="dirTrans"><option value="mix">Cuts and glides</option><option value="cuts" selected>Cuts only</option><option value="glides">Glides where possible</option></select></div>
+    <div class="field" title="The share of shots that hold still after each cut (the camera stays where it cut to); the rest move. Automatic: the director chooses, and about 1 shot in 15 is still"><label>Still shots</label><select id="dirStill"></select></div>
+    <div class="field" title="The share of screen time for the hands and keyboard, the pianist and the piano, which the director steers toward as it chooses each shot. From Favour: the usual mix, tilted by Favour"><label>Subjects</label><select id="dirMix"></select></div>
     <label class="chk" title="Off: each shot frames her as it starts and holds still while she moves. On: the camera operator follows her head"><input type="checkbox" id="camFollow"> Follow her movement</label>
     <div class="field" title="Which shot sizes the director may use"><label>Shots</label><div class="sizeChk"><label><input type="checkbox" id="dirFar" checked> Far</label><label><input type="checkbox" id="dirMed" checked> Medium</label><label><input type="checkbox" id="dirClose" checked> Close</label></div></div>
     <label class="chk"><input type="checkbox" id="shotLbl"> Show shot names</label>
@@ -486,6 +489,7 @@
     import { createCommunity, communityList } from './pianist/community.js'
     import { createSmoother } from './pianist/subdivide.js'
     import { createDirector, SPOTS, PORTRAIT, spotFor, MOVES, FRAME_LABELS, SIZES, spotKind } from './pianist/director.js'
+    import { wireDirectorMenu } from './pianist/director-menu.js'
     import { hideBody } from './pianist/shell.js'
     import { suggestClips, snapStart, snapEnd, clipOf, shortDescription, SHORT_MAX, SHORT_LENGTHS, SHORT_DEFAULT } from './pianist/shorts.js'
     import { createFocusPuller, SHOT_DOF } from './pianist/focus-puller.js'
@@ -1126,6 +1130,8 @@
     $('dirPace').onchange = () => dirSet('pace', +$('dirPace').value)
     $('dirBias').onchange = () => dirSet('bias', +$('dirBias').value)
     $('dirTrans').onchange = () => dirSet('trans', $('dirTrans').value)
+    // Preset, Still shots, Subjects (pianist/director-menu.js)
+    wireDirectorMenu($, dirSet)
     const SEQ_MOVES = { random: 'Random', cut: "Director's cut" }
     $('camMove').value = MOVES[params.get('move')] || SEQ_MOVES[params.get('move')] ? params.get('move') : 'cut'
     $('camMove').onchange = () => { moveT = 0; userCam = false; lastShot = null; $('shotName').textContent = '' }
@@ -1687,7 +1693,7 @@
       ['gaze', 'gaze'], ['expr', 'expr'], ['rest', 'restAfter'], ['hips', 'hips'], ['posture', 'posture'], ['reach', 'reach'], ['rock', 'rock'], ['sway', 'sway'], ['nod', 'nod'], ['glances', 'glances'], ['armw', 'armw'], ['lifth', 'lifth'], ['wflex', 'wflex'], ['frot', 'frot'], ['elbow', 'elbowLead'], ['liftoff', 'liftoff'], ['bench', 'benchDist'], ['benchh', 'benchH'],
       ['touch', 'touch'], ['fingering', 'fingering'], ['hands', 'hands'],
       ['light', 'light'], ['exposure', 'exposure'], ['dof', 'dof'],
-      ['move', 'camMove'], ['pace', 'dirPace'], ['favour', 'dirBias'], ['trans', 'dirTrans'], ['shotnames', 'shotLbl'], ['follow', 'camFollow'], ['dfar', 'dirFar'], ['dmed', 'dirMed'], ['dclose', 'dirClose'],
+      ['move', 'camMove'], ['dpreset', 'dirPreset'], ['pace', 'dirPace'], ['favour', 'dirBias'], ['trans', 'dirTrans'], ['dstill', 'dirStill'], ['dmix', 'dirMix'], ['shotnames', 'shotLbl'], ['follow', 'camFollow'], ['dfar', 'dirFar'], ['dmed', 'dirMed'], ['dclose', 'dirClose'],
       ['sf', 'sf'], ['avsync', 'avsync'],
       ['dofamt', 'dofAmt'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
       ['vol', 'vol'], ['room', 'room'], ['seat', 'seat'], ['rv', 'rvAmt'], ['decay', 'rvDecay'], ['tone', 'rvTone'], ['boost', 'boost'], ['amb', 'amb'], ['applause', 'applause'],

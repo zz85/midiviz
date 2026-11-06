@@ -30,7 +30,7 @@ const FPS = +(process.env.FPS || 30)
 // START: song time to begin at (s); a song may be given as song.mid@start
 const START = +(process.env.START || 0)
 // (the Goldberg from Variation 5, Bach's hand crossings, to Variation 6)
-const DEFAULT = ['Prelude1.mid', 'chpn-p15.mid', 'entertainer.mid', 'rush_e_real.mid', 'midis/bach_goldberg.mid@412']
+const DEFAULT = ['Prelude1.mid', 'chpn-p15.mid', 'entertainer.mid', 'rush_e_real.mid', 'midis/bach_goldberg.mid@307']
 const TOL = 3, FAR = 10, OUT_SHARE = 0.01, MISS_SHARE = 0.05
 // the forearms' centre lines closer than this (cm): one arm through the other
 const FOREARMS = 4

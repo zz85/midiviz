@@ -19,6 +19,8 @@
 // length, except where the music jumps (back to a repeat, or past a first
 // ending): a note still sounding there ends with its bar.
 //
+// Each movement plays at its tempo (bach_goldberg_tempo.mjs), as the file it reads does.
+//
 // The input is the file as the pipeline writes it, as printed: bach_ornaments.mjs
 // (which bach_goldberg_voicing.mjs runs) ends with this, so a rerun of that
 // rebuilds both files. A file whose movements are not as printed is refused.
@@ -30,6 +32,7 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { readLilyPondFiles, mainLyFile } from '../../strings/lilypond.js'
 import { readSource } from './bach_ornaments.mjs'
+import { secondsAt, sourceSpq } from './bach_goldberg_tempo.mjs'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const root = here + '../../'
@@ -51,10 +54,11 @@ export function movementSource(id) {
   // (the parts agree on the repeats; the first part's are taken)
   const repeats = readLilyPondFiles(files, { main: mainLyFile(files), part: 0 }).repeats
   const r = v => Math.round(v * 1e6) / 1e6
-  const ref = notes.find(n => n.q > 1), spq = ref.on / ref.q
+  // (seconds at a point of the printed music, at the movement's tempo: bach_goldberg_tempo.mjs)
+  const spq = sourceSpq(notes), sec = q => secondsAt(id, q, spq)
   const first = Math.min(...notes.map(n => n.q))
   const endQ = r(Math.max(...notes.map(n => n.q + n.len), ...repeats.map(x => Math.max(x.to, ...(x.alts || []).map(a => a[1])))))
-  const s = { id, spq, first, endQ, last: Math.max(...notes.map(n => n.off)), repeats: repeats.map(x => ({ from: r(x.from), to: r(x.to), alts: (x.alts || []).map(a => a.map(r)), times: x.times })) }
+  const s = { id, sec, first, endQ, last: sec(Math.max(...notes.map(n => n.off)) / spq), repeats: repeats.map(x => ({ from: r(x.from), to: r(x.to), alts: (x.alts || []).map(a => a.map(r)), times: x.times })) }
   sources.set(id, s)
   return s
 }
@@ -93,10 +97,10 @@ export function goldbergForms() {
   for (const [key, file] of Object.entries(FILES)) forms[`midis/${file}.mid`] = SEQUENCE.map((id, k) => {
     const src = movementSource(id), mode = key === 'repeats' && k < SEQUENCE.length - 1 ? 'repeats' : 'plain'
     let t = 0
-    const chunks = formOf(src, mode).map(([a, b]) => { const c = { a: a * src.spq, b: b * src.spq, t }; t += c.b - c.a; return c })
+    const chunks = formOf(src, mode).map(([qa, qb]) => { const c = { a: src.sec(qa), b: src.sec(qb), qa, qb, t }; t += c.b - c.a; return c })
     // (to the last note's end: past the printed end where it rings on, before it where the
     // last ending's bar is longer than its notes)
-    return { id, mode, chunks, end: t + src.last - src.endQ * src.spq }
+    return { id, mode, chunks, end: t + src.last - src.sec(src.endQ) }
   })
   return forms
 }
@@ -115,7 +119,7 @@ function movementsOf(midi) {
   }
   if (segs.length !== SEQUENCE.length) throw new Error(`the file has ${segs.length} movements, not ${SEQUENCE.length}`)
   return segs.map((ns, k) => {
-    const src = movementSource(SEQUENCE[k]), origin = ns[0].time - src.first * src.spq
+    const src = movementSource(SEQUENCE[k]), origin = ns[0].time - src.sec(src.first)
     const len = Math.max(...ns.map(n => n.time + n.duration)) - origin
     // as printed, it lasts as long as its source (the notes lengthened for an ornament end by then too)
     if (Math.abs(len - src.last) > 0.3) throw new Error(`${SEQUENCE[k]}: ${len.toFixed(2)} s, not ${src.last.toFixed(2)} s as printed: is the input as printed (bach_ornaments.mjs writes it so)?`)

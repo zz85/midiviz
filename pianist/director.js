@@ -508,8 +508,33 @@ export function songSeed({ duration = 0, phrases = [] }) {
  * opts.pace: 0.5 (long takes) .. 2 (lively); opts.bias: -1 (hands) .. 1 (pianist);
  * opts.trans: 'mix' | 'cuts' | 'glides'
  */
+// ── Settings beyond pace, favour and transitions (Camera → Director) ──
+// opts.still: the share of shots that hold still after the cut (0..1); left out,
+// the director picks moves as it always has (about 6 % still).
+// opts.mix: the share of screen time for each subject, { keys, her, piano } (the hands
+// and the keyboard, the pianist, the piano); left out, Favour (opts.bias) tilts the
+// usual 50 / 38 / 12. The director steers each new shot toward what the film is
+// short of, so a mix is a target it keeps close to, not an exact count.
+export const STILL_SHARES = { auto: ['Automatic', null], 25: ['A quarter', 0.25], 50: ['Half', 0.5], 80: ['Most (80 %)', 0.8], 100: ['All', 1] }
+export const SUBJECT_MIXES = {
+  auto: ['From Favour', null],
+  hands: ['Hands and keys first (65 / 25 / 10)', { keys: 0.65, her: 0.25, piano: 0.1 }],
+  handsOnly: ['Hands and keys nearly always (85 / 10 / 5)', { keys: 0.85, her: 0.1, piano: 0.05 }],
+  her: ['The pianist first (25 / 65 / 10)', { keys: 0.25, her: 0.65, piano: 0.1 }],
+}
+// Presets: every director setting at once. Picking one sets the controls; a control
+// changed after it keeps its own value. `auto` is the director as it is with no preset.
+export const DIRECTOR_PRESETS = {
+  auto: { label: 'Automatic', pace: 1, bias: 0, trans: 'cuts', sizes: [0, 1, 2], still: 'auto', mix: 'auto' },
+  hands: { label: 'Hands study: still frames, mostly hands and keys', pace: 0.8, bias: -0.8, trans: 'cuts', sizes: [0, 1], still: '80', mix: 'hands' },
+  still: { label: 'Still camera: most shots hold still', pace: 0.8, bias: 0, trans: 'cuts', sizes: [0, 1, 2], still: '80', mix: 'auto' },
+  her: { label: 'The pianist: her face and figure first', pace: 1, bias: 0.8, trans: 'mix', sizes: [0, 1, 2], still: 'auto', mix: 'her' },
+}
+const normMix = m => { if (!m) return null; const t = (m.keys ?? 0) + (m.her ?? 0) + (m.piano ?? 0); return t > 0 ? { keys: (m.keys ?? 0) / t, her: (m.her ?? 0) / t, piano: (m.piano ?? 0) / t } : null }
+
 export function planShots({ duration, phrases = [], glances = [], energyAt = () => 0.3 }, opts = {}) {
   const pace = opts.pace ?? 1, bias = opts.bias ?? 0, trans = opts.trans ?? 'mix'
+  const mix = normMix(opts.mix), still = opts.still == null ? null : clamp(+opts.still, 0, 1)
   // sizes: the shot sizes allowed (0 close, 1 medium, 2 far), all by default
   const sizes = Array.isArray(opts.sizes) && opts.sizes.length && opts.sizes.length < 3 ? opts.sizes : null, wideOk = !sizes || sizes.includes(2)
   // every choice is a hash of the shot number and the song, so a song always
@@ -528,7 +553,11 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
   const lastUsed = {}, uses = {}
   const tally = Object.fromEntries(Object.entries(TARGETS).map(([ax, cs]) => [ax, Object.fromEntries(Object.keys(cs).map(c => [c, 0]))]))
   const b = clamp(bias, -1, 1) * 0.15
-  const targets = { ...TARGETS, what: { keys: TARGETS.what.keys - b, her: TARGETS.what.her + b, piano: TARGETS.what.piano } }
+  const targets = { ...TARGETS, what: mix ?? { keys: TARGETS.what.keys - b, her: TARGETS.what.her + b, piano: TARGETS.what.piano } }
+  // (a mix: each subject's spots weighted by its share against the usual one, and her face
+  // asked for less often where she has less of the screen)
+  const kindGain = k => mix ? Math.pow(mix[k] / TARGETS.what[k], 2) : 1
+  const faceAfter = 35 * (mix ? clamp(TARGETS.what.her / Math.max(mix.her, 0.01), 1, 4) : 1)
   let t = 0
   for (let i = 0; t < duration; i++) {
     const E = mean(t, t + 6)
@@ -569,6 +598,7 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
       const w = names.map(n => {
         const s = SPOTS[n], kind = SUBJ_KIND[s.subj]
         let x = kind === 'hands' ? 0.35 + 0.7 * E - 0.3 * bias : kind === 'pianist' ? 0.5 - 0.25 * E + 0.3 * bias : 0.18
+        x *= kindGain(AXES.what(s))
         if (n === 'feet') x *= 0.1
         if (s.subj === 'hammers' || s.subj === 'pedals') x *= 1.6   // the mechanism: a detail now and then
         if (sizes && !sizes.includes(s.size)) return 0   // (a category switched off)
@@ -592,18 +622,20 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
           const ps = SPOTS[prev.name]
           if (n === prev.name) return 0
           if (prev2 && n === prev2.name) x *= 0.3
-          if (prev2 && SUBJ_KIND[ps.subj] === kind && SUBJ_KIND[SPOTS[prev2.name].subj] === kind) x *= 0.35
+          // (a third shot of one subject in a row: less likely, unless the mix gives it most of the screen)
+          if (prev2 && SUBJ_KIND[ps.subj] === kind && SUBJ_KIND[SPOTS[prev2.name].subj] === kind) x *= mix && mix[AXES.what(s)] >= 0.5 ? 0.8 : 0.35
           // after the opening (behind her): close, her fingers or her face, or
           // over her shoulder onto the keys
           if (opening) x *= s.size === 0 && SUBJ_KIND[s.subj] !== 'piano' ? (s.subj === 'head' ? 0.5 : 6) : 0
           else if (i === 1) x *= s.size === 0 || n === 'shoulder' ? 4 : 0.25
           // after a close-up: a medium shot (back to the keys), not the hall
-          else if (ps.size === 0) x *= s.size === 1 ? 2.5 : s.size === 2 ? 0.8 : 0.15
+          // (where the mix gives this subject most of the screen, another close one may follow)
+          else if (ps.size === 0) x *= s.size === 1 ? 2.5 : s.size === 2 ? 0.8 : mix && mix[AXES.what(s)] >= 0.5 ? 0.8 : 0.15
           else if (s.size !== ps.size) x *= 1.4
           // too long close or behind her: pull out wide, or come round to her face.
           // Overrides the size grammar above; grows from ~25 s / ~35 s on
           const needWide = clamp((t - lastWide - 25 / pace) / (20 / pace), 0, 1)
-          const needFace = clamp((t - lastFace - 35 / pace) / (20 / pace), 0, 1)
+          const needFace = clamp((t - lastFace - faceAfter / pace) / (20 / pace), 0, 1)
           if (s.size === 2) x *= 1 + 8 * needWide
           if (faceSeen(s)) x *= 1 + 6 * needFace
           // and past ~45 s it must: only those shots are left (unless far
@@ -631,6 +663,13 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
       let q = hs(i, 4) * mw.reduce((a, b) => a + b, 0), j = 0
       while (j < ms.length - 1 && (q -= mw[j]) > 0) j++
       move = last ? 'dollyOut' : ms[j]
+    }
+    // the share of still shots, where it is set: each shot but the last holds still
+    // or moves by its own hash, so a seek or an export gets the same film
+    if (still != null && !last) {
+      const ms = SPOTS[name].moves.filter(m => m !== 'still')
+      if (hash(i * 0.618 + seed * 0.001, 17) < still) move = 'still'
+      else if (move === 'still' && ms.length) move = ms[Math.floor(hs(i, 8) * ms.length) % ms.length]
     }
     // into this shot: a cut, or a glide when the two spots are on the same side
     let glide = 0

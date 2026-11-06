@@ -36,6 +36,7 @@ import { createLook } from '../pianist/look.js'
 import { createCommunity, communityList } from '../pianist/community.js'
 import { createSmoother } from '../pianist/subdivide.js'
 import { createDirector, SPOTS, PORTRAIT, spotFor, MOVES, FRAME_LABELS, SIZES, spotKind, STRINGS_LEVELS } from '../pianist/director.js'
+import { wireDirectorMenu } from '../pianist/director-menu.js'
 import { hideBody } from '../pianist/shell.js'
 import { suggestClips, snapStart, snapEnd, clipOf, shortDescription, SHORT_MAX, SHORT_LENGTHS, SHORT_DEFAULT } from '../pianist/shorts.js'
 import { createPathTraceStills } from '../pathtrace/still.js'
@@ -785,6 +786,8 @@ export async function boot(plug = {}) {
     $('dirPace').onchange = () => dirSet('pace', +$('dirPace').value)
     $('dirBias').onchange = () => dirSet('bias', +$('dirBias').value)
     $('dirTrans').onchange = () => dirSet('trans', $('dirTrans').value)
+    // Preset, Still shots, Subjects (pianist/director-menu.js)
+    wireDirectorMenu($, dirSet)
     $('dirStrings').onchange = () => dirSet('strings', dirStrings())
     $('dirPedals').onchange = () => dirSet('pedals', $('dirPedals').checked)
     $('dirOpen').onchange = () => dirSet('opening', dirOpening())
@@ -1414,7 +1417,7 @@ export async function boot(plug = {}) {
       ['touch', 'touch'], ['fingering', 'fingering'], ['hands', 'hands'],
       ['light', 'light'], ['exposure', 'exposure'], ['dof', 'dof'], ['scene', 'stageSet'], ['finish', 'finish'], ['lid', 'lid'],
       ['fasian', 'faceAsian'], ['fafrican', 'faceAfrican'], ['skintex', 'skinTex'],
-      ['move', 'camMove'], ['pace', 'dirPace'], ['favour', 'dirBias'], ['trans', 'dirTrans'], ['shotnames', 'shotLbl'], ['follow', 'camFollow'], ['dfar', 'dirFar'], ['dmed', 'dirMed'], ['dclose', 'dirClose'], ['strings', 'dirStrings'], ['dpedals', 'dirPedals'], ['dopen', 'dirOpen'],
+      ['move', 'camMove'], ['dpreset', 'dirPreset'], ['pace', 'dirPace'], ['favour', 'dirBias'], ['trans', 'dirTrans'], ['dstill', 'dirStill'], ['dmix', 'dirMix'], ['shotnames', 'shotLbl'], ['follow', 'camFollow'], ['dfar', 'dirFar'], ['dmed', 'dirMed'], ['dclose', 'dirClose'], ['strings', 'dirStrings'], ['dpedals', 'dirPedals'], ['dopen', 'dirOpen'],
       ['sf', 'sf'], ['avsync', 'avsync'],
       ['dofamt', 'dofAmt'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
       ['vol', 'vol'], ['room', 'room'], ['seat', 'seat'], ['rv', 'rvAmt'], ['decay', 'rvDecay'], ['tone', 'rvTone'], ['boost', 'boost'], ['amb', 'amb'], ['applause', 'applause'],

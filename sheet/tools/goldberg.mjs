@@ -35,6 +35,7 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { readSource } from '../../midis/tools/bach_ornaments.mjs'
 import { goldbergForms } from '../../midis/tools/bach_goldberg_form.mjs'
+import { secondsAt, sourceSpq } from '../../midis/tools/bach_goldberg_tempo.mjs'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const { Midi } = createRequire(import.meta.url)(root + 'tonejs-midi.js')
@@ -53,8 +54,9 @@ const movements = IDS.map(id => {
   const ly = execFileSync('sh', ['-c', `cat "${dir}"*.ly`], { encoding: 'utf8' })
   const title = (/^\s*piece\s*=\s*"(.*)"\s*$/m.exec(ly)?.[1] || id).replace(/\\"/g, '"').replace(/\s+/g, ' ').replace(/\s*\.\s*a\s/, '. a ').trim()
   const { notes } = readSource(dir)
-  // seconds a quarter here (one tempo a movement)
-  const ref = notes.find(n => n.q > 1), spq = ref.on / ref.q
+  // seconds at a point of the printed music, at the tempo the file plays it
+  // (midis/tools/bach_goldberg_tempo.mjs: the source's, or the movement's own)
+  const spq = sourceSpq(notes), sec = q => secondsAt(id, q, spq)
   const endQ = Math.max(...notes.map(n => n.q + n.len)), end = Math.max(...notes.map(n => n.off))
   let starts
   if (id === 'v26') {
@@ -69,7 +71,7 @@ const movements = IDS.map(id => {
     for (let i = 1; i < starts.length - 1; i++) if (starts[i + 1] - starts[i] < starts[i] - starts[i - 1] - 1e-6 && Math.abs((starts[i + 1] - starts[i - 1]) / 2 - (starts[i] - starts[i - 1])) > 1e-6) starts[i] = (starts[i - 1] + starts[i + 1]) / 2
   }
   const r3 = v => Math.round(v * 1000) / 1000
-  return { id, title, meter: METER[id], key: KEY[id] || ['G', 'major'], bars: starts.length, starts: starts.map(q => r3(q * spq)), end: r3(Math.max(end, endQ * spq)), spq, notes }
+  return { id, title, meter: METER[id], key: KEY[id] || ['G', 'major'], bars: starts.length, startQ: starts, starts: starts.map(q => r3(sec(q))), end: r3(Math.max(sec(end / spq), sec(endQ))), notes }
 })
 console.error(movements.map(m => `${m.id} ${m.bars}`).join(', '), '·', movements.reduce((s, m) => s + m.bars, 0), 'bars')
 
@@ -204,7 +206,7 @@ for (const m of movements) {
   m.engrave = []
   if (m.id === 'v16') {
     // the ouverture's 16 bars in 2/2, then from the second ending on in 3/8, each its own file
-    const q17 = m.starts[16] / m.spq
+    const q17 = m.startQ[16]
     writeScore(`sheet/scores/goldberg/${m.id}a.score.mid`, m.notes.filter(n => n.q < q17 - 1e-6), '2/2', m.key)
     // (the last bar, a held 2/2 chord, engraves as two 3/8 bars and a bit: the cursor still finds bar 50 by time)
     writeScore(`sheet/scores/goldberg/${m.id}b.score.mid`, m.notes.filter(n => n.q >= q17 - 1e-6), '3/8', m.key, q17)
