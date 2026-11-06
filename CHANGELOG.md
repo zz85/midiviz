@@ -4,6 +4,10 @@ What each experiment does and how, newest first. The short list is in the [READM
 
 ## 6 Nov 2026
 
+Render in parts, its sound on its own, and Resume (#045, #049, #050; work in progress)
+- Render → **Parts** (`?exparts=60|120|300|600`): the render goes into a folder you pick as parts of about that length, each from one of the director's cuts to another and never while an intertitle shows; each part starts the scene 3 s before its first frame without drawing it, so the hair and the dress have caught up. The sound is one file of its own for the whole render (notation3d/video-export.js `exportAudio`, the same plan, room and fades as the picture), so no note or ring is cut where a part ends. The folder also holds render.json (the settings and which parts are done), parts.txt and join.sh (ffmpeg concat, no re-encoding), and the subtitles and chapters. **Resume…** reopens the last folder (or one picked), loads the render's settings, and renders the parts not done; a part cut short is rendered again whole.
+- video-export.js: `exportPlan` (the timeline both share), `exportVideo`'s `range` and `warm`. [pathtrace/parts.js](pathtrace/parts.js); tests: pathtrace/test/parts.test.js (2). A 20 s smoke render in three parts joined to 22.0 s with its sound; Cancel then Resume is not tested yet.
+
 Film grain: the same at every resolution (#045, #049, #050, path-traced stills)
 - The grain was one noise value a pixel: coarse at 480p, all but gone at 4K. A grain is now a cell of 1/1080 of the frame's height (a pixel at 1080 rows, as before), smoothly interpolated above that, and below it each pixel averages several, so the grain is fainter by the rows the frame lacks, as a 1080p frame scaled down would be. Measured on a patch of the floor, each frame scaled to 540 rows: 540p 12.1 → 6.2, 1080p 6.1 → 6.1, 2160p 3.0 → 6.4.
 

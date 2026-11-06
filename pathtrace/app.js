@@ -20,7 +20,8 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
 import { SoundFontEngine, MidiScheduler } from '../soundfont-engine/src/index.js'
 import { midiToSchedule } from '../notation3d/midi-score.js'
-import { exportVideo, exportSupported, defaultBitrate } from '../notation3d/video-export.js'
+import { exportVideo, exportAudio, exportPlan, exportSupported, defaultBitrate } from '../notation3d/video-export.js'
+import { chooseParts, newJob, writeJob, writeText, openJob, pickFolder, jobLeft, jobDone, settingsOf } from './parts.js'
 import { installAcoustics, offlineHall, acousticParams, rt60Of, ROOMS, SEATS } from '../concertstage/acoustics.js'
 import { buildGrandPiano, LOW, HIGH, DIM, FINISHES } from '../concertstage/concert-grand.js'
 import { buildCandleChamber, candleEnvironment, CANDLE } from '../pathtrace/candle-chamber.js'
@@ -1077,7 +1078,7 @@ export async function boot(plug = {}) {
       }
     }
     // ── Liner notes (liner/): captions, the notes panel, sections on the seek bar
-    const saveText = (name, text) => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 60000) }
+    const saveTextDl = (name, text) => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 60000) }
     const linerLib = createLinerLibrary()
     // where the pianist is in the frame (her head and hands, in -1..1), for intertitles placed automatically
     const subjectNdc = { x: 0, y: 0 }
@@ -1133,7 +1134,7 @@ export async function boot(plug = {}) {
       const places = freePlaces(), prefer = awayFromHer() in places ? awayFromHer() : Object.keys(places)[0]
       try { return frameSpace.pick(camera, places, prefer).place } catch (e) { console.warn(e); return prefer }
     }
-    const liner = createLinerOverlay({ seek: $('seek'), title: $('songTitle'), onSeek: t => seekTo(t), download: saveText, autoPosition })
+    const liner = createLinerOverlay({ seek: $('seek'), title: $('songTitle'), onSeek: t => seekTo(t), download: saveTextDl, autoPosition })
     liner.attachMenu($('songList'), linerLib)
     window.__liner = { liner, lib: linerLib }
     for (const [k, st] of Object.entries(INTERTITLE_STYLES)) $('itStyle').append(new Option(st.label, k, k === 'serif', k === 'serif'))
@@ -1442,7 +1443,7 @@ export async function boot(plug = {}) {
       ['sf', 'sf'], ['avsync', 'avsync'],
       ['dofamt', 'dofAmt'], ['dofboth', 'dofBoth'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
       ['vol', 'vol'], ['room', 'room'], ['seat', 'seat'], ['rv', 'rvAmt'], ['decay', 'rvDecay'], ['tone', 'rvTone'], ['boost', 'boost'], ['amb', 'amb'], ['applause', 'applause'],
-      ['exformat', 'exFormat'], ['exlayout', 'exLayout'], ['exsplit', 'exSplit'], ['exhands', 'exHandsHalf'], ['exlview', 'exLessonView'], ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exfps', 'exFps'], ['extail', 'exTail'], ['exlead', 'exLead'], ['exend', 'exEnd'], ['exfadelen', 'exFadeLen'], ['exsub', 'exSub'], ['excard', 'exCard'], ['excaps', 'exCaps'], ['exvtt', 'exVtt'], ['exlen', 'exLen'], ['exhold', 'exHold'],
+      ['exformat', 'exFormat'], ['exlayout', 'exLayout'], ['exsplit', 'exSplit'], ['exhands', 'exHandsHalf'], ['exlview', 'exLessonView'], ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exfps', 'exFps'], ['extail', 'exTail'], ['exlead', 'exLead'], ['exend', 'exEnd'], ['exfadelen', 'exFadeLen'], ['exsub', 'exSub'], ['excard', 'exCard'], ['excaps', 'exCaps'], ['exvtt', 'exVtt'], ['exlen', 'exLen'], ['exparts', 'exParts'], ['exhold', 'exHold'],
       ['notes', 'linerMode'], ['itstyle', 'itStyle'], ['itstylea', 'itStyleA'], ['itcol', 'itTheme'], ['itpos', 'itPos'], ['itheads', 'itHeads'], ['extitle', 'exTitle'], ['expt', 'exPt'], ['ptengine', 'ptEngine'], ['ptspp', 'ptSpp'], ['ptbounces', 'ptBounces'], ['pthair', 'ptHair'], ['ptdn', 'ptDenoise'], ['ptfx', 'ptFx'], ['ptsize', 'ptSize'],
     ].filter(([, id]) => $(id))
     const OUTFIT_KEYS = { dress: 'dress', slit: 'slit', fabric: 'fabric', dcol: 'color', shoes: 'shoes', hair: 'hair', hcol: 'hairColor' }
@@ -1810,7 +1811,34 @@ export async function boot(plug = {}) {
     for (const id of ['exFont', 'exTitle', 'exCard']) $(id).addEventListener('change', drawPreview)
     $('exSub').addEventListener('input', drawPreview)
     let exAbort = null
+    // Render → Parts: the render as several files in a folder, with its sound and a record
+    // to resume from (pathtrace/parts.js); Resume picks up one a restart cut short
+    let resuming = null   // { dir, job } of the render Resume continues
+    if ($('exResume')) $('exResume').onclick = async () => {
+      let r = null
+      try { r = await openJob() } catch (e) { if (e.name !== 'AbortError') $('exStatus').textContent = 'Resume: ' + e.message; return }
+      if (!r) return void ($('exStatus').textContent = 'Resume: that folder holds no render (render.json).')
+      if (jobDone(r.job)) return void ($('exStatus').textContent = `Resume: every part of ${r.job.name} is done. Run join.sh in its folder.`)
+      // the render's own settings, from its link: reload with them, then Resume again
+      if (settingsOf(location.search) !== settingsOf(r.job.search)) {
+        $('exStatus').textContent = 'Resume: loading the render\'s settings…'
+        sessionStorage.setItem('midiviz-resume', r.job.name)
+        location.search = r.job.search
+        return
+      }
+      // (the song loads on a first gesture: this click)
+      if (!song) $('playBtn').click()
+      for (let k = 0; k < 600 && !(song && fingered); k++) { $('exStatus').textContent = 'Resume: loading the song and its fingering…'; await new Promise(ok => setTimeout(ok, 500)) }
+      if (scheduler?.playing) { scheduler.pause(); songTarget.allSoundOff(); setPlaying(false) }
+      resuming = r
+      $('exStart').onclick()
+    }
+    if (sessionStorage.getItem('midiviz-resume')) {
+      $('exStatus').textContent = `Settings of ${sessionStorage.getItem('midiviz-resume')} loaded: press Resume to continue it.`
+      sessionStorage.removeItem('midiviz-resume')
+    }
     $('exStart').onclick = async () => {
+      const resume = resuming; resuming = null
       if (!song || !fingered) return void ($('exStatus').textContent = song ? 'Still working out the fingering, try again in a moment.' : 'Load a song first (Songs, top left).')
       if (!exportSupported()) return void ($('exStatus').textContent = 'This browser has no WebCodecs video encoder; try Chrome or Edge.')
       const [width, height] = $('exRes').value.split('x').map(Number), fps = +$('exFps').value
@@ -1836,7 +1864,14 @@ export async function boot(plug = {}) {
       const clip = clipA > 0 || clipB < song.duration
       const name = (song.title || 'pianist').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_') + (asShort ? '_short' : '') + (clip ? `_${Math.floor(clipA)}-${Math.ceil(clipB)}s` : '') + (ptKey ? `_${ptKey}_${$('ptSpp').value}spp` : '') + `_${height}p${fps}.mp4`
       let fileStream = null
-      if (window.showSaveFilePicker) {
+      // in parts: a folder for the parts, their sound, the record and the join script
+      // (one picked now, or the resumed render's)
+      const partSecs = resume ? -1 : asShort || $('exParts')?.value === 'off' || !$('exParts') ? 0 : +$('exParts').value
+      let partDir = resume?.dir ?? null
+      if (partSecs > 0) {
+        if (!window.showDirectoryPicker) return void ($('exStatus').textContent = 'Parts need a browser that can write to a folder (Chrome or Edge).')
+        try { partDir = await pickFolder() } catch (e) { if (e.name !== 'AbortError') $('exStatus').textContent = 'Parts: ' + e.message; return }
+      } else if (window.showSaveFilePicker && !resume) {
         try {
           const handle = await showSaveFilePicker({ suggestedName: name, types: [{ description: 'MP4 video', accept: { 'video/mp4': ['.mp4'] } }] })
           fileStream = await handle.createWritable()
@@ -1869,7 +1904,7 @@ export async function boot(plug = {}) {
         denoise: $('ptDenoise').checked, hairFraction: +$('ptHair').value, fx: $('ptFx').checked, signal: exAbort.signal,
       }) : null
       try {
-        const blob = await exportVideo({
+        const xo = {
           frameSource: ptv?.frame,
           stage: stageAdapter,
           song: { schedule: { notes: song.notes, controlChanges: (song.controlChanges || []).filter(c => c.controller !== 7) }, programs, duration: song.duration, title: song.title },
@@ -1895,7 +1930,41 @@ export async function boot(plug = {}) {
             $('exStatus').textContent = p.phase === 'finalizing' ? 'Finalizing…'
               : `${p.frame}/${p.frames} frames · ${ptv?.stats.last ? `${(ptv.stats.last.ms / 1000).toFixed(1)} s a frame (trace ${(ptv.stats.last.trace / 1000).toFixed(1)} s, scene ${((ptv.stats.last.setup + ptv.stats.last.snapshot) / 1000).toFixed(1)} s)` : `${(p.frame / p.elapsed).toFixed(1)} fps`} · ${fmt(p.eta)} left`
           },
-        })
+        }
+        // the render in parts: the sound first (quick), then each part not done, the record
+        // written after each; the subtitles and chapters go into the folder with them
+        async function renderParts(xo) {
+          const plan = exportPlan(xo)
+          songZero = plan.songZero
+          let job = resume?.job
+          if (job && (job.frames !== plan.frames || job.width !== plan.width || job.height !== plan.height || job.fps !== fps))
+            throw new Error(`the settings make ${plan.frames} frames at ${plan.width}×${plan.height}, ${fps} fps; the render in that folder has ${job.frames} at ${job.width}×${job.height}, ${job.fps} fps`)
+          if (!job) {
+            const cuts = (director.shots || []).map(x => x.t0), avoid = burnCaps && linerTl?.intertitles ? linerTl.intertitles.map(x => [x.start, x.end]) : []
+            const parts = chooseParts(plan, { cuts, avoid, seconds: partSecs })
+            job = newJob({ name, search: location.search, width: plan.width, height: plan.height, fps, frames: plan.frames, songZero: plan.songZero, parts, audio: xo.audio })
+            await writeJob(partDir, job)
+          }
+          const left = jobLeft(job), done0 = job.parts.length - left.length
+          if (job.audio && !job.audio.done) {
+            const h = await partDir.getFileHandle(job.audio.file, { create: true })
+            await exportAudio({ ...xo, fileStream: await h.createWritable(), onProgress: p => {
+              $('exBar').firstElementChild.style.width = (p.done / p.total * 100).toFixed(1) + '%'
+              $('exStatus').textContent = `The sound: ${fmt(p.done / 48000)} of ${fmt(p.total / 48000)}`
+            } })
+            job.audio.done = true; await writeJob(partDir, job)
+          }
+          for (const [k, part] of left.entries()) {
+            const h = await partDir.getFileHandle(part.file, { create: true })
+            await exportVideo({ ...xo, audio: false, range: [part.a, part.b], fileStream: await h.createWritable(), onProgress: p => {
+              xo.onProgress(p)
+              $('exStatus').textContent = `Part ${done0 + k + 1} of ${job.parts.length} · ` + $('exStatus').textContent
+            } })
+            part.done = true; part.at = new Date().toISOString(); await writeJob(partDir, job)
+          }
+          return null
+        }
+        const blob = partDir ? await renderParts(xo) : await exportVideo(xo)
         if (blob) {
           const a = document.createElement('a')
           a.href = URL.createObjectURL(blob); a.download = name; a.click()
@@ -1904,6 +1973,7 @@ export async function boot(plug = {}) {
         // the liner notes as two YouTube subtitle tracks, timed to this video, whatever
         // is on screen: <name>.vtt the intertitles (the title too, when it is one, and the
         // floats as this take places them), <name>.notes.vtt every note's caption; and chapters
+        const saveText = partDir ? (n, text) => writeText(partDir, n, text) : saveTextDl
         if (asShort) {
           // the Short's text as a subtitle track, and a description to paste
           if ($('exVtt').checked && shortTlx.intertitles.length) saveText(name.replace(/\.mp4$/, '.vtt'), toVTT(shortTlx, { offset: songZero, from: 'intertitles' }))
@@ -1916,7 +1986,7 @@ export async function boot(plug = {}) {
           const ch = !clip && liner.timeline && toChapters(liner.timeline, { offset: songZero })
           if (ch) saveText(name.replace(/\.mp4$/, '-chapters.txt'), ch + '\n')
         }
-        $('exStatus').textContent = 'Done: ' + name
+        $('exStatus').textContent = partDir ? `Done: ${name}, in parts in the folder ${partDir.name}. Run join.sh there (ffmpeg) to join them.` : 'Done: ' + name
       } catch (e) {
         console.error(e)
         $('exStatus').textContent = e.name === 'AbortError' ? 'Cancelled' : 'Failed: ' + e.message

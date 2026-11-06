@@ -421,8 +421,14 @@ export function drawOutroCard(g, w, h, k, secs, { title, subtitle, credits = [] 
  * @param {AbortSignal} o.signal
  * @returns {Promise<Blob|null>} blob when buffered, null when streamed to disk
  */
-export async function exportVideo(o) {
-	const { stage, song, fps, signal } = o
+/**
+ * The timeline of an export (exportVideo's and exportAudio's), from the same options:
+ * its frames, where the music starts in them, the cards, the fades, and where song time
+ * 0 lands (songZero, seconds into the video). A render in parts (o.range) and its sound
+ * (exportAudio) read the same plan, so the pieces line up frame for frame.
+ */
+export function exportPlan(o) {
+	const { song, fps } = o
 	const width = o.width & ~1, height = o.height & ~1
 	const bitrate = o.bitrate || defaultBitrate(width, height, fps)
 	const preroll = o.preroll ?? 1, tail = o.tail ?? 2
@@ -440,13 +446,129 @@ export async function exportVideo(o) {
 	// 'fade': credits start outroFrames before the end and the music fades out under them
 	const outroStart = musicStart + musicFrames - (outroFade ? outroFrames : 0)
 	const fadeA = Math.round(outroStart * SAMPLE_RATE / fps), fadeB = Math.round((outroStart + outroFrames) * SAMPLE_RATE / fps)
-	const intro3D = o.intro?.style === '3d' && stage.titleMesh
 	const introSamples = Math.round(musicStart * SAMPLE_RATE / fps)
 	// the fade to black at the very end (o.fadeOut), in frames and in samples
 	const endFadeFrames = o.fadeOut > 0 ? Math.min(frames, Math.round(o.fadeOut * fps)) : 0
 	const endFadeA = Math.round((frames - endFadeFrames) * SAMPLE_RATE / fps), endFadeB = Math.round(frames * SAMPLE_RATE / fps)
+	return {
+		width, height, fps, bitrate, t0, t1, musicFrames, introFrames, outroFade, outroFrames, musicStart, frames, outroStart,
+		fadeA, fadeB, introSamples, endFadeFrames, endFadeA, endFadeB, songZero: musicStart / fps - t0,
+		/** the frame at song time t (music running) */
+		frameAt: t => musicStart + Math.round((t - t0) * fps),
+	}
+}
+
+// The sound of an export, chunk by chunk, up to an output sample: the pre-roll's and the
+// intro's silence, the synth, the fades and the caller's audioFx, as AudioData
+function audioPump(p, synth, o) {
+	let musicFrame = Math.round(p.t0 * SAMPLE_RATE) // synth timeline; may be negative (pre-roll silence)
+	let audioTs = 0                                  // samples so far (output timeline)
+	return {
+		get ts() { return audioTs },
+		/** AudioData chunks up to output sample `target` */
+		* upTo(target) {
+			while (audioTs < target) {
+				let n, data
+				if (audioTs < p.introSamples) {
+					n = Math.min(target, p.introSamples, audioTs + 4800) - audioTs
+					data = new Float32Array(n * 2)
+				} else {
+					n = Math.min(target - audioTs, 4800)
+					const chunkEnd = musicFrame + n
+					if (chunkEnd <= 0) data = new Float32Array(n * 2) // pre-roll before t=0
+					else if (musicFrame < 0) { // straddles t=0
+						const pad = -musicFrame
+						const rest = synth.renderTo(chunkEnd)
+						data = new Float32Array(n * 2)
+						data.set(rest.subarray(0, n - pad), pad)
+						data.set(rest.subarray(n - pad), n + pad)
+					} else data = synth.renderTo(chunkEnd)
+					musicFrame = chunkEnd
+					// fade the music out under the credits (equal-power cosine)
+					if (p.outroFade && audioTs + n > p.fadeA) {
+						for (let j = 0; j < n; j++) {
+							const x = clamp01((audioTs + j - p.fadeA) / Math.max(1, p.fadeB - p.fadeA))
+							const gn = Math.cos(x * Math.PI / 2)
+							data[j] *= gn; data[n + j] *= gn
+						}
+					}
+				}
+				if (o.audioFx) o.audioFx(data, n, SAMPLE_RATE) // optional post-processing (e.g. room reverb), planar in place
+				// the sound fades with the picture at the end (equal-power cosine), the room's ring included
+				if (p.endFadeFrames && audioTs + n > p.endFadeA) {
+					for (let j = 0; j < n; j++) {
+						const gn = Math.cos(clamp01((audioTs + j - p.endFadeA) / Math.max(1, p.endFadeB - p.endFadeA)) * Math.PI / 2)
+						data[j] *= gn; data[n + j] *= gn
+					}
+				}
+				const ad = new AudioData({ format: 'f32-planar', sampleRate: SAMPLE_RATE, numberOfFrames: n, numberOfChannels: 2, timestamp: Math.round(audioTs * 1e6 / SAMPLE_RATE), data })
+				audioTs += n
+				yield ad
+			}
+		},
+	}
+}
+
+/**
+ * The sound of an export alone, as an audio-only MP4 (.m4a): the same plan, synth,
+ * room (audioFx) and fades as exportVideo with the same options, sample for sample, for a
+ * render in parts (exportVideo with o.range and no audio) joined with it afterwards.
+ * o.fileStream: where it goes; else a Blob is returned. o.onProgress({ done, total }).
+ */
+export async function exportAudio(o) {
+	const p = exportPlan(o), signal = o.signal
+	const ac = await pickAudioCodec()
+	if (!ac) throw new Error('This browser has no audio encoder')
+	const temp = o.fileStream ? null : await openTempFile()
+	const fileStream = o.fileStream || temp?.stream
+	const target = fileStream ? new FileSystemWritableFileStreamTarget(fileStream) : new ArrayBufferTarget()
+	const muxer = new Muxer({ target, audio: { codec: ac.mux, numberOfChannels: 2, sampleRate: SAMPLE_RATE }, fastStart: fileStream ? false : 'in-memory', firstTimestampBehavior: 'offset' })
+	let encError = null
+	const aenc = new AudioEncoder({ output: (c, m) => muxer.addAudioChunk(c, m), error: e => { encError = e } })
+	aenc.configure(ac.config)
+	const synth = await OfflineSynth.create({ ...o.audioOpts, schedule: o.song.schedule, programs: o.song.programs })
+	synth.seek(Math.max(0, p.t0))
+	const pump = audioPump(p, synth, o), total = Math.round(p.frames * SAMPLE_RATE / p.fps)
+	try {
+		let k = 0
+		for (const ad of pump.upTo(total)) {
+			if (signal?.aborted) throw new DOMException('Export cancelled', 'AbortError')
+			if (encError) throw encError
+			aenc.encode(ad); ad.close()
+			if (++k % 40 === 0) {
+				o.onProgress?.({ done: pump.ts, total })
+				while (aenc.encodeQueueSize > 20) await new Promise(r => setTimeout(r, 2))
+				await new Promise(r => setTimeout(r, 0))
+			}
+		}
+		await aenc.flush()
+		if (encError) throw encError
+		muxer.finalize()
+		if (o.fileStream) { await o.fileStream.close(); return null }
+		if (temp) { await temp.stream.close(); return new Blob([await temp.handle.getFile()], { type: 'audio/mp4' }) }
+		return new Blob([target.buffer], { type: 'audio/mp4' })
+	} catch (e) {
+		try { aenc.close() } catch { /* ignore */ }
+		if (fileStream) try { await fileStream.abort() } catch { /* ignore */ }
+		throw e
+	} finally { synth.dispose() }
+}
+
+export async function exportVideo(o) {
+	const { stage, song, fps, signal } = o
+	const P = exportPlan(o)
+	const { width, height, bitrate, t0, introFrames, outroFade, outroFrames, musicStart, frames, outroStart, endFadeFrames } = P
+	const intro3D = o.intro?.style === '3d' && stage.titleMesh
+	// o.range [a, b): this part of the frames alone, from frame a to the frame before b, as its
+	// own video (timestamps from 0), for a render in parts joined afterwards; the frames from
+	// o.warm seconds before a (3 by default) are stepped through and not drawn, so the hair, the
+	// dress and the camera operator have caught up by the first one. A part has no sound: the
+	// sound is exportAudio's, with the same options.
+	const [rA, rB] = o.range ? [Math.max(0, o.range[0]), Math.min(frames, o.range[1])] : [0, frames]
+	if (o.range && o.audio) throw new Error('a part of a render has no sound: exportAudio gives it')
+	const warmFrames = o.range && rA > 0 ? Math.min(rA, Math.round((o.warm ?? 3) * fps)) : 0
 	// where song time 0 lands in the video (for captions written alongside it)
-	o.onTimeline?.({ songZero: musicStart / fps - t0, fps, frames })
+	o.onTimeline?.({ songZero: P.songZero, fps, frames })
 
 	const vc = await pickVideoCodec(width, height, fps, bitrate)
 	const ac = o.audio ? await pickAudioCodec() : null
@@ -489,10 +611,10 @@ export async function exportVideo(o) {
 	const prevTitle = stage.titleText
 	if (intro3D && o.intro.title && o.intro.title !== prevTitle) await stage.setTitle(o.intro.title)
 	stage.beginOffline(width, height)
-	let musicFrame = Math.round(t0 * SAMPLE_RATE) // synth timeline; may be negative (pre-roll silence)
-	let audioTs = 0                                // samples encoded so far (output timeline)
+	const pump = synth ? audioPump(P, synth, o) : null
 	try {
-		for (let i = 0; i < frames; i++) {
+		for (let i = rA - warmFrames; i < rB; i++) {
+			const warming = i < rA
 			if (signal?.aborted) throw new DOMException('Export cancelled', 'AbortError')
 			if (encError) throw encError
 			const inIntro = i < introFrames
@@ -503,6 +625,7 @@ export async function exportVideo(o) {
 			const introK = inIntro ? (i + 0.5) / introFrames : null
 			if (intro3D) stage.setIntroShot(introK)
 			stage.update(t, 1 / fps, i >= musicStart && !(inOutro && !outroFade), t)
+			if (warming) { if ((i - rA) % 4 === 0) await yieldUI(); continue }
 			let src = stage.renderer.domElement
 			// (a caller's own picture of this frame, e.g. path traced: may take a while)
 			if (o.frameSource) src = await o.frameSource(src, t, i)
@@ -518,63 +641,23 @@ export async function exportVideo(o) {
 				if (endK > 0) { g.fillStyle = `rgba(0,0,0,${easeInOut(endK)})`; g.fillRect(0, 0, width, height) }
 				src = card
 			}
-			const frame = new VideoFrame(src, { timestamp: Math.round(i * 1e6 / fps), duration: Math.round(1e6 / fps) })
-			venc.encode(frame, { keyFrame: i % (fps * 2) === 0 })
+			const k = i - rA
+			const frame = new VideoFrame(src, { timestamp: Math.round(k * 1e6 / fps), duration: Math.round(1e6 / fps) })
+			venc.encode(frame, { keyFrame: k % (fps * 2) === 0 })
 			frame.close()
 
 			// audio up to the end of this video frame (silence during the intro card)
-			if (aenc) {
-				const target = Math.round((i + 1) * SAMPLE_RATE / fps)
-				while (audioTs < target) {
-					let n, data
-					if (audioTs < introSamples) {
-						n = Math.min(target, introSamples, audioTs + 4800) - audioTs
-						data = new Float32Array(n * 2)
-					} else {
-						n = Math.min(target - audioTs, 4800)
-						const chunkEnd = musicFrame + n
-						if (chunkEnd <= 0) data = new Float32Array(n * 2) // pre-roll before t=0
-						else if (musicFrame < 0) { // straddles t=0
-							const pad = -musicFrame
-							const rest = synth.renderTo(chunkEnd)
-							data = new Float32Array(n * 2)
-							data.set(rest.subarray(0, n - pad), pad)
-							data.set(rest.subarray(n - pad), n + pad)
-						} else data = synth.renderTo(chunkEnd)
-						musicFrame = chunkEnd
-						// fade the music out under the credits (equal-power cosine)
-						if (outroFade && audioTs + n > fadeA) {
-							for (let j = 0; j < n; j++) {
-								const x = clamp01((audioTs + j - fadeA) / Math.max(1, fadeB - fadeA))
-								const gn = Math.cos(x * Math.PI / 2)
-								data[j] *= gn; data[n + j] *= gn
-							}
-						}
-					}
-					if (o.audioFx) o.audioFx(data, n, SAMPLE_RATE) // optional post-processing (e.g. room reverb), planar in place
-					// the sound fades with the picture at the end (equal-power cosine), the room's ring included
-					if (endFadeFrames && audioTs + n > endFadeA) {
-						for (let j = 0; j < n; j++) {
-							const gn = Math.cos(clamp01((audioTs + j - endFadeA) / Math.max(1, endFadeB - endFadeA)) * Math.PI / 2)
-							data[j] *= gn; data[n + j] *= gn
-						}
-					}
-					const ad = new AudioData({ format: 'f32-planar', sampleRate: SAMPLE_RATE, numberOfFrames: n, numberOfChannels: 2, timestamp: Math.round(audioTs * 1e6 / SAMPLE_RATE), data })
-					aenc.encode(ad)
-					ad.close()
-					audioTs += n
-				}
-			}
+			if (aenc) for (const ad of pump.upTo(Math.round((i + 1) * SAMPLE_RATE / fps))) { aenc.encode(ad); ad.close() }
 
 			// back-pressure + keep the UI responsive
 			while (venc.encodeQueueSize > 6) await new Promise(r => setTimeout(r, 2))
 			if (i % 2 === 0) {
 				const el = (performance.now() - startWall) / 1000
-				o.onProgress?.({ frame: i + 1, frames, elapsed: el, eta: el / (i + 1) * (frames - i - 1), codec: vc.codec, audioCodec: ac?.codec })
+				o.onProgress?.({ frame: k + 1, frames: rB - rA, elapsed: el, eta: el / (k + 1) * (rB - rA - k - 1), codec: vc.codec, audioCodec: ac?.codec })
 				await yieldUI()
 			}
 		}
-		o.onProgress?.({ frame: frames, frames, phase: 'finalizing' })
+		o.onProgress?.({ frame: rB - rA, frames: rB - rA, phase: 'finalizing' })
 		await venc.flush()
 		if (aenc) await aenc.flush()
 		if (encError) throw encError
