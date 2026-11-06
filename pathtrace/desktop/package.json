@@ -1,0 +1,14 @@
+{
+  "name": "midiviz-pathtrace-desktop",
+  "private": true,
+  "description": "#045 Path-traced Pianist as a local Electron app, with a choice of CPU renderer for machines without a GPU",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "node run.mjs",
+    "info": "node run.mjs --info",
+    "still": "node run.mjs --still"
+  },
+  "devDependencies": {
+    "electron": "45.0.0"
+  }
+}

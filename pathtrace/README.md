@@ -65,6 +65,64 @@ The skin under a garment isn't hidden: it is sunk into the body (0.8 cm under co
 - The path-traced video export has only been run headless on SwiftShader (`test/video.mjs`), not on a GPU.
 - No timings from a real GPU are recorded here yet: this machine has none, and SwiftShader takes 1–10 minutes a still at 320×180. The viewer reports each still's timings.
 
+## Desktop app (no GPU needed)
+
+[desktop/](desktop/) runs the page in Electron 45 with nothing to serve: the repo reaches the page through a private `midiviz://` protocol, so no port is opened. three.js still comes from jsDelivr.
+
+```
+cd pathtrace/desktop && npm install
+node run.mjs                                   # the page in a window (needs a desktop: DCV, X or Wayland)
+node run.mjs --info                            # which WebGL / WebGPU device the page gets
+node run.mjs --still Prelude1.mid 20 shoulder /tmp/out --size=320x180 --spp=16
+node run.mjs --video Prelude1.mid /tmp/out --res=3840x2160 --fps=12 --len=5 --spp=4 --bounces=10 --denoise=0
+node run.mjs --export Prelude1.mid 20 shoulder /tmp/out   # the frozen frame for native/ (scene.glb, scene.json, env.f32)
+```
+
+`bun run.mjs` works as well. `--still` takes `--engines`, `--spp`, `--bounces`, `--size=WxH`, `--denoise=0`, `--fx=1`, `--hair` and `--extra=&outfit=…`, like `test/stills.mjs`, plus `--timeout=<minutes>` per tracer. It writes each tracer's PNG as soon as that tracer finishes, plus a JSON report. It does not save the raster frame, because its WebGL canvas reads back blank headless.
+
+Without a GPU the default tracer is MuTracer WebGL 2 on lavapipe. That holds for `--still` and `--video`, and for the page itself: when its WebGL runs on llvmpipe, lavapipe or SwiftShader, the Path trace menu starts on MuTracer · WebGL 2, unless the link names a renderer (`ptengine=`).
+
+`--video` goes through the page's Render menu with Path traced selected, the way `test/video.mjs` does. It takes `--engine`, `--spp`, `--bounces`, `--res`, `--fps`, `--len` (5, 20, 60 or `all`), `--denoise`, `--fx`, `--hair`, `--recycle` and `--extra`. The defaults are 4K, 12 fps, 5 s, 4 spp, 10 bounces and no denoising. It saves the MP4 and its two subtitle files, and prints the tracer's line for each frame. `run.mjs` samples the app's processes every 5 s while it runs: CPU in cores, and memory as PSS, so pages shared between processes are not counted twice. The samples go to `monitor.csv` next to the MP4, with a summary in `monitor.summary.json`. `--monitor[=file.csv]` turns this on for the other modes.
+
+`--backend` picks the driver under WebGL:
+
+| `--backend` | WebGL | WebGPU |
+| --- | --- | --- |
+| `lavapipe` (default with no GPU, if installed) | Mesa's Vulkan through ANGLE (`mesa-vulkan-drivers`, or `./setup-lavapipe.sh` to unpack it without root) | SwiftShader |
+| `llvmpipe` (default with no GPU otherwise) | Mesa's OpenGL ES 3.2 through ANGLE | SwiftShader |
+| `swiftshader` | SwiftShader, as in `test/stills.mjs` | SwiftShader |
+| `gpu` (default with a GPU) | the GPU | the GPU |
+
+WebGPU is always on SwiftShader without a GPU: Chromium's Dawn does not offer other CPU Vulkan drivers to pages, with any of the flags tried.
+
+The timings below are from 24 Oct 2026, with MuTracer 0.1.3; the 720p comparison under Native MuTracer is with 0.3.0.
+
+Wall time for each tracer at 320×180, 16 spp, 4 bounces (`Prelude1.mid`, 20 s, `shoulder`), on a 64-core Graviton with no GPU:
+
+| Tracer | lavapipe | llvmpipe | swiftshader |
+| --- | --- | --- | --- |
+| three-gpu-pathtracer WebGL | 86 s | 68 s | 137 s |
+| MuTracer WebGL | **5 s** | 45 s (nearly all compiling) | no result in 22 min |
+| three-gpu-pathtracer WebGPU (SwiftShader every time) | | 52 s (23 s of it OIDN) | |
+| MuTracer WebGPU (SwiftShader every time) | | GPU process crashed (exit 133) after 9 and 19 min of compiling, with the watchdog off | |
+
+At 1920×1080, 64 spp, MuTracer WebGL on lavapipe traced in 21 s and took 220 s wall in all. Most of the extra goes into the JNLM denoise and the readback after it, because the GPU work is still queued when the timer stops. [engines.js](engines.js) traces the whole frame as one tile on a CPU driver. Without that, MuTracer's tile scheduler kept splitting the frame smaller, and samples slowed from 5 s to over 5 min each by the eighth.
+
+A 4K export at 12 fps, 4 spp, 10 bounces and no denoising, with 5 s of `Prelude1.mid` (72 frames with the page's 1 s pre-roll), took 36.6 min on lavapipe:
+
+- **Per frame:** 28–32 s, almost all of it tracing. The snapshot and scene update were under 0.4 s once the snapshot cache held the stage. Frame 25 is where the session is recycled (every 24 frames): it spent 26 s rebuilding, about what one traced frame costs.
+- **CPU:** 61.3 of 64 cores on average, peak 64.6, nearly all in Chromium's GPU process. lavapipe used every core.
+- **Memory:** peak 9.15 GB PSS (GPU process 4.88 GB, page 4.05 GB) of 124 GB. It stayed flat across the clip, and the lowest free memory on the system was 71.7 GB.
+- **Output:** H.264 (OpenH264 in Electron), 3840×2160, 6.0 s, 6.5 MB. The frames are noisy at 4 spp without denoising. Dark areas also show blocky compression, which is the exporter's default bitrate.
+
+The defaults leave MuTracer WebGPU out on CPU backends. Name it in `--engines` to try it anyway.
+
+On lavapipe and llvmpipe, MuTracer's WebGL 2 fallback renders the whole stage and looks like three-gpu-pathtracer's WebGPU still, so the blank MuTracer stills under Known problems are SwiftShader's fault. three-gpu-pathtracer's WebGL tracer is pale and over-lit on all three drivers, so that one is not down to SwiftShader. Whether a GPU shows it too has not been checked.
+
+## Native MuTracer
+
+[native/](native/) builds MuTracer's native SDK (Rust on wgpu) and times it on a frame the desktop app exports (`node run.mjs --export`), with MuTracer's own BVH and with hardware ray queries. On lavapipe it is no faster than the page: 6.9 s against 6.7 s at 720p, and ray queries make it 21.3 s. Its notes say how to run it on a machine with a GPU, where the ray queries could pay off.
+
 ## Tests
 
 Headless, on SwiftShader, with the parent folder served at `http://127.0.0.1:8000/midiviz/` and playwright-core and a Chromium as for [pianist/test/shorts_sheet.mjs](../pianist/test/shorts_sheet.mjs):

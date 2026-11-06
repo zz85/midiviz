@@ -254,7 +254,11 @@ async function mutracer({ width, height, bounces, toneMapping, denoise }, backen
       engine.camera = MU.fromTHREECamera(camera, muLens(camera, dof))
       Object.assign(engine.display, { toneMapping, toneMappingExposure: exposure })
       last?.dispose?.()
-      const render = last = new MU.Render(engine, { width, height, bounces, maxSamples: samples, batchSamples: true })
+      // On a CPU driver (llvmpipe, lavapipe, SwiftShader) MuTracer's tile scheduler keeps
+      // splitting the frame into smaller tiles, one per animation frame, and a 1080p still
+      // slowed from 5 s to over 5 min a sample. Tracing the whole frame as one tile keeps it at about 5 s.
+      const cpu = /llvmpipe|lavapipe|swiftshader/i.test(info.adapterName || '')
+      const render = last = new MU.Render(engine, { width, height, bounces, maxSamples: samples, batchSamples: true, ...(cpu ? { maxTiles: 1, timeBudgetMs: 60000 } : {}) })
       if (denoise) await render.setDenoiser(info.backend === 'webgpu' ? { type: 'oidn', model: 'standard' } : { type: 'jnlm' })
       engine.update()
       times.setup = Math.round(performance.now() - t); t = performance.now()

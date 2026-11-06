@@ -27,8 +27,20 @@ export function createPathTraceStills(stage) {
   hasWebGPU().then(ok => {
     state.gpu = ok
     for (const o of $('ptEngine').options) if (ENGINES[o.value]?.webgpu && !ok) { o.disabled = true; o.textContent += ' (no WebGPU here)' }
-    if (!ok && ENGINES[$('ptEngine').value]?.webgpu) { $('ptEngine').value = 'mu-webgl'; $('ptEngine').dispatchEvent(new Event('change')) }
+    // Without a GPU (WebGL on llvmpipe, lavapipe or SwiftShader), MuTracer's WebGL 2 tracer is the
+    // one that is both right and fast: a 1080p, 64-sample still in about 20 s on lavapipe.
+    // Its WebGPU tracer would land on SwiftShader, which takes minutes to compile it, or crashes.
+    const pick = !ok || (softwareGL() && !new URLSearchParams(location.search).has('ptengine'))
+    if (pick && $('ptEngine').value !== 'mu-webgl') { $('ptEngine').value = 'mu-webgl'; $('ptEngine').dispatchEvent(new Event('change')) }
   })
+  function softwareGL() {
+    try {
+      const gl = document.createElement('canvas').getContext('webgl2'), ext = gl?.getExtension('WEBGL_debug_renderer_info')
+      const name = gl ? String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER)) : ''
+      gl?.getExtension('WEBGL_lose_context')?.loseContext()
+      return /llvmpipe|lavapipe|swiftshader/i.test(name)
+    } catch { return false }
+  }
   const status = (msg, frac) => { $('ptStatus').textContent = msg; if (frac != null) $('ptBar').firstElementChild.style.width = Math.round(frac * 100) + '%' }
   function size() {
     const v = $('ptSize').value
