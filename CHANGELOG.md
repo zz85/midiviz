@@ -4,6 +4,14 @@ What each experiment does and how, newest first. The short list is in the [READM
 
 ## 6 Nov 2026
 
+Depth of field: her face and her hands sharp together, and a pull when they can't be (#045, #049, #050)
+- In a frame that holds her face and her hands, or both hands, the focus puller (pianist/focus-puller.js) now focuses between the nearest and the farthest of them and closes the aperture just enough that each stays sharp (a blur radius of about 1/2000 of the frame's width). The room behind still blurs to the shader's limit, as before. Measured on the 36 camera spots: from behind (back), her hands went from 2.2–2.5 times the sharp limit to within it, the aperture 0.8 of before; the close shots of the keys keep both hands sharp (the off hand was 3.9 times the limit), at half the aperture.
+- Where the face and the hands lie too far apart in depth for that (over her shoulder: the face 5 times the limit), the focus stays on the hands and racks to her eyes while she looks up from the keys (the rig's glances), back after, over about 0.6 s.
+- Effects → **Face and hands sharp** (`?dofboth=0` turns it off: the shot's subject alone, as before). The Blur slider above 1 now also raises the most blur (0.006 of the frame, up to 3 times). Path-traced stills and videos take the same focus and aperture.
+
+Dust in the light: the same at every resolution (#045, #049, #050)
+- A mote was 1 to 3.5 pixels at any resolution: a large share of a 480p frame, specks at 4K. Its size is now a share of the frame's height (0.9 to 3.2 thousandths, what it was at 1080 rows), and where that is under 1.5 pixels it is drawn 1.5 pixels wide and fainter by the area it lacks, so it gives the same light.
+
 Goldberg Variations with repeats: 81 intertitles (liner/pieces/bach-goldberg-repeats.md)
 - The 72-minute file had 10 intertitles, 2 % of the screen time (the other pieces' notes run 1.6–3.8 a minute). It now has 79 pinned lines and the 2 floating stories, about one a minute, 16 % of the time: 2–4 a movement, each where a half starts or repeats (what to listen for on the first pass, a story or a technique on the repeat), each with its note in the panel and its source. History (the 1741 print, Goldberg, Keyserlingk, Forkel's goblet, Bach's own copy found in Strasbourg in 1974 with fourteen more canons, the Haussmann portrait), analysis (every canon's interval, the groups of three, the lament bass of Var. 21), technique (the two manuals on one keyboard) and trivia (Landowska 1933, Gould 1955 and 1981, Scarlatti, Diabelli, Hannibal Lecter). No two overlap, none is dropped, with any take.
 

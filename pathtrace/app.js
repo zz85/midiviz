@@ -626,13 +626,20 @@ export async function boot(plug = {}) {
       geo.setAttribute('seed', new THREE.BufferAttribute(seed, 1))
       const mat = new THREE.ShaderMaterial({
         uniforms: { uTime: { value: 0 }, uScale: { value: innerHeight * renderer.getPixelRatio() }, uOpacity: { value: 0.18 } },
+        // A mote's size is a share of the frame's height, so it looks the same at 480p
+        // and at 4K (it was 1 to 3.5 pixels at any size: large at 480p, specks at 4K).
+        // At 1080 rows it is as before, 1 to 3.5 px: 0.93 to 3.24 thousandths of the
+        // height. Where that is under MIN_PX pixels (a small render), the mote is drawn
+        // MIN_PX wide and fainter by the area it lacks, so it sends as much light.
         vertexShader: `attribute float seed; uniform float uTime, uScale; varying float vA;
+          const float MIN_PX = 1.5;
           void main() {
             vec3 p = position + vec3(sin(uTime * 0.07 + seed) * 9.0, sin(uTime * 0.05 + seed * 1.7) * 7.0, cos(uTime * 0.06 + seed * 0.7) * 9.0);
             vec4 mv = modelViewMatrix * vec4(p, 1.0);
             gl_Position = projectionMatrix * mv;
-            gl_PointSize = clamp(uScale * 0.22 / -mv.z, 1.0, 3.5);
-            vA = 0.4 + 0.6 * abs(sin(uTime * 0.4 + seed * 3.0));
+            float px = clamp(uScale * 0.22 / -mv.z, uScale * 0.000926, uScale * 0.00324);
+            gl_PointSize = max(px, MIN_PX);
+            vA = (0.4 + 0.6 * abs(sin(uTime * 0.4 + seed * 3.0))) * min(1.0, (px * px) / (MIN_PX * MIN_PX));
           }`,
         fragmentShader: `uniform float uOpacity; varying float vA;
           void main() { float d = length(gl_PointCoord - 0.5); if (d > 0.5) discard;
@@ -652,6 +659,8 @@ export async function boot(plug = {}) {
     const pct = x => Math.round(x * 100) + '%'
     function applyFx() {
       bokeh.enabled = $('dof').checked
+      // (the most blur, a share of the frame: more of it with the Blur slider above 1)
+      bokeh.uniforms.maxblur.value = 0.006 * Math.max(1, Math.min(3, +$('dofAmt').value))
       bloom.enabled = $('bloom').checked; bloom.strength = +$('bloomAmt').value
       const g = $('filmGrain').checked
       grain.uniforms.uAmount.value = g ? +$('grainAmt').value : 0; grain.uniforms.uVig.value = g ? +$('vig').value : 0
@@ -661,12 +670,12 @@ export async function boot(plug = {}) {
       $('grainAmtV').textContent = pct(+$('grainAmt').value / 0.035)
       $('vigV').textContent = pct(+$('vig').value / 0.55)
       $('dustAmtV').textContent = pct(+$('dustAmt').value / 0.18)
-      for (const id of ['dofAmt']) $(id).disabled = !$('dof').checked
+      for (const id of ['dofAmt', 'dofBoth']) $(id).disabled = !$('dof').checked
       $('bloomAmt').disabled = !$('bloom').checked
       $('grainAmt').disabled = $('vig').disabled = !g
       $('dustAmt').disabled = !$('dust').checked
     }
-    for (const id of ['dof', 'bloom', 'filmGrain', 'dust']) $(id).onchange = applyFx
+    for (const id of ['dof', 'dofBoth', 'bloom', 'filmGrain', 'dust']) $(id).onchange = applyFx
     for (const id of ['dofAmt', 'bloomAmt', 'grainAmt', 'vig', 'dustAmt']) $(id).oninput = applyFx
     applyFx()
 
@@ -1419,7 +1428,7 @@ export async function boot(plug = {}) {
       ['fasian', 'faceAsian'], ['fafrican', 'faceAfrican'], ['skintex', 'skinTex'],
       ['move', 'camMove'], ['dpreset', 'dirPreset'], ['pace', 'dirPace'], ['favour', 'dirBias'], ['trans', 'dirTrans'], ['dstill', 'dirStill'], ['dmix', 'dirMix'], ['shotnames', 'shotLbl'], ['follow', 'camFollow'], ['dfar', 'dirFar'], ['dmed', 'dirMed'], ['dclose', 'dirClose'], ['strings', 'dirStrings'], ['dpedals', 'dirPedals'], ['dopen', 'dirOpen'],
       ['sf', 'sf'], ['avsync', 'avsync'],
-      ['dofamt', 'dofAmt'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
+      ['dofamt', 'dofAmt'], ['dofboth', 'dofBoth'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
       ['vol', 'vol'], ['room', 'room'], ['seat', 'seat'], ['rv', 'rvAmt'], ['decay', 'rvDecay'], ['tone', 'rvTone'], ['boost', 'boost'], ['amb', 'amb'], ['applause', 'applause'],
       ['exformat', 'exFormat'], ['exlayout', 'exLayout'], ['exsplit', 'exSplit'], ['exhands', 'exHandsHalf'], ['exlview', 'exLessonView'], ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exfps', 'exFps'], ['extail', 'exTail'], ['exlead', 'exLead'], ['exend', 'exEnd'], ['exfadelen', 'exFadeLen'], ['exsub', 'exSub'], ['excard', 'exCard'], ['excaps', 'exCaps'], ['exvtt', 'exVtt'], ['exlen', 'exLen'], ['exhold', 'exHold'],
       ['notes', 'linerMode'], ['itstyle', 'itStyle'], ['itstylea', 'itStyleA'], ['itcol', 'itTheme'], ['itpos', 'itPos'], ['itheads', 'itHeads'], ['extitle', 'exTitle'], ['expt', 'exPt'], ['ptengine', 'ptEngine'], ['ptspp', 'ptSpp'], ['ptbounces', 'ptBounces'], ['pthair', 'ptHair'], ['ptdn', 'ptDenoise'], ['ptfx', 'ptFx'], ['ptsize', 'ptSize'],
@@ -1518,6 +1527,8 @@ export async function boot(plug = {}) {
     const eyesC = new THREE.Vector3(), hasEyes = !!(ch.byName?.['eye.L'] && ch.byName?.['eye.R'])
     const eyesAt = () => hasEyes ? eyesC.copy(rig.pos('eye.L')).add(rig.pos('eye.R')).multiplyScalar(0.5) : head
     const dofOf = name => SHOT_DOF[name] ?? 1
+    // she looks up from the keys now (the rig's glances): the focus may rack to her eyes
+    const glancing = t => !!dirSource?.glances?.some(g => t >= g.a && t < g.b)
     let lastShot2 = null
     let fxT = 0, exporting = false, exTitleCard = false
     function frame() {
@@ -1588,7 +1599,7 @@ export async function boot(plug = {}) {
       // shot's aim on the mechanism; shallower the closer (pianist/focus-puller.js)
       {
         const f = focusPull.update({ camera, dt, subject: focusOn === handsC ? 'hands' : focusOn === head ? 'head' : 'target', hands: rig.hands, handsMid: handsC,
-          eyes: focusOn === head ? eyesAt() : null, target: focusOn, snap: snapFocus, amount: +$('dofAmt').value, shot: dofOf(driven?.shot?.name ?? view) })
+          eyes: eyesAt(), target: focusOn, snap: snapFocus, amount: +$('dofAmt').value, shot: dofOf(driven?.shot?.name ?? view), glance: glancing(t), split: $('dofBoth')?.checked !== false })
         bokeh.uniforms.focus.value = f.focus; bokeh.uniforms.aperture.value = f.aperture
       }
       // (the director's fade-in only while the song runs: a loaded song paused at 0 isn't black)
@@ -2235,7 +2246,8 @@ export async function boot(plug = {}) {
         }
         {
           const hd = focusOn === handsAt ? 'hands' : focusOn === rig.pos('head') ? 'head' : 'target'
-          const f = focusPull.update({ camera, dt: 0, subject: hd, hands: rig.hands, handsMid: handsAt, eyes: hd === 'head' ? eyesAt() : null, target: focusOn, snap: true, amount: +$('dofAmt').value, shot: dofOf(window.__shotInfo?.name ?? view) })
+          const f = focusPull.update({ camera, dt: 0, subject: hd, hands: rig.hands, handsMid: handsAt, eyes: eyesAt(), target: focusOn, snap: true, amount: +$('dofAmt').value, shot: dofOf(window.__shotInfo?.name ?? view), glance: glancing(T), split: $('dofBoth')?.checked !== false })
+          window.__focusInfo = f
           bokeh.uniforms.focus.value = f.focus; bokeh.uniforms.aperture.value = f.aperture
         }
         bokeh.enabled = !params.has('nodof')

@@ -19,10 +19,25 @@
 // • The aperture: shallower the closer the subject, as a real lens at one
 //   f-stop (×220 cm / focus, within 0.3–1.6), times the Blur slider and the
 //   shot's own amount (SHOT_DOF).
+// • Her face and her hands in one frame (the medium shots of her, over her
+//   shoulder, from above), or both hands (the close shots of the keys): all
+//   of them are kept sharp where the lens allows it. The
+//   focus goes between the nearest and the farthest of them, and the aperture
+//   closes just enough that each stays within SHARP (the blur a viewer reads
+//   as sharp: a radius of about 1/2000 of the frame's width); the room behind,
+//   a metre and more away, still blurs. Where that would close it below SPLIT_MIN
+//   of the shot's own (the face and the hands far apart in depth, as over her
+//   shoulder), the lens keeps its aperture and pulls focus instead: to the
+//   shot's subject, and to her eyes while she looks up from the keys (glance),
+//   back to the keys after, each pull over RACK seconds.
+//   `split` (default on) turns this off: the shot's subject alone, as before.
 
 import * as THREE from 'three'
 
 const TAU = 0.16, HOLD = 1.5, BASE = 0.0001, REF = 220
+// three's BokehShader blurs by |depth - focus| × aperture (a fraction of the frame), its
+// taps reaching 0.4 of that: SHARP 0.00125 is a tap radius of 1/2000 of the frame's width
+export const SHARP = 0.00125, SPLIT_MIN = 0.4, RACK = 0.6
 
 /**
  * Each spot's depth of field against the others (pianist/director.js SPOTS):
@@ -38,7 +53,7 @@ export const SHOT_DOF = {
 }
 
 export function createFocusPuller({ tau = TAU, hold = HOLD } = {}) {
-  let z = 0, hand = null, lead = 0
+  let z = 0, hand = null, lead = 0, ap = 0, racked = null, pulling = false
   const fwd = new THREE.Vector3(), d = new THREE.Vector3(), q = new THREE.Vector3()
   const depth = (camera, p) => d.subVectors(p, camera.position).dot(fwd)
 
@@ -71,6 +86,17 @@ export function createFocusPuller({ tau = TAU, hold = HOLD } = {}) {
     return cand[hand].z
   }
 
+  // what of her eyes and her hands the frame holds, by depth: { near, far, eyes (null where
+  // they are out of it) }, or null where it holds fewer than two of them, or no hand
+  function inFrame(camera, eyes, hands) {
+    const visible = p => { q.copy(p).project(camera); return Math.abs(q.x) <= 0.95 && Math.abs(q.y) <= 0.95 && q.z < 1 }
+    const ze = eyes && visible(eyes) ? depth(camera, eyes) : null, zs = ze != null ? [ze] : []
+    let nh = 0
+    for (const side of ['L', 'R']) { const h = hands?.[side]; if (h?.visible && visible(h.joints.M)) { zs.push(depth(camera, h.joints.M)); nh++ } }
+    if (zs.length < 2 || !nh) return null
+    return { near: Math.min(...zs), far: Math.max(...zs), eyes: ze }
+  }
+
   return {
     get focus() { return z },
     get hand() { return hand },
@@ -79,7 +105,7 @@ export function createFocusPuller({ tau = TAU, hold = HOLD } = {}) {
      * hands { L, R } (hand drivers: visible, joints.M, diag.press), handsMid / eyes / target
      * (Vector3 fallbacks), snap (a cut), amount (the Blur slider), shot (SHOT_DOF factor)
      */
-    update({ camera, dt = 1 / 60, subject = 'head', hands = null, handsMid = null, eyes = null, target = null, snap = false, amount = 1, shot = 1 }) {
+    update({ camera, dt = 1 / 60, subject = 'head', hands = null, handsMid = null, eyes = null, target = null, snap = false, amount = 1, shot = 1, glance = false, split = true }) {
       camera.updateMatrixWorld()
       camera.getWorldDirection(fwd)
       let goal = null
@@ -87,9 +113,29 @@ export function createFocusPuller({ tau = TAU, hold = HOLD } = {}) {
       else if (subject === 'target') goal = target && depth(camera, target)
       else goal = (eyes || target) && depth(camera, eyes || target)
       if (!(goal > camera.near * 2)) goal = Math.max(camera.near * 2, goal || REF)
-      z = snap || !(z > 0) ? goal : z + (goal - z) * (1 - Math.exp(-Math.max(0, dt) / tau))
-      const aperture = BASE * THREE.MathUtils.clamp(REF / z, 0.3, 1.6) * amount * shot
-      return { focus: z, aperture }
+      const apOf = f => BASE * THREE.MathUtils.clamp(REF / f, 0.3, 1.6) * amount * shot
+      let apGoal = null, mode = 'subject'
+      // her face and a hand in the frame: both sharp, or a pull between them
+      const both = split && subject !== 'target' ? inFrame(camera, eyes, hands) : null
+      if (both) {
+        const mid = (both.near + both.far) / 2, half = (both.far - both.near) / 2, want = apOf(mid)
+        const fits = half > 0 ? SHARP / half : Infinity
+        if (fits >= SPLIT_MIN * want) { goal = mid; apGoal = Math.min(want, fits); mode = 'both' }
+        else {
+          // too far apart for one focus: the subject, or her eyes while she looks up
+          const to = glance && both.eyes != null ? 'eyes' : subject
+          if (to === 'eyes') goal = both.eyes
+          if (racked && racked !== to) pulling = true
+          racked = to; mode = to === 'eyes' ? 'eyes' : 'subject'
+        }
+      } else racked = null
+      // (a pull racked between the face and the keys takes about RACK s; one that follows a hand, TAU)
+      if (snap || Math.abs(goal - z) < 0.5) pulling = false
+      const k = 1 - Math.exp(-Math.max(0, dt) / (pulling ? RACK / 3 : tau))
+      z = snap || !(z > 0) ? goal : z + (goal - z) * k
+      const a = apGoal ?? apOf(z)
+      ap = snap || !(ap > 0) ? a : ap + (a - ap) * (1 - Math.exp(-Math.max(0, dt) / TAU))
+      return { focus: z, aperture: ap, mode }
     },
   }
 }
