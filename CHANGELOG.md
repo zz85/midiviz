@@ -4,6 +4,9 @@ What each experiment does and how, newest first. The short list is in the [READM
 
 ## 6 Nov 2026
 
+Film grain: the same at every resolution (#045, #049, #050, path-traced stills)
+- The grain was one noise value a pixel: coarse at 480p, all but gone at 4K. A grain is now a cell of 1/1080 of the frame's height (a pixel at 1080 rows, as before), smoothly interpolated above that, and below it each pixel averages several, so the grain is fainter by the rows the frame lacks, as a 1080p frame scaled down would be. Measured on a patch of the floor, each frame scaled to 540 rows: 540p 12.1 → 6.2, 1080p 6.1 → 6.1, 2160p 3.0 → 6.4.
+
 Depth of field: her face and her hands sharp together, and a pull when they can't be (#045, #049, #050)
 - In a frame that holds her face and her hands, or both hands, the focus puller (pianist/focus-puller.js) now focuses between the nearest and the farthest of them and closes the aperture just enough that each stays sharp (a blur radius of about 1/2000 of the frame's width). The room behind still blurs to the shader's limit, as before. Measured on the 36 camera spots: from behind (back), her hands went from 2.2–2.5 times the sharp limit to within it, the aperture 0.8 of before; the close shots of the keys keep both hands sharp (the off hand was 3.9 times the limit), at half the aperture.
 - Where the face and the hands lie too far apart in depth for that (over her shoulder: the face 5 times the limit), the focus stays on the hands and racks to her eyes while she looks up from the keys (the rig's glances), back after, over about 0.6 s.

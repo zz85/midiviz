@@ -64,7 +64,7 @@ export function finishTrace(hdr, fx) {
     composer.addPass(new OutputPass())
     if (withFx && (fx.grain.amount || fx.grain.vig)) {
       const g = new ShaderPass({
-        uniforms: { tDiffuse: { value: null }, uTime: { value: fx.grain.time }, uAmount: { value: fx.grain.amount }, uVig: { value: fx.grain.vig } },
+        uniforms: { tDiffuse: { value: null }, uTime: { value: fx.grain.time }, uAmount: { value: fx.grain.amount }, uVig: { value: fx.grain.vig }, uRes: { value: new THREE.Vector2(w, h) } },
         ...fx.grainShader,
       })
       composer.addPass(g)

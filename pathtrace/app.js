@@ -603,12 +603,24 @@ export async function boot(plug = {}) {
     composer.addPass(bloom)
     composer.addPass(new OutputPass())
     const grain = new ShaderPass({
-      uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uAmount: { value: 0.035 }, uVig: { value: 0.55 } },
+      // Grain the same at every resolution: a grain is a cell of 1/1080 of the frame's height
+      // (one pixel at 1080 rows, as it was), smoothly interpolated, so at 4K a grain spans
+      // 2 pixels and stays visible. Below 1080 rows a pixel holds several grains, which
+      // average: the amount falls with the height (rows / 1080), as a downscaled 1080p
+      // frame's grain would. (It was one noise value a pixel at any size: coarse at 480p,
+      // invisible at 4K.) uRes: the frame's width and height in pixels.
+      uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uAmount: { value: 0.035 }, uVig: { value: 0.55 }, uRes: { value: new THREE.Vector2(1920, 1080) } },
       vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-      fragmentShader: `uniform sampler2D tDiffuse; uniform float uTime, uAmount, uVig; varying vec2 vUv;
-        float h(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233)) + uTime * 7.13) * 43758.5453); }
+      fragmentShader: `uniform sampler2D tDiffuse; uniform float uTime, uAmount, uVig; uniform vec2 uRes; varying vec2 vUv;
+        float h(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233)) + fract(uTime * 7.13) * 91.7) * 43758.5453); }
+        // value noise on grain cells: bilinear between the four cells around the point
+        float n(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(h(i), h(i + vec2(1.0, 0.0)), f.x), mix(h(i + vec2(0.0, 1.0)), h(i + vec2(1.0, 1.0)), f.x), f.y); }
         void main() { vec4 c = texture2D(tDiffuse, vUv); vec2 q = vUv - 0.5; float v = 1.0 - uVig * dot(q, q) * 1.6;
-          c.rgb *= v; c.rgb += (h(vUv * 1000.0) - 0.5) * uAmount; gl_FragColor = c; }`,
+          float k = uRes.y / 1080.0, cells = max(k, 1.0);
+          // (bilinear noise has about 0.65 of a cell's spread: 1.5 brings it back)
+          float g = (cells > 1.0 ? (n(vUv * uRes / cells) - 0.5) * 1.5 : h(floor(vUv * uRes)) - 0.5) * min(k, 1.0);
+          c.rgb *= v; c.rgb += g * uAmount; gl_FragColor = c; }`,
     })
     composer.addPass(grain)
 
@@ -1707,6 +1719,7 @@ export async function boot(plug = {}) {
       camera.aspect = w / ca; camera.updateProjectionMatrix()
       renderer.setSize(w, h, style); composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(w, ch)
       dust.material.uniforms.uScale.value = ch * renderer.getPixelRatio()
+      grain.uniforms.uRes.value.set(w * renderer.getPixelRatio(), ch * renderer.getPixelRatio())
     }
     addEventListener('resize', () => { if (!exporting) liveResize() })
     resize(innerWidth, innerHeight)
