@@ -350,3 +350,26 @@ test('a held key out of reach is let go early; an octave is held', () => {
   assert.equal(near[0].release, undefined)
   assert.equal(near[0].finger, 5)
 })
+
+// Godowsky's rule for crossings ("the hand using the thumb goes on the
+// bottom"), as in the opening of Bach's Partita No. 1 Giga: the right hand
+// runs on in the middle of the keyboard with its thumb, the left hand leaps
+// over it from the bass to the treble and back
+test('crossings: the hand that leaps goes over, the hand underneath keeps its thumb', () => {
+  const run = [60, 62, 64, 65, 67, 65, 64, 62], notes = []
+  for (let i = 0; i < 32; i++) notes.push({ pitch: run[i % 8], on: i * 0.125, off: i * 0.125 + 0.12, hand: 'R' })
+  for (let i = 0; i < 16; i++) notes.push({ pitch: i % 2 ? 81 : 48, on: i * 0.25, off: i * 0.25 + 0.2, hand: 'L' })
+  fingerPiece(notes, { splitHands: false })
+  const cross = h => notes.filter(n => n.hand === h && n.cross)
+  assert.ok(cross('L').length >= 6 && cross('R').length >= 6, 'both hands play across the other')
+  assert.ok(cross('L').every(n => n.over), 'the leaping left hand goes over')
+  assert.ok(cross('R').every(n => !n.over), 'the running right hand stays under')
+  assert.equal(cross('L').filter(n => n.finger === 1).length, 0, 'no thumb on the hand going over')
+  assert.deepEqual(notes.filter(n => n.hand === 'R' && n.pitch === 60).map(n => n.finger), [1, 1, 1, 1], 'the hand underneath plays on with its thumb, each time round')
+  // the same with the roles changed: the left hand runs, the right leaps
+  const flip = notes.map(n => ({ pitch: 124 - n.pitch, on: n.on, off: n.off, hand: n.hand === 'L' ? 'R' : 'L' }))
+  fingerPiece(flip, { splitHands: false })
+  assert.ok(flip.filter(n => n.hand === 'R' && n.cross).every(n => n.over), 'the leaping right hand goes over')
+  assert.ok(flip.filter(n => n.hand === 'R' && n.cross).every(n => n.finger !== 1), 'no thumb on the right hand going over')
+  assert.deepEqual(flip.filter(n => n.hand === 'L' && n.pitch === 64).map(n => n.finger), [1, 1, 1, 1], 'the left hand underneath keeps its thumb')
+})

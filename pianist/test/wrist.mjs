@@ -47,6 +47,11 @@ const HANDS_PEN = 1, HANDS_SHARE = 0.15
 const HANDS_SHARES = { 'rush_e_real.mid': 0.9 }
 // over/under swaps inside a passage (Goldberg Var. 5-6: 39 before, 0 after)
 const MAX_SWAPS = 2
+// thumbs on crossing notes, in a crossing passage (Godowsky: the hand using
+// its thumb goes under): the hand going over on at most THUMB_OVER of its crossing notes, and on no
+// more of them than the hand underneath; checked where each hand plays
+// THUMB_MIN crossing notes or more
+const THUMB_OVER = 0.15, THUMB_MIN = 20
 const MISSES = { 'chpn-p15.mid': { R: 0.08 } }
 
 const { chromium } = await import(PW)
@@ -140,7 +145,16 @@ async function runPiece(run) {
         out[sd].push([t, u - rest[sd][0], e - rest[sd][1], miss])
       }
     }
-    return { out, both, range: Object.fromEntries(Object.entries(WRIST_RANGE).map(([k, v]) => [k, v * DEG])) }
+    // thumbs on the crossing notes (fingering.js crossOver): the hand going
+    // over keeps its thumb off them, the hand underneath plays on with it
+    // (in a crossing passage, where a hand lifts over the other: not the
+    // interlocked chords of two hands side by side, whose thumbs meet;
+    // and single notes: a chord the hand reaches over with takes its thumb)
+    const H = rig.hands, crossed = n => Math.max(H.crossAt('L', n.on - H.lead), H.crossAt('R', n.on - H.lead)) > 0.5
+    const chord = n => H.notes.some(m => m !== n && m.hand === n.hand && Math.abs(m.on - n.on) < 0.03)
+    const cn = H.notes.filter(n => n.cross && n.finger >= 1 && n.on >= START && n.on <= dur && crossed(n) && !chord(n))
+    const thumbs = { over: cn.filter(n => n.over).length, overThumb: cn.filter(n => n.over && n.finger === 1).length, under: cn.filter(n => !n.over).length, underThumb: cn.filter(n => !n.over && n.finger === 1).length }
+    return { out, both, thumbs, range: Object.fromEntries(Object.entries(WRIST_RANGE).map(([k, v]) => [k, v * DEG])) }
   }, [SECONDS, FPS, start])
   const R = r.range
   const checks = [['ulnar', 1, R.ulnar], ['radial', 1, -R.radial], ['extension', 2, R.ext], ['flexion', 2, -R.flex]]
@@ -179,6 +193,12 @@ async function runPiece(run) {
       console.log(`${bad ? 'FAIL' : 'ok  '} ${run} hand over hand: one hand more than ${HANDS_PEN} cm into the other on ${deep.length} of ${crossedF.length} crossed frames (${(100 * deep.length / crossedF.length).toFixed(0)} %, at most ${Math.round(100 * share)} %)`)
       if (bad) failed++
     }
+  }
+  if (r.thumbs.over >= THUMB_MIN && r.thumbs.under >= THUMB_MIN) {
+    const { over, overThumb, under, underThumb } = r.thumbs, o = overThumb / over, u = underThumb / under
+    const bad = o > THUMB_OVER || o > u
+    console.log(`${bad ? 'FAIL' : 'ok  '} ${run} thumbs crossing: the hand over on ${overThumb} of ${over} notes (${(100 * o).toFixed(0)} %, at most ${Math.round(100 * THUMB_OVER)} %), the hand under on ${underThumb} of ${under} (${(100 * u).toFixed(0)} %, at least as many)`)
+    if (bad) failed++
   }
   if (errors.length) { console.log('FAIL', song, 'page errors:', errors.join(' | ')); failed++ }
   } finally { await page.close().catch(() => {}) }
