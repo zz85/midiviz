@@ -419,7 +419,8 @@ export function fingerHand(notes, model, hand = 'R') {
       const pw = nearestWhite(prevSl, n.p), nw = nearestWhite(nextSl, n.p)
       const role = { top: k > 1 && i === k - 1, melody: i === k - 1 }
       // (the hand that goes over only: the one underneath plays on as it
-      // would, its thumb included; crossOver)
+      // would, its thumb included; crossOver. Both, where crossOver hasn't
+      // decided yet: n.over null)
       const cross = n.src?.cross && n.src.over !== false ? model.W.crossHand || 0 : 0
       return [0, 1, 2, 3, 4, 5].map(f => (f ? model.noteCost(n, f, pw, nw, role) + cross * CROSS_FINGER[f] : 0))
     })
@@ -631,9 +632,10 @@ export function markCrossings(notes) {
  * within OVER_WIN s, in semitones, a chord by its middle; a run steps, a hand
  * crossing over leaps) goes over; decided for the passage, not note by note
  * (the majority of the crossing notes within OVER_MAJ s), so the hands don't
- * trade places in the middle of one. Call after markCrossings.
+ * trade places in the middle of one. Call after markCrossings; see below
+ * for the close calls.
  */
-const OVER_WIN = 0.6, OVER_MAJ = 2.5
+const OVER_WIN = 0.6, OVER_MAJ = 2.5, OVER_GAP = 1, OVER_CLOSE = 0.3, OVER_EVEN = 0.15
 export function crossOver(notes) {
   const by = { L: [], R: [] }
   for (const n of notes) { n.over = false; if (by[n.hand]) by[n.hand].push(n) }
@@ -651,15 +653,52 @@ export function crossOver(notes) {
     return k ? sum / k : 0
   }
   const cross = notes.filter(n => n.cross && by[n.hand]).sort((a, b) => a.on - b.on)
-  const say = cross.map(n => (leap('L', n.on) > leap('R', n.on) ? 'L' : 'R'))
+  const lp = cross.map(n => [leap('L', n.on), leap('R', n.on)])
+  const say = lp.map(([l, r]) => (l > r ? 'L' : 'R'))
+  const over = new Array(cross.length)
   for (let i = 0, lo = 0, hi = 0; i < cross.length; i++) {
     while (cross[lo].on < cross[i].on - OVER_MAJ) lo++
     while (hi < cross.length && cross[hi].on <= cross[i].on + OVER_MAJ) hi++
     let l = 0; for (let k = lo; k < hi; k++) if (say[k] === 'L') l++
-    const over = 2 * l === hi - lo ? say[i] : 2 * l > hi - lo ? 'L' : 'R'
-    cross[i].over = cross[i].hand === over
+    over[i] = 2 * l === hi - lo ? say[i] : 2 * l > hi - lo ? 'L' : 'R'
   }
-  return notes
+  // Close calls, where the leaps don't say: the thumb does. In each crossing
+  // passage (crossing notes less than OVER_GAP s apart) where the hands leap
+  // about as far (the median of their difference under OVER_CLOSE of the
+  // larger) or the notes' say is nearly even (OVER_EVEN), the hand that
+  // plays its single crossing notes with its thumb more often goes under;
+  // where both do as often, the hand on more black keys goes over (Godowsky,
+  // as Dale Haven reported his master class, The Piano Teacher, 1963). That
+  // takes the fingers: on notes not fingered yet such a passage is left open
+  // (n.over null: both hands are charged for the thumb there, so a hand that
+  // takes it all the same needs it), and the count of open passages is
+  // returned, for fingerPiece to finger them and decide
+  let open = 0
+  const black = p => [1, 3, 6, 8, 10].includes(p % 12)
+  for (let a = 0; a < cross.length;) {
+    let b = a + 1
+    while (b < cross.length && cross[b].on - cross[b - 1].on < OVER_GAP) b++
+    const ds = [], idx = []
+    let l = 0
+    for (let i = a; i < b; i++) { idx.push(i); const [x, y] = lp[i]; ds.push(Math.abs(x - y) / Math.max(x, y, 1)); if (say[i] === 'L') l++ }
+    ds.sort((x, y) => x - y)
+    const share = l / (b - a), close = ds[ds.length >> 1] < OVER_CLOSE || Math.abs(share - 0.5) < OVER_EVEN
+    if (close && b - a >= 2) {
+      const ps = cross.slice(a, b)
+      if (ps.some(n => !(n.finger >= 1))) { open++; for (const i of idx) over[i] = null }
+      else {
+        const single = n => !by[n.hand].some(m => m !== n && Math.abs(m.on - n.on) < 0.03)
+        const th = h => ps.filter(n => n.hand === h && n.finger === 1 && single(n)).length
+        const bl = h => { const q = ps.filter(n => n.hand === h); return q.filter(n => black(n.pitch)).length / Math.max(1, q.length) }
+        const tL = th('L'), tR = th('R')
+        const o = tL !== tR ? (tL > tR ? 'R' : 'L') : tL && bl('L') !== bl('R') ? (bl('L') > bl('R') ? 'L' : 'R') : null
+        if (o) for (const i of idx) over[i] = o
+      }
+    }
+    a = b
+  }
+  for (let i = 0; i < cross.length; i++) cross[i].over = over[i] == null ? null : cross[i].hand === over[i]
+  return open
 }
 
 // ── Whole piece ────────────────────────────────────────────────────────────
@@ -684,8 +723,13 @@ export function fingerPiece(notes, options = {}) {
     if (dups.size) notes = notes.filter(n => !dups.has(n))
   }
   if (options.splitHands !== false) splitHands(notes, model.opts)
-  if (model.W.crossHand) { markCrossings(notes); crossOver(notes) }
+  let open = 0
+  if (model.W.crossHand) { markCrossings(notes); open = crossOver(notes) }
   const out = {}
+  // (twice where crossOver left close calls open: once to see which hand
+  // reaches for its thumb there, again with the hand over decided)
+  for (let pass = 0; pass < (open ? 2 : 1); pass++) {
+  if (pass) crossOver(notes)
   for (const hand of ['R', 'L']) {
     const own = notes.filter(n => n.hand === hand)
     const rh = own.map(n => ({ p: hand === 'L' ? mirror(n.pitch) : n.pitch, on: n.on, off: n.off, src: n }))
@@ -695,6 +739,7 @@ export function fingerPiece(notes, options = {}) {
       // the finger lets go before the note ends (see W.release); else absent
       if (n.release != null && n.release < n.off) n.src.release = n.release; else delete n.src.release
     }
+  }
   }
   for (const [n, k] of dups) { n.hand = k.hand; n.finger = k.finger; n.cross = k.cross; n.over = k.over; if (k.release != null) n.release = Math.min(k.release, n.off); else delete n.release }
   const t1 = typeof performance !== 'undefined' ? performance.now() : Date.now()

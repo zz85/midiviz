@@ -373,3 +373,21 @@ test('crossings: the hand that leaps goes over, the hand underneath keeps its th
   assert.ok(flip.filter(n => n.hand === 'R' && n.cross).every(n => n.finger !== 1), 'no thumb on the right hand going over')
   assert.deepEqual(flip.filter(n => n.hand === 'L' && n.pitch === 64).map(n => n.finger), [1, 1, 1, 1], 'the left hand underneath keeps its thumb')
 })
+
+// A close call, where both hands step: the leaps don't say which goes over,
+// so the thumb does. The right hand runs a whole-tone scale up and down,
+// passing its thumb under; the left hand rocks between two keys just above it, which the
+// 2nd and 3rd fingers play as well as any (both step by 2 semitones). The scale needs its thumb: the
+// right hand goes under, the left over it
+test('crossings: in a close call, the hand that needs its thumb goes under', () => {
+  const sc = [60, 62, 64, 66, 68, 70, 72, 70, 68, 66, 64, 62], notes = []
+  for (let i = 0; i < 36; i++) notes.push({ pitch: sc[i % 12], on: i * 0.15, off: i * 0.15 + 0.14, hand: 'R' })
+  for (let i = 0; i < 36; i++) notes.push({ pitch: [74, 76][i % 2], on: i * 0.15 + 0.07, off: i * 0.15 + 0.14, hand: 'L' })
+  fingerPiece(notes, { splitHands: false })
+  const cross = h => notes.filter(n => n.hand === h && n.cross)
+  assert.ok(cross('L').length >= 16 && cross('R').length >= 16, 'both hands play across the other')
+  assert.ok(cross('R').every(n => n.over === false), 'the scale stays under')
+  assert.ok(cross('L').every(n => n.over === true), 'the rocking hand goes over')
+  assert.equal(cross('L').filter(n => n.finger === 1).length, 0, 'no thumb on the hand going over')
+  assert.ok(cross('R').filter(n => n.finger === 1).length >= 6, 'the scale passes its thumb under')
+})
