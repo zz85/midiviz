@@ -7,6 +7,11 @@ What each experiment does and how, newest first. The short list is in the [READM
 Score that scrolls (#049, #050)
 - Visuals → Score → **Layout → Scroll, one long line** (`?smode=scroll`): the bars on one line in the order played, moving right to left under a cursor that stays a third of the way across, in place of the system that turns up. The clef and the key are cut off each system and drawn once at the left, where they stay; each system is scaled to the score's usual staff height so the staves join; the line moves at each bar's width over its time, averaged over 0.8 s. Repeats are laid out again, movements 8 spaces apart. Live and in videos, scans and engravings alike ([sheet/overlay.js](sheet/overlay.js), [notes](sheet/README.md)). From Galen DeGraf's video on scrolling scores: a score in time rather than on a page, no page turns, a stationary cursor and the clef kept on a layer of its own. His proportional note spacing isn't done: the scan's spacing is the printer's and nwc-viewer's is its own, and the smoothed scroll stands in for it. Test: sheet/test/sheet.test.js (15). Checked headless on the Aria and in Var. 16 of the complete Goldberg in both pages, and a 20 s export of #050.
 
+Sequins as metal flakes (#032, #045, #047, #049, #050)
+- The sequin fabric ([pianist/fabric.js](pianist/fabric.js)) was a metalness of 0.75 over the whole dress, half metal, half cloth everywhere. Each disc of its normal tile is now a metal flake (metalness 1, roughness 0.32, its rolled edge 0.44) and the cloth that shows between the discs isn't (metalness 0, roughness 0.85), from a metalness and roughness map drawn with the normal tile, packed as glTF does (roughness in G, metalness in B). The cloth sheen is off (it lay over the metal); the clearcoat and the light iridescence stay. The path tracers take the maps as they are.
+- Away from a highlight, a flake now reflects the room rather than showing the dress colour, so a sequin dress reads darker between its glints, as a real one does. With the flakes at 0.18 roughness, as before, the dress read almost black in #047's studio; at 0.32 each flake spreads its reflection enough to catch the light.
+- Changing fabric puts back the garment's own metalness map, as it does its other maps.
+
 ## 7 Nov 2026
 
 The page takes no input while it renders (#045, #049, #050)

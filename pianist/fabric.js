@@ -5,9 +5,11 @@
 //  • satin    — smooth, low roughness, a bright sheen;
 //  • velvet   — rough, deep, a strong coloured sheen at grazing angles;
 //  • sequins  — concert stage dresses: a tiled normal map of small
-//    overlapping discs, each tilted at random, on a metallic, glossy base,
-//    so every disc catches the spotlight at its own angle and the dress
-//    glitters as she moves. Tiled in the garment's own UVs; `scale` sets the
+//    overlapping discs, each a flat metal flake tilted at random, so every
+//    disc catches the spotlight at its own angle and the dress glitters as
+//    she moves. The discs are metal (metalness 1, glossy) and the cloth that
+//    shows between them isn't (a metalness and roughness map from the same
+//    tile, as glTF packs them: roughness in G, metalness in B). Tiled in the garment's own UVs; `scale` sets the
 //    tiles per UV unit (community UVs span 0–1, ours run in 5.6 cm tiles).
 //
 // More finishes (#047), each a set of material values plus, where the cloth
@@ -48,12 +50,18 @@
 import * as THREE from 'three'
 
 let sequinTex = null
+// the sequins' tile: { normal, pbr } (pbr: roughness in G, metalness in B)
+const SEQUIN_ROUGH = 0.32, CLOTH_ROUGH = 0.85
 function sequinNormal(size = 256, cells = 16) {
   if (sequinTex) return sequinTex
   let s = 31; const r = () => (s = (s * 16807) % 2147483647) / 2147483647
   const c = document.createElement('canvas'); c.width = c.height = size
   const g = c.getContext('2d'), img = g.createImageData(size, size), d = img.data
   for (let i = 0; i < d.length; i += 4) { d[i] = 128; d[i + 1] = 128; d[i + 2] = 255; d[i + 3] = 255 }
+  // the cloth between the discs: rough and not metal, until a disc covers it
+  const pc = document.createElement('canvas'); pc.width = pc.height = size
+  const pg = pc.getContext('2d'), pimg = pg.createImageData(size, size), pd = pimg.data
+  for (let i = 0; i < pd.length; i += 4) { pd[i] = 255; pd[i + 1] = CLOTH_ROUGH * 255; pd[i + 2] = 0; pd[i + 3] = 255 }
   const cw = size / cells, rad = cw * 0.62
   // rows overlap like scales: draw top row first, later rows on top
   for (let row = 0; row < cells; row++) for (let col = 0; col < cells; col++) {
@@ -67,14 +75,13 @@ function sequinNormal(size = 256, cells = 16) {
       if (q > 0.8) { nx += dx / rad * 1.5; ny += dy / rad * 1.5 }
       const l = Math.hypot(nx, ny, nz), i = (((y + size) % size) * size + ((x + size) % size)) * 4
       d[i] = (nx / l * 0.5 + 0.5) * 255; d[i + 1] = (ny / l * 0.5 + 0.5) * 255; d[i + 2] = (nz / l * 0.5 + 0.5) * 255
+      // a flake: metal, glossy; its rolled edge a little less so
+      pd[i + 1] = (q > 0.8 ? SEQUIN_ROUGH + 0.12 : SEQUIN_ROUGH) * 255; pd[i + 2] = 255
     }
   }
-  g.putImageData(img, 0, 0)
-  sequinTex = new THREE.CanvasTexture(c)
-  sequinTex.wrapS = sequinTex.wrapT = THREE.RepeatWrapping
-  sequinTex.colorSpace = THREE.NoColorSpace
-  sequinTex.anisotropy = 8
-  return sequinTex
+  g.putImageData(img, 0, 0); pg.putImageData(pimg, 0, 0)
+  const tex = cv => { const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.NoColorSpace; t.anisotropy = 8; return t }
+  return (sequinTex = { normal: tex(c), pbr: tex(pc) })
 }
 
 // a tile from a height field h(x, y) (0–1, x and y in 0–1, wrapping):
@@ -340,11 +347,12 @@ export const traceMapOf = m => STATE.get(m)?.trace?.() || null
 export function applyFabric(mats, kind = 'made') {
   for (const { material: m, scale = 1, around = null, center = [0, 0] } of mats) {
     const st = state(m)
-    const o = (st.orig ||= { ...Object.fromEntries(KEYS.map(k => [k, m[k]])), normalMap: m.normalMap, normalScale: m.normalScale.clone(), roughnessMap: m.roughnessMap, iridescenceThickness: thicknessOf(m), onBeforeCompile: m.onBeforeCompile, customProgramCacheKey: m.customProgramCacheKey })
+    const o = (st.orig ||= { ...Object.fromEntries(KEYS.map(k => [k, m[k]])), normalMap: m.normalMap, normalScale: m.normalScale.clone(), roughnessMap: m.roughnessMap, metalnessMap: m.metalnessMap, iridescenceThickness: thicknessOf(m), onBeforeCompile: m.onBeforeCompile, customProgramCacheKey: m.customProgramCacheKey })
     for (const k of KEYS) m[k] = o[k]
     if (m.normalMap !== o.normalMap) m.normalMap?.dispose()
-    if (m.roughnessMap !== o.roughnessMap) m.roughnessMap?.dispose()
-    m.normalMap = o.normalMap; m.normalScale.copy(o.normalScale); m.roughnessMap = o.roughnessMap
+    if (m.roughnessMap !== o.roughnessMap && m.roughnessMap !== m.metalnessMap) m.roughnessMap?.dispose()
+    if (m.metalnessMap !== o.metalnessMap) m.metalnessMap?.dispose()
+    m.normalMap = o.normalMap; m.normalScale.copy(o.normalScale); m.roughnessMap = o.roughnessMap; m.metalnessMap = o.metalnessMap
     setThickness(m, o.iridescenceThickness)
     // what an earlier fabric added beyond plain values: a map, a shader, a bake
     if (st.map) { if (m.map === st.map) m.map = st.mapBase; st.map.dispose(); st.map = st.mapBase = null }
@@ -362,10 +370,13 @@ export function applyFabric(mats, kind = 'made') {
     if (kind === 'satin') { m.roughness = 0.32; m.sheen = 0.9; m.sheenRoughness = 0.25; m.normalScale.multiplyScalar(0.25); m.specularIntensity = 0.8 }
     if (kind === 'velvet') { m.roughness = 0.95; m.sheen = 1; m.sheenRoughness = 0.65; m.normalScale.multiplyScalar(0.4) }
     if (kind === 'sequin') {
-      const t = sequinNormal().clone()
-      t.repeat.set(scale, scale); t.needsUpdate = true
-      m.normalMap = t; m.normalScale.set(1, 1)
-      m.metalness = 0.75; m.roughness = 0.22; m.sheen = 0.2; m.clearcoat = 0.4; m.clearcoatRoughness = 0.1
+      const T = sequinNormal(), rep = x => { const t = x.clone(); t.repeat.set(scale, scale); t.needsUpdate = true; return t }
+      m.normalMap = rep(T.normal); m.normalScale.set(1, 1)
+      // metal flakes on cloth: the maps say which is which (the scalars multiply them)
+      const pbr = rep(T.pbr)
+      m.metalnessMap = m.roughnessMap = pbr; m.metalness = 1; m.roughness = 1
+      // (no cloth sheen over the metal; the clear lacquer sequins are coated with)
+      m.sheen = 0; m.clearcoat = 0.4; m.clearcoatRoughness = 0.1
       m.specularIntensity = 1; m.iridescence = 0.15
     }
     if (kind === 'silk') { m.roughness = 0.2; m.sheen = 0.6; m.sheenRoughness = 0.2; m.specularIntensity = 1; m.anisotropy = 0.7; m.anisotropyRotation = Math.PI / 2; m.normalScale.multiplyScalar(0.15) }
