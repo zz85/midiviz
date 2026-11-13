@@ -2,6 +2,11 @@
 
 What each experiment does and how, newest first. The short list is in the [README](README.md).
 
+## 7 Nov 2026
+
+The page takes no input while it renders (#045, #049, #050)
+- While a video renders, every control but Cancel is disabled, and the keyboard, the mouse, the wheel and touches are stopped before any of the page's handlers see them ([pathtrace/render-lock.js](pathtrace/render-lock.js)): a stray 1–0 no longer changes her outfit, S the score, Escape the controls, Space the playback, nor a drag the camera, under a render. A note at the top says so, and flashes at a blocked key or click; closing or reloading the tab asks first. After the render, or Cancel, each control is as it was. Checked headless by pathtrace/test/render-lock.mjs: keys, a click, the wheel and a drag during a render change nothing; a real click on Cancel stops it; a key after it changes the outfit again.
+
 ## 6 Nov 2026
 
 Render in parts, its sound on its own, and Resume (#045, #049, #050; work in progress)

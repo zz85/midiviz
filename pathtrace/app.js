@@ -21,6 +21,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
 import { SoundFontEngine, MidiScheduler } from '../soundfont-engine/src/index.js'
 import { midiToSchedule } from '../notation3d/midi-score.js'
 import { exportVideo, exportAudio, exportPlan, exportSupported, defaultBitrate } from '../notation3d/video-export.js'
+import { createRenderLock } from './render-lock.js'
 import { chooseParts, newJob, writeJob, writeText, openJob, pickFolder, jobLeft, jobDone, settingsOf } from './parts.js'
 import { installAcoustics, offlineHall, acousticParams, rt60Of, ROOMS, SEATS } from '../concertstage/acoustics.js'
 import { buildGrandPiano, LOW, HIGH, DIM, FINISHES } from '../concertstage/concert-grand.js'
@@ -1811,6 +1812,9 @@ export async function boot(plug = {}) {
     for (const id of ['exFont', 'exTitle', 'exCard']) $(id).addEventListener('change', drawPreview)
     $('exSub').addEventListener('input', drawPreview)
     let exAbort = null
+    // while a video renders, only Cancel takes input: a stray key or click can't change the
+    // outfit, the camera or a setting under it (pathtrace/render-lock.js)
+    const renderLock = createRenderLock({ allow: ['#exCancel'], note: 'Rendering: the page takes no input until it finishes. Cancel stops it.' })
     // Render → Parts: the render as several files in a folder, with its sound and a record
     // to resume from (pathtrace/parts.js); Resume picks up one a restart cut short
     let resuming = null   // { dir, job } of the render Resume continues
@@ -1895,6 +1899,7 @@ export async function boot(plug = {}) {
       let songZero = 0
       exAbort = new AbortController()
       exporting = true
+      renderLock.on()
       const fadeFrom0 = director.opts.fadeFrom
       if (leadS) director.opts.fadeFrom = -leadS
       $('exStart').disabled = true
@@ -1993,6 +1998,7 @@ export async function boot(plug = {}) {
       } finally {
         ptv?.dispose()
         exporting = false; exAbort = null; director.opts.fadeFrom = fadeFrom0
+        renderLock.off()
         $('exStart').disabled = false
       }
     }

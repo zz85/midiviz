@@ -8,7 +8,7 @@ import { mkdirSync, writeFileSync, existsSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 const BASE = process.env.BASE || 'http://127.0.0.1:8000/midiviz/'
 const PW = process.env.PLAYWRIGHT || '/tmp/pw/node_modules/playwright-core/index.mjs'
-const CHROME = process.env.CHROME || `${process.env.HOME}/.cache/ms-playwright/chromium-1140/chrome-linux/chrome`
+const CHROME = process.env.CHROME || `${process.env.HOME}/.cache/ms-playwright/chromium-1194/chrome-linux/chrome`
 const out = process.argv[2] || '/tmp/sheet_test'
 mkdirSync(out, { recursive: true })
 const { chromium } = await import(PW)
