@@ -14,6 +14,13 @@ Sequins as metal flakes (#032, #045, #047, #049, #050)
 
 ## 7 Nov 2026
 
+three.js r187 on every page (#016, #025, #027 to #033, #037, #038, #051)
+- The pages still on three.js 0.170.0 move to 0.187.0, the release #045, #047, #049 and #050 run on since 1 Nov; no page loads r170 now. Headless stills of each before and after differ by a mean of 0 to 3.8 levels in 255, with no new page errors.
+- Shadows: r187 removed PCFSoftShadowMap (it falls back to PCF with a warning), so #027, #029, #031, #033, #037 and #038 ask for PCFShadowMap; #028, #030 and #032 leave VSM, whose half-float depth draws bands from r17x on, for PCF as #045 did (?shadows=vsm to compare).
+- #025: r187 passes the vertex colour to the fragment shader as a vec4, which broke the glyphs' HDR-colour patch (notation3d/stage.js reads vColor.rgb now). Its title font stays at r170's URL: three.js stopped shipping examples/fonts/droid after r182.
+- #030: r187's UnrealBloomPass blurs with its whole Gaussian where r170's stopped at one sigma, which put a haze over this bright stage at the same strength; 0.04 matches r170's 0.2 (still within 2.2 levels). The other bloom strengths change the picture by under 2.5 levels and stay.
+- Left as they are: r187's deprecation warnings for THREE.Clock (use Timer) and, in #028, RGBELoader (use HDRLoader).
+
 The page takes no input while it renders (#045, #049, #050)
 - While a video renders, every control but Cancel is disabled, and the keyboard, the mouse, the wheel and touches are stopped before any of the page's handlers see them ([pathtrace/render-lock.js](pathtrace/render-lock.js)): a stray 1–0 no longer changes her outfit, S the score, Escape the controls, Space the playback, nor a drag the camera, under a render. A note at the top says so, and flashes at a blocked key or click; closing or reloading the tab asks first. After the render, or Cancel, each control is as it was. Checked headless by pathtrace/test/render-lock.mjs: keys, a click, the wheel and a drag during a render change nothing; a real click on Cancel stops it; a key after it changes the outfit again.
 

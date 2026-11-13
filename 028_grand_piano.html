@@ -17,8 +17,8 @@
   -->
   <script type="importmap">
     { "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      "three": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/"
     } }
   </script>
   <style>
@@ -159,7 +159,7 @@
     renderer.toneMapping = THREE.AgXToneMapping
     renderer.toneMappingExposure = 1
     renderer.shadowMap.enabled = true
-    renderer.shadowMap.type = THREE.VSMShadowMap
+    renderer.shadowMap.type = new URLSearchParams(location.search).get('shadows') === 'vsm' ? THREE.VSMShadowMap : THREE.PCFShadowMap   // (VSM's half-float depth bands on r17x+, as in #045)
     document.body.appendChild(renderer.domElement)
 
     const scene = new THREE.Scene()

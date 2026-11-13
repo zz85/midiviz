@@ -23,6 +23,7 @@ import { FontLoader } from 'three/addons/loaders/FontLoader.js'
 import { TextGeometry } from 'three/addons/geometries/TextGeometry.js'
 import { Reflector } from 'three/addons/objects/Reflector.js'
 
+// (a font file, not code: three.js stopped shipping examples/fonts/droid after r182, so it stays pinned)
 const TITLE_FONT = 'https://cdn.jsdelivr.net/npm/three@0.170.0/examples/fonts/droid/droid_serif_bold.typeface.json'
 
 export const STAFF_COLORS = ['#ff8a2a', '#2f86ff', '#ff4f8b', '#3ee0b0', '#ffd23f', '#b06bff', '#7cff4f', '#4fd8ff']
@@ -264,8 +265,8 @@ function makeGlyphMaterial() {
 			.replace('#include <color_fragment>', `
 				vec3 instGlow = vec3(0.0);
 				#if defined( USE_COLOR )
-					instGlow = max(vColor - vec3(1.0), vec3(0.0));
-					diffuseColor.rgb *= min(vColor, vec3(1.0));
+					instGlow = max(vColor.rgb - vec3(1.0), vec3(0.0));   // (vColor is a vec4 from r18x on)
+					diffuseColor.rgb *= min(vColor.rgb, vec3(1.0));
 				#endif`)
 			.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
 				totalEmissiveRadiance += instGlow;`)

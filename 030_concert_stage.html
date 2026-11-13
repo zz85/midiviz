@@ -18,8 +18,8 @@
   <script src="playback_controls.js"></script>
   <script type="importmap">
     { "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      "three": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/"
     } }
   </script>
   <style>
@@ -284,7 +284,7 @@
     renderer.toneMapping = THREE.AgXToneMapping
     renderer.toneMappingExposure = 1
     renderer.shadowMap.enabled = true
-    renderer.shadowMap.type = THREE.VSMShadowMap
+    renderer.shadowMap.type = new URLSearchParams(location.search).get('shadows') === 'vsm' ? THREE.VSMShadowMap : THREE.PCFShadowMap   // (VSM's half-float depth bands on r17x+, as in #045)
     document.body.prepend(renderer.domElement)
     RectAreaLightUniformsLib.init()
 
@@ -696,7 +696,9 @@
     composer.addPass(clampPass)
     const bokeh = new BokehPass(scene, camera, { focus: 150, aperture: 0.0001, maxblur: 0.008 })
     composer.addPass(bokeh)
-    const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.2, 0.5, 0.9)
+    // (0.04: r187's bloom blurs with its whole Gaussian, where r170's cut it off at one sigma, so the
+    // same strength gave this bright stage a haze; 0.04 matches r170's 0.2 here)
+    const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.04, 0.5, 0.9)
     composer.addPass(bloom)
     composer.addPass(new OutputPass())
     const grade = new ShaderPass({

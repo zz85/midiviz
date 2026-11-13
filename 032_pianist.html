@@ -22,8 +22,8 @@
   <script src="playback_controls.js"></script>
   <script type="importmap">
     { "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+      "three": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/",
       "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.5.5/lib/three-vrm.module.min.js"
     } }
   </script>
@@ -520,7 +520,7 @@
     renderer.setSize(innerWidth, innerHeight)
     renderer.toneMapping = THREE.AgXToneMapping
     renderer.shadowMap.enabled = true
-    renderer.shadowMap.type = THREE.VSMShadowMap
+    renderer.shadowMap.type = new URLSearchParams(location.search).get('shadows') === 'vsm' ? THREE.VSMShadowMap : THREE.PCFShadowMap   // (VSM's half-float depth bands on r17x+, as in #045)
     document.body.prepend(renderer.domElement)
     RectAreaLightUniformsLib.init()
     const scene = new THREE.Scene()
