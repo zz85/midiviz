@@ -258,3 +258,43 @@ test('movements: a file of another form than the one given is followed as it pla
   // the form that fits is kept as it is
   assert.deepEqual(createMovementTimeline([...notesOf(0, [0, 2, 4, 6, 8, 10], 12), ...notesOf(14.5, [0, 1.5], 3)], MOVES, { performance: repeats }).fitted, [])
 })
+
+test('scroll: the bars on one line in the order played, under a cursor that stays put', async () => {
+  const { createSheetOverlay } = await import('../overlay.js')
+  // two systems of four bars; system 2 drawn smaller (its staves 60 units apart, system 1's 80),
+  // bars 100 units wide but bar 3 at 160; a header of 40 units; three seconds a bar; a repeat of bars 5-8
+  const systems = [0, 1].map(i => ({ x: 0, y: i * 200, w: 500, h: 200, staffTop: i * 200 + 60, staffBottom: i * 200 + (i ? 120 : 140), bars: [1, 2, 3, 4].map(b => b + i * 4), space: i ? 7.5 : 10 }))
+  const xs = [40, 140, 240, 400, 500]
+  const bars = new Map()
+  for (let b = 1; b <= 8; b++) { const si = b > 4 ? 1 : 0, k = (b - 1) % 4; bars.set(b, { system: si, x0: xs[k], x1: xs[k + 1], start: xs[k] + (k ? 9 : 40), end: xs[k + 1] - 9, onsets: null }) }
+  const layout = { page: { width: 500, height: 400 }, systems, bars, space: 10 }
+  const order = [1, 2, 3, 4, 5, 6, 7, 8, 5, 6, 7, 8]
+  const tl = { bars: order.map((bar, i) => ({ i, bar, t0: i * 3, t1: i * 3 + 3 })), at(t) { const i = Math.max(0, Math.min(order.length - 1, Math.floor(t / 3))), b = this.bars[i]; return { i, bar: b.bar, frac: Math.min(1, (t - b.t0) / 3), t0: b.t0, t1: b.t1 } } }
+  globalThis.OffscreenCanvas = OffscreenCanvasStub
+  const ov = createSheetOverlay(layout, tl, { mode: 'scroll', style: 'ink', highlight: 'cursor' })
+  // what is drawn: each slice of ink (source x, width; where on the frame, how wide) and the cursor's x
+  const draws = [], lines = []
+  const g = new Proxy({}, { get: (o, k) => k === 'drawImage' ? (...a) => draws.push(a) : k === 'moveTo' ? x => lines.push(x) : k === 'getContext' ? () => g : k.startsWith('create') ? () => ({ addColorStop() {} }) : k in o ? o[k] : () => {}, set: (o, k, v) => { o[k] = v; return true } })
+  OffscreenCanvasStub.prototype.getContext = function () { return this.width === 500 || this.height === 200 ? stubCtx(this) : g }
+  const W = 1280, H = 720, box = ov.box(W, H, 'bottom')
+  assert.ok(box.w > W * 0.9 && Math.abs(box.h - H * 0.2) < 1, 'a band across the frame, as tall as Size: ' + JSON.stringify(box))
+  const cursorAt = []
+  for (let t = 4; t < 35; t += 0.25) {
+    draws.length = lines.length = 0
+    ov.draw(g, W, H, t, { box })
+    const slices = draws.filter(d => d.length === 9 && d[5] > box.x + 60)
+    // the slices of ink join end to end, the first bar of system 2 without its clef and key
+    slices.sort((a, b) => a[5] - b[5])
+    assert.ok(slices.length >= (t < 30 ? 4 : 2), `t ${t}: the bars in view drawn (${slices.length})`)
+    for (let k = 1; k < slices.length; k++) assert.ok(Math.abs(slices[k][5] - (slices[k - 1][5] + slices[k - 1][7])) < 0.5, `t ${t}: slice ${k} joins the one before`)
+    cursorAt.push(lines[0])
+  }
+  // the cursor stays near a third of the way across, moving at most a little either way
+  const mid = box.x + 60 + (box.w - 60) * 0.3
+  for (const x of cursorAt) assert.ok(Math.abs(x - mid) < box.w * 0.06, `cursor at ${x}, about ${mid}`)
+  // system 2's staves drawn as tall as system 1's: its slices scaled by 80 / 60
+  draws.length = 0; ov.draw(g, W, H, 13.5, { box })
+  const h = draws.filter(d => d.length === 9).map(d => d[8])
+  assert.ok(h.some(v => Math.abs(v / h[0] - 4 / 3) < 0.01) || h.some(v => Math.abs(h[0] / v - 4 / 3) < 0.01), 'systems scaled to the same staff height: ' + h.map(v => v.toFixed(1)))
+})
+function stubCtx(c) { return { drawImage() {}, getImageData: () => ({ data: new Uint8ClampedArray(c.width * c.height * 4) }), putImageData() {}, fillRect() {}, set globalCompositeOperation(v) {}, set fillStyle(v) {} } }

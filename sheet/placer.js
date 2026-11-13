@@ -53,7 +53,7 @@ export function createPlacer(ov, { survey, key = () => '', reserve = () => {} })
     if (mode !== 'auto') b = ov.box(W, H, mode, inset)
     else {
       // (the panel's size and the frame's shape change the places' rects)
-      const k = key(), sz = `${ov.opts.size}|${ov.opts.rows}|${(W / H).toFixed(2)}`
+      const k = key(), sz = `${ov.opts.mode}|${ov.opts.size}|${ov.opts.rows}|${(W / H).toFixed(2)}`
       if (cur == null || k !== curKey || sz !== size) {
         const boxes = {}, rects = {}
         for (const p of PLACES) {

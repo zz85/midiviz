@@ -10,14 +10,14 @@
 // srows, ssize, shl, svideo; draws on a canvas over the picture each frame,
 // and onto every frame of a video the Render menu exports.
 
-import { createSheetOverlay, STYLES, POSITIONS, HIGHLIGHTS } from './overlay.js'
+import { createSheetOverlay, STYLES, POSITIONS, HIGHLIGHTS, MODES } from './overlay.js'
 import { createPlacer } from './placer.js'
 
 export function sheetPlugin({ title, href = 'sheet/README.md', defaultSong, build, about = '' }) {
   let app = null, ov = null, canvas = null, g = null, note = '', job = 0, placer = null, ready = null
   const newPlacer = o => createPlacer(o, { survey: r => app.surveyFrame(r), key: () => app.surveyKey(), reserve: r => app.reserve(r) })
   const opt = id => app.$(id)
-  const settings = () => ({ style: opt('sStyle').value, position: opt('sPos').value, rows: +opt('sRows').value, size: +opt('sSize').value, highlight: opt('sHl').value })
+  const settings = () => ({ mode: opt('sMode').value, style: opt('sStyle').value, position: opt('sPos').value, rows: +opt('sRows').value, size: +opt('sSize').value, highlight: opt('sHl').value })
   function resize() {
     const k = Math.min(devicePixelRatio || 1, 2)
     canvas.width = Math.round(innerWidth * k); canvas.height = Math.round(innerHeight * k)
@@ -46,19 +46,27 @@ export function sheetPlugin({ title, href = 'sheet/README.md', defaultSong, buil
       const sel = (id, map, v) => `<select id="${id}">${Object.entries(map).map(([k, l]) => `<option value="${k}"${k === v ? ' selected' : ''}>${typeof l === 'string' ? l : l.label}</option>`).join('')}</select>`
       app.addVisuals(`<div class="sect">Score <small id="sNote">${about}</small></div>
         <label class="chk" title="The score's system over the picture as it plays (S)"><input type="checkbox" id="sOn" checked> Show the score</label>
+        <div class="field" title="Systems: the score as printed, a system at a time, the next coming up before it is reached. Scroll: the bars on one long line in the order they are played, moving under a cursor that stays put, with the clef and the key held at the left"><label>Layout</label>${sel('sMode', MODES, 'systems')}</div>
         <div class="field"><label>Style</label>${sel('sStyle', STYLES, 'glass')}</div>
         <div class="field" title="Automatic: one place for the whole song, the part of the frame the pianist and the piano fill least over the director's shots, leaving room for the liner notes (automatic intertitles keep off it; a fixed intertitle place or the captions keep it off theirs). It doesn't move while the song plays"><label>Position</label>${sel('sPos', POSITIONS, 'auto')}</div>
-        <div class="field" title="Systems in view: the one being played, and the ones after it"><label>Systems shown</label><select id="sRows"><option value="1" selected>1</option><option value="2">2</option></select></div>
+        <div class="field" id="sRowsF" title="Systems in view: the one being played, and the ones after it"><label>Systems shown</label><select id="sRows"><option value="1" selected>1</option><option value="2">2</option></select></div>
         <div class="field"><label>Size <span class="val" id="sSizeV"></span></label><input type="range" id="sSize" min="0.1" max="0.4" step="0.01" value="0.2"></div>
         <div class="field"><label>Follow with</label>${sel('sHl', HIGHLIGHTS, 'bar')}</div>
         <label class="chk" title="Draw the score into every frame of a video from Render, as it shows here (path-traced videos too)"><input type="checkbox" id="sVideo" checked> In videos</label>`, { first: true })
       const p = app.params
       if (p.get('sheet') === '0') opt('sOn').checked = false
-      for (const [k, id] of [['sstyle', 'sStyle'], ['spos', 'sPos'], ['srows', 'sRows'], ['ssize', 'sSize'], ['shl', 'sHl']]) if (p.has(k)) opt(id).value = p.get(k)
+      for (const [k, id] of [['smode', 'sMode'], ['sstyle', 'sStyle'], ['spos', 'sPos'], ['srows', 'sRows'], ['ssize', 'sSize'], ['shl', 'sHl']]) if (p.has(k)) opt(id).value = p.get(k)
       if (p.get('svideo') === '0') opt('sVideo').checked = false
-      app.addState(['sheet', 'sOn'], ['sstyle', 'sStyle'], ['spos', 'sPos'], ['srows', 'sRows'], ['ssize', 'sSize'], ['shl', 'sHl'], ['svideo', 'sVideo'])
-      const apply = () => { opt('sSizeV').textContent = Math.round(+opt('sSize').value * 100) + '%'; ov?.set(settings()) }
-      for (const id of ['sStyle', 'sPos', 'sRows', 'sHl']) opt(id).onchange = apply
+      app.addState(['sheet', 'sOn'], ['smode', 'sMode'], ['sstyle', 'sStyle'], ['spos', 'sPos'], ['srows', 'sRows'], ['ssize', 'sSize'], ['shl', 'sHl'], ['svideo', 'sVideo'])
+      const apply = () => {
+        opt('sSizeV').textContent = Math.round(+opt('sSize').value * 100) + '%'
+        opt('sRowsF').style.display = opt('sMode').value === 'scroll' ? 'none' : ''
+        const was = ov?.opts.mode
+        ov?.set(settings())
+        // (the panel's shape changes with the layout: its place is chosen again)
+        if (ov && was !== ov.opts.mode) placer = newPlacer(ov)
+      }
+      for (const id of ['sMode', 'sStyle', 'sPos', 'sRows', 'sHl']) opt(id).onchange = apply
       opt('sSize').oninput = apply
       apply()
       addEventListener('keydown', e => { if ((e.key === 's' || e.key === 'S') && !e.metaKey && !e.ctrlKey && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName)) opt('sOn').click() })

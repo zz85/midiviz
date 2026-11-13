@@ -2,6 +2,11 @@
 
 What each experiment does and how, newest first. The short list is in the [README](README.md).
 
+## 13 Nov 2026
+
+Score that scrolls (#049, #050)
+- Visuals → Score → **Layout → Scroll, one long line** (`?smode=scroll`): the bars on one line in the order played, moving right to left under a cursor that stays a third of the way across, in place of the system that turns up. The clef and the key are cut off each system and drawn once at the left, where they stay; each system is scaled to the score's usual staff height so the staves join; the line moves at each bar's width over its time, averaged over 0.8 s. Repeats are laid out again, movements 8 spaces apart. Live and in videos, scans and engravings alike ([sheet/overlay.js](sheet/overlay.js), [notes](sheet/README.md)). From Galen DeGraf's video on scrolling scores: a score in time rather than on a page, no page turns, a stationary cursor and the clef kept on a layer of its own. His proportional note spacing isn't done: the scan's spacing is the printer's and nwc-viewer's is its own, and the smoothed scroll stands in for it. Test: sheet/test/sheet.test.js (15). Checked headless on the Aria and in Var. 16 of the complete Goldberg in both pages, and a 20 s export of #050.
+
 ## 7 Nov 2026
 
 The page takes no input while it renders (#045, #049, #050)
