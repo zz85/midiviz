@@ -40,11 +40,24 @@ The page's numbers require `f8d69ca` or later — see [The WebGL clock](#the-web
 traces the stage without the environment map and does less light transport than every other row.
 Read it as an upper bound on what ray queries can do here, not as a comparable render.
 
-At 1280×720, 4 spp: ThreeRT ray queries 0.11 s, `native-bench` hardware 0.18 s, `native-bench`
-software 0.39 s, ThreeRT own BVH 0.58 s, `mu-webgpu` 0.9–1.2 s, `gpt-webgl` 1.1 s,
-`mu-webgl` 1.2 s, `gpt-webgpu` 3.4 s.
+## Tracing time, 1280×720, 4 spp, 10 bounces
 
-Three things the table says:
+| Path | Trace |
+| --- | --- |
+| ThreeRT, ray queries | **0.11 s** |
+| `native-bench` hardware (MuTracer, ray queries) | 0.18 s |
+| `native-bench` software (MuTracer's own BVH) | 0.39 s |
+| ThreeRT, its own BVH | 0.58 s |
+| Page `mu-webgpu` | 0.9–1.2 s |
+| Page `gpt-webgl` | 1.1 s |
+| Page `mu-webgl` | 1.2 s |
+| Page `gpt-webgpu` | 3.4 s |
+
+`mu-webgpu` is a range rather than one figure: it was the only row that did not settle across
+repeats. Note that `gpt-webgpu` is the slowest of the page's four engines at 720p and the fastest of
+them at 4K — it carries a fixed per-frame cost that only pays off at size.
+
+Four things these tables say:
 
 - **Ray queries are worth about 2× within one renderer** (`native-bench` 3.21 → 1.64 s), and 5.5×
   for ThreeRT against its own BVH. The gap widens slightly with samples (2.0× at 4 spp, 2.1× at
@@ -88,10 +101,19 @@ So **64 spp** is where the strings read correctly: 13.2 s a frame with ThreeRT's
 23.6 s native, against ~100 s in the page. 16 spp (5.8 s native) is defensible only where the
 soundboard is out of focus or out of frame, which at this view it is not.
 
-At matched 4 spp the engines do not agree on quality either: `native-bench` 16.22, ThreeRT 14.25,
-`mu-webgpu` 20.33, `mu-webgl` 27.07 — the WebGL path is the noisiest of the MuTracer pair at low
-sample counts, though the two converge by 16 spp (13.48 vs 12.38 at 720p). Pick `mu-webgpu` over
-`mu-webgl` on quality, not only on speed.
+At matched 4 spp the engines do not agree on quality either:
+
+| 4K, 4 spp | Noise | Bright outliers |
+| --- | --- | --- |
+| ThreeRT, ray queries | 14.25 | 1.68 % |
+| `native-bench` hardware | 16.22 | 1.79 % |
+| Page `mu-webgpu` | 20.33 | 3.27 % |
+| Page `mu-webgl` | 27.07 | 4.43 % |
+
+The WebGL path is the noisiest of the MuTracer pair at low sample counts, though the two converge by
+16 spp (13.48 vs 12.38 at 720p). Pick `mu-webgpu` over `mu-webgl` on quality, not only on speed.
+ThreeRT's lower figure is not a win: it traces without the environment map, so some of that
+smoothness is light transport it never did.
 
 ## Hardware ray queries
 
