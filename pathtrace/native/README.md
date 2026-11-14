@@ -50,13 +50,15 @@ Tracing time at 4 spp, 10 bounces, no denoising (`Prelude1.mid`, 20 s, `shoulder
 | `native-bench hardware` (MuTracer, ray queries) | 0.18 s | 1.64 s |
 | `native-bench software` (MuTracer's own BVH) | 0.39 s | 3.21 s |
 | ThreeRT, its own BVH | 0.58 s | 4.64 s |
-| Page, MuTracer WebGPU | 0.9–1.2 s | 6.2 s |
-| Page, MuTracer WebGL 2 | about 0.8 s | about 7.2 s |
-| Page, three-gpu-pathtracer WebGL | 1.1 s | |
-| Page, three-gpu-pathtracer WebGPU | 3.4 s | |
+| Page, MuTracer WebGPU | 0.9–1.2 s | 6.3 s |
+| Page, MuTracer WebGL 2 | 1.2 s | 7.3 s |
+| Page, three-gpu-pathtracer WebGL | 1.1 s | crashes (device loss) |
+| Page, three-gpu-pathtracer WebGPU | 3.4 s | 4.3 s |
 
 - On a GPU, ray queries pay: 2.0x over MuTracer's own BVH at 4K, 5.5x for ThreeRT. The native tracers are 4–7x faster than the page.
-- The page's MuTracer WebGL times are wall time less about 0.8 s of scene set-up and PNG encoding. Its own report said 0.7 s at 4K: it stopped the clock when the samples were submitted, not when the GPU had finished them. [engines.js](../engines.js) now waits for the GPU.
+- The page's MuTracer WebGL times are measured with the fence [engines.js](../engines.js) now waits on. Its own report used to say 0.7 s at 4K: it stopped the clock when the samples were submitted, not when the GPU had finished them.
+- three-gpu-pathtracer's WebGL path cannot do 4K here: `Failed to create shared texture memory due to device loss`, GPU process exit 8704, over three attempts. Its WebGPU path is the only `gpt-*` one that survives 4K.
+- 16 and 64 spp, how many samples the frame actually needs, and how the native integrations are built: [PATHTRACERS-ON-A-GPU.md](../PATHTRACERS-ON-A-GPU.md).
 - With a fresh browser profile, so that shaders compile cold, a 720p still took 1.9 s on MuTracer WebGPU, 7.0 s on MuTracer WebGL and 0.5 s on three-gpu-pathtracer WebGL.
 - These are speeds, not quality: ThreeRT renders without the environment map and with its own tone curve, so its pictures differ from MuTracer's.
 
@@ -70,7 +72,7 @@ On the 64-core Graviton this repo is developed on, with lavapipe as the Vulkan d
 | `native-bench software` | 6.9 s |
 | `native-bench hardware` | 21.3 s |
 
-- lavapipe offers ray queries, but on a CPU they run Mesa's generic traversal, which is 3x slower than MuTracer's own BVH shader.
+- lavapipe offers ray queries, but on a CPU they run Mesa's generic traversal, which is 3x slower than MuTracer's own BVH shader. On a GPU this inverts, and ray queries are 2x faster: "ray queries available" is not "hardware ray tracing present".
 - The native renderer kept about 12 of the 64 cores busy, and `LP_NUM_THREADS` didn't change that.
 - 4K doesn't run natively on lavapipe: MuTracer needs a 398 MB storage buffer there, and lavapipe allows 128 MB.
 
