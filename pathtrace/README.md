@@ -50,7 +50,7 @@ MuTracer 0.3.0 (released 2 Nov 2026) needed two changes:
 - **A shader that didn't compile.** Its WebGL sphere-light sampler holds a copy of the emissive-light branch that uses a variable it doesn't declare, so a scene with both a sphere light and an emissive mesh, as the stage has, fails with `'randomSampleValue' : undeclared identifier`. [tools/vendor.mjs](tools/vendor.mjs) takes the copy out as it vendors, which leaves that function as 0.2.0 had it, and stops if the file isn't as expected.
 - **Emissive meshes as lights.** 0.3.0 samples every emissive triangle as a light. The grand's 88 hammer felts glow a little in the raster picture (emissive 0x5a5a56, a stand-in for light under the lid), and as lights they made a 640x360, 32-sample still trace in 59 s instead of 6.7 s, with the same picture. A material marked `userData.rasterEmissive` (the felts, in concertstage/concert-grand.js) loses its emission in [snapshot.js](snapshot.js), for both tracers.
 
-With both, the stage traces in 6.7 s on lavapipe WebGL, as on 0.2.0, and looks the same. On the test scenes, at 16 samples, WebGL reads 141,119,95 plain and 183 with `?test=env`, as on 0.2.0; `?test=spot` reads 72, where 0.2.0's WebGL read 60, now near its WebGPU tracer's 69 (73 on 0.2.0).
+With both, the stage reported 6.7 s on lavapipe WebGL, as on 0.2.0, and looks the same (the time to submit the samples; measured with the GPU wait it is 15.1 s). On the test scenes, at 16 samples, WebGL reads 141,119,95 plain and 183 with `?test=env`, as on 0.2.0; `?test=spot` reads 72, where 0.2.0's WebGL read 60, now near its WebGPU tracer's 69 (73 on 0.2.0).
 
 ## Garments over the skin
 
@@ -102,11 +102,11 @@ Wall time for each tracer at 320×180, 16 spp, 4 bounces (`Prelude1.mid`, 20 s, 
 | Tracer | lavapipe | llvmpipe | swiftshader |
 | --- | --- | --- | --- |
 | three-gpu-pathtracer WebGL | 86 s | 68 s | 137 s |
-| MuTracer WebGL | **5 s** | 45 s (nearly all compiling) | no result in 22 min |
+| MuTracer WebGL | **5 s** (submission only, see below) | 45 s (nearly all compiling) | no result in 22 min |
 | three-gpu-pathtracer WebGPU (SwiftShader every time) | | 52 s (23 s of it OIDN) | |
 | MuTracer WebGPU (SwiftShader every time) | | GPU process crashed (exit 133) after 9 and 19 min of compiling, with the watchdog off | |
 
-At 1920×1080, 64 spp, MuTracer WebGL on lavapipe traced in 21 s and took 220 s wall in all. Most of the extra goes into the JNLM denoise and the readback after it, because the GPU work is still queued when the timer stops. [engines.js](engines.js) traces the whole frame as one tile on a CPU driver. Without that, MuTracer's tile scheduler kept splitting the frame smaller, and samples slowed from 5 s to over 5 min each by the eighth.
+At 1920×1080, 64 spp, MuTracer WebGL on lavapipe reported 21 s and took 220 s wall in all. The 21 s was the time to submit the samples: the WebGL timer stopped when they were queued, not when the GPU had traced them, so most of the 220 s was tracing. [engines.js](engines.js) now waits for the GPU before it stops the clock (14 Nov 2026), and the MuTracer WebGL timings recorded before then are low by the same kind of margin. [engines.js](engines.js) traces the whole frame as one tile on a CPU driver. Without that, MuTracer's tile scheduler kept splitting the frame smaller, and samples slowed from 5 s to over 5 min each by the eighth.
 
 A 4K export at 12 fps, 4 spp, 10 bounces and no denoising, with 5 s of `Prelude1.mid` (72 frames with the page's 1 s pre-roll), took 36.6 min on lavapipe:
 
@@ -121,7 +121,7 @@ On lavapipe and llvmpipe, MuTracer's WebGL 2 fallback renders the whole stage an
 
 ## Native MuTracer and ThreeRT
 
-[native/](native/) times native path tracers on a frame the desktop app exports (`node run.mjs --export`), each with its own BVH and with hardware ray queries: MuTracer's native SDK (Rust on wgpu, `build.sh`), and [ThreeRT](https://github.com/meshy-dev/ThreeRT) (`threert.sh`), another wgpu path tracer built for ray-tracing GPUs. On lavapipe at 720p, 4 spp, neither beats the page's 6.7 s: native MuTracer takes 6.9 s (21.3 s with ray queries), ThreeRT 9.8 s (39.3 s). Its notes say how to run both on a machine with a GPU, where the ray queries could pay off.
+[native/](native/) times native path tracers on a frame the desktop app exports (`node run.mjs --export`), each with its own BVH and with hardware ray queries: MuTracer's native SDK (Rust on wgpu, `build.sh`), and [ThreeRT](https://github.com/meshy-dev/ThreeRT) (`threert.sh`), another wgpu path tracer built for ray-tracing GPUs. On an Apple M4 Pro, a 4K still at 4 spp and 10 bounces traces in 0.84 s on ThreeRT with ray queries, 1.64 s on native MuTracer with ray queries, and 6.2–7.2 s in the page. Without a GPU, on lavapipe at 720p, native MuTracer's own BVH is the fastest (6.9 s, against 9.8 s for ThreeRT and 15.1 s for the page), and ray queries are slower there. Its notes have the full tables and how to run both.
 
 ## Tests
 

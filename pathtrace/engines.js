@@ -98,6 +98,16 @@ async function lensCamera(camera, dof) {
   return c
 }
 // MuTracer: aperture radius = focal (mm, from sensorHeight and the fov) / (2·fStop) / 1000 / metersPerUnit
+// Resolves when the GPU has finished every WebGL command issued so far (a fence, polled
+// without blocking the page).
+async function glDone(gl) {
+  if (!gl) return
+  const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0)
+  gl.flush()
+  try { while (gl.clientWaitSync(sync, 0, 0) === gl.TIMEOUT_EXPIRED) await new Promise(r => setTimeout(r, 1)) }
+  finally { gl.deleteSync(sync) }
+}
+
 function muLens(camera, dof) {
   if (!dof) return {}
   const focal = 0.5 * camera.getFilmHeight() * (camera.zoom || 1) / Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)
@@ -263,17 +273,23 @@ async function mutracer({ width, height, bounces, toneMapping, denoise }, backen
       engine.update()
       times.setup = Math.round(performance.now() - t); t = performance.now()
       let tracedAt = 0, out = null
+      // render.samples counts samples submitted, not finished: the trace ends when the GPU has done
+      // them. Without this wait WebGL reported its dispatch time, 0.7 s for a 4K still that took
+      // about 7 s on an M4 Pro. (WebGPU was paced by presenting, and came out close.)
+      const gpuDone = info.backend === 'webgpu' ? () => engine.device.queue.onSubmittedWorkDone() : () => glDone(engine.display.canvas.getContext('webgl2'))
       for (;;) {
         aborted(signal)
         if (errors.length) throw errors[0]
         const st = render.refine()
         engine.display.present(render)
         if (times.firstSample == null && render.samples >= 1) times.firstSample = Math.round(performance.now() - t)
-        if (!tracedAt && render.samples >= samples) tracedAt = performance.now()
+        const reached = !tracedAt && render.samples >= samples
         onProgress({ samples: render.samples, of: samples, status: st })
         // the canvas copied in the same task as its last present (display.toBlob
-        // re-composes the picture: minutes on a software GPU)
-        if (st === 'finished') { out = copyCanvas(engine.display.canvas, width, height); if (errors.length) throw errors[0]; break }
+        // re-composes the picture: minutes on a software GPU), and only then the wait
+        if (st === 'finished') out = copyCanvas(engine.display.canvas, width, height)
+        if (reached) { await gpuDone(); tracedAt = performance.now() }
+        if (st === 'finished') { if (errors.length) throw errors[0]; break }
         if (st === 'error') throw errors[0] || new Error('MuTracer: render error')
         await frame()
       }
