@@ -19,6 +19,11 @@ if [ ! -d "$src/.git" ]; then git clone -q https://github.com/meshy-dev/ThreeRT 
 git -C "$src" fetch -q origin "$commit" 2>/dev/null || git -C "$src" fetch -q origin
 git -C "$src" -c advice.detachedHead=false checkout -q "$commit"
 echo "ThreeRT $(git -C "$src" rev-parse --short HEAD)"
+# This checkout lives below pathtrace/native, which is this repo's Cargo workspace root.
+# Give ThreeRT its own workspace so Cargo does not load native/Cargo.toml and its
+# optional MuTracer path dependency while building the renderer.
+grep -q '^\[workspace\]' "$src/renderer/Cargo.toml" ||
+  printf '\n[workspace]\n' >> "$src/renderer/Cargo.toml"
 (cd "$src" && npm ci --no-audit --no-fund --loglevel=error)
 # (--no-default-features leaves out the network client, which a local render doesn't use)
 (cd "$src/renderer" && cargo build --release --no-default-features)
