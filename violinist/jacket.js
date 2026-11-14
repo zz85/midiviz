@@ -43,6 +43,53 @@ function cut(skeleton) {
 }
 
 /**
+ * Slimmer arms. The VRoid body has a man's arm girth on two thirds of a man's
+ * arm length (upper arm bone 22 cm, skin radius 6.1 cm at mid-arm; a 180 cm
+ * man: 33 cm and about 4.8 cm), so the upper arm reads as a bodybuilder's
+ * next to the violin. Each vertex weighted to an arm bone is moved toward that
+ * bone's axis (bind pose) by the factor `k`, in proportion to its arm weight,
+ * so the shoulder and the hand blend in; over the last third of the forearm
+ * the factor fades to 1, so the wrist meets the hand without a step. Returns a
+ * new geometry; the donor's is left as it is (it is cached and reused).
+ */
+export function slimArms(geo, skeleton, k = 0.8) {
+  const out = geo.clone()
+  const P = out.attributes.position, SI = out.attributes.skinIndex, SW = out.attributes.skinWeight
+  const bones = skeleton.bones
+  const bind = i => new THREE.Vector3().setFromMatrixPosition(skeleton.boneInverses[i].clone().invert())
+  const arms = new Map()                       // bone index → { A, ax, L, lower }
+  bones.forEach((b, i) => {
+    const m = /([LR])_(UpperArm|LowerArm)$/.exec(b.name)
+    if (!m) return
+    const next = bones.findIndex(x => x.name.endsWith(m[1] + (m[2] === 'UpperArm' ? '_LowerArm' : '_Hand')))
+    if (next < 0) return
+    const A = bind(i), B = bind(next), ax = B.clone().sub(A), L = ax.length()
+    arms.set(i, { A, ax: ax.multiplyScalar(1 / L), L, lower: m[2] === 'LowerArm' })
+  })
+  const p = new THREE.Vector3(), q = new THREE.Vector3()
+  for (let v = 0; v < P.count; v++) {
+    let w = 0, bi = -1, wb = 0
+    for (let j = 0; j < 4; j++) {
+      const i = SI.getComponent(v, j), wj = SW.getComponent(v, j)
+      if (!arms.has(i)) continue
+      w += wj
+      if (wj > wb) { wb = wj; bi = i }
+    }
+    if (bi < 0 || w < 1e-3) continue
+    const { A, ax, L, lower } = arms.get(bi)
+    p.fromBufferAttribute(P, v).sub(A)
+    const t = p.dot(ax) / L
+    q.copy(ax).multiplyScalar(t * L)           // the point on the axis
+    const ramp = lower ? THREE.MathUtils.clamp((1 - t) * 3, 0, 1) : 1
+    const f = 1 + (k - 1) * Math.min(1, w) * ramp
+    P.setXYZ(v, A.x + q.x + (p.x - q.x) * f, A.y + q.y + (p.y - q.y) * f, A.z + q.z + (p.z - q.z) * f)
+  }
+  P.needsUpdate = true
+  out.computeBoundingSphere()
+  return out
+}
+
+/**
  * The shirt-and-vest mesh under the jacket, trimmed to what still shows (the
  * collar and the V opening; for the tailcoat also the waistcoat below the
  * front cut) so its vest can't poke through the jacket.
@@ -148,9 +195,10 @@ export function buildJacket(body, { style = 'jacket', thick = 0.008, under = [] 
     if (!keep[v]) continue
     map[v] = pos.length / 3
     _p.fromBufferAttribute(P, v); _n.fromBufferAttribute(N, v)
-    // a little looser over the chest and back and round the upper arm; tails hang free
+    // a little looser over the chest and back; the sleeves follow the arm
+    // (an allowance round the upper arm made it read as a bicep); tails hang free
     const t = tail[v]
-    const loose = clear[v] + thick * (1 + (/UpperArm/.test(dom[v]) ? 0.3 : 0) + (/Chest/.test(dom[v]) ? 0.3 : 0)) + 0.06 * t * t
+    const loose = clear[v] + thick * (1 + (/Chest/.test(dom[v]) ? 0.3 : 0)) + 0.06 * t * t
     _p.addScaledVector(_n, loose)
     if (t) _p.z += 0.02 * t
     pos.push(_p.x, _p.y, _p.z); nor.push(_n.x, _n.y, _n.z)

@@ -10,7 +10,7 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { tuneMToon } from './stage.js'
-import { buildJacket, jacketMaterials, trimUnder } from './jacket.js'
+import { buildJacket, jacketMaterials, trimUnder, slimArms } from './jacket.js'
 
 export const MODELS = {
   'vroid-hairsample-male.vrm': 'Black hair (Chiaki-like)',
@@ -106,7 +106,9 @@ async function dress(target, key, base) {
       }
       return c
     })
-    let g = o.geometry
+    // slimmer arms on every body mesh (skin, shirt, hoodie), so the jacket
+    // cut from the skin and cleared over the shirt is slim too
+    let g = slimArms(o.geometry, o.skeleton, 0.8)
     // under a jacket only the collar and the V of the shirt and vest still show
     if (tint.jacket && /Tops/.test([].concat(o.material)[0].name)) g = trimUnder(g, o.skeleton, tint.jacket)
     const m = new THREE.SkinnedMesh(g, Array.isArray(o.material) ? mats : mats[0])
