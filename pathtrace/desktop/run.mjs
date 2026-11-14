@@ -18,7 +18,8 @@ const value = k => flag(k)?.split('=').slice(1).join('=')
 const hasGpu = () => { if (process.platform !== 'linux') return true; try { return fs.readdirSync('/dev/dri').some(f => f.startsWith('renderD')) } catch { return false } }
 const backend = value('backend') || (hasGpu() ? 'gpu' : findLavapipe() ? 'lavapipe' : 'llvmpipe')
 if (!['llvmpipe', 'lavapipe', 'swiftshader', 'gpu'].includes(backend)) { console.error(`unknown --backend=${backend}`); process.exit(2) }
-const noDisplay = !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY
+// (only Linux can lack a display; macOS and Windows always have their window server)
+const noDisplay = process.platform === 'linux' && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY
 const batch = !!flag('still') || !!flag('info') || !!flag('video') || !!flag('export')
 const headless = !!flag('headless') || batch || noDisplay
 
@@ -56,7 +57,7 @@ if (headless && noDisplay && !batch) console.error('no display: the window runs 
 const child = spawn(electron, argv, { stdio: ['inherit', 'inherit', 'pipe'], env })
 // Chromium logs dbus and similar noise on headless servers; keep real errors.
 child.stderr.on('data', b => {
-  const text = b.toString().split('\n').filter(l => l && !/dbus|ozone_platform_x11|aura\/env|vulkan_instance\.cc|gpu_init\.cc:1445|GPU stall due to ReadPixels/.test(l)).join('\n')
+  const text = b.toString().split('\n').filter(l => l && !/dbus|cv_display_link_mac|ozone_platform_x11|aura\/env|vulkan_instance\.cc|gpu_init\.cc:1445|GPU stall due to ReadPixels/.test(l)).join('\n')
   if (text) process.stderr.write(text + '\n')
 })
 // --monitor[=file.csv]: CPU and memory of the app's processes every 5 s, a line a minute, a summary at the end.
