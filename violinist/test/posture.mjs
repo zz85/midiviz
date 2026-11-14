@@ -29,7 +29,20 @@
 // plane, the middle joint ≥ 25°; the thumb's tip on the frog (≤ 1 cm) and
 // bent (≥ 15°); the back of the hand up (palm down onto the stick); the wrist
 // within 15° of the research's bend for that part of the bow (≤ 35° in all);
-// the elbow bent 60…165°.
+// the elbow bent 60…165°. And the bow elbow's motion over the 20 s live run
+// (research/06_bow_arm.md §2.3 step 5), while the bow is on the string: its
+// distance from its own mean over ±0.1 s (what pumps with the notes) is at
+// most 2 cm on 95 % of the frames (the frames around a one-frame jump are
+// left to bJump); and over fast crossings between adjacent strings (one
+// string's width, 4 or more a second, the bow past the frog, as in a
+// bariolage) it travels at most 0.45 of the hand's path: the wrist rocks the
+// bow and the arm parks. A slow crossing, a chord rolled through three
+// strings and any crossing at the frog are the arm's, at 0.6–0.9 of the hand's
+// path, and are not counted; the ratio is checked where such crossings fill
+// at least 0.5 s of the run (the Preludio, the Kreutzer) and printed otherwise. Its speed (budget 60 cm/s on 99 % of frames) and
+// its one-frame jumps (none over 3 cm) are measured and printed with the rest,
+// and noted when over, but do not fail yet: they come from the short arm and
+// the hand solver's basin flips (06 §2.2 b, c), the next fixes.
 // And every finger of both hands, pressing or not: no twist about its own
 // length at the knuckle (MCP axial rotation, the hand's knuckle line against
 // the proximal phalanx's hinge, both square to the phalanx, as a joint
@@ -78,7 +91,7 @@ for (const run of runs) {
     const vals = { tip: [], flex: [], lean: [], pip: [], pip4: [], bend: [], contact: [], little: [], thumb: [], elbow: [], bTip: [], bFlex: [], bLean: [], bPip: [], bThumb: [], bThumbBend: [], bPalm: [], bWrist: [], bElbow: [], twist: [], bTwist: [], thTwist: [], bThTwist: [] }
     let stretches = 0, pressed = 0
     const LEN033 = [8.6, 9.7, 9.1, 7.3]           // #033's finger lengths (strings/hand3d.js LEFT), × its scale
-    const FAR = { tip: 1, flex: 30, lean: 8, pip: 20, pip4: 10, bend: 15, contact: 2, little: 1.5, thumb: 1.5, elbow: 4, bTip: 1, bFlex: 30, bLean: 10, bPip: 15, bThumb: 1, bThumbBend: 10, bPalm: 0.3, bWrist: 15, bElbow: 15, twist: 10, bTwist: 10, thTwist: 10, bThTwist: 10 }
+    const FAR = { bSpeed: 60, bJump: 3, bFast: 2, tip: 1, flex: 30, lean: 8, pip: 20, pip4: 10, bend: 15, contact: 2, little: 1.5, thumb: 1.5, elbow: 4, bTip: 1, bFlex: 30, bLean: 10, bPip: 15, bThumb: 1, bThumbBend: 10, bPalm: 0.3, bWrist: 15, bElbow: 15, twist: 10, bTwist: 10, thTwist: 10, bThTwist: 10 }
     const worst = {}, out = {}, far = {}
     const note = (k, v, t, bad) => {
       vals[k].push(v)
@@ -167,9 +180,14 @@ for (const run of runs) {
     // live rate: 20 s at 60 fps from 4 s
     let lastK = null, lastP = null, prevT = null
     const turn = []
+    const orig = rig.update
+    let bow = null
+    rig.update = (p, d, dt) => { bow = p?.bow; return orig(p, d, dt) }
+    const E = [], W = [], on = [], sBow = [], posBow = []
     for (let t = 4; t < Math.min(24, songDuration); t += 1 / 60) {
       frame(t, prevT == null ? 1 / 60 : t - prevT); prevT = t
       vrm.scene.updateMatrixWorld(true); V.group.updateMatrixWorld(true); inv.copy(V.group.matrixWorld).invert()
+      E.push(wp(H('rightLowerArm'))); W.push(wp(H('rightHand'))); on.push(!!bow?.playing && (bow?.lift ?? 1) < 0.5); sBow.push(bow?.s ?? 0); posBow.push(bow?.pos ?? 0)
       const k1 = L(wp(H('leftIndexProximal'))), k4 = L(wp(H('leftLittleProximal'))), w = L(wp(H('leftHand')))
       const kl = k4.clone().sub(k1).normalize(), pal = kl.clone().cross(k1.clone().lerp(k4, 0.5).sub(w)).normalize()
       // (only within a position: while the hand shifts it may turn faster)
@@ -178,7 +196,46 @@ for (const run of runs) {
       if (lastK && still) turn.push(Math.max(kl.angleTo(lastK), pal.angleTo(lastP)) * 180 / Math.PI * 60)
       lastK = kl; lastP = pal
     }
+    rig.update = orig
     vals.turn = turn
+    // the bow elbow's motion
+    vals.bSpeed = []; vals.bJump = []; vals.bFast = []
+    // crossing episodes: runs of frames where the bowed string moves; each has a
+    // width in strings, and a rate from the episodes around it (±0.25 s)
+    const ep = []
+    for (let i = 1; i < E.length; i++) {
+      if (Math.abs(sBow[i] - sBow[i - 1]) <= 0.05) continue
+      const last = ep[ep.length - 1]
+      if (last && last.end === i - 1) { last.end = i; last.lo = Math.min(last.lo, sBow[i]); last.hi = Math.max(last.hi, sBow[i]) } else ep.push({ start: i, end: i, lo: Math.min(sBow[i], sBow[i - 1]), hi: Math.max(sBow[i], sBow[i - 1]) })
+    }
+    const jumpAt = new Array(E.length).fill(false)
+    for (let i = 1; i < E.length; i++) if (on[i] && on[i - 1] && E[i].distanceTo(E[i - 1]) > 3) for (let j = -6; j <= 6; j++) if (jumpAt[i + j] != null) jumpAt[i + j] = true
+    let eCross = 0, wCross = 0, nCross = 0, eLow = 0, wLow = 0, nLow = 0
+    for (let i = 1; i < E.length; i++) {
+      if (!on[i] || !on[i - 1]) continue
+      const dE = E[i].distanceTo(E[i - 1])
+      const tt = 4 + i / 60
+      note('bSpeed', dE * 60, tt, dE * 60 > 60 && dE * 60 - 60)
+      note('bJump', dE, tt, dE > 3 && dE - 3)
+      if (i >= 6 && i < E.length - 6 && !jumpAt[i]) {
+        const m = new THREE.Vector3()
+        for (let j = -6; j <= 6; j++) m.addScaledVector(E[i + j], 1 / 13)
+        const f = E[i].distanceTo(m)
+        note('bFast', f, tt, f > 2 && f - 2)
+      }
+    }
+    for (const e of ep) {
+      if (e.hi - e.lo > 1.3) continue                                          // a chord roll: the arm's
+      const near = ep.filter(o => Math.abs(o.start - e.start) <= 15).length
+      if (near / 0.5 < 4) continue                                             // a slow crossing: the arm's
+      const up = posBow[e.start] >= 35
+      for (let i = e.start; i <= e.end; i++) if (on[i] && on[i - 1]) {
+        const dE = E[i].distanceTo(E[i - 1]), dW = W[i].distanceTo(W[i - 1])
+        if (up) { eCross += dE; wCross += dW; nCross++ } else { eLow += dE; wLow += dW; nLow++ }
+      }
+    }
+    const bCross = nCross > 0 ? eCross / wCross : null, bCrossFrames = nCross
+    const bCrossLow = nLow > 0 ? +(eLow / wLow).toFixed(2) : null, bCrossLowFrames = nLow
     const fast = turn.filter(x => x > 150).length / Math.max(1, turn.length)
     if (fast > 0.01) { out.turn = turn.filter(x => x > 150).length; worst.turn = { v: Math.max(...turn), t: 0, by: 0 } }
     const pct = (a, p) => { const s = a.slice().sort((x, y) => x - y); return s.length ? +s[Math.min(s.length - 1, Math.floor(p * s.length))].toFixed(1) : null }
@@ -187,16 +244,21 @@ for (const run of runs) {
     const bend90 = pct(vals.bend, 0.9)
     const frac = Object.fromEntries(Object.entries(out).map(([k, n]) => [k, +(100 * n / vals[k].length).toFixed(1)]))
     const farFrac = Object.fromEntries(Object.entries(far).map(([k, n]) => [k, +(100 * n / vals[k].length).toFixed(2)]))
-    return { frames, stats, worst, frac, farFrac, bend90, stretch: +(100 * stretches / Math.max(1, pressed)).toFixed(1) }
+    return { frames, stats, worst, frac, farFrac, bend90, bCross: bCross == null ? null : +bCross.toFixed(2), bCrossFrames, bCrossLow, bCrossLowFrames, stretch: +(100 * stretches / Math.max(1, pressed)).toFixed(1) }
   }, SECONDS)
-  const FRACMAX = { tip: 3, turn: 1 }, FARMAX = { tip: 1.5, turn: 100 }
+  const FRACMAX = { tip: 3, turn: 1, bSpeed: 1, bJump: 0, bFast: 5 }, FARMAX = { tip: 1.5, turn: 100 }
+  const PENDING = new Set(['bSpeed', 'bJump'])             // measured against their budgets, not failed yet (see the header)
   const over = k => r.frac[k] > (FRACMAX[k] ?? 2) || (r.farFrac[k] || 0) > (FARMAX[k] ?? 0.5)
-  const bad = Object.entries(r.worst).filter(([k]) => over(k)).map(([k, w]) => `${k}: ${r.frac[k]} % of samples out of range (${r.farFrac[k] || 0} % far), worst ${w.v} at ${w.t} s`)
+  const line = ([k, w]) => `${k}: ${r.frac[k]} % of samples out of range (${r.farFrac[k] || 0} % far), worst ${w.v} at ${w.t} s`
+  const bad = Object.entries(r.worst).filter(([k]) => over(k) && !PENDING.has(k)).map(line)
+  const pending = Object.entries(r.worst).filter(([k]) => over(k) && PENDING.has(k)).map(line)
   const notes = Object.entries(r.worst).filter(([k]) => !over(k)).map(([k, w]) => `${k} ${r.frac[k]} %`)
   if (r.bend90 > 15) bad.push(`wrist bent more than 15° on over 10 % of frames (90th percentile ${r.bend90}°)`)
+  if (r.bCross > 0.45 && r.bCrossFrames >= 30) bad.push(`bow elbow travels ${r.bCross} of the hand's path on fast string crossings (budget 0.45)`)
   if (errors.length) bad.push('page errors: ' + errors.join('; '))
-  console.log(`${bad.length ? 'FAIL' : 'ok  '} ${run} — ${r.frames} frames, stretches ${r.stretch} % of stops; 5/50/95 %: ${Object.entries(r.stats).map(([k, v]) => `${k} ${v.join('/')}`).join(', ')}`)
+  console.log(`${bad.length ? 'FAIL' : 'ok  '} ${run} — ${r.frames} frames, stretches ${r.stretch} % of stops, bow elbow/hand on fast crossings ${r.bCross ?? 'none'} (${r.bCrossFrames} frames${r.bCrossFrames < 30 ? ', not checked' : ''}), lower half ${r.bCrossLow ?? 'none'} (${r.bCrossLowFrames} frames, pending); 5/50/95 %: ${Object.entries(r.stats).map(([k, v]) => `${k} ${v.join('/')}`).join(', ')}`)
   for (const b of bad) console.log('     ' + b)
+  if (pending.length) console.log('     over budget, not failed yet (06 §2.2 b, c): ' + pending.join('; '))
   if (notes.length) console.log('     within budget: ' + notes.join(', '))
   failed += bad.length ? 1 : 0
   await page.close()
