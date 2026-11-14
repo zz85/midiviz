@@ -189,6 +189,11 @@ export function buildMotion(notes, { instrument = 'violin', lead = 0.04, vibrato
     lastOff = e.off
   }
   // stroke lengths and positions along the hair (0 = frog … 65 = tip)
+  // A stroke ends where the next begins: a note that starts under a held note
+  // (a chord's voice, a timed MIDI's overlap) takes the bow over, and the held
+  // note's stroke stops there, so the bow's position stays continuous (the
+  // next stroke starts from this one's end, which is now where the bow is).
+  for (let k = 1; k < strokes.length; k++) strokes[k - 1].t1 = Math.min(strokes[k - 1].t1, strokes[k].t0)
   for (let k = 0; k < strokes.length; k++) {
     const st = strokes[k]
     const D = Math.max(0.05, st.t1 - st.t0)

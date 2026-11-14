@@ -120,8 +120,9 @@ models: 22 + 25 cm):
 | Elbow height below the shoulder | E: −l₁·cos 35°, A: −l₁·cos 45°, D: −l₁·cos 55°, G: −l₁·cos 68° (for l₁ = 22: −18, −16, −13, −8 cm) |
 | Elbow travel per string, slow crossing | ≈ 2.5–5 cm at this arm; it moves over 150–300 ms with the arm, leading the bow change by ~15° of phase |
 | Elbow travel per crossing, fast patterns (> 4 crossings/s) | ≈ 0 (parked at the middle level of the strings in use); the bow rocks from the wrist and fingers |
-| Elbow path / hand path, lower half | ≈ l₁ / (l₁ + l₂·cos(flex − 90°)) ≈ 0.6–0.7 (the arm swings as a unit) |
-| Elbow path / hand path, upper half | ≈ 0.15–0.25 (the forearm opens; the elbow drifts a few cm forward) |
+| Elbow path / hand path, lower half | ≈ l₁ / |shoulder–wrist| ≈ 0.7 (the arm swings as a unit) [M, §2.5] |
+| Elbow path / hand path, at the square (middle) | ≈ 0.3: the forearm opens, the elbow drifts along the bow [M, §2.5] |
+| Elbow path / hand path, at the tip | 0.65–0.85 as the arm straightens, for any arm; the shoulder protracts [M, §2.5] |
 | Elbow flexion | frog 95–110°, middle ≈ 90°, tip 20–40° (interior 140–160°) |
 | Elbow swivel (position on the shoulder–wrist circle) | in the arm-level plane through the bow axis, a few degrees below it at the frog; it changes with the string level, slowly, and not with the bow position |
 | Shoulder | fixed height; protracts 2–4 cm at the tip only; never rises on up-bows |
@@ -258,6 +259,61 @@ which is geometric with the arm folded past 100°: the hand's rock then has a
 component along the forearm that the elbow must follow, and the fix is the
 bow fitted to the arm (step 3). Clips: `violinist/tools/render_clip.mjs`, the
 Preludio from 4 s with the camera at (−170, 165, 110) → (−5, 133, 20), fov 34.
+
+### 2.5 After fixes 2, 3 and the jumps (14 Nov 2026) [M]
+
+- **Fix 3, the bow fitted to the arm.** `bowReach` = (l₁ + l₂) / 55 ≈ 0.85
+  (frog → 55 cm of the 65). Adagio, flexion by bow position: 76° at the frog,
+  90° at 30 cm (the square), 104° at 40, 120° at 50, 131° at 60 (before: 75 /
+  88 / 101 / 116 / 126). Not 0.885 (tip 139–144°): past ~140° the arm is nearly
+  straight and the two-bone elbow is ill-conditioned; a change of 0.0006 in
+  `bowReach` moved the Preludio's elbow-pumping measure from 0.3 % to 5.1 % of
+  frames over 2 cm, with no change in the hand solver's output. Real players
+  reach 140–160° at the tip with a bow 1.1 arm lengths long; ours is 1.38.
+- **Fix 2, the pole in the arm-level plane.** The pole is a point 30 cm from
+  the shoulder along the bow's axis toward the frog's side (the upper arm is
+  parallel to the bow at the square), dropped 10 cm × (1 − tip) below that
+  plane, following the arm's slow string level, low-passed 80 ms. The sign was
+  measured, not assumed: the pole on the tip's side put the elbow above the
+  shoulder. Elbow distance from the plane through the shoulder holding the bow
+  axis and the wrist: median 6.3 → 2.4 cm (Adagio). Elbow heights D / A / E:
+  −10.7 / −13.4 / −16.1 cm below the shoulder (Preludio), 2.3 cm a string;
+  before, −13 / −16 / −18 from the hand-set offsets. That is Fischer's "level
+  with the bow" rather than 01 §4.3's table (abduction 45° on the E string
+  rather than 35°); both are within the sources. The Preludio's fast-crossing
+  ratio fell further, 0.21 → 0.12.
+- **The jumps were the bow's, not the arm's.** Every one-frame elbow jump
+  (Adagio 5, Romance 4, 10–13 cm) was the bow teleporting along its hair with
+  `lift` 0: a note starting under a held note (a chord's voice) opened a stroke
+  in `motion.js` that started at the held stroke's *end* (`prev.end`) while the
+  bow was mid-stroke. `motion.js` now ends each stroke where the next begins,
+  so the bow's position is continuous; zero jumps on every piece, the hand
+  solver's cost no longer spikes to 300–600 there. The "basin flips" of §2.2 c
+  were this: the solver was chasing a bow that had moved 29 cm in a frame.
+- **What the elbow/hand ratio really is.** The textbook ≈ 0.2 for the upper
+  half in §1.5 was my [calc] and it was wrong. Measured by bow position on the
+  Adagio with the plane pole: upper arm within 7–8° of the bow and the forearm
+  86° to it at 30–40 cm (the square holds), and the elbow travels 0.29–0.42 of
+  the hand there; 0.68–0.75 at the frog (the arm swings as a unit about the
+  shoulder, ≈ l₁ / |SW|); 0.65–0.86 past 50 cm as the arm straightens. A long
+  arm (33 + 26) on the same hand path, in simulation, gives 0.57 overall: the
+  ratio is geometry, not a flaw. The posture budget is therefore on fast
+  crossings alone, where the wrist should rock the bow.
+- **Still pending.** Elbow speed over 60 cm/s on 3–10 % of frames in the
+  Ciaccona and the Paganini: rolled chords at the tip, where `motion.js` rocks
+  the bow across three strings in 70 ms about its contact and the hand, 60 cm
+  out, swings 40 cm in two frames; the planner should roll a chord slower at
+  the tip or nearer the middle. The lower-half fast-crossing ratio (Paganini
+  0.54) is geometric with the elbow folded past 100°.
+
+| Preludio, 30 s | before | fix 1 | fixes 1–3 |
+|---|---|---|---|
+| elbow path / wrist path | 0.53 | 0.38 | 0.41 (more bow used) |
+| elbow on crossing frames, ratio to wrist | 0.51 | 0.27 | 0.17 |
+| elbow speed, 95th pct | 91 cm/s | 43 | 31 |
+| elbow-height reversals / s | 5.7 | 5.5 | 3.4 |
+| one-frame jumps > 3 cm (Adagio) | 21 | 5 | 0 |
+| posture.mjs fast-crossing ratio | 0.48 | 0.21 | 0.12 |
 
 ## 3. References (fetched or checked 13 Nov 2026)
 

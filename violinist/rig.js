@@ -204,7 +204,14 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
     rest.set(m.foot, { q: wq(m.foot) })
     m.footRest = pF
   }
-  const bowReach = clamp((M.R.l1 + M.R.l2) / 58, 0.72, 1)
+  // how much of the bow he uses: the part of it that lets the elbow sit at the
+  // square (~90°) in the middle and open to ~135° at the tip, research/06 §2.3
+  // step 3. A 59 cm arm (a 180 cm man) uses it all; the VRoid's 47 cm arm uses
+  // 0.85 (frog → 55 cm of the 65). Measured on the Adagio: elbow 76° at the
+  // frog, 90° at 30 cm, 131° at 60 cm (at 0.81 the tip stopped at 126°). Not
+  // more: past ~140° the arm is nearly straight and the two-bone elbow turns
+  // ill-conditioned (a 0.1 % change of the hand's place moved it 1 cm)
+  const bowReach = clamp((M.R.l1 + M.R.l2) / 55, 0.72, 1)
   const middleLen = M.L.fingers[1].len.reduce((a, b) => a + b, 0)
   const handScale = middleLen / 9.7          // vs the #033 left hand's middle finger
   const B = {
@@ -346,7 +353,7 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
       if (F.press > 0) { const s = Math.round(F.s); if (stops[s] == null || F.u > stops[s]) stops[s] = F.u }
     }
     for (const so of pose.sounding) vib[so.s] = bw.playing ? Math.min(1, 0.35 + Math.abs(bw.speed) / 80) : 0.25
-    V.layoutStrings(stops, vib, performance.now() / 1000)
+    V.layoutStrings(stops, vib, t)
     leftHand.update(pose, dt)
     placeBow(bw)
 
@@ -763,11 +770,8 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
     st.rClav += (need - st.rClav) * Math.min(1, dt * 10)
     turn(m.shoulder, new THREE.Euler(0, 0.35 * st.rClav, -0.08 * st.rClav, 'YXZ'))
     const S = wp(m.upper)
+    const stickDir = stickB.clone().sub(stickA).normalize()      // along the stick toward the tip, world
     const sb = bw.s ?? 1.5, sArm = st.sArm ?? sb
-    const level = 1 - sArm / Math.max(1, V.S - 1)              // 1 = G string: elbow high
-    // pole low enough that the elbow sits near the measured heights per string
-    // (research 01 §4.3: upper arm 30–40° from the body on E, 60–75° on G)
-    const poleLevel = S.clone().add(v3(-30, -55 + 22 * level + 12 * tip, -12))
     // the fast part of a string crossing, which the arm does not follow: the
     // bow's rock about its contact point from the arm's level to the bowed
     // string (about the strings' axis, violin x). The elbow is placed where the
@@ -777,6 +781,21 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
     const dTh = V.bowTilt(sb) - V.bowTilt(sArm)
     const Cw = (st.bowC || v3()).clone().applyMatrix4(V.group.matrixWorld)
     const unrock = new THREE.Quaternion().setFromAxisAngle(v3().setFromMatrixColumn(V.group.matrixWorld, 0).normalize(), dTh)
+    // the elbow in the arm-level plane (research/06 §1.1, §2.3 step 2; 01 §6.3
+    // step 9): the plane through the shoulder that holds the bow's axis, at the
+    // arm's string level, so that upper arm, forearm and bow lie on one "plate
+    // of glass" and the elbow sits at the height of the string played. The
+    // pole is a point 30 cm from the shoulder along the bow's axis toward the
+    // frog's side (the upper arm is parallel to the bow at the square, and
+    // points the way the bow runs from its tip to the frog), dropped below that
+    // plane by 10 cm at
+    // the frog and nothing at the tip (the elbow hangs under the bow at the
+    // frog, Fischer's "level with the bow" toward the tip). The pole follows
+    // the slow string level, so the swivel does not pump with the hand
+    const aArm = stickDir.clone().applyQuaternion(unrock)
+    const poleWant = S.clone().addScaledVector(aArm, -30).addScaledVector(Y, -10 * (1 - tip))
+    st.pole = st.pole ? st.pole.lerp(poleWant, Math.min(1, dt / 0.08)) : poleWant.clone()
+    const poleLevel = st.pole
     const elbowRef = W => twoBone(S.clone(), W.clone().sub(Cw).applyQuaternion(unrock).add(Cw), m.l1, m.l2, poleLevel, v3())
     // the wrist takes the rock: the forearm swings about the elbow and the hand
     // stays on the bow, so the wrist extends as the bow rocks toward the E
@@ -787,7 +806,6 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
     const rock = clamp(0.3 * THREE.MathUtils.radToDeg(dTh) * (bw.pos ?? 30) / m.l2, -15, 15)
     const bendWant = 22 - 30 * tip - rock                        // + flexed, − extended (degrees)
     const proWant = THREE.MathUtils.degToRad(25) * tip           // extra pronation toward the tip
-    const stickDir = stickB.clone().sub(stickA).normalize()
     // the torso (a capsule from the hips to the neck, r ≈ 13 cm) for the forearm to clear
     const tA = wp(B.hips).add(v3(0, 8, 0)), tB = wp(B.neck), tD = tB.clone().sub(tA), tL2 = tD.lengthSq()
     const toTorso = p => { const u = clamp(p.clone().sub(tA).dot(tD) / tL2, 0, 1); return p.distanceTo(tA.clone().addScaledVector(tD, u)) }

@@ -247,7 +247,7 @@ for (const run of runs) {
     return { frames, stats, worst, frac, farFrac, bend90, bCross: bCross == null ? null : +bCross.toFixed(2), bCrossFrames, bCrossLow, bCrossLowFrames, stretch: +(100 * stretches / Math.max(1, pressed)).toFixed(1) }
   }, SECONDS)
   const FRACMAX = { tip: 3, turn: 1, bSpeed: 1, bJump: 0, bFast: 5 }, FARMAX = { tip: 1.5, turn: 100 }
-  const PENDING = new Set(['bSpeed', 'bJump'])             // measured against their budgets, not failed yet (see the header)
+  const PENDING = new Set(['bSpeed'])             // measured against their budgets, not failed yet (see the header)
   const over = k => r.frac[k] > (FRACMAX[k] ?? 2) || (r.farFrac[k] || 0) > (FARMAX[k] ?? 0.5)
   const line = ([k, w]) => `${k}: ${r.frac[k]} % of samples out of range (${r.farFrac[k] || 0} % far), worst ${w.v} at ${w.t} s`
   const bad = Object.entries(r.worst).filter(([k]) => over(k) && !PENDING.has(k)).map(line)
@@ -258,7 +258,7 @@ for (const run of runs) {
   if (errors.length) bad.push('page errors: ' + errors.join('; '))
   console.log(`${bad.length ? 'FAIL' : 'ok  '} ${run} — ${r.frames} frames, stretches ${r.stretch} % of stops, bow elbow/hand on fast crossings ${r.bCross ?? 'none'} (${r.bCrossFrames} frames${r.bCrossFrames < 30 ? ', not checked' : ''}), lower half ${r.bCrossLow ?? 'none'} (${r.bCrossLowFrames} frames, pending); 5/50/95 %: ${Object.entries(r.stats).map(([k, v]) => `${k} ${v.join('/')}`).join(', ')}`)
   for (const b of bad) console.log('     ' + b)
-  if (pending.length) console.log('     over budget, not failed yet (06 §2.2 b, c): ' + pending.join('; '))
+  if (pending.length) console.log('     over budget, not failed yet (see the header): ' + pending.join('; '))
   if (notes.length) console.log('     within budget: ' + notes.join(', '))
   failed += bad.length ? 1 : 0
   await page.close()
