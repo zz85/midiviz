@@ -29,6 +29,7 @@
 // over ~1–2k guides: a few ms a frame.
 
 import * as THREE from 'three'
+import { tagTSL } from './tsl-tags.js'
 
 const G = 2              // guide spacing (cm)
 const TEXW = 128         // displacement texture width (guides per row)
@@ -250,6 +251,7 @@ export function createHairCloth(ch, skinnedMesh, { rootDist = 2.2 } = {}) {
         sh.vertexShader.replace('#include <skinning_vertex>', '#include <skinning_vertex>' + VERT)
     }
     m.defines = { ...(m.defines || {}), HAIR_CLOTH: '' }
+    tagTSL(m, 'hairCloth', { U, TEXW, TEXH })
     const key = m.customProgramCacheKey?.bind(m)
     m.customProgramCacheKey = () => (key ? key() : '') + '|haircloth' + TEXH
     m.needsUpdate = true

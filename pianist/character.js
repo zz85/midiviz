@@ -17,6 +17,7 @@
 //  • eyebrows and eyelashes — alpha-tested cards, tinted to the hair.
 
 import * as THREE from 'three'
+import { tagTSL } from './tsl-tags.js'
 
 const SKIN_WRAP = /* glsl */`
 #ifdef SKIN_WRAP
@@ -42,6 +43,7 @@ export function useSkinWrap(material) {
         'reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseColor );', SKIN_WRAP))
   }
   material.defines = { ...(material.defines || {}), SKIN_WRAP: '' }
+  tagTSL(material, 'skinWrap')
   const key = material.customProgramCacheKey?.bind(material)
   material.customProgramCacheKey = () => (key ? key() : '') + '|skinwrap'
   return material

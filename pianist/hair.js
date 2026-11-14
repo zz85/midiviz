@@ -659,6 +659,8 @@ export function createHair(ch, rig, { density = 1, color = '#5a3e2a', style = 'h
 
   Object.assign(api, {
     kind: 'strands', style, object, guides, cap, X, spheres, sphW,
+    // (for a renderer that takes the shader in another language: pathtrace/live-gpu.js)
+    strandMesh: mesh, uniforms, MAXL,
     penetration() { let n = 0, m = 0; for (let i = 0; i < NG * NP; i++) { if (!loose[Math.floor(i / NP)]) continue; m++; for (let q = 0; q < spheres.length; q++) { const c = sphW[q]; if ((X[i * 3] - c.x) ** 2 + (X[i * 3 + 1] - c.y) ** 2 + (X[i * 3 + 2] - c.z) ** 2 < spheres[q].r ** 2 * 0.9) { n++; break } } } return n + ' / ' + m },
     get count() { return mesh.geometry.instanceCount },
     setColor,

@@ -91,7 +91,12 @@ export async function boot(plug = {}) {
     }
 
     // ── Renderer ─────────────────────────────────────────────────────────
-    const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: params.has('shot') })
+    // ?gpu=webgpu: the live picture on three.js's WebGPU renderer, with SSGI and SSR
+    // (pathtrace/live-gpu.js; work in progress, so WebGL stays the default)
+    const GPU = params.get('gpu') === 'webgpu' ? await import('./live-gpu.js') : null
+    const TG = GPU ? await import('three/webgpu') : null
+    const renderer = GPU ? await GPU.createLiveGPU()
+      : new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: params.has('shot') })
     renderer.setPixelRatio(Math.min(devicePixelRatio, LOWQ ? 1 : 2))
     renderer.setSize(innerWidth, innerHeight)
     renderer.toneMapping = THREE.AgXToneMapping
@@ -112,7 +117,8 @@ export async function boot(plug = {}) {
     controls.minDistance = 10; controls.maxDistance = 1400
 
     // ── Piano and stage ──────────────────────────────────────────────────
-    const piano = buildGrandPiano({ mirror: LOWQ ? false : { width: 1600, height: 900 } })
+    // (the fallboard's planar mirror is a WebGL Reflector: on WebGPU, SSR reflects the keys in the lacquer)
+    const piano = buildGrandPiano({ mirror: LOWQ || GPU ? false : { width: 1600, height: 900 } })
     scene.add(piano.root)
     piano.setFinish('ebony'); piano.setLid('full')
     // the lesson view (falling notes) for the hands half of a stacked Short
@@ -177,7 +183,7 @@ export async function boot(plug = {}) {
     applyLight()
     $('exposure').oninput = () => { renderer.toneMappingExposure = +$('exposure').value }
 
-    const pmrem = new THREE.PMREMGenerator(renderer)
+    const pmrem = GPU ? new TG.PMREMGenerator(renderer) : new THREE.PMREMGenerator(renderer)
     // the reflections: a few glowing panels around the stage, prefiltered for the
     // page; envScene is the panels themselves (#045: the path tracers ray cast them
     // into an equirect map). Black stage: our own; the candle chamber's from #030
@@ -366,6 +372,7 @@ export async function boot(plug = {}) {
         ? createHair(ch, rig, { density: +$('hairDensity').value, color, style })
         : style[0] === 'c' ? await createCommunity(ch, style, { color })
         : await createMeshHair(ch, style, { color })
+      if (GPU) await GPU.toNodeMaterials({ hair })   // (its GLSL strand shader, in TSL)
       scene.add(hair.object)
       hair.object.visible = $('hairOn').checked
       hair.simulate = $('hairSim').checked
@@ -596,15 +603,21 @@ export async function boot(plug = {}) {
     $('hairDensity').onchange = () => hair.setDensity(+$('hairDensity').value)
 
     // ── Post ─────────────────────────────────────────────────────────────
+    // (WebGPU: the TSL chain of live-gpu.js, in the same shapes; its grain is a
+    // TSL copy of this one, whose GLSL the path-traced exports still take)
+    const live = GPU ? GPU.livePost(renderer, scene, camera, { offscreen: params.get('gpuout') === 'target' }) : null
+    let composer, bokeh, bloom, grain
+    if (!GPU) {
     const rt = new THREE.WebGLRenderTarget(innerWidth * renderer.getPixelRatio(), innerHeight * renderer.getPixelRatio(), { type: THREE.HalfFloatType, samples: LOWQ ? 0 : 4 })
-    const composer = new EffectComposer(renderer, rt)
+    composer = new EffectComposer(renderer, rt)
     composer.addPass(new RenderPass(scene, camera))
-    const bokeh = new BokehPass(scene, camera, { focus: 150, aperture: 0.00011, maxblur: 0.006 })
+    bokeh = new BokehPass(scene, camera, { focus: 150, aperture: 0.00011, maxblur: 0.006 })
     composer.addPass(bokeh)
-    const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.12, 0.4, 0.92)
+    bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.12, 0.4, 0.92)
     composer.addPass(bloom)
     composer.addPass(new OutputPass())
-    const grain = new ShaderPass({
+    }
+    const grainPass = new ShaderPass({
       // Grain the same at every resolution: a grain is a cell of 1/1080 of the frame's height
       // (one pixel at 1080 rows, as it was), smoothly interpolated, so at 4K a grain spans
       // 2 pixels and stays visible. Below 1080 rows a pixel holds several grains, which
@@ -624,7 +637,19 @@ export async function boot(plug = {}) {
           float g = (cells > 1.0 ? (n(vUv * uRes / cells) - 0.5) * 1.5 : h(floor(vUv * uRes)) - 0.5) * min(k, 1.0);
           c.rgb *= v; c.rgb += g * uAmount; gl_FragColor = c; }`,
     })
-    composer.addPass(grain)
+    if (GPU) {
+      ({ composer, bokeh, bloom, grain } = live)
+      grain.material = { vertexShader: grainPass.material.vertexShader, fragmentShader: grainPass.material.fragmentShader }
+    } else { grain = grainPass; composer.addPass(grain) }
+    window.__live = live
+    if (GPU) {
+      // the grade (WebGPU only): the looks of pathtrace/grade-gpu.js, ?grade=
+      for (const [k, g] of Object.entries(live.fx.grades)) $('grade').add(new Option(g.label, k))
+      $('gradeBox').hidden = false
+      $('grade').value = live.fx.grades[params.get('grade')] ? params.get('grade') : 'stage'
+      $('grade').onchange = () => live.fx.grade($('grade').value)
+      live.fx.grade($('grade').value)
+    }
 
     // Dust in the beam (from #030): a few hundred motes drifting through the spot
     const dust = (() => {
@@ -662,6 +687,8 @@ export async function boot(plug = {}) {
       })
       const pts = new THREE.Points(geo, mat)
       pts.frustumCulled = false
+      // (WebGPU draws points one pixel wide: there the motes are sprites, with this shader in TSL)
+      if (GPU) { const sp = GPU.dustSprites(pts); live.overlay.add(sp); return sp }
       scene.add(pts)
       return pts
     })()
@@ -1442,7 +1469,7 @@ export async function boot(plug = {}) {
       ['fasian', 'faceAsian'], ['fafrican', 'faceAfrican'], ['skintex', 'skinTex'],
       ['move', 'camMove'], ['dpreset', 'dirPreset'], ['pace', 'dirPace'], ['favour', 'dirBias'], ['trans', 'dirTrans'], ['dstill', 'dirStill'], ['dmix', 'dirMix'], ['shotnames', 'shotLbl'], ['follow', 'camFollow'], ['dfar', 'dirFar'], ['dmed', 'dirMed'], ['dclose', 'dirClose'], ['strings', 'dirStrings'], ['dpedals', 'dirPedals'], ['dopen', 'dirOpen'],
       ['sf', 'sf'], ['avsync', 'avsync'],
-      ['dofamt', 'dofAmt'], ['dofboth', 'dofBoth'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
+      ['dofamt', 'dofAmt'], ['dofboth', 'dofBoth'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['grade', 'grade'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
       ['vol', 'vol'], ['room', 'room'], ['seat', 'seat'], ['rv', 'rvAmt'], ['decay', 'rvDecay'], ['tone', 'rvTone'], ['boost', 'boost'], ['amb', 'amb'], ['applause', 'applause'],
       ['exformat', 'exFormat'], ['exlayout', 'exLayout'], ['exsplit', 'exSplit'], ['exhands', 'exHandsHalf'], ['exlview', 'exLessonView'], ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exfps', 'exFps'], ['extail', 'exTail'], ['exlead', 'exLead'], ['exend', 'exEnd'], ['exfadelen', 'exFadeLen'], ['exsub', 'exSub'], ['excard', 'exCard'], ['excaps', 'exCaps'], ['exvtt', 'exVtt'], ['exlen', 'exLen'], ['exparts', 'exParts'], ['exhold', 'exHold'],
       ['notes', 'linerMode'], ['itstyle', 'itStyle'], ['itstylea', 'itStyleA'], ['itcol', 'itTheme'], ['itpos', 'itPos'], ['itheads', 'itHeads'], ['extitle', 'exTitle'], ['expt', 'exPt'], ['ptengine', 'ptEngine'], ['ptspp', 'ptSpp'], ['ptbounces', 'ptBounces'], ['pthair', 'ptHair'], ['ptdn', 'ptDenoise'], ['ptfx', 'ptFx'], ['ptsize', 'ptSize'],
@@ -1517,11 +1544,21 @@ export async function boot(plug = {}) {
       const q = stateQuery(), url = location.pathname + (q ? '?' + q : '') + location.hash
       if (url !== location.pathname + location.search + location.hash) history.replaceState(null, '', url)
     }, 500)
+    // Renderer: WebGL or WebGPU, by reloading with ?gpu= (the renderer is chosen at
+    // start-up); every setting and the song's position go with it, as Share keeps them
+    $('gpuSel').value = GPU ? 'webgpu' : 'webgl'
+    if (!navigator.gpu) { $('gpuSel').options[1].disabled = true; $('gpuSel').options[1].text += ' (not in this browser)' }
+    $('gpuSel').onchange = () => {
+      const q = new URLSearchParams(stateQuery(true))
+      if ($('gpuSel').value === 'webgpu') q.set('gpu', 'webgpu'); else q.delete('gpu')
+      location.href = location.pathname + '?' + q.toString().replace(/%2F/g, '/').replace(/%2C/g, ',') + location.hash
+    }
     // restore defaults: reload with no options (keeps ?q=low, the song and where it was)
     $('resetAll').onclick = () => {
       if (!confirm('Restore every option to its default?')) return
       const q = new URLSearchParams()
       if (params.get('q')) q.set('q', params.get('q'))
+      if (GPU) q.set('gpu', 'webgpu')   // (the renderer stays as chosen)
       if (songFile) { q.set('song', songFile); const t = song ? songNow() : sharedSong?.[1] || 0; if (t > 0.5) q.set('at', t.toFixed(1)) }
       location.href = location.pathname + (q.toString() ? '?' + q.toString().replace(/%2F/g, '/') : '')
     }
@@ -2342,6 +2379,9 @@ export async function boot(plug = {}) {
         bokeh.enabled = !params.has('nodof')
         renderer.toneMappingExposure = +$('exposure').value
         if (stacked) { drawStacked(T, 1 / 60, { hands: handsAt, head: rig.pos('head') }); window.__shotInfo2 = director2.update(T, 0, { hands: handsAt, head: rig.pos('head') }).shot }
+        // (SSGI, SSR and TRAA settle over frames; each in a frame of its own, since the
+        // nodes that read the camera update once a frame and the shot just moved it)
+        else if (GPU) { for (let i = 0; i < +(params.get('gpuframes') || 8); i++) { await new Promise(r => requestAnimationFrame(r)); composer.render() } }
         else composer.render()
         await plug.onFrame?.(T, app, { shot: true })
         return true

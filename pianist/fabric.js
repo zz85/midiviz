@@ -48,6 +48,7 @@
 //    The path tracers drop shader patches, so they trace that kind unpleated.
 
 import * as THREE from 'three'
+import { tagTSL, untagTSL } from './tsl-tags.js'
 
 let sequinTex = null
 // the sequins' tile: { normal, pbr } (pbr: roughness in G, metalness in B)
@@ -229,6 +230,7 @@ function laceShader(m, k) {
   const L = lace(), T = new THREE.Matrix3().setUvTransform(0, 0, k, k, 0, 0, 0)
   const u = { uLaceT: { value: T }, uLaceMask: { value: L.mask }, uLaceLining: laceLining }
   m.userData.fabricShader = 'lace'
+  tagTSL(m, 'lace', u)
   m.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, u)
     sh.vertexShader = LACE_SHADER.vertexHead + sh.vertexShader.replace('#include <uv_vertex>', '#include <uv_vertex>' + LACE_SHADER.vertex)
@@ -321,6 +323,7 @@ const PLEAT_SHADER = {
 function pleatShader(m, center, count = 44) {
   const u = { uPleatC: { value: new THREE.Vector2(...center) }, uPleatN: { value: count }, uPleatDepth: { value: 1 } }
   m.userData.fabricShader = 'pleat'
+  tagTSL(m, 'pleat', u)
   m.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, u)
     sh.vertexShader = PLEAT_SHADER.vertexHead + sh.vertexShader.replace('#include <defaultnormal_vertex>', '#include <defaultnormal_vertex>' + PLEAT_SHADER.vertex)
@@ -356,7 +359,7 @@ export function applyFabric(mats, kind = 'made') {
     setThickness(m, o.iridescenceThickness)
     // what an earlier fabric added beyond plain values: a map, a shader, a bake
     if (st.map) { if (m.map === st.map) m.map = st.mapBase; st.map.dispose(); st.map = st.mapBase = null }
-    if (m.userData.fabricShader) { m.onBeforeCompile = o.onBeforeCompile; m.customProgramCacheKey = o.customProgramCacheKey; delete m.userData.fabricShader }
+    if (m.userData.fabricShader) { m.onBeforeCompile = o.onBeforeCompile; m.customProgramCacheKey = o.customProgramCacheKey; delete m.userData.fabricShader; untagTSL(m, 'lace'); untagTSL(m, 'pleat') }
     st.bake?.tex.dispose(); st.bake = null; st.trace = null
     delete m.userData.traceMap
     // a fabric's own tile, tiled like the sequins (scale) times its REPEAT

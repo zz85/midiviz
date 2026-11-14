@@ -10,6 +10,7 @@
 //    back faces only, drawn black).
 
 import * as THREE from 'three'
+import { tagTSL, copyTSL } from './tsl-tags.js'
 import { linkFabric } from './fabric.js'
 
 let ramp = null
@@ -32,6 +33,7 @@ function outlineMaterial(width) {
         transformed += normalize(normal) * ${width.toFixed(3)};
       #endif`)
   }
+  tagTSL(m, 'outline', { width })
   return m
 }
 
@@ -91,14 +93,14 @@ export function createLook(ch) {
         if (src === ch.materials.skin) {
           m.normalScale = new THREE.Vector2(0, 0); m.roughness = 0.62; m.sheen = 0.6
           m.color = tint(o, src, look)
-          if (src.onBeforeCompile) { m.onBeforeCompile = src.onBeforeCompile; m.customProgramCacheKey = src.customProgramCacheKey }
+          if (src.onBeforeCompile) { m.onBeforeCompile = src.onBeforeCompile; m.customProgramCacheKey = src.customProgramCacheKey; copyTSL(m, src) }
         } else if (o.parent?.name === 'dress' || /dress/.test(o.name) || src.normalMap) {
           if (m.normalScale) m.normalScale = new THREE.Vector2(0.25, 0.25)
           if ('sheen' in m) { m.sheen = 0.9; m.sheenRoughness = 0.3; m.roughness = 0.7 }
         }
       }
       // a fabric's shader (pleats) travels with the swapped material
-      if (src.userData.fabricShader) { m.onBeforeCompile = src.onBeforeCompile; m.customProgramCacheKey = src.customProgramCacheKey }
+      if (src.userData.fabricShader) { m.onBeforeCompile = src.onBeforeCompile; m.customProgramCacheKey = src.customProgramCacheKey; copyTSL(m, src, ['lace', 'pleat']) }
       linkFabric(m, src)
       o.userData.origMat = src
       o.material = m
