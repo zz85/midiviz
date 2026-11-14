@@ -890,7 +890,8 @@ export function createHandsDriver(dims) {
     /** Change the stroke settings (re-plans the strokes only, a few ms). */
     setStrokeOpts(o) { Object.assign(strokeOpts, o); plan() },
     setNotes(notes) {
-      own = notes.filter(n => n.finger >= 1)
+      // (not the keys a finger shares with another: fingering.js sharedUnits)
+      own = notes.filter(n => n.finger >= 1 && !n.shared)
       markCrossings(own)
       // (a crossing marks both hands' notes: the left above the right is the
       // right below the left)

@@ -340,10 +340,10 @@
     // ── Sources ────────────────────────────────────────────────────────────
     const EX = exercises()
     $('exercise').add(new Option('— choose an exercise —', ''))
-    const groups = { core: document.createElement('optgroup'), scales: document.createElement('optgroup') }
-    groups.core.label = 'Patterns'; groups.scales.label = 'Scales (2 octaves)'
+    const groups = { core: document.createElement('optgroup'), scales: document.createElement('optgroup'), mp: document.createElement('optgroup') }
+    groups.core.label = 'Patterns'; groups.scales.label = 'Scales (2 octaves)'; groups.mp.label = 'Mechanical Pianist reference'
     for (const e of EX) groups[e.suite || 'core'].appendChild(new Option(e.title, e.id))
-    $('exercise').append(groups.core, groups.scales)
+    $('exercise').append(groups.core, groups.scales, groups.mp)
     $('exercise').onchange = () => {
       const e = EX.find(x => x.id === $('exercise').value)
       if (!e) return

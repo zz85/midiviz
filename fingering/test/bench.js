@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Run every exercise through the engine and print predicted vs textbook fingering.
 //   node fingering/test/bench.js [--distance=semitone|physical|mixed] [--only=substr] [--quiet]
+// Suites: core (patterns), scales (24 scales × 2 hands), mp (Mechanical Pianist's reference cases)
 import { exercises } from '../exercises.js'
 import { fingerPiece, fingerString, PARNCUTT } from '../fingering.js'
 
@@ -38,7 +39,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     if (args.quiet && r.exact) continue
     console.log(`${r.exact ? '✓' : '✗'} ${r.id.padEnd(18)} ${r.hand} got ${r.got}${r.exact ? '' : `  want ${r.want[0]}${r.want.length > 1 ? ` (+${r.want.length - 1})` : ''}  ${(r.agree * 100).toFixed(0)}%`}`)
   }
-  for (const suite of ['core', 'scales']) {
+  for (const suite of ['core', 'scales', 'mp']) {
     const s = rows.filter(r => r.suite === suite)
     if (!s.length) continue
     const exact = s.filter(r => r.exact).length

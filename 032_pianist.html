@@ -366,6 +366,7 @@
     <div class="sect">Fingers<small>Chopin: let each finger fall, in its own way</small></div>
     <div class="field" title="Fall: each finger rises in the free time before its note (higher for louder notes) and falls onto the key, each in its own way: the thumb low from the base of the hand, the 2nd light and quick, the 3rd steady, the 4th rising a little with the 3rd, the 5th firm. Press: every finger the same, pushed down as in #029 / #030"><label>Finger touch</label><select id="touch"><option value="fall" selected>Fall (each its own way)</option><option value="press">Press (all alike)</option></select></div>
     <div class="field" title="Chopin: the 4th finger is not avoided, the 5th takes the outer voice of a chord (the top in the right hand, the bass in the left), the 3rd sings long melody notes. Standard: the usual textbook rules"><label>Fingering</label><select id="fingering"><option value="standard" selected>Standard</option><option value="chopin">Chopin</option></select></div>
+    <label class="chk" title="Play the fingering on a copy of her hands first; where a fingertip cannot stay on a key it holds, finger that chord another way, and keep the new fingering only if her hands then miss fewer keys (after Mechanical Pianist). Takes a few seconds after a song loads; she starts with the plain fingering"><input type="checkbox" id="replanOn"> Check on her hands <small id="replanV"></small></label>
     <div class="field" title="Which hand plays each note. Automatic, with the tracks' hand crossings (the default): the fingering's own split, except in the passages where the MIDI's hand tracks cross (the left hand's track above the right's, as in the Goldberg's variations for two manuals), which keep the tracks' split. From the score's tracks: where the MIDI names its tracks for the hands (Right hand / Left hand, RH / LH, treble / bass), the edition's own split, hand crossings included; other files fall back to automatic. Automatic: the fingering chooses the split that its fingers play most easily."><label>Hands <small id="handsV"></small></label><select id="hands"></select></div>
     <div class="sect">Hands and arms<small>wrist strokes: lifts, drops, bounces</small></div>
     <div class="field" title="How much loudness comes from the arm: before a loud note the hand lifts in the time it has and falls into the key (0 = fingers only, the hand stays on the keys)"><label>Arm weight</label><input type="range" id="armw" min="0" max="2" step="0.1" value="1"><span id="armwV">1×</span></div>
@@ -936,6 +937,8 @@
     rig.hands.touch = $('touch').value
     $('touch').onchange = () => { rig.hands.touch = $('touch').value; if (song) fingerInWorker(song.notes) }
     $('fingering').onchange = () => { if (song) fingerInWorker(song.notes) }
+    $('replanOn').checked = params.get('replan') === '1'
+    $('replanOn').onchange = () => { if (song) fingerInWorker(song.notes) }
     for (const [k, l] of Object.entries(HAND_MODES)) $('hands').add(new Option(l, k, k === DEFAULT_HAND_MODE))
     $('hands').value = handModeOf(params.get('hands'))
     $('hands').onchange = () => { if (song) fingerInWorker(song.notes) }
@@ -1564,27 +1567,64 @@
     // (Performance > Hands, the default, ?hands=crossings), the file's own split where its
     // tracks name the hands (?hands=tracks), or the fingering's throughout (?hands=auto)
     let handsSource = 'auto'
-    function fingerInWorker(notes) {
+    // The fingering's worker: fingerPiece on the notes, with CHOPIN and any
+    // bans (pianist/replan.js) as asked; replies [[hand, finger, release]]
+    function newFingerWorker() {
+      const url = new URL('./fingering/fingering.js', import.meta.url).href
+      const src = `import { fingerPiece, CHOPIN } from ${JSON.stringify(url)}
+        onmessage = e => { const o = e.data.chopin ? { ...CHOPIN } : {}; if (e.data.bans) o.bans = e.data.bans
+          const r = fingerPiece(e.data.notes, o); postMessage({ id: e.data.id, rows: r.notes.map(n => [n.hand, n.finger || 0, n.release, n.shared]) }) }`
+      return new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })), { type: 'module' })
+    }
+    let fingerReq = 0
+    function fingerRows(worker, notes, chopin, bans) {
+      return new Promise(resolve => {
+        const id = ++fingerReq
+        const h = e => { if (e.data.id !== id) return; worker.removeEventListener('message', h); resolve(e.data.rows) }
+        worker.addEventListener('message', h)
+        worker.postMessage({ id, chopin, bans, notes })
+      })
+    }
+    function applyFingering(notes, rows) {
+      lesson.setNotes(notes, rows)
+      const out = notes.map((n, i) => { const [h, f, rel, sh] = rows[i]; return { pitch: n.midi, on: n.time, off: n.time + n.duration, release: rel, hand: h, finger: f, velocity: n.velocity, ...(sh ? { shared: sh } : {}) } })
+      rig.setNotes(out)
+      dirSource = { duration: out.reduce((m, n) => Math.max(m, n.off), 0), ...rig.form(), energyAt: rig.music.energyAt }
+      director.setSong(dirSource); director2?.setSong(dirSource)
+    }
+    // Check on her hands (Performance > Fingers, ?replan=1; pianist/replan.js):
+    // she plays the fingering first; meanwhile it is played on a copy of her
+    // hands, and where a fingertip leaves a key it is holding that chord's
+    // shape is fingered again, kept only if her hands then miss less. The
+    // check runs on this thread in slices of a few ms (the import map that
+    // gives hand-driver.js its three.js doesn't reach workers); exports wait
+    // for it
+    async function fingerInWorker(notes) {
       const job = ++fingerJob
       const hr = assignHands(notes, song?.trackNames, $('hands').value)
       handsSource = hr.source
       $('handsV') && ($('handsV').textContent = handsSource === 'tracks' ? 'from the tracks' : handsSource === 'crossings' ? `${hr.passages.length} crossing${hr.passages.length === 1 ? '' : 's'} from the tracks` : 'automatic')
       fingerWorker?.terminate()
-      const url = new URL('./fingering/fingering.js', import.meta.url).href
-      const src = `import { fingerPiece, CHOPIN } from ${JSON.stringify(url)}
-        onmessage = e => { const r = fingerPiece(e.data.notes, e.data.chopin ? CHOPIN : {}); postMessage(r.notes.map(n => [n.hand, n.finger || 0, n.release])) }`
-      fingerWorker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })), { type: 'module' })
-      fingerWorker.onmessage = e => {
-        if (job !== fingerJob) return
-        lesson.setNotes(notes, e.data)
-        const out = notes.map((n, i) => { const [h, f, rel] = e.data[i]; return { pitch: n.midi, on: n.time, off: n.time + n.duration, release: rel, hand: h, finger: f, velocity: n.velocity } })
-        fingerWorker.terminate(); fingerWorker = null
-        rig.setNotes(out)
-        dirSource = { duration: out.reduce((m, n) => Math.max(m, n.off), 0), ...rig.form(), energyAt: rig.music.energyAt }
-        director.setSong(dirSource); director2?.setSong(dirSource)
-        fingered = true
-      }
-      fingerWorker.postMessage({ chopin: $('fingering')?.value === 'chopin', notes: notes.map(n => ({ pitch: n.midi, on: n.time, off: n.time + n.duration, velocity: n.velocity, ...(n.hand ? { hand: n.hand } : {}) })) })
+      const w = fingerWorker = newFingerWorker()
+      const done = () => { w.terminate(); if (fingerWorker === w) fingerWorker = null }
+      const chopin = $('fingering')?.value === 'chopin', check = !!$('replanOn')?.checked
+      const input = notes.map(n => ({ pitch: n.midi, on: n.time, off: n.time + n.duration, velocity: n.velocity, ...(n.hand ? { hand: n.hand } : {}) }))
+      const rows = await fingerRows(w, input, chopin)
+      if (job !== fingerJob) return
+      applyFingering(notes, rows)
+      $('replanV') && ($('replanV').textContent = check ? 'checking…' : '')
+      if (!check) { done(); fingered = true; return }
+      try {
+        const { replan } = await import('./pianist/replan.js')
+        const r = await replan(input, {}, rig.dims.R, { first: rows, finger: (ns, o) => fingerRows(w, ns, chopin, o.bans), touch: rig.hands.touch, yieldMs: 8, cancelled: () => job !== fingerJob })
+        if (!r || job !== fingerJob) return
+        const pct = c => (100 * c.missFrames / Math.max(1, c.frames)).toFixed(1)
+        const changed = r.kept ? r.rows.filter((x, i) => x[0] !== rows[i][0] || x[1] !== rows[i][1]).length : 0
+        if (r.kept) applyFingering(notes, r.rows)
+        $('replanV') && ($('replanV').textContent = r.kept ? `${changed} note${changed === 1 ? '' : 's'} refingered, keys missed ${pct(r.before)} → ${pct(r.after)} %` : `keys missed ${pct(r.before)} %, nothing better found`)
+        console.info('replan', { before: r.before.missFrames, after: r.after.missFrames, frames: r.after.frames, bans: r.bans.size, rounds: r.rounds, changed, ms: Math.round(r.ms) })
+      } catch (e) { console.error(e); $('replanV') && ($('replanV').textContent = 'check failed') }
+      finally { if (job === fingerJob) { done(); fingered = true } }
     }
     let fingered = false
     async function loadSong(buffer, name, at = 0) {
@@ -1691,7 +1731,7 @@
       ['hair', 'hairStyle'], ['hcol', 'hairColor'], ['density', 'hairDensity'], ['hairon', 'hairOn'], ['hairsim', 'hairSim'],
       ['dresson', 'dressOn'], ['clothsim', 'clothSim'], ['vdress', 'vdress'], ['look', 'look'], ['smooth', 'smooth'], ['simplify', 'simplify'],
       ['gaze', 'gaze'], ['expr', 'expr'], ['rest', 'restAfter'], ['hips', 'hips'], ['posture', 'posture'], ['reach', 'reach'], ['rock', 'rock'], ['sway', 'sway'], ['nod', 'nod'], ['glances', 'glances'], ['armw', 'armw'], ['lifth', 'lifth'], ['wflex', 'wflex'], ['frot', 'frot'], ['elbow', 'elbowLead'], ['liftoff', 'liftoff'], ['bench', 'benchDist'], ['benchh', 'benchH'],
-      ['touch', 'touch'], ['fingering', 'fingering'], ['hands', 'hands'],
+      ['touch', 'touch'], ['fingering', 'fingering'], ['replan', 'replanOn'], ['hands', 'hands'],
       ['light', 'light'], ['exposure', 'exposure'], ['dof', 'dof'],
       ['move', 'camMove'], ['dpreset', 'dirPreset'], ['pace', 'dirPace'], ['favour', 'dirBias'], ['trans', 'dirTrans'], ['dstill', 'dirStill'], ['dmix', 'dirMix'], ['shotnames', 'shotLbl'], ['follow', 'camFollow'], ['dfar', 'dirFar'], ['dmed', 'dirMed'], ['dclose', 'dirClose'],
       ['sf', 'sf'], ['avsync', 'avsync'],

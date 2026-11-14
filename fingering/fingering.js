@@ -102,6 +102,9 @@ export const DEFAULTS = {
     // the thumb hangs from the side of the hand and cannot (and 5 is short),
     // per CROSS_FINGER. The hand underneath isn't charged (crossOver)
     crossHand: 6,
+    // A hand shape the hands could not hold when they played it (bans, from
+    // replan.js's physical check): added to the slice's cost each time
+    ban: 12,
   },
 
 }
@@ -129,7 +132,7 @@ export const PARNCUTT = {
     fourOnBlack: 1, thumbOnBlack: 1, thumbOnBlackNext: 2, fiveOnBlack: 2, thumbPass: 1,
     cross: null, crossDist: 0, turnaround: 0, repeatShuttle: 0, sameFinger: 1000,
     repeatSame: 0, repeatChange: 0, anchor: 0, leap: 1000, template: 0, vertical: 1, natural: 0, consistency: 0,
-    handSpan: 0, release: null, crossHand: 0,
+    handSpan: 0, release: null, crossHand: 0, ban: 0,
   },
 }
 
@@ -331,6 +334,54 @@ export function makeSlices(notes, tol = 0.03) {
   return slices
 }
 
+// ── Shared fingers ─────────────────────────────────────────────────────────
+// More than five keys struck at once (RH space, sorted by pitch): as few
+// keys as it takes are doubled up under one finger, one pair at a time, until
+// five units are left, as pianists do:
+//   thumb    first, the two lowest keys (the thumb's side) where they are
+//            adjacent white keys: the thumb lies across both
+//   cluster  then the closest neighbouring units a tone or less apart, the
+//            closest first: the flat of a finger, the side of the hand, the
+//            fist or the forearm over a run of seconds (Rush E's bass); a
+//            cluster grows key by key
+// A unit is led by its lowest key (thumb) or its middle one (cluster). If no
+// two units are close enough and more than five are left, the outer five are
+// played (the three lowest units, the two highest) and the rest unfingered
+// (finger 0), as before. Returns { lead: the units' leading notes, follow:
+// [[note, lead, kind]] }; each follower takes its lead's finger and
+// n.shared = kind (fingerHand).
+const LEGATO = 0.1
+export function sharedUnits(ns) {
+  let units = ns.map(n => ({ notes: [n], kind: null }))
+  const lo = u => u.notes[0].p, hi = u => u.notes[u.notes.length - 1].p
+  if (units.length > 5 && units[1].notes[0].p - units[0].notes[0].p <= 2 && !isBlack(units[0].notes[0].p) && !isBlack(units[1].notes[0].p))
+    units.splice(0, 2, { notes: [units[0].notes[0], units[1].notes[0]], kind: 'thumb' })
+  while (units.length > 5) {
+    let best = -1, bd = Infinity
+    for (let i = 0; i + 1 < units.length; i++) {
+      if (units[i].kind === 'thumb' || units[i + 1].kind === 'thumb') continue
+      const d = lo(units[i + 1]) - hi(units[i])
+      // (closest first; between equals, the one that grows a cluster, then the lower)
+      const score = d + (units[i].kind || units[i + 1].kind ? -0.5 : 0)
+      if (d <= 2 && score < bd) { bd = score; best = i }
+    }
+    if (best < 0) break
+    units.splice(best, 2, { notes: [...units[best].notes, ...units[best + 1].notes], kind: 'cluster' })
+  }
+  if (units.length > 5) units = [...units.slice(0, 3), ...units.slice(-2)]
+  const lead = [], follow = []
+  for (const u of units) {
+    const l = u.kind === 'cluster' ? u.notes[u.notes.length >> 1] : u.notes[0]
+    lead.push(l)
+    for (const n of u.notes) if (n !== l) follow.push([n, l, u.kind])
+  }
+  return { lead, follow }
+}
+
+// a held key let go to make room when nothing else fits (fingerHand's rescue);
+// dearer than W.release, which lets go of a key for being too far to hold
+const RESCUE_RELEASE = 4
+
 // k-combinations of the given (sorted) finger list
 function combos(list, k) {
   const out = []
@@ -354,7 +405,8 @@ function combosFor(freeMask, k) {
 // ── One hand ───────────────────────────────────────────────────────────────
 /**
  * Finger one hand. notes: [{ p, on, off }] in RH space (mirror LH pitches first).
- * Writes n.finger (1..5, or 0 when a slice has more than five new notes) and
+ * Writes n.finger (1..5; 0 where a slice has more units than five, see
+ * sharedUnits), n.shared on a key a finger shares with another, and
  * returns { cost, slices }.
  */
 export function fingerHand(notes, model, hand = 'R') {
@@ -408,11 +460,20 @@ export function fingerHand(notes, model, hand = 'R') {
     const prevSl = slices[si - 1], nextSl = slices[si + 1]
     let fresh = sl.notes
     if (fresh.length > 5) {
-      // more than five keys at once: finger the outer five, leave the rest unfingered
-      fresh = [...fresh.slice(0, 3), ...fresh.slice(-2)]
+      // more than five keys at once: some fingers take more than one (sharedUnits)
+      const { lead, follow } = sharedUnits(fresh)
+      fresh = lead
+      sl.follow = follow
       for (const n of sl.notes) if (!fresh.includes(n)) n.finger = 0
     }
     const k = fresh.length
+    // banned shapes for this slice (fingerPiece options.bans): finger strings
+    // in the order of the notes' input indices
+    let banned = null, byId = null
+    if (model.bans) {
+      byId = fresh.map((n, i) => [n.id, i]).sort((a, b) => a[0] - b[0])
+      banned = model.bans.get(byId.map(([id]) => id).join(','))
+    }
     const minDur = Math.min(...fresh.map(n => n.off - n.on))
     const holdTol = Math.max(0.08, 0.5 * minDur)
     const unary = fresh.map((n, i) => {
@@ -428,6 +489,12 @@ export function fingerHand(notes, model, hand = 'R') {
     const wx = p => keyX(p) / WHITE_W
     const reach = 8 * opts.handSize, wall = 9 * opts.handSize
     const lo = wx(fresh[0].p), hi = wx(fresh[k - 1].p)
+    // rescue: no hypothesis could play the slice around the keys it holds
+    // (a new key on the wrong side of a held one, no free finger between):
+    // try again letting go of a held key, any one, or all of them, as a
+    // pianist would (the pedal, or the release, covers it). Was a restart of
+    // the hand that dropped the held keys without letting go of them
+    for (let rescue = 0; rescue < 2 && !next.size; rescue++)
     for (const h of beam) {
       // keys still held down from earlier slices keep their finger
       let heldAll = h.down.filter(([n]) => n.off - sl.on > holdTol && !fresh.includes(n))
@@ -440,8 +507,11 @@ export function fingerHand(notes, model, hand = 'R') {
       }
       // ...unless keeping one down would stretch the hand past a ninth: then it
       // may also be let go as the new keys are struck
-      const variants = [[heldAll, []]]
-      if (model.W.release != null && heldAll.length) {
+      const variants = rescue ? [] : [[heldAll, []]]
+      if (rescue) {
+        if (heldAll.length > 1) for (const e of heldAll) variants.push([heldAll.filter(x => x !== e), [e[0]]])
+        if (heldAll.length) variants.push([[], heldAll.map(([n]) => n)])
+      } else if (model.W.release != null && heldAll.length) {
         const keep = [], cut = []
         for (const e of heldAll) (Math.max(hi, wx(e[0].p)) - Math.min(lo, wx(e[0].p)) > reach ? cut : keep).push(e)
         if (cut.length) variants.push([keep, cut.map(([n]) => n)])
@@ -456,12 +526,13 @@ export function fingerHand(notes, model, hand = 'R') {
         let ok = true
         for (let i = 1; i < cfg.length; i++) if (cfg[i][1] <= cfg[i - 1][1] || cfg[i][0].p === cfg[i - 1][0].p) { ok = false; break }
         if (!ok) continue
-        let c = h.cost + cutHeld.length * (model.W.release || 0)
+        let c = h.cost + cutHeld.length * (rescue ? RESCUE_RELEASE : model.W.release || 0)
         for (let i = 0; i < k; i++) c += unary[i][fs[i]]
         // the whole hand, held keys included
         const span = wx(cfg[cfg.length - 1][0].p) - wx(cfg[0][0].p)
         if (span > reach) c += model.W.handSpan * ((span - reach) + 3 * Math.max(0, span - wall))
         if (target[si] && k === 1 && fs[0] !== target[si]) c += model.W.template * targetW[si]
+        if (banned && banned.includes(byId.map(([, i]) => fs[i]).join(''))) c += model.W.ban
         // vertical: every pair that includes a new key
         for (let i = 0; i < cfg.length; i++) for (let j = i + 1; j < cfg.length; j++) {
           if (!fresh.includes(cfg[i][0]) && !fresh.includes(cfg[j][0])) continue
@@ -512,6 +583,25 @@ export function fingerHand(notes, model, hand = 'R') {
     h.fresh.forEach((n, i) => { n.finger = h.fingers[i] })
     // a held key let go early: its finger lifts here (the note may sound on)
     for (const n of h.cut || []) n.release = Math.min(n.release ?? Infinity, h.on)
+  }
+  // the keys a finger shares with another in its slice (sharedUnits)
+  for (const sl of slices) for (const [n, lead, kind] of sl.follow || []) { n.finger = lead.finger; n.shared = kind }
+  // A finger struck again while a key it played before is still down has
+  // let go of that key: the search treats a held key as up once little of it
+  // is left beside the new note (holdTol), and a rescue lets one go. Record
+  // it, so the hands don't hold a key with a finger that has left it (a
+  // shared finger lets go of all its keys). An overlap of up to LEGATO s is
+  // ordinary legato and stays as written.
+  const down = [[], [], [], [], [], []]
+  for (const sl of slices) {
+    const by = [[], [], [], [], [], []]
+    for (const n of sl.notes) if (n.finger >= 1) by[n.finger].push(n)
+    for (let f = 1; f <= 5; f++) {
+      if (!by[f].length) continue
+      // (its own key struck again by it: up and down again, so let go too)
+      for (const m of down[f]) if (Math.min(m.off, m.release ?? Infinity) > sl.on + LEGATO) m.release = sl.on
+      down[f] = by[f]
+    }
   }
   return { cost: best.cost, slices: slices.length }
 }
@@ -705,10 +795,17 @@ export function crossOver(notes) {
 /**
  * Finger a piece. notes: [{ pitch, on, off, hand? ('L'|'R'), ... }] (seconds).
  * Returns the same note objects with .hand and .finger set, plus stats.
+ *
+ * options.bans: Map from a slice (the input indices of its notes, ascending,
+ * joined by ',') to the finger strings it must not be played with (one finger
+ * per note, in the same order); each costs W.ban. Made by replan.js from the
+ * hands' physical check. Absent or empty: no effect at all.
  */
 export function fingerPiece(notes, options = {}) {
   const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now()
   const model = createModel(options)
+  if (options.bans?.size) model.bans = options.bans
+  const index = model.bans ? new Map(notes.map((n, i) => [n, i])) : null
   // The same key struck twice at once (two voices on one note, or the empty
   // note a doubled note-on leaves): one finger plays it. The fingering sees
   // the longest of them alone; the others take its hand and finger after.
@@ -722,6 +819,9 @@ export function fingerPiece(notes, options = {}) {
     }
     if (dups.size) notes = notes.filter(n => !dups.has(n))
   }
+  // (the key is down as long as any of its copies says)
+  const keyOff = new Map(), keyUp = new Map()   // (keyUp: where its finger let go, as the fingering saw the key)
+  for (const [n, k] of dups) if (n.off > (keyOff.get(k) ?? k.off)) keyOff.set(k, n.off)
   if (options.splitHands !== false) splitHands(notes, model.opts)
   let open = 0
   if (model.W.crossHand) { markCrossings(notes); open = crossOver(notes) }
@@ -732,16 +832,25 @@ export function fingerPiece(notes, options = {}) {
   if (pass) crossOver(notes)
   for (const hand of ['R', 'L']) {
     const own = notes.filter(n => n.hand === hand)
-    const rh = own.map(n => ({ p: hand === 'L' ? mirror(n.pitch) : n.pitch, on: n.on, off: n.off, src: n }))
+    const rh = own.map(n => ({ p: hand === 'L' ? mirror(n.pitch) : n.pitch, on: n.on, off: keyOff.get(n) ?? n.off, src: n, ...(index ? { id: index.get(n) } : {}) }))
     out[hand] = fingerHand(rh, model, hand)
     for (const n of rh) {
       n.src.finger = n.finger ?? 0
+      if (n.shared) n.src.shared = n.shared; else delete n.src.shared
       // the finger lets go before the note ends (see W.release); else absent
-      if (n.release != null && n.release < n.off) n.src.release = n.release; else delete n.src.release
+      if (n.release != null && n.release < n.src.off) n.src.release = n.release; else delete n.src.release
+      if (n.release != null) keyUp.set(n.src, n.release)
     }
   }
   }
-  for (const [n, k] of dups) { n.hand = k.hand; n.finger = k.finger; n.cross = k.cross; n.over = k.over; if (k.release != null) n.release = Math.min(k.release, n.off); else delete n.release }
+  for (const [n, k] of dups) {
+    n.hand = k.hand; n.finger = k.finger; n.cross = k.cross; n.over = k.over
+    if (k.shared) n.shared = k.shared; else delete n.shared
+    // (the key goes up when its finger leaves it: k's release, or k's own
+    // end where the fingering saw the key down only that long)
+    const up = keyUp.get(k) ?? keyOff.get(k) ?? k.off
+    if (up < n.off) n.release = up; else delete n.release
+  }
   const t1 = typeof performance !== 'undefined' ? performance.now() : Date.now()
   return { notes: all, cost: out.R.cost + out.L.cost, ms: t1 - t0, hands: out }
 }

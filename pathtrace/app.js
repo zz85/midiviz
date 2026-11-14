@@ -1317,12 +1317,12 @@ export async function boot(plug = {}) {
       fingerWorker?.terminate()
       const url = new URL('../fingering/fingering.js', import.meta.url).href
       const src = `import { fingerPiece, CHOPIN } from ${JSON.stringify(url)}
-        onmessage = e => { const r = fingerPiece(e.data.notes, e.data.chopin ? CHOPIN : {}); postMessage(r.notes.map(n => [n.hand, n.finger || 0, n.release])) }`
+        onmessage = e => { const r = fingerPiece(e.data.notes, e.data.chopin ? CHOPIN : {}); postMessage(r.notes.map(n => [n.hand, n.finger || 0, n.release, n.shared])) }`
       fingerWorker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })), { type: 'module' })
       fingerWorker.onmessage = e => {
         if (job !== fingerJob) return
         lesson.setNotes(notes, e.data)
-        const out = notes.map((n, i) => { const [h, f, rel] = e.data[i]; return { pitch: n.midi, on: n.time, off: n.time + n.duration, release: rel, hand: h, finger: f, velocity: n.velocity } })
+        const out = notes.map((n, i) => { const [h, f, rel, sh] = e.data[i]; return { pitch: n.midi, on: n.time, off: n.time + n.duration, release: rel, hand: h, finger: f, velocity: n.velocity, ...(sh ? { shared: sh } : {}) } })
         fingerWorker.terminate(); fingerWorker = null
         rig.setNotes(out)
         dirSource = { duration: out.reduce((m, n) => Math.max(m, n.off), 0), ...rig.form(), energyAt: rig.music.energyAt }

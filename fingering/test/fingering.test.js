@@ -130,11 +130,51 @@ test('a held key keeps its finger while other voices move', () => {
   assert.ok(accepts(e.expect.R, fingerString(notes, 'R')))
 })
 
-test('more than five simultaneous keys in one hand leaves the extras unfingered', () => {
+test('six adjacent white keys at once: the thumb lies across the lowest two', () => {
   const notes = [60, 62, 64, 65, 67, 69].map(p => ({ pitch: p, on: 0, off: 0.5, hand: 'R' }))
   fingerPiece(notes)
+  assert.deepEqual(notes.map(n => n.finger), [1, 1, 2, 3, 4, 5])
+  assert.equal(notes[1].shared, 'thumb')
+  assert.equal(notes.filter(n => n.shared).length, 1)
+  // (the left hand's thumb is on its high side)
+  const left = [48, 50, 52, 53, 55, 57].map(p => ({ pitch: p, on: 0, off: 0.5, hand: 'L' }))
+  fingerPiece(left)
+  assert.deepEqual(left.map(n => n.finger), [5, 4, 3, 2, 1, 1])
+})
+
+test('a cluster of seconds is taken by one finger with the hand flat; the rest keep their fingers', () => {
+  // a chromatic cluster C3-F#3 under a C major chord, in one hand
+  const notes = [48, 49, 50, 51, 52, 53, 54, 60, 64].map(p => ({ pitch: p, on: 0, off: 0.5, hand: 'R' }))
+  sharedUnitsCheck(notes)
+})
+function sharedUnitsCheck(notes) {
+  fingerPiece(notes)
+  assert.ok(notes.every(n => n.finger >= 1), notes.map(n => n.finger).join(''))
+  const shared = notes.filter(n => n.shared === 'cluster')
+  assert.ok(shared.length >= 4 && shared.every(n => n.pitch < 55))
+  assert.deepEqual(notes.filter(n => n.pitch >= 60).map(n => n.shared), [undefined, undefined])
+  assert.equal(new Set(notes.filter(n => !n.shared).map(n => n.finger)).size, notes.filter(n => !n.shared).length)
+}
+
+test('six keys too far apart to double up: the outer five are fingered, one left unfingered', () => {
+  const notes = [48, 52, 55, 60, 64, 67].map(p => ({ pitch: p, on: 0, off: 0.5, hand: 'R' }))
+  fingerPiece(notes)
   assert.equal(notes.filter(n => n.finger === 0).length, 1)
-  assert.deepEqual(notes.filter(n => n.finger).map(n => n.finger), [1, 2, 3, 4, 5])
+  assert.ok(!notes.some(n => n.shared))
+})
+
+test('no finger holds two keys: struck again, a finger lets go of the key it held', () => {
+  // a long C held while the hand runs up an octave and a half: some finger
+  // has to leave its key, and where it does, the key is let go (n.release)
+  const notes = [{ pitch: 60, on: 0, off: 3, hand: 'R' }, ...[64, 65, 67, 69, 71, 72, 74, 76, 77, 79].map((p, i) => ({ pitch: p, on: 0.2 * (i + 1), off: 0.2 * (i + 2), hand: 'R' }))]
+  fingerPiece(notes)
+  let reused = 0
+  for (const a of notes) for (const b of notes) {
+    if (b.on <= a.on || b.finger !== a.finger || b.pitch === a.pitch) continue
+    if (b.on < Math.min(a.off, a.release ?? Infinity) - 0.1) assert.fail(`${a.pitch} still held by ${a.finger} at ${b.on}: ${notes.map(n => n.finger).join('')}`)
+    reused++
+  }
+  assert.ok(reused && notes[0].release < 3, notes.map(n => n.finger + ':' + (n.release ?? '')).join(' '))
 })
 
 // ── Exercises with textbook answers ───────────────────────────────────────
@@ -390,4 +430,27 @@ test('crossings: in a close call, the hand that needs its thumb goes under', () 
   assert.ok(cross('L').every(n => n.over === true), 'the rocking hand goes over')
   assert.equal(cross('L').filter(n => n.finger === 1).length, 0, 'no thumb on the hand going over')
   assert.ok(cross('R').filter(n => n.finger === 1).length >= 6, 'the scale passes its thumb under')
+})
+
+// ── Bans (pianist/replan.js) ───────────────────────────────────────────────
+test('bans: a banned slice shape is avoided, the next best taken; no bans, no change', () => {
+  const triad = () => [60, 64, 67].map(p => ({ pitch: p, on: 0, off: 1, hand: 'R' }))
+  const fs = (bans) => { const n = triad(); fingerPiece(n, bans ? { bans } : {}); return n.map(x => x.finger).join('') }
+  assert.equal(fs(), '135')
+  assert.equal(fs(new Map()), '135')
+  assert.equal(fs(new Map([['0,1,2', ['135']]])), '124')
+  assert.equal(fs(new Map([['0,1,2', ['135', '124', '125']]])), '123')
+  // keys are input indices, so the order of the notes given doesn't matter
+  const rev = triad().reverse()
+  fingerPiece(rev, { bans: new Map([['0,1,2', ['531']]]) })   // indices 0,1,2 = G4, E4, C4
+  assert.notEqual(rev.map(x => x.finger).join(''), '531')
+})
+
+test('bans that match no slice change nothing (exercise suite)', () => {
+  const bans = new Map([['9999,10000', ['12']]])
+  for (const e of exercises()) {
+    const a = e.notes.map(n => ({ ...n })), b = e.notes.map(n => ({ ...n }))
+    fingerPiece(a); fingerPiece(b, { bans })
+    assert.equal(fingerString(b), fingerString(a), e.id)
+  }
 })

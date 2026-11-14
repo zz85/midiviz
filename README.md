@@ -22,7 +22,7 @@ Browser experiments with MIDI, piano and violin rendering, synthesis and audio a
 - [#032 Pianist](032_pianist.html) - a pianist at a concert grand playing any MIDI file, filmed by an automatic director; [character notes](pianist/README.md), [liner notes](liner/README.md) ([details](CHANGELOG.md#19-oct-2026)) and [YouTube Shorts](pianist/README.md#youtube-shorts) ([details](CHANGELOG.md#20-oct-2026))
 - [#031 RoboPianist vs #029](031_robopianist.html) - MuJoCo Shadow Hands: their RL policy against our fingering ([details](CHANGELOG.md#15-oct-2026))
 - [#030 Concert Stage](030_concert_stage.html) - the grand on a spotlit stage, pianist hands, lesson mode, hall reverb, MP4 export ([details](CHANGELOG.md#15-oct-2026))
-- [#029 Piano Fingering](029_piano_fingering.html) - automatic fingering from MIDI, shown as hands ([details](CHANGELOG.md#15-oct-2026))
+- [#029 Piano Fingering](029_piano_fingering.html) - automatic fingering from MIDI, shown as hands ([details](CHANGELOG.md#15-oct-2026), [checked on her hands, and a baseline to test changes against](CHANGELOG.md#13-nov-2026))
 - [#028 Grand Piano](028_grand_piano.html) - a physically based concert grand built in code ([details](CHANGELOG.md#14-oct-2026))
 - [#027 JabTunes Reimagined](027_jabtunes_reimagined.html) - the 2009 JabTunes piano in three.js ([details](CHANGELOG.md#13-oct-2026))
 - [#026 JabTunes (recovered)](026_jabtunes_recovered.html) - an HTML5 port of jabtunes.com as archived in 2010 ([details](CHANGELOG.md#13-oct-2026))

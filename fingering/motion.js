@@ -94,7 +94,9 @@ export function buildMotion(notes, { approach = 0.09, release = 0.03, travel = 0
   const vLo = vs.length ? vs[Math.floor(0.1 * (vs.length - 1))] : 0.4, vHi = vs.length ? vs[Math.floor(0.95 * (vs.length - 1))] : 0.8
   const loud = n => Math.min(1, Math.max(0, ((n.velocity ?? 0.7) - vLo) / Math.max(0.05, vHi - vLo)))
   for (const hand of ['L', 'R']) {
-    const own = notes.filter(n => n.hand === hand && n.finger >= 1).sort((a, b) => a.on - b.on || a.pitch - b.pitch)
+    // (a key a finger shares with another, n.shared: the finger goes to the
+    // one leading it, fingering.js sharedUnits; the hand covers the rest)
+    const own = notes.filter(n => n.hand === hand && n.finger >= 1 && !n.shared).sort((a, b) => a.on - b.on || a.pitch - b.pitch)
     // per finger: the notes it plays, in time order
     const fingers = [1, 2, 3, 4, 5].map(() => [])
     for (const n of own) fingers[n.finger - 1].push(n)

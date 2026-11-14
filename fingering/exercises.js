@@ -148,5 +148,62 @@ export function exercises() {
     e.suite = 'scales'
     ex.push(e)
   }
+  for (const e of mpExercises()) ex.push(e)
+  return ex
+}
+
+// ── The Mechanical Pianist suite ───────────────────────────────────────────
+// The reference cases of larroy/mechanical-pianist (tools/fingering-report-
+// data.ts and the conventions of src/interpretation/Conventions.ts), as they
+// run there: 24 major scales two octaves up and down in sixteenths at ♩=120
+// (0.125 s, RH from middle C, LH two octaves lower), C / F / G arpeggios two
+// octaves up and down (0.15 s), four chord shapes in both hands, and repeated
+// notes. Our weights were never tuned on these, so they check that a change
+// generalises beyond the core and scales suites. (Their engine scores 98.8 %
+// of notes on them; ours, when the suite was added, 38/38 exact.)
+
+// [start finger on the tonic, fingers on degrees 1..7 mid-run, top tonic]
+const C_R = [1, [1, 2, 3, 1, 2, 3, 4], 5], C_L = [5, [1, 4, 3, 2, 1, 3, 2], 1], FLAT_L = [3, [3, 2, 1, 4, 3, 2, 1], 3]
+const MP_SCALES = {
+  R: { 0: C_R, 7: C_R, 2: C_R, 9: C_R, 4: C_R, 11: C_R, 5: [1, [1, 2, 3, 4, 1, 2, 3], 4], 10: [2, [4, 1, 2, 3, 1, 2, 3], 4], 3: [3, [3, 1, 2, 3, 4, 1, 2], 3], 8: [3, [3, 4, 1, 2, 3, 1, 2], 3], 1: [2, [2, 3, 1, 2, 3, 4, 1], 2], 6: [2, [2, 3, 4, 1, 2, 3, 1], 2] },
+  L: { 0: C_L, 7: C_L, 2: C_L, 9: C_L, 4: C_L, 5: C_L, 11: [4, [1, 3, 2, 1, 4, 3, 2], 1], 10: FLAT_L, 3: FLAT_L, 8: FLAT_L, 1: FLAT_L, 6: [4, [4, 3, 2, 1, 3, 2, 1], 4] },
+}
+const MP_CHORDS = [
+  { id: 'C', name: 'C major, root', notes: ['C4', 'E4', 'G4'], R: ['135'], L: ['531'] },
+  { id: 'C6', name: 'C major, 1st inv.', notes: ['E4', 'G4', 'C5'], R: ['125'], L: ['531', '541'] },
+  { id: 'C64', name: 'C major, 2nd inv.', notes: ['G3', 'C4', 'E4'], R: ['135'], L: ['521'] },
+  { id: 'G7', name: 'G dominant 7th', notes: ['G3', 'B3', 'D4', 'F4'], R: ['1235'], L: ['5321'] },
+]
+const NAMES = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B']
+const upDown = up => up.concat(up.slice(0, -1).reverse())
+/** every string choosing one finger per note from `alts` ([[4, 3], [2], …]) */
+const choices = alts => alts.reduce((acc, a) => acc.flatMap(s => a.map(f => s + f)), [''])
+
+export function mpExercises() {
+  const ex = []
+  const mk = (id, title, notes, hand, want) => ex.push({ id: 'mp-' + id, suite: 'mp', title: `${title} (MP)`, notes, expect: { [hand]: want } })
+  for (const hand of ['R', 'L']) for (let pc = 0; pc < 12; pc++) {
+    const base = (hand === 'R' ? 60 : 36) + pc
+    const up = []
+    for (let o = 0; o < 2; o++) for (const s of MAJOR.slice(0, 7)) up.push(base + 12 * o + s)
+    up.push(base + 24)
+    const [start, cyc, top] = MP_SCALES[hand][pc]
+    const want = up.map((p, i) => (i === 0 ? start : i === up.length - 1 ? top : cyc[MAJOR.indexOf((p - base) % 12)]))
+    mk(`scale-${pc}-${hand}`, `${NAMES[pc]} major scale, ${hand}H, 2 octaves`, line(upDown(up), { dur: 0.125, legato: 1.02, hand }), hand, upDown(want).join(''))
+  }
+  for (const hand of ['R', 'L']) for (const root of ['C', 'F', 'G']) {
+    const base = parseNote(`${root}${hand === 'R' ? 4 : 2}`)
+    const up = [0, 4, 7, 12, 16, 19, 24].map(x => base + x)
+    // right 1-2-3-1-2-3-5; left 5-4-2-1-4-2-1 or 5-3-2-1-3-2-1 (pianists use both)
+    const alts = up.map((_, i) => (hand === 'R' ? [i === up.length - 1 ? 5 : [1, 2, 3][i % 3]] : i === 0 ? [5] : [[4, 3], [2], [1]][(i - 1) % 3]))
+    mk(`arpeggio-${root}-${hand}`, `${root} major arpeggio, ${hand}H, 2 octaves up and down`, line(upDown(up), { dur: 0.15, legato: 1.02, hand }), hand, choices(upDown(alts)))
+  }
+  for (const hand of ['R', 'L']) for (const c of MP_CHORDS) {
+    const ps = c.notes.map(n => parseNote(n) - (hand === 'L' ? 24 : 0))
+    mk(`chord-${c.id}-${hand}`, `${c.name}, ${hand}H`, chords([ps], { dur: 1, legato: 1.02, hand }), hand, c[hand])
+  }
+  // repeated notes: no single right answer (mp.test.js checks their properties)
+  ex.push({ id: 'mp-repeat-fast', suite: 'mp', title: 'Repeated E5 ×8, fast (0.1 s) (MP)', notes: line(Array(8).fill('E5'), { dur: 0.1, legato: 1.02 }) })
+  ex.push({ id: 'mp-repeat-slow', suite: 'mp', title: 'Repeated E5 ×4, slow (0.6 s) (MP)', notes: line(Array(4).fill('E5'), { dur: 0.6, legato: 1.02 }) })
   return ex
 }

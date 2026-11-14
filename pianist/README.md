@@ -137,6 +137,10 @@ A plain link opens on a dimmed start screen with one Play button (and the song i
 - Tests: `bun test pianist/test` (the film covers the song and repeats per song, the wide-shot / face memory, favourites, camera outside the piano and holding still, Director's cut take rules; three.js is stood in by `pianist/test/three-shim.mjs`).
 - Headless: `?shot&view=auto&t=…` renders the director's frame at `t` (`window.__shotInfo` names the shot).
 
+## Fingering checked on her hands
+
+Performance → Fingers → **Check on her hands** (`?replan=1`, off by default): the fingering (fingering/fingering.js) is played on a copy of her hands ([replan.js](replan.js), on [hand-driver.js](hand-driver.js) with her measured hand), and where a fingertip is off a key it holds on 3 frames or more at 30 fps, that chord's or note's hand shape is banned (`fingerPiece(notes, { bans })`) and the piece fingered again, up to twice. The result is kept only if her hands then miss fewer frames; the label says how many notes changed and the share of frames with a key missed before and after. She plays the plain fingering until the check is done (a few seconds); exports wait for it. Test: `node --test pianist/test/replan.node.mjs` (finds a three.js package on the machine, or `THREE=/path/to/three`). Before changing the fingering itself, record and diff the baseline: `node fingering/test/golden.js record|diff`.
+
 ## YouTube Shorts
 
 Render → Format → **YouTube Short (9:16)** turns the export into a Short: 1080×1920 (540×960 and 720×1280 to preview), a clip of the piece of up to 3 minutes (YouTube's limit for a Short), its own camera plan, and the text kept clear of YouTube's buttons.

@@ -385,12 +385,12 @@
       fingerWorker?.terminate()
       const url = new URL('./fingering/fingering.js', import.meta.url).href
       const src = `import { fingerPiece } from ${JSON.stringify(url)}
-        onmessage = e => { const r = fingerPiece(e.data); postMessage(r.notes.map(n => [n.hand, n.finger || 0, n.release])) }`
+        onmessage = e => { const r = fingerPiece(e.data); postMessage(r.notes.map(n => [n.hand, n.finger || 0, n.release, n.shared])) }`
       fingerWorker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })), { type: 'module' })
       return new Promise(res => {
         fingerWorker.onmessage = e => {
           fingerWorker.terminate(); fingerWorker = null
-          res(notes.map((n, i) => { const [h, f, rel] = e.data[i]; return { ...n, release: rel, hand: h, finger: f } }))
+          res(notes.map((n, i) => { const [h, f, rel, sh] = e.data[i]; return { ...n, release: rel, hand: h, finger: f, ...(sh ? { shared: sh } : {}) } }))
         }
         fingerWorker.postMessage(notes.map(n => ({ pitch: n.pitch, on: n.on, off: n.off, velocity: n.velocity, ...(n.hand ? { hand: n.hand } : {}) })))
       })
