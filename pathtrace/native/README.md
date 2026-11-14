@@ -56,4 +56,22 @@ On the 64-core Graviton this repo is developed on, with lavapipe as the Vulkan d
 
 So without a GPU, the page's own WebGL path stays the one to use.
 
+## ThreeRT
+
+[ThreeRT](https://github.com/meshy-dev/ThreeRT) (Meshy, MIT) is another path tracer on Rust and wgpu, built for real time on ray-tracing GPUs: hardware ray queries where the GPU has them, its own BVH where it doesn't. It reads scenes written against its own three.js-style API, not three.js itself, so it can't trace the page's live scene. [threert/midiviz-pianist.ts](threert/midiviz-pianist.ts) builds that scene from the same export: `scene.glb` in metres, the five spot lights and the area light, and the camera.
+
+```bash
+./threert.sh ~/pt_export 4 10 1280x720 3840x2160
+```
+
+The arguments are the export folder, samples per pixel, bounces, then sizes. It checks ThreeRT out at the commit tested here into `threert-src/` (`THREERT_COMMIT` picks another), builds `threert-render` (about a minute), bundles the scene and renders each size with its BVH and with ray queries, after one small untimed render of each to compile the shaders. Results go to `<export>/threert/`: a PNG and a log for each run, `info.json` (the adapter, and `hwrt`, whether it has ray queries) and `results.jsonl`, one JSON line a run with `hwrt` and `timings_ms.trace_ms`. It needs git, Node 24 or later and stable Rust.
+
+Differences from the page, so compare its timings and not its pictures:
+
+- No environment map: its native renderer refuses HDRI environments ("not supported by the native renderer yet"), so the stage is darker.
+- Its own tone curve, a UE-style filmic one, in place of the page's AgX.
+- Light units differ: spots are in candela and the area light in nits, converted from the export as well as the two engines allow.
+
+On lavapipe, at 1280x720, 4 spp, 10 bounces, no denoising, after the warm-up: 9.8 s with its BVH and 39.3 s with ray queries, against 6.7 s for the page's MuTracer. The first render of a session compiles its shaders inside the trace time; it read 26.2 s.
+
 On Linux ARM64 `build.sh` adds two things MuTracer doesn't ship for that platform: the ARM64 build of scriptc (MuTracer's TypeScript-to-native compiler), and a source build of the oidn-webgpu denoiser core.

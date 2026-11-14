@@ -119,9 +119,9 @@ The defaults leave MuTracer WebGPU out on CPU backends. Name it in `--engines` t
 
 On lavapipe and llvmpipe, MuTracer's WebGL 2 fallback renders the whole stage and looks like three-gpu-pathtracer's WebGPU still, so the blank MuTracer stills under Known problems are SwiftShader's fault. three-gpu-pathtracer's WebGL tracer is pale and over-lit on all three drivers, so that one is not down to SwiftShader. Whether a GPU shows it too has not been checked.
 
-## Native MuTracer
+## Native MuTracer and ThreeRT
 
-[native/](native/) builds MuTracer's native SDK (Rust on wgpu) and times it on a frame the desktop app exports (`node run.mjs --export`), with MuTracer's own BVH and with hardware ray queries. On lavapipe it is no faster than the page: 6.9 s against 6.7 s at 720p, and ray queries make it 21.3 s. Its notes say how to run it on a machine with a GPU, where the ray queries could pay off.
+[native/](native/) times native path tracers on a frame the desktop app exports (`node run.mjs --export`), each with its own BVH and with hardware ray queries: MuTracer's native SDK (Rust on wgpu, `build.sh`), and [ThreeRT](https://github.com/meshy-dev/ThreeRT) (`threert.sh`), another wgpu path tracer built for ray-tracing GPUs. On lavapipe at 720p, 4 spp, neither beats the page's 6.7 s: native MuTracer takes 6.9 s (21.3 s with ray queries), ThreeRT 9.8 s (39.3 s). Its notes say how to run both on a machine with a GPU, where the ray queries could pay off.
 
 ## Tests
 
