@@ -135,12 +135,18 @@ export function livePost(renderer, scene, camera, { offscreen = false } = {}) {
   const graded = gradeMod.grade(bloomed, { grainAmt: U.grainAmt, vig: U.vig, time: U.time, res: U.res })
   pipe.outputNode = graded.node
 
-  const target = offscreen ? new THREE.RenderTarget(1, 1, { type: THREE.UnsignedByteType }) : null
+  // the target a frame renders into in place of the canvas: always where offscreen
+  // (headless), and while capturing (the exports, which read every frame back)
+  let target = null, capturing = false
   const size = new THREE.Vector2()
-  const setSize = (w, h2) => { U.res.value.set(w * renderer.getPixelRatio(), h2 * renderer.getPixelRatio()); target?.setSize(U.res.value.x, U.res.value.y) }
+  const ensureTarget = () => {
+    target ||= new THREE.RenderTarget(1, 1, { type: THREE.UnsignedByteType, depthBuffer: false })
+    if (target.width !== U.res.value.x || target.height !== U.res.value.y) target.setSize(U.res.value.x, U.res.value.y)
+    return target
+  }
+  const setSize = (w, h2) => { U.res.value.set(w * renderer.getPixelRatio(), h2 * renderer.getPixelRatio()); if (target) ensureTarget() }
   renderer.getSize(size); setSize(size.x, size.y)
 
-  // the shapes app.js drives the WebGL chain by
   const uniformsOf = map => Object.fromEntries(Object.entries(map).map(([k, u]) => [k, u]))
   const bokeh = {
     enabled: true,
@@ -161,26 +167,71 @@ export function livePost(renderer, scene, camera, { offscreen = false } = {}) {
     /** a look of grade-gpu.js's GRADES, by name */
     grade: name => graded.set(name), grades: gradeMod.GRADES,
   }
+  // The nodes that read the camera (SSGI's, SSR's, TRAA's jitter) update once a node
+  // frame, and three advances the node frame in its animation loop's requestAnimationFrame.
+  // An export renders many frames between two of those, with the camera moved each time:
+  // a render after another in the same node frame starts a new one itself
+  const nodeFrame = renderer._nodes?.nodeFrame
+  let lastFrame = -1
   const composer = {
     render() {
       U.dofOn.value = bokeh.enabled ? 1 : 0; U.bloomOn.value = bloom.enabled ? 1 : 0
-      if (target) renderer.setRenderTarget(target)
+      if (nodeFrame) {
+        if (nodeFrame.frameId === lastFrame) { nodeFrame.update(); renderer.info.frame = nodeFrame.frameId }
+        lastFrame = nodeFrame.frameId
+      }
+      const t = offscreen || capturing ? ensureTarget() : null
+      if (t) renderer.setRenderTarget(t)
       pipe.render()
-      if (target) renderer.setRenderTarget(null)
+      if (t) renderer.setRenderTarget(null)
     },
     setSize, setPixelRatio() {},
   }
+  /** the last frame's pixels, RGBA top-down, read back from the target */
+  async function pixels() {
+    const t = ensureTarget(), w = t.width, h2 = t.height
+    const px = await renderer.readRenderTargetPixelsAsync(t, 0, 0, w, h2)
+    return { w, h: h2, data: new Uint8ClampedArray(px.buffer, px.byteOffset, w * h2 * 4) }   // (WebGPU's rows run top-down, as a canvas's)
+  }
   /** offscreen: the last frame, as a PNG data URL */
   async function frame() {
-    if (!target) return renderer.domElement.toDataURL('image/png')
-    const w = target.width, h2 = target.height, px = await renderer.readRenderTargetPixelsAsync(target, 0, 0, w, h2)
-    const c = document.createElement('canvas'); c.width = w; c.height = h2
-    const g = c.getContext('2d'), im = g.createImageData(w, h2)
-    im.data.set(px.subarray(0, w * h2 * 4))   // (WebGPU's rows run top-down, as a canvas's)
-    g.putImageData(im, 0, 0)
+    if (!offscreen && !capturing) return renderer.domElement.toDataURL('image/png')
+    const { w, h, data } = await pixels()
+    const c = document.createElement('canvas'); c.width = w; c.height = h
+    c.getContext('2d').putImageData(new ImageData(data, w, h), 0, 0)
     return c.toDataURL('image/png')
   }
-  return { composer, bokeh, bloom, grain, fx, frame, pipe, overlay }
+  /**
+   * For the exports: capture(true) renders each frame into the target instead of the
+   * canvas (the canvas of a WebGPU context can't be read back once it is presented, and
+   * a headless browser loses the device presenting one); picture() is the last frame
+   * as an ImageBitmap, which VideoFrame and drawImage both take.
+   */
+  const capture = on => { capturing = !!on }
+  async function picture() {
+    const { w, h, data } = await pixels()
+    return createImageBitmap(new ImageData(data, w, h))
+  }
+
+  // quality of the live picture: what SSGI, SSR and TRAA cost, against how they look
+  // (three's SSGI presets, with temporal filtering: low 1 × 12, medium 2 × 8, high 3 × 16)
+  const QUALITY = {
+    low: { slices: 1, steps: 12, giScale: 0.5, ssrScale: 0.5, ssrQuality: 0.3 },
+    medium: { slices: 2, steps: 8, giScale: 1, ssrScale: 0.5, ssrQuality: 0.5 },
+    high: { slices: 3, steps: 16, giScale: 1, ssrScale: 1, ssrQuality: 0.75 },
+  }
+  let quality = 'medium'
+  function setQuality(q) {
+    const Q = QUALITY[q] || QUALITY.medium
+    quality = QUALITY[q] ? q : 'medium'
+    giPass.sliceCount.value = Q.slices; giPass.stepCount.value = Q.steps; giPass.resolutionScale = Q.giScale
+    ssrPass.resolutionScale = Q.ssrScale; ssrPass.quality.value = Q.ssrQuality
+    return quality
+  }
+  setQuality('medium')
+  fx.setQuality = setQuality; fx.qualities = Object.keys(QUALITY)
+  Object.defineProperty(fx, 'quality', { get: () => quality })
+  return { composer, bokeh, bloom, grain, fx, frame, pipe, overlay, capture, picture }
 }
 
 // the scene pass's depth, for the dust's own depth test (set by livePost)

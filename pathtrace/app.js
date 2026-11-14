@@ -649,6 +649,10 @@ export async function boot(plug = {}) {
       $('grade').value = live.fx.grades[params.get('grade')] ? params.get('grade') : 'stage'
       $('grade').onchange = () => live.fx.grade($('grade').value)
       live.fx.grade($('grade').value)
+      // the live picture's quality (an export renders at high, see stageAdapter)
+      $('gpuQualBox').hidden = false
+      $('gpuQual').onchange = () => live.fx.setQuality($('gpuQual').value)
+      live.fx.setQuality($('gpuQual').value)
     }
 
     // Dust in the beam (from #030): a few hundred motes drifting through the spot
@@ -1469,7 +1473,7 @@ export async function boot(plug = {}) {
       ['fasian', 'faceAsian'], ['fafrican', 'faceAfrican'], ['skintex', 'skinTex'],
       ['move', 'camMove'], ['dpreset', 'dirPreset'], ['pace', 'dirPace'], ['favour', 'dirBias'], ['trans', 'dirTrans'], ['dstill', 'dirStill'], ['dmix', 'dirMix'], ['shotnames', 'shotLbl'], ['follow', 'camFollow'], ['dfar', 'dirFar'], ['dmed', 'dirMed'], ['dclose', 'dirClose'], ['strings', 'dirStrings'], ['dpedals', 'dirPedals'], ['dopen', 'dirOpen'],
       ['sf', 'sf'], ['avsync', 'avsync'],
-      ['dofamt', 'dofAmt'], ['dofboth', 'dofBoth'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['grade', 'grade'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
+      ['dofamt', 'dofAmt'], ['dofboth', 'dofBoth'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['grade', 'grade'], ['gpuq', 'gpuQual'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
       ['vol', 'vol'], ['room', 'room'], ['seat', 'seat'], ['rv', 'rvAmt'], ['decay', 'rvDecay'], ['tone', 'rvTone'], ['boost', 'boost'], ['amb', 'amb'], ['applause', 'applause'],
       ['exformat', 'exFormat'], ['exlayout', 'exLayout'], ['exsplit', 'exSplit'], ['exhands', 'exHandsHalf'], ['exlview', 'exLessonView'], ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exfps', 'exFps'], ['extail', 'exTail'], ['exlead', 'exLead'], ['exend', 'exEnd'], ['exfadelen', 'exFadeLen'], ['exsub', 'exSub'], ['excard', 'exCard'], ['excaps', 'exCaps'], ['exvtt', 'exVtt'], ['exlen', 'exLen'], ['exparts', 'exParts'], ['exhold', 'exHold'],
       ['notes', 'linerMode'], ['itstyle', 'itStyle'], ['itstylea', 'itStyleA'], ['itcol', 'itTheme'], ['itpos', 'itPos'], ['itheads', 'itHeads'], ['extitle', 'exTitle'], ['expt', 'exPt'], ['ptengine', 'ptEngine'], ['ptspp', 'ptSpp'], ['ptbounces', 'ptBounces'], ['pthair', 'ptHair'], ['ptdn', 'ptDenoise'], ['ptfx', 'ptFx'], ['ptsize', 'ptSize'],
@@ -1660,7 +1664,7 @@ export async function boot(plug = {}) {
       if (!offline) { liner.update(songNow()); plug.onFrame?.(songNow(), app) }
       // nothing to post-process on the light path: draw straight to the screen
       if (stacked) drawStacked(t, dt, live)
-      else if (LOWQ && !bokeh.enabled && !bloom.enabled && !$('filmGrain').checked) renderer.render(scene, camera)
+      else if (!GPU && LOWQ && !bokeh.enabled && !bloom.enabled && !$('filmGrain').checked) renderer.render(scene, camera)
       else composer.render()
     }
     // ── Stacked Short: her above, the hands below ──
@@ -1679,7 +1683,7 @@ export async function boot(plug = {}) {
     const lens = (w, hh) => { camera.aspect = w / hh; camera.zoom = Math.max(0.55, Math.min(1, camera.aspect / 1.6)); camera.updateProjectionMatrix(); bokeh.uniforms.aspect.value = camera.aspect }
     function drawStacked(t, dt, live) {
       const { x: w, y: h } = renderer.getSize(_sz), [ht, hb] = stackHs(h)
-      const draw = () => LOWQ && !bokeh.enabled && !bloom.enabled && !$('filmGrain').checked ? renderer.render(scene, camera) : composer.render()
+      const draw = () => !GPU && LOWQ && !bokeh.enabled && !bloom.enabled && !$('filmGrain').checked ? renderer.render(scene, camera) : composer.render()
       const aspect0 = camera.aspect, zoom0 = camera.zoom, bokehOn = bokeh.enabled
       renderer.setScissorTest(true)
       lens(w, ht)
@@ -1783,11 +1787,15 @@ export async function boot(plug = {}) {
         renderer.setAnimationLoop(null)
         renderer.setPixelRatio(1)
         resize(w, h, false)
+        // (WebGPU: each frame into a target, read back for the encoder, since a presented
+        // WebGPU canvas can't be read; live-gpu.js)
+        live?.capture(true); live?.fx.setQuality('high')   // (an export needn't keep up: its best)
         if (isShort()) setShortFrame(true)
         else if ($('exCam').value === 'auto' && view !== 'auto') setView('auto')
         userCam = false; releaseKeys()
       },
       endOffline() {
+        live?.capture(false); live?.fx.setQuality($('gpuQual').value)
         releaseKeys()
         if (shortFrame && !short.on) setShortFrame(false)
         if (view !== prevView && !short.on) setView(prevView)
@@ -1947,7 +1955,7 @@ export async function boot(plug = {}) {
       }) : null
       try {
         const xo = {
-          frameSource: ptv?.frame,
+          frameSource: ptv?.frame || (GPU ? () => live.picture() : undefined),
           stage: stageAdapter,
           song: { schedule: { notes: song.notes, controlChanges: (song.controlChanges || []).filter(c => c.controller !== 7) }, programs, duration: song.duration, title: song.title },
           width, height, fps, start: clipA,
@@ -2189,6 +2197,9 @@ export async function boot(plug = {}) {
     // the camera plans for the Short: one 9:16 picture (portrait framings), or
     // stacked (director: her, director2: the hands, the top avoiding the bottom's cuts)
     function applyShortPlan() {
+      // (the stacked layout draws two halves into the canvas by viewport and scissor, which
+      // the WebGPU chain's passes don't take: on WebGPU a Short is one 9:16 picture)
+      if (GPU && $('exLayout').value === 'stack') { $('exLayout').value = 'one'; setStatus('Stacked Shorts need the WebGL renderer: one 9:16 picture here', false, 5000) }
       const stack = shortFrame && $('exLayout').value === 'stack', changed = stack !== stacked
       stacked = stack
       if (stack) {
