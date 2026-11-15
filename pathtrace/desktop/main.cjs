@@ -10,6 +10,9 @@
 //        Native renderers too (native.cjs, built in pathtrace/native): --engines=mu-native,rt-native, and --video --engine=mu-native
 //   node pathtrace/desktop/run.mjs --video [song] [out dir]                a path-traced MP4 through the page's Render menu
 //        --engine=mu-webgl --spp=4 --bounces=10 --res=3840x2160 --fps=12 --len=5 --denoise=0 --fx=0 --hair=0.5
+//        --len=all or a number of seconds; --audio=1 puts the song in the MP4 (the page's own playback stays muted)
+//   node pathtrace/desktop/run.mjs --record [song] [out dir]               the same export's frames, written for a native
+//        render instead of traced (--res, --fps, --len, --audio as --video): node pathtrace/native/render-seq.mjs <out dir>
 //        --recycle=24 (frames per tracer session; 0 keeps one) --extra=&outfit=…
 //   node pathtrace/desktop/run.mjs --export [song] [t] [view] [out dir]    the frozen frame for a native renderer: scene.glb,
 //        scene.json (camera and lights, world space) and env.f32 (the environment map, RGBA float32) --hair=0.5
@@ -220,11 +223,16 @@ async function exportScene() {
 async function video() {
   const [song = 'Prelude1.mid', out = '/tmp/pt_video'] = pos
   fs.mkdirSync(out, { recursive: true })
+  // --record: the same export, its frames written for a native render (native/render-seq.mjs) instead of traced
+  const recording = 'record' in opt
   const o = {
-    engine: opt.engine || (backend === 'gpu' ? 'mu-webgpu' : 'mu-webgl'), spp: opt.spp || '4', bounces: opt.bounces || '10',
+    engine: recording ? 'record-native' : opt.engine || (backend === 'gpu' ? 'mu-webgpu' : 'mu-webgl'), spp: opt.spp || '4', bounces: opt.bounces || '10',
     res: opt.res || '3840x2160', fps: opt.fps || '12', len: opt.len || '5', denoise: opt.denoise === '1', fx: opt.fx === '1', hair: opt.hair || '0.5',
+    audio: opt.audio === '1',
   }
   const w = makeWindow({ show: false, width: 960, height: 540 })
+  // (the page plays the song to load it, see below; nothing to hear while it exports)
+  w.webContents.setAudioMuted(true)
   w.webContents.on('render-process-gone', (_, d) => { console.error('renderer gone:', d.reason); process.exit(3) })
   w.webContents.on('console-message', e => {
     const m = String(e.message)
@@ -233,12 +241,17 @@ async function video() {
   })
   let gpuGone = null
   app.on('child-process-gone', (_, d) => { if (d.type === 'GPU') { gpuGone = `${d.reason}, exit ${d.exitCode}`; console.error('GPU process gone:', gpuGone) } })
-  // the page saves the MP4 through a download (no file picker here)
+  // the page saves the MP4 through a download (no file picker here), with its captions (.vtt) beside it
+  const downloads = []
   const saved = new Promise(resolve => w.webContents.session.on('will-download', (_, item) => {
     const file = path.join(out, item.getFilename())
     item.setSavePath(file)
-    item.once('done', (__, state) => resolve(state === 'completed' ? file : null))
+    item.once('done', (__, state) => {
+      if (state === 'completed') downloads.push(file)
+      if (/\.mp4$/i.test(file)) resolve(state === 'completed' ? file : null)
+    })
   }))
+  if (recording) require('./native.cjs').startRecording(out, { song, res: o.res, fps: +o.fps, len: o.len, audio: o.audio, recorded: new Date().toISOString() })
   const q = `q=low&hairsim=0&clothsim=0&sw=0&song=${song}&ptengine=${o.engine}${opt.recycle != null ? '&ptrecycle=' + opt.recycle : ''}${opt.extra || ''}`
   await w.loadURL(`${PAGE}?${q}`)
   const js = s => w.webContents.executeJavaScript(s, true)
@@ -251,7 +264,10 @@ async function video() {
   const picked = await js(`(o => {
     const set = (id, v) => { const el = document.getElementById(id); if (el.type === 'checkbox') el.checked = v; else el.value = v; el.dispatchEvent(new Event('change')); el.onchange?.() }
     set('exPt', 'pt'); set('ptEngine', o.engine); set('ptSpp', o.spp); set('ptBounces', o.bounces); set('ptHair', o.hair)
-    set('exRes', o.res); set('exFps', o.fps); set('exLen', o.len); set('exAudio', false); set('exTitle', 'none')
+    // (the export takes any number of seconds; the menu offers a few)
+    const len = document.getElementById('exLen')
+    if (/^\\d+$/.test(o.len) && ![...len.options].some(x => x.value === o.len)) len.add(new Option('First ' + o.len + ' s', o.len))
+    set('exRes', o.res); set('exFps', o.fps); set('exLen', o.len); set('exAudio', o.audio); set('exTitle', 'none')
     set('ptFx', o.fx); set('ptDenoise', o.denoise)
     window.showSaveFilePicker = undefined
     const v = id => document.getElementById(id).value
@@ -284,7 +300,14 @@ async function video() {
   }
   if (/^Done/.test(last)) {
     const file = await saved
-    console.log('saved', file, file && fs.statSync(file).size, 'bytes', `(${elapsed()})`)
+    if (recording) {
+      // (the export's own MP4 is black, with the song: the audio of the native render)
+      const timeline = path.join(out, 'timeline.mp4')
+      fs.renameSync(file, timeline)
+      const seq = require('./native.cjs').finishRecording({ timeline: 'timeline.mp4', captions: downloads.filter(f => /\.vtt$/.test(f)).map(f => path.basename(f)) })
+      console.log(`recorded ${seq.frames} frames (${seq.runs} run${seq.runs > 1 ? 's' : ''}, ${seq.megabytes} MB) in ${out} (${elapsed()})`)
+      console.log(`render: node pathtrace/native/render-seq.mjs ${out} --engine=mu --spp=4`)
+    } else console.log('saved', file, file && fs.statSync(file).size, 'bytes', `(${elapsed()})`)
   } else process.exitCode = 1
 }
 
@@ -301,7 +324,7 @@ app.whenReady().then(async () => {
   try {
     if ('info' in opt) await info()
     else if ('still' in opt) await still()
-    else if ('video' in opt) await video()
+    else if ('video' in opt || 'record' in opt) await video()
     else if ('export' in opt) await exportScene()
     else return interactive()
   } catch (e) { console.error(e); process.exitCode = 1 }

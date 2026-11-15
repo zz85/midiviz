@@ -114,7 +114,7 @@ export function createPathTraceStills(stage) {
   }
 
   $('ptStart').onclick = () => run([$('ptEngine').value])
-  $('ptAll').onclick = () => run(Object.keys(ENGINES).filter(k => state.gpu || !ENGINES[k].webgpu))
+  $('ptAll').onclick = () => run(Object.keys(ENGINES).filter(k => (state.gpu || !ENGINES[k].webgpu) && !ENGINES[k].record))
   $('ptCancel').onclick = () => state.busy?.abort()
 
   // ── viewer: one result at a time, the raster under a split line ──

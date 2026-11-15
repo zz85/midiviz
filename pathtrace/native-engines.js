@@ -14,6 +14,19 @@ export async function nativeSession(key, { width, height, bounces, toneMapping, 
   const bridge = nativeBridge()
   if (!bridge) throw new Error(`${key} runs in the desktop app only (node pathtrace/desktop/run.mjs)`)
   const MU = await import(VENDOR + 'mutracer/lib/mutracer.js')
+  // record-native: the frame written for native/render-seq.mjs (run.mjs --record); the export gets a black frame
+  if (key === 'record-native') return {
+    times: {},
+    async frame({ scene, camera, samples, exposure, onProgress, dof = null }) {
+      const t = performance.now()
+      const { manifest, buffer } = await encodeScene(MU, scene, MU.fromTHREECamera(camera, muLens(camera, dof)), { width, height, exposure, toneMapping })
+      const line = await bridge.record(manifest, buffer)
+      const canvas = document.createElement('canvas'); canvas.width = 16; canvas.height = 9
+      onProgress({ samples, of: samples, status: 'recorded' })
+      return { canvas, samples, backend: 'recorded' + (line.delta ? '' : ', a run starts'), times: { setup: Math.round(performance.now() - t), trace: 0 } }
+    },
+    dispose() {},
+  }
   return {
     times: {},
     async frame({ scene, camera, samples, exposure, onProgress, signal, dof = null }) {

@@ -7,7 +7,7 @@
 
 It prints the adapter, whether the device has ray queries, the time of the first sample (shader compilation and BVH or acceleration-structure build), and the median of three timed runs. Each run waits for the GPU to finish. It also writes a preview PNG of each, `native_<backend>_<W>x<H>_<spp>spp.png`, next to the export. The preview has a plain Reinhard tone map, not the page's AgX.
 
-`build.sh` also builds `mu-trace` ([src/bin/mu-trace.rs](src/bin/mu-trace.rs)), the renderer behind the desktop app's `mu-native` engine. It reads the page's own scene, MuTracer's `fromTHREEScene` output, not a glTF export, and renders it with the page's AgX and exposure: see [Native mode in the desktop app](../PATHTRACERS-ON-A-GPU.md#native-mode-in-the-desktop-app). [threert/midiviz-ir.ts](threert/midiviz-ir.ts) does the same for ThreeRT (`rt-native`).
+`build.sh` also builds `mu-trace` ([src/bin/mu-trace.rs](src/bin/mu-trace.rs)), the renderer behind the desktop app's `mu-native` engine. It reads the page's own scene, MuTracer's `fromTHREEScene` output, not a glTF export, and renders it with the page's AgX and exposure: see [Native mode in the desktop app](../PATHTRACERS-ON-A-GPU.md#native-mode-in-the-desktop-app). [threert/midiviz-ir.ts](threert/midiviz-ir.ts) does the same for ThreeRT (`rt-native`). [render-seq.mjs](render-seq.mjs) renders a recorded sequence (`desktop/run.mjs --record`) with either, without the page, into an MP4 and linear EXRs: see [Record once, render natively](../PATHTRACERS-ON-A-GPU.md#record-once-render-natively).
 
 ## On the GPU machine
 

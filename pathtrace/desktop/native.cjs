@@ -53,18 +53,83 @@ function muServer() {
   child.on('close', (code, signal) => gone(signal ? 'stopped by ' + signal : 'exited ' + code))
   return s
 }
-function muFrame(request) {
-  const s = muServer()
+function muFrame(s, request) {
   return new Promise((resolve, reject) => { s.waiting.push({ resolve, reject }); s.child.stdin.write(JSON.stringify(request) + '\n') })
 }
+/** what a frame changes against its run's first, as mu-trace reads it: delta.json (refs into delta.bin) + delta.bin */
+function writeDelta(dir, c, display) {
+  const parts = [], geo = {}
+  let at = 0
+  const put = b => { const r = { o: at, n: b.length / 4 }; parts.push(b); at += b.length; return r }
+  for (const [i, g] of Object.entries(c.geo)) geo[i] = Object.fromEntries(Object.entries(g).map(([k, b]) => [k, put(b)]))
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, 'delta.json'), JSON.stringify({ geo, mesh: c.mesh, camera: c.camera, lights: c.lights, display }))
+  fs.writeFileSync(path.join(dir, 'delta.bin'), Buffer.concat(parts))
+  return at
+}
 
-async function muNative(dir, o) {
-  const out = path.join(dir, 'out.rgba')
-  const r = await muFrame({ dir, out, spp: o.samples, bounces: o.bounces, width: o.width, height: o.height, denoise: !!o.denoise, backend: software ? 'software' : 'hardware', raw: true })
-  if (r.error) throw new Error('mu-trace: ' + r.error)
+// ── recording: a page export's frames, for a native render later (native/render-seq.mjs) ──
+// run.mjs --record writes, instead of tracing:
+//   sequence.json                what was recorded (song, size, fps, frames) and the export's timeline.mp4 (its audio)
+//   frames.jsonl                 a line a frame: { frame, run, delta? }
+//   runs/<n>/scene.json, .bin    a run's first frame in full (native-scene.js)
+//   frames/<frame>/delta.*       what a frame after it changes against that first frame (mu-trace's delta format)
+let rec = null
+function startRecording(dir, info) {
+  fs.mkdirSync(dir, { recursive: true })
+  rec = { dir, info, frames: 0, runs: 0, base: null, bytes: 0, lines: fs.openSync(path.join(dir, 'frames.jsonl'), 'w'), started: Date.now() }
+}
+function recordFrame(manifest, buffer) {
+  const m = JSON.parse(manifest), bin = Buffer.from(buffer), frame = rec.frames++
+  let line
+  if (rec.base && sameStructure(rec.base.m, rec.base.bin, m, bin)) {
+    const rel = path.join('frames', String(frame).padStart(6, '0'))
+    rec.bytes += writeDelta(path.join(rec.dir, rel), changes(rec.base.m, rec.base.bin, m, bin), m.display)
+    line = { frame, run: rec.base.run, delta: rel }
+  } else {
+    const run = path.join('runs', String(rec.runs++).padStart(3, '0')), d = path.join(rec.dir, run)
+    fs.mkdirSync(d, { recursive: true })
+    fs.writeFileSync(path.join(d, 'scene.json'), manifest)
+    fs.writeFileSync(path.join(d, 'scene.bin'), bin)
+    rec.bytes += bin.length
+    rec.base = { m, bin, run }
+    line = { frame, run }
+  }
+  fs.writeSync(rec.lines, JSON.stringify(line) + '\n')
+  return line
+}
+function finishRecording(extra) {
+  if (!rec) return null
+  fs.closeSync(rec.lines)
+  const seq = { format: 'midiviz-native-sequence', version: 1, ...rec.info, frames: rec.frames, runs: rec.runs, megabytes: +(rec.bytes / 1e6).toFixed(1),
+    recordedSeconds: Math.round((Date.now() - rec.started) / 1000), ...extra }
+  fs.writeFileSync(path.join(rec.dir, 'sequence.json'), JSON.stringify(seq, null, 1))
+  rec = null
+  return seq
+}
+
+// A run, as for rt-native below: its first frame goes to mu-trace in full, the frames after it as what moved
+// against that first frame (delta.json + delta.bin, under 1 MB), which mu-trace puts on the Scene it kept
+// instead of writing, reading and building 60 MB a frame.
+async function muNative(dir, manifest, buffer, o) {
+  const s = muServer()
+  const m = JSON.parse(manifest), bin = Buffer.from(buffer), out = path.join(dir, 'out.rgba')
+  const request = { out, spp: o.samples, bounces: o.bounces, width: o.width, height: o.height, denoise: !!o.denoise, backend: software ? 'software' : 'hardware', raw: true }
+  if (s.base && sameStructure(s.base.m, s.base.bin, m, bin)) {
+    writeDelta(dir, changes(s.base.m, s.base.bin, m, bin), m.display)
+    request.delta = dir
+  } else {
+    fs.writeFileSync(path.join(dir, 'scene.json'), manifest)
+    fs.writeFileSync(path.join(dir, 'scene.bin'), bin)
+    request.dir = dir
+    s.base = { m, bin }
+  }
+  const r = await muFrame(s, request)
+  // (a failed frame ends mu-trace's run too: the next frame starts a new one)
+  if (r.error) { s.base = null; throw new Error('mu-trace: ' + r.error) }
   const T = r.timings_ms
   return { rgba: fs.readFileSync(out), width: r.width, height: r.height, report: { engine: 'mu-native', adapter: r.adapter, hwrt: r.hwrt, samples: r.samples, leftOut: r.left_out,
-    commit: r.commit, warm: r.warm, firstBatch: r.first_batch, timings: { scene: T.scene, setup: T.setup, firstSample: null, trace: T.trace, encode: T.encode } } }
+    commit: r.commit, warm: r.warm, run: r.run, firstBatch: r.first_batch, timings: { scene: T.scene, setup: T.setup, firstSample: null, trace: T.trace, encode: T.encode } } }
 }
 
 // ThreeRT's scripts can't read files, so the frame goes in front of the bundled script as two globals
@@ -105,14 +170,16 @@ function sameStructure(a, A, b, B) {
   }
   return a.meshes.every((m, i) => m.geometry === b.meshes[i].geometry && sameJson(m.materials, b.meshes[i].materials)) && a.lights.every((l, i) => l.type === b.lights[i].type)
 }
+/** { geo: { [geometry]: { p, n?, t? } } (positions, normals, tangents: Buffers), mesh: { [mesh]: transform }, camera, lights } */
 function changes(a, A, b, B) {
   const geo = {}, mesh = {}
   b.geometries.forEach((y, i) => {
-    const x = a.geometries[i], p = span(B, y.position, 4), n = y.normal && span(B, y.normal, 4)
-    if (!p.equals(span(A, x.position, 4)) || (n && !n.equals(span(A, x.normal, 4)))) geo[i] = { p: p.toString('base64'), ...(n ? { n: n.toString('base64') } : {}) }
+    const x = a.geometries[i], p = span(B, y.position, 4), n = y.normal && span(B, y.normal, 4), t = y.tangent && x.tangent && span(B, y.tangent, 4)
+    const moved = !p.equals(span(A, x.position, 4)) || (n && !n.equals(span(A, x.normal, 4))) || (t && !t.equals(span(A, x.tangent, 4)))
+    if (moved) geo[i] = { p, ...(n ? { n } : {}), ...(t ? { t } : {}) }
   })
   b.meshes.forEach((m, i) => { if (!sameJson(m.transform, a.meshes[i].transform)) mesh[i] = m.transform })
-  return { geo, mesh, camera: b.camera, lights: b.lights, exposure: b.display.exposure }
+  return { geo, mesh, camera: b.camera, lights: b.lights }
 }
 
 // rt-native: `threert-render serve` for the app's life (its device and pipelines kept). A run's first frame becomes
@@ -168,15 +235,32 @@ async function rtNative(dir, manifest, buffer, o) {
     s.base = { file, m, bin, frames: 0 }
     s.said = []
     run = 'starts'
-  } else state = changes(s.base.m, s.base.bin, m, bin)
-  const out = path.join(dir, 'out.png'), id = ++s.seq
+  } else {
+    const c = changes(s.base.m, s.base.bin, m, bin), b64 = g => ({ p: g.p.toString('base64'), ...(g.n ? { n: g.n.toString('base64') } : {}) })
+    state = { geo: Object.fromEntries(Object.entries(c.geo).map(([i, g]) => [i, b64(g)])), mesh: c.mesh, camera: c.camera, lights: c.lights, exposure: m.display.exposure }
+  }
+  // (raw RGBA8, top row first: threert/raw-output.patch; a 4K PNG took the page a third of a second to decode)
+  const out = path.join(dir, 'out.rgba'), id = ++s.seq
   const job = { id, game: s.base.file, assets: s.dir, room: 'midiviz', seed: 0, seq: id, state, out, spp: o.samples, width: o.width, height: o.height,
     denoise: !!o.denoise, overrides: { native: { maxBounces: o.bounces } } }
-  const v = await new Promise((resolve, reject) => { s.waiting.push({ resolve, reject }); s.child.stdin.write(JSON.stringify(job) + '\n') })
+  const send = j => new Promise((resolve, reject) => { s.waiting.push({ resolve, reject }); s.child.stdin.write(JSON.stringify(j) + '\n') })
+  let v = await send(job)
+  // A frame script has 50 ms (ThreeRT's FRAME_MS); applying a frame takes about 5, but a stall of the machine (a
+  // garbage collection at 4K) can push it over, and ThreeRT stops it as "interrupted". The state says the whole
+  // frame against the run's first, so it is sent again; failing twice, the frame starts a new run.
+  if (!v.ok && /interrupted/.test(v.error) && state) v = await send({ ...job, id: ++s.seq, seq: s.seq })
+  if (!v.ok && /interrupted/.test(v.error) && state) {
+    fs.rmSync(s.base.file, { force: true })
+    const file = path.join(s.dir, `run-${++s.bases}.js`)
+    writeBundle(file, manifest, bin)
+    s.base = { file, m, bin, frames: 0 }
+    run = 'starts again'
+    v = await send({ ...job, id: ++s.seq, seq: s.seq, game: file, state: null })
+  }
   if (!v.ok) throw new Error('threert-render: ' + v.error)
   s.base.frames++
   const r = v.stats, T = r.timings_ms, n = k => T[k] || 0
-  return { png: fs.readFileSync(out), report: { engine: 'rt-native', adapter: r.adapter, hwrt: r.hwrt, samples: r.spp, leftOut: s.said,
+  return { rgba: fs.readFileSync(out), width: o.width, height: o.height, report: { engine: 'rt-native', adapter: r.adapter, hwrt: r.hwrt, samples: r.spp, leftOut: s.said,
     run, moved: state ? { geometries: Object.keys(state.geo).length, transforms: Object.keys(state.mesh).length } : null,
     timings: { scene: n('load_ms') + n('script_ms') + n('bvh_ms') + n('accel_build_ms') + n('texture_pages_ms') + n('upload_ms') + n('sky_ms'), setup: n('gpu_init_ms'),
       firstSample: null, trace: n('trace_ms'), ...(o.denoise ? { denoise: n('denoise_ms') } : {}), encode: n('post_ms') + n('readback_ms') + n('encode_ms') } } }
@@ -186,6 +270,11 @@ function install(ipcMain) {
   const fromApp = e => String(e.senderFrame?.url || '').startsWith('midiviz://app/')
   ipcMain.handle('native:engines', () => Object.fromEntries(Object.entries(BIN).map(([k, b]) => [k, fs.existsSync(b)])))
   ipcMain.handle('native:cancel', (e, key) => { if (fromApp(e)) running.get(key)?.kill() })
+  ipcMain.handle('native:record', (e, manifest, buffer) => {
+    if (!fromApp(e)) throw new Error('native renderers answer the app\'s own page only')
+    if (!rec) throw new Error('not recording: the record engine runs under run.mjs --record')
+    return recordFrame(manifest, buffer)
+  })
   ipcMain.handle('native:render', async (e, key, manifest, buffer, o) => {
     if (!fromApp(e)) throw new Error('native renderers answer the app\'s own page only')
     if (!BIN[key]) throw new Error('unknown native renderer ' + key)
@@ -193,18 +282,19 @@ function install(ipcMain) {
     const t0 = Date.now()
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'midiviz-native-'))
     try {
-      // (mu-trace reads the frame from files; ThreeRT gets a run's first frame in its bundle and the rest as state)
-      if (key === 'mu-native' || process.env.MIDIVIZ_NATIVE_KEEP) {
+      // (a run's first frame goes in full, the frames after it as what moved: muNative and rtNative write what they need)
+      if (process.env.MIDIVIZ_NATIVE_KEEP) {
         fs.writeFileSync(path.join(dir, 'scene.json'), manifest)
         fs.writeFileSync(path.join(dir, 'scene.bin'), Buffer.from(buffer))
       }
       const files = Date.now() - t0
-      const r = key === 'mu-native' ? await muNative(dir, o) : await rtNative(dir, manifest, buffer, o)
+      const r = key === 'mu-native' ? await muNative(dir, manifest, buffer, o) : await rtNative(dir, manifest, buffer, o)
       r.report.timings.files = files
       r.report.wall = Date.now() - t0
       if (process.env.MIDIVIZ_NATIVE_LOG) {
         const R = r.report, T = R.timings
-        const how = R.commit ? `${R.commit} commit${R.warm ? '' : ' (cold engine)'}, ` : R.run === 'starts' ? 'run starts, ' : R.moved ? `${R.moved.geometries} geometries and ${R.moved.transforms} transforms moved, ` : ''
+        const how = (R.run === 'starts' ? 'run starts, ' : R.moved ? `${R.moved.geometries} geometries and ${R.moved.transforms} transforms moved, ` : R.run ? 'run continues, ' : '') +
+          (R.commit ? `${R.commit} commit${R.warm ? '' : ' (cold engine)'}, ` : '')
         console.log(`  ${key}: ${how}scene ${Math.round(T.scene)} ms, trace ${Math.round(T.trace)} ms, out ${Math.round(T.encode)} ms, ${R.wall} ms in the app`)
       }
       if (process.env.MIDIVIZ_NATIVE_KEEP) { r.report.dir = dir; console.log(`  ${key}: kept ${dir}`) }
@@ -213,4 +303,4 @@ function install(ipcMain) {
   })
 }
 
-module.exports = { install, BIN, sameStructure, changes }
+module.exports = { install, BIN, HOW, sameStructure, changes, startRecording, finishRecording, muServer, muFrame, rtServer, writeBundle }

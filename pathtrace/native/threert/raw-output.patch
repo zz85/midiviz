@@ -1,0 +1,16 @@
+diff --git a/renderer/src/main.rs b/renderer/src/main.rs
+index 676b701..7ae0a24 100644
+--- a/renderer/src/main.rs
++++ b/renderer/src/main.rs
+@@ -526,7 +526,10 @@ fn render(g: &gpu::Gpu, job: &Job, presets: &Path, init_ms: f64, hosts: &mut Hos
+         std::fs::create_dir_all(parent)?;
+     }
+     let ext = job.out.extension().and_then(|e| e.to_str()).unwrap_or("png").to_ascii_lowercase();
+-    if ext == "jpg" || ext == "jpeg" {
++    if ext == "rgba" {
++        // midiviz: the displayed RGBA8 as it is, top row first (a 4K PNG costs its reader a third of a second)
++        std::fs::write(&job.out, &rgba)?;
++    } else if ext == "jpg" || ext == "jpeg" {
+         let rgb: Vec<u8> = rgba.chunks(4).flat_map(|p| [p[0], p[1], p[2]]).collect();
+         let f = std::io::BufWriter::new(std::fs::File::create(&job.out)?);
+         image::codecs::jpeg::JpegEncoder::new_with_quality(f, 88).encode(&rgb, w as u32, h as u32, image::ExtendedColorType::Rgb8)?;

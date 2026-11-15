@@ -24,6 +24,10 @@ echo "ThreeRT $(git -C "$src" rev-parse --short HEAD)"
 # optional MuTracer path dependency while building the renderer.
 grep -q '^\[workspace\]' "$src/renderer/Cargo.toml" ||
   printf '\n[workspace]\n' >> "$src/renderer/Cargo.toml"
+# The desktop app's rt-native reads its frames raw (an .rgba out: the displayed RGBA8, top row first), which
+# ThreeRT's encoders don't write; a 4K PNG took the page a third of a second to decode.
+git -C "$src" apply --reverse --check "$here/threert/raw-output.patch" 2>/dev/null ||
+  git -C "$src" apply "$here/threert/raw-output.patch"
 (cd "$src" && npm ci --no-audit --no-fund --loglevel=error)
 # (--no-default-features leaves out the network client, which a local render doesn't use)
 (cd "$src/renderer" && cargo build --release --no-default-features)

@@ -20,7 +20,7 @@ const backend = value('backend') || (hasGpu() ? 'gpu' : findLavapipe() ? 'lavapi
 if (!['llvmpipe', 'lavapipe', 'swiftshader', 'gpu'].includes(backend)) { console.error(`unknown --backend=${backend}`); process.exit(2) }
 // (only Linux can lack a display; macOS and Windows always have their window server)
 const noDisplay = process.platform === 'linux' && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY
-const batch = !!flag('still') || !!flag('info') || !!flag('video') || !!flag('export')
+const batch = !!flag('still') || !!flag('info') || !!flag('video') || !!flag('export') || !!flag('record')
 const headless = !!flag('headless') || batch || noDisplay
 
 function findLavapipe() {

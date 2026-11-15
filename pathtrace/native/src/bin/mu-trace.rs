@@ -18,11 +18,11 @@
 // material parameters by hand.
 use mutracer_native_probe::{
     api,
-    scene_api::{Environment, Geometry, Light, Mesh, OpenPbrMaterial, Scene, Texture, TexturePixels},
+    scene_api::{Environment, Geometry, GeometryId, Light, LightId, Mesh, MeshId, OpenPbrMaterial, Scene, Texture, TextureId, TexturePixels},
 };
 use glam::Mat4;
 use serde_json::{Value, json};
-use std::{collections::HashMap, io::{BufRead, Write}, path::Path, sync::{Arc, Mutex}, time::Instant};
+use std::{collections::{HashMap, HashSet}, io::{BufRead, Write}, path::Path, sync::{Arc, Mutex}, time::Instant};
 
 const SCHEMA: &str = include_str!("../../mutracer/native/schemas/material-properties.json");
 // mutracer-layout.h: header words and the light record (mt_light_v4)
@@ -68,7 +68,108 @@ fn schema() -> Res<HashMap<String, Prop>> {
 /// One frame of the page as a native descriptor, with what the display needs.
 struct Frame { descriptor: Vec<u8>, size: (u32, u32), tone_mapping: api::ToneMapping, exposure: f32, lights: usize, spots_with_radius: usize, left_out: Vec<String>, ms: f64 }
 
-fn load_frame(dir: &Path, props: &HashMap<String, Prop>) -> Res<Frame> {
+/// A run's first frame as a Scene, kept so that the frames after it are edits of it: what moved only
+/// (desktop/native.cjs works it out and writes delta.json + delta.bin).
+struct Base {
+    scene: Scene, size: (u32, u32), left_out: Vec<String>, textures: Vec<TextureId>,
+    geometries: Vec<GeometryId>, first: Vec<Geometry>, meshes: Vec<MeshId>, first_transforms: Vec<Mat4>,
+    /// one a light of the page's, None where it was left out
+    lights: Vec<Option<LightId>>,
+    moved: HashSet<usize>, placed: HashSet<usize>,
+}
+
+fn light_of(l: &Value, tex: &dyn Fn(&Value) -> Option<TextureId>) -> Option<Light> {
+    let (color, intensity, transform) = (arr::<3>(&l["color"]), f(&l["intensity"]), mat(&l["transform"]));
+    Some(match l["type"].as_str().unwrap_or("") {
+        "SpotLight" => Light::Spot { color, intensity, inner: f(&l["innerAngle"]), outer: f(&l["outerAngle"]), transform, ies: Arc::from(Vec::<u8>::new()) },
+        "RectLight" => Light::Rect { color, intensity, width: f(&l["size"][0]), height: f(&l["size"][1]), spread: f(&l["spread"]), transform, texture: tex(&l["texture"]) },
+        "SphereLight" => Light::Sphere { color, intensity, radius: f(&l["radius"]), transform },
+        "DirectionalLight" => Light::Directional { color, intensity, transform },
+        _ => return None,
+    })
+}
+fn camera_of(c: &Value) -> api::Camera {
+    let mut camera = api::Camera::default();
+    camera.projection = (c["projection"].as_str() == Some("orthographic")) as u32;
+    for (field, key) in [(&mut camera.fov, "fov"), (&mut camera.near_clip, "near"), (&mut camera.far_clip, "far"), (&mut camera.left, "left"), (&mut camera.right, "right"),
+        (&mut camera.bottom, "bottom"), (&mut camera.top, "top"), (&mut camera.zoom, "zoom"), (&mut camera.f_stop, "fStop"), (&mut camera.focus_distance, "focusDistance"),
+        (&mut camera.sensor_height, "sensorHeight"), (&mut camera.meters_per_unit, "metersPerUnit")] {
+        if let Some(v) = c[key].as_f64() { *field = v as f32; }
+    }
+    camera.world_matrix = arr::<16>(&c["transform"]);
+    camera
+}
+
+/// The Scene as a descriptor, with what the Scene API can't say written in.
+fn encode(base: &Base, lights: &[Value], display: &Value, t: Instant) -> Res<Frame> {
+    let mut d = base.scene.descriptor()?.as_ref().clone();
+    let word = |d: &[u8], i: usize| u32::from_le_bytes([d[i * 4], d[i * 4 + 1], d[i * 4 + 2], d[i * 4 + 3]]);
+    // (the Scene API has no spot radius; the descriptor does)
+    let (mut spots, mut n) = (vec![], 0);
+    for (j, l) in lights.iter().enumerate() {
+        if base.lights.get(j).copied().flatten().is_none() { continue }
+        if l["type"].as_str() == Some("SpotLight") { spots.push((n, f(&l["radius"]))); }
+        n += 1;
+    }
+    let (count, at) = (word(&d, H_LIGHT_COUNT) as usize, word(&d, H_LIGHT_OFFSET) as usize);
+    if count != n { return Err(format!("descriptor has {count} lights, the scene {n}").into()); }
+    for (i, r) in &spots {
+        let rec = at + i * L_WORDS;
+        if word(&d, rec + L_TYPE) != LIGHT_SPOT { return Err(format!("light {i} is not a spot in the descriptor").into()); }
+        d[(rec + L_SIZE) * 4..(rec + L_SIZE) * 4 + 4].copy_from_slice(&r.to_le_bytes());
+    }
+    // Each new Scene gives its meshes and materials new process-wide AOV ids, so to MuTracer's commit every
+    // frame would be a different scene, prepared in full. Without the ID tables the core numbers them by
+    // index (scene-sync.ts), the same from frame to frame; nothing here reads ID AOVs.
+    for h in [H_MESH_AOV_IDS, H_MATERIAL_AOV_IDS] { d[h * 4..h * 4 + 4].copy_from_slice(&0u32.to_le_bytes()); }
+    Ok(Frame {
+        descriptor: d, size: base.size,
+        tone_mapping: if display["toneMapping"].as_str() == Some("linear") { api::ToneMapping::Linear } else { api::ToneMapping::Agx },
+        exposure: display["exposure"].as_f64().unwrap_or(1.) as f32,
+        lights: n, spots_with_radius: spots.iter().filter(|(_, r)| *r > 0.).count(), left_out: base.left_out.clone(), ms: ms(t),
+    })
+}
+
+/// A frame after a run's first: its changes on the kept Scene, and the first frame's back where it no longer changes them.
+fn edit_frame(base: &mut Base, dir: &Path) -> Res<Frame> {
+    let t = Instant::now();
+    let d: Value = serde_json::from_slice(&std::fs::read(dir.join("delta.json"))?)?;
+    let blob = Blob(std::fs::read(dir.join("delta.bin"))?);
+    let mut now = HashSet::new();
+    for (k, g) in d["geo"].as_object().into_iter().flatten() {
+        let i: usize = k.parse()?;
+        let first = base.first.get(i).ok_or("delta: no such geometry")?.clone();
+        // (a new Geometry, for the bounds of the new positions; its other arrays the first frame's, shared)
+        let mut geo = Geometry::new(blob.f32s(&g["p"])?, first.indices.clone());
+        geo.normals = if g["n"].is_null() { first.normals.clone() } else { blob.f32s(&g["n"])? };
+        geo.tangents = if g["t"].is_null() { first.tangents.clone() } else { blob.f32s(&g["t"])? };
+        geo.uv = first.uv.clone();
+        geo.colors = first.colors.clone();
+        geo.material_indices = first.material_indices.clone();
+        *base.scene.geometry_mut(base.geometries[i])? = geo;
+        now.insert(i);
+    }
+    for &i in base.moved.difference(&now) { *base.scene.geometry_mut(base.geometries[i])? = base.first[i].clone(); }
+    base.moved = now;
+    let mut placed = HashSet::new();
+    for (k, tr) in d["mesh"].as_object().into_iter().flatten() {
+        let i: usize = k.parse()?;
+        base.scene.mesh_mut(*base.meshes.get(i).ok_or("delta: no such mesh")?)?.transform = mat(tr);
+        placed.insert(i);
+    }
+    for &i in base.placed.difference(&placed) { base.scene.mesh_mut(base.meshes[i])?.transform = base.first_transforms[i]; }
+    base.placed = placed;
+    let lights = d["lights"].as_array().cloned().unwrap_or_default();
+    let textures = base.textures.clone();
+    let tex = move |v: &Value| v.as_u64().map(|i| textures[i as usize]);
+    for (j, l) in lights.iter().enumerate() {
+        if let (Some(Some(id)), Some(light)) = (base.lights.get(j).copied(), light_of(l, &tex)) { *base.scene.light_mut(id)? = light; }
+    }
+    base.scene.set_default_camera(Some(camera_of(&d["camera"])));
+    encode(base, &lights, &d["display"], t)
+}
+
+fn load_frame(dir: &Path, props: &HashMap<String, Prop>) -> Res<(Base, Frame)> {
     let t = Instant::now();
     let m: Value = serde_json::from_slice(&std::fs::read(dir.join("scene.json"))?)?;
     let blob = Blob(std::fs::read(dir.join("scene.bin"))?);
@@ -132,30 +233,22 @@ fn load_frame(dir: &Path, props: &HashMap<String, Prop>) -> Res<Frame> {
         }
         materials.push(scene.add_material(mat)?);
     }
+    let (mut meshes, mut first_transforms) = (vec![], vec![]);
     for me in m["meshes"].as_array().into_iter().flatten() {
         let ms: Vec<_> = me["materials"].as_array().unwrap().iter().map(|i| materials[i.as_u64().unwrap() as usize]).collect();
         let mut mesh = Mesh::new(geometries[me["geometry"].as_u64().unwrap() as usize], ms[0]);
         if ms.len() > 1 { mesh.materials = ms; }
         mesh.transform = mat(&me["transform"]);
-        scene.add_mesh(mesh)?;
+        first_transforms.push(mesh.transform);
+        meshes.push(scene.add_mesh(mesh)?);
     }
-    // (the Scene API has no spot radius; the descriptor does, so it is written in after encoding)
-    let mut spot_radius: Vec<(usize, f32)> = vec![];
-    let mut n_lights = 0;
-    for l in m["lights"].as_array().into_iter().flatten() {
-        let (color, intensity, transform) = (arr::<3>(&l["color"]), f(&l["intensity"]), mat(&l["transform"]));
-        let light = match l["type"].as_str().unwrap_or("") {
-            "SpotLight" => {
-                spot_radius.push((n_lights, f(&l["radius"])));
-                Light::Spot { color, intensity, inner: f(&l["innerAngle"]), outer: f(&l["outerAngle"]), transform, ies: Arc::from(Vec::<u8>::new()) }
-            }
-            "RectLight" => Light::Rect { color, intensity, width: f(&l["size"][0]), height: f(&l["size"][1]), spread: f(&l["spread"]), transform, texture: tex(&l["texture"]) },
-            "SphereLight" => Light::Sphere { color, intensity, radius: f(&l["radius"]), transform },
-            "DirectionalLight" => Light::Directional { color, intensity, transform },
-            k => { note(format!("light {k}")); continue }
-        };
-        scene.add_light(light)?;
-        n_lights += 1;
+    let lights_json = m["lights"].as_array().cloned().unwrap_or_default();
+    let mut lights = vec![];
+    for l in &lights_json {
+        match light_of(l, &tex) {
+            Some(light) => lights.push(Some(scene.add_light(light)?)),
+            None => { note(format!("light {}", l["type"])); lights.push(None) }
+        }
     }
     let mut env = Environment::default();
     let mut es = scene.environment_settings();
@@ -171,44 +264,21 @@ fn load_frame(dir: &Path, props: &HashMap<String, Prop>) -> Res<Frame> {
     }
     scene.set_environment(env)?;
     scene.set_environment_settings(es)?;
-    let c = &m["camera"];
-    let mut camera = api::Camera::default();
-    camera.projection = (c["projection"].as_str() == Some("orthographic")) as u32;
-    for (field, key) in [(&mut camera.fov, "fov"), (&mut camera.near_clip, "near"), (&mut camera.far_clip, "far"), (&mut camera.left, "left"), (&mut camera.right, "right"),
-        (&mut camera.bottom, "bottom"), (&mut camera.top, "top"), (&mut camera.zoom, "zoom"), (&mut camera.f_stop, "fStop"), (&mut camera.focus_distance, "focusDistance"),
-        (&mut camera.sensor_height, "sensorHeight"), (&mut camera.meters_per_unit, "metersPerUnit")] {
-        if let Some(v) = c[key].as_f64() { *field = v as f32; }
-    }
-    camera.world_matrix = arr::<16>(&c["transform"]);
-    scene.set_default_camera(Some(camera));
-
-    let mut d = scene.descriptor()?.as_ref().clone();
-    let word = |d: &[u8], i: usize| u32::from_le_bytes([d[i * 4], d[i * 4 + 1], d[i * 4 + 2], d[i * 4 + 3]]);
-    let (count, at) = (word(&d, H_LIGHT_COUNT) as usize, word(&d, H_LIGHT_OFFSET) as usize);
-    if count != n_lights { return Err(format!("descriptor has {count} lights, the scene {n_lights}").into()); }
-    for (i, r) in &spot_radius {
-        let rec = at + i * L_WORDS;
-        if word(&d, rec + L_TYPE) != LIGHT_SPOT { return Err(format!("light {i} is not a spot in the descriptor").into()); }
-        d[(rec + L_SIZE) * 4..(rec + L_SIZE) * 4 + 4].copy_from_slice(&r.to_le_bytes());
-    }
-    // Each new Scene gives its meshes and materials new process-wide AOV ids, so to MuTracer's commit every
-    // frame would be a different scene, prepared in full. Without the ID tables the core numbers them by
-    // index (scene-sync.ts), the same from frame to frame; nothing here reads ID AOVs.
-    for h in [H_MESH_AOV_IDS, H_MATERIAL_AOV_IDS] { d[h * 4..h * 4 + 4].copy_from_slice(&0u32.to_le_bytes()); }
-    Ok(Frame {
-        descriptor: d,
-        size: (m["size"][0].as_u64().unwrap_or(1280) as u32, m["size"][1].as_u64().unwrap_or(720) as u32),
-        tone_mapping: if m["display"]["toneMapping"].as_str() == Some("linear") { api::ToneMapping::Linear } else { api::ToneMapping::Agx },
-        exposure: m["display"]["exposure"].as_f64().unwrap_or(1.) as f32,
-        lights: n_lights, spots_with_radius: spot_radius.iter().filter(|(_, r)| *r > 0.).count(), left_out, ms: ms(t),
-    })
+    scene.set_default_camera(Some(camera_of(&m["camera"])));
+    let first = geometries.iter().map(|&g| scene.geometry(g).cloned()).collect::<Result<Vec<_>, _>>()?;
+    let base = Base {
+        scene, size: (m["size"][0].as_u64().unwrap_or(1280) as u32, m["size"][1].as_u64().unwrap_or(720) as u32), left_out, textures,
+        geometries, first, meshes, first_transforms, lights, moved: HashSet::new(), placed: HashSet::new(),
+    };
+    let frame = encode(&base, &lights_json, &m["display"], t)?;
+    Ok((base, frame))
 }
 
-struct Options { spp: u32, bounces: u32, size: Option<(u32, u32)>, backend: api::Backend, denoise: bool, raw: bool }
+struct Options { spp: u32, bounces: u32, size: Option<(u32, u32)>, backend: api::Backend, denoise: bool, raw: bool, hdr: Option<std::path::PathBuf> }
 type RenderKey = (u32, u32, u32, u32, bool);
 /// The engine and its render, kept from frame to frame.
 #[derive(Default)]
-struct Host { engine: Option<(api::Engine, bool)>, render: Option<(api::Render, RenderKey)>, frames: u32 }
+struct Host { engine: Option<(api::Engine, bool)>, render: Option<(api::Render, RenderKey)>, frames: u32, base: Option<Base> }
 
 fn trace(host: &mut Host, frame: &Frame, o: &Options, out: &Path) -> Res<Value> {
     let t_all = Instant::now();
@@ -242,7 +312,18 @@ fn trace(host: &mut Host, frame: &Frame, o: &Options, out: &Path) -> Res<Value> 
     let f1 = first.clone();
     c.on_progress = Some(Box::new(move |p: api::ConvergeProgress| { let mut g = f1.lock().unwrap(); if g.is_none() && p.samples >= 1 { *g = Some((ms(t), p.samples)); } }));
     let done = render.converge(c)?;
-    let _ = render.read_pixels(api::PixelKind::Hdr)?;   // waits for the GPU
+    let hdr = render.read_pixels(if o.denoise { api::PixelKind::Denoised } else { api::PixelKind::Hdr })?;   // (and waits for the GPU)
+    // The linear picture for a grade elsewhere: the radiance times the frame's exposure (what AgX gets, fades
+    // included), planar G, B, R, A float32 planes, which is ffmpeg's gbrapf32le for an EXR
+    if let Some(path) = &o.hdr {
+        let n = (hdr.width * hdr.height) as usize;
+        let mut planes = vec![0f32; n * 4];
+        for (i, px) in hdr.data.chunks_exact(4).enumerate() {
+            let e = frame.exposure;
+            planes[i] = px[1] * e; planes[n + i] = px[2] * e; planes[2 * n + i] = px[0] * e; planes[3 * n + i] = px[3];
+        }
+        std::fs::write(path, planes.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>())?;
+    }
     let trace_ms = ms(t);
     // the path actually traced (a hardware engine falls back to its own BVH where ray queries can't take the scene),
     // and how MuTracer committed this frame against the last
@@ -279,11 +360,25 @@ fn serve(props: &HashMap<String, Prop>) -> Res<()> {
                 spp: r["spp"].as_u64().unwrap_or(16) as u32, bounces: r["bounces"].as_u64().unwrap_or(10) as u32,
                 size: r["width"].as_u64().zip(r["height"].as_u64()).map(|(w, h)| (w as u32, h as u32)),
                 backend: backend_of(r["backend"].as_str()), denoise: r["denoise"].as_bool().unwrap_or(false), raw: r["raw"].as_bool().unwrap_or(false),
+                hdr: r["hdr"].as_str().map(std::path::PathBuf::from),
             };
-            let frame = load_frame(Path::new(r["dir"].as_str().ok_or("no dir")?), props)?;
-            trace(&mut host, &frame, &o, Path::new(r["out"].as_str().ok_or("no out")?))
+            // {"load"}: a run's first frame taken in, not rendered (a render that starts in the middle of a run)
+            if let Some(d) = r["load"].as_str() {
+                let (base, _) = load_frame(Path::new(d), props)?;
+                host.base = Some(base);
+                return Ok(json!({ "loaded": d }));
+            }
+            // {"dir"}: a run's first frame, in full (scene.json + scene.bin); {"delta"}: a frame after it, what moved only
+            let (frame, run) = match (r["delta"].as_str(), r["dir"].as_str()) {
+                (Some(d), _) => (edit_frame(host.base.as_mut().ok_or("a delta without a run: send a frame in full first")?, Path::new(d))?, "continues"),
+                (None, Some(d)) => { let (base, frame) = load_frame(Path::new(d), props)?; host.base = Some(base); (frame, "starts") }
+                _ => return Err("a frame needs dir or delta".into()),
+            };
+            let mut report = trace(&mut host, &frame, &o, Path::new(r["out"].as_str().ok_or("no out")?))?;
+            report["run"] = json!(run);
+            Ok(report)
         })().unwrap_or_else(|e| {
-            // (a failed frame leaves no state behind: the next one starts a new engine)
+            // (a failed frame leaves no state behind: the next one starts a new engine and a new run)
             host = Host { frames: host.frames, ..Host::default() };
             json!({ "error": e.to_string() })
         });
@@ -316,8 +411,9 @@ fn main() -> Res<()> {
     let o = Options {
         spp: flag("--spp").map(|s| s.parse()).transpose()?.unwrap_or(16), bounces: flag("--bounces").map(|s| s.parse()).transpose()?.unwrap_or(10),
         size, backend: backend_of(flag("--backend").as_deref()), denoise: a.iter().any(|x| x == "--denoise"), raw: a.iter().any(|x| x == "--raw"),
+        hdr: flag("--hdr").map(std::path::PathBuf::from),
     };
-    let frame = load_frame(Path::new(&a[1]), &props)?;
+    let (_, frame) = load_frame(Path::new(&a[1]), &props)?;
     println!("{}", trace(&mut Host::default(), &frame, &o, Path::new(&a[2]))?);
     Ok(())
 }

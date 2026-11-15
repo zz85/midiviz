@@ -290,10 +290,12 @@ In the clip, one commit is full and 83 incremental. An incremental frame is the 
 committed after t = 20 against t = 21 from a cold engine, with MuTracer's own BVH, differs by at
 most 1/255 in a pixel, while t = 20 and t = 21 differ by up to 195 in an 8-pixel block.
 
-What is left a frame is the hand-over, about 0.2 s: the page encodes the frame (MuTracer's
-conversion 13 ms, the encoding 30 ms with textures read once a video), Electron copies its 60 MB
-(about 70 ms), the app writes it (40 ms) and mu-trace builds the Scene (45 ms). Sending only what
-changed would cut most of it.
+The hand-over is then about 0.13 s a frame: the page encodes the frame (MuTracer's conversion
+13 ms, the encoding 30 ms with textures read once a video) and Electron copies its 60 MB (about
+70 ms), but the app works out what moved against the run's first frame (as for rt-native below)
+and mu-trace edits the Scene it kept instead of reading and building 60 MB: 0.56 MB a frame,
+6 ms where building took 45. A delta frame against the same frame in full, MuTracer's own BVH:
+at most 1/255 in a pixel. The 5 s clip at 4K, 4 spp: 113 s → 102 s.
 
 **rt-native renders a sequence the way ThreeRT's games do.** `threert-render serve` keeps a game's
 runtime between jobs: its `setup` builds the scene once, and each later job only gives it a new
@@ -316,11 +318,76 @@ than 2/255. ThreeRT's offline renderer still prepares its GPU scene for each job
 updates belong to its real-time renderer, `live`); what a sequence saves is the process, the
 script and the setup.
 
+At 4K about 0.3 s of rt-native's frame is ThreeRT's own work after the trace: its post on the CPU
+(about 175 ms) and the read-back (about 125 ms). Frames come back raw (an `.rgba` out:
+[native/threert/raw-output.patch](native/threert/raw-output.patch), which `threert.sh` applies), but
+the PNG they replaced was a small part of it (40 ms to encode). A frame script has 50 ms (ThreeRT's
+`FRAME_MS`); applying a frame takes about 5, but a stall of the machine once pushed one over at
+4K, and ThreeRT stopped it as "interrupted": such a frame is sent again, and failing twice it
+starts a new run.
+
 **rt-native leaves out** what ThreeRT's materials don't have and says so in its report: sheen
 (OpenPBR fuzz), coat normal maps and alpha maps on this frame, and the environment map. Its tone
 curve is its own, and it denoises with OIDN only when built with its `oidn` feature; `threert.sh`'s
 build has its à-trous filter, which barely touches 4 spp noise. Textures go across as RGBA8 with
 their rows turned (ThreeRT puts a `DataTexture`'s row 0 at v = 1, three.js and MuTracer at v = 0).
+
+## Record once, render natively
+
+The page doesn't need to be there while the frames trace. Recording runs the page's own video
+export with an engine that traces nothing and writes each frame's scene to disk instead; a native
+renderer then renders that sequence on its own, straight into ffmpeg:
+
+```bash
+cd pathtrace/desktop
+node run.mjs --record Prelude1.mid ~/seq --res=3840x2160 --fps=12 --len=30 --audio=1
+cd ..
+node native/render-seq.mjs ~/seq --engine=mu --spp=4                 # → ~/seq/mu_4spp.mp4
+node native/render-seq.mjs ~/seq --engine=rt --spp=4 --hdr=~/seq/exr # ThreeRT, and linear EXRs
+```
+
+**What a recording holds** (`desktop/native.cjs`): `runs/<n>/` a run's first frame in full,
+`frames/<frame>/` every later frame as what it changes against that first frame (mu-trace's delta
+format), `frames.jsonl` a line a frame, `sequence.json`, and the export's own MP4 as
+`timeline.mp4`: black, but with the song (with `--audio=1`) and the captions beside it as `.vtt`.
+The 5 s clip: 84 frames in 16 s (0.1 s a frame, nothing traced), 103 MB, one 60 MB frame and
+0.56 MB for each after it.
+
+**What the renderer makes** ([native/render-seq.mjs](native/render-seq.mjs)): an MP4 (libx264 at
+`--crf`, or VideoToolbox HEVC or ProRes), AgX in sRGB with BT.709 primaries as the page tags its
+own, with `timeline.mp4`'s audio; `--hdr=<dir>` adds a half-float EXR a frame: the linear radiance
+times each frame's exposure (the director's fades included), before any tone curve, for a grade
+elsewhere (the frame above: up to 261, 1 % of the pixels above 1.0; about 29 MB a frame at 4K with
+4 spp noise). `--from` / `--to` render a range: a resumed or split render (a range that starts
+inside a run takes its first frame in without rendering it). `--spp`, `--bounces`, `--size`,
+`--denoise` are the render's, not the recording's: one recording renders any number of ways.
+
+**What it costs**, 30 s of the Prelude at 4K, 4 spp, 10 bounces, 12 fps (384 frames):
+
+| | in the app (`--video`) | recorded, then `render-seq.mjs` |
+| --- | --- | --- |
+| recording | — | 54 s (0.14 s a frame, 275 MB) |
+| mu | 518 s, 1.32 s a frame | **468 s**, 1.22 s a frame (trace 1.10 s) |
+| rt | 443 s, 1.11 s a frame | **395 s**, 1.03 s a frame (trace 0.63 s) |
+
+A render without the page is about 10 % faster (no snapshot, conversion or 60 MB hand-over a
+frame), but a first render pays the recording, so one render costs about the same either way: the
+recording pays off from the second render of it on (another spp, size or renderer), and for the
+EXRs. The MP4 is libx264 at CRF 16 by default, which spends a lot on 4 spp noise (350 MB for the
+30 s, against 37 MB at the page's fixed bitrate): `--crf=23` or more for a smaller file.
+
+**What is left to you:** the page burns the intertitles and captions into its MP4 (they are in the
+`.vtt`), and its bloom and grain when they are on. Everything traced is the same: a native-only
+frame against the in-app mu-native frame, mid-clip, differs by 0.56/255 a 16-pixel block (sample
+noise at 4 spp) apart from the intertitle.
+
+**The page's camera depends on how fast it renders.** During the camera moves at the start of the
+Prelude, frame 20 is not the same picture in exports that ran at different speeds: two mu-native
+exports at 1.1 and 1.2 s a frame agree (0.41/255 a block), mu-webgpu at 3.7 s a frame and the
+recording at 0.1 s don't (the camera stands elsewhere); later frames agree. The page's live loop
+is stopped while it exports and its step takes the export's time, so something else reaches the
+camera in wall time; not found. A recording is one take of it: every native render of it is the
+same.
 
 ## Caveats
 
