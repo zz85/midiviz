@@ -56,8 +56,21 @@ function imagePixels(src) {
   return { width: w, height: h, data: px }
 }
 
-/** RGBA pixels of a MuTracer texture: { width, height, data: Uint8Array | Float32Array } */
+// (a video's textures stay the same from frame to frame: their pixels are read once, again only when the
+// texture's version moves on)
+const pixelCache = new WeakMap()
 function texturePixels(t) {
+  const src = sourceOf(t)
+  if (!src || typeof src !== 'object') return readPixels(t)
+  const hit = pixelCache.get(src)
+  if (hit && hit.version === t.version) return hit.px
+  const px = readPixels(t)
+  pixelCache.set(src, { version: t.version, px })
+  return px
+}
+
+/** RGBA pixels of a MuTracer texture: { width, height, data: Uint8Array | Float32Array } */
+function readPixels(t) {
   const src = sourceOf(t)
   if (src?.data) {
     const { width, height, data } = src, n = width * height, ch = data.length / n

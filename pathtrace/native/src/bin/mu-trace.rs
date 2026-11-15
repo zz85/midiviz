@@ -1,9 +1,17 @@
-// Renders a frame of the page with native MuTracer, from the scene the page hands it: pathtrace/native-scene.js
+// Renders frames of the page with native MuTracer, from the scene the page hands it: pathtrace/native-scene.js
 // runs MuTracer's own fromTHREEScene on the page's snapshot (as the mu-webgpu engine does) and writes the
 // result, unchanged, as scene.json + scene.bin. This rebuilds it with the native Scene API, so native and
 // the page trace the same scene from the same conversion.
-//   mu-trace <ir dir> <out.png> [--spp N] [--bounces N] [--size WxH] [--backend hardware|software] [--denoise]
-// Prints one JSON line: the adapter, whether it traced with ray queries, what was left out, timings in ms.
+//   mu-trace <ir dir> <out.png> [--spp N] [--bounces N] [--size WxH] [--backend hardware|software] [--denoise] [--raw]
+//       one frame; prints one JSON line: the adapter, the path traced, what was left out, timings in ms.
+//       --raw writes RGBA8 bytes, top row first, instead of a PNG (which takes about 1.1 s to encode at 4K)
+//   mu-trace --serve
+//       many frames, one engine: a JSON line a frame on stdin, {"dir", "out", "spp", "bounces", "width", "height",
+//       "denoise", "backend", "raw"}, answered by its report line (or {"error"}) on stdout; ends at the end of stdin.
+//       The engine keeps its compiled shaders, and MuTracer commits each new frame against the last one
+//       (commit_plan.rs): what moved (skinned vertices, transforms, the camera, lights) is edited in place,
+//       unchanged geometry keeps its acceleration structure and unchanged textures their atlas.
+//       The report's "commit" says which it was.
 //
 // Materials go across by name: every OpenPBR property the page's material has is set by its frozen native
 // property ID from MuTracer's own schema (native/schemas/material-properties.json), so nothing here maps
@@ -14,12 +22,14 @@ use mutracer_native_probe::{
 };
 use glam::Mat4;
 use serde_json::{Value, json};
-use std::{collections::HashMap, sync::Arc, time::Instant};
+use std::{collections::HashMap, io::{BufRead, Write}, path::Path, sync::{Arc, Mutex}, time::Instant};
 
 const SCHEMA: &str = include_str!("../../mutracer/native/schemas/material-properties.json");
 // mutracer-layout.h: header words and the light record (mt_light_v4)
 const H_LIGHT_COUNT: usize = 7;
 const H_LIGHT_OFFSET: usize = 12;
+const H_MESH_AOV_IDS: usize = 24;
+const H_MATERIAL_AOV_IDS: usize = 25;
 const L_WORDS: usize = 28;
 const L_TYPE: usize = 0;
 const L_SIZE: usize = 5;
@@ -44,36 +54,27 @@ fn f(v: &Value) -> f32 { v.as_f64().unwrap_or(0.) as f32 }
 fn arr<const N: usize>(v: &Value) -> [f32; N] { std::array::from_fn(|i| f(&v[i])) }
 fn mat(v: &Value) -> Mat4 { Mat4::from_cols_array(&arr::<16>(v)) }
 fn wrap(v: &Value) -> u32 { match v.as_str() { Some("clamp-to-edge") => 1, Some("mirrored-repeat") => 2, _ => 0 } }
+fn ms(t: Instant) -> f64 { (t.elapsed().as_secs_f64() * 1e4).round() / 10. }
 
 struct Prop { id: u32, kind: String, values: Vec<String> }
-
-fn main() -> Res<()> {
-    let a: Vec<String> = std::env::args().collect();
-    if a.len() < 3 { return Err("usage: mu-trace <ir dir> <out.png> [--spp N] [--bounces N] [--size WxH] [--backend hardware|software] [--denoise]".into()); }
-    let (dir, out) = (std::path::PathBuf::from(&a[1]), std::path::PathBuf::from(&a[2]));
-    let flag = |k: &str| a.iter().position(|x| x == k).and_then(|i| a.get(i + 1)).cloned();
-    let spp: u32 = flag("--spp").map(|s| s.parse()).transpose()?.unwrap_or(16);
-    let bounces: u32 = flag("--bounces").map(|s| s.parse()).transpose()?.unwrap_or(10);
-    let backend = match flag("--backend").as_deref() { Some("software") => api::Backend::Software, _ => api::Backend::Hardware };
-    let denoise = a.iter().any(|x| x == "--denoise");
-    let t_all = Instant::now();
-
-    let m: Value = serde_json::from_slice(&std::fs::read(dir.join("scene.json"))?)?;
-    let blob = Blob(std::fs::read(dir.join("scene.bin"))?);
-    let (w, h) = match flag("--size") {
-        Some(s) => { let v: Vec<u32> = s.split('x').map(|x| x.parse()).collect::<Result<_, _>>()?; (v[0], v[1]) }
-        None => (m["size"][0].as_u64().unwrap_or(1280) as u32, m["size"][1].as_u64().unwrap_or(720) as u32),
-    };
+fn schema() -> Res<HashMap<String, Prop>> {
     let schema: Vec<Value> = serde_json::from_str(SCHEMA)?;
-    let props: HashMap<String, Prop> = schema.iter().filter(|e| e["supported"].as_bool() != Some(false)).map(|e| (e["key"].as_str().unwrap().to_owned(), Prop {
+    Ok(schema.iter().filter(|e| e["supported"].as_bool() != Some(false)).map(|e| (e["key"].as_str().unwrap().to_owned(), Prop {
         id: e["id"].as_u64().unwrap() as u32, kind: e["type"].as_str().unwrap().to_owned(),
         values: e["values"].as_array().map(|v| v.iter().filter_map(|x| x.as_str().map(str::to_owned)).collect()).unwrap_or_default(),
-    })).collect();
+    })).collect())
+}
+
+/// One frame of the page as a native descriptor, with what the display needs.
+struct Frame { descriptor: Vec<u8>, size: (u32, u32), tone_mapping: api::ToneMapping, exposure: f32, lights: usize, spots_with_radius: usize, left_out: Vec<String>, ms: f64 }
+
+fn load_frame(dir: &Path, props: &HashMap<String, Prop>) -> Res<Frame> {
+    let t = Instant::now();
+    let m: Value = serde_json::from_slice(&std::fs::read(dir.join("scene.json"))?)?;
+    let blob = Blob(std::fs::read(dir.join("scene.bin"))?);
     let mut left_out: Vec<String> = vec![];
     let mut note = |s: String| if !left_out.contains(&s) { left_out.push(s) };
 
-    // ── scene ──
-    let t = Instant::now();
     let mut scene = Scene::new();
     let mut textures = vec![];
     for tx in m["textures"].as_array().into_iter().flatten() {
@@ -190,47 +191,133 @@ fn main() -> Res<()> {
         if word(&d, rec + L_TYPE) != LIGHT_SPOT { return Err(format!("light {i} is not a spot in the descriptor").into()); }
         d[(rec + L_SIZE) * 4..(rec + L_SIZE) * 4 + 4].copy_from_slice(&r.to_le_bytes());
     }
-    let scene_ms = t.elapsed().as_secs_f64() * 1e3;
+    // Each new Scene gives its meshes and materials new process-wide AOV ids, so to MuTracer's commit every
+    // frame would be a different scene, prepared in full. Without the ID tables the core numbers them by
+    // index (scene-sync.ts), the same from frame to frame; nothing here reads ID AOVs.
+    for h in [H_MESH_AOV_IDS, H_MATERIAL_AOV_IDS] { d[h * 4..h * 4 + 4].copy_from_slice(&0u32.to_le_bytes()); }
+    Ok(Frame {
+        descriptor: d,
+        size: (m["size"][0].as_u64().unwrap_or(1280) as u32, m["size"][1].as_u64().unwrap_or(720) as u32),
+        tone_mapping: if m["display"]["toneMapping"].as_str() == Some("linear") { api::ToneMapping::Linear } else { api::ToneMapping::Agx },
+        exposure: m["display"]["exposure"].as_f64().unwrap_or(1.) as f32,
+        lights: n_lights, spots_with_radius: spot_radius.iter().filter(|(_, r)| *r > 0.).count(), left_out, ms: ms(t),
+    })
+}
 
-    // ── render ──
+struct Options { spp: u32, bounces: u32, size: Option<(u32, u32)>, backend: api::Backend, denoise: bool, raw: bool }
+type RenderKey = (u32, u32, u32, u32, bool);
+/// The engine and its render, kept from frame to frame.
+#[derive(Default)]
+struct Host { engine: Option<(api::Engine, bool)>, render: Option<(api::Render, RenderKey)>, frames: u32 }
+
+fn trace(host: &mut Host, frame: &Frame, o: &Options, out: &Path) -> Res<Value> {
+    let t_all = Instant::now();
+    let (w, h) = o.size.unwrap_or(frame.size);
+    let software = matches!(o.backend, api::Backend::Software);
     let t = Instant::now();
-    let engine = api::Engine::new(api::EngineOptions { backend })?;
-    let info = engine.info();
-    let render = api::Render::new(&engine, api::RenderSettings { max_samples: spp, bounces, size: api::RenderSize::Fixed { width: w, height: h }, ..Default::default() })?;
-    if denoise { render.set_denoiser(Some(api::DenoiserOptions { backend: api::DENOISE_OIDN_WEBGPU, max_tile_size: 512, ..Default::default() }))?; }
-    engine.set_scene(&d)?;
+    let warm = host.engine.as_ref().is_some_and(|(_, s)| *s == software);
+    if !warm { host.render = None; host.engine = Some((api::Engine::new(api::EngineOptions { backend: o.backend })?, software)); }
+    let engine = &host.engine.as_ref().unwrap().0;
+    let key: RenderKey = (w, h, o.spp, o.bounces, o.denoise);
+    if host.render.as_ref().is_none_or(|(_, k)| *k != key) {
+        host.render = None;
+        let render = api::Render::new(engine, api::RenderSettings { max_samples: o.spp, bounces: o.bounces, size: api::RenderSize::Fixed { width: w, height: h }, ..Default::default() })?;
+        if o.denoise { render.set_denoiser(Some(api::DenoiserOptions { backend: api::DENOISE_OIDN_WEBGPU, max_tile_size: 512, ..Default::default() }))?; }
+        host.render = Some((render, key));
+    }
+    let render = &host.render.as_ref().unwrap().0;
+    engine.set_scene(&frame.descriptor)?;
     engine.update()?;
     let display = engine.display();
     display.set_size(w, h)?;
-    let (tone_mapping, tm) = match m["display"]["toneMapping"].as_str() { Some("linear") => (api::ToneMapping::Linear, "linear"), _ => (api::ToneMapping::Agx, "agx") };
-    display.set_settings(api::DisplaySettings { tone_mapping, tone_mapping_exposure: m["display"]["exposure"].as_f64().unwrap_or(1.) as f32, ..Default::default() })?;
-    let setup_ms = t.elapsed().as_secs_f64() * 1e3;
+    display.set_settings(api::DisplaySettings { tone_mapping: frame.tone_mapping, tone_mapping_exposure: frame.exposure, ..Default::default() })?;
+    let setup_ms = ms(t);
 
     let t = Instant::now();
-    let first = Arc::new(std::sync::Mutex::new(None::<f64>));
-    let mut o = api::ConvergeOptions::new(spp);
-    o.samples_per_batch = spp.clamp(1, 8);
-    o.timeout_ms = 6 * 3600 * 1000;
-    let (f1, t1) = (first.clone(), t);
-    o.on_progress = Some(Box::new(move |p: api::ConvergeProgress| { let mut g = f1.lock().unwrap(); if g.is_none() && p.samples >= 1 { *g = Some(t1.elapsed().as_secs_f64() * 1e3); } }));
-    let done = render.converge(o)?;
+    // (progress comes a batch at a time: the first report is the first batch, preparation and all, not one sample)
+    let first = Arc::new(Mutex::new(None::<(f64, u32)>));
+    let mut c = api::ConvergeOptions::new(o.spp);
+    c.samples_per_batch = o.spp.clamp(1, 8);
+    c.timeout_ms = 6 * 3600 * 1000;
+    let f1 = first.clone();
+    c.on_progress = Some(Box::new(move |p: api::ConvergeProgress| { let mut g = f1.lock().unwrap(); if g.is_none() && p.samples >= 1 { *g = Some((ms(t), p.samples)); } }));
+    let done = render.converge(c)?;
     let _ = render.read_pixels(api::PixelKind::Hdr)?;   // waits for the GPU
-    let trace_ms = t.elapsed().as_secs_f64() * 1e3;
-    // the path actually traced (a hardware engine falls back to its own BVH where ray queries can't take the scene)
+    let trace_ms = ms(t);
+    // the path actually traced (a hardware engine falls back to its own BVH where ray queries can't take the scene),
+    // and how MuTracer committed this frame against the last
     let (used, fallback) = render.backend()?;
-    let hwrt = matches!(used, api::Backend::Hardware);
+    let commit = render.last_commit()?.map(|k| if matches!(k, api::CommitKind::Incremental) { "incremental" } else { "full" });
+    // A PNG takes about 1.1 s to encode at 4K (and the page decodes it again); raw RGBA8, top row first, is a copy
     let t = Instant::now();
-    let png = display.encode_png(&render)?;
-    std::fs::write(&out, &png)?;
-    let encode_ms = t.elapsed().as_secs_f64() * 1e3;
+    if o.raw { std::fs::write(out, display.read_rgba8(render)?.2)?; } else { std::fs::write(out, display.encode_png(render)?)?; }
+    let encode_ms = ms(t);
+    host.frames += 1;
+    let info = engine.info();
+    Ok(json!({
+        "engine": "mu-native", "adapter": info.adapter_name, "hwrt": matches!(used, api::Backend::Hardware), "device_has_ray_queries": info.hardware_ray_query,
+        "fallback": fallback, "backend": if software { "software" } else { "hardware" },
+        "width": w, "height": h, "samples": done.samples, "bounces": o.bounces, "denoise": o.denoise, "out": out, "format": if o.raw { "rgba8" } else { "png" },
+        "lights": frame.lights, "spots_with_radius": frame.spots_with_radius, "left_out": frame.left_out,
+        "warm": warm, "commit": commit, "frame": host.frames,
+        "first_batch": first.lock().unwrap().map(|(ms, samples)| json!({ "ms": ms, "samples": samples })),
+        "timings_ms": { "scene": frame.ms, "setup": setup_ms, "trace": trace_ms, "encode": encode_ms, "total": frame.ms + ms(t_all) },
+    }))
+}
 
-    let r = |x: f64| (x * 10.).round() / 10.;
-    println!("{}", json!({
-        "engine": "mu-native", "adapter": info.adapter_name, "hwrt": hwrt, "device_has_ray_queries": info.hardware_ray_query, "fallback": fallback,
-        "backend": if matches!(backend, api::Backend::Software) { "software" } else { "hardware" },
-        "width": w, "height": h, "samples": done.samples, "bounces": bounces, "denoise": denoise, "toneMapping": tm, "out": out,
-        "lights": n_lights, "spots_with_radius": spot_radius.iter().filter(|(_, r)| *r > 0.).count(), "left_out": left_out,
-        "timings_ms": { "scene": r(scene_ms), "setup": r(setup_ms), "first_sample": first.lock().unwrap().map(r), "trace": r(trace_ms), "encode": r(encode_ms), "total": r(t_all.elapsed().as_secs_f64() * 1e3) },
-    }));
+fn backend_of(s: Option<&str>) -> api::Backend { if s == Some("software") { api::Backend::Software } else { api::Backend::Hardware } }
+
+fn serve(props: &HashMap<String, Prop>) -> Res<()> {
+    let mut host = Host::default();
+    let mut stdout = std::io::stdout().lock();
+    for line in std::io::stdin().lock().lines() {
+        let line = line?;
+        if line.trim().is_empty() { continue }
+        let answer = (|| -> Res<Value> {
+            let r: Value = serde_json::from_str(&line)?;
+            let o = Options {
+                spp: r["spp"].as_u64().unwrap_or(16) as u32, bounces: r["bounces"].as_u64().unwrap_or(10) as u32,
+                size: r["width"].as_u64().zip(r["height"].as_u64()).map(|(w, h)| (w as u32, h as u32)),
+                backend: backend_of(r["backend"].as_str()), denoise: r["denoise"].as_bool().unwrap_or(false), raw: r["raw"].as_bool().unwrap_or(false),
+            };
+            let frame = load_frame(Path::new(r["dir"].as_str().ok_or("no dir")?), props)?;
+            trace(&mut host, &frame, &o, Path::new(r["out"].as_str().ok_or("no out")?))
+        })().unwrap_or_else(|e| {
+            // (a failed frame leaves no state behind: the next one starts a new engine)
+            host = Host { frames: host.frames, ..Host::default() };
+            json!({ "error": e.to_string() })
+        });
+        writeln!(stdout, "{answer}")?;
+        stdout.flush()?;
+    }
+    Ok(())
+}
+
+// MuTracer's log goes to a C callback only; MU_TRACE_LOG=1 sends it to stderr (with MUTRACER_NATIVE_PROFILE=1,
+// a line per commit says whether it was incremental and where the time went)
+unsafe extern "C" {
+    fn mt_set_log_callback(callback: Option<unsafe extern "C" fn(*mut std::ffi::c_void, *const u8, usize)>, user: *mut std::ffi::c_void) -> i32;
+}
+unsafe extern "C" fn log_to_stderr(_: *mut std::ffi::c_void, message: *const u8, length: usize) {
+    eprintln!("[mutracer] {}", String::from_utf8_lossy(unsafe { std::slice::from_raw_parts(message, length) }));
+}
+
+fn main() -> Res<()> {
+    let a: Vec<String> = std::env::args().collect();
+    if std::env::var_os("MU_TRACE_LOG").is_some_and(|v| v == "1") { unsafe { mt_set_log_callback(Some(log_to_stderr), std::ptr::null_mut()); } }
+    let props = schema()?;
+    if a.get(1).map(String::as_str) == Some("--serve") { return serve(&props); }
+    if a.len() < 3 { return Err("usage: mu-trace <ir dir> <out.png> [--spp N] [--bounces N] [--size WxH] [--backend hardware|software] [--denoise]\n       mu-trace --serve".into()); }
+    let flag = |k: &str| a.iter().position(|x| x == k).and_then(|i| a.get(i + 1)).cloned();
+    let size = match flag("--size") {
+        Some(s) => { let v: Vec<u32> = s.split('x').map(|x| x.parse()).collect::<Result<_, _>>()?; Some((v[0], v[1])) }
+        None => None,
+    };
+    let o = Options {
+        spp: flag("--spp").map(|s| s.parse()).transpose()?.unwrap_or(16), bounces: flag("--bounces").map(|s| s.parse()).transpose()?.unwrap_or(10),
+        size, backend: backend_of(flag("--backend").as_deref()), denoise: a.iter().any(|x| x == "--denoise"), raw: a.iter().any(|x| x == "--raw"),
+    };
+    let frame = load_frame(Path::new(&a[1]), &props)?;
+    println!("{}", trace(&mut Host::default(), &frame, &o, Path::new(&a[2]))?);
     Ok(())
 }

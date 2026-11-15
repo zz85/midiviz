@@ -5,7 +5,8 @@
 //   rt-native  pathtrace/native/threert-src/…/threert-render       (cd pathtrace/native && ./threert.sh <export dir>)
 //              with native/threert/midiviz-ir.ts, bundled here on first use (needs Node 24 or later as `node`)
 // MIDIVIZ_NATIVE_BACKEND=software traces with the renderers' own BVH instead of ray queries;
-// MIDIVIZ_NATIVE_KEEP=1 keeps each frame's folder (scene.json, scene.bin) and prints where.
+// MIDIVIZ_NATIVE_KEEP=1 keeps each frame's folder (scene.json, scene.bin) and prints where;
+// MIDIVIZ_NATIVE_LOG=1 prints a line a frame (mu-native: how MuTracer committed it).
 'use strict'
 const fs = require('node:fs')
 const os = require('node:os')
@@ -40,13 +41,46 @@ function run(key, bin, args, env = {}) {
 }
 const lastJson = text => JSON.parse(text.trim().split('\n').filter(l => l.startsWith('{')).pop() || '{}')
 
+// mu-native: one `mu-trace --serve` for the app's life, a frame at a time. It keeps its engine, so a cold
+// start (about 0.5 s: device, pipelines, full scene preparation) is paid once, and MuTracer commits each
+// frame against the last (incremental when only vertices, transforms, lights or the camera moved). It ends
+// when the app does (end of its stdin), and a new one starts if it dies.
+let server = null
+function muServer() {
+  if (server) return server
+  const child = spawn(BIN['mu-native'], ['--serve'], { stdio: ['pipe', 'pipe', 'pipe'] })
+  const s = server = { child, waiting: [], buffer: '', err: '' }
+  running.set('mu-native', child)
+  child.stdout.setEncoding('utf8')
+  child.stdout.on('data', chunk => {
+    s.buffer += chunk
+    for (let i; (i = s.buffer.indexOf('\n')) >= 0;) {
+      const line = s.buffer.slice(0, i); s.buffer = s.buffer.slice(i + 1)
+      if (line.trim()) s.waiting.shift()?.resolve(JSON.parse(line))
+    }
+  })
+  child.stderr.on('data', b => { s.err = (s.err + b).slice(-4000) })
+  const gone = why => {
+    if (server === s) server = null
+    running.delete('mu-native')
+    for (const w of s.waiting.splice(0)) w.reject(new Error(`mu-trace ${why}: ${s.err.trim().split('\n').slice(-3).join(' | ')}`))
+  }
+  child.on('error', e => gone(e.message))
+  child.on('close', (code, signal) => gone(signal ? 'stopped by ' + signal : 'exited ' + code))
+  return s
+}
+function muFrame(request) {
+  const s = muServer()
+  return new Promise((resolve, reject) => { s.waiting.push({ resolve, reject }); s.child.stdin.write(JSON.stringify(request) + '\n') })
+}
+
 async function muNative(dir, o) {
-  const out = path.join(dir, 'out.png')
-  const args = [dir, out, '--spp', o.samples, '--bounces', o.bounces, '--size', `${o.width}x${o.height}`, ...(o.denoise ? ['--denoise'] : []), ...(software ? ['--backend', 'software'] : [])]
-  const r = lastJson((await run('mu-native', BIN['mu-native'], args.map(String))).out)
+  const out = path.join(dir, 'out.rgba')
+  const r = await muFrame({ dir, out, spp: o.samples, bounces: o.bounces, width: o.width, height: o.height, denoise: !!o.denoise, backend: software ? 'software' : 'hardware', raw: true })
+  if (r.error) throw new Error('mu-trace: ' + r.error)
   const T = r.timings_ms
-  return { png: fs.readFileSync(out), report: { engine: 'mu-native', adapter: r.adapter, hwrt: r.hwrt, samples: r.samples, leftOut: r.left_out,
-    timings: { scene: T.scene, setup: T.setup, firstSample: T.first_sample, trace: T.trace, encode: T.encode } } }
+  return { rgba: fs.readFileSync(out), width: r.width, height: r.height, report: { engine: 'mu-native', adapter: r.adapter, hwrt: r.hwrt, samples: r.samples, leftOut: r.left_out,
+    commit: r.commit, warm: r.warm, firstBatch: r.first_batch, timings: { scene: T.scene, setup: T.setup, firstSample: null, trace: T.trace, encode: T.encode } } }
 }
 
 // ThreeRT's scripts can't read files, so the frame goes in front of the bundled script as two globals
@@ -95,6 +129,7 @@ function install(ipcMain) {
       const r = key === 'mu-native' ? await muNative(dir, o) : await rtNative(dir, manifest, buffer, o)
       r.report.timings.files = files
       r.report.wall = Date.now() - t0
+      if (process.env.MIDIVIZ_NATIVE_LOG) { const T = r.report.timings; console.log(`  ${key}: ${r.report.commit ? r.report.commit + ' commit' + (r.report.warm ? '' : ' (cold engine)') + ', ' : ''}scene ${Math.round(T.scene)} ms, trace ${Math.round(T.trace)} ms, out ${Math.round(T.encode)} ms, ${r.report.wall} ms in the app`) }
       if (process.env.MIDIVIZ_NATIVE_KEEP) { r.report.dir = dir; console.log(`  ${key}: kept ${dir}`) }
       return r
     } finally { if (!process.env.MIDIVIZ_NATIVE_KEEP) fs.rmSync(dir, { recursive: true, force: true }) }

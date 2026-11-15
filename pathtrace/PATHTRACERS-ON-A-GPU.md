@@ -253,20 +253,48 @@ means, so that sample noise averages out:
   `outer · (1 − penumbra)`, and `midiviz-pianist.ts` passed linear light colours as hex, which
   ThreeRT reads as sRGB.
 
-**What it costs, 4K, 10 bounces, through the app** (the page's encoding, the hand-over, a new
-renderer process, the PNG back):
+**What it costs, 4K, 10 bounces, through the app** (the page's encoding, the hand-over, tracing,
+the picture back), a frame after the first:
 
 | | 16 spp | 64 spp |
 | --- | --- | --- |
 | Page `mu-webgpu` | 25.9 s | 107.3 s |
-| `mu-native` | 9.1 s (trace 7.6 s, first sample 4.2 s) | **28.7 s** (trace 27.0 s) |
+| `mu-native` | **7.0 s** (trace 6.7 s) | **27.8 s** (trace 27.5 s) |
 | `rt-native` | 5.3 s (trace 3.8 s) | **16.3 s** (trace 14.9 s) |
 
-So 3.7× the page for MuTracer and 6.6× for ThreeRT, end to end. Each frame starts a new
-renderer, which compiles its shaders and builds its acceleration structures again: about 3.5 s of
-`mu-native`'s first sample at 4K, against 0.8 s for `native-bench`'s warmed run. A renderer that stays
-up between frames would pay it once a video; that is the next step for long renders. The page's
-part is small: MuTracer's conversion 13 ms, the encoding 62 ms, 60 MB (774 meshes, 17 textures).
+So 3.9× the page for MuTracer and 6.6× for ThreeRT, end to end.
+
+**mu-native keeps one renderer for the app's life** (`mu-trace --serve`: a JSON line a frame on
+stdin, its report back). The engine keeps its device and compiled pipelines, and MuTracer commits
+each frame against the last one: where only vertices, transforms, lights or the camera moved, the
+commit is incremental (`commit_plan.rs`), and unchanged geometry keeps its acceleration structure
+and unchanged textures their atlas. Two things made that work:
+
+- A new Scene gives its meshes and materials new process-wide AOV ids, and to the commit that
+  made every frame a different scene, prepared in full. mu-trace drops the descriptor's ID tables,
+  so the core numbers them by index, the same each frame (nothing here reads ID AOVs).
+- The picture comes back as raw RGBA8, not a PNG: encoding one took 1.1 s at 4K.
+
+The cold start this saves is about 0.5 s (device, pipelines, full preparation), not the ~3.5 s an
+earlier version of this page said: that was the time of the first progress report, which comes
+after the first batch of 8 samples, half of a 16-sample frame. So the warm renderer is worth most
+at preview settings:
+
+| | a process a frame | one renderer |
+| --- | --- | --- |
+| 480p, 4 spp, the 5 s test clip (84 frames) | 78 s, 0.8 s a frame | **31 s**, 0.25 s a frame |
+| 4K, 16 spp | 9.1 s | 7.0 s |
+| 4K, 64 spp | 28.7 s | 27.8 s |
+
+In the clip, one commit is full and 83 incremental. An incremental frame is the full one: t = 21
+committed after t = 20 against t = 21 from a cold engine, with MuTracer's own BVH, differs by at
+most 1/255 in a pixel, while t = 20 and t = 21 differ by up to 195 in an 8-pixel block.
+
+What is left a frame is the hand-over, about 0.2 s: the page encodes the frame (MuTracer's
+conversion 13 ms, the encoding 30 ms with textures read once a video), Electron copies its 60 MB
+(about 70 ms), the app writes it (40 ms) and mu-trace builds the Scene (45 ms). Sending only what
+changed would cut most of it. rt-native still starts ThreeRT for each frame: its CLI renders one
+scene and exits.
 
 **rt-native leaves out** what ThreeRT's materials don't have and says so in its report: sheen
 (OpenPBR fuzz), coat normal maps and alpha maps on this frame, and the environment map. Its tone

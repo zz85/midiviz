@@ -34,9 +34,16 @@ export async function nativeSession(key, { width, height, bounces, toneMapping, 
       if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError')
       const rep = r.report, T = rep.timings
       t = performance.now()
-      const bmp = await createImageBitmap(new Blob([r.png], { type: 'image/png' }), { colorSpaceConversion: 'none', premultiplyAlpha: 'none' })
-      const canvas = document.createElement('canvas'); canvas.width = bmp.width; canvas.height = bmp.height
-      canvas.getContext('2d', { willReadFrequently: true }).drawImage(bmp, 0, 0); bmp.close()
+      const canvas = document.createElement('canvas'), g = canvas.getContext('2d', { willReadFrequently: true })
+      if (r.rgba) {
+        // (raw RGBA8, top row first: mu-native's, where a PNG would take a second to encode at 4K)
+        canvas.width = r.width; canvas.height = r.height
+        g.putImageData(new ImageData(new Uint8ClampedArray(r.rgba.buffer, r.rgba.byteOffset, r.rgba.byteLength), r.width, r.height), 0, 0)
+      } else {
+        const bmp = await createImageBitmap(new Blob([r.png], { type: 'image/png' }), { colorSpaceConversion: 'none', premultiplyAlpha: 'none' })
+        canvas.width = bmp.width; canvas.height = bmp.height
+        g.drawImage(bmp, 0, 0); bmp.close()
+      }
       // setup: the page's conversion, the hand-over to the app, the native scene and device; trace: the GPU's
       // work from the first sample to the last, as the renderer timed it (GPU-fenced)
       times.setup = Math.round(times.encode + ipc + T.files + T.scene + T.setup)

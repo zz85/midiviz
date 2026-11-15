@@ -65,7 +65,8 @@ child.stderr.on('data', b => {
 let monitor = null
 const videoOut = flag('video') && (rest.filter(a => !a.startsWith('--'))[1] || '/tmp/pt_video')
 const monitorFile = value('monitor') || (flag('monitor') || videoOut ? path.join(videoOut || '/tmp', 'monitor.csv') : null)
-if (monitorFile && !flag('info')) {
+// (it samples /proc: Linux only; elsewhere it threw at start and left the app running without its launcher)
+if (monitorFile && !flag('info') && process.platform === 'linux') {
   const { startMonitor } = await import('./monitor.mjs')
   fs.mkdirSync(path.dirname(monitorFile), { recursive: true })
   monitor = startMonitor(child.pid, { file: monitorFile })
