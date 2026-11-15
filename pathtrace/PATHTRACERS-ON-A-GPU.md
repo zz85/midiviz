@@ -293,8 +293,28 @@ most 1/255 in a pixel, while t = 20 and t = 21 differ by up to 195 in an 8-pixel
 What is left a frame is the hand-over, about 0.2 s: the page encodes the frame (MuTracer's
 conversion 13 ms, the encoding 30 ms with textures read once a video), Electron copies its 60 MB
 (about 70 ms), the app writes it (40 ms) and mu-trace builds the Scene (45 ms). Sending only what
-changed would cut most of it. rt-native still starts ThreeRT for each frame: its CLI renders one
-scene and exits.
+changed would cut most of it.
+
+**rt-native renders a sequence the way ThreeRT's games do.** `threert-render serve` keeps a game's
+runtime between jobs: its `setup` builds the scene once, and each later job only gives it a new
+state, which the game's frame script turns into scene changes. So a run's first frame goes into a
+bundle, inline, and [native/threert/midiviz-ir.ts](native/threert/midiviz-ir.ts) is that game: its
+setup builds the frame as before, and its frame script puts each later frame's changes on it —
+positions and normals where they differ from the first frame's, transforms, the camera, the lights,
+the exposure — and the first frame's back where a frame no longer changes them. The app works out
+the changes against the run's first frame; anything else that differs (counts, indices, UVs,
+materials, textures) starts a new run. Between two frames of the Prelude, 9 of 774 geometries move
+and 30 to 55 transforms (the keys): 0.76 MB of state, against 60 MB for the whole frame.
+
+| rt-native | a process a frame | a sequence |
+| --- | --- | --- |
+| 854×480, 16 spp, a frame after the first | 799 ms | **~300 ms** (frame script 5 ms) |
+| the 5 s test clip, 480p, 4 spp (84 frames) | 77 s | **26 s**, about 0.12 s a frame in the app |
+
+t = 21 as state after t = 20 against t = 21 rendered alone: 22 of 410 000 pixels differ by more
+than 2/255. ThreeRT's offline renderer still prepares its GPU scene for each job (its in-place
+updates belong to its real-time renderer, `live`); what a sequence saves is the process, the
+script and the setup.
 
 **rt-native leaves out** what ThreeRT's materials don't have and says so in its report: sheen
 (OpenPBR fuzz), coat normal maps and alpha maps on this frame, and the environment map. Its tone

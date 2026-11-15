@@ -19,13 +19,14 @@ import {
   Scene, Group, PerspectiveCamera, Mesh, BufferGeometry, BufferAttribute, MeshStandardMaterial, MeshPhysicalMaterial, MeshBasicMaterial,
   DataTexture, SpotLight, RectAreaLight, PointLight, DirectionalLight, Object3D, Matrix4, Vector3,
 } from "@threert/scene";
+import { defineGame, type FrameContext } from "@threert/gameplay";
 
 declare const __MIDIVIZ_SCENE: any;
 declare const __MIDIVIZ_BIN: string;
 const CM = 0.01;
 const SRGB_SLOTS = new Set(["map", "emissiveMap", "fuzzColorMap", "specularColorMap"]);
 
-export default function build() {
+function build() {
   const S = __MIDIVIZ_SCENE;
   const bin: Uint8Array = (Uint8Array as any).fromBase64(__MIDIVIZ_BIN);
   const f32 = (r: any) => new Float32Array(bin.buffer, bin.byteOffset + r.o, r.n);
@@ -119,64 +120,110 @@ export default function build() {
   const root = new Group();
   root.scale.set(CM, CM, CM);
   scene.add(root);
-  const m4 = new Matrix4();
+  const meshes: Mesh[] = [];
   for (const me of S.meshes) {
     const ms = me.materials.map((i: number) => materials[i]);
     const mesh = new Mesh(geometry(me.geometry, ms.length), ms.length > 1 ? ms : ms[0]);
     m4.fromArray(me.transform).decompose(mesh.position, mesh.quaternion, mesh.scale);
     root.add(mesh);
+    meshes.push(mesh);
   }
 
   // ── lights: emit along their local -Z ──
-  const scale = new Vector3();
-  for (const l of S.lights) {
-    const e = l.transform, at = (o: Object3D) => { m4.fromArray(e).decompose(o.position, o.quaternion, scale); o.position.multiplyScalar(CM); };
-    const target = () => { const t = new Object3D(); t.position.set((e[12] - e[8]) * CM, (e[13] - e[9]) * CM, (e[14] - e[10]) * CM); return t; };
+  const lights: (Object3D | null)[] = S.lights.map((l: any) => {
+    let o: any = null;
     switch (l.type) {
-      case "SpotLight": {
-        const outer = (l.outerAngle * Math.PI) / 180, inner = (Math.min(l.innerAngle, l.outerAngle) * Math.PI) / 180;
-        const s = new SpotLight(l.color, l.intensity * CM * CM, 0, outer, outer > 0 ? 1 - inner / outer : 0, 2);
-        s.radius = l.radius * CM;
-        at(s); s.target = target();
-        scene.add(s);
-        break;
-      }
-      case "RectLight": {
-        const r = new RectAreaLight(l.color, l.intensity, l.size[0] * CM, l.size[1] * CM);
-        at(r);
-        (r as any).card = false;
-        if (l.texture != null) leftOut.add("textured rect lights");
-        scene.add(r);
-        break;
-      }
-      case "SphereLight": {
-        const p = new PointLight(l.color, l.intensity * CM * CM, 0, 2);
-        p.radius = l.radius * CM;
-        at(p);
-        scene.add(p);
-        break;
-      }
-      case "DirectionalLight": {
-        const d = new DirectionalLight(l.color, l.intensity);
-        at(d); d.target = target();
-        scene.add(d);
-        break;
-      }
-      default: leftOut.add(`${l.type}`);
+      case "SpotLight": o = new SpotLight(l.color, 1, 0, 1, 0, 2); o.target = new Object3D(); break;
+      case "RectLight": o = new RectAreaLight(l.color, 1, 1, 1); o.card = false; if (l.texture != null) leftOut.add("textured rect lights"); break;
+      case "SphereLight": o = new PointLight(l.color, 1, 0, 2); break;
+      case "DirectionalLight": o = new DirectionalLight(l.color, 1); o.target = new Object3D(); break;
+      default: leftOut.add(`${l.type}`); return null;
     }
-  }
+    placeLight(o, l);
+    scene.add(o);
+    return o;
+  });
   if (S.environment) leftOut.add("environment map (ThreeRT's native renderer takes no HDRI)");
 
   // ── camera ──
   const c = S.camera;
   const camera = new PerspectiveCamera(c.fov, c.aspect, c.near * CM, c.far * CM);
-  m4.fromArray(c.transform).decompose(camera.position, camera.quaternion, scale);
-  camera.position.multiplyScalar(CM);
-  if (c.fStop > 0) camera.dof = { focusDistance: c.focusDistance * c.metersPerUnit, fStop: c.fStop, sensorWidth: c.sensorHeight * c.aspect };
-  // three.js at exposure 1 shows radiance as it is; ThreeRT takes EV100, where 1 / (1.2 · 2^EV) is the same scale
-  camera.setManualExposure(Math.log2(1 / (1.2 * (S.display?.exposure || 1))));
+  placeCamera(camera, c, S.display?.exposure);
   scene.add(camera);
   if (S.display?.toneMapping === "linear") leftOut.add("linear output (ThreeRT applies its own tone curve)");
   if (leftOut.size) console.warn("midiviz left out: " + [...leftOut].join("; "));
+  live = { geometries, meshes, meshBase: S.meshes.map((me: any) => me.transform), lights, camera, saved: new Map(), moved: new Set(), placed: new Set() };
   return { scene, camera, options: { name: "midiviz" } };
 }
+
+const m4 = new Matrix4();
+const scratch = new Vector3();
+function placeLight(o: any, l: any) {
+  const e = l.transform;
+  m4.fromArray(e).decompose(o.position, o.quaternion, scratch);
+  o.position.multiplyScalar(CM);
+  o.color.set(l.color);
+  if (o.target) o.target.position.set((e[12] - e[8]) * CM, (e[13] - e[9]) * CM, (e[14] - e[10]) * CM);
+  switch (l.type) {
+    case "SpotLight": {
+      const outer = (l.outerAngle * Math.PI) / 180, inner = (Math.min(l.innerAngle, l.outerAngle) * Math.PI) / 180;
+      Object.assign(o, { intensity: l.intensity * CM * CM, angle: outer, penumbra: outer > 0 ? 1 - inner / outer : 0, radius: l.radius * CM });
+      break;
+    }
+    case "RectLight": Object.assign(o, { intensity: l.intensity, width: l.size[0] * CM, height: l.size[1] * CM }); break;
+    case "SphereLight": Object.assign(o, { intensity: l.intensity * CM * CM, radius: l.radius * CM }); break;
+    case "DirectionalLight": o.intensity = l.intensity; break;
+  }
+}
+function placeCamera(camera: PerspectiveCamera, c: any, exposure: number | undefined) {
+  Object.assign(camera, { fov: c.fov, aspect: c.aspect, near: c.near * CM, far: c.far * CM });
+  m4.fromArray(c.transform).decompose(camera.position, camera.quaternion, scratch);
+  camera.position.multiplyScalar(CM);
+  camera.dof = c.fStop > 0 ? { focusDistance: c.focusDistance * c.metersPerUnit, fStop: c.fStop, sensorWidth: c.sensorHeight * c.aspect } : null;
+  // three.js at exposure 1 shows radiance as it is; ThreeRT takes EV100, where 1 / (1.2 · 2^EV) is the same scale
+  camera.setManualExposure(Math.log2(1 / (1.2 * (exposure || 1))));
+}
+
+// ── a sequence: the frames after the first, as state ──
+// pathtrace/desktop/native.cjs runs `threert-render serve` and gives each later frame as this game's state:
+//   { geo: { [geometry]: { p, n } }  positions / normals (base64 f32) where they differ from the first frame's,
+//     mesh: { [mesh]: transform },   transforms that differ, camera, lights, exposure }
+// The frame script (run after each new state) puts them on the scene the setup built, and the first frame's
+// back where a state no longer changes them. Nothing is rebuilt but what moved.
+let live: {
+  geometries: Map<number, BufferGeometry>; meshes: Mesh[]; meshBase: number[][]; lights: (Object3D | null)[]; camera: PerspectiveCamera;
+  saved: Map<number, { p: Float32Array; n?: Float32Array }>; moved: Set<number>; placed: Set<number>;
+} | null = null;
+const floats = (b64: string) => { const u: Uint8Array = (Uint8Array as any).fromBase64(b64); return new Float32Array(u.buffer, u.byteOffset, u.byteLength / 4); };
+
+function frame(f: FrameContext<any>) {
+  const L = live, st = f.state;
+  if (!L || !st || !st.camera) return;
+  const now = new Set<number>();
+  for (const [k, v] of Object.entries(st.geo || {}) as [string, any][]) {
+    const i = +k, g = L.geometries.get(i);
+    if (!g) continue;
+    const pos = g.getAttribute("position")!, nor = g.getAttribute("normal");
+    if (!L.saved.has(i)) L.saved.set(i, { p: (pos.array as Float32Array).slice(), n: nor && (nor.array as Float32Array).slice() });
+    (pos.array as Float32Array).set(floats(v.p)); pos.needsUpdate = true;
+    if (v.n && nor) { (nor.array as Float32Array).set(floats(v.n)); nor.needsUpdate = true; }
+    now.add(i);
+  }
+  for (const i of L.moved) if (!now.has(i)) {
+    const g = L.geometries.get(i)!, s = L.saved.get(i)!, pos = g.getAttribute("position")!, nor = g.getAttribute("normal");
+    (pos.array as Float32Array).set(s.p); pos.needsUpdate = true;
+    if (s.n && nor) { (nor.array as Float32Array).set(s.n); nor.needsUpdate = true; }
+  }
+  L.moved = now;
+  const placed = new Set<number>();
+  for (const [k, t] of Object.entries(st.mesh || {}) as [string, number[]][]) {
+    const m = L.meshes[+k];
+    if (m) { m4.fromArray(t).decompose(m.position, m.quaternion, m.scale); placed.add(+k); }
+  }
+  for (const i of L.placed) if (!placed.has(i)) m4.fromArray(L.meshBase[i]).decompose(L.meshes[i].position, L.meshes[i].quaternion, L.meshes[i].scale);
+  L.placed = placed;
+  (st.lights || []).forEach((l: any, i: number) => { if (L.lights[i]) placeLight(L.lights[i], l); });
+  placeCamera(L.camera, st.camera, st.exposure);
+}
+
+export default defineGame<any>({ state: {}, setup: () => build(), frame, handlers: {} });
