@@ -8,6 +8,7 @@
 // Units: the VRM is scaled to centimetres, standing at the origin facing +z.
 
 import * as THREE from 'three'
+import { scaleSpringBones } from './vrm-springs.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { tuneMToon } from './stage.js'
 import { buildJacket, jacketMaterials, trimUnder, slimArms } from './jacket.js'
@@ -46,6 +47,8 @@ export async function loadViolinist(file, { base = new URL('./assets/models/', i
   VRMUtils.removeUnnecessaryVertices(gltf.scene)
   VRMUtils.rotateVRM0(vrm)
   vrm.scene.scale.setScalar(100)     // metres → cm
+  vrm.scene.updateMatrixWorld(true)
+  scaleSpringBones(vrm, 100)         // (and the hair's stiffness, gravity and colliders with it)
   vrm.scene.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false } })
   if (outfit !== 'own') await dress(vrm, outfit, base)
   tuneMToon(vrm, gain != null ? { gain } : undefined)

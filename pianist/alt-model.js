@@ -18,6 +18,7 @@
 // and right… } of THREE.Bones, from VRM's humanoid or from bone names.
 
 import * as THREE from 'three'
+import { scaleSpringBones } from '../violinist/vrm-springs.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { subdivide } from './subdivide.js'
 import { createSkirtCloth } from './vrm-skirt.js'
@@ -46,6 +47,20 @@ export const MODELS = {
     dress: { url: 'models/vroid-a-dress', hide: /Tops|Bottoms/ },
     drape: { material: /VRoidDress/, under: /./, push: true },
     credit: 'VRoid AvatarSample_A, © pixiv Inc. (VRoid Project); free to use, alter and redistribute under pixiv\'s AvatarSample terms',
+  },
+  // VRoid's CC0 sample women (pianist/assets/models/CREDITS.md), in their own clothes; the
+  // same VRoid Studio exports as the violinists, so his MToon gain (violinist/stage.js tuneMToon)
+  'vroid-vivi': {
+    label: 'VRoid · Vivi, brown bob (CC0)', url: 'models/vroid-avatarsample-e-vivi.vrm', kind: 'vrm', gain: 0.85,
+    credit: 'VRoid sample model Vivi (AvatarSample_E), © pixiv Inc. / VRoid Project, CC0',
+  },
+  'vroid-hairsample-female': {
+    label: 'VRoid · HairSample_Female, white dress (CC0)', url: 'models/vroid-hairsample-female.vrm', kind: 'vrm', gain: 0.85,
+    credit: 'VRoid sample model HairSample_Female, © pixiv Inc. / VRoid Project, CC0',
+  },
+  'vroid-base-female': {
+    label: 'VRoid · Base_Female, uniform (CC0)', url: 'models/vroid-base-female.vrm', kind: 'vrm', gain: 0.85,
+    credit: 'VRoid sample model Base_Female, © pixiv Inc. / VRoid Project, CC0',
   },
 }
 
@@ -259,12 +274,11 @@ export async function loadAltCharacter(key, base = new URL('./assets/', import.m
   }
   const box = new THREE.Box3().setFromObject(model)
   if (vrm) {
-    // spring bones (hair, skirt) start from the scaled, turned rest pose
-    // gravity is in world units per second: scale it with the model (×~100,
-    // metres to centimetres), or the hair floats
-    for (const j of vrm.springBoneManager?.joints ?? []) j.settings.gravityPower *= holder.scale.x
-    vrm.springBoneManager?.setInitState?.()
-    vrm.springBoneManager?.reset?.()
+    // spring bones (hair, skirt) start from the scaled, turned rest pose; their
+    // stiffness, gravity and collider radii are in world units, so scale them
+    // with the model (×~100, metres to centimetres: violinist/vrm-springs.js)
+    group.updateMatrixWorld(true)
+    scaleSpringBones(vrm, model.getWorldScale(v3()).x)
     // MToon is close to unlit: under the stage's spotlights it burns out, so
     // take its lit and shade colours down to the scene's exposure
     model.traverse(o => {

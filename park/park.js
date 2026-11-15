@@ -5,8 +5,10 @@
 // are drawn with two cameras that are the same camera at two scales (the park's at the
 // duo camera's place, turned and moved onto the lawn, its near and far planes 1/100 of
 // the duo camera's, or scale/100 with `scale`), so a point of either lands on the same pixel at the same depth and
-// both draw into one image and one depth buffer, which the post chain then paints over:
-// grass in front of a foot hides it, the piano hides the hill behind it.
+// both map to the same pixel and depth. The park and piano are painted first; the cel-rendered
+// performers and violin are colour-graded separately and composited above the painterly passes,
+// against fresh park and piano depth prepasses, so grass in front of a foot still hides it and
+// the piano still hides the player behind it.
 // The duo casts into the park's sun shadow map (grass and ground darken under the
 // piano), drawn the same way with the shadow camera at the duo's scale.
 //
@@ -100,6 +102,7 @@ export async function createPark(renderer, { time = 1.4, style = 'summer', azimu
   const shadowRT = new THREE.WebGLRenderTarget(SHADOW_RES, SHADOW_RES, { depthTexture: new THREE.DepthTexture(SHADOW_RES, SHADOW_RES, THREE.FloatType), depthBuffer: true });
   const shadowCam = new THREE.OrthographicCamera(-26, 26, 26, -26, 1, 110);
   const duoShadowCam = new THREE.OrthographicCamera(-26 / CM, 26 / CM, 26 / CM, -26 / CM, 1 / CM, 110 / CM);
+  duoShadowCam.layers.enable(1);
   const shadowBasic = new THREE.MeshBasicMaterial();
   shared.uShadowMap.value = shadowRT.depthTexture;
   function renderShadow(duoScene) {
@@ -180,8 +183,8 @@ export async function createPark(renderer, { time = 1.4, style = 'summer', azimu
     u.uTrailOn.value = on ? THREE.MathUtils.smoothstep(TRAIL_P - tau, 0, 12) : 0;
   }
 
-  // ── Ambience: Sorairo's wind, songbirds and insects (its music off), on its own audio context
-  const sound = makeLiveAudio();
+  // ── Ambience: Sorairo's wind, songbirds and insects. Its generative music is not built.
+  const sound = makeLiveAudio({ music: false });
 
   // ── The light, for the duo's own lights: the sun's direction in the duo's frame (toward
   // the sun), its colour and the ambient, linear, as Sorairo's celLight reads them
@@ -257,9 +260,17 @@ export async function createPark(renderer, { time = 1.4, style = 'summer', azimu
     renderShadow(duoScene)
     const au = renderer.autoClear
     renderer.autoClear = false
+    const renderDuoLayer = layer => {
+      const bg = duoScene.background, mask = duoCam.layers.mask
+      duoScene.background = null; duoCam.layers.set(layer)
+      try { renderer.render(duoScene, duoCam) }
+      finally { duoScene.background = bg; duoCam.layers.mask = mask }
+    }
     post.render(scene, camera, {
       bloom: S.bloom, paint: Math.min(6, S.paint * renderer.getPixelRatio()),
-      extra: () => { const bg = duoScene.background; duoScene.background = null; renderer.render(duoScene, duoCam); duoScene.background = bg },
+      background: () => renderDuoLayer(0),
+      depthScene: duoScene, depthCamera: duoCam,
+      overlay: () => renderDuoLayer(1),
     })
     post.final.uniforms.uTime.value = shared.uTime.value
     renderer.autoClear = au

@@ -1,9 +1,12 @@
-// From ../random-sketches/vibes/sorairo (post.js), with o.extra: a second scene drawn into the scene target.
+// From ../random-sketches/vibes/sorairo (post.js), with o.background and o.overlay: the
+// piano joins the painted environment, while the cel performers are graded separately and
+// composited after the painterly passes with environment depth occlusion.
 // Post chain, all hand-wired so passes can read more than one input:
 //   scene (HDR, MSAA, alpha = sun occlusion) -> light shafts -> bloom (UnrealBloomPass, additive)
 //   -> grade: lens flare, tone map, colour grade, to display space
 //   -> painterly: structure tensor -> blur -> anisotropic Kuwahara (Kyprianidis et al. 2009,
 //      polynomial sector weights) -> final: canvas texture, edge pigment, vignette, grain
+//   -> separately graded cel foreground (with a park depth prepass for occlusion)
 import * as THREE from 'three';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
@@ -97,6 +100,39 @@ export function makePost(renderer) {
       }`,
   });
 
+  // The cel-rendered foreground is graded separately, then composited after the painterly
+  // passes. The render target stores premultiplied colour at covered MSAA samples, so undo
+  // that before grading and premultiply again for the final over operation.
+  const overlayGrade = new THREE.ShaderMaterial({
+    uniforms: {
+      tIn: { value: null }, uTexel: { value: new THREE.Vector2() }, uSoft: { value: 0.55 }, uExposure: { value: 1 }, uSat: { value: 1.15 },
+      uLift: { value: new THREE.Color(0.02, 0.03, 0.08) }, uGain: { value: new THREE.Color(1.03, 1.0, 0.96) },
+    },
+    vertexShader: VS,
+    fragmentShader: /* glsl */ `
+      uniform sampler2D tIn; uniform vec2 uTexel; uniform float uSoft, uExposure, uSat; uniform vec3 uLift, uGain;
+      varying vec2 vUv;
+      vec3 toSRGB(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
+      void main() {
+        vec2 d = uTexel * uSoft;
+        vec4 src = texture2D(tIn, vUv) * 0.5
+          + (texture2D(tIn, vUv + vec2(d.x, 0.0)) + texture2D(tIn, vUv - vec2(d.x, 0.0))
+          + texture2D(tIn, vUv + vec2(0.0, d.y)) + texture2D(tIn, vUv - vec2(0.0, d.y))) * 0.125;
+        if (src.a < 0.001) { gl_FragColor = vec4(0.0); return; }
+        vec3 col = src.rgb / max(src.a, 1e-4);
+        col *= uExposure;
+        float L = dot(col, vec3(0.2126, 0.7152, 0.0722));
+        float Lt = L * (1.0 + L / 9.0) / (1.0 + L);
+        col *= Lt / max(L, 1e-4);
+        float mx = max(max(col.r, col.g), col.b);
+        if (mx > 1.0) col = mix(col / mx, vec3(1.0), clamp((mx - 1.0) * 0.5, 0.0, 1.0));
+        float l2 = dot(col, vec3(0.2126, 0.7152, 0.0722));
+        col = mix(vec3(l2), col, uSat);
+        col = clamp(col * uGain + uLift * (1.0 - l2), 0.0, 1.0);
+        gl_FragColor = vec4(toSRGB(col) * src.a, src.a);
+      }`,
+  });
+
   const tensor = new THREE.ShaderMaterial({
     uniforms: { tIn: { value: null }, uTexel: { value: new THREE.Vector2() } },
     vertexShader: VS,
@@ -183,10 +219,10 @@ export function makePost(renderer) {
       }`,
   });
   const final = new THREE.ShaderMaterial({
-    uniforms: { tIn: { value: null }, tRef: { value: null }, uTexel: { value: new THREE.Vector2() }, uPaper: { value: 1 }, uTime: { value: 0 }, uVignette: { value: 1 }, uPaint: { value: 1 } },
+    uniforms: { tIn: { value: null }, tRef: { value: null }, tOverlay: { value: null }, uTexel: { value: new THREE.Vector2() }, uPaper: { value: 1 }, uTime: { value: 0 }, uVignette: { value: 1 }, uPaint: { value: 1 }, uOverlay: { value: 0 } },
     vertexShader: VS,
     fragmentShader: /* glsl */ `
-      uniform sampler2D tIn, tRef; uniform vec2 uTexel; uniform float uPaper, uTime, uVignette, uPaint;
+      uniform sampler2D tIn, tRef, tOverlay; uniform vec2 uTexel; uniform float uPaper, uTime, uVignette, uPaint, uOverlay;
       varying vec2 vUv;
       float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
       float vn(vec2 p) { vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3. - 2. * f);
@@ -214,8 +250,12 @@ export function makePost(renderer) {
         // vignette
         float v = smoothstep(0.95, 0.25, length(dc * vec2(1.0, 0.8)));
         col *= mix(1.0, 0.72 + 0.28 * v, uVignette);
-        // film grain
+        // film grain on the painted environment, then the separately graded cel foreground
         col += (hash(px + fract(uTime) * 100.0) - 0.5) * 0.025;
+        if (uOverlay > 0.5) {
+          vec4 fg = texture2D(tOverlay, vUv);
+          col = fg.rgb + col * (1.0 - fg.a);
+        }
         gl_FragColor = vec4(col, 1.0);
       }`,
   });
@@ -234,21 +274,38 @@ export function makePost(renderer) {
     targets.grade = rt(W, H, { type: THREE.UnsignedByteType });
     targets.tA = rt(W, H); targets.tB = rt(W, H);
     targets.paint = rt(W, H, { type: THREE.UnsignedByteType });
+    targets.overlay = rt(W, H, { depthBuffer: true, samples: 4 });
+    targets.overlayGrade = rt(W, H, { type: THREE.UnsignedByteType });
     bloom.setSize(W, H);
     const tex = new THREE.Vector2(1 / W, 1 / H);
     tensor.uniforms.uTexel.value.copy(tex); kuwahara.uniforms.uTexel.value.copy(tex); final.uniforms.uTexel.value.copy(tex);
+    overlayGrade.uniforms.uTexel.value.copy(tex); overlayGrade.uniforms.uSoft.value = 0.55 * pr;
     light.uniforms.uAspect.value = grade.uniforms.uAspect.value = W / H;
   }
 
   function pass(mat, target) { quad.material = mat; renderer.setRenderTarget(target); quad.render(renderer); }
+
+  // Re-draw the environment into the foreground target's depth buffer without colour.
+  // Its original shaders still provide wind-deformed grass, alpha cut-outs and every other
+  // depth detail, so foreground feet and instruments remain hidden by nearby park geometry.
+  function environmentDepth(scene, camera) {
+    const writes = new Map();
+    scene.traverse(object => {
+      for (const material of [].concat(object.material || [])) if (material && !writes.has(material)) {
+        writes.set(material, material.colorWrite);
+        material.colorWrite = false;
+      }
+    });
+    try { renderer.render(scene, camera); }
+    finally { for (const [material, colorWrite] of writes) material.colorWrite = colorWrite; }
+  }
 
   function render(scene, camera, o) {
     renderer.setRenderTarget(targets.scene);
     renderer.setClearColor(0x000000, 0);
     renderer.clear();
     renderer.render(scene, camera);
-    // (#051: the duo's own scene, drawn into the same image and depth)
-    o.extra?.();
+    o.background?.();
 
     light.uniforms.tScene.value = targets.scene.texture;
     pass(light, targets.light);
@@ -268,10 +325,30 @@ export function makePost(renderer) {
       pass(kuwahara, targets.paint);
       img = targets.paint.texture;
     }
+
+    let overlay = null;
+    if (o.overlay) {
+      renderer.setRenderTarget(targets.overlay);
+      renderer.setClearColor(0x000000, 0);
+      renderer.clear();
+      environmentDepth(scene, camera);
+      if (o.depthScene) environmentDepth(o.depthScene, o.depthCamera);
+      o.overlay();
+      overlayGrade.uniforms.tIn.value = targets.overlay.texture;
+      overlayGrade.uniforms.uExposure.value = grade.uniforms.uExposure.value;
+      overlayGrade.uniforms.uSat.value = grade.uniforms.uSat.value;
+      overlayGrade.uniforms.uLift.value.copy(grade.uniforms.uLift.value);
+      overlayGrade.uniforms.uGain.value.copy(grade.uniforms.uGain.value);
+      pass(overlayGrade, targets.overlayGrade);
+      overlay = targets.overlayGrade.texture;
+    }
+
     final.uniforms.tIn.value = img;
+    final.uniforms.tOverlay.value = overlay;
+    final.uniforms.uOverlay.value = overlay ? 1 : 0;
     final.uniforms.uPaint.value = o.paint > 0 ? 1 : 0;
     pass(final, null);
   }
 
-  return { setSize, render, light, grade, final, kuwahara, bloom, targets };
+  return { setSize, render, light, grade, overlayGrade, final, kuwahara, bloom, targets };
 }

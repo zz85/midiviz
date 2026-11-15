@@ -67,6 +67,7 @@
     <select id="ppart" hidden title="What the pianist plays: the file's piano tracks, or every other track but the drums"><option value="piano">Her part: the piano tracks</option><option value="all">Her part: everything else</option></select>
     <select id="model" title="Violinist"></select>
     <select id="outfit" title="His outfit"></select>
+    <select id="pmodel" title="The pianist's model (pianist/alt-model.js). Changing it reloads the page"><option value="vroida">Pianist: VRoid AvatarSample_A</option><option value="vrm">Pianist: pixiv VRM 1.0 sample</option></select>
     <select id="vdress" title="Her dress"><option value="wine">Wine dress</option><option value="black">Black dress</option><option value="navy">Navy dress</option><option value="emerald">Emerald dress</option><option value="rose">Rose dress</option><option value="white">White dress</option><option value="off">Casual: her cardigan</option></select>
     <select id="hands" title="Her hands. Pianist's: #032's pianist's own hands (the MakeHuman woman, fingers lengthened to a woman's proportions), on her wrists and played by the same fingering (pianist/hand-graft.js): cel-shaded in her skin's colour with the ink outline, or in #032's realistic skin. Anime: the VRoid model's own. Changing it reloads the page"><option value="pianist">Hands: the pianist's, cel-shaded</option><option value="real">Hands: the pianist's, realistic skin</option><option value="model">Hands: anime (the model's)</option></select>
     <select id="cam" title="Camera">
@@ -87,7 +88,7 @@
     </select>
     <select id="venue" title="Where they play: the concert hall, or outdoors on Sorairo's hillside (park/, from random-sketches/vibes/sorairo: the tree, wind in the grass, the sky, birds and a painterly finish). Changing it reloads the page"><option value="hall">Venue: concert hall</option><option value="park">Venue: the park</option></select>
     <select id="layout" title="Where he stands: beside the keyboard end, about a metre to her left and a little in front (the usual recital layout), or in front of the piano's curve. Changing it reloads the page"><option value="keys">Layout: by the keyboard</option><option value="curve">Layout: by the curve</option></select>
-    <select id="pscale" hidden title="The park's size around the two, who stay as they are: the tree, hill and grass at 3/4 or 1/2 of Sorairo's. Changing it reloads the page"><option value="1">Park: full size</option><option value="0.75">Park: 3/4 size</option><option value="0.5">Park: 1/2 size</option></select>
+    <select id="pscale" hidden title="The park's size around the two, who stay as they are. Changing it reloads the page"><option value="0.45" selected>Park: 0.45 size</option><option value="0.5">Park: 1/2 size</option><option value="0.75">Park: 3/4 size</option><option value="1">Park: full size</option></select>
     <select id="tod" hidden title="Time of day in the park"></select>
     <select id="tstyle" hidden title="The tree in the park"><option value="summer">Tree: summer</option><option value="sakura">Tree: cherry blossom</option><option value="autumn">Tree: autumn</option><option value="maple">Tree: maple</option></select>
     <label id="ambBox" hidden title="Wind, songbirds and insects in the park (Sorairo's ambience)"><input type="checkbox" id="amb" checked> Birds</label>
@@ -145,7 +146,7 @@
     import { createViolinistRig } from './violinist/rig.js'
     import { toonify, buildStage } from './violinist/stage.js'
     import { loadViolinist, disposeVRM, setOutline, MODELS as VIOLINISTS, OUTFITS } from './violinist/character.js'
-    import { loadAltCharacter } from './pianist/alt-model.js'
+    import { loadAltCharacter, MODELS as PIANISTS } from './pianist/alt-model.js'
     import { createRig as createPianistRig } from './pianist/rig.js'
     import { graftPianistHands } from './pianist/hand-graft.js'
     import { createPark, TIMES } from './park/park.js'
@@ -157,6 +158,7 @@
     const SHOT = Q.has('shot')
     // #051: the park (park/park.js) in place of the concert hall
     const PARK = Q.get('stage') === 'park'
+    const parkForeground = root => { if (PARK) root.traverse(object => object.layers.set(1)) }
     $('venue').value = PARK ? 'park' : 'hall'
     $('venue').onchange = () => { const p = new URLSearchParams(location.search); if ($('venue').value === 'park') p.set('stage', 'park'); else p.delete('stage'); location.search = p.toString() }
     if (PARK) { $('title').textContent = '#051 Duo in the Park'; document.title = '#051 Duo in the Park' }
@@ -225,10 +227,10 @@
     if (PARK) {
       for (const o of stageParts) o.visible = false
       scene.background = null; scene.fog = null
-      // any size from 0.02 to 4 in the URL; the menu offers 1, 3/4 and 1/2
+      // any size from 0.02 to 4 in the URL; the menu defaults to 0.45
       { const k = +Q.get('pscale'); if (k >= 0.02 && k <= 4) { const v = String(k); if (![...$('pscale').options].some(o => o.value === v)) $('pscale').add(new Option(`Park: ${v} size`, v)); $('pscale').value = v } }
       const pscale = +$('pscale').value
-      $('pscale').onchange = () => { const p = new URLSearchParams(location.search); if ($('pscale').value === '1') p.delete('pscale'); else p.set('pscale', $('pscale').value); location.search = p.toString() }
+      $('pscale').onchange = () => { const p = new URLSearchParams(location.search); if ($('pscale').value === '0.45') p.delete('pscale'); else p.set('pscale', $('pscale').value); location.search = p.toString() }
       // the park's camera is this one at scale/100: its 0.1-8000 m, here in cm
       camera.near = 10; camera.far = 800000 * pscale; camera.updateProjectionMatrix()
       for (const [i, n] of TIMES) $('tod').add(new Option('Time: ' + n.toLowerCase(), i))
@@ -249,6 +251,7 @@
       sunLight.shadow.bias = -0.0004; sunLight.shadow.normalBias = 0.6
       sunLight.target.position.copy(MID).setY(80)
       skyLight = new THREE.HemisphereLight(0xffffff, 0x446633, 1)
+      sunLight.layers.enable(1); skyLight.layers.enable(1)
       scene.add(sunLight, sunLight.target, skyLight)
     }
     const LIGHT_K = +(Q.get('lightk') || 0.75)
@@ -279,7 +282,14 @@
     piano.bench.position.z = 47
     const SEAT_Y = 55.4
     setStatus('Loading the pianist…')
-    const her = await loadAltCharacter('vroida', new URL('./pianist/assets/', import.meta.url).href)
+    // ?pmodel=: any VRM of pianist/alt-model.js in place of AvatarSample_A (only she has the concert dress)
+    $('pmodel').innerHTML = ''
+    for (const [k, m] of Object.entries(PIANISTS).sort(([a], [b]) => (b === 'vroida') - (a === 'vroida'))) if (m.kind === 'vrm') $('pmodel').add(new Option('Pianist: ' + m.label.replace(/^VRoid · |^VRM · /, ''), k))
+    const PMODEL = PIANISTS[Q.get('pmodel')]?.kind === 'vrm' ? Q.get('pmodel') : 'vroida'
+    $('pmodel').value = PMODEL
+    $('pmodel').onchange = () => { saveUrl(); const p = new URLSearchParams(location.search); if ($('pmodel').value === 'vroida') p.delete('pmodel'); else p.set('pmodel', $('pmodel').value); location.search = p.toString() }
+    const her = await loadAltCharacter(PMODEL, new URL('./pianist/assets/', import.meta.url).href)
+    $('vdress').hidden = !her.dress
     pianoSide.add(her.group)
     // her hands: #032's pianist's, fitted to hers (pianist/hand-graft.js), or the model's own
     if (['model', 'real'].includes(Q.get('hands'))) $('hands').value = Q.get('hands')
@@ -297,6 +307,7 @@
     }
     $('vdress').onchange = () => { her.dress?.set($('vdress').value); saveUrl() }
     pRig.update(0, 1 / 60)
+    parkForeground(her.group)
 
     // ── The violin and the violinist (#037) ────────────────────────────────
     const V = buildViolin((await import('./strings/fingering.js')).INSTRUMENTS.violin, { finish: 'red' })
@@ -307,6 +318,7 @@
     const bowHand = buildBowHand(bow, V.group)
     bowHand.hand.visible = false; bowHand.arm.visible = false
     const inkInstrument = toonify([V.group, bow.group])
+    parkForeground(V.group)
     let him = null, vRig = null
     const TURN = +(Q.get('turn') ?? (LAYOUT === 'curve' ? -0.38 : 0.3))
     async function loadHim() {
@@ -318,6 +330,7 @@
       // measures everything from his rest pose, so it plays in any facing)
       him.scene.rotation.y += TURN      // (on top of rotateVRM0's half turn)
       scene.add(him.scene)
+      parkForeground(him.scene)
       him.scene.updateMatrixWorld(true)
       leftHand.setScale(1)
       vRig = createViolinistRig({ vrm: him, V, bow, leftHand, bowHand })
@@ -542,7 +555,7 @@
         : e.score ? `MIDI: ${e.credit || 'Mutopia Project'}, ${e.licence}`
         : `MIDI: ${e.local ? 'opened here' : e.credit}${oct ? `, the violin ${Math.abs(oct / 12)} octave${Math.abs(oct) > 12 ? 's' : ''} ${oct > 0 ? 'up' : 'down'}` : ''}`
       const name = [e.composer, e.title].filter(Boolean).join(' – ')
-      $('credit').innerHTML = `${name.replace(/[<&]/g, '')}<br>${src} · VRoid Project models (pixiv)${b && b.mode !== 'fixed' ? `<br>Bowing: ${b.mode === 'score' ? 'the Mutopia score' : 'inferred'} (${b.slurs} slurred notes)` : ''}${song.performer ? '<br>Played as ' + performerCredit(song.performer.rec, { pitch: hybrid.on }) : song.modelled ? '<br>Played as ' + modelledCredit(song.modelled.model) : ''}`
+      $('credit').innerHTML = `${name.replace(/[<&]/g, '')}<br>${src} · VRoid Project models (pixiv)${PMODEL === 'vroida' ? '' : ' · ' + PIANISTS[PMODEL].credit.replace(/[<&]/g, '')}${b && b.mode !== 'fixed' ? `<br>Bowing: ${b.mode === 'score' ? 'the Mutopia score' : 'inferred'} (${b.slurs} slurred notes)` : ''}${song.performer ? '<br>Played as ' + performerCredit(song.performer.rec, { pitch: hybrid.on }) : song.modelled ? '<br>Played as ' + modelledCredit(song.modelled.model) : ''}`
       $('startSong').textContent = name
       showMixerParts()
       clock.t = 0
@@ -1200,11 +1213,12 @@
       if ($('bowing').value !== 'score') p.set('bowing', $('bowing').value)
       if ($('performer').value !== MODELLED) p.set('performer', $('performer').value || 'none')
       if ($('source').value === 'midi') p.set('src', 'midi')
+      if (PMODEL !== 'vroida') p.set('pmodel', PMODEL)
       if ($('vdress').value !== 'wine') p.set('vdress', $('vdress').value)
       if ($('hands').value !== 'pianist') p.set('hands', $('hands').value)
       if ($('room').value !== (PARK ? 'dry' : 'hall')) p.set('room', $('room').value)
       if (LAYOUT === 'curve') p.set('layout', 'curve')
-      if (PARK) { p.set('stage', 'park'); if ($('tod').value !== '1') p.set('tod', $('tod').value); if ($('tstyle').value !== 'summer') p.set('tree', $('tstyle').value); if (!$('amb').checked) p.set('amb', '0'); if ($('pscale').value !== '1') p.set('pscale', $('pscale').value) }
+      if (PARK) { p.set('stage', 'park'); if ($('tod').value !== '1') p.set('tod', $('tod').value); if ($('tstyle').value !== 'summer') p.set('tree', $('tstyle').value); if (!$('amb').checked) p.set('amb', '0'); if ($('pscale').value !== '0.45') p.set('pscale', $('pscale').value) }
       if (hybrid.on) p.set('violin', hybrid.name)
       if (levels.violin || levels.piano) p.set('vol', `${levels.violin},${levels.piano}`)
       if ($('psynth').value !== 'oxisynth') p.set('psynth', $('psynth').value)
@@ -1275,6 +1289,7 @@
       pRig.update(t, dt)
       her.group.updateMatrixWorld(true)
       her.update(dt)
+      if (PARK && her.dress?.cloth && her.dress.cloth.mesh.layers.mask !== 2) her.dress.cloth.mesh.layers.set(1)
       if (standing !== wasStanding) { wasStanding = standing; her.dress?.cloth?.settle(1) }
       // camera
       subjects()

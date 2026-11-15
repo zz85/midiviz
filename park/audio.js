@@ -19,7 +19,7 @@ const CHORDS = [
 // melody notes: D major pentatonic, A4 to D6
 const SCALE = [69, 71, 74, 76, 78, 81, 83, 86];
 
-export function makeAudio(ctx, seed = 11) {
+export function makeAudio(ctx, seed = 11, { music = true } = {}) {
   const rnd = mulberry32(seed);
   const now = () => ctx.currentTime;
   const SR = ctx.sampleRate;
@@ -29,7 +29,7 @@ export function makeAudio(ctx, seed = 11) {
   limiter.threshold.value = -10; limiter.ratio.value = 6; limiter.attack.value = 0.01; limiter.release.value = 0.3;
   limiter.connect(ctx.destination);
   const master = ctx.createGain(); master.gain.value = 0; master.connect(limiter);
-  const musicBus = ctx.createGain(); musicBus.gain.value = 0.6; musicBus.connect(master);
+  const musicBus = ctx.createGain(); musicBus.gain.value = music ? 0.6 : 0; musicBus.connect(master);
   const ambBus = ctx.createGain(); ambBus.gain.value = 0.8; ambBus.connect(master);
 
   // a long soft hall: noise with an exponential tail, decorrelated per channel
@@ -168,7 +168,7 @@ export function makeAudio(ctx, seed = 11) {
   let nextBar = 0, bar = 0, mel = 3, nextBird = 0, nextHigu = 0, nextDrip = 0;
   function schedule(until) {
     if (!nextBar) { nextBar = now() + 0.3; nextBird = now() + 1; nextHigu = now() + 3; nextDrip = now() + 0.5; }
-    while (nextBar < until) {
+    while (music && nextBar < until) {
       const t = nextBar, [bass, notes] = CHORDS[bar % CHORDS.length], quiet = st.night > 0.5;
       pad(notes, bass, t, BAR, quiet);
       piano(bass, t, 0.55, BAR * 1.1); // bass note on the downbeat
@@ -222,7 +222,7 @@ export function makeAudio(ctx, seed = 11) {
     ramp(rainLoG.gain, 0.22 * st.rain);
     ramp(crickets.gain, 0.5 * st.night * st.insects);
     ramp(higu.gain, Math.min(1, st.dusk * 1.4) * st.insects, 1);
-    ramp(musicBus.gain, st.music * (st.night > 0.5 ? 0.75 : 1), 0.8);
+    ramp(musicBus.gain, music ? st.music * (st.night > 0.5 ? 0.75 : 1) : 0, 0.8);
     ramp(ambBus.gain, st.amb);
   }
 
@@ -236,12 +236,12 @@ export function makeAudio(ctx, seed = 11) {
 }
 
 // Live wrapper: creates the context on first user gesture, runs the scheduler.
-export function makeLiveAudio() {
+export function makeLiveAudio({ music = true } = {}) {
   let ctx = null, audio = null, timer = 0, pending = null;
   function ensure() {
     if (ctx) return;
     ctx = new (window.AudioContext || window.webkitAudioContext)();
-    audio = makeAudio(ctx);
+    audio = makeAudio(ctx, 11, { music });
     if (pending) audio.update(pending, 0);
     timer = setInterval(() => audio.schedule(ctx.currentTime + 1.2), 250);
   }
