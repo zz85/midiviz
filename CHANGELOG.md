@@ -2,6 +2,13 @@
 
 What each experiment does and how, newest first. The short list is in the [README](README.md).
 
+## 15 Nov 2026
+
+Crossings are hands past each other, not thumbs that meet (#032, #038, #045, #049, #050)
+- Hedwig's Theme failed pianist/test/wrist.mjs's thumb rule (from 150 s: the hand going over played 7 of its 24 crossing notes with the thumb, 29 %; at most 15 %). It has no crossings: the hands play side by side and their thumbs meet a key or two inside each other's ground, which fingering.js `markCrossings` counted as a crossing (a right-hand note below any left-hand note sounding with it). With `{ deep: true }` a note crosses only past the middle of the other hand, below the median of the left hand's keys sounding then, or above the right hand's; the hands ([pianist/hand-driver.js](pianist/hand-driver.js)) use it. Hedwig now has no crossing notes, so no hand is lifted over the other there; the over/under swaps from 150 s go from 1 to 0 and one hand into the other from 4 of 13 crossed frames to 3 of 12.
+- `crossOver(notes, { thumbs: true })`, which the hands also use: with every note fingered, in each run of one hand over, the hand that plays more of its single crossing notes with the thumb goes under (Godowsky's rule), whatever the leaps say; with as many each, the one for which they are the smaller share goes over.
+- The fingering itself doesn't change: fingerPiece reads the plain rules, as its weights were tuned with (the golden baseline is identical). Goldberg Var. 5-6 (307 s): the hand over on its thumb on 7 of 70 crossing notes (5 of 69 before, at most 15 %), one hand into the other on 42 of 521 crossed frames (39 of 520), the forearms at least 2.9 cm apart (1.4); over the whole Goldberg, the hand over on its thumb 43 of 695 (45 of 697). Prelude No. 1, Chopin's 15th prelude, the Entertainer, Rush E and Rachmaninov 3 unchanged. Tests: fingering.test.js (53).
+
 ## 14 Nov 2026
 
 The violinist's bow arm: the elbow stops pumping on fast string crossings (#037, #038, #051)

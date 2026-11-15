@@ -6,7 +6,7 @@ import { createRequire } from 'node:module'
 import { keyX, isBlack, parseNote, noteName, WHITE_W } from '../keyboard.js'
 import {
   SPAN_TABLE, spanLimits, mirror, createModel, makeSlices, splitHands, fingerPiece, fingerString,
-  costOf, toPIG, fromPIG, PARNCUTT,
+  costOf, toPIG, fromPIG, PARNCUTT, markCrossings, crossOver,
 } from '../fingering.js'
 import { exercises, scale, scaleExpect, line } from '../exercises.js'
 import { runSuite } from './bench.js'
@@ -419,6 +419,37 @@ test('crossings: the hand that leaps goes over, the hand underneath keeps its th
 // passing its thumb under; the left hand rocks between two keys just above it, which the
 // 2nd and 3rd fingers play as well as any (both step by 2 semitones). The scale needs its thumb: the
 // right hand goes under, the left over it
+test('crossings, deep: thumbs meeting between two hands side by side are not a crossing; a hand past the other\'s middle is', () => {
+  // the left hand's chord G3-B3-D4 with its thumb on E4; the right hand's scale
+  // from D4 up: the thumbs share D4-E4, neither hand goes over
+  const side = () => [
+    ...[55, 59, 62, 64].map(p => ({ pitch: p, on: 0, off: 1, hand: 'L', finger: 1 })),
+    ...[62, 64, 65, 67, 69].map((p, i) => ({ pitch: p, on: 0.2 * i, off: 0.2 * i + 0.19, hand: 'R', finger: 1 })),
+  ]
+  const plain = markCrossings(side()), deep = markCrossings(side(), { deep: true })
+  assert.ok(plain.some(n => n.cross), 'the plain rule calls the meeting thumbs a crossing')
+  assert.ok(!deep.some(n => n.cross), 'deep: no crossing')
+  // the right hand reaching down to C3, below the whole left hand
+  const over = [...side(), { pitch: 48, on: 0.5, off: 0.7, hand: 'R', finger: 2 }]
+  const m = markCrossings(over, { deep: true })
+  assert.ok(m.find(n => n.pitch === 48).cross, 'a note below the other hand is still a crossing')
+})
+
+test('crossings, thumbs: once fingered, the hand that plays its crossing notes with the thumb goes under, whatever the leaps say', () => {
+  // the left hand leaps up across a right-hand scale: by the leaps it goes over; but here
+  // it is the one on its thumb, and the right hand never uses its own
+  const notes = []
+  for (let i = 0; i < 12; i++) notes.push({ pitch: [60, 62, 64, 65][i % 4], on: i * 0.2, off: i * 0.2 + 0.19, hand: 'R', finger: [2, 3, 4, 5][i % 4] })
+  for (let i = 0; i < 12; i++) notes.push({ pitch: [72, 55][i % 2], on: i * 0.2 + 0.1, off: i * 0.2 + 0.19, hand: 'L', finger: [1, 5][i % 2] })
+  markCrossings(notes); crossOver(notes)
+  const lOver = notes.filter(n => n.hand === 'L' && n.cross).every(n => n.over)
+  markCrossings(notes); crossOver(notes, { thumbs: true })
+  const cl = notes.filter(n => n.hand === 'L' && n.cross), cr = notes.filter(n => n.hand === 'R' && n.cross)
+  assert.ok(lOver, 'by the leaps the left hand goes over')
+  assert.ok(cl.length && cl.every(n => n.over === false), 'with the fingers: the left hand, on its thumb, goes under')
+  assert.ok(cr.length && cr.every(n => n.over === true))
+})
+
 test('crossings: in a close call, the hand that needs its thumb goes under', () => {
   const sc = [60, 62, 64, 66, 68, 70, 72, 70, 68, 66, 64, 62], notes = []
   for (let i = 0; i < 36; i++) notes.push({ pitch: sc[i % 12], on: i * 0.15, off: i * 0.15 + 0.14, hand: 'R' })

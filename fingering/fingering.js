@@ -690,9 +690,18 @@ const CROSS_FINGER = [0, 3, 0, 0, 1, 2]
  * Mark the notes a hand plays across the other (n.cross): a right-hand note
  * below a left-hand note sounding within CROSS_WINDOW s of it, or a left-hand
  * note above a right-hand one.
+ *
+ * With { deep: true }, only a note past the middle of the other hand: below
+ * the median of the left hand's keys sounding then (or above the right
+ * hand's). Two hands side by side whose thumbs meet, a key or two into each
+ * other's ground (interlocked chords, a scale running up inside the other
+ * hand's span), each play with the thumb there and neither goes over; only a
+ * hand that reaches into or past the other does. The hands use it
+ * (pianist/hand-driver.js); the fingering's crossHand cost reads the plain
+ * rule, as it was tuned with.
  */
 const CROSS_WINDOW = 0.15
-export function markCrossings(notes) {
+export function markCrossings(notes, { deep = false } = {}) {
   const by = { L: [], R: [] }
   for (const n of notes) { n.cross = false; if (by[n.hand]) by[n.hand].push(n) }
   for (const h of ['L', 'R']) by[h].sort((a, b) => a.on - b.on)
@@ -702,10 +711,17 @@ export function markCrossings(notes) {
     let lo = 0
     for (const n of by[h]) {
       while (lo < os.length && os[lo].on < n.on - 4) lo++   // (no note is held longer than 4 s and crosses)
+      const near = []
       for (let i = lo; i < os.length && os[i].on < n.off + CROSS_WINDOW; i++) {
         const o = os[i]
         if (o.off < n.on - CROSS_WINDOW) continue
-        if (h === 'R' ? o.pitch > n.pitch : o.pitch < n.pitch) { n.cross = true; break }
+        if (!deep) { if (h === 'R' ? o.pitch > n.pitch : o.pitch < n.pitch) { n.cross = true; break } continue }
+        near.push(o.pitch)
+      }
+      if (deep && near.length) {
+        near.sort((a, b) => a - b)
+        const mid = near.length & 1 ? near[near.length >> 1] : (near[near.length / 2 - 1] + near[near.length / 2]) / 2
+        n.cross = h === 'R' ? n.pitch < mid : n.pitch > mid
       }
     }
   }
@@ -725,8 +741,19 @@ export function markCrossings(notes) {
  * trade places in the middle of one. Call after markCrossings; see below
  * for the close calls.
  */
+//
+// With { thumbs: true }, once every note is fingered (the hands, pianist/
+// hand-driver.js, which shows the fingering as it is): in every passage, not
+// the close calls alone, the hand that plays its single
+// crossing notes with the thumb more often goes under (by count: the hand
+// over then plays the fewest of them with its thumb; as many each, by their
+// share of its single notes), whatever the leaps say: a thumb
+// can't reach down from a hand held over the other (Godowsky's rule, which
+// the fingering's crossHand cost keeps for the hand it puts over, but which
+// it may still break where everything else costs more). The fingering
+// itself, fingerPiece, doesn't take it: it decides before the fingers.
 const OVER_WIN = 0.6, OVER_MAJ = 2.5, OVER_GAP = 1, OVER_CLOSE = 0.3, OVER_EVEN = 0.15
-export function crossOver(notes) {
+export function crossOver(notes, { thumbs = false } = {}) {
   const by = { L: [], R: [] }
   for (const n of notes) { n.over = false; if (by[n.hand]) by[n.hand].push(n) }
   const line = {}
@@ -783,6 +810,24 @@ export function crossOver(notes) {
         const tL = th('L'), tR = th('R')
         const o = tL !== tR ? (tL > tR ? 'R' : 'L') : tL && bl('L') !== bl('R') ? (bl('L') > bl('R') ? 'L' : 'R') : null
         if (o) for (const i of idx) over[i] = o
+      }
+    }
+    if (thumbs) {
+      // (by each run of one hand over: in a passage where the hands take turns
+      // going over, as Bach's for two manuals do, each turn is its own)
+      const single = n => !by[n.hand].some(m => m !== n && Math.abs(m.on - n.on) < 0.03)
+      for (let c = a; c < b;) {
+        let d = c + 1
+        while (d < b && over[d] === over[c]) d++
+        const o = over[c], ps = cross.slice(c, d)
+        if (o && d - c >= 2 && ps.every(n => n.finger >= 1)) {
+          const u = o === 'L' ? 'R' : 'L'
+          const sg = h => ps.filter(n => n.hand === h && single(n)), th = h => sg(h).filter(n => n.finger === 1).length
+          const [to, tu] = [th(o), th(u)]
+          // (as many thumbs each: the hand whose single notes they are a smaller share of goes over)
+          if (tu < to || (tu === to && to && tu / sg(u).length < to / sg(o).length)) for (let i = c; i < d; i++) over[i] = u
+        }
+        c = d
       }
     }
     a = b

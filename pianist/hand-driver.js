@@ -892,14 +892,18 @@ export function createHandsDriver(dims) {
     setNotes(notes) {
       // (not the keys a finger shares with another: fingering.js sharedUnits)
       own = notes.filter(n => n.finger >= 1 && !n.shared)
-      markCrossings(own)
+      // (only a note past the middle of the other hand: the thumbs of two
+      // hands side by side meet a key or two inside each other's ground
+      // without either going over, markCrossings deep)
+      markCrossings(own, { deep: true })
       // (a crossing marks both hands' notes: the left above the right is the
       // right below the left)
       // Which hand goes over (fingering.js crossOver, as the fingering
       // decided it: the hand that jumps across, over the one that keeps
       // playing). And a crossing is a passage, not one stray note: two or
       // more within 2 s
-      crossOver(own)
+      // (decided again here with the fingers known: the hand on its thumb goes under)
+      crossOver(own, { thumbs: true })
       crossing = { L: [], R: [] }
       for (const h of ['L', 'R']) {
         const c = own.filter(n => n.hand === h && n.cross && n.over).sort((a, b) => a.on - b.on)
