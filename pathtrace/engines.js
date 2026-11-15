@@ -24,6 +24,12 @@ export const ENGINES = {
   'mu-webgpu': { label: 'MuTracer · WebGPU', short: 'MuTracer WebGPU', webgpu: true, denoiser: 'OIDN' },
   'mu-webgl': { label: 'MuTracer · WebGL 2', short: 'MuTracer WebGL', webgpu: false, denoiser: 'JNLM' },
 }
+// Native renderers, in the desktop app only (its preload gives the page window.midivizNative): native-engines.js
+if (globalThis.midivizNative) Object.assign(ENGINES, {
+  'mu-native': { label: 'MuTracer · native (wgpu, ray queries)', short: 'MuTracer native', webgpu: false, native: true, denoiser: 'OIDN' },
+  // (ThreeRT denoises with OIDN only when built with its oidn feature; threert.sh's build has its à-trous filter)
+  'rt-native': { label: 'ThreeRT · native (wgpu, ray queries)', short: 'ThreeRT native', webgpu: false, native: true, denoiser: 'à-trous' },
+})
 export const hasWebGPU = async () => { try { return !!(navigator.gpu && await navigator.gpu.requestAdapter()) } catch { return false } }
 
 const frame = () => new Promise(r => requestAnimationFrame(() => r()))
@@ -57,7 +63,8 @@ export async function createTraceSession(key, opts) {
   if (!ENGINES[key]) throw new Error('unknown engine ' + key)
   const o = { bounces: 6, denoise: false, toneMapping: 'agx', ...opts }
   const t0 = performance.now()
-  const make = { 'gpt-webgpu': gptWebGPU, 'gpt-webgl': gptWebGL, 'mu-webgpu': x => mutracer(x, 'webgpu'), 'mu-webgl': x => mutracer(x, 'webgl') }[key]
+  const native = async x => (await import('./native-engines.js')).nativeSession(key, x, { VENDOR, muLens })
+  const make = { 'gpt-webgpu': gptWebGPU, 'gpt-webgl': gptWebGL, 'mu-webgpu': x => mutracer(x, 'webgpu'), 'mu-webgl': x => mutracer(x, 'webgl'), 'mu-native': native, 'rt-native': native }[key]
   const s = await make(o)
   s.times = { ...s.times, create: Math.round(performance.now() - t0) }
   s.engine = key
@@ -109,7 +116,7 @@ async function glDone(gl) {
   finally { gl.deleteSync(sync) }
 }
 
-function muLens(camera, dof) {
+export function muLens(camera, dof) {
   if (!dof) return {}
   const focal = 0.5 * camera.getFilmHeight() * (camera.zoom || 1) / Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)
   return { fStop: focal / (10 * dof.aperture), focusDistance: dof.focus, metersPerUnit: 0.01 }

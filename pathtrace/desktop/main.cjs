@@ -7,6 +7,7 @@
 //        --engines=gpt-webgpu,mu-webgl --spp=64 --bounces=4 --size=640x360 --denoise=1 --fx=0 --hair=0.5 --extra=&outfit=…
 //        --timeout=20 (minutes per tracer; stops the run when one hangs)
 //        Default engines: mu-webgl on a CPU backend (MuTracer's WebGL 2 tracer), all four on a GPU.
+//        Native renderers too (native.cjs, built in pathtrace/native): --engines=mu-native,rt-native, and --video --engine=mu-native
 //   node pathtrace/desktop/run.mjs --video [song] [out dir]                a path-traced MP4 through the page's Render menu
 //        --engine=mu-webgl --spp=4 --bounces=10 --res=3840x2160 --fps=12 --len=5 --denoise=0 --fx=0 --hair=0.5
 //        --recycle=24 (frames per tracer session; 0 keeps one) --extra=&outfit=…
@@ -40,7 +41,7 @@ for (const a of argv) {
 const backend = opt.backend || 'gpu'      // run.mjs always passes both
 const headless = opt.headless === '1'
 
-const { app, BrowserWindow, protocol, net } = require('electron')
+const { app, BrowserWindow, protocol, net, ipcMain } = require('electron')
 const sw = (k, v) => app.commandLine.appendSwitch(k, v)
 sw('enable-unsafe-webgpu'); sw('ignore-gpu-blocklist'); sw('enable-features', 'Vulkan')
 if (backend !== 'gpu') {
@@ -71,7 +72,8 @@ const [W, H] = (opt.size || '640x360').split('x').map(Number)
 function makeWindow({ show, width, height }) {
   return new BrowserWindow({
     show, width, height, useContentSize: true, title: 'Path-traced Pianist',
-    webPreferences: { backgroundThrottling: false, contextIsolation: true, sandbox: true },
+    // (the preload gives the page the native renderers, run by native.cjs, and nothing else)
+    webPreferences: { backgroundThrottling: false, contextIsolation: true, sandbox: true, preload: path.join(__dirname, 'preload.cjs') },
   })
 }
 
@@ -295,6 +297,7 @@ async function interactive() {
 
 app.whenReady().then(async () => {
   serveRepo()
+  require('./native.cjs').install(ipcMain)
   try {
     if ('info' in opt) await info()
     else if ('still' in opt) await still()

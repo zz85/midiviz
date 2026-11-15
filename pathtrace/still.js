@@ -24,6 +24,8 @@ export function createPathTraceStills(stage) {
   let envCache = null
 
   // ── menu ──
+  // (the native renderers, when the desktop app offers them: engines.js; stills and videos both pick from this menu)
+  for (const [k, E] of Object.entries(ENGINES)) if (E.native && ![...$('ptEngine').options].some(o => o.value === k)) $('ptEngine').add(new Option(E.label, k))
   hasWebGPU().then(ok => {
     state.gpu = ok
     for (const o of $('ptEngine').options) if (ENGINES[o.value]?.webgpu && !ok) { o.disabled = true; o.textContent += ' (no WebGPU here)' }
@@ -88,7 +90,7 @@ export function createPathTraceStills(stage) {
           }
           const T = r.times
           r.label = E.label
-          r.info = `${w}×${h}, ${Math.round(r.samples)} spp, ${s.bounces} bounces${s.denoise && E.denoiser ? ', ' + E.denoiser + ' denoised' : ''}${dof ? `, depth of field: focus ${dof.focus.toFixed(0)} cm, aperture ${(dof.aperture * 10).toFixed(1)} mm` : ''} · ${(T.total / 1000).toFixed(1)} s (scene ${(T.setup / 1000).toFixed(1)} s, first sample ${((T.firstSample ?? 0) / 1000).toFixed(1)} s, tracing ${(T.trace / 1000).toFixed(1)} s${T.denoise ? `, denoise ${(T.denoise / 1000).toFixed(1)} s` : ''}${T.init ? `, init ${(T.init / 1000).toFixed(1)} s` : ''}${T.readback ? `, readback ${(T.readback / 1000).toFixed(1)} s` : ''}${T.post != null ? `, effects ${(T.post / 1000).toFixed(1)} s` : ''})${r.hdrStats ? ` · the page's AgX and effects (linear light: mean ${r.hdrStats.mean.toFixed(2)}, ${(r.hdrStats.clipped * 100).toFixed(1)} % of pixels at the ${HDR_SCALE}× ceiling)` : ''} · ${sceneInfo}`
+          r.info = `${w}×${h}, ${Math.round(r.samples)} spp, ${s.bounces} bounces${s.denoise && E.denoiser ? ', ' + E.denoiser + ' denoised' : ''}${dof ? `, depth of field: focus ${dof.focus.toFixed(0)} cm, aperture ${(dof.aperture * 10).toFixed(1)} mm` : ''} · ${(T.total / 1000).toFixed(1)} s (scene ${(T.setup / 1000).toFixed(1)} s, ${T.firstSample != null ? `first sample ${(T.firstSample / 1000).toFixed(1)} s, ` : ''}tracing ${(T.trace / 1000).toFixed(1)} s${T.denoise ? `, denoise ${(T.denoise / 1000).toFixed(1)} s` : ''}${T.init ? `, init ${(T.init / 1000).toFixed(1)} s` : ''}${T.readback ? `, readback ${(T.readback / 1000).toFixed(1)} s` : ''}${T.post != null ? `, effects ${(T.post / 1000).toFixed(1)} s` : ''})${r.hdrStats ? ` · the page's AgX and effects (linear light: mean ${r.hdrStats.mean.toFixed(2)}, ${(r.hdrStats.clipped * 100).toFixed(1)} % of pixels at the ${HDR_SCALE}× ceiling)` : ''} · ${sceneInfo}`
           results.push(r)
         } catch (e) {
           if (e.name === 'AbortError') throw e

@@ -200,6 +200,80 @@ part hardware RT deletes. If a native renderer with gpt's look is ever wanted, t
 to fork ThreeRT and port gpt's material and tone-mapping conventions into it, keeping ThreeRT's
 traversal — and `midiviz-pianist.ts` already prices the scene-rebuild work that implies.
 
+## Native mode in the desktop app
+
+Two more engines, `mu-native` and `rt-native`, sit beside the page's four when it runs in the desktop
+app, so stills, the page's menus and its video export take them as they are:
+
+```bash
+cd pathtrace/native && ./build.sh && ./threert.sh ~/pt_export     # once: mu-trace, and ThreeRT
+cd ../desktop
+node run.mjs --still Prelude1.mid 20 shoulder ~/pt_still --size=3840x2160 --spp=64 --bounces=10 --denoise=0 --engines=mu-native,rt-native
+node run.mjs --video Prelude1.mid ~/pt_video --engine=mu-native --res=3840x2160 --spp=64 --bounces=10
+```
+
+They trace the scene the page's MuTracer engines trace, with no scene of their own and no glTF:
+
+1. **The page** runs `MU.fromTHREEScene` on its snapshot, as `mu-webgpu` does, and
+   [native-scene.js](native-scene.js) writes the result out as it stands — `scene.json` with
+   MuTracer's own field names, `scene.bin` with the arrays and pixels.
+2. **The app**: the page can't start a program, so [desktop/preload.cjs](desktop/preload.cjs) gives
+   it three calls, and [desktop/native.cjs](desktop/native.cjs) in the main process writes the frame
+   to a temporary folder and runs the renderer as a child process (no shell, nothing listening).
+3. **mu-native**: [native/src/bin/mu-trace.rs](native/src/bin/mu-trace.rs) rebuilds it with
+   MuTracer's native Scene API. Every material property is set by name through MuTracer's own
+   schema (`native/schemas/material-properties.json`), so nothing maps material parameters by
+   hand: 119 materials across, none left out.
+4. **rt-native**: [native/threert/midiviz-ir.ts](native/threert/midiviz-ir.ts) is a scene script
+   that builds whatever the page encoded. ThreeRT's scripts can't read files, so the frame goes in
+   front of the bundled script as two globals; its QuickJS has `Uint8Array.fromBase64`, which
+   decodes 7.5 MB in 5 ms.
+5. Both are sessions of [native-engines.js](native-engines.js) with the interface of
+   `engines.js`'s others, which is why `still.js` and `video.js` needed no change of their own.
+
+**mu-native traces the page's picture.** Against `mu-webgpu` on the same frame, as 16-pixel block
+means, so that sample noise averages out:
+
+| 720p | mean \|Δ\| | p95 | max | mean level |
+| --- | --- | --- | --- | --- |
+| `mu-webgpu` vs `mu-webgl` (both the page's) | 1.87 | 11.26 | 33.8 | 62.70 vs 61.38 |
+| `mu-webgpu` vs `mu-native`, ray queries, 64 spp | 0.98 | 4.17 | 9.3 | 64.11 vs 63.46 |
+| `mu-webgpu` vs `mu-native`, its own BVH, 64 spp | **0.40** | **1.56** | 9.3 | **64.11 vs 64.13** |
+
+- With its own BVH it is the page's picture. Ray queries on Metal come out about 1 % darker, with
+  differences where surfaces touch (the piano's feet on the floor): MuTracer's known issues, "with
+  Metal HWRT, a sample can occasionally … fail to accumulate … a small bias in offline images", and
+  "coplanar or overlapping surfaces can resolve to different triangles in the two backends".
+  `MIDIVIZ_NATIVE_BACKEND=software` picks the BVH.
+- MuTracer's Rust Scene API has no spot radius, though its descriptor and core do; the page's
+  spots are 6 cm discs. mu-trace writes the radii into the encoded descriptor. Without it, the
+  spots' shadow edges go hard: max block difference 27.2 instead of 11.1.
+- The prototype's hand-written conversions had two errors the reuse removes: `native-bench`
+  computed the spots' inner angle by a formula of its own, not `fromTHREE`'s
+  `outer · (1 − penumbra)`, and `midiviz-pianist.ts` passed linear light colours as hex, which
+  ThreeRT reads as sRGB.
+
+**What it costs, 4K, 10 bounces, through the app** (the page's encoding, the hand-over, a new
+renderer process, the PNG back):
+
+| | 16 spp | 64 spp |
+| --- | --- | --- |
+| Page `mu-webgpu` | 25.9 s | 107.3 s |
+| `mu-native` | 9.1 s (trace 7.6 s, first sample 4.2 s) | **28.7 s** (trace 27.0 s) |
+| `rt-native` | 5.3 s (trace 3.8 s) | **16.3 s** (trace 14.9 s) |
+
+So 3.7× the page for MuTracer and 6.6× for ThreeRT, end to end. Each frame starts a new
+renderer, which compiles its shaders and builds its acceleration structures again: about 3.5 s of
+`mu-native`'s first sample at 4K, against 0.8 s for `native-bench`'s warmed run. A renderer that stays
+up between frames would pay it once a video; that is the next step for long renders. The page's
+part is small: MuTracer's conversion 13 ms, the encoding 62 ms, 60 MB (774 meshes, 17 textures).
+
+**rt-native leaves out** what ThreeRT's materials don't have and says so in its report: sheen
+(OpenPBR fuzz), coat normal maps and alpha maps on this frame, and the environment map. Its tone
+curve is its own, and it denoises with OIDN only when built with its `oidn` feature; `threert.sh`'s
+build has its à-trous filter, which barely touches 4 spp noise. Textures go across as RGBA8 with
+their rows turned (ThreeRT puts a `DataTexture`'s row 0 at v = 1, three.js and MuTracer at v = 0).
+
 ## Caveats
 
 - One machine, one frame, one GPU vendor. Metal on Apple silicon only; nothing here is measured on
