@@ -8,5 +8,15 @@
   "credit": "arranged by Never Cry",
   "violinTracks": [0],
   "pianoTracks": [6, 7]
+ },
+ {
+  "file": "brahms_op78_1.mid",
+  "url": "duo/midis/brahms_op78_1.mid",
+  "composer": "Johannes Brahms",
+  "title": "Violin Sonata No. 1 in G major, Op. 78: I. Vivace ma non troppo",
+  "short": "Brahms – Op. 78, I. Vivace ma non troppo",
+  "credit": "transcribed from the Simrock first edition (Staatsbibliothek zu Berlin), CC0",
+  "violinTracks": [0, 1],
+  "pianoTracks": [2, 3]
  }
 ]

@@ -1,0 +1,180 @@
+# bar staff verdict  (H = reference reading checked against the Simrock score scan and found correct)
+1 VN,LH H
+2 LH H
+3 VN,LH H
+4 VN,LH H
+5 LH H
+6 VN H
+7 LH H
+8 VN H
+10 VN,RH,LH H  # VN Eb4 printed (=D#4)
+11 RH,LH H
+13 VN H
+15 VN,RH H
+16 VN H
+17 VN,RH,LH H
+18 VN H  # A5 2. tied to A5 4
+20 VN,RH,LH H
+21 RH,LH H  # G3+B3 chord at 0 printed on the lower staff
+22 RH H
+23 VN H
+24 VN H
+26 RH H
+28 VN,RH H
+29 VN H
+30 VN H
+32 VN H
+33 RH H
+34 VN H
+35 VN,RH,LH H
+38 RH,LH H  # RH beam crosses to E3 on the lower staff
+39 RH,LH H
+40 RH,LH H
+45 RH H
+46 VN,LH H
+47 RH H  # Bb4 printed (=A#4)
+49 RH,LH H
+50 RH,LH H  # Eb/Bb printed
+51 RH H
+53 LH H
+54 LH H
+56 VN H  # F#4 half at 0 is a tie from bar 55
+58 VN H  # E4 at 0 tied from bar 57
+59 VN H
+60 VN,RH,LH H  # RH chords at 3,5 printed on the lower staff
+61 RH,LH H  # RH on lower staff
+62 RH,LH H
+63 VN H
+64 VN,RH,LH H  # VN triplet 8ths G4/G3 alternating from beat 3
+65 VN H  # 9-tuplet group marked
+66 VN,RH,LH H  # RH 9-tuplet 8ths over 3 beats
+67 VN,RH,LH H
+68 RH,LH H  # F natural printed
+69 RH,LH H
+69 VN H  # G#3 d.half, B3 d.half; H E4@5.75 = grace of bar 70
+71 LH H
+72 RH,LH H
+73 RH H
+74 RH H  # Bb printed
+75 LH H
+76 RH,LH H
+77 VN H
+78 RH,LH H
+81 LH H
+82 RH H  # VN pizz. dolce starts bar 82
+85 VN H
+86 RH,LH H  # RH: rest, D5+D6 q, F#5 q, A4+A5 dotted half
+87 VN H
+88 LH H
+90 RH H  # arco at beat 5
+92 LH OMR  # print has G2,D3,F3 (F natural); the reference omits D3
+94 LH OMR  # print has C3,G3,Bb3; the reference omits G3
+97 LH H  # Eb2 dotted whole, tied into 98
+98 LH H  # Eb2 tied at 0
+99 VN,LH H  # Ab/Eb spellings printed
+100 RH,LH H  # RH lower notes on lower staff
+101 RH H  # Ab3,Eb4,F4
+104 VN,RH H  # Bb/Ab spellings
+105 RH,LH H  # flat spellings (Ab,Bb,Db; Gb1/Gb2)
+106 RH,LH H  # Db
+107 RH H  # triplet 8ths, flats
+108 VN,RH,LH H  # flats; LH triplets
+109 RH,LH H
+110 VN,RH H
+111 RH,LH H
+112 RH H  # triplets
+113 VN,RH,LH H
+114 VN,RH H
+115 VN,RH,LH H
+117 LH H  # F1/F2 naturals; Eb3+A3; pencil fingerings in scan ignored
+118 RH,LH H  # Db/Ab spellings in RH lower voice; 8th-note offbeat syncopation
+119 RH,LH H
+120 RH,LH H
+121 RH,LH H  # RH G4 at 0 tied from 120
+122 VN,RH,LH H
+124 VN,RH,LH H
+125 VN H
+126 VN,RH,LH H
+128 VN,RH,LH H  # VN two voices
+129 LH H  # Bb
+132 RH H  # Bb
+133 LH H*  # Bb1+Bb2 half@0; D2+D3 q@2 tied to q@3; D2+D3 half@4; H G1@5.75 = grace of 134
+134 LH H  # Bb2 printed
+135 LH H  # Eb2 printed
+136 RH,LH H  # Ab4, Eb5, Eb4, Eb3 printed
+137 RH,LH H  # flats printed (Ab2)
+141 VN H  # Bb4; the reference G3 at 5.75 is the grace note before bar 142's G4
+142 RH,LH H  # Bb/Eb spellings
+143 RH,LH H  # flats printed
+144 RH,LH H  # Eb2, Eb4/Ab spellings printed
+146 LH H  # Db2 printed
+148 RH,LH H  # RH C4+D4 on treble staff; OMR put them in LH
+149 RH H  # Eb4 then E4 natural
+149 LH P  # PRINT: @0 G1,G2,Eb3,Bb3; @3 G1,G2,E3,B3 (naturals on both); the reference Bb3@3 wrong
+150 VN,RH,LH H  # F naturals, Bb spellings
+151 LH H
+152 RH H
+153 VN,LH H
+154 VN,RH H  # VN 8ths
+155 VN,RH,LH H
+156 RH,LH H  # Tempo I, p
+157 VN,RH,LH H
+158 VN H
+160 VN,LH H
+161 LH H
+162 VN,LH H  # VN B4 at 0 is tie from 161; RH empty
+163 RH,LH H
+164 VN,RH,LH H  # sempre p e dolce
+167 VN,RH H
+171 VN H
+172 RH,LH H  # poco f
+173 RH H
+178 LH H  # arpeggiated chord G2+G3 (the reference 0.25 offsets = arpeggio)
+179 LH H  # arpeggiated E2+E3
+180 LH H
+181 RH H
+183 RH,LH H  # Bb spellings
+184 VN H
+185 RH H  # Eb spellings
+187 RH,LH H  # Bb spellings printed
+191 RH,LH H  # F naturals, sf
+192 VN,RH,LH H  # p dolce
+193 RH,LH H
+194 VN,RH,LH H  # piu dolce, dimin.
+195 VN,RH,LH H  # un poco
+196 VN H  # calando
+198 VN,RH,LH H  # in tempo
+200 RH,LH H  # pp
+201 RH,LH H
+202 VN H  # 9-tuplet 8ths
+203 VN H  # 9-tuplet 8ths
+204 RH H  # 9-tuplet 8ths, pp
+205 RH H  # 9-tuplet 8ths
+206 VN,RH,LH H  # rit.; Bb3 printed (RH), 9-tuplet
+207 VN,RH,LH H  # RH Bb4 printed (not A#); VN A4 at 5.75 = grace before 208; LH 8ths
+208 RH,LH H  # pp grazioso, in tempo; RH C natural
+211 VN H
+213 RH H
+214 RH,LH H  # flat spellings printed (Bb, Eb)
+216 RH H  # dimin.; Bb printed
+217 VN,RH,LH H  # un poco calando, sempre dim.
+218 RH,LH H
+220 LH H  # flats printed (Db/Bb spelling)
+221 LH H  # flats printed
+222 LH H
+223 LH H  # in tempo poco a poco e cresc.
+224 VN,LH H  # F natural LH
+227 LH H
+228 VN,LH H  # F natural VN
+229 RH H
+230 RH,LH H  # sempre cresc.; RH F natural
+231 RH,LH H
+232 VN,LH H  # crescendo
+233 VN H  # RH Bb/Eb printed
+234 VN H  # dim.
+236 RH H  # LH F natural
+237 VN H
+240 VN,LH H  # f; staccato chords
+241 VN,RH,LH H  # triplet 8ths
+242 VN H  # VN 3.25 offset = rolled chord D4,A4,F#5 at beat 3
+243 VN,RH,LH H*  # final: VN D4 quarter + B4,G5 dotted whole fermata (H rolls it); piano dotted-whole chords fermata

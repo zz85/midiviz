@@ -1,0 +1,448 @@
+# Brahms Op. 78, I: the bars build.py doesn't take from the OMR as it read them.
+#
+# Each line gives one staff of one bar in full: <bar> <VN|RH|LH>, then its notes as
+# <onset>:<pitch>[,<pitch>...]:<duration>[~], onset and duration in quarters from the bar's start,
+# ~ for a tie to the next note of that pitch, duration 0 for a grace note. A # after a space starts a note.
+#
+#   "checked against the scan"  the bar's pitches and onsets as the Simrock score prints them,
+#       read bar by bar from the scan (verdicts-1.txt), where the OMR misread them. Durations are
+#       the OMR's where it read the note, else the printed value the reading implied; spelling
+#       follows the OMR where it read the pitch, so a few notes printed flat are spelt sharp here.
+#   "read from the scan"        bars read note by note from a zoom of the scan.
+#   "OMR pass A"                the OMR's reading of the uncropped scan, where it read the bar right
+#       and the cropped, upscaled pass (omr.json) didn't.
+#   "violin part"               the OMR's reading of the separate violin part, where the score's
+#       violin staff was misread and the part prints the same notes.
+#
+# compare.py lists these staves as differing from the reference MIDI where the print differs from
+# it: 149 LH (naturals on beat 3), the rolled chords of 178, 179, 242 and 243 (played, not notated
+# as spread), and grace notes and notes tied over the barline, which a reference times differently.
+# 173 LH stays as the OMR read it: the print ties the chord at 2.5 into beat 3.
+1 VN  4:D5:3/2 11/2:D5:1/2  # checked against the scan
+1 LH  0:G1,G2,D3,G3,B3:3 3:G1,G2:2 3:D3,G3,B3:3  # checked against the scan
+2 VN  0:D5:3/2 3/2:C5:1/2 2:B4:1/2 5/2:G4:1/2 3:D4:3  # violin part
+2 LH  0:B1,B2,D3,G3,D4:3 3:B2:2 3:B1,D3,G3,D4:3  # checked against the scan
+3 VN  1:E4:3/2 5/2:E4:1/2 3:E4:2 5:G4:1  # checked against the scan
+3 LH  0:C2,C3:2 0:E3,G3,D4:3 3:C2,C3,E3,G3,C4:3  # checked against the scan
+4 VN  1:G4:3/2 5/2:G4:1/2 3:G4:2 5:B4:1  # checked against the scan
+4 LH  0:G1,G2,D3,G3,C4:3 3:G1,G2,D3,G3,B3:3  # checked against the scan
+5 LH  0:A1,F#2,D3,A3:3 3:A1,F#2,D3,A3,D4:3  # checked against the scan
+6 VN  1/2:A3:1/2 1:B3:1/2 3/2:C#4:1/2 2:D4:1/2 5/2:E4:1/2 3:F#4:1/2 7/2:G4:1/2 4:G#4:1/2 9/2:A4:1/2 5:B4:1/2 11/2:A4:1/2  # checked against the scan
+7 VN  1:D5:1 2:F#4:1 3:B4:3~  # OMR pass A
+7 LH  0:F#1,F#2,D3,A3,D4:3 3:G#1,G#2,D3,F#3,D4:3  # checked against the scan
+8 VN  1/2:A3:1/2 1:E4:1/2 3/2:G#4:1/2 2:A4:1/2 5/2:B4:1/2 3:C#5:1/2 7/2:D#5:1/2 4:E5:1/2 9/2:F#5:1/2 5:G5:1/2 11/2:G#5:1/2  # checked against the scan
+10 VN  0:E5:1/2 1/2:D5:1/2 1:C5:1/2 3/2:B4:1/2 2:A4:1/2 5/2:G4:1/2 3:F#4:1/2 7/2:E4:1/2 4:Eb4:1/2 9/2:D4:1/2 5:C#4:1/2 11/2:C4:1/2  # checked against the scan
+10 RH  0:C5:1/2 1/2:B4:1/2 1:A4:1/2 3/2:G4:1/2 2:F#4:1/2 5/2:G4:1/2 3:A4:1/2 7/2:C5:1/2 4:F#5:1/2 9/2:C5:1/2 5:F#5:1/2 11/2:A5:1/2  # checked against the scan
+10 LH  2:F#4:1/2 5/2:E4:1/2 3:D4:1/2 7/2:A3:1/2 4:F#3:1/2 9/2:D3:1/2 5:A2:1/2 11/2:F#2:1/2  # checked against the scan
+11 VN  0:B3:3/2 3/2:F#4:1/2 2:B4:3/2 7/2:A#4:1/2 4:G#4:3/2 11/2:E4:1/2  # violin part
+11 RH  0:F#6:1/2 1/2:B5:1/2 1:F#5:1/2 3/2:B5:1/2 2:F#5:1/2 5/2:B4:1/2 3:G#6:1/2 7/2:B5:1/2 4:G#5:1/2 9/2:B5:1/2 5:G#5:1/2 11/2:B4:1/2  # checked against the scan
+11 LH  0:D#2:1/2 1/2:B2:1/2 1:D#3:1/2 3/2:B2:1/2 2:D#3:1/2 5/2:B3:1/2 3:E2:1/2 7/2:B2:1/2 4:E3:1/2 9/2:B2:1/2 5:E3:1/2 11/2:B3:1/2  # checked against the scan
+12 VN  0:D#4:2 2:C#4:1 3:B3:3/2 9/2:F#4:1/2 5:B4:1  # OMR pass A
+12 RH  0:G#5:1/2 1/2:B4:1/2 1:G#4:1/2 3/2:E5:1/2 2:A#4:1/2 5/2:E4:1/2 3:F#6:1/2 7/2:B5:1/2 4:F#5:1/2 9/2:B5:1/2 5:F#5:1/2 11/2:B4:1/2  # OMR pass A
+13 VN  1/2:A4:1/2 1:G4:3/2 5/2:E4:1/2 3:D4:2 5:C#4:1  # checked against the scan
+14 VN  0:B3:3/2 3/2:F#4:1/2 2:B4:3/2 7/2:A4:1/2 4:G4:3/2 11/2:E4:1/2  # violin part
+15 VN  0:B4:3/2 3/2:A4:1/2 2:G4:3/2 7/2:F#4:1/2 4:E4:3/2 11/2:D4:1/2  # checked against the scan
+15 RH  0:D#6:1/2 1/2:A5:1/2 1:D#5:1/2 3/2:D#6:1/2 2:G5:1/2 5/2:D#5:1/2 3:E6:1/2 7/2:G5:1/2 4:E5:1/2 9/2:C6:1/2 5:G5:1/2 11/2:C5:1/2  # checked against the scan
+16 VN  0:C4:3/2 3/2:D4:1/2 2:C4:3/2 7/2:A4:1/2 4:C5:3/2 11/2:E4:1/2  # checked against the scan
+17 VN  0:C4:3/2 3/2:D4:1/2 2:C4:3/2 7/2:F#4:1/2 4:E5:3/2 11/2:C5:1/2  # checked against the scan
+17 RH  0:F#5:1/2 1/2:C5:1/2 1:F#4:1/2 3/2:G5:1/2 2:C5:1/2 5/2:G4:1/2 3:C6:1/2 7/2:F#5:1/2 4:C5:1/2 9/2:B5:1/2 5:C5:1/2 11/2:B4:1/2  # checked against the scan
+17 LH  0:D2:1/2 1/2:A2:1/2 1:D3:1/2 3/2:E2:1/2 2:A2:1/2 5/2:E3:1/2 3:A2:1/2 7/2:C3:1/2 4:A3:1/2 9/2:G2:1/2 5:C3:1/2 11/2:G3:1/2  # checked against the scan
+18 VN  0:A5:4 5:C5:1  # checked against the scan
+20 VN  0:Eb5:3 4:D5:3/2 11/2:D5:1/2  # checked against the scan
+20 RH  0:F#4:1/2 1/2:C4:1/2 1:F#3:1/2 3/2:F#4:1/2 2:Eb4:1/2 5/2:F#3:1/2 3:G4:1/2 7/2:D4:1/2 4:G3:1/2 9/2:C4:1/2 5:F#3:1/2 11/2:C3:1/2  # checked against the scan
+20 LH  0:D2:1/2 1/2:A2:1/2 1:D3:1/2 3/2:C2:1/2 2:A2:1/2 5/2:C3:1/2 3:B1:1/2 7/2:D2:1/2 4:B2:1/2 9/2:A1:1/2 5:D2:1/2 11/2:A2:1/2  # checked against the scan
+21 VN  0:D5:3/2 3/2:C5:1/2 2:B4:1/2 5/2:G4:1/2 3:D4:1/2 7/2:B3:1/2 4:D4:1/2 9/2:G4:1/2 5:B4:1/2 11/2:D5:1/2  # violin part
+21 RH  0:G3,B3:1 4:D5,D6:3/2 11/2:D5,D6:1/2  # checked against the scan
+21 LH  0:G1:1/2 1/2:D2:1/2 1:G2:1/2 3/2:B2:1/2 2:D3:1/2 5/2:G3:1/2 3:B3:1/2 7/2:D4:1/2 4:B3:1/2 9/2:G3:1/2 5:D3:1/2 11/2:B2:1/2  # checked against the scan
+22 RH  0:D5,D6:3/2 3/2:C6:1/2 2:B5:1/2 5/2:G5:1/2 3:D5:1/2 7/2:B4:1/2 4:D5:1/2 9/2:G5:1/2 5:B5:1/2 11/2:D6:1/2  # checked against the scan
+23 VN  1:E5:3/2 5/2:E5:1/2 3:E5:2 5:G5:1  # checked against the scan
+24 VN  1:G5:3/2 5/2:G5:1/2 3:G5:2 5:B5:1  # checked against the scan
+26 VN  1:B6:1 2:D6:1 3:F#6:3  # violin part
+26 RH  0:D5,B5,D6:3 4:B5,B6:1 5:B5:1  # checked against the scan
+27 VN  1:D6:1 2:F#5:1 3:D6:1 4:F#5:1 5:D6:1  # violin part
+28 VN  0:D6:1 1:F#6:3/2 5/2:E6:1/2 3:D6:1/2 7/2:B5:1/2 4:G#5:1/2 9/2:E5:1/2 5:D5:1/2 11/2:B4:1/2  # checked against the scan
+28 RH  0:D5,G#5,D6:3 3:G#4,D5,G#5:3  # checked against the scan
+29 VN  0:C#4,A4:3 3:C#4,A4:3  # checked against the scan
+30 VN  0:C4,A4:3 3:C4,A4:3  # checked against the scan
+31 VN  0:B3,A4:3 3:B3,G4:3  # violin part
+32 VN  0:A3,G4:2 3:A3,F#4:3  # checked against the scan
+33 VN  0:G3,F#4:3 3:G3,E4:3  # violin part
+33 RH  1:B4,B5:1 5/2:B4,B5:1/2 3:B4,B5:3/2 9/2:A5:1/2 5:G5:1/2 11/2:E5:1/2  # checked against the scan
+34 VN  0:A3,D4:3 3:A3,D#4:3  # checked against the scan
+34 RH  0:E#4,E#5:2 2:F#4,F#5:1~ 3:F#4,F#5:2 5:A4,A5:1~  # OMR pass A
+35 VN  0:A3,E4:3 3:A3,G4:3  # checked against the scan
+35 RH  0:A4:2 2:G5:1 3:E5:2 3:A4:3 5:C#5:1  # checked against the scan
+35 LH  0:C4:2 0:A3:6 2:C#4:3 5:E4:1  # checked against the scan
+37 VN  0:G4:1 1:B4:3/2 5/2:D5:1/2 3:D5:2 5:A4:1  # violin part
+38 VN  0:B4:1 1:D5:1 2:E5:1 3:A5:1 4:F#5:1 5:D5:1  # OMR pass A
+38 RH  0:G4:1 1/2:B3:1/2 1:D4:1/2 3/2:E3:1/2 3:F#4:1 7/2:A3:1/2 4:D4:1/2 9/2:D3:1/2  # checked against the scan
+38 LH  0:D2:1 2:G3:1/2 5/2:D3:1/2 3:D2:1 5:F#3:1/2 11/2:A2:1/2  # checked against the scan
+39 RH  0:E4:2 1/2:E3:1/2 2:D4:2 5/2:E3:1/2 4:C#4:2 9/2:E3:1/2  # checked against the scan
+39 LH  0:D2:1 1:G3:1/2 3/2:D3:1/2 3:G3:1/2 7/2:D3:1/2 5:A3:1/2 11/2:D3:1/2  # checked against the scan
+40 VN  0:F#5:1 1:F#5:3/2 5/2:G5:1/2 3:A5:1 4:E5:1 5:F#5:1  # OMR pass A
+40 RH  0:F#4:1 1/2:A3:1/2 1:F#4:3/2 5/2:G4:1/2 3:A4:1 7/2:A3:1/2 4:E4:1 5:F#4:1  # checked against the scan
+40 LH  0:D2:1 1:D4:1/2 3/2:F#3:1/2 2:A3:1/2 5/2:D3:1/2 3:C#2:1 4:C#4:1/2 9/2:E3:1/2 5:A3:1/2 11/2:C#3:1/2  # checked against the scan
+41 VN  0:G5:1 1:B5:3/2 5/2:D6:1/2 3:D6:2 5:A5:1  # OMR pass A
+43 LH  0:E1,E2:2 2:D1,D2:1~ 3:D1,D2:1 4:C#1,C#2:2  # OMR pass A
+44 VN  0:C#5:1 1:B4:1 2:E5:1 3:F#5:3/2 9/2:E5:1/2 5:C#5:1/2 11/2:A4:1/2  # violin part
+45 RH  3:D4:1/2 7/2:E4:1/2 4:F4:1/2 9/2:D4:1/2  # checked against the scan
+46 VN  0:D5:1 1:C#5:1 2:E5:1 3:B5:3/2 9/2:A5:1/2 5:F#5:1/2 11/2:D5:1/2  # checked against the scan
+46 LH  0:C#3:2 2:A3:1/2 5/2:C#3:1/2 3:F#2:2 5:A3:1/2 11/2:F#3:1/2  # checked against the scan
+47 RH  3:G4:1/2 7/2:A4:1/2 4:A#4:1/2 9/2:G4:1/2  # checked against the scan
+48 VN  0:E#5:2 2:F#5:2 4:G#5:3/2 11/2:A5:1/2  # OMR pass A
+48 LH  0:D1:1 1:D2:1 2:D2:1 3:A3:1/2 3:D3:1 7/2:F#3:1/2 4:B2:1 5:F3:1/2 5:D2:1 11/2:D3:1/2  # OMR pass A
+49 RH  3:A4,A5:1 4:E4,E5:1 5:F4,A4,F5:1  # checked against the scan
+49 LH  0:C#2:1/2 1/2:A2:1/2 1:C#3:1/2 3/2:E3:1/2 2:A3:1/2 5/2:E4:1/2 3:C#3,A3:2 4:E3:1 5:C3,F3,A3:1  # checked against the scan
+50 RH  0:A4,Eb5:1/2 1/2:Eb4:1/2 1:A4,Eb5:1/2 3/2:Eb4:1/2 2:A4,Eb5:1/2 5/2:Eb4:1/2 3:A4,Eb5:1/2 7/2:Eb4:1/2 4:G4,Bb4,Eb5:1/2 9/2:Eb4:1/2 5:F4,G#4,D5:1/2 11/2:D4:1/2  # checked against the scan
+50 LH  0:C2:1 1:C3:1 2:Cb2:1 3:Cb3:1 4:Bb1:1 5:Bb2:1  # checked against the scan
+51 RH  0:D4,E4,A4,D5:3/2 3/2:C#4:1/2 2:A4:1/2 5/2:C#5:1/2 3:C#5,A5:1/2 7/2:A4:1/2 4:E5:1/2 9/2:E4:1/2 5:B4,E#5:1/2 11/2:E#4:1/2  # checked against the scan
+53 VN  0:G5:2 3:F#5:3~  # violin part
+53 LH  0:D2:1 1:D3:1 3:D#2:1 4:D#3:1  # checked against the scan
+54 RH  0:C4,F#4,A4,C5:1 1:C4,F#4,A4,C5:1 3:B3,A4,B4:1 4:B3,A4,B4:1  # OMR pass A
+54 LH  0:D#3:1 1:D#3:1 3:D#3:1 4:D#3:1  # checked against the scan
+55 VN  0:F#5:3/2 3/2:E5:1/2 2:D5:1/2 5/2:B4:1/2 3:F#4:3~  # violin part
+56 VN  0:F#4:2 4:E5:1 11/2:E5:1/2  # checked against the scan
+57 VN  0:E5:3/2 3/2:D5:1/2 2:C5:1/2 5/2:A4:1/2 3:E4:3~  # violin part
+58 VN  0:E4:1 1:D5:1 5/2:D5:1/2 3:D5:2 5:E4:1  # checked against the scan
+59 VN  1:A4:1 5/2:A4:1/2 3:A4:2 5:C#4:1  # checked against the scan
+60 VN  0:D4:2/3 1:F#4:2 3:F#4:3  # checked against the scan
+60 RH  0:F#3,D4:1 3:F#3,A#3,C#4:2 5:F#3,B3,D#4:1  # checked against the scan
+60 LH  0:D2:1 3:F#2:2 5:B1:1  # checked against the scan
+61 VN  0:F#4:2 2:G#4:1 3:G#4:2 5:E4:1  # violin part
+61 RH  0:F#3,B3,D#4:2 2:E3,G#3,B3:1 3:E3,G#3,C#4:1 4:E3,G#3,B3:3/2 11/2:E3,G#3,C#4:1/2  # checked against the scan
+61 LH  0:B1:2 2:E2:1 3:C#2:1 4:E2:3/2 11/2:C#2:1/2  # checked against the scan
+62 VN  0:F#4:1 1:E4:3/2 5/2:F#4:1/2 3:D#4:3  # violin part
+62 RH  0:C#3,F#3,A#3:2 3:A#4,F#5,A#5:2 5:B4,F#5,B5:1  # checked against the scan
+62 LH  0:F#2:2  # checked against the scan
+63 VN  0:B3:3 3:E4:3  # checked against the scan
+63 LH  0:D#2:2 2:E2:1 3:E2:2 5:C#2:1  # OMR pass A
+64 VN  0:C#4:2 3:G4:1/3 10/3:G3:1/3 11/3:G4:1/3 4:G3:1/3 13/3:G4:1/3 14/3:G3:1/3 5:G4:1/3 16/3:G3:1/3 17/3:G4:1/3  # checked against the scan
+64 RH  0:A#4,F#5,A#5:2 3:C#4,C#5:1 4:B3,B4:3/2 11/2:C#4,C#5:1/2  # checked against the scan
+64 LH  0:F#2:1 1:E2:3/2 5/2:F#2:1/2 3:E2:3  # checked against the scan
+65 VN  0:C#4:3 3:G4:1/3 10/3:G3:1/3 11/3:G4:1/3 4:G3:1/3 13/3:G4:1/3 14/3:G3:1/3 5:G4:1/3 16/3:G3:1/3 17/3:G4:1/3  # checked against the scan
+66 VN  0:C#4:3 3:B3:1 4:A3:3/2 11/2:B3:1/2  # checked against the scan
+66 RH  0:A#3,A#4:3 3:F#3:1/3 10/3:F#4:1/3 11/3:F#3:1/3 4:F#4:1/3 13/3:F#3:1/3 14/3:F#4:1/3 5:F#3:1/3 16/3:F#4:1/3 17/3:F#3:1/3  # checked against the scan
+66 LH  0:F#2:1 1:E2:3/2 5/2:F#2:1/2 3:D#2:3  # checked against the scan
+67 VN  0:A3:3 3:B3:1 4:A3:3/2 11/2:B3:1/2  # checked against the scan
+67 RH  0:F#3,F#4:3 3:F#3:1/3 10/3:F#4:1/3 11/3:F#3:1/3 4:F#4:1/3 13/3:F#3:1/3 14/3:F#4:1/3 5:F#3:1/3 16/3:F#4:1/3 17/3:F#3:1/3  # checked against the scan
+67 LH  0:C3:1 0:D#2:3 1:B2:3/2 5/2:C3:1/2 3:D#2,B2:3  # checked against the scan
+68 RH  0:F#3,F#4:3 3:F3:1/3 10/3:F4:1/3 11/3:F3:1/3 4:F4:1/3 13/3:F3:1/3 14/3:F4:1/3 5:F3:1/3 16/3:F4:1/3 17/3:F3:1/3  # checked against the scan
+68 LH  0:C3:1 0:D#2:3 1:B2:3/2 5/2:C3:1/2 3:D2,B2:3  # checked against the scan
+69 VN  0:G#3:3 3:B3:3  # read from the scan
+69 RH  0:F3,F4:1 1:D3,E4:3/2 5/2:F3,F4:1/2 3:E3,E4:3  # checked against the scan
+69 LH  0:D2:1/3 1/3:B2:1/3 2/3:D2:1/3 1:B2:1/3 4/3:D2:1/3 5/3:B2:1/3 2:D2:1/3 7/3:B2:1/3 8/3:D2:3 3:G#2:3  # checked against the scan
+70 VN  0:E5:1 1:D#5:3/2 5/2:E5:1/2 3:D5:1 4:C#5:3/2 11/2:D5:1/2  # violin part
+70 RH  1/2:G3,A3,G4,A4:1/2 3/2:G3,A3,G4,A4:1 5/2:G3,A3,G4,A4:1/2 7/2:G3,A3,G4,A4:1/2 9/2:G3,A3,G4,A4:1 11/2:G3,A3,G4,A4:1/2  # OMR pass A
+70 LH  0:C#2,A2:1 1:B#1:3/2 1:A2:2 5/2:C#2:1/2 3:D2,A2:1 4:E2:3/2 4:A2:2 11/2:D2:1/2  # OMR pass A
+71 LH  0:C#2,A2:1 1:C2,A2:3/2 5/2:C#2:1/2 3:G2,A2:1 4:E2,A2:1 5:D2,A2:1  # checked against the scan
+72 VN  0:A4:1/2 1/2:A3,G4:1/2 3/2:A3,G4:1 5/2:A3,G4:1/2 7/2:A3,G4:1/2 9/2:A3,G4:1 11/2:A3,G4:1/2  # violin part
+72 RH  0:E5,G5,E6:1 1:D#5,G5,D#6:3/2 5/2:E5,G5,E6:1/2 3:D5,G5,D6:1 4:C#5,G5,C#6:3/2 11/2:D5,G5,D6:1/2  # checked against the scan
+72 LH  0:C#2,A2:1 1:B#1,A2:3/2 5/2:C#2,A2:1/2 3:D2,A2:1 4:E2,A2:3/2 11/2:D2,A2:1/2  # checked against the scan
+73 VN  1/2:A3,G4:1/2 3/2:A3,G4:1 5/2:A3,G4:1/2 7/2:A3,G4:1/2 9/2:A3,G4:1/2 11/2:E4:1/2  # violin part
+73 RH  0:G5,G6:1 1:G5,A5,A6:3/2 5/2:G5,A5,G6:1/2 3:E5,E6:1 4:C#5,G5,C#6:1 5:B4,G5,B5:1  # checked against the scan
+73 LH  0:C#2,A2:1 1:C2,A2:3/2 5/2:C#2,A2:1/2 3:G2,A2:1 4:E2,A2:1 5:C#2,A2:1  # OMR pass A
+74 RH  1/2:A4,F#5,A5:1/2 3/2:G#4,E#5,G#5:1/2 5/2:A4,F#5,A5:1/2 7/2:Bb4,G5,Bb5:1/2 9/2:A4,F#5,A5:1/2 11/2:A4,G5,A5:1/2  # checked against the scan
+75 LH  0:D2:1 1:D3:2 2:G3:1 3:G#3:1 3:D3:2 4:B3:1 5:D3,D4:1  # checked against the scan
+76 VN  0:A4:1/2 1/2:D4,A4:1/2 3/2:D4,B4:1/2 5/2:D4,A4:1/2 7/2:G4:1/2 9/2:A4:1/2 11/2:G4:1/2  # violin part
+76 RH  0:C5:1 1/2:F#5,A5:1/2 1:D5:3/2 3/2:E#5,G#5:1/2 5/2:C5,F#5,A5:1/2 3:Bb4:1 7/2:E5,G5:1/2 4:C5:3/2 9/2:D#5,F#5:1/2 11/2:Bb4,E5,G5:1/2  # checked against the scan
+76 LH  0:D3,C4:1 1:D4:3/2 1:D3:2 5/2:C4:1/2 3:D3,A#3:1 4:C4:3/2 4:D3:2 11/2:A#3:1/2  # checked against the scan
+77 VN  1/2:F#4:1 3/2:A3,A4:1/2 5/2:A3,G4:1/2 7/2:F#4:1/2 7/2:A3:1 9/2:A3,F4:1/2 11/2:A3,E4:1/2  # checked against the scan
+77 RH  0:A4:1 1/2:F#5,A5:1/2 1:F#4,D5,F#5:1 2:G4,E5,G5:1 3:A4,F#5,A5:1 4:B4,G#5,B5:1 5:C#5,G5,C#6:1  # OMR pass A
+77 LH  0:D3,A3:1 1:A2:1 2:A1:1 3:A2:1 4:A1:1 5:A2:1  # OMR pass A
+78 RH  0:D5,F#5,D6:1 3/2:A4,F#5,A5:1/2 5/2:A4,E5,G5:1/2 7/2:A4,D5,F#5:1/2 9/2:G#4,D5,F5:1/2 11/2:G4,Bb4,E5:1/2  # checked against the scan
+78 LH  0:A1:1 1:A3:1 2:A2:1 3:A3:1 4:A2:1 5:A3:1  # checked against the scan
+80 VN  0:C6:1 1:D6:1 2:E6:1 3:F#6:1 4:G6:1 5:A6:1  # violin part
+81 VN  0:B6:2~ 2:B6:1  # violin part
+81 LH  0:D2,D3,G3,B3:3 3:B1,D3,G3,B3:3  # checked against the scan
+82 VN  0:G3,D4,B4:2 3:G3,D4,B4:2  # violin part
+82 RH  4:D5,D6:3/2 11/2:D5,D6:1/2  # checked against the scan
+83 VN  0:G3,G4,D5:2 3:G3,G4,D5:2  # violin part
+84 VN  0:G3,E4,D5:2 3:G3,E4,C5:2  # violin part
+85 VN  0:G3,D4,C5:2 3:G3,D4,B4:2  # checked against the scan
+86 RH  1:D5,D6:1 2:F#5:1 3:A4,A5:3  # checked against the scan
+86 LH  0:F#1,F#2:3 3:F#1,F#2:3  # checked against the scan
+87 VN  0:A3,E4,D5:2 3:A3,E4,C#5:2  # checked against the scan
+88 LH  0:F#1,F#2:3 3:G#1,G#2:3  # checked against the scan
+89 VN  0:D4,E4,A4:2 3:C#4,G4,A4:2  # violin part
+89 LH  0:A1,A2:3 3:A2:3  # OMR pass A
+90 VN  0:C4,F#4,A4:2 5:A5:1/2 11/2:G5:1/2  # violin part
+90 RH  0:E6:1/2 1/2:D6:1/2 1:C6:1/2 3/2:B5:1/2 2:A5:1/2 5/2:G#5:1/2 3:C6:1/2 7/2:B5:1/2 4:A5:1/2 9/2:G5:1/2 5:F#5:1/2 11/2:E5:1/2  # checked against the scan
+91 VN  0:F#5:1/2 1/2:E5:1/2 1:D5:1/2 3/2:C5:1/2 2:B4:1/2 5/2:Bb4:1/2 3:A4:1/2 7/2:F#4:1/2 4:A4:1/2 9/2:C5:1/2 5:F#5:1/2 11/2:A5:1/2  # violin part
+92 VN  0:E6:1/2 1/2:D6:1/2 1:C6:1/2 3/2:B5:1/2 2:A5:1/2 5/2:G5:1/2 3:C6:1/2 7/2:B5:1/2 4:A5:1/2 9/2:G5:1/2 5:F5:1/2 11/2:E5:1/2  # violin part
+93 VN  0:A5:1/2 1/2:G5:1/2 1:F5:1/2 3/2:E5:1/2 2:D5:1/2 5/2:C5:1/2 3:B4:1/2 7/2:A4:1/2 4:Ab4:1/2 9/2:G4:1/2 5:F#4:1/2 11/2:F4:1/2  # violin part
+95 VN  0:F5:1/2 1/2:E5:1/2 1:A5:1/2 3/2:G5:1/2 2:F5:1/2 5/2:E5:1/2 3:G5:1/2 7/2:Db5:1/2 4:F5:1/2 9/2:E5:1/2 5:G5:1/2 11/2:Db5:1/2  # violin part
+97 LH  0:D#2:6  # checked against the scan
+98 LH  4:Eb2:1 11/2:Eb2:1/2  # checked against the scan
+99 VN  1:C4:2 4:Eb5:3/2 11/2:Eb5:1/2  # checked against the scan
+99 LH  0:G#1,G#2:3 3:G#1,G#2:3  # checked against the scan
+100 VN  0:Eb5:3/2 3/2:Db5:1/2 2:C5:1/2 5/2:Ab4:1/2 3:Eb4:3  # violin part
+100 RH  1:Eb3,Ab3,Eb4:2 4:Eb3,Ab3,Eb4:2  # checked against the scan
+100 LH  0:C2,C3:3 3:C2,C3:3  # checked against the scan
+101 VN  1:F4:1 5/2:F4:1/2 3:F4:2 5:Ab4:1  # OMR pass A
+101 RH  1:G#3,Eb4,F4:2 4:G#3,Db4,F4:2  # checked against the scan
+103 VN  1:Db4,C5:2 4:Db4,Bb4:2  # violin part
+104 VN  1:C4,Bb4:2 4:C4,Ab4:2  # checked against the scan
+104 RH  1:F4,F5:1 5/2:F4,F5:1/2 3:F4,F5:2 5:Ab4,Ab5:1  # checked against the scan
+105 VN  1:Bb5:1 5/2:Bb5:1/2 3:Bb5:2 5:Db6:1  # OMR pass A
+105 RH  1:G#4,Bb4,C#5,G#5:2 4:Gb4,Bb4,C#5,Gb5:2  # checked against the scan
+105 LH  0:F#1,F#2:3 3:F#1,F#2:3  # checked against the scan
+106 VN  1:Db6:1 5/2:Db6:1/2 3:Db6:2 5:F6:1  # violin part
+106 RH  1:Gb4,Ab4,C#5,Gb5:2 4:F4,Ab4,C#5,F5:2  # checked against the scan
+106 LH  0:Db1,Db2:3 3:Db2,Db3:3  # checked against the scan
+107 VN  1:Ab6:1 2:C6:1 3:Eb6:2~  # violin part
+107 RH  0:Ab4,Eb5,Ab5:1 10/3:G3:1/3 11/3:G#3:1/3 4:Bb3:1/3 13/3:Cb4:1/3 14/3:Db4:1/3 5:Eb4:1/3 16/3:F4:1/3 17/3:G4:1/3  # checked against the scan
+107 LH  0:C2,Eb2,C3:1 3:Cb2,Eb2,Ab2,Ab2,Cb3,Cb3:2~  # OMR pass A
+108 VN  0:Eb6:1/2 1/2:Db6:1/2 1:Cb6:1/2 3/2:Bb5:1/2 2:Ab5:1/2 5/2:G5:1/2 3:Cb6:1/2 7/2:Bb5:1/2 4:Ab5:1/2 9/2:Gb5:1/2 5:Fb5:1/2 11/2:Eb5:1/2  # checked against the scan
+108 RH  0:Ab4:1/3 1/3:Eb4:1/3 2/3:B3:1/3 3:Fb4:1/3 10/3:B3:1/3 11/3:Ab3:1/3 5:Ab4,Ab5:1/2 11/2:Gb4,Gb5:1/2  # checked against the scan
+108 LH  0:Cb2,D#2,Ab2,Cb3:1 1:Ab3:1/3 4/3:Eb3:1/3 5/3:Cb3:1/3 2:Ab2:1/3 7/3:D#2:1/3 8/3:Cb2:1/3 3:Ab1:1 4:Fb3:1/3 13/3:Cb3:1/3 14/3:Ab2:1/3 5:Fb2:1/3 16/3:Cb2:1/3 17/3:Ab1:1/3  # checked against the scan
+109 VN  0:Ab5:1/2 1/2:Gb5:1/2 1:Fb5:1/2 3/2:Eb5:1/2 2:Ab5:1/2 5/2:Gb5:1/2 3:Fb5:1/2 7/2:Eb5:1/2 4:G5:1/2 9/2:Gb5:1/2 5:Fb5:1/2 11/2:D5:1/2  # violin part
+109 RH  0:Fb4,Fb5:1/2 1/2:Eb4,Eb5:1/2 1:Ab4,Ab5:1/2 3/2:Gb4,Gb5:1/2 2:Fb4,Fb5:1/2 5/2:Eb4,Eb5:1/2 3:G4,G5:1/2 7/2:Gb4,Gb5:1/2 4:Fb4,Fb5:1/2 9/2:Eb4,Eb5:1/2 5:G4,G5:1/2 11/2:Gb4,Gb5:1/2  # checked against the scan
+109 LH  0:Bb1:1/3 1/3:Gb2:1/3 2/3:Bb2:1/3 1:Gb2:1/3 4/3:Bb2:1/3 5/3:Gb3:1/3 3:F#1:1/3 10/3:Bb1:1/3 11/3:Gb2:1/3 4:Gb2:1/3 13/3:Bb2:1/3 14/3:Gb3:1/3  # checked against the scan
+110 VN  0:C#5:1 1:D4,B4:2 10/3:A#3:1/3 11/3:B3:1/3 4:C#4:1/3 13/3:D4:1/3 14/3:E4:1/3 5:F#4:1/3 16/3:G4:1/3 17/3:A#4:1/3  # checked against the scan
+110 RH  0:E4,A#4,E5:1 1:B4,B5:1 2:D5:1 3:F#4,B4,F#5:3  # checked against the scan
+110 LH  0:G1,G2:1 1:G2,B2,G3:2 3:D2,B2,D3:3~  # OMR pass A
+111 VN  0:B4:1/3 1/3:F#4:1/3 2/3:D4:1/3 1:B3:1/2 3:G4:1/3 10/3:D4:1/3 11/3:B3:1/3 4:G3:1/2  # violin part
+111 RH  0:F#4,B4,F#5:1/2 1/2:E5:1/2 1:D5:1/2 3/2:C#5:1/2 2:B4:1/2 5/2:A#4:1/2 3:D5:1/2 7/2:C#5:1/2 4:B4:1/2 9/2:A4:1/2 5:G4:1/2 11/2:F#4:1/2  # checked against the scan
+111 LH  0:D2,B2,D3:1 1:B3:1/3 4/3:F#3:1/3 5/3:D3:1/3 2:B2:1/3 7/3:F#2:1/3 8/3:D2:1/3 3:B1:1/2 4:G3:1/3 13/3:D3:1/3 14/3:B2:1/3 5:G2:1/3 16/3:D2:1/3 17/3:B1:1/3  # checked against the scan
+112 VN  1:A5:1 2:C#5:1 3:E5:3  # violin part
+112 RH  0:A3,E4:2 10/3:G#3:1/3 11/3:A3:1/3 4:B3:1/3 13/3:C4:1/3 14/3:D4:1/3 5:E4:1/3 16/3:F#4:1/3 17/3:G#4:1/3  # checked against the scan
+113 VN  1/2:D5:1/2 1:C5:1/2 3/2:B4:1/2 2:A4:1/2 5/2:G#4:1/2 3:C5:1/2 7/2:B4:1/2 4:A4:1/2 9/2:G4:1/2 5:F4:1/2 11/2:E4:1/2  # checked against the scan
+113 RH  0:A4:1/3 1/3:E4:1/3 2/3:C4:1/3 1:A4,A5:1 2:C5:1 3:F4:1/3 10/3:C4:1/3 11/3:A3:1/3 4:F4,F5:1 5:A4:1  # checked against the scan
+113 LH  0:C2,A2,C3:1 1:A3:1/3 4/3:E3:1/3 5/3:C3:1/3 2:A2:1/3 7/3:E2:1/3 8/3:C2:1/3 3:A1:1 4:F3:1/3 13/3:C3:1/3 14/3:A2:1/3 5:F2:1/3 16/3:C2:1/3 17/3:A1:1/3  # checked against the scan
+114 VN  0:G3,D4:2 10/3:F#4:1/3 11/3:G4:1/3 4:A4:1/3 13/3:Bb4:1/3 14/3:C5:1/3 5:D5:1/3 16/3:E5:1/3 17/3:F#5:1/3  # checked against the scan
+114 RH  1:G5,G6:1 2:B5:1 3:D5,G5,D6:3  # checked against the scan
+114 LH  0:B1,B2:2 3:A#1,A#2:3~  # OMR pass A
+115 VN  0:G5:1/3 1/3:D5:1/3 2/3:Bb4:1/3 1:D5:1/3 4/3:Bb4:1/3 5/3:G4:1/3 2:D4:1 3:Eb5:1/3 10/3:Bb4:1/3 11/3:G4:1/3 4:Bb4:1/3 13/3:G4:1/3 14/3:Eb4:1/3 5:Bb3:1/2  # checked against the scan
+115 RH  0:D5,G5,D6:1/2 1/2:C6:1/2 1:Bb5:1/2 3/2:A5:1/2 2:G5:1/2 5/2:F#5:1/2 3:Bb5:1/2 7/2:A5:1/2 4:G5:1/2 9/2:F5:1/2 5:Eb5:1/2 11/2:D5:1/2  # checked against the scan
+115 LH  1:G3,G4:1 2:Bb3:1 3:G1,G2:1 4:Eb3,Eb4:1 5:G3:1  # checked against the scan
+116 VN  0:C4,Eb4:1 1:G4:1/2 3/2:F4:1/2 2:Eb4:1/2 5/2:D4:1/2 3:G4:1/2 7/2:F4:1/2 4:Eb4:1/2 9/2:D4:1/2 5:G4:1/2 11/2:F4:1/2  # violin part
+117 VN  0:Eb4:1/2 1/2:D4:1/2 1:G4:1/2 3/2:F4:1/2 2:Eb4:1/2 5/2:D4:1/2 3:C4:1/2 7/2:Bb3:1/2 4:A3:1 5:C4:1  # violin part
+117 LH  0:F1,F2:1 1:Eb3,A3:1  # checked against the scan
+118 VN  0:D4:3/2 3/2:A4:1/2 2:D5:3/2 7/2:C5:1/2 4:Bb4:3/2 11/2:G4:1/2  # OMR pass A
+118 RH  0:D4:1/2 1/2:C#4:1/2 1:C4:1/2 3/2:A3:1/2 2:F#3:1/2 5/2:D3:1/2 3:D#3:3/2 9/2:A#3:1/2 5:D#4:1~  # checked against the scan
+118 LH  0:F#1:1/2 1/2:D2:1/2 1:F#2:1 2:D2:1 3:G1:1/2 7/2:D#2:1/2 4:G2:3/2 11/2:D#2:1/2  # checked against the scan
+119 VN  0:F4:3/2 3/2:C5:1/2 2:F5:3/2 7/2:Eb5:1/2 4:D5:3/2 11/2:Bb4:1/2  # violin part
+119 RH  1/2:D4:1/2 1:C4:3/2 5/2:A3:1/2 3:F3:3/2 9/2:Bb3:1/2 5:F4:1  # checked against the scan
+119 LH  0:A1:3/2 3/2:F2:1/2 2:A2:1/2 5/2:F2:1/2 3:A#1:1/2 7/2:F2:1/2 4:Bb2:3/2 11/2:F2:1/2  # checked against the scan
+120 VN  0:G4:3/2 3/2:D5:1/2 2:G5:3/2 7/2:F5:1/2 4:Eb5:3/2 11/2:C5:1/2  # OMR pass A
+120 RH  1/2:Eb4:1/2 1:D4:3/2 5/2:B3:1/2 3:G3:3/2 9/2:C4:1/2 5:G4:1  # checked against the scan
+120 LH  0:B1:3/2 3/2:G2:1/2 2:B2:1/2 5/2:G2:1/2 3:C2:1/2 7/2:G2:1/2 4:C3:3/2 11/2:G2:1/2  # checked against the scan
+121 VN  0:A4:3/2 3/2:E5:1/2 2:A5:3/2 7/2:A4:1/2 4:F5:3/2 11/2:A5:1/2  # OMR pass A
+121 RH  0:G4:1/2 1/2:F4:1/2 1:E4:3/2 5/2:G4:1/2 3:F4:3/2 9/2:E4:1/2 5:D4:1  # checked against the scan
+121 LH  0:C#2:3/2 3/2:A2:1/2 2:C#3:1/2 5/2:A2:1/2 3:D2:1/2 7/2:A2:1/2 4:D3:3/2 11/2:A2:1/2  # checked against the scan
+122 VN  0:A4:3/2 3/2:E5:1/2 2:A5:3/2 7/2:A4:1/2 4:D5:3/2 11/2:A5:1/2  # checked against the scan
+122 RH  1/2:C#4:1/2 1:G4:3/2 5/2:F4:1/2 3:E4:3/2 9/2:D4:1/2 5:F4:1/2 11/2:D4:1/2  # checked against the scan
+122 LH  0:E2:3/2 3/2:A2:1/2 2:E3:1/2 5/2:A2:1/2 3:F2:1/2 7/2:A2:1/2 4:F3:3/2 11/2:A2:1/2  # checked against the scan
+123 VN  0:A5:1/2 1/2:G5:1/2 1:F#5:3/2 5/2:A5:1/2 3:G5:3/2 9/2:F#5:1/2 5:E5:1~  # violin part
+124 VN  1/2:D#5:1/2 1:A5:3/2 5/2:G5:1/2 3:F#5:3/2 9/2:E5:1/2 5:G5:1/2 11/2:E5:1/2  # checked against the scan
+124 RH  0:B4:3/2 3/2:F#5:1/2 2:B5:3/2 7/2:B4:1/2 4:E5:3/2 11/2:B5:1/2  # checked against the scan
+124 LH  0:F#2:1/2 1/2:B2:1/2 1:F#3:3/2 5/2:B2:1/2 3:G2:3/2 9/2:B2:1/2 5:G3:1/2 11/2:B2:1/2  # checked against the scan
+125 VN  0:A#3:1/2 1/2:F#4:1/2 1:A#4,F#5:2 3:B3:1/2 7/2:D4:1/2 4:B4,F#5:2  # checked against the scan
+126 VN  0:C#4:1/2 1/2:E4:1/2 1:C#5,A#5:2 3:D4:1/2 7/2:F#4:1/2 4:D5,B5:2  # checked against the scan
+126 RH  1/2:A#4,A#5:1/2 1:G5,E6,G6:3/2 5/2:F#5,D6,F#6:1/2 3:E5,C#6,E6:3/2 9/2:D5,D6:1/2 5:F#5,F#6:1/2 11/2:D5,D6:1/2  # checked against the scan
+126 LH  0:F#2:3/2 3/2:C#3:1/2 2:F#3:3/2 7/2:F#2:1/2 4:B2:3/2 11/2:F#3:1/2  # checked against the scan
+128 VN  1/2:E5:1/2 1:G5:1/2 1:A4:3 3/2:E5:2 7/2:E5:1/2 4:A5:1/2 9/2:Eb5:1/2 5:D6:1/2 11/2:D5:1/2  # checked against the scan
+128 RH  1:C#4:1 1:A3:3 2:B3,D4:1 3:C#4,E4:1 4:A3,Eb4,F#4:1 5:G3,D4,G4:1  # checked against the scan
+128 LH  0:D2,D3:4 4:C2,C3:1 5:B1,B2:1  # checked against the scan
+129 LH  0:Bb1,Bb2:4 4:A1,A2:1 5:F#1,F#2:1  # checked against the scan
+130 VN  1:Bb4:1 2:C5:1 3:D5:1 4:Eb5:1 5:F5:1  # violin part
+130 LH  0:G1,G2:3~ 3:G1,G2:1 4:F1,F2:1 5:D1,D2:1  # OMR pass A
+131 VN  1:G5:1 2:A5:1 3:Bb5:1 4:Bb5:1 5:C6:1  # violin part
+132 RH  1/2:G5:1/2 1:Bb5:1/2 3/2:Bb4:1/2 2:C5,G5:1/2 5/2:G4:1/2 7/2:G5:1/2 4:G6:1/2 9/2:G5:1/2 5:C5,G5:1/2 11/2:G4:1/2  # checked against the scan
+133 VN  0:D6:2 2:D6:1~ 3:D6:1 4:D6:2  # OMR pass A
+133 LH  0:Bb1,Bb2:2 2:D2,D3:1~ 3:D2,D3:1 4:D2,D3:2  # read from the scan
+134 VN  0:G5:1 3:G4:1 4:F#4:3/2 11/2:G4:1/2  # violin part
+134 LH  0:G2:1 1:F#2:3/2 5/2:G2:1/2 3:A#2:3  # checked against the scan
+135 VN  0:Bb4:3 3:G4:1 4:F#4:3/2 11/2:G4:1/2  # violin part
+135 RH  7/2:Bb3:1/2 4:C4,Eb4,A4:1/2 9/2:A3:1/2 5:Bb3,Eb4,G4:1/2 11/2:G3:1/2  # OMR pass A
+135 LH  0:G2:1 1:F#2:3/2 5/2:G2:1/2 3:D#2:3  # checked against the scan
+136 RH  7/2:G4:1/2 4:Ab4,D5,F5:1/2 9/2:F4:1/2 5:G4,C5,Eb5:1/2 11/2:Eb4:1/2  # checked against the scan
+136 LH  0:C3:1 1:B2:3/2 5/2:C3:1/2 3:D#3:3  # checked against the scan
+137 RH  7/2:Eb4:1/2 4:F4,G#4,D5:1/2 9/2:D4:1/2 5:Eb4,G#4,C5:1/2 11/2:C4:1/2  # checked against the scan
+137 LH  0:C3:1 1:B2:3/2 5/2:C3:1/2 3:G#2:3  # checked against the scan
+140 VN  4:D5:1 11/2:D5:1/2  # violin part
+141 VN  0:D5:3/2 3/2:C5:1/2 2:Bb4:1/2 5/2:G4:1/2 3:D4:3  # checked against the scan
+141 LH  0:A#1,A#2:3 3:G3:2 3:D2,D3:3 5:F#3:1  # OMR pass A
+142 RH  1/2:Bb3:1/2 1:C4,Eb4:1/2 3/2:A3:1/2 2:Bb3,D4:1/2 5/2:G3:1/2 7/2:Bb3:1/2 4:D4:1/2 9/2:Bb4:1/2 5:D5:1/2 11/2:Bb4:1/2  # checked against the scan
+142 LH  3:G2:1 4:F#2:3/2 11/2:G2:1/2  # checked against the scan
+143 RH  0:G4:1/2 1/2:D4:1/2 1:Eb4,A4,C5:1/2 3/2:C4:1/2 2:D4,G4,Bb4:1/2 5/2:Bb3:1/2 7/2:Bb3:1/2 4:Eb4:1/2 9/2:Bb4:1/2 5:Eb5:1/2 11/2:Bb4:1/2  # checked against the scan
+143 LH  0:Bb2:3 3:G2:1 4:F#2:3/2 11/2:G2:1/2  # checked against the scan
+144 VN  0:C5:1 1:B4:3/2 5/2:C5:1/2 3:Eb5:3  # violin part
+144 RH  0:G4:1/2 1/2:Eb4:1/2 1:F4,Ab4:1/2 3/2:D4:1/2 2:Eb4,G4:1/2 5/2:C4:1/2 7/2:Eb4:1/2 4:G4:1/2 9/2:Eb5:1/2 5:G5:1/2 11/2:Eb5:1/2  # checked against the scan
+144 LH  0:Eb2:3 3:C3:1 4:B2:3/2 11/2:C3:1/2  # checked against the scan
+146 LH  0:D2:1 1:C#2:3/2 5/2:D2:1/2 3:D#2:3  # checked against the scan
+147 RH  0:D4,Ab4:1/2 1/2:Ab3:1/2 3:Eb4,G4:1/2 7/2:G3:1/2  # OMR pass A
+148 VN  4:D5:1 11/2:D5:1/2  # violin part
+148 RH  0:C4,D4:3 3:D4:3  # checked against the scan
+148 LH  0:F#1,F#2,D3,A3:3 3:G1,G2,D3,Bb3:3  # checked against the scan
+149 VN  0:D5:3/2 3/2:C5:1/2 2:Bb4:1/2 5/2:G4:1/2 3:D4:3~  # violin part
+149 RH  0:Eb4:3 3:E4:3  # checked against the scan
+149 LH  0:G1,G2,Eb3,Bb3:3 3:G1,G2,E3,B3:3  # read from the scan
+150 VN  0:D4:2 4:D5:1 11/2:D5:1/2  # checked against the scan
+150 RH  0:D4,F4:3 3:D4,G4:3  # checked against the scan
+150 LH  0:F1,F2,F3,Bb3:3 3:E1,E2,G3,Bb3:3  # checked against the scan
+151 VN  0:D5:3/2 3/2:C5:1/2 2:Bb4:1/2 5/2:G4:1/2 3:D4:1/2 7/2:Bb3:1/2 4:D4:1/2 9/2:G4:1/2 5:Bb4:1/2 11/2:D5:1/2  # violin part
+151 LH  0:E1,E2:3~ 4:E2:1 11/2:E2:1/2  # checked against the scan
+152 VN  0:G5:3/2 3/2:F#5:1/2 2:E5:1/2 5/2:C#5:1/2 3:G4:1/2 7/2:E4:1/2 4:G4:1/2 9/2:C#5:1/2 5:E5:1/2 11/2:G5:1/2  # violin part
+152 RH  0:A3,C#4,E4:6  # checked against the scan
+153 VN  0:C6:3/2 3/2:B5:1/2 2:A5:1/2 5/2:F#5:1/2 3:B5:3/2 9/2:A5:1/2 5:G5:1/2 11/2:E5:1/2  # checked against the scan
+153 LH  0:A3:2 0:D1,D2:6 2:D4:1 3:G3:2 5:C4:1  # checked against the scan
+154 VN  0:A5:1/2 1/2:G5:1/2 1:F#5:1/2 3/2:D5:1/2 2:G5:1/2 5/2:F#5:1/2 3:E5:1/2 7/2:C5:1/2 4:F#5:1/2 9/2:E5:1/2 5:D5:1/2 11/2:B4:1/2  # checked against the scan
+154 RH  0:E4:2/3 1:D4:2 3:C4:2 5:B3:1~  # checked against the scan
+154 LH  0:F#3:1 1:B3:1 2:E3:1 3:A3:1 4:D3:1 5:G3:1  # OMR pass A
+155 VN  0:E5:1/2 1/2:D5:1/2 1:C5:1/2 3/2:A4:1/2 2:D#5:1/2 5/2:D5:1/2 3:C5:1/2 7/2:A4:1/2 4:E5:1/2 9/2:D5:1/2 5:C5:1/2 11/2:A4:1/2  # checked against the scan
+155 RH  0:B3:1 1:A3:2 3:A3:2 5:A3:1  # checked against the scan
+155 LH  0:C3:1 0:D2:6 1:G3:1 2:C3:1 3:G3:1 4:C3:1 5:F#3:1  # checked against the scan
+156 VN  0:D5:3/2 3/2:C5:1/2 2:B4:1/2 5/2:G4:1/2 3:D4:3  # violin part
+156 RH  0:C4:3  # checked against the scan
+156 LH  0:G1,G2,D3,F3:3 3:G2,F3,G3,B3:3  # checked against the scan
+157 VN  1:E4:3/2 5/2:E4:1/2 3:E4:2 5:G4:1  # checked against the scan
+157 RH  0:D4:3  # checked against the scan
+157 LH  0:C2,C3,E3,G3:3 3:C2,C3,E3,G3,C4:3  # checked against the scan
+158 VN  1:G4:3/2 5/2:G4:1/2 3:G4:2 5:B4:1  # checked against the scan
+159 VN  1:D5:1 2:F#4:1 3:A4:3~  # violin part
+160 VN  1/2:A3:1/2 1:B3:1/2 3/2:C#4:1/2 2:D4:1/2 5/2:E4:1/2 3:F#4:1/2 7/2:G4:1/2 4:G#4:1/2 9/2:A4:1/2 5:B4:1/2 11/2:A4:1/2  # checked against the scan
+160 LH  0:A1,A2,E3,A3,D4:3 3:G1,G2,E3,A3,C#4:3  # checked against the scan
+161 VN  1:D5:1 2:F#4:1 3:B4:3~  # violin part
+161 LH  0:F#1,F#2,D3,A3,D4:3 3:G#1,G#2,D3,F#3,D4:3  # checked against the scan
+162 VN  0:B4:1/2 1/2:A3:1/2 1:E4:1/2 3/2:G#4:1/2 2:A4:1/2 5/2:B4:1/2 3:C#5:1/2 7/2:D#5:1/2 4:E5:1/2 9/2:F#5:1/2 5:G5:1/2 11/2:G#5:1/2  # checked against the scan
+162 RH    # read from the scan
+162 LH  0:A1,A2,E3,A3,D4:3 3:A1,A2,E3,G3,C#4:3  # checked against the scan
+163 VN  0:B5:1/2 1/2:A5:1/2 1:G5:1/2 3/2:F#5:1/2 2:E5:1/2 5/2:D5:1/2 3:G5:1/2 7/2:F#5:1/2 4:E5:1/2 9/2:D5:1/2 5:C5:1/2 11/2:B4:1/2  # violin part
+163 RH  5:E5:1/2 11/2:D5:1/2  # checked against the scan
+163 LH  0:D2,A2,D3,F#3,C4:3  # checked against the scan
+164 VN  0:E5:1/2 1/2:D5:1/2 1:C5:1/2 3/2:B4:1/2 2:A4:1/2 5/2:G4:1/2 3:F#4:1/2 7/2:E4:1/2 4:D#4:1/2 9/2:D4:1/2 5:C#4:1/2 11/2:C4:1/2  # checked against the scan
+164 RH  0:C5:1/2 1/2:B4:1/2 1:A4:1/2 3/2:G4:1/2 2:F#4:1/2 5/2:G4:1/2 3:A4:1/2 7/2:C5:1/2 4:A5:1/2 9/2:C5:1/2 5:F#5:1/2 11/2:C6:1/2  # checked against the scan
+164 LH  2:F#4:1/2 5/2:E4:1/2 3:D4:1/2 7/2:A3:1/2 4:F#3:1/2 9/2:D3:1/2 5:A2:1/2 11/2:F#2:1/2  # checked against the scan
+165 VN  0:B3:3/2 3/2:F#4:1/2 2:B4:3/2 7/2:A#4:1/2 4:G#4:3/2 11/2:E4:1/2  # violin part
+166 VN  0:D#4:2 2:C#4:1 3:B3:3/2 9/2:F#4:1/2 5:B4:1~  # violin part
+167 VN  1/2:A4:1/2 1:G4:3/2 5/2:E4:1/2 3:D4:2 5:C#4:1  # checked against the scan
+167 RH  0:G6:1/2 1/2:B5:1/2 1:G5:1/2 3/2:B5:1/2 2:G5:1/2 5/2:B4:1/2 3:B5:1/2 7/2:D5:1/2 4:B4:1/2 9/2:A#5:1/2 5:E5:1/2 11/2:A#4:1/2  # checked against the scan
+168 VN  0:B3:3/2 3/2:F#4:1/2 2:B4:3/2 7/2:A4:1/2 4:G4:3/2 11/2:E4:1/2  # violin part
+171 VN  0:C4:3/2 3/2:D4:1/2 2:C4:3/2 7/2:F#4:1/2 4:E5:3/2 11/2:C5:1/2  # checked against the scan
+172 RH  0:A5:1/2 1/2:C5:3 1:A4,A5:2 3:G5:1/2 7/2:C5:5/2 4:G4,G5:2  # checked against the scan
+172 LH  0:F#2:1/2 1/2:D3:1/2 1:F#3:1/2 3/2:D3:1/2 2:F#3:1/2 5/2:D4:1/2 3:E2:1/2 7/2:C3:1/2 4:E3:1/2 9/2:C3:1/2 5:E3:1/2 11/2:C4:1/2  # checked against the scan
+173 RH  0:G5:1/2 1/2:C5:3 1:G4,G5:2 3:F#4,F#5:1  # checked against the scan
+174 VN  0:B4:1 1:B4:3/2 5/2:C5:1/2 3:D5:1 4:A4:1 5:B4:1  # OMR pass A
+178 VN  1:B4:3/2 5/2:C5:1/2 3:D5:1 4:A4:1 5:B4:1  # violin part
+178 LH  0:G2,G3:1/2 1/2:A3:1/2 1:B3:1/2 3/2:C4:1/2 3:F#2,F#3:1/2 7/2:G3:1/2 4:A3:1/2 9/2:B3:1/2  # checked against the scan
+179 LH  0:E2,E3:1/2 1/2:F#3:1/2 1:G3:1/2 3/2:A3:1/2 3:D2,D3:1/2 7/2:F#3:1/2 4:G3:1/2 9/2:A3:1/2  # checked against the scan
+180 LH  0:C2:1/2 1/2:G2:1/2 1:E3:1/2 3/2:G3:1/2 2:C3:1 3:A1:1/2 7/2:G2:1/2 4:D3:1/2 9/2:G3:1/2 5:B2:1  # checked against the scan
+181 VN  0:F#5:1 1:E5:3/2 5/2:A5:1/2 3:A5:2 5:D5:1  # OMR pass A
+181 RH  0:D4,F#4:1/2 1/2:G3:1/2 1:C#4,E4:1/2 3/2:A3:1/2 3:C#4,E4:1/2 7/2:A3:1/2 4:D4:1/2 9/2:A3:1/2  # checked against the scan
+182 VN  0:F#5:1 1:E5:1 2:A5:1 3:B5:3/2 9/2:A5:1/2 5:F#5:1/2 11/2:D5:1/2  # violin part
+182 RH  0:D5:1/2 0:D5:1 1/2:A4:1/2 1:C#5:1/2 1:C#5:1 3/2:E4:1/2 3:D5:1/2 3:D5:1 7/2:D4:1/2 4:A4:1/2 4:A4:1 9/2:F#4:1/2  # OMR pass A
+183 RH  3:G4:1/2 7/2:A4:1/2 4:A#4:1/2 9/2:G4:1/2  # checked against the scan
+183 LH  0:G2:1/2 1/2:Bb2:1/2 1:E3:1/2 3/2:G3:1/2 2:Bb3:1/2 5/2:E4:1/2 5:Bb3:1/2 11/2:G3:1/2  # checked against the scan
+184 VN  0:G5:1 1:F#5:1 2:A5:1 3:E6:3/2 9/2:D6:1/2 5:B5:1/2 11/2:G5:1/2  # checked against the scan
+185 RH  2:Eb4:1/2 5/2:A4:1/2 3:C5:1/2 7/2:D5:1/2 4:D#5:1/2 9/2:C5:1/2 5:Eb4:1/2 11/2:C4:1/2  # checked against the scan
+187 RH  3/2:A3:1/2 2:D4:1/2 5/2:A4:1/2 3:D5,D6:1 4:A4,A5:1 5:Bb4,D5,Bb5:1  # checked against the scan
+187 LH  0:F#2:1/2 1/2:D3:1/2 1:F#3:1/2 3:F#3,D4:1 4:A3:1 5:F3,Bb3,D4:1  # checked against the scan
+188 VN  0:Bb5:2 2:B5:1~ 3:B5:1 4:C6:1 5:C#6:1  # violin part
+188 RH  0:D5,Ab5:1/2 1/2:Ab4:1/2 1:D5,Ab5:1/2 3/2:Ab4:1/2 2:D5,Ab5:1/2 5/2:Ab4:1/2 3:D5,Ab5:1/2 7/2:Ab4:1/2 4:C5,Eb5,Ab5:1/2 9/2:Ab4:1/2 5:Bb4,C#5,G5:1/2 11/2:G4:1/2  # OMR pass A
+191 VN  0:C6:2 3:B5:3~  # violin part
+191 RH  0:C4,G4:1/2 1/2:G3:1/2 1:D4:1/2 3/2:D3:1/2 2:E4:1/2 5/2:E3:1/2 3:D4,F4:1 4:D4,F4:1  # checked against the scan
+191 LH  0:G1:1 1:G2:1 2:D2:1 3:G#2,F3,B3:1 3:G#1:3 4:G#2,F3,B3:1  # checked against the scan
+192 VN  0:B5:2 2:B5:1 4:B5:3/2 11/2:B5:1/2  # checked against the scan
+192 RH  0:D4,F4:1 1:D4,F4:1 3:D4,E4:1 4:D4,E4:1  # checked against the scan
+192 LH  0:G#2,F3,B3:1 0:G#1:3 1:G#2,F3,B3:1 3:G#2,E3:1 4:G#2,E3:1  # checked against the scan
+193 VN  0:B5:3/2 3/2:A5:1/2 2:G5:1/2 5/2:E5:1/2 3:B4:3~  # violin part
+193 RH  0:D4,E4:1 1:D4,E4:1 3:C#4,E4:1 4:C#4,E4:1  # checked against the scan
+193 LH  0:A2,G3:1 0:A1:6 1:A2,G3:1 3:A2,G3:1 4:A2,G3:1  # checked against the scan
+194 VN  0:B4:2 4:A5:1/2 11/2:A5:1/2  # checked against the scan
+194 RH  0:C4,E4:1 1:C4,E4:1 3:C4,D4:1 4:C4,D4:1  # checked against the scan
+194 LH  0:D2,G3:1 1:D2,G3:1 3:D2,F#3:1 4:D2,F#3:1  # checked against the scan
+195 VN  0:A5:3/2 3/2:G5:1/2 2:F5:1/2 5/2:D5:1/2 3:A4:3  # checked against the scan
+195 RH  0:C4,D4:1 1:C4,D4:1 3:B3,D4:1 4:B3,D4:1  # checked against the scan
+195 LH  0:G2,F3:1 0:G1:6 1:G2,F3:1 3:G2,F3:1 4:G2,F3:1  # checked against the scan
+196 VN  0:A4:1 1:G5:2/3 5/2:G5:1/2 3:G5:2 5:A4:1  # checked against the scan
+196 LH  0:C2,E3,B3,D4:1 1:C2,E3,B3,D4:1 3:C2,E3,A3,C4:1 4:C2,E3,A3,C4:1  # OMR pass A
+197 VN  1:D5:1 5/2:D5:1/2 3:D5:2 5:F#4:1  # violin part
+197 LH  0:D2,D3,A3,B3:1 1:D2,D3,G3,B3:1 3:D2,D3,G3,A3:1 4:D2,C3,F#3,A3:1  # OMR pass A
+198 VN  0:G4:1 1:B4:2 3:B4:3  # checked against the scan
+198 RH  3:B3,D#4,F#4:2 5:B3,E4,G#4:1  # checked against the scan
+198 LH  0:G1,B2,G3:1 3:B2:2 5:E2:1  # checked against the scan
+200 VN  0:B4:1 1:A4:3/2 5/2:B4:1/2 3:G#4:3  # OMR pass A
+200 RH  0:F#3,B3,D#4:2 3:D#5,B5,D#6:2 5:E5,B5,E6:1  # checked against the scan
+200 LH  0:B2:2  # checked against the scan
+201 RH  0:E5,B5,E6:2 2:C#5,A5,C#6:1 3:F#5,F#6:1 3:C#6:3 4:E5,E6:3/2 11/2:F#5,F#6:1/2  # checked against the scan
+201 LH  0:G#2:2 2:A2:1 3:A2:2 5:F#2:1  # checked against the scan
+202 VN  0:F#4:2 3:C5:1/3 10/3:C4:1/3 11/3:C5:1/3 4:C4:1/3 13/3:C5:1/3 14/3:C4:1/3 5:C5:1/3 16/3:C4:1/3 17/3:C5:1/3  # checked against the scan
+202 RH  0:D#5,B5,D#6:2 3:F#4,F#5:1 4:E4,E5:3/2 11/2:F#4,F#5:1/2  # OMR pass A
+203 VN  0:F#4:3 3:C5:1/3 10/3:C4:1/3 11/3:C5:1/3 4:C4:1/3 13/3:C5:1/3 14/3:C4:1/3 5:C5:1/3 16/3:C4:1/3 17/3:C5:1/3  # checked against the scan
+203 RH  0:D#4,D#5:2 3:F#4,F#5:1 4:E4,E5:3/2 11/2:F#4,F#5:1/2  # OMR pass A
+204 VN  0:F#4:3 3:E4:1 4:D4:3/2 11/2:E4:1/2  # violin part
+204 RH  0:D#4,D#5:3 3:B3:1/3 10/3:B4:1/3 11/3:B3:1/3 4:B4:1/3 13/3:B3:1/3 14/3:B4:1/3 5:B3:1/3 16/3:B4:1/3 17/3:B3:1/3  # checked against the scan
+205 RH  0:B3,B4:3 3:B3:1/3 10/3:B4:1/3 11/3:B3:1/3 4:B4:1/3 13/3:B3:1/3 14/3:B4:1/3 5:B3:1/3 16/3:B4:1/3 17/3:B3:1/3  # checked against the scan
+205 LH  0:F3:1 0:G#2:3 1:E3:3/2 5/2:F3:1/2 3:G#2,E3:3  # OMR pass A
+206 VN  0:D4:3 3:D4:1 4:C#4:3/2 11/2:D4:1/2  # checked against the scan
+206 RH  0:B4:3 3:Bb3:1/3 10/3:Bb4:1/3 11/3:Bb3:1/3 4:Bb4:1/3 13/3:Bb3:1/3 14/3:Bb4:1/3 5:Bb3:1/3 16/3:Bb4:1/3 17/3:Bb3:1/3  # checked against the scan
+206 LH  0:F3:1 0:G#2:3 1:E3:3/2 5/2:F3:1/2 3:G#2,E3:3  # checked against the scan
+207 VN  0:C#4:3 3:E4:3  # checked against the scan
+207 RH  0:A#4:1 1:G3,A4:3/2 5/2:A#3,A#4:1/2 3:A3,A4:3  # checked against the scan
+207 LH  0:G2:1/3 1/3:E3:1/3 2/3:G2:1/3 1:E3:1/3 4/3:G2:1/3 5/3:E3:1/3 2:G2:1/3 7/3:E3:1/3 8/3:G2:3 3:C#3:3  # checked against the scan
+208 VN  0:A5:1 1:G#5:3/2 5/2:A5:1/2 3:G5:1 4:F#5:3/2 11/2:G5:1/2  # violin part
+208 RH  1/2:C4,D4,C5,D5:1/2 3/2:C4,D4,C5,D5:1 5/2:C4,D4,C5,D5:1/2 7/2:C4,D4,C5,D5:1/2 9/2:C4,D4,C5,D5:1 11/2:C4,D4,C5,D5:1/2  # checked against the scan
+208 LH  0:F#2,D3:1 1:E#2,D3:3/2 5/2:F#2:1/2 3:G2,D3:1 4:A2,D3:3/2 11/2:G2:1/2  # checked against the scan
+209 RH  1/2:C4,D4,C5,D5:1/2 3/2:C4,D4,C5,D5:1 5/2:C4,D4,C5,D5:1/2 7/2:C4,D4,C5,D5:1/2 9/2:C4,D4,C5,D5:1/2 11/2:C4,D4,C5,D5:1/2  # OMR pass A
+209 LH  0:F#2,D3:1 1:E#2:3/2 1:D3:2 5/2:F#2:1/2 3:C3,D3:1 4:A2,D3:1 5:G2,D3:1  # OMR pass A
+210 VN  0:D5:1/2 1/2:D4,C5:1/2 3/2:C4,D4:1 5/2:C4,D4:1/2 7/2:D4,C5:1/2 9/2:C4,D4:1 11/2:C4,D4:1/2  # violin part
+211 VN  1/2:D4,A4:1/2 3/2:D4,A4:1 5/2:D4,A4:1/2 7/2:D4,A4:1 9/2:C4,D4:1 11/2:A3:1/2  # checked against the scan
+212 VN  0:F4:1 1:E4:3/2 5/2:F4:1/2 3:F#4:1 4:F4:3/2 11/2:F#4:1/2  # OMR pass A
+213 VN  0:G4:1 1:C6:1 2:B5:1 3:A5:1 4:G5:1 5:E5:1  # violin part
+213 RH  1/2:E4,C5,E5:1/2 3/2:G4,E5,G5:1/2 5/2:E4,C5,E5:1/2 7/2:G4,E5,G5:1/2 9/2:E4,C#5,E5:1/2 11/2:E4,A#4,C#5:1/2  # checked against the scan
+214 VN  1/2:D5:1/2 3/2:E5:1/2 5/2:D5:1/2 7/2:C5:1/2 9/2:D5:1/2 11/2:C5:1/2  # violin part
+214 RH  0:F4:1 1/2:B4,D5:1/2 1:G4:3/2 3/2:A#4,C#5:1/2 5/2:F4,B4,D5:1/2 3:Eb4:1 7/2:A4,C5:1/2 4:F4:3/2 9/2:G#4,B4:1/2 11/2:Eb4,A4,C5:1/2  # checked against the scan
+214 LH  0:G2,F3:1 1:G2,G3:3/2 5/2:F3:1/2 3:G2,Eb3:1 4:G2,F3:3/2 11/2:Eb3:1/2  # checked against the scan
+215 VN  1/2:B4:1/2 3/2:D4,D5:1/2 5/2:D4,C5:1/2 7/2:D4,B4:1/2 9/2:D4,Bb4:1/2 11/2:D4,A4:1/2  # violin part
+216 RH  0:G4,B4,G5:1 3/2:D5,B5,D6:1/2 5/2:D5,A5,C6:1/2 7/2:D5,G5,B5:1/2 9/2:C#5,G5,B5:1/2 11/2:C5,Eb5,A5:1/2  # checked against the scan
+217 VN  0:G4:1 1:A4:1 2:B4:1 3:C5:1 4:D5:1 5:E5:1  # checked against the scan
+217 RH  1/2:B4,D5,G5:1/2 3/2:A4,C5,F#5:1/2 5/2:G#4,D5,F5:1/2 7/2:G4,C5,E5:1/2 9/2:F4,B4,D5:1/2 11/2:E4,G4,C5:1/2  # checked against the scan
+217 LH  0:D2:1 1:G2:1 2:G1:1 3:G2:1 4:G1:1 5:G2:1  # checked against the scan
+218 RH  1/2:D4,G4,B4:1/2 3/2:C4,G4,A4:1/2 5/2:B3,G4:1/2 7/2:A3,F4:1/2 9/2:G3,E4:1/2 11/2:F3,B3,D4:1/2  # checked against the scan
+218 LH  0:G1:1 1:G2:1 2:G1:1 3:G2:1 4:G1:1 5:G2:1  # checked against the scan
+219 VN  0:E6:4  # violin part
+219 LH  0:G1,E3,Bb3,C#4:3 3:G1,E3,Bb3,C#4:3  # OMR pass A
+220 VN  0:G6:4  # violin part
+220 LH  0:C#1,C#2,E3,Bb3:3 3:C#2,E3,Bb3:3  # checked against the scan
+221 VN  0:A5:4  # violin part
+221 LH  0:F#1,F#2,D#3,C4,Eb4:3 3:F#2,D#3,C4,Eb4:3  # checked against the scan
+222 VN  0:D#6:6  # OMR pass A
+222 LH  0:C1,C2,F#3,A3:3 3:C2,F#3,A3:3  # checked against the scan
+223 LH  0:D3,G3,D4:1 0:B1,G2:3 1:D3,G3,D4:1 3:D3,G3,D4:1 3:B1:3 4:D3,G3,D4:1  # checked against the scan
+224 VN  0:D6:3/2 3/2:C6:1/2 2:B5:1/2 5/2:G5:1/2 3:D5:3  # checked against the scan
+224 LH  0:D3,G3,B3:1 0:F2,G2:3 1:D3,G3,B3:1 3:D3,G3,B3:1 3:F2:3 4:D3,G3,B3:1  # checked against the scan
+226 VN  1:F#5:1 2:G5:1 3:A5:1 4:B5:1 5:C6:1  # violin part
+227 VN  1:D6:1 5/2:D6:1/2 3:F6:3~  # violin part
+227 LH  0:G3,D4:1 0:B1,B2:3 1:G3,D4:1 3:D3,G3,D4:1 3:B2:3 4:D3,G3,D4:1  # checked against the scan
+228 VN  0:F6:3/2 3/2:E6:1/2 2:D6:1/2 5/2:B5:1/2 3:F5:3  # checked against the scan
+228 LH  0:D3,B3,D4:1 0:A1,A2:3 1:D3,B3,D4:1 3:D3,B3,D4:1 3:A2:3 4:D3,B3,D4:1  # checked against the scan
+229 VN  1:E5:1 2:F#5:1 3:G#5:1 4:A5:1 5:B5:1  # violin part
+229 RH  1:D5:1/2 3/2:E4:1/2 2:C5:1/2 5/2:E4:1/2 3:B4:1/2 7/2:E4:1/2 4:A4:1/2 9/2:E4:1/2 5:G#4:1/2 11/2:E4:1/2  # checked against the scan
+230 VN  1:C6:1 2:D6:1 3:E6:1 4:F#6:1 5:G6:1  # violin part
+230 RH  1:F5:1/2 3/2:E4:1/2 2:E5:1/2 5/2:E4:1/2 3:C5:1/2 7/2:E4:1/2 4:A4:1/2 9/2:C4:1/2 5:E4:1/2 11/2:A3:1/2  # checked against the scan
+230 LH  0:C2:1 1:C3,E3,A3:1 3:A1:1 4:C3,E3:1  # checked against the scan
+231 RH  4:A4:1/2 9/2:C4:1/2 5:A4:1/2 11/2:C5:1/2  # checked against the scan
+231 LH  0:C3:1/2 0:F#1,F#2:1 1/2:A3:1/2 1:C4:1/2 1:F#2:1 3/2:A3:1/2 2:C4:1/2 5/2:A4:1/2 3:A3:1/2 3:F#2:1 7/2:C4:1/2 4:F#2:1  # checked against the scan
+232 VN  0:C6:3 3:A6:3  # checked against the scan
+232 RH  0:C4:1/2 1/2:A4:1/2 1:C5:1/2 3/2:A4:1/2 2:C5:1/2 5/2:A5:1/2 3:A4:1/2 7/2:C5:1/2 4:A5:1/2 9/2:C5:1/2 5:A5:1/2 11/2:C6:1/2  # OMR pass A
+232 LH  0:E2:1 0:E1:6 1:E2:1 3:E2:1 4:E2:1  # checked against the scan
+233 VN  0:C6:9/2 9/2:A5:1/2 5:C5:1/2 11/2:A5:1/2  # checked against the scan
+234 VN  0:C6:9/2 9/2:A5:1/2 5:F#5:1/2 11/2:C5:1/2  # checked against the scan
+234 RH  0:F#6:1/2 1/2:C6:1/2 1:F#5:1/2 3/2:E6:1/2 2:C6:1/2 5/2:E5:1/2 3:C6:1/2 7/2:A5:1/2 4:C5:1/2 9/2:F#5:1/2 5:C5:1/2 11/2:F#4:1/2  # OMR pass A
+234 LH  0:D2:2 2:A2:1 3:D3:2 5:D2:1  # OMR pass A
+236 VN  0:D5:2 2:F#4:1 3:G4:3/2 9/2:D5:1/2 5:B5:1  # violin part
+236 RH  0:B4:1/2 1/2:G4:1/2 1:B3:1/2 3/2:A4:1/2 2:D4:1/2 5/2:A3:1/2 3:D5:1/2 7/2:G4:1/2 4:D4:1/2 9/2:B4:1/2 5:D4:1/2 11/2:B3:1/2  # checked against the scan
+237 VN  1/2:A5:1/2 1:G5:3/2 5/2:E5:1/2 3:E5:3/2 9/2:D5:1/2 5:D5:1/2 11/2:F#4:1/2  # checked against the scan
+237 LH  0:E1:1 1:E2:1 2:C#1,C#2:1 3:D1:1 4:D2:1 5:D3,F#3:1  # OMR pass A
+238 VN  0:G4:3/2 3/2:D5:1/2 2:B5:3/2 7/2:D5:1/2 4:F#5:3/2 11/2:D6:1/2  # OMR pass A
+239 RH  0:D5:1/2 1/2:G4:1/2 1:D4:1/2 3/2:B5:1/2 2:D5:1/2 5/2:B4:1/2 3:E5:1/2 7/2:C5:1/2 4:E4:1/2 9/2:E6:1/2 5:C6:1/2 11/2:E5:1/2  # OMR pass A
+240 VN  0:G6:1/2 1/2:D6:1/2 1:B5:1/2 3/2:G5:1/2 2:D6:1/2 5/2:B5:1/2 3:G5:1/2 7/2:D5:1/2 4:B5:1/2 9/2:G5:1/2 5:D5:1/2 11/2:B4:1/2  # checked against the scan
+240 LH  0:G1,B1,D2,G2:1 2:B1,D2,G2,B2:1 4:D2,G2,B2,D3:1  # checked against the scan
+241 VN  0:G5:1/3 1/3:D5:1/3 2/3:B4:1/3 1:G4:1/3 4/3:D4:1/3 5/3:B3:1/3 2:G3:1/3 7/3:B3:1/3 8/3:D4:1/3 3:G4:1/2 7/2:B3:1/2 4:B4:1/2 9/2:D4:1/2 5:D5:1/2 11/2:B4:1/2  # checked against the scan
+241 RH  1:G4,B4,D5,G5:1 3:G3:1/3 10/3:B3:1/3 11/3:D4:1/3 4:G4:1/3 13/3:B4:1/3 14/3:D5:1/3 5:G5:1/3 16/3:B5:1/3 17/3:D6:1/3  # checked against the scan
+241 LH  0:G2,B2,D3,G3:1 3:G1:1/3 10/3:B1:1/3 11/3:D2:1/3 4:G2:1/3 13/3:B2:1/3 14/3:D3:1/3 5:G3:1/3 16/3:B3:1/3 17/3:D4:1/3  # checked against the scan
+242 VN  0:D5,B5:1 3:D4,A4,F#5:1  # checked against the scan
+243 VN  0:D4:1 0:B4,G5:6  # read from the scan
+243 RH  0:G4,B4,D5,G5:6  # read from the scan
+243 LH  0:G2,B2,D3,G3:6  # read from the scan

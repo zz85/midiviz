@@ -1,0 +1,28 @@
+{
+  "title": "Sonata for Violin and Piano No. 1 in G major, Op. 78",
+  "composer": "Johannes Brahms",
+  "source": {
+    "edition": "first edition, N. Simrock, Berlin (score and violin part)",
+    "library": "Staatsbibliothek zu Berlin, Mus. Kb 672, digitized as PPN68453410X",
+    "url": "http://resolver.staatsbibliothek-berlin.de/SBB0000733E00000000",
+    "iiif": "https://content.staatsbibliothek-berlin.de/dc/68453410X-{n:04d}/full/full/0/default.jpg",
+    "pages": 55,
+    "status": "public domain"
+  },
+  "licence": "CC0 1.0: the transcription (omr.json, the fixes and the MIDI made from them)",
+  "parts": {"score": [9, 37], "violin": [39, 48]},
+  "movements": {
+    "1": {
+      "title": "I. Vivace ma non troppo",
+      "out": "duo/midis/brahms_op78_1.mid",
+      "meter": [6, 4], "key": "G", "fifths": 1, "tempo": 126,
+      "score": [9, 21], "violin": [39, 43],
+      "score_stacks": [["p0009", 17], ["p0010", 21], ["p0011", 21], ["p0012", 18], ["p0013", 18], ["p0014", 18], ["p0015", 18],
+                       ["p0016", 21], ["p0017", 21], ["p0018", 15], ["p0019", 19], ["p0020", 18], ["p0021", 18]],
+      "pizz": [[82, 0], [90, 5]],
+      "marks": [[1, "Vivace ma non troppo"], [156, "Tempo I"]]
+    },
+    "2": {"title": "II. Adagio", "meter": [2, 4], "score": [22, 26], "violin": [44, 45]},
+    "3": {"title": "III. Allegro molto moderato", "meter": [4, 4], "score": [27, 37], "violin": [46, 48]}
+  }
+}
