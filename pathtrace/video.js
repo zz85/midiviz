@@ -9,11 +9,12 @@
 // The copied stage is kept from frame to frame (createSnapshotCache): what
 // has not changed keeps its copy and its BVH, what deforms is refreshed in
 // place; the frame's own parts (the hair ribbons) are freed after it is
-// traced (disposeSnapshot), and the tracer is replaced every RECYCLE frames
-// (the cache, and the BVHs on it, outlive that). Each frame logs its time,
-// split, and what the cache reused.
+// traced (disposeSnapshot), and the tracer is replaced periodically (the
+// cache, and the BVHs on it, outlive that). Each frame logs its time, split,
+// and what the cache reused.
 //
-//   const pt = pathTracedFrames(stage, { engine, samples, bounces, denoise, hairFraction, fx, width, height, signal })
+//   const pt = pathTracedFrames(stage, { engine, samples, bounces, denoise, hairFraction, fx, width, height, signal,
+//     recycleEvery: 24 }) // tracer-session lifetime in frames; 0 keeps it until dispose()
 //   exportVideo({ ..., frameSource: pt.frame })   then   pt.dispose()
 //
 // stage: the same adapter as still.js (scene, camera, hair(), envScene,
@@ -24,19 +25,21 @@ import { snapshotScene, snapshotCamera, bakeEnvironment, disposeSnapshot, create
 import { createTraceSession, lensFromBokeh } from './engines.js'
 import { finishTrace, HDR_SCALE } from './post.js'
 
-// a new tracer (renderer, pipelines) every this many frames: whatever a
-// tracer keeps from one setScene to the next is then freed with it
-const RECYCLE = 24
+// Default tracer-session lifetime in video frames. Set recycleEvery to 0 to
+// keep one session until the frame source is disposed.
+export const DEFAULT_RECYCLE_EVERY = 24
 
 export function pathTracedFrames(stage, o) {
-  const { engine, width, height, samples, bounces, denoise, hairFraction = 0.5, fx = false, signal } = o
+  const { engine, width, height, samples, bounces, denoise, hairFraction = 0.5, fx = false, signal,
+    recycleEvery = DEFAULT_RECYCLE_EVERY } = o
+  if (!Number.isInteger(recycleEvery) || recycleEvery < 0) throw new RangeError('recycleEvery must be a non-negative integer')
   let session = null, env = null, used = 0
   const cache = o.cache === false ? null : createSnapshotCache()
   const stats = { frames: 0, ms: 0, last: null }
 
   async function frame() {
     const t0 = performance.now()
-    if (session && used >= RECYCLE) { session.dispose(); session = null }
+    if (session && recycleEvery > 0 && used >= recycleEvery) { session.dispose(); session = null }
     if (!session) { session = await createTraceSession(engine, { width, height, bounces, denoise, toneMapping: fx ? 'linear' : 'agx' }); used = 0 }
     used++
     env ||= stage.envScene ? bakeEnvironment(stage.envScene, { intensity: stage.envIntensity }) : null

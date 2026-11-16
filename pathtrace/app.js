@@ -1974,6 +1974,8 @@ export async function boot(plug = {}) {
       const ptv = ptKey ? pathTracedFrames(ptStage, {
         engine: ptKey, width: width & ~1, height: height & ~1, samples: +$('ptSpp').value, bounces: +$('ptBounces').value,
         denoise: $('ptDenoise').checked, hairFraction: +$('ptHair').value, fx: $('ptFx').checked, signal: exAbort.signal,
+        // ?ptrecycle=0 keeps one tracer for the export; absent preserves the 24-frame default
+        recycleEvery: params.has('ptrecycle') ? +params.get('ptrecycle') : undefined,
       }) : null
       try {
         const xo = {

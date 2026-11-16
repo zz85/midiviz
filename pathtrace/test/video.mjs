@@ -1,6 +1,7 @@
 // #045: a short path-traced export, headless, through the Render menu.
 //   node pathtrace/test/video.mjs [song] [out dir]
 // env: ENGINE=gpt-webgl SPP=4 RES=426x240 FPS=5 LEN=5 FX=0 DENOISE=0 BOUNCES=3
+//      RECYCLE=24 (tracer-session lifetime in frames; 0 keeps one for the export)
 // Same setup as stills.mjs (BASE, PLAYWRIGHT, CHROME). Writes the MP4 and a log
 // of the per-frame status lines.
 const BASE = process.env.BASE || 'http://127.0.0.1:8000/midiviz/'
@@ -16,7 +17,9 @@ const page = await browser.newPage({ viewport: { width: 960, height: 540 }, acce
 page.on('pageerror', e => console.log('pageerror:', e.message))
 page.on('console', m => { if (m.type() === 'error') console.log('console:', m.text().slice(0, 300)) })
 page.setDefaultTimeout(0)
-await page.goto(`${BASE}045_pathtracer.html?q=low&hairsim=0&clothsim=0&sw=0&song=${song}`)
+const recycle = env('RECYCLE')
+const recycleQuery = recycle == null ? '' : `&ptrecycle=${encodeURIComponent(recycle)}`
+await page.goto(`${BASE}045_pathtracer.html?q=low&hairsim=0&clothsim=0&sw=0&song=${song}${recycleQuery}`)
 await page.waitForFunction(() => window.__pianist?.pt && document.getElementById('songTitle')?.textContent.trim(), null, { timeout: 300000 })
 await page.waitForTimeout(3000)
 await page.evaluate(o => {
