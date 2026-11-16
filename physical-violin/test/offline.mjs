@@ -29,8 +29,8 @@ function detectPitch(x, fs, fmin = 150, fmax = 3000) {
   return { hz: fs / (bestLag + shift), clarity: best };
 }
 
-export function renderNote(midi, params = {}, seconds = 1.5) {
-  const m = new ViolinModel(FS);
+export function renderNote(midi, params = {}, seconds = 1.5, instrument = 'violin') {
+  const m = new ViolinModel(FS, 2, instrument);
   m.setParams(params);
   m.noteOnMidi(midi);
   const n = Math.floor(seconds * FS);
@@ -48,10 +48,28 @@ export function renderNote(midi, params = {}, seconds = 1.5) {
   let rms = 0, peak = 0, bad = false;
   for (const v of tail) { rms += v * v; peak = Math.max(peak, Math.abs(v)); if (!Number.isFinite(v)) bad = true; }
   rms = Math.sqrt(rms / tail.length);
-  const p = detectPitch(tail.subarray(0, 8192), FS);
   const f0 = midiToHz(midi);
+  const p = detectPitch(tail.subarray(0, 8192), FS, Math.min(150, 0.45 * f0), Math.min(3000, 2.2 * f0));
   const periods = (tail.length / FS) * f0;
   return { out, f0, hz: p.hz, clarity: p.clarity, cents: 1200 * Math.log2((p.hz || 1) / f0), slipsPerPeriod: slipsLate / periods, rms, peak, bad };
+}
+
+// Attack: milliseconds until Helmholtz motion holds, i.e. the time of the last
+// slip-to-slip interval more than 10% away from the period, within `seconds`.
+export function attackMs(midi, params = {}, instrument = 'violin', seconds = 1.5) {
+  const m = new ViolinModel(FS, 2, instrument);
+  m.setParams(params);
+  m.noteOnMidi(midi);
+  const fi = FS * m.os, period = fi / midiToHz(midi), bow = m.bows[m.active];
+  let slips = bow.slips, last = -1, lastOff = 0;
+  for (let i = 0; i < seconds * fi; i++) {
+    m.tickInternal();
+    if (bow.slips === slips) continue;
+    slips = bow.slips;
+    if (last >= 0 && Math.abs((i - last) / period - 1) > 0.1) lastOff = i;
+    last = i;
+  }
+  return (1000 * lastOff) / fi;
 }
 
 function wav(path, x) {

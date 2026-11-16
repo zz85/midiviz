@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { renderNote } from './offline.mjs';
+import { renderNote, attackMs } from './offline.mjs';
+import { INSTRUMENTS } from '../violin-core.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '..', '..');
@@ -30,10 +31,37 @@ test('the bowed-string model is pitched, stable and in Helmholtz motion', () => 
   }
 });
 
+test('viola, cello and double bass hold Helmholtz motion on every open string', () => {
+  for (const inst of ['viola', 'cello', 'bass']) {
+    const open = INSTRUMENTS[inst].openStrings;
+    for (const midi of [...open, open[3] + 12]) {
+      const result = renderNote(midi, diagnosticParams, 1.5, inst);
+      const at = `${inst} MIDI ${midi}`;
+      assert.equal(result.bad, false, `${at} produced non-finite samples`);
+      assert.ok(Math.abs(result.cents) < 8, `${at} was ${result.cents.toFixed(1)} cents off`);
+      assert.ok(result.clarity > 0.8, `${at} clarity was ${result.clarity.toFixed(2)}`);
+      assert.ok(result.slipsPerPeriod > 0.9 && result.slipsPerPeriod < 1.1,
+        `${at} had ${result.slipsPerPeriod.toFixed(2)} slips per period`);
+      assert.ok(result.rms > 0.02, `${at} was unexpectedly quiet`);
+    }
+  }
+});
+
+test('a detached note reaches Helmholtz motion quickly', () => {
+  // Listeners accept roughly 50 ms of pre-Helmholtz noise in a bowed attack; the
+  // lowest strings of the viola and double bass take longer, as they do in life.
+  const limits = [['violin', 69, 60], ['violin', 76, 60], ['violin', 88, 60], ['violin', 55, 250],
+    ['viola', 62, 100], ['cello', 43, 150], ['cello', 50, 100], ['bass', 43, 200], ['bass', 55, 120]];
+  for (const [inst, midi, ms] of limits) {
+    const t = attackMs(midi, diagnosticParams, inst);
+    assert.ok(t < ms, `${inst} MIDI ${midi} took ${t.toFixed(0)} ms to reach Helmholtz motion (limit ${ms})`);
+  }
+});
+
 test('the experiment page contains every control required by the app', async () => {
   const html = await readFile(resolve(root, '048_bowed_violin.html'), 'utf8');
   for (const id of ['start', 'note', 'stats', 'xypad', 'padSpring', 'padBow', 'preset',
-    'body', 'ir', 'roomMix', 'rt60', 'params', 'scope']) {
+    'body', 'ir', 'roomMix', 'rt60', 'params', 'scope', 'instrument', 'keyhelp']) {
     assert.match(html, new RegExp(`id=["']${id}["']`), `missing #${id}`);
   }
   assert.match(html, /physical-violin\/app\.js/);

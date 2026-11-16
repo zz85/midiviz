@@ -1,10 +1,11 @@
-// AudioWorklet processor for the bowed-string model.
+// AudioWorklet processors: the bowed-string model and an FDN room.
 import { ViolinModel } from './violin-core.js';
 
 class PhysicalViolinProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
-    this.model = new ViolinModel(sampleRate);
+    this.model = new ViolinModel(sampleRate, 2, options?.processorOptions?.instrument || 'violin');
+    this.lastParams = {};   // re-applied when the instrument changes
     this.statsEvery = Math.floor(sampleRate / 10);
     this.sinceStats = 0;
     // optional deterministic event script for offline rendering: [{ t: seconds, type, midi?, params? }]
@@ -13,7 +14,8 @@ class PhysicalViolinProcessor extends AudioWorkletProcessor {
   }
 
   apply(ev) {
-    if (ev.type === 'params') this.model.setParams(ev.params);
+    if (ev.type === 'instrument') { this.model = new ViolinModel(sampleRate, 2, ev.name); this.model.setParams(this.lastParams); }
+    else if (ev.type === 'params') { Object.assign(this.lastParams, ev.params); this.model.setParams(ev.params); }
     else if (ev.type === 'noteOn') this.model.noteOnMidi(ev.midi);
     else if (ev.type === 'noteOff') this.model.noteOffMidi();
   }
@@ -23,7 +25,8 @@ class PhysicalViolinProcessor extends AudioWorkletProcessor {
     while (this.events.length && this.events[0].t * sampleRate <= currentFrame + out.length) this.apply(this.events.shift());
     this.model.process(out, out.length);
     this.sinceStats += out.length;
-    if (this.sinceStats >= this.statsEvery) {
+    // at least 0.1 s and 16 periods, so one boundary slip on a low note doesn't read as multiple slipping
+    if (this.sinceStats >= Math.max(this.statsEvery, (16 * sampleRate) / this.model.f0)) {
       const s = this.model.stats();
       const periods = (this.sinceStats / sampleRate) * s.f0;
       this.port.postMessage({ slipsPerPeriod: s.slips / periods, f0: s.f0, string: s.string, noteOn: this.model.noteOn });

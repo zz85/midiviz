@@ -163,6 +163,10 @@ export class Bow {
     this.supervise = true;
     this.cycleJitter = 0.005;  // per-transition random gain
     this.frictionNoise = 0.2;  // broadband noise proportional to friction force
+    // Share of the string's velocity the bow contact sees. Below 1, the hair's
+    // compliance and the bow's width soften the contact; this damps the secondary
+    // slips that otherwise trap an attack in multiple slipping for many periods.
+    this.coupling = 0.9;
     // parameters (set via setParams)
     this.stickiness = 0;
     this.noiseAmp = 0.144;
@@ -184,7 +188,7 @@ export class Bow {
   // vString = rA + rC (sum of incoming waves at the bow); returns the excitation
   tick(vBow, vString) {
     const noise = this.noiseLp.tick(rand() * this.noiseAmp * this.noiseRand);
-    const relativeVelocity = vBow * (1 + noise) - vString;
+    const relativeVelocity = vBow * (1 + noise) - this.coupling * vString;
     const speed = Math.abs(relativeVelocity);
     const forceAsVelocity = this.normalForce * this.boost / (2 * STRING_IMPEDANCE);
     const staticLimit = forceAsVelocity * this.staticFriction * this.cycleGain;
@@ -242,7 +246,7 @@ export class BowedString {
   constructor(fs, openMidi) {
     this.fs = fs;
     this.openMidi = openMidi;
-    const max = Math.ceil(fs / 40);
+    const max = Math.ceil(fs / 25);  // room for the double bass's low E (41 Hz) with vibrato and jitter
     this.dlA = new FracDelay(max);   // bow-to-bridge segment
     this.dlC = new FracDelay(max);   // bow-to-finger segment
     this.lpA = new OnePole(0);       // termination loss filters
@@ -309,7 +313,7 @@ export class BowedString {
 // Sympathetic open-string resonator: a tuned, filtered feedback delay.
 class Resonator {
   constructor(fs, midi) {
-    this.d = new FracDelay(Math.ceil(fs / 40));
+    this.d = new FracDelay(Math.ceil(fs / 25));
     this.d.delay = fs / midiToHz(midi);
     this.lp = new OnePole(pole(0.3, fs));
     this.y = 0;
@@ -339,26 +343,56 @@ export class SlowNoise {
   tick() { return this.step() * this.scale; }
 }
 
-// Open strings G3, D4, A4 and E5.
+// Violin open strings G3, D4, A4 and E5.
 export const OPEN_STRINGS = [55, 62, 69, 76];
 
+// The bowed-string family: one model, per-instrument settings. openStrings are
+// MIDI notes (fifths, or fourths for the double bass), range is the playable
+// MIDI range, hpHz the output DC/rumble high-pass (below the lowest open
+// string). `defaults` override the violin's parameters. Texture, noise and loss were
+// fitted to each instrument's University of Iowa recordings; forceScale is set so
+// the heavier strings stay in Helmholtz motion (Schelleng's minimum bow force rises
+// with string impedance, so the cello and bass need more than the violin's 0.22).
+export const INSTRUMENTS = {
+  violin: { name: 'Violin', openStrings: OPEN_STRINGS, range: [55, 101], hpHz: 60 },
+  // The Iowa viola is steadier than the violin: about half the bow wander.
+  viola: { name: 'Viola', openStrings: [48, 55, 62, 69], range: [48, 96], hpHz: 60,
+    defaults: { bowWander: 0.07, pressureWander: 0.055 } },
+  // Cello: string loss tracks pitch less steeply (the Iowa fit preferred 0.4; 0.7
+  // keeps the low strings stable), steady low register, livelier from about F3 up,
+  // and less per-cycle jitter (the low register was too rough).
+  cello: { name: 'Cello', openStrings: [36, 43, 50, 57], range: [36, 89], hpHz: 30,
+    defaults: { vibratoRate: 5.6, forceScale: 0.5, lossSlope: 0.7, bowWander: 0.07, pressureWander: 0.055,
+      wanderRefHz: 175, wanderSlope: 1.2, cycleJitter: 0.002, frictionNoise: 0.2 } },
+  // Double bass, tuned in fourths: the steadiest wander of the family and a
+  // little less friction noise, matching the real noise-to-harmonic ratio.
+  bass: { name: 'Double Bass', openStrings: [28, 33, 38, 43], range: [28, 80], hpHz: 20,
+    defaults: { vibratoRate: 5.6, forceScale: 0.38, bowWander: 0.05, pressureWander: 0.04,
+      wanderRefHz: 110, wanderSlope: 1.2, cycleJitter: 0.002, frictionNoise: 0.15 } },
+};
+
 export class ViolinModel {
-  constructor(fs, os = 2) {
+  constructor(fs, os = 2, instrument = 'violin') {
     this.fs = fs;
     this.os = os;
+    this.instrument = INSTRUMENTS[instrument] ? instrument : 'violin';
+    this.openStrings = INSTRUMENTS[this.instrument].openStrings;
     const fi = fs * os;                      // internal (oversampled) rate
     this.fi = fi;
-    this.strings = OPEN_STRINGS.map((m) => new BowedString(fi, m));
-    this.bows = OPEN_STRINGS.map(() => new Bow(fi));
-    this.sym = OPEN_STRINGS.map((m) => new Resonator(fi, m));
+    this.strings = this.openStrings.map((m) => new BowedString(fi, m));
+    this.bows = this.openStrings.map(() => new Bow(fi));
+    this.sym = this.openStrings.map((m) => new Resonator(fi, m));
     this.dec1 = new Biquad().design('lowpass', 0.45 * fs, 0.5412, fi);
     this.dec2 = new Biquad().design('lowpass', 0.45 * fs, 1.3066, fi);
     this.active = 0;
     this.exc = 0;
     this.f0 = 196;
     this.periodRamp = new Ramp(1 / 196, 0);
-    this.vBow = new Ramp(0, 1 / fi);         // bow velocity ramp
-    this.force = new Ramp(0, 2 / fi);        // pressure ramp
+    this.vBowRate = 1 / fi;
+    this.vBow = new Ramp(0, this.vBowRate);  // bow velocity ramp
+    this.forceRate = 2 / fi;
+    this.force = new Ramp(0, this.forceRate); // pressure ramp
+    this.onset = false;                      // pressure and bow speed building at a detached note's start
     this.noteOn = false;
     this.vibPhase = 0;
     this.vibRate = 5.8;
@@ -367,14 +401,23 @@ export class ViolinModel {
     this.vibFadeRate = 1 / (0.25 * fi);      // 250 ms vibrato fade-in
     this.counter = 0;
     this.controlEvery = 32 * os;
-    this.outHp = new Biquad().design('highpass', 60, 0.7, fs);
+    this.outHp = new Biquad().design('highpass', INSTRUMENTS[this.instrument].hpHz, 0.7, fs);
     this.outLp = new Biquad().design('lowpass', 16000, 0.7, fs);
     this.params = {
       expression: 0.6, bowForce: 0.5, bowPosition: 0.1, stickiness: 0.5, bowNoise: 0.5,
       bowRandomPos: 0.5, vibratoDepth: 0.3, vibratoRate: 5.8, stringRes: 0.5,
       portamentoTime: 0.06, forceScale: 0.22, volume: 0.5,
+      bowCoupling: 0.9,                    // see Bow.coupling
+      // Seconds for bow pressure to build at the start of a detached note. Pressure
+      // that creeps up with the bow already moving sits below Schelleng's minimum
+      // force and plays multiple slips first; players set the bow, then draw.
+      pressureOnset: 0.004,
+      bowOnset: 0.06,                      // seconds for the bow to reach speed at a detached note's start
       // Players never hold bow speed, pressure or contact point perfectly still.
       bowWander: 0.15, pressureWander: 0.12, positionWander: 0.07,   // contact wander eased: ±20% swept the bow-position notch (flanger-like, metallic)
+      // Optional growth of speed/pressure wander above wanderRefHz, by
+      // wanderSlope per octave (at most two octaves). Off for the violin.
+      wanderRefHz: 440, wanderSlope: 0,
       // Bow noise split: inside the string loop versus radiated directly.
       directNoise: 0,
       // String HF loss: cutoff fc(f0) = lossFc · (f0/440)^lossSlope.
@@ -388,7 +431,7 @@ export class ViolinModel {
     this.noiseHp = { x1: 0, y1: 0, tick(x) { const y = 0.99 * (this.y1 + x - this.x1); this.x1 = x; this.y1 = y; return y; } };   // DC block
     this.wanderF = new SlowNoise(fi, 1.7);
     this.wanderP = new SlowNoise(fi, 1.1);
-    this.setParams({});
+    this.setParams({ ...(INSTRUMENTS[this.instrument].defaults || {}) });
   }
 
   setParams(p) {
@@ -399,6 +442,7 @@ export class ViolinModel {
       b.noiseAmp = (0.7 * q.bowNoise + 0.4) * 0.16;
       b.noiseRand = q.bowNoise;
       b.forceScale = q.forceScale;
+      b.coupling = q.bowCoupling;
       if (q.frictionNoise != null) b.frictionNoise = q.frictionNoise;
       if (q.supervise != null) b.supervise = q.supervise;
       if (q.cycleJitter != null) b.cycleJitter = q.cycleJitter;
@@ -436,11 +480,11 @@ export class ViolinModel {
 
   pickString(midi) {
     let s = 0;
-    for (let i = 0; i < OPEN_STRINGS.length; i++) if (midi >= OPEN_STRINGS[i]) s = i;
+    for (let i = 0; i < this.openStrings.length; i++) if (midi >= this.openStrings[i]) s = i;
     return s;
   }
 
-  // stringIndex (0=G … 3=E) forces a string; the default picks automatically.
+  // stringIndex (0 = lowest … 3 = highest string) forces a string; the default picks automatically.
   noteOnMidi(midi, stringIndex = null) {
     const legato = this.noteOn;
     const s = stringIndex ?? this.pickString(midi);
@@ -459,10 +503,18 @@ export class ViolinModel {
     this.applyLoss();
     if (!legato) this.vibFade = 0;
     this.applyExpression();
+    if (!legato) {
+      this.force.rate = Math.max(this.forceRate, this.force.target / Math.max(1, this.params.pressureOnset * this.fi));
+      this.vBow.rate = Math.max(this.vBowRate, this.vBow.target / Math.max(1, this.params.bowOnset * this.fi));
+      this.onset = true;
+    }
   }
 
   noteOffMidi() {
     this.noteOn = false;
+    this.onset = false;                      // release at the usual rates, even mid-onset
+    this.force.rate = this.forceRate;
+    this.vBow.rate = this.vBowRate;
     this.vBow.target = 0;
     this.force.target = 0;
   }
@@ -485,9 +537,16 @@ export class ViolinModel {
       // Apply the same physical movement in bow units across the register.
       // Multiplying wander by pitch made short high-note periods much more
       // likely to fall into a subharmonic even though the player's motion had
-      // not changed.
-      const vBow = this.vBow.tick() * Math.max(0, 1 + q.bowWander * this.wanderV.tick());
-      const force = this.force.tick() * Math.max(0, 1 + q.pressureWander * this.wanderF.tick());
+      // not changed. Instruments may opt into livelier upper registers with
+      // wanderSlope; the violin leaves it at 0.
+      const hw = 1 + q.wanderSlope * Math.min(Math.max(Math.log2(this.f0 / q.wanderRefHz), 0), 2);
+      const vBow = this.vBow.tick() * Math.max(0, 1 + q.bowWander * hw * this.wanderV.tick());
+      const force = this.force.tick() * Math.max(0, 1 + q.pressureWander * hw * this.wanderF.tick());
+      if (this.onset) {   // back to the usual ramps once the note has started
+        if (this.force.value === this.force.target) this.force.rate = this.forceRate;
+        if (this.vBow.value === this.vBow.target) this.vBow.rate = this.vBowRate;
+        if (this.force.rate === this.forceRate && this.vBow.rate === this.vBowRate) this.onset = false;
+      }
       const wp = 1 + q.positionWander * (0.5 + q.bowRandomPos) * this.wanderP.tick();
       let period = this.periodRamp.tick();
 

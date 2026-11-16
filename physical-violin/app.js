@@ -1,4 +1,5 @@
 // UI + audio graph: model (worklet) → body convolution → clip → dry + FDN room → out.
+import { INSTRUMENTS } from './violin-core.js';
 
 const PARAMS = [
   // id, label, min, max, step, default, note
@@ -12,7 +13,7 @@ const PARAMS = [
   ['vibratoDepth', 'Vibrato depth', 0, 1, 0.01, 0.3, 'CC1'],
   ['vibratoRate', 'Vibrato rate', 3, 8, 0.1, 5.8, 'Hz'],
   ['portamentoTime', 'Portamento', 0, 0.4, 0.005, 0.06, 'seconds'],
-  ['forceScale', 'Pressure scale', 0.02, 0.5, 0.005, 0.22, 'normal-force calibration'],
+  ['forceScale', 'Pressure scale', 0.02, 1, 0.005, 0.22, 'normal-force calibration'],
 ];
 
 // Synthetic body IRs: sums of damped modes typical of violin bodies (A0, B1−, B1+, bridge hill).
@@ -20,6 +21,12 @@ const PARAMS = [
 const BODIES = {
   'Iowa violin, fitted (detailed)': 'irs/violin-body-iowa.wav',
   'Iowa violin, fitted (smooth)': 'irs/violin-body-iowa-smooth.wav',
+  'Iowa viola, fitted (detailed)': 'irs/viola-body-iowa.wav',
+  'Iowa viola, fitted (smooth)': 'irs/viola-body-iowa-smooth.wav',
+  'Iowa cello, fitted (detailed)': 'irs/cello-body-iowa.wav',
+  'Iowa cello, fitted (smooth)': 'irs/cello-body-iowa-smooth.wav',
+  'Iowa double bass, fitted (detailed)': 'irs/bass-body-iowa.wav',
+  'Iowa double bass, fitted (smooth)': 'irs/bass-body-iowa-smooth.wav',
   'Synthetic: classic': [[275, 45, 1.0], [440, 35, 0.6], [470, 30, 0.9], [540, 30, 1.0], [700, 25, 0.5],
     [1000, 18, 0.45], [1400, 14, 0.4], [2400, 9, 0.7], [2900, 8, 0.55], [3500, 6, 0.35], [4800, 4, 0.2]],
   'Synthetic: dark': [[260, 50, 1.0], [430, 40, 0.8], [520, 35, 1.0], [650, 30, 0.6], [900, 20, 0.4],
@@ -30,6 +37,26 @@ const BODIES = {
 };
 
 export const DEFAULT_BODY = 'Iowa violin, fitted (detailed)';
+
+// Per-instrument UI settings (the model's own live in INSTRUMENTS in violin-core.js).
+// makeup: output gain matched to each instrument's Iowa reference loudness (the viola keeps
+// the violin's). body: the default fitted body; the smooth fits generalise best below the violin.
+export const INSTRUMENT_INFO = {
+  violin: { label: 'violin', makeup: 0.25, baseName: 'G3', strings: ['G', 'D', 'A', 'E'], body: 'Iowa violin, fitted (detailed)' },
+  viola: { label: 'viola', makeup: 0.25, baseName: 'C3', strings: ['C', 'G', 'D', 'A'], body: 'Iowa viola, fitted (smooth)' },
+  cello: { label: 'cello', makeup: 0.115, baseName: 'C2', strings: ['C', 'G', 'D', 'A'], body: 'Iowa cello, fitted (smooth)' },
+  bass: { label: 'double bass', makeup: 0.10, baseName: 'E1', strings: ['E', 'A', 'D', 'G'], body: 'Iowa double bass, fitted (smooth)' },
+};
+for (const [id, info] of Object.entries(INSTRUMENT_INFO)) info.base = INSTRUMENTS[id].openStrings[0];
+// Model defaults that are also sliders: the sliders send every value, so set them on a switch.
+const sliderDefault = (inst, id) => INSTRUMENTS[inst].defaults?.[id] ?? PARAMS.find((p) => p[0] === id)[5];
+// Presets name violin bodies; map them to the current instrument's equivalent.
+const bodyFor = (name, inst) => {
+  if (inst === 'violin' || !name.startsWith('Iowa violin')) return name;
+  if (name === 'Iowa violin, fitted (detailed)') return INSTRUMENT_INFO[inst].body;
+  return name.replace('Iowa violin', `Iowa ${INSTRUMENT_INFO[inst].label}`);
+};
+let instrument = 'violin';
 
 // Resolve a body entry (file path or mode list) to an AudioBuffer.
 async function loadBody(ac, name) {
@@ -118,20 +145,19 @@ export const PRESETS = {
 async function applyPreset(name) {
   const p = PRESETS[name];
   for (const [id, v] of Object.entries(p.params)) setSlider(id, v);
-  document.getElementById('body').value = p.body;
+  document.getElementById('body').value = bodyFor(p.body, instrument);
   document.getElementById('roomMix').value = p.roomMix;
   document.getElementById('rt60').value = p.rt60;
   if (ctx) {
-    body.buffer = await loadBody(ctx, p.body);
+    body.buffer = await loadBody(ctx, bodyFor(p.body, instrument));
     roomGain.gain.value = p.roomMix;
     room.buffer = makeHallIR(ctx, p.rt60);
   }
 }
 
-const KEYMAP = 'awsedftgyhujkolp;\''.split('');   // chromatic from G3 (MIDI 55)
-const STRING_NAMES = ['G', 'D', 'A', 'E'];
+const KEYMAP = 'awsedftgyhujkolp;\''.split('');   // chromatic from the instrument's lowest open string
 
-let ctx, node, body, room, roomGain, dryGain, analyser;
+let ctx, node, body, room, roomGain, dryGain, makeup, analyser;
 let heldKeys = [];
 let lastMidi = 69;
 let padBowing = false;
@@ -224,10 +250,10 @@ function buildPad() {
 }
 
 // Shared graph: model → body convolver → (pre-clip tap) → clip → dry + room → out.
-export async function buildGraph(ac, { events, bodyName = DEFAULT_BODY, roomMix = 0.22, rt60 = 1.8, makeup = 0.25 } = {}) {
+export async function buildGraph(ac, { events, bodyName = DEFAULT_BODY, roomMix = 0.22, rt60 = 1.8, instrument: inst = 'violin', makeup = INSTRUMENT_INFO[inst].makeup } = {}) {
   await ac.audioWorklet.addModule(new URL('worklet.js', import.meta.url));
   const g = {};
-  g.node = new AudioWorkletNode(ac, 'physical-violin', { numberOfInputs: 0, outputChannelCount: [1], processorOptions: { events } });
+  g.node = new AudioWorkletNode(ac, 'physical-violin', { numberOfInputs: 0, outputChannelCount: [1], processorOptions: { events, instrument: inst } });
   g.body = new ConvolverNode(ac, { disableNormalization: true });   // option name per spec; 'normalize' is ignored
   g.body.buffer = await loadBody(ac, bodyName);
   g.makeup = new GainNode(ac, { gain: makeup });
@@ -244,15 +270,15 @@ export async function buildGraph(ac, { events, bodyName = DEFAULT_BODY, roomMix 
 
 async function start() {
   ctx = new AudioContext({ latencyHint: 'interactive' });
-  const g = await buildGraph(ctx, { bodyName: document.getElementById('body').value });
-  ({ node, body, room, roomGain, dryGain } = g);
+  const g = await buildGraph(ctx, { bodyName: document.getElementById('body').value, instrument });
+  ({ node, body, room, roomGain, dryGain, makeup } = g);
   analyser = new AnalyserNode(ctx, { fftSize: 4096 });
   g.out.connect(ctx.destination);
   g.out.connect(analyser);
   node.port.onmessage = ({ data }) => {
     const ok = Math.abs(data.slipsPerPeriod - 1) < 0.05;
     document.getElementById('stats').textContent = data.noteOn
-      ? `string ${STRING_NAMES[data.string]} · f0 ${data.f0.toFixed(1)} Hz · slips/period ${data.slipsPerPeriod.toFixed(2)} ${ok ? '(Helmholtz)' : data.slipsPerPeriod < 0.5 ? '(stuck / choked)' : '(multiple slip)'}`
+      ? `${INSTRUMENT_INFO[instrument].strings[data.string]} string · f0 ${data.f0.toFixed(1)} Hz · slips/period ${data.slipsPerPeriod.toFixed(2)} ${ok ? '(Helmholtz)' : data.slipsPerPeriod < 0.5 ? '(stuck / choked)' : '(multiple slip)'}`
       : 'bow lifted';
   };
   await applyPreset(document.getElementById('preset').value);
@@ -262,14 +288,15 @@ async function start() {
 }
 
 // Offline render of the same graph for diagnostics: returns metrics + left channel.
-export async function renderOffline({ seconds = 4, params = {}, bodyName = DEFAULT_BODY, phrase, roomMix, rt60 } = {}) {
+export async function renderOffline({ seconds = 4, params = {}, bodyName, phrase, roomMix, rt60, instrument: inst = 'violin' } = {}) {
+  bodyName = bodyFor(bodyName || INSTRUMENT_INFO[inst].body, inst);
   const fs = 48000;
   const ac = new OfflineAudioContext({ numberOfChannels: 4, length: seconds * fs, sampleRate: fs });
-  const defaults = Object.fromEntries(PARAMS.map(([id, , , , , def]) => [id, def]));
+  const defaults = Object.fromEntries(PARAMS.map(([id]) => [id, sliderDefault(inst, id)]));
   const notes = phrase || [{ t: 0.1, midi: 62, dur: 1.2 }, { t: 1.4, midi: 69, dur: 1.0 }, { t: 2.5, midi: 74, dur: 1.2 }];
   const events = [{ t: 0, type: 'params', params: { ...defaults, ...params } }];
   for (const n of notes) { events.push({ t: n.t, type: 'noteOn', midi: n.midi }, { t: n.t + n.dur, type: 'noteOff' }); }
-  const g = await buildGraph(ac, { events, bodyName, roomMix, rt60 });
+  const g = await buildGraph(ac, { events, bodyName, roomMix, rt60, instrument: inst });
   const merger = new ChannelMergerNode(ac, { numberOfInputs: 4 });
   const split = new ChannelSplitterNode(ac, { numberOfOutputs: 2 });
   g.out.connect(split);
@@ -352,6 +379,21 @@ function buildUI() {
   });
   document.getElementById('roomMix').addEventListener('input', (e) => { if (roomGain) roomGain.gain.value = parseFloat(e.target.value); });
   document.getElementById('rt60').addEventListener('change', (e) => { if (room) room.buffer = makeHallIR(ctx, parseFloat(e.target.value)); });
+  const ins = document.getElementById('instrument');
+  ins.addEventListener('change', async () => {
+    instrument = ins.value;
+    const info = INSTRUMENT_INFO[instrument];
+    document.getElementById('keyhelp').textContent = info.baseName;
+    document.getElementById('body').value = info.body;
+    for (const id of ['vibratoRate', 'forceScale']) setSlider(id, sliderDefault(instrument, id));
+    if (ctx) {
+      noteOff(); heldKeys = [];
+      node.port.postMessage({ type: 'instrument', name: instrument });
+      body.buffer = await loadBody(ctx, info.body);
+      makeup.gain.value = info.makeup;
+      sendParams();
+    }
+  });
   const ps = document.getElementById('preset');
   for (const name of Object.keys(PRESETS)) ps.add(new Option(name, name));
   ps.addEventListener('change', () => applyPreset(ps.value));
@@ -361,14 +403,15 @@ function buildUI() {
     if (e.repeat) return;
     const k = KEYMAP.indexOf(e.key.toLowerCase());
     if (k < 0) return;
-    const midi = 55 + k + (e.shiftKey ? 12 : 0);
+    const midi = INSTRUMENT_INFO[instrument].base + k + (e.shiftKey ? 12 : 0);
     heldKeys.push(midi);
     noteOn(midi);
   });
   window.addEventListener('keyup', (e) => {
     const k = KEYMAP.indexOf(e.key.toLowerCase());
     if (k < 0) return;
-    heldKeys = heldKeys.filter((m) => m !== 55 + k && m !== 67 + k);
+    const b = INSTRUMENT_INFO[instrument].base;
+    heldKeys = heldKeys.filter((m) => m !== b + k && m !== b + 12 + k);
     if (heldKeys.length) noteOn(heldKeys[heldKeys.length - 1]);   // legato back to the held note
     else if (!padBowing) noteOff();
   });

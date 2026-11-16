@@ -76,7 +76,7 @@
     <header>
       <div>
         <h1>#048 · Bowed Violin</h1>
-        <p class="intro">A playable physical string: bow pressure and motion excite a waveguide, then a violin-body response and room shape the sound.</p>
+        <p class="intro">A playable physical string: bow pressure and motion excite a waveguide, then a body response and room shape the sound. The same model plays violin, viola, cello and double bass.</p>
       </div>
       <a href="README.md">Back to experiments</a>
     </header>
@@ -84,6 +84,7 @@
     <div class="toolbar">
       <button id="start">Start audio</button>
       <span id="note"></span>
+      <label>Instrument <select id="instrument" autocomplete="off"><option value="violin">Violin</option><option value="viola">Viola</option><option value="cello">Cello</option><option value="bass">Double Bass</option></select></label>
       <label>Preset <select id="preset"></select></label>
       <label>Body <select id="body"></select></label>
       <label title="Replace the body stage with any WAV impulse response">Load body response <input id="ir" type="file" accept="audio/*"></label>
@@ -114,7 +115,7 @@
 
     <canvas id="scope" width="1200" height="400" aria-label="Waveform and spectrum"></canvas>
     <p class="keys">
-      Play chromatically from G3 with
+      Play chromatically from <span id="keyhelp">G3</span> with
       <kbd>A</kbd> <kbd>W</kbd> <kbd>S</kbd> <kbd>E</kbd> <kbd>D</kbd> <kbd>F</kbd> <kbd>T</kbd> <kbd>G</kbd>
       <kbd>Y</kbd> <kbd>H</kbd> <kbd>U</kbd> <kbd>J</kbd> <kbd>K</kbd> <kbd>O</kbd> <kbd>L</kbd> <kbd>P</kbd>
       <kbd>;</kbd> <kbd>'</kbd>. Hold <kbd>Shift</kbd> for one octave higher. A MIDI keyboard works too.
