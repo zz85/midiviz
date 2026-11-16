@@ -70,6 +70,8 @@
     <select id="pmodel" title="The pianist's model (pianist/alt-model.js). Changing it reloads the page"><option value="vroida">Pianist: VRoid AvatarSample_A</option><option value="vrm">Pianist: pixiv VRM 1.0 sample</option></select>
     <select id="vdress" title="Her dress"><option value="wine">Wine dress</option><option value="black">Black dress</option><option value="navy">Navy dress</option><option value="emerald">Emerald dress</option><option value="rose">Rose dress</option><option value="white">White dress</option><option value="off">Casual: her cardigan</option></select>
     <select id="hands" title="Her hands. Pianist's: #032's pianist's own hands (the MakeHuman woman, fingers lengthened to a woman's proportions), on her wrists and played by the same fingering (pianist/hand-graft.js): cel-shaded in her skin's colour with the ink outline, or in #032's realistic skin. Anime: the VRoid model's own. Changing it reloads the page"><option value="pianist">Hands: the pianist's, cel-shaded</option><option value="real">Hands: the pianist's, realistic skin</option><option value="model">Hands: anime (the model's)</option></select>
+    <select id="pianoType" title="The concert grand or the older upright. Changing it reloads the page"><option value="grand">Piano: concert grand</option><option value="upright">Piano: older upright</option></select>
+    <select id="uprightPanel" hidden title="Remove the upright's upper front panel to show its hammers, dampers, action and strings"><option value="open">Panel: off - show action</option><option value="closed">Panel: on - cover action</option></select>
     <select id="cam" title="Camera">
       <option value="auto">Director (auto)</option>
       <option value="front">The two, from the hall</option>
@@ -134,6 +136,7 @@
     import { SoundFontEngine, MidiScheduler } from './soundfont-engine/src/index.js'
     import { installAcoustics, acousticParams, ROOMS, SEATS } from './concertstage/acoustics.js'
     import { buildGrandPiano, LOW, HIGH } from './concertstage/concert-grand.js'
+    import { loadUprightPiano } from './pianist/upright-piano.js'
     import { fingerLine, onePlayerNotes } from './strings/fingering.js'
     import { buildMotion } from './strings/motion.js'
     import { bowingFor } from './violinist/score-art.js'
@@ -156,6 +159,16 @@
     const $ = id => document.getElementById(id)
     const Q = new URLSearchParams(location.search)
     const SHOT = Q.has('shot')
+    const PIANO_TYPE = Q.get('piano') === 'upright' ? 'upright' : 'grand'
+    $('pianoType').value = PIANO_TYPE
+    $('uprightPanel').hidden = PIANO_TYPE !== 'upright'
+    $('uprightPanel').value = Q.get('panel') === 'closed' ? 'closed' : 'open'
+    $('pianoType').onchange = () => {
+      const p = new URLSearchParams(location.search)
+      if ($('pianoType').value === 'upright') p.set('piano', 'upright'); else p.delete('piano')
+      location.search = p.toString()
+    }
+    $('uprightPanel').onchange = () => { piano.setPanelOpen?.($('uprightPanel').value === 'open'); saveUrl() }
     // #051: the park (park/park.js) in place of the concert hall
     const PARK = Q.get('stage') === 'park'
     const parkForeground = root => { if (PARK) root.traverse(object => object.layers.set(1)) }
@@ -276,9 +289,9 @@
     }
 
     // ── The piano and the pianist (#032) ───────────────────────────────────
-    const piano = buildGrandPiano({ mirror: false })
+    const piano = PIANO_TYPE === 'upright' ? await loadUprightPiano() : buildGrandPiano({ mirror: false })
     pianoSide.add(piano.root)
-    piano.setFinish('ebony'); piano.setLid('full')
+    piano.setFinish('ebony'); piano.setLid(PIANO_TYPE === 'upright' && $('uprightPanel').value === 'closed' ? 'closed' : 'full')
     piano.bench.position.z = 47
     const SEAT_Y = 55.4
     setStatus('Loading the pianist…')
@@ -1207,6 +1220,8 @@
     function saveUrl() {
       if (SHOT) return
       const p = new URLSearchParams()
+      if (PIANO_TYPE === 'upright') p.set('piano', 'upright')
+      if (PIANO_TYPE === 'upright' && $('uprightPanel').value === 'closed') p.set('panel', 'closed')
       if ($('song').value !== 'beethoven_kreutzer_3_presto.mid' && !$('song').value.startsWith('local:')) p.set('song', $('song').value)
       if ($('model').selectedIndex) p.set('model', $('model').value)
       if ($('outfit').value !== 'concert') p.set('outfit', $('outfit').value)

@@ -256,6 +256,9 @@
   </div>
   <div id="visualsPop" class="pop ui">
     <div class="item" id="resetAll" title="Every option back to its default (the song and its position are kept)">↺ Restore all defaults</div>
+    <div class="sect">Piano</div>
+    <div class="field" title="The concert grand or the older upright. Changing it reloads the scene"><label>Instrument</label><select id="pianoType"><option value="grand" selected>Concert grand</option><option value="upright">Older upright</option></select></div>
+    <div class="field" id="uprightPanelField" hidden title="Remove the upright's upper front panel to show its hammers, dampers, action and strings"><label>Front panel</label><select id="uprightPanel"><option value="open" selected>Off - show the action</option><option value="closed">On - cover the action</option></select></div>
     <div class="sect">Pianist</div>
     <div class="field"><label>Model</label><select id="model"><option value="">MakeHuman (realistic, CC0)</option></select></div>
     <div class="field" id="vdressField" style="display:none" title="The VRoid pianist's concert dress (VRoid HairSample_Female's, refitted to her), or her own cardigan and shorts"><label>Concert dress</label><select id="vdress"><option value="wine" selected>Wine</option><option value="black">Black</option><option value="navy">Navy</option><option value="emerald">Emerald</option><option value="rose">Rose</option><option value="white">White</option><option value="off">Her own clothes</option></select></div>
@@ -478,6 +481,7 @@
     import { exportVideo, exportSupported, defaultBitrate } from './notation3d/video-export.js'
     import { installAcoustics, offlineHall, acousticParams, rt60Of, ROOMS, SEATS } from './concertstage/acoustics.js'
     import { buildGrandPiano, LOW, HIGH, DIM } from './concertstage/concert-grand.js'
+    import { loadUprightPiano } from './pianist/upright-piano.js'
     import { createLessonView, LESSON_VIEWS } from './pianist/lesson.js'
     import { loadCharacter } from './pianist/character.js'
     import { loadAltCharacter, MODELS } from './pianist/alt-model.js'
@@ -532,9 +536,21 @@
     controls.minDistance = 10; controls.maxDistance = 1400
 
     // ── Piano and stage ──────────────────────────────────────────────────
-    const piano = buildGrandPiano({ mirror: LOWQ ? false : { width: 1600, height: 900 } })
+    const PIANO_TYPE = params.get('piano') === 'upright' ? 'upright' : 'grand'
+    $('pianoType').value = PIANO_TYPE
+    $('uprightPanelField').hidden = PIANO_TYPE !== 'upright'
+    $('uprightPanel').value = params.get('panel') === 'closed' ? 'closed' : 'open'
+    $('pianoType').onchange = () => {
+      const q = new URLSearchParams(location.search)
+      if ($('pianoType').value === 'upright') q.set('piano', 'upright'); else q.delete('piano')
+      location.search = q.toString()
+    }
+    const piano = PIANO_TYPE === 'upright'
+      ? await loadUprightPiano()
+      : buildGrandPiano({ mirror: LOWQ ? false : { width: 1600, height: 900 } })
     scene.add(piano.root)
-    piano.setFinish('ebony'); piano.setLid('full')
+    piano.setFinish('ebony'); piano.setLid(PIANO_TYPE === 'upright' && $('uprightPanel').value === 'closed' ? 'closed' : 'full')
+    $('uprightPanel').onchange = () => piano.setPanelOpen?.($('uprightPanel').value === 'open')
     // the lesson view (falling notes) for the hands half of a stacked Short
     const lesson = createLessonView({ piano, DIM, LOW, HIGH })
     scene.add(lesson.group)
@@ -1727,7 +1743,7 @@
     // song position (&at=); a shared song starts on the first click.
     const STATE = [
       // key, control (selects / ranges / colours: value; checkboxes: 1 / 0)
-      ['outfit', 'outfit'], ['dress', 'dressStyle'], ['slit', 'slit'], ['fabric', 'fabric'], ['dcol', 'dressColor'], ['shoes', 'shoeStyle'],
+      ['piano', 'pianoType'], ['panel', 'uprightPanel'], ['outfit', 'outfit'], ['dress', 'dressStyle'], ['slit', 'slit'], ['fabric', 'fabric'], ['dcol', 'dressColor'], ['shoes', 'shoeStyle'],
       ['hair', 'hairStyle'], ['hcol', 'hairColor'], ['density', 'hairDensity'], ['hairon', 'hairOn'], ['hairsim', 'hairSim'],
       ['dresson', 'dressOn'], ['clothsim', 'clothSim'], ['vdress', 'vdress'], ['look', 'look'], ['smooth', 'smooth'], ['simplify', 'simplify'],
       ['gaze', 'gaze'], ['expr', 'expr'], ['rest', 'restAfter'], ['hips', 'hips'], ['posture', 'posture'], ['reach', 'reach'], ['rock', 'rock'], ['sway', 'sway'], ['nod', 'nod'], ['glances', 'glances'], ['armw', 'armw'], ['lifth', 'lifth'], ['wflex', 'wflex'], ['frot', 'frot'], ['elbow', 'elbowLead'], ['liftoff', 'liftoff'], ['bench', 'benchDist'], ['benchh', 'benchH'],

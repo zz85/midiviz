@@ -25,6 +25,7 @@ import { createRenderLock } from './render-lock.js'
 import { chooseParts, newJob, writeJob, writeText, openJob, pickFolder, jobLeft, jobDone, settingsOf } from './parts.js'
 import { installAcoustics, offlineHall, acousticParams, rt60Of, ROOMS, SEATS } from '../concertstage/acoustics.js'
 import { buildGrandPiano, LOW, HIGH, DIM, FINISHES } from '../concertstage/concert-grand.js'
+import { loadUprightPiano } from '../pianist/upright-piano.js'
 import { buildCandleChamber, candleEnvironment, CANDLE } from '../pathtrace/candle-chamber.js'
 import { createLessonView, LESSON_VIEWS } from '../pianist/lesson.js'
 import { loadCharacter } from '../pianist/character.js'
@@ -117,8 +118,17 @@ export async function boot(plug = {}) {
     controls.minDistance = 10; controls.maxDistance = 1400
 
     // ── Piano and stage ──────────────────────────────────────────────────
-    // (the fallboard's planar mirror is a WebGL Reflector: on WebGPU, SSR reflects the keys in the lacquer)
-    const piano = buildGrandPiano({ mirror: LOWQ || GPU ? false : { width: 1600, height: 900 } })
+    const PIANO_TYPE = params.get('piano') === 'upright' ? 'upright' : 'grand'
+    $('pianoType').value = PIANO_TYPE
+    $('pianoType').onchange = () => {
+      const q = new URLSearchParams(location.search)
+      if ($('pianoType').value === 'upright') q.set('piano', 'upright'); else q.delete('piano')
+      location.search = q.toString()
+    }
+    // (the grand fallboard's planar mirror is a WebGL Reflector: on WebGPU, SSR reflects the keys in the lacquer)
+    const piano = PIANO_TYPE === 'upright'
+      ? await loadUprightPiano()
+      : buildGrandPiano({ mirror: LOWQ || GPU ? false : { width: 1600, height: 900 } })
     scene.add(piano.root)
     piano.setFinish('ebony'); piano.setLid('full')
     // the lesson view (falling notes) for the hands half of a stacked Short
@@ -232,12 +242,24 @@ export async function boot(plug = {}) {
     for (const [k, f] of Object.entries(FINISHES)) $('finish').add(new Option(f.label, k))
     $('finish').value = 'ebony'
     $('finish').onchange = () => piano.setFinish($('finish').value)
-    // (the lid goes straight to its new angle, so a link or an export starts with it there)
+    if (PIANO_TYPE === 'upright') {
+      const field = $('lid').closest('.field')
+      field.title = "Remove the upright's upper front panel to show its hammers, dampers, action and strings"
+      field.querySelector('label').firstChild.nodeValue = 'Front panel'
+      $('lid').options[0].textContent = 'Off - show the action'
+      $('lid').options[1].hidden = true
+      $('lid').options[2].textContent = 'On - cover the action'
+    }
+    // (the grand lid and upright panel go straight to their linked state)
     const setLid = mode => {
-      piano.setLid(mode); lidLight.visible = mode !== 'closed'
+      if (PIANO_TYPE === 'upright' && mode === 'half') mode = 'full'
+      piano.setLid(mode)
+      $('lid').value = piano.lidMode
+      lidLight.visible = PIANO_TYPE === 'upright' || piano.lidMode !== 'closed'
       for (let i = 0; i < 120; i++) piano.update(0.05)
     }
     $('lid').onchange = () => setLid($('lid').value)
+    setLid($('lid').value)
     // ── The pianist ──────────────────────────────────────────────────────
     setStatus('Loading the pianist…')
     // ?model=quaternius|vrm: another rigged model (pianist/alt-model.js) with
@@ -1464,7 +1486,7 @@ export async function boot(plug = {}) {
     // song position (&at=); a shared song starts on the first click.
     const STATE = [
       // key, control (selects / ranges / colours: value; checkboxes: 1 / 0)
-      ['outfit', 'outfit'], ['dress', 'dressStyle'], ['slit', 'slit'], ['fabric', 'fabric'], ['dcol', 'dressColor'], ['shoes', 'shoeStyle'],
+      ['piano', 'pianoType'], ['outfit', 'outfit'], ['dress', 'dressStyle'], ['slit', 'slit'], ['fabric', 'fabric'], ['dcol', 'dressColor'], ['shoes', 'shoeStyle'],
       ['hair', 'hairStyle'], ['hcol', 'hairColor'], ['density', 'hairDensity'], ['hairon', 'hairOn'], ['hairsim', 'hairSim'],
       ['dresson', 'dressOn'], ['clothsim', 'clothSim'], ['vdress', 'vdress'], ['look', 'look'], ['smooth', 'smooth'], ['simplify', 'simplify'],
       ['gaze', 'gaze'], ['expr', 'expr'], ['rest', 'restAfter'], ['hips', 'hips'], ['posture', 'posture'], ['reach', 'reach'], ['rock', 'rock'], ['sway', 'sway'], ['nod', 'nod'], ['glances', 'glances'], ['armw', 'armw'], ['lifth', 'lifth'], ['wflex', 'wflex'], ['frot', 'frot'], ['elbow', 'elbowLead'], ['liftoff', 'liftoff'], ['bench', 'benchDist'], ['benchh', 'benchH'],
