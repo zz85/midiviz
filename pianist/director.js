@@ -22,6 +22,7 @@
 // lid), 180 = in front of her across the piano (-z), -90 = her left.
 
 import * as THREE from 'three'
+import { MelodyFocus, assignCinematicCompositions, cinematicFrame, planMusicalCuts } from './cinematic-camera.js'
 
 const D2R = Math.PI / 180
 const clamp = THREE.MathUtils.clamp
@@ -532,7 +533,8 @@ export const DIRECTOR_PRESETS = {
 }
 const normMix = m => { if (!m) return null; const t = (m.keys ?? 0) + (m.her ?? 0) + (m.piano ?? 0); return t > 0 ? { keys: (m.keys ?? 0) / t, her: (m.her ?? 0) / t, piano: (m.piano ?? 0) / t } : null }
 
-export function planShots({ duration, phrases = [], glances = [], energyAt = () => 0.3 }, opts = {}) {
+export function planShots(song, opts = {}) {
+  const { duration, phrases = [], glances = [], energyAt = () => 0.3 } = song
   const pace = opts.pace ?? 1, bias = opts.bias ?? 0, trans = opts.trans ?? 'mix'
   const mix = normMix(opts.mix), still = opts.still == null ? null : clamp(+opts.still, 0, 1)
   // sizes: the shot sizes allowed (0 close, 1 medium, 2 far), all by default
@@ -541,6 +543,7 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
   // gets the same film (seek, export) and different songs get different ones
   const seed = songSeed({ duration, phrases }), hs = (k, n) => hash(k + seed, n)
   const starts = phrases.map(p => p[0]).filter(t => t > 0.5)
+  const musicalCuts = opts.cinematic && song.notes?.length ? planMusicalCuts(song, { pace }) : null
   const mean = (a, b) => { let s = 0, n = 0; for (let t = a; t < b; t += 0.25) { s += energyAt(t); n++ } return n ? s / n : 0 }
   const lookUp = (a, b) => glances.some(g => g.a < b - 1 && g.b > a + 0.5 && !g.quiet)
   const strMax = opts.strings ?? null
@@ -563,14 +566,20 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
     const E = mean(t, t + 6)
     const h = hs(i, 1)
     let L = lerp(13, 4.5, clamp(E, 0, 1)) * (0.8 + 0.45 * h) / pace
-    // cut on a phrase start near the planned length
-    let end = t + L
-    const cand = starts.filter(s => s > t + 0.6 * L && s < t + 1.6 * L)
-    if (cand.length) end = cand.reduce((b, s) => Math.abs(s - t - L) < Math.abs(b - t - L) ? s : b)
-    end = Math.min(end, t + 16 / pace)
+    // The cinematic edit chooses all cuts together from notes and tempo. The
+    // established director remains the fallback for pages that provide only phrases.
+    let end
+    if (musicalCuts) {
+      end = musicalCuts.find(c => c > t + 1e-6) ?? duration
+      L = end - t
+    } else {
+      end = t + L
+      const cand = starts.filter(s => s > t + 0.6 * L && s < t + 1.6 * L)
+      if (cand.length) end = cand.reduce((b, s) => Math.abs(s - t - L) < Math.abs(b - t - L) ? s : b)
+      end = Math.min(end, t + 16 / pace)
+    }
     // the opening: three quick takes, far → medium → close, whatever the pace
-    // (about 7, 5 and 4.5 s, on a phrase start when one is near)
-    const opening = !sizes && duration > 45 && i < 3
+    const opening = !musicalCuts && !sizes && duration > 45 && i < 3
     if (opening) {
       const want = t + [6.5, 4.5, 4][i] + 1.2 * h
       const near = starts.filter(s => s > want - 1.5 && s < want + 1.5)
@@ -582,7 +591,8 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
     let name, move
     // open far (the page fades it in from black): side-on from the hall,
     // across the hall, or high from behind her; then medium, then close
-    if (i === 0 && opts.opening === 'wide') { name = 'stage'; move = 'dollyIn'; end = Math.max(end, t + 7) }
+    if (musicalCuts && i === 0) { name = names.includes('keys') ? 'keys' : names[0]; move = 'still' }
+    else if (i === 0 && opts.opening === 'wide') { name = 'stage'; move = 'dollyIn'; end = Math.max(end, t + 7) }
     else if (opening && i < 2) {
       const pick = (opts, r) => { opts = opts.filter(([n]) => names.includes(n)); const tot = opts.reduce((a, o) => a + o[1], 0); let q = r * tot; return opts.find(o => (q -= o[1]) <= 0)?.[0] ?? opts[0][0] }
       name = i === 0 ? pick([['hallSide', 1.2], ['establish', 1], ['highBehind', 0.8]], hs(i, 3))
@@ -693,7 +703,7 @@ export function planShots({ duration, phrases = [], glances = [], energyAt = () 
     })
     t = end
   }
-  return shots
+  return opts.cinematic ? assignCinematicCompositions(shots, song, { instrument: opts.instrument, panelOpen: opts.panelOpen }) : shots
 }
 
 // ── A Short: one clip, framed for 9:16 ──
@@ -821,11 +831,12 @@ export function createDirector(opts = {}) {
   // fadeIn: seconds the opening shot takes to come up from black, from song time fadeFrom (0)
   const o = { pace: 1, bias: 0, trans: 'mix', follow: false, fadeIn: 2.5, ...opts }
   let shots = null, source = null, idleT = 0
-  const anchor = { hands: new THREE.Vector3(0, 76, 0), head: new THREE.Vector3(0, 122, 32), figure: new THREE.Vector3(), piano: new THREE.Vector3(), feet: new THREE.Vector3(0, 12, 18), hammers: new THREE.Vector3(0, 85, -36.5), pedals: new THREE.Vector3(0, 7, -2) }
+  const anchor = { hands: new THREE.Vector3(0, 76, 0), left: new THREE.Vector3(-18, 76, 0), right: new THREE.Vector3(18, 76, 0), head: new THREE.Vector3(0, 122, 32), figure: new THREE.Vector3(), piano: new THREE.Vector3(), feet: new THREE.Vector3(0, 12, 18), hammers: new THREE.Vector3(0, 85, -36.5), pedals: new THREE.Vector3(0, 7, -2) }
   let primed = false, swayT = 0
   const seqs = {}   // take lists for sequence(): random / the director's cut
-  const A = {}, B = {}, out = { pos: new THREE.Vector3(), target: new THREE.Vector3(), fov: 34, focus: 'head', wide: false, shot: null }
+  const A = {}, B = {}, out = { pos: new THREE.Vector3(), target: new THREE.Vector3(), fov: 34, focalLength: null, fstop: null, focusDistance: null, roll: 0, focus: 'head', wide: false, shot: null }
   const ta = new THREE.Vector3(), tb = new THREE.Vector3()
+  let melody = { L: new MelodyFocus(), R: new MelodyFocus() }
 
   // o.portrait: a Short (planShort over o.window, portrait framings)
   // o.half: one half of a stacked Short ('her' / 'hands'), landscape framings
@@ -833,6 +844,8 @@ export function createDirector(opts = {}) {
   const spot = name => spotFor(name, o.portrait && !o.half)
   function replan() {
     shots = plan(source ?? { duration: 600 })
+    const notes = source?.notes || []
+    melody = { L: new MelodyFocus(notes.filter(n => n.hand === 'L')), R: new MelodyFocus(notes.filter(n => n.hand !== 'L')) }
   }
   replan()
   function shotAt(t) {
@@ -873,7 +886,7 @@ export function createDirector(opts = {}) {
   return {
     opts: o,
     get shots() { return shots },
-    /** song: { duration, phrases, glances, energyAt } or null for the idle plan */
+    /** song: { duration, phrases, glances, energyAt, notes?, tempos? } or null for the idle plan */
     setSong(song) { source = song; replan() },
     set(k, v) { o[k] = v; if (k !== 'follow') { replan(); lockIdx = -1 } },
     /** t: song time, or null to run on the director's own clock */
@@ -881,6 +894,8 @@ export function createDirector(opts = {}) {
       // the operator follows the subjects with a little lag (~0.5 s)
       const k = primed ? 1 - Math.exp(-dt / 0.5) : 1
       anchor.hands.lerp(live.hands, k)
+      if (live.left) anchor.left.lerp(live.left, k); else anchor.left.set(anchor.hands.x - 18, anchor.hands.y, anchor.hands.z)
+      if (live.right) anchor.right.lerp(live.right, k); else anchor.right.set(anchor.hands.x + 18, anchor.hands.y, anchor.hands.z)
       anchor.head.lerp(live.head, primed ? 1 - Math.exp(-dt / 0.35) : 1)
       anchor.figure.lerpVectors(anchor.hands, anchor.head, 0.55).add(ta.set(0, -6, 4))
       anchor.piano.set(anchor.hands.x * 0.3, 90, -70)
@@ -893,37 +908,55 @@ export function createDirector(opts = {}) {
       // a new shot locks onto where she is now (the shot gliding out keeps its own)
       if (idx !== lockIdx) {
         for (const x of shots) if (x !== sh && x !== shots[idx - 1]) x.lock = null
-        sh.lock = anchor.head.clone(); sh.lockHands = anchor.hands.clone()
-        if (idx > 0 && !shots[idx - 1].lock) { shots[idx - 1].lock = anchor.head.clone(); shots[idx - 1].lockHands = anchor.hands.clone() }
+        sh.lock = anchor.head.clone(); sh.lockHands = anchor.hands.clone(); sh.lockLeft = anchor.left.clone(); sh.lockRight = anchor.right.clone()
+        if (idx > 0 && !shots[idx - 1].lock) { shots[idx - 1].lock = anchor.head.clone(); shots[idx - 1].lockHands = anchor.hands.clone(); shots[idx - 1].lockLeft = anchor.left.clone(); shots[idx - 1].lockRight = anchor.right.clone() }
         lockIdx = idx
       }
-      shotParams(sh, t, A, ta)
-      const u = sh.glide ? clamp((t - sh.t0) / sh.glide, 0, 1) : 1
-      if (u < 1 && idx > 0) {
-        // glide from the previous shot (still running its own move) into this one
-        shotParams(shots[idx - 1], t, B, tb)
-        const e = sstep(u, 0, 1)
-        A.az = B.az + wrap(A.az - B.az) * e
-        A.el = lerp(B.el, A.el, e)
-        // a little lift away from her in the middle of the move
-        A.dist = Math.exp(lerp(Math.log(B.dist), Math.log(A.dist), e)) * (1 + 0.12 * Math.sin(Math.PI * e))
-        A.fov = lerp(B.fov, A.fov, e)
-        ta.lerpVectors(tb, ta, e)
+      const locked = o.follow ? anchor : {
+        ...anchor,
+        hands: sh.lockHands ?? anchor.hands,
+        left: sh.lockLeft ?? anchor.left,
+        right: sh.lockRight ?? anchor.right,
+        head: sh.lock ?? anchor.head,
       }
-      out.target.copy(ta)
-      place(A, ta, out.pos)
-      // handheld breath, scaled to the framing
-      // (on the frame clock, so an offline render breathes at the same rate)
-      swayT += dt
-      const w = swayT, amp = 0.0035 * A.dist * (A.fov / 34)
-      out.pos.x += amp * (Math.sin(w * 0.53) + 0.5 * Math.sin(w * 1.31 + 1))
-      out.pos.y += amp * 0.7 * (Math.sin(w * 0.71 + 2) + 0.4 * Math.sin(w * 1.7))
-      out.target.x += amp * 0.25 * Math.sin(w * 0.43 + 3)
-      out.pos.y = Math.max(out.pos.y, 8)
-      out.fov = A.fov
+      const composed = sh.composition ? cinematicFrame(sh.composition, { t, shot: sh, anchors: locked, melody }) : null
+      if (composed) {
+        out.pos.copy(composed.position); out.target.copy(composed.target)
+        out.focalLength = composed.focalLength; out.fstop = composed.fstop; out.focusDistance = composed.focusDistance; out.roll = composed.roll
+        // FOV remains available to old consumers. Three's 36 mm film gauge
+        // uses the shorter film dimension for landscape frames.
+        out.fov = 2 * Math.atan(18 / composed.focalLength) / D2R
+      } else {
+        shotParams(sh, t, A, ta)
+        const u = sh.glide ? clamp((t - sh.t0) / sh.glide, 0, 1) : 1
+        if (u < 1 && idx > 0) {
+          // glide from the previous shot (still running its own move) into this one
+          shotParams(shots[idx - 1], t, B, tb)
+          const e = sstep(u, 0, 1)
+          A.az = B.az + wrap(A.az - B.az) * e
+          A.el = lerp(B.el, A.el, e)
+          // a little lift away from her in the middle of the move
+          A.dist = Math.exp(lerp(Math.log(B.dist), Math.log(A.dist), e)) * (1 + 0.12 * Math.sin(Math.PI * e))
+          A.fov = lerp(B.fov, A.fov, e)
+          ta.lerpVectors(tb, ta, e)
+        }
+        out.target.copy(ta)
+        place(A, ta, out.pos)
+        // handheld breath, scaled to the framing
+        // (on the frame clock, so an offline render breathes at the same rate)
+        swayT += dt
+        const w = swayT, amp = 0.0035 * A.dist * (A.fov / 34)
+        out.pos.x += amp * (Math.sin(w * 0.53) + 0.5 * Math.sin(w * 1.31 + 1))
+        out.pos.y += amp * 0.7 * (Math.sin(w * 0.71 + 2) + 0.4 * Math.sin(w * 1.7))
+        out.target.x += amp * 0.25 * Math.sin(w * 0.43 + 3)
+        out.pos.y = Math.max(out.pos.y, 8)
+        out.fov = A.fov
+        out.focalLength = out.fstop = out.focusDistance = null; out.roll = 0
+      }
+      const u = sh.glide ? clamp((t - sh.t0) / sh.glide, 0, 1) : 1
       const cur = u < 0.5 && idx > 0 ? shots[idx - 1] : sh
       const subj = spot(cur.name).subj
-      out.focus = subj === 'hands' || subj === 'feet' ? 'hands' : subj === 'hammers' || subj === 'pedals' ? 'target' : 'head'
+      out.focus = composed ? 'physical' : subj === 'hands' || subj === 'feet' ? 'hands' : subj === 'hammers' || subj === 'pedals' ? 'target' : 'head'
       out.wide = spot(cur.name).size === 2
       out.shot = cur
       // the opening fades in from black over its first o.fadeIn seconds

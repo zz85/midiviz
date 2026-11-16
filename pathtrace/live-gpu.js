@@ -11,7 +11,8 @@
 //   → SSGI: indirect light (diffuse × GI) and ambient occlusion on the colour
 //   → SSR: reflections, added (SSR's output is premultiplied)
 //   → TRAA: temporal anti-aliasing, which SSGI's and SSR's noise is made for
-//   → depth of field (DepthOfFieldNode), bloom (BloomNode)
+//   → depth of field (DepthOfFieldNode), shutter-scaled depth-aware motion blur,
+//     bloom (BloomNode)
 //   → tone mapping, then vignette and grain (the WebGL page's grain, in TSL)
 //
 // The attachments: normal, metalness/roughness and diffuse are 8-bit (three's
@@ -26,7 +27,7 @@ import * as THREE from 'three/webgpu'
 import {
   pass, mrt, output, normalView, metalness, roughness, diffuseColor, velocity, packNormalToRGB, unpackRGBToNormal,
   sample, vec2, vec3, vec4, add, uniform, uv, Fn, float, fract, sin, cos, dot, floor, mix, max, min, renderOutput, select,
-  attribute, abs, clamp, length, convertToTexture, clearcoat, clearcoatRoughness, positionViewDirection, pow, varying, modelViewMatrix, screenDPR, Discard, screenUV, positionView, perspectiveDepthToViewZ, cameraNear, cameraFar,
+  attribute, abs, clamp, length, convertToTexture, clearcoat, clearcoatRoughness, positionViewDirection, pow, exp, varying, modelViewMatrix, screenDPR, Discard, screenUV, positionView, perspectiveDepthToViewZ, cameraNear, cameraFar,
 } from 'three/tsl'
 import { ssgi } from 'three/addons/tsl/display/SSGINode.js'
 import { ssr } from 'three/addons/tsl/display/SSRNode.js'
@@ -34,6 +35,7 @@ import { traa } from 'three/addons/tsl/display/TRAANode.js'
 import { dof } from 'three/addons/tsl/display/DepthOfFieldNode.js'
 import { bloom as bloomNode } from 'three/addons/tsl/display/BloomNode.js'
 
+import { shutterScale } from './motion-blur.js'
 let gradeMod = null
 
 /** The WebGPU renderer, initialised. */
@@ -77,6 +79,7 @@ export function livePost(renderer, scene, camera, { offscreen = false } = {}) {
   const U = {
     gi: uniform(1), ao: uniform(1), refl: uniform(1), sharpen: uniform(0.6),
     focus: uniform(150), aperture: uniform(0.00011), maxblur: uniform(0.006), dofOn: uniform(1),
+    motionOn: uniform(0), motionScale: uniform(1), motionMax: uniform(32), motionQuality: uniform(1),
     bloomOn: uniform(1),
     grainAmt: uniform(0.035), vig: uniform(0.55), time: uniform(0), res: uniform(new THREE.Vector2(1920, 1080)),
   }
@@ -119,13 +122,49 @@ export function livePost(renderer, scene, camera, { offscreen = false } = {}) {
   const focalLen = U.maxblur.div(max(U.aperture, 1e-7))
   const dofPass = dof(aa, viewZ, U.focus, focalLen, U.maxblur.mul(U.res.x).mul(0.4).mul(U.dofOn))
 
+  // Motion blur after McGuire et al.'s reconstruction shape: use the largest
+  // velocity in a 3x3 neighbourhood, clamp it to a bounded screen-space tile,
+  // then gather along it. Depth weighting keeps a fast foreground finger from
+  // painting through a nearer key or a hand behind it. The MRT velocity is NDC
+  // displacement; TRAA converts it to UV with (0.5, -0.5), as this pass does.
+  const dofTexture = convertToTexture(dofPass)
+  const motionPass = Fn(() => {
+    const p = uv(), center = dofTexture.sample(p), texel = vec2(1).div(U.res)
+    const motion = clamp(vel.sample(p).xy.mul(vec2(0.5, -0.5)), vec2(-1), vec2(1)).toVar()
+    const best = dot(motion, motion).toVar()
+    for (const [x, y] of [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]]) {
+      const candidate = clamp(vel.sample(p.add(texel.mul(vec2(x, y)))).xy.mul(vec2(0.5, -0.5)), vec2(-1), vec2(1))
+      const size = dot(candidate, candidate)
+      const take = size.greaterThan(best)
+      motion.assign(select(take, candidate, motion)); best.assign(max(best, size))
+    }
+    motion.assign(motion.mul(U.motionScale).mul(U.motionQuality))
+    const pixels = length(motion.mul(U.res)).toVar()
+    motion.assign(select(pixels.greaterThan(U.motionMax), motion.mul(U.motionMax.div(max(pixels, 1e-5))), motion))
+    pixels.assign(min(pixels, U.motionMax))
+    const z0 = depth.sample(p).x
+    const sum = center.rgb.toVar(), weights = float(1).toVar()
+    for (let i = 0; i < 15; i++) {
+      if (i === 7) continue
+      const along = (i - 7) / 7
+      const q = clamp(p.add(motion.mul(along)), vec2(0), vec2(1))
+      const z = depth.sample(q).x
+      const depthWeight = exp(abs(z.sub(z0)).div(0.01).negate())
+      const weight = depthWeight.mul(1 - 0.35 * Math.abs(along))
+      sum.addAssign(dofTexture.sample(q).rgb.mul(weight)); weights.addAssign(weight)
+    }
+    const reconstructed = sum.div(weights)
+    const amount = clamp(pixels.sub(0.25), 0, 1).mul(U.motionOn)
+    return vec4(mix(center.rgb, reconstructed, amount), center.a)
+  })()
+
   // the dust in the beam, a pass of its own after TRAA: TRAA's clamp to each pixel's
   // neighbours takes out a mote a pixel or two wide, as it does any lone speck. The
   // motes test the scene pass's depth themselves (dustSprites), so she still hides them
   const overlay = new THREE.Scene()
   sceneDepth = depth
   const dustPass = pass(overlay, camera)
-  const withDust = vec4(dofPass.rgb.add(dustPass.getTextureNode('output').rgb), 1)
+  const withDust = vec4(motionPass.rgb.add(dustPass.getTextureNode('output').rgb), 1)
 
   const bl = bloomNode(withDust, 0.12, 0.4, 0.92)
   const bloomed = withDust.add(bl.mul(U.bloomOn))
@@ -163,9 +202,12 @@ export function livePost(renderer, scene, camera, { offscreen = false } = {}) {
   const fx = {
     get ssgi() { return U.gi.value > 0 || U.ao.value > 0 }, set ssgi(on) { U.gi.value = on ? 1 : 0; U.ao.value = on ? 1 : 0 },
     get ssr() { return U.refl.value > 0 }, set ssr(on) { U.refl.value = on ? 1 : 0 },
-    uniforms: U, nodes: { scene: sp, lit, reflected, giPass, ssrPass, traa: aa0, sharpened: aa, dof: dofPass, bloom: bl, withDust, bloomed, graded },
+    get motionBlur() { return U.motionOn.value > 0 }, set motionBlur(on) { U.motionOn.value = on ? 1 : 0 },
+    shutter: 180,
+    motionFrame(dt, cut = false) { U.motionScale.value = shutterScale(this.shutter, dt, { cut }) },
+    uniforms: U, nodes: { scene: sp, lit, reflected, giPass, ssrPass, traa: aa0, sharpened: aa, dof: dofPass, motion: motionPass, bloom: bl, withDust, bloomed, graded },
     /** a look of grade-gpu.js's GRADES, by name */
-    grade: name => graded.set(name), grades: gradeMod.GRADES,
+    grade: name => graded.set(name), grades: gradeMod.GRADES, gradeState: () => graded.get(),
   }
   // The nodes that read the camera (SSGI's, SSR's, TRAA's jitter) update once a node
   // frame, and three advances the node frame in its animation loop's requestAnimationFrame.
@@ -216,9 +258,9 @@ export function livePost(renderer, scene, camera, { offscreen = false } = {}) {
   // quality of the live picture: what SSGI, SSR and TRAA cost, against how they look
   // (three's SSGI presets, with temporal filtering: low 1 × 12, medium 2 × 8, high 3 × 16)
   const QUALITY = {
-    low: { slices: 1, steps: 12, giScale: 0.5, ssrScale: 0.5, ssrQuality: 0.3 },
-    medium: { slices: 2, steps: 8, giScale: 1, ssrScale: 0.5, ssrQuality: 0.5 },
-    high: { slices: 3, steps: 16, giScale: 1, ssrScale: 1, ssrQuality: 0.75 },
+    low: { slices: 1, steps: 12, giScale: 0.5, ssrScale: 0.5, ssrQuality: 0.3, motion: 0 },
+    medium: { slices: 2, steps: 8, giScale: 1, ssrScale: 0.5, ssrQuality: 0.5, motion: 0.65 },
+    high: { slices: 3, steps: 16, giScale: 1, ssrScale: 1, ssrQuality: 0.75, motion: 1 },
   }
   let quality = 'medium'
   function setQuality(q) {
@@ -226,6 +268,7 @@ export function livePost(renderer, scene, camera, { offscreen = false } = {}) {
     quality = QUALITY[q] ? q : 'medium'
     giPass.sliceCount.value = Q.slices; giPass.stepCount.value = Q.steps; giPass.resolutionScale = Q.giScale
     ssrPass.resolutionScale = Q.ssrScale; ssrPass.quality.value = Q.ssrQuality
+    U.motionQuality.value = Q.motion
     return quality
   }
   setQuality('medium')

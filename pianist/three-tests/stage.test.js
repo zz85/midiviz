@@ -107,4 +107,5 @@ test('lensFromBokeh: the same blur as the page near the focus plane', () => {
   const D = 1, coc = lens.aperture * D / (s + D) / (2 * s * Math.tan(THREE.MathUtils.degToRad(c.fov) / 2))
   expect(coc / page).toBeGreaterThan(0.98); expect(coc / page).toBeLessThan(1.02)
   expect(lensFromBokeh({ focus: 0, aperture: 1 }, c)).toBe(null)
+  expect(lensFromBokeh({ focus: 90, aperture: 1.25, physical: true }, c)).toEqual({ focus: 90, aperture: 1.25, blades: 0 })
 })

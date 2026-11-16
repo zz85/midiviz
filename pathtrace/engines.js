@@ -81,8 +81,9 @@ let ltcReady = false
  * there: A = 1.6·aperture·aspect·s²·tan(fov/2). (Far from it they part: the
  * page's blur is capped (maxblur), a lens's grows to A/(2·s·tan) at infinity.)
  */
-export function lensFromBokeh({ focus, aperture } = {}, camera, blades = 0) {
+export function lensFromBokeh({ focus, aperture, physical = false } = {}, camera, blades = 0) {
   if (!(focus > 0) || !(aperture > 0)) return null
+  if (physical) return { focus, aperture, blades }
   const tan = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) / (camera.zoom || 1)
   return { focus, aperture: 1.6 * aperture * camera.aspect * focus * focus * tan, blades }
 }

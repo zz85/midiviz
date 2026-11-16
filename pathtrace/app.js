@@ -113,6 +113,7 @@ export async function boot(plug = {}) {
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(0x000000)
     const camera = new THREE.PerspectiveCamera(34, innerWidth / innerHeight, 2, 6000)
+    camera.filmGauge = 36
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.enableDamping = true; controls.dampingFactor = 0.08
     controls.minDistance = 10; controls.maxDistance = 1400
@@ -185,9 +186,18 @@ export async function boot(plug = {}) {
       stage: [[0xffd2a0, 1], [0xffd9b8, 1], [0xffe6c8, 1], [0xffe2c0, 1], [0xfff0e0, 1], [0xffc28a, 1]],
       candle: ((L, C) => [[L.key.color, L.key.intensity / C.key], [0xffc890, 0.85], [0xffb070, 0.8], [L.back.color, L.back.intensity / C.back], [L.fill.color, L.fill.intensity / C.fill], [L.lid.color, L.lid.intensity / C.lid]])(CANDLE.lights, CANDLE.concert),
     }
+    const CINEMATIC_LIGHTS = {
+      golden: [[0xffd2a0, 1.1], [0xffd9b8, 0.95], [0xffe6c8, 1.05], [0xffe2c0, 0.9], [0xfff0e0, 0.9], [0xffc28a, 1.1]],
+      noir: [[0xffe2c0, 1.25], [0xffd8c0, 0.3], [0xffffff, 1.5], [0xffd0b0, 0.45], [0xdde5f0, 0.3], [0xffd0a0, 1.2]],
+      noirCyan: [[0xffe2c0, 1.25], [0xcceeff, 0.3], [0xb8f4ff, 1.5], [0xffd0b0, 0.45], [0xb8e8ff, 0.3], [0x8eefff, 1.2]],
+      moonlight: [[0x9dbfff, 0.6], [0xc4d8ff, 0.45], [0xa8c8ff, 1.7], [0x718fc8, 0.8], [0xdbe5ff, 0.4], [0x91b7ff, 0.7]],
+      faded: [[0xffc080, 1.1], [0xffd0a0, 1], [0xffd8b0, 0.6], [0xd99060, 0.65], [0xffe0bc, 1], [0xffb878, 0.8]],
+      studio: [[0xffe3ca, 0.6], [0xffffff, 1.4], [0xdde8ff, 1.5], [0xd8e4ff, 0.7], [0xfff6ee, 2.2], [0xffd2a8, 0.9]],
+    }
     const applyLight = () => {
-      const k = +$('light').value, look = STAGE_LIGHTS[$('stageSet').value] || STAGE_LIGHTS.stage
-      LIGHTS.forEach(([l, i], j) => { l.color.setHex(look[j][0]); l.intensity = i * look[j][1] * k })
+      const k = +$('light').value, stageLook = STAGE_LIGHTS[$('stageSet').value] || STAGE_LIGHTS.stage
+      const cinematic = CINEMATIC_LIGHTS[$('grade')?.value]
+      LIGHTS.forEach(([l, i], j) => { const look = cinematic?.[j] || stageLook[j]; l.color.setHex(look[0]); l.intensity = i * look[1] * k })
     }
     $('light').oninput = applyLight
     applyLight()
@@ -242,6 +252,7 @@ export async function boot(plug = {}) {
     for (const [k, f] of Object.entries(FINISHES)) $('finish').add(new Option(f.label, k))
     $('finish').value = 'ebony'
     $('finish').onchange = () => piano.setFinish($('finish').value)
+    let directorPianoChanged = () => {}
     if (PIANO_TYPE === 'upright') {
       const field = $('lid').closest('.field')
       field.title = "Remove the upright's upper front panel to show its hammers, dampers, action and strings"
@@ -257,6 +268,7 @@ export async function boot(plug = {}) {
       $('lid').value = piano.lidMode
       lidLight.visible = PIANO_TYPE === 'upright' || piano.lidMode !== 'closed'
       for (let i = 0; i < 120; i++) piano.update(0.05)
+      directorPianoChanged()
     }
     $('lid').onchange = () => setLid($('lid').value)
     setLid($('lid').value)
@@ -669,12 +681,13 @@ export async function boot(plug = {}) {
       for (const [k, g] of Object.entries(live.fx.grades)) $('grade').add(new Option(g.label, k))
       $('gradeBox').hidden = false
       $('grade').value = live.fx.grades[params.get('grade')] ? params.get('grade') : 'stage'
-      $('grade').onchange = () => live.fx.grade($('grade').value)
-      live.fx.grade($('grade').value)
+      $('grade').onchange = () => { live.fx.grade($('grade').value); applyLight() }
+      live.fx.grade($('grade').value); applyLight()
       // the live picture's quality (an export renders at high, see stageAdapter)
       $('gpuQualBox').hidden = false
       $('gpuQual').onchange = () => live.fx.setQuality($('gpuQual').value)
       live.fx.setQuality($('gpuQual').value)
+      $('motionBlurBox').hidden = $('shutterBox').hidden = false
     }
 
     // Dust in the beam (from #030): a few hundred motes drifting through the spot
@@ -732,18 +745,21 @@ export async function boot(plug = {}) {
       const g = $('filmGrain').checked
       grain.uniforms.uAmount.value = g ? +$('grainAmt').value : 0; grain.uniforms.uVig.value = g ? +$('vig').value : 0
       dust.visible = $('dust').checked; dust.material.uniforms.uOpacity.value = +$('dustAmt').value
+      if (GPU) { live.fx.motionBlur = $('motionBlur').checked && +$('shutter').value > 0; live.fx.shutter = +$('shutter').value }
       $('dofAmtV').textContent = (+$('dofAmt').value).toFixed(2).replace(/0$/, '') + '×'
       $('bloomAmtV').textContent = (+$('bloomAmt').value).toFixed(2)
       $('grainAmtV').textContent = pct(+$('grainAmt').value / 0.035)
       $('vigV').textContent = pct(+$('vig').value / 0.55)
       $('dustAmtV').textContent = pct(+$('dustAmt').value / 0.18)
+      $('shutterV').textContent = $('shutter').value + '°'
       for (const id of ['dofAmt', 'dofBoth']) $(id).disabled = !$('dof').checked
       $('bloomAmt').disabled = !$('bloom').checked
       $('grainAmt').disabled = $('vig').disabled = !g
       $('dustAmt').disabled = !$('dust').checked
+      $('shutter').disabled = !$('motionBlur').checked
     }
-    for (const id of ['dof', 'dofBoth', 'bloom', 'filmGrain', 'dust']) $(id).onchange = applyFx
-    for (const id of ['dofAmt', 'bloomAmt', 'grainAmt', 'vig', 'dustAmt']) $(id).oninput = applyFx
+    for (const id of ['dof', 'dofBoth', 'bloom', 'filmGrain', 'dust', 'motionBlur']) $(id).onchange = applyFx
+    for (const id of ['dofAmt', 'bloomAmt', 'grainAmt', 'vig', 'dustAmt', 'shutter']) $(id).oninput = applyFx
     applyFx()
 
     // ── Cameras (framed after Concert Creator's shots) ───────────────────
@@ -847,7 +863,8 @@ export async function boot(plug = {}) {
     for (const [id, k] of [['dirFar', 'dfar'], ['dirMed', 'dmed'], ['dirClose', 'dclose']]) if (params.get(k) === '0') $(id).checked = false
     if (STRINGS_LEVELS[params.get('strings')]) $('dirStrings').value = params.get('strings')
     const dirStrings = () => STRINGS_LEVELS[$('dirStrings').value] ?? null
-    const director = createDirector({ pace: +(params.get('pace') ?? 1), bias: +(params.get('favour') ?? 0), trans: params.get('trans') || 'cuts', sizes: dirSizes(), strings: dirStrings(), pedals: params.get('dpedals') !== '0' })
+    const director = createDirector({ pace: +(params.get('pace') ?? 1), bias: +(params.get('favour') ?? 0), trans: params.get('trans') || 'cuts', sizes: dirSizes(), strings: dirStrings(), pedals: params.get('dpedals') !== '0', cinematic: true, instrument: PIANO_TYPE, panelOpen: PIANO_TYPE === 'upright' && piano.panelOpen })
+    directorPianoChanged = () => director.set('panelOpen', PIANO_TYPE === 'upright' && piano.panelOpen)
     if (['auto', 'usual', 'wide'].includes(params.get('dopen'))) $('dirOpen').value = params.get('dopen')
     const dirOpening = () => $('dirOpen').value === 'wide' || ($('dirOpen').value === 'auto' && $('stageSet').value === 'candle') ? 'wide' : null
     director.set('opening', dirOpening())
@@ -1378,7 +1395,11 @@ export async function boot(plug = {}) {
         const out = notes.map((n, i) => { const [h, f, rel, sh] = e.data[i]; return { pitch: n.midi, on: n.time, off: n.time + n.duration, release: rel, hand: h, finger: f, velocity: n.velocity, ...(sh ? { shared: sh } : {}) } })
         fingerWorker.terminate(); fingerWorker = null
         rig.setNotes(out)
-        dirSource = { duration: out.reduce((m, n) => Math.max(m, n.off), 0), ...rig.form(), energyAt: rig.music.energyAt }
+        dirSource = {
+          duration: out.reduce((m, n) => Math.max(m, n.off), 0), ...rig.form(), energyAt: rig.music.energyAt,
+          notes: out.map(n => ({ midi: n.pitch, start: n.on, end: n.off, velocity: n.velocity, hand: n.hand })),
+          tempos: song.tempos || [],
+        }
         director.setSong(dirSource); director2?.setSong(dirSource)
         fingered = true
       }
@@ -1391,6 +1412,7 @@ export async function boot(plug = {}) {
         if (sch.playing) sch.stop()
         songTarget.allSoundOff()
         const midi = new Midi(buffer), s = midiToSchedule(midi)
+        s.tempos = (midi.header.tempos || []).map(x => ({ time: x.time ?? midi.header.ticksToSeconds(x.ticks), bpm: x.bpm }))
         s.notes = s.notes.filter(n => n.channel !== 9 && n.midi >= LOW && n.midi <= HIGH)
         if (!s.notes.length) throw new Error('no notes in file')
         s.duration = s.notes.reduce((m, n) => Math.max(m, n.time + n.duration), 0)
@@ -1495,7 +1517,7 @@ export async function boot(plug = {}) {
       ['fasian', 'faceAsian'], ['fafrican', 'faceAfrican'], ['skintex', 'skinTex'],
       ['move', 'camMove'], ['dpreset', 'dirPreset'], ['pace', 'dirPace'], ['favour', 'dirBias'], ['trans', 'dirTrans'], ['dstill', 'dirStill'], ['dmix', 'dirMix'], ['shotnames', 'shotLbl'], ['follow', 'camFollow'], ['dfar', 'dirFar'], ['dmed', 'dirMed'], ['dclose', 'dirClose'], ['strings', 'dirStrings'], ['dpedals', 'dirPedals'], ['dopen', 'dirOpen'],
       ['sf', 'sf'], ['avsync', 'avsync'],
-      ['dofamt', 'dofAmt'], ['dofboth', 'dofBoth'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['grade', 'grade'], ['gpuq', 'gpuQual'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
+      ['dofamt', 'dofAmt'], ['dofboth', 'dofBoth'], ['motion', 'motionBlur'], ['shutter', 'shutter'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['grade', 'grade'], ['gpuq', 'gpuQual'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
       ['vol', 'vol'], ['room', 'room'], ['seat', 'seat'], ['rv', 'rvAmt'], ['decay', 'rvDecay'], ['tone', 'rvTone'], ['boost', 'boost'], ['amb', 'amb'], ['applause', 'applause'],
       ['exformat', 'exFormat'], ['exlayout', 'exLayout'], ['exsplit', 'exSplit'], ['exhands', 'exHandsHalf'], ['exlview', 'exLessonView'], ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exfps', 'exFps'], ['extail', 'exTail'], ['exlead', 'exLead'], ['exend', 'exEnd'], ['exfadelen', 'exFadeLen'], ['exsub', 'exSub'], ['excard', 'exCard'], ['excaps', 'exCaps'], ['exvtt', 'exVtt'], ['exlen', 'exLen'], ['exparts', 'exParts'], ['exhold', 'exHold'],
       ['notes', 'linerMode'], ['itstyle', 'itStyle'], ['itstylea', 'itStyleA'], ['itcol', 'itTheme'], ['itpos', 'itPos'], ['itheads', 'itHeads'], ['extitle', 'exTitle'], ['expt', 'exPt'], ['ptengine', 'ptEngine'], ['ptspp', 'ptSpp'], ['ptbounces', 'ptBounces'], ['pthair', 'ptHair'], ['ptdn', 'ptDenoise'], ['ptfx', 'ptFx'], ['ptsize', 'ptSize'],
@@ -1601,6 +1623,7 @@ export async function boot(plug = {}) {
     // depth of field (pianist/focus-puller.js): her eyes for the face, a hand the puller picks for the hands;
     // a second puller for the hands half of a stacked Short
     const focusPull = createFocusPuller(), focusPull2 = createFocusPuller()
+    let physicalLens = null
     const eyesC = new THREE.Vector3(), hasEyes = !!(ch.byName?.['eye.L'] && ch.byName?.['eye.R'])
     const eyesAt = () => hasEyes ? eyesC.copy(rig.pos('eye.L')).add(rig.pos('eye.R')).multiplyScalar(0.5) : head
     const dofOf = name => SHOT_DOF[name] ?? 1
@@ -1634,11 +1657,11 @@ export async function boot(plug = {}) {
       if (userCam && view !== 'orbit' && (view === 'auto' || $('camMove').value !== 'still') && performance.now() - camTouched > 8000) userCam = false
       let focusOn = viewFocusHands(view) ? handsC : head, wide = viewWide(view), snapFocus = false
       if (cut) { camera.position.copy(camGoal.pos); controls.target.copy(camGoal.target); camera.fov = camGoal.fov; camera.updateProjectionMatrix(); cut = false; userCam = false; snapFocus = true }
-      const live = { hands: handsC, head }
+      const cameraSubjects = { hands: handsC, head, left: hd.L.visible ? hd.L.joints.W : null, right: hd.R.visible ? hd.R.joints.W : null }
       if (view === 'player') playerView(handsC, dt)
       setPov(view === 'player' && !userCam)
       if (povOn && hair?.object.visible) hair.object.visible = false
-      const dirShot = view === 'auto' ? director.update(song ? dirT : null, dt, live) : null   // runs even while dragged, so the subjects stay tracked
+      const dirShot = view === 'auto' ? director.update(song ? dirT : null, dt, cameraSubjects) : null   // runs even while dragged, so the subjects stay tracked
       let driven = null
       if (dirShot && !userCam) {
         driven = dirShot
@@ -1647,13 +1670,13 @@ export async function boot(plug = {}) {
           if (!dirShot.shot.glide || !lastShot) snapFocus = true
           lastShot = dirShot.shot
           const sp = SPOTS[dirShot.shot.name]
-          $('shotName').textContent = `${sp.label} · ${MOVES[dirShot.shot.move].toLowerCase()}${dirShot.shot.glide ? ' (glide)' : ''}`
+          $('shotName').textContent = `${dirShot.shot.compositionLabel || sp.label} · ${dirShot.shot.composition ? 'composed move' : MOVES[dirShot.shot.move].toLowerCase()}${dirShot.shot.glide ? ' (glide)' : ''}`
         }
       } else if (!dirShot && view !== 'orbit' && $('camMove').value !== 'still' && !userCam) {
         moveT += dt
         const mv = $('camMove').value
         if (SEQ_MOVES[mv]) {
-          driven = director.sequence(VIEWS[view], mv, moveT, live, camOut)
+          driven = director.sequence(VIEWS[view], mv, moveT, cameraSubjects, camOut)
           if (driven.focus) focusOn = driven.focus === 'hands' ? handsC : head
           if (driven.frame !== 'home') wide = driven.wide
           if (driven.shot !== lastShot) {
@@ -1667,25 +1690,41 @@ export async function boot(plug = {}) {
         camOut.pos.fromArray(VIEWS.player.pos); camOut.target.fromArray(VIEWS.player.target); camOut.fov = VIEWS.player.fov; driven = camOut
       }
       if (driven) {
-        camera.position.copy(driven.pos); controls.target.copy(driven.target); camera.lookAt(driven.target)
-        if (Math.abs(camera.fov - driven.fov) > 1e-3) { camera.fov = driven.fov; camera.updateProjectionMatrix() }
-      } else controls.update()
+        camera.position.copy(driven.pos); controls.target.copy(driven.target)
+        camera.up.set(Math.sin(driven.roll || 0), Math.cos(driven.roll || 0), 0)
+        camera.lookAt(driven.target)
+        if (driven.focalLength > 0) camera.setFocalLength(driven.focalLength)
+        else if (Math.abs(camera.fov - driven.fov) > 1e-3) { camera.fov = driven.fov; camera.updateProjectionMatrix() }
+      } else { camera.up.set(0, 1, 0); controls.update() }
       // (where she is in the frame: for intertitles placed automatically)
       { const a = _ndc.copy(head).project(camera), ax = a.x, ay = a.y, b = _ndc.copy(handsC).project(camera); subjectNdc.x = (ax + b.x) / 2; subjectNdc.y = Math.max(ay, b.y) }
       // focus: her eyes in the shots of her, a hand in the shots of the hands, the
       // shot's aim on the mechanism; shallower the closer (pianist/focus-puller.js)
       {
-        const f = focusPull.update({ camera, dt, subject: focusOn === handsC ? 'hands' : focusOn === head ? 'head' : 'target', hands: rig.hands, handsMid: handsC,
-          eyes: eyesAt(), target: focusOn, snap: snapFocus, amount: +$('dofAmt').value, shot: dofOf(driven?.shot?.name ?? view), glance: glancing(t), split: $('dofBoth')?.checked !== false })
-        bokeh.uniforms.focus.value = f.focus; bokeh.uniforms.aperture.value = f.aperture
+        if (driven?.focus === 'physical' && driven.focusDistance > 0 && driven.focalLength > 0 && driven.fstop > 0) {
+          const amount = +$('dofAmt').value, focus = driven.focusDistance
+          // BokehPass's aperture is screen-space rather than an f-stop. Match
+          // its established 50 mm, f/5.6, 150 cm amount and preserve the
+          // physical lens's relative depth of field until WebGPU consumes the
+          // exact focal length and f-stop below.
+          const aperture = 0.0001 * (driven.focalLength / 50) ** 2 * (5.6 / driven.fstop) * (150 / focus) ** 2 * amount
+          bokeh.uniforms.focus.value = focus; bokeh.uniforms.aperture.value = THREE.MathUtils.clamp(aperture, 0.000015, 0.0012)
+          physicalLens = { focus, focalLength: driven.focalLength, fstop: driven.fstop, aperture: driven.focalLength / driven.fstop / 10 }
+        } else {
+          const f = focusPull.update({ camera, dt, subject: focusOn === handsC ? 'hands' : focusOn === head ? 'head' : 'target', hands: rig.hands, handsMid: handsC,
+            eyes: eyesAt(), target: focusOn, snap: snapFocus, amount: +$('dofAmt').value, shot: dofOf(driven?.shot?.name ?? view), glance: glancing(t), split: $('dofBoth')?.checked !== false })
+          bokeh.uniforms.focus.value = f.focus; bokeh.uniforms.aperture.value = f.aperture
+          physicalLens = null
+        }
       }
+      live?.fx.motionFrame(dt, snapFocus)
       // (the director's fade-in only while the song runs: a loaded song paused at 0 isn't black)
       renderer.toneMappingExposure = +$('exposure').value * (dirShot && !userCam && ((offline && !exTitleCard) || scheduler?.playing) ? dirShot.fade ?? 1 : 1)
       grain.uniforms.uTime.value = fxT
       if (!offline && scheduler?.playing && performance.now() - idleT > 2500) document.body.classList.add('idle')
       if (!offline) { liner.update(songNow()); plug.onFrame?.(songNow(), app) }
       // nothing to post-process on the light path: draw straight to the screen
-      if (stacked) drawStacked(t, dt, live)
+      if (stacked) drawStacked(t, dt, cameraSubjects)
       else if (!GPU && LOWQ && !bokeh.enabled && !bloom.enabled && !$('filmGrain').checked) renderer.render(scene, camera)
       else composer.render()
     }
@@ -2083,11 +2122,12 @@ export async function boot(plug = {}) {
       scene, camera, get envScene() { return envScene }, get envIntensity() { return scene.environmentIntensity },
       hair: () => hair, exposure: () => +$('exposure').value, liveExposure: () => renderer.toneMappingExposure,
       // the depth of field this frame, for the tracers' lens (null when off)
-      dof: () => bokeh.enabled ? { focus: bokeh.uniforms.focus.value, aperture: bokeh.uniforms.aperture.value } : null,
+      dof: () => bokeh.enabled ? (physicalLens ? { ...physicalLens, physical: true } : { focus: bokeh.uniforms.focus.value, aperture: bokeh.uniforms.aperture.value }) : null,
       fx: () => ({
         exposure: +$('exposure').value,
         bloom: bloom.enabled ? { strength: bloom.strength, radius: bloom.radius, threshold: bloom.threshold } : null,
         grain: { amount: grain.uniforms.uAmount.value, vig: grain.uniforms.uVig.value, time: grain.uniforms.uTime.value },
+        grade: GPU ? live.fx.gradeState() : null,
         grainShader: { vertexShader: grain.material.vertexShader, fragmentShader: grain.material.fragmentShader },
       }),
       current: () => ptCopy(renderer.domElement),
@@ -2351,6 +2391,7 @@ export async function boot(plug = {}) {
         const file = params.get('song')
         if (file) {
           const midi = new Midi(await (await fetch(file)).arrayBuffer()), s = midiToSchedule(midi)
+          s.tempos = (midi.header.tempos || []).map(x => ({ time: x.time ?? midi.header.ticksToSeconds(x.ticks), bpm: x.bpm }))
           s.notes = s.notes.filter(n => n.channel !== 9 && n.midi >= LOW && n.midi <= HIGH)
           s.duration = s.notes.reduce((m, n) => Math.max(m, n.time + n.duration), 0)
           song = s
@@ -2383,14 +2424,17 @@ export async function boot(plug = {}) {
         for (let i = 0; i < 30; i++) piano.update(1 / 60)
         const handsAt = (() => { const c = new THREE.Vector3(); for (const h of [rig.hands.L, rig.hands.R]) c.add(h.joints.W); return c.multiplyScalar(0.5) })()
         let focusOn = viewFocusHands(view) ? handsAt : rig.pos('head'), wide = viewWide(view)
+        physicalLens = null
         if (view === 'player') playerView(handsAt, 1 / 60)
         setPov(view === 'player')
         if (view === 'auto') {
           // the director's frame at T (a ?move= on a fixed view is shown at its far end)
-          const c = director.update(T, 1 / 60, { hands: handsAt, head: rig.pos('head') })
-          camera.position.copy(c.pos); controls.target.copy(c.target); camera.fov = c.fov; camera.updateProjectionMatrix(); camera.lookAt(c.target)
+          const c = director.update(T, 1 / 60, { hands: handsAt, head: rig.pos('head'), left: rig.hands.L.joints.W, right: rig.hands.R.joints.W })
+          camera.position.copy(c.pos); controls.target.copy(c.target); camera.up.set(Math.sin(c.roll || 0), Math.cos(c.roll || 0), 0); camera.lookAt(c.target)
+          if (c.focalLength > 0) camera.setFocalLength(c.focalLength); else { camera.fov = c.fov; camera.updateProjectionMatrix() }
           focusOn = c.focus === 'hands' ? handsAt : c.focus === 'target' ? c.target : rig.pos('head'); wide = c.wide
-          window.__shotInfo = { ...c.shot, label: SPOTS[c.shot.name].label }
+          physicalLens = c.focus === 'physical' ? { focus: c.focusDistance, focalLength: c.focalLength, fstop: c.fstop, aperture: c.focalLength / c.fstop / 10 } : null
+          window.__shotInfo = { ...c.shot, label: c.shot.compositionLabel || SPOTS[c.shot.name].label }
         } else if (SEQ_MOVES[params.get('move')]) {
           const c = director.sequence(VIEWS[view], params.get('move'), T, { head: rig.pos('head'), hands: handsAt }, camOut)
           camera.position.copy(c.pos); controls.target.copy(c.target); camera.fov = c.fov; camera.updateProjectionMatrix(); camera.lookAt(c.target)
@@ -2406,12 +2450,19 @@ export async function boot(plug = {}) {
           if (camFree) { camera.position.copy(camGoal.pos); controls.target.copy(camGoal.target); controls.update() }   // (?cam=)
         }
         {
-          const hd = focusOn === handsAt ? 'hands' : focusOn === rig.pos('head') ? 'head' : 'target'
-          const f = focusPull.update({ camera, dt: 0, subject: hd, hands: rig.hands, handsMid: handsAt, eyes: eyesAt(), target: focusOn, snap: true, amount: +$('dofAmt').value, shot: dofOf(window.__shotInfo?.name ?? view), glance: glancing(T), split: $('dofBoth')?.checked !== false })
-          window.__focusInfo = f
-          bokeh.uniforms.focus.value = f.focus; bokeh.uniforms.aperture.value = f.aperture
+          if (physicalLens) {
+            const aperture = 0.0001 * (physicalLens.focalLength / 50) ** 2 * (5.6 / physicalLens.fstop) * (150 / physicalLens.focus) ** 2 * +$('dofAmt').value
+            bokeh.uniforms.focus.value = physicalLens.focus; bokeh.uniforms.aperture.value = THREE.MathUtils.clamp(aperture, 0.000015, 0.0012)
+            window.__focusInfo = { ...physicalLens, mode: 'physical' }
+          } else {
+            const hd = focusOn === handsAt ? 'hands' : focusOn === rig.pos('head') ? 'head' : 'target'
+            const f = focusPull.update({ camera, dt: 0, subject: hd, hands: rig.hands, handsMid: handsAt, eyes: eyesAt(), target: focusOn, snap: true, amount: +$('dofAmt').value, shot: dofOf(window.__shotInfo?.name ?? view), glance: glancing(T), split: $('dofBoth')?.checked !== false })
+            window.__focusInfo = f
+            bokeh.uniforms.focus.value = f.focus; bokeh.uniforms.aperture.value = f.aperture
+          }
         }
         bokeh.enabled = !params.has('nodof')
+        live?.fx.motionFrame(0, true)
         renderer.toneMappingExposure = +$('exposure').value
         if (stacked) { drawStacked(T, 1 / 60, { hands: handsAt, head: rig.pos('head') }); window.__shotInfo2 = director2.update(T, 0, { hands: handsAt, head: rig.pos('head') }).shot }
         // (SSGI, SSR and TRAA settle over frames; each in a frame of its own, since the

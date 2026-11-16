@@ -11,8 +11,7 @@
 //     before the curve) → tone curve: AgX, as the WebGL page, or ACES (fitted),
 //     as The Mechanical Pianist
 //   → lift / gamma / gain → split toning (shadow and highlight tints)
-//   → saturation, with an accent hue kept (cyan, The Mechanical Pianist's joints;
-//     off in every look here) → sRGB → contrast about mid grey
+//   → saturation, with an accent hue kept (cyan, for the Noir, cyan look) → sRGB → contrast about mid grey
 //   → black tint (the deepest shadows keep a colour) → fade (lifted blacks)
 //   → the page's own vignette and grain (the amounts of its sliders, the
 //     grain the same at every resolution) → letterbox bars
@@ -29,7 +28,7 @@ import {
 } from 'three/tsl'
 import { gaussianBlur } from 'three/addons/tsl/display/GaussianBlurNode.js'
 
-const N = { contrast: 1, saturation: 1, warmth: 0, rolloff: 0, fade: 0, lift: [0, 0, 0], gamma: [1, 1, 1], gain: [1, 1, 1], shadowTint: [1, 1, 1], highlightTint: [1, 1, 1], blackTint: [0, 0, 0], aberration: 0, streaks: 0, streakThreshold: 1.2, letterbox: 0, grain: 1, vignette: 1, curve: 'agx' }
+const N = { contrast: 1, saturation: 1, accent: 0, warmth: 0, rolloff: 0, fade: 0, lift: [0, 0, 0], gamma: [1, 1, 1], gain: [1, 1, 1], shadowTint: [1, 1, 1], highlightTint: [1, 1, 1], blackTint: [0, 0, 0], aberration: 0, streaks: 0, streakThreshold: 1.2, letterbox: 0, grain: 1, vignette: 1, curve: 'agx' }
 
 /** The looks. grain and vignette multiply the page's sliders; the rest are as The Mechanical Pianist's grade takes them. */
 export const GRADES = {
@@ -41,6 +40,10 @@ export const GRADES = {
   noir: {
     label: 'Noir', ...N, curve: 'aces', saturation: 0, contrast: 1.55, rolloff: 0.9, grain: 1.9, vignette: 1.7,
     aberration: 0.004, streaks: 0.6, letterbox: 2.39,
+  },
+  noirCyan: {
+    label: 'Noir, cyan', ...N, curve: 'aces', saturation: 0, accent: 1, contrast: 1.55, rolloff: 0.9, grain: 1.7, vignette: 1.7,
+    aberration: 0.004, streaks: 0.9, letterbox: 2.39,
   },
   moonlight: {
     label: 'Moonlight', ...N, curve: 'aces', warmth: -0.6, contrast: 1.2, saturation: 0.72, rolloff: 0.7, grain: 1.2, vignette: 1.3,
@@ -70,7 +73,7 @@ const acesFitted = Fn(([c0]) => {
  */
 export function grade(hdr, page) {
   const U = {
-    contrast: uniform(1), saturation: uniform(1), warmth: uniform(0), rolloff: uniform(0), fade: uniform(0),
+    contrast: uniform(1), saturation: uniform(1), accent: uniform(0), warmth: uniform(0), rolloff: uniform(0), fade: uniform(0),
     lift: uniform(new THREE.Vector3()), gamma: uniform(new THREE.Vector3(1, 1, 1)), gain: uniform(new THREE.Vector3(1, 1, 1)),
     shadowTint: uniform(new THREE.Vector3(1, 1, 1)), highlightTint: uniform(new THREE.Vector3(1, 1, 1)), blackTint: uniform(new THREE.Vector3()),
     aberration: uniform(0), streaks: uniform(0), streakThreshold: uniform(1.2), letterbox: uniform(0), grain: uniform(1), vignette: uniform(1),
@@ -103,8 +106,9 @@ export function grade(hdr, page) {
     c = c.mul(U.gain).add(U.lift.mul(float(1).sub(c)))
     c = pow(max(c, 0), vec3(1).div(U.gamma))
     c = c.mul(mix(U.shadowTint, U.highlightTint, smoothstep(0.05, 0.7, dot(c, LUMA))))
-    const l = dot(c, LUMA)
-    c = max(mix(vec3(l), c, U.saturation), 0)
+    const l = dot(c, LUMA), chroma = c.sub(vec3(l))
+    const cyan = smoothstep(0.55, 0.85, dot(chroma.div(max(length(chroma), 1e-5)), vec3(-0.85, 0.3, 0.43))).mul(smoothstep(0.015, 0.06, length(chroma)))
+    c = max(mix(vec3(l), c, max(U.saturation, U.accent.mul(cyan).mul(1.2))), 0)
     let s = sRGBTransferOETF(clamp(c, 0, 1))
     s = clamp(s.sub(0.5).mul(U.contrast).add(0.5), 0, 1)
     s = s.add(U.blackTint.mul(pow(float(1).sub(dot(s, vec3(0.333))), 5)))
@@ -126,8 +130,10 @@ export function grade(hdr, page) {
     return vec4(select(inBar, vec3(0), s), 1)
   })()
 
+  let current = 'stage'
   function set(name) {
     const g = GRADES[name] || GRADES.stage
+    current = GRADES[name] ? name : 'stage'
     for (const [k, v] of Object.entries(g)) {
       if (k === 'label') continue
       if (k === 'curve') { U.aces.value = v === 'aces' ? 1 : 0; continue }
@@ -136,5 +142,5 @@ export function grade(hdr, page) {
     return g
   }
   set('stage')
-  return { node, uniforms: U, set }
+  return { node, uniforms: U, set, get: () => ({ id: current, ...GRADES[current] }) }
 }
