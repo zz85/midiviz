@@ -8,7 +8,7 @@ pawchestra's `sibelius-2-{1,2,3-4}.mid`, sequenced by Jack Gilbert, copied into 
 
 The point is to measure the OMR where there is no MusicXML transcription, find where it fails,
 and fix ScoreShift's `omr.js` (in `../random-sketches/vibes/scoreshift/`) where the errors cluster.
-On this part the pitch accuracy went from 86.8% to 89.8% (see below for what the first 60.8%
+On this part the pitch accuracy went from 86.8% to 93.8% (see below for what the first 60.8%
 figure was).
 
 ```
@@ -73,7 +73,8 @@ pages again).
 | | heads found | pitch right | wrong | extra | missed |
 |---|---|---|---|---|---|
 | ScoreShift before | 98.7% | 86.8% | 733 | 119 | 75 |
-| after | 98.8% | 89.8% | 549 | 122 | 77 |
+| after the first round (clefs, staves, key glyphs) | 98.8% | 89.8% | 549 | 122 | 77 |
+| after the second (accidentals) | 98.8% | 93.8% | 303 | 122 | 77 |
 
 The first run of the evaluator reported 60.8% with the same reads. The difference is all in the
 truth and the alignment: the second movement's octave (+9.3), the divisi staves merged by onset and
@@ -100,9 +101,28 @@ The OMR fixes, in `omr.js`, each with a regression fixture in ScoreShift's `fixt
   longer asked about strokes under 0.45 space wide, whose padded crop read a flat's stem as the two
   flats beside it.
 
-What is left: 331 semitone errors, mostly accidentals in double stops and chromatic runs; the
-braced divisi systems, where the lower staff is matched to a MIDI that often plays one line; and
-p. 4's chromatic passage, the worst page at 70%.
+The second round went after the 331 semitone errors, which are accidentals. Of each head read a
+semitone off, most had nothing left of it as a component of its own: the accidental was fused
+with its head, a beam or a slur. The fixes, again each with a fixture:
+
+- **A flat marks the note at its bowl's middle**, not its glyph's bottom: a flat re-paired from
+  its stem and bowl (cut apart by a staff line) reached a step below the bowl, so it marked the
+  wrong note and was given to the wrong head (p. 2, bar 121). One line of change, 52 notes.
+- **Accidentals fused with other ink**: for a head with no accidental read before it, the ink of
+  the window left of it is tried as one, with other heads' boxes and stems and long horizontal
+  runs (slurs, beams) kept out, the "heads" and "grace notes" read on a natural's box or a
+  sharp's crossings taken back, and the glyph cut to its own strokes with a slur's end under it
+  removed (p. 12, 14, 16). Semitone errors 224 → 115.
+- **Two touching flats of a chord a third apart** (p. 4) are cut between their stems; they read as
+  one sharp.
+- **A ring in a tight key signature of flats** passed for a half note and ended the key before it
+  began (p. 12, G flat major read in C).
+
+What is left: the braced divisi systems, where a quarter-note chord of a third is sometimes not
+found and its stem then passes for a barline, which also breaks the carry of accidentals through
+the bar (p. 4, 76%, the worst page); accidentals under a slur's end where the slur runs along a
+stroke; and the lower divisi staff matched to a MIDI that often plays one of the two lines. The
+111 "other" errors are scattered: alignment noise in chord passages the MIDI plays differently.
 
 ## The viewer (`053_omr_eval.html`, `viewer.js`)
 
