@@ -451,7 +451,7 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
   // the little finger abducts furthest
   const SPLAY = [0.55, 0.55, 0.66, 0.75]
   const _qf = new THREE.Quaternion(), _qi = new THREE.Quaternion(), _o = v3(), _fp = [v3(), v3(), v3(), v3()]
-  const _l = v3(), _n = v3(), _bt = new THREE.Matrix4(), _br = new THREE.Matrix4(), _pp = v3()
+  const _l = v3(), _n = v3(), _rr = v3(), _fa = v3(), _bt = new THREE.Matrix4(), _br = new THREE.Matrix4(), _pp = v3()
   function handFrame(th, ya, ro, mat) {
     const m = M.L
     // little − index knuckle, and the back of the hand, in the violin frame
@@ -500,7 +500,27 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
     const targets = [1, 2, 3, 4].map(f => ({ T: J.fingers[f].cur.clone().applyMatrix4(mat), on: pose.fingers[f].press > 0, held: !!pose.fingers[f].held, len: m.fingers[f - 1].len.reduce((a, b) => a + b, 0) }))
     const thumbT = J.thumb.target.clone().applyMatrix4(mat)
     const thumbLen = (m.thumb.len[0] + m.thumb.len[1]) + m.thumbRest.distanceTo(m.kRest[0]) * 0.55
-    const elbowRef = J.elbow.clone().applyMatrix4(mat)
+    // the elbow's place (research/07 §2.3 step 1): under the fingerboard,
+    // swung toward the midline (violin −z) by 2.5 cm a string from E to G for
+    // the string fingered and 1.2 cm a position, so the hand meets each string
+    // in the same shape; low-passed over 150 ms so a fast crossing parks it
+    // between the strings, as the bow arm's level does. The swing is scaled to
+    // this arm (the reference is a 59 cm arm's). `sFing` is the string of the
+    // highest pressing finger (the one the hand is shaped for), the mean of
+    // the fingers' strings when none presses
+    {
+      let sF = null
+      for (const f of [1, 2, 3, 4]) { const F = pose.fingers[f]; if (F.press > 0) sF = sF == null ? F.s : Math.max(sF, F.s) }
+      if (sF == null) sF = pose.fingers.slice(1, 5).reduce((a, F) => a + F.s, 0) / 4
+      const tau = 0.15
+      LH.sArm = LH.sArm == null || !LH.init ? sF : LH.sArm + (sF - LH.sArm) * Math.min(1, dt / tau)
+    }
+    const armK = (m.l1 + m.l2) / 59
+    const swing = (2.5 * (V.S - 1 - LH.sArm) + 1.2 * Math.max(0, pose.base - 2) / 2) * armK
+    // (z −2 is as far toward the midline as this arm's elbow gets with the
+    // wrist within 15° of straight; the swing from there is what the wrist
+    // allows, about 1.5 cm from E to D on a 47 cm arm: research/07 §2.4)
+    const elbowRef = v3(V.x0 + V.bodyLen * 0.25 - 4 * high, -22 * armK, -2 - swing).applyMatrix4(mat)
     const l1 = m.l1, l2 = m.l2
     const th0 = THREE.MathUtils.degToRad(24 - 14 * high)
     const evaluate = (th, ya, ro, sh, keep, why = null) => {
@@ -516,26 +536,39 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
       const want = W.clone().addScaledVector(h, -l2)
       const radial = want.clone().sub(C); radial.addScaledVector(ax, -radial.dot(ax))
       if (radial.lengthSq() < 1e-8) radial.set(0, -1, 0).addScaledVector(ax, ax.y).normalize(); else radial.normalize()
-      // the line's best elbow, and one turned down under the violin; keep the better
-      const down = v3(0, -1, 0).transformDirection(mat).addScaledVector(ax, 0); down.addScaledVector(ax, -down.dot(ax)).normalize()
-      let best = null
+      // the elbow: the point of the two-bone circle nearest the swing reference
+      // (research/07 §2.3 step 1), among those that keep the wrist within
+      // BEND_MAX of straight and the arm clear of the violin's body. A finer
+      // ring than the hand's search needs, so the choice is continuous as the
+      // reference moves (a coarse ring made the elbow jump between its points)
+      const down = v3(0, -1, 0).transformDirection(mat); down.addScaledVector(ax, -down.dot(ax)).normalize()
       const u2 = ax.clone().cross(radial).normalize()
-      const ring = [0, 0.5, -0.5, 1.1, -1.1, 1.8, -1.8, 2.6, -2.6].map(t => radial.clone().multiplyScalar(Math.cos(t)).addScaledVector(u2, Math.sin(t)))
-      for (const r of [...ring, down]) {
+      const BEND_MAX = 15
+      let best = null
+      const Sl = S.clone().applyMatrix4(toLocalM), Wl = W.clone().applyMatrix4(toLocalM)
+      // (the ring's cost without the body test first, then the body test on
+      // the four cheapest: the test is 18 point checks and the ring has 36)
+      const cands = []
+      for (let a = 0; a < 36; a++) {
+        const r = _rr.copy(radial).multiplyScalar(Math.cos(a * Math.PI / 18)).addScaledVector(u2, Math.sin(a * Math.PI / 18))
         const Ec = C.clone().addScaledVector(r, rC)
-        const fa = W.clone().sub(Ec).normalize()
+        const fa = _fa.subVectors(W, Ec).normalize()
         const bend = THREE.MathUtils.radToDeg(Math.acos(clamp(fa.dot(h), -1, 1)))
-        const El = Ec.clone().applyMatrix4(toLocalM)
-        let c = bend * (bend > 12 ? 3 : 1) + 10 * Math.max(0, bend - 25)
-        c += 4 * Math.max(0, El.y + 8 * k)                    // the elbow under the violin
+        // the wrist within its budget, then as near the reference as it gets;
+        // a little bend is free, past the budget it costs as before
+        let c = 2 * Ec.distanceTo(elbowRef) + 0.3 * bend + 1.5 * Math.max(0, bend - 11) + 3 * Math.max(0, bend - BEND_MAX) + 10 * Math.max(0, bend - 25)
+        c += 4 * Math.max(0, Ec.clone().applyMatrix4(toLocalM).y + 8 * k)       // the elbow under the violin
+        cands.push({ c, E: Ec, bend })
+      }
+      cands.sort((p, q) => p.c - q.c)
+      for (const cd of cands.slice(0, 4)) {
+        const El = cd.E.clone().applyMatrix4(toLocalM)
         // the forearm and the upper arm (with a sleeve) clear of the violin's body
-        const Wl = W.clone().applyMatrix4(toLocalM), Sl = S.clone().applyMatrix4(toLocalM)
         for (let j = 1; j <= 9; j++) {
-          if (inBody(_pp.lerpVectors(El, Wl, j / 9), 4.6 * k)) c += 400          // (j = 9: the wrist itself)
-          if (inBody(_pp.lerpVectors(Sl, El, j / 9), 5.6 * k)) c += 400
+          if (inBody(_pp.lerpVectors(El, Wl, j / 9), 4.6 * k)) cd.c += 400          // (j = 9: the wrist itself)
+          if (inBody(_pp.lerpVectors(Sl, El, j / 9), 5.6 * k)) cd.c += 400
         }
-        c += 0.25 * Ec.distanceTo(elbowRef)
-        if (!best || c < best.c) best = { c, E: Ec, bend }
+        if (!best || cd.c < best.c) best = cd
       }
       let c = add('arm', best.c) + add('reach', Math.max(0, dist - (l1 + l2)) * 20)
       // each finger, solved as it will be drawn: its base joint within a hand's
@@ -559,7 +592,7 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
       const Tb = W.clone().add(_pp.copy(m.thumbRest).applyQuaternion(R))
       c += add('thumb', 6 * Math.max(0, Tb.distanceTo(thumbT) - thumbLen))
       // the wrist stays out of the violin's body (high positions)
-      const Wl = W.clone().applyMatrix4(toLocalM)
+      // (Wl, the wrist in the violin frame, from the elbow search above)
       if (Wl.x > V.x0 - 1 && Wl.x < V.x0 + V.bodyLen) c += add('body', 15 * Math.max(0, Wl.y + 2.2 * k))
       // posture preferences, and no jumps
       c += add('pref', 12 * Math.abs(th - th0) + 6 * Math.abs(ya - 0.5) + 6 * Math.abs(ro - 0.15) + 3 * Math.abs(sh) / s)
@@ -606,8 +639,35 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
       LH[k] += clamp((best[k] - LH[k]) * a, -lim, lim)
     }
     LH.init = true
+    // vibrato (research/01 §3.5, 07 §2.3 step 2). The fingertip's travel is in
+    // `anchorU`, so the hand moves along the string either way; what differs
+    // is the joint that carries it. Wrist mode (1st–4th position on D, A, E):
+    // the hand rocks about the wrist, ±3° in phase with the vibrato, and the
+    // forearm stays. Arm mode (5th position and up, or the G string): no rock,
+    // the straight-wrist rule carries the swing to the forearm, which turns
+    // about the elbow. The rock is added after the smoothing, which would
+    // otherwise damp a 5.6 Hz motion
+    const armMode = pose.base >= 7 || LH.sArm < 0.5
+    const rock = armMode ? 0 : -THREE.MathUtils.degToRad(2.5) * (pose.vib || 0) / 0.22
     const out = evaluate(LH.th, LH.ya, LH.ro, LH.sh, false)
     LH.cost = out.c
+    if (rock) {
+      // the hand's frame and wrist with the rock; the elbow stays as solved
+      const r = evaluate(LH.th + rock, LH.ya, LH.ro, LH.sh, false)
+      out.R = r.R; out.W = r.W
+    }
+    // the elbow settles over 100 ms: the ring's choice moves with the hand's
+    // frame from frame to frame, and a violinist's elbow does not. The
+    // smoothed point is put back on the two-bone circle of this frame's wrist
+    if (LH.E && LH.init) {
+      const ax = out.W.clone().sub(S), d = Math.min(ax.length(), l1 + l2 - 1e-3); ax.normalize()
+      const xC = (l1 * l1 - l2 * l2 + d * d) / (2 * d), rC = Math.sqrt(Math.max(0, l1 * l1 - xC * xC))
+      const C = S.clone().addScaledVector(ax, xC)
+      const Es = LH.E.lerp(out.E, Math.min(1, dt / 0.1)).sub(C)
+      Es.addScaledVector(ax, -Es.dot(ax))
+      if (Es.lengthSq() > 1e-6) out.E = C.addScaledVector(Es.normalize(), rC)
+    }
+    LH.E = out.E.clone()
     st.lh = { th: LH.th, ya: LH.ya, ro: LH.ro, sh: LH.sh, cost: out.c, bend: out.bend }
     st.lhWhy = (th, ya, ro, sh = LH.sh) => { const w = {}; evaluate(th, ya, ro, sh, false, w); for (const k in w) if (typeof w[k] === 'number') w[k] = +w[k].toFixed(1); return w }
     return out

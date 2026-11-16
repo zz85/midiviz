@@ -114,6 +114,57 @@ going up. Small on camera.
    vibrato is on; the collision sweep (`collisions.mjs`) for the forearm against
    the violin's body, which is the risk when the elbow swings under it.
 
+### 2.4 After the fix (16 Nov 2026) [M]
+
+The swing is bounded by the wrist, not by the weight. Probing the two-bone
+circle of elbows for the hand frame the fingers demand in 1st position (shoulder
+at z +6.4, wrist at z −2, forearm direction set by the straight-wrist rule): the
+elbows that keep the wrist within 15° of straight lie at z 0 to +8 for this arm
+(22 + 25 cm), and there are none for a 33 + 26 cm arm with the same shoulder.
+The textbook swing to z −6…−9 needs the hand to roll with the forearm, which
+the finger targets, solved first in the violin frame, don't allow. Each cm of
+swing past z 0 costs about 4° of wrist deviation; the clavicle can't help (±0.3
+rad of tilt moves the shoulder 0.4–2 cm in z).
+
+What `leftHandPose` does now:
+
+- the elbow is the point of the two-bone circle nearest a swing reference (z
+  −2 − 2.5 cm × (3 − s) × armK for the string fingered, low-passed 150 ms, plus
+  1.2 cm a position), among 36 points of the circle (the old ring had 10, and
+  the elbow jumped between them as the reference moved), with the wrist's
+  bend costed at 0.3/° to 11°, 1.8/° to 15° and 4.8/° past it, and the body
+  clearance tested on the four cheapest;
+- the chosen elbow is smoothed over 100 ms and put back on this frame's
+  circle, so the hand's frame-to-frame search doesn't shake it;
+- vibrato: in wrist mode (below 5th position on D, A, E) the hand rocks about
+  the wrist ±2.5° in phase with `vib`, after the pose smoothing (which would
+  damp 5.6 Hz), with the elbow as solved; in arm mode (5th position and up,
+  or the G string) no rock, so the straight-wrist rule carries the hand's
+  travel to the forearm.
+
+| | before | after | teaching |
+|---|---|---|---|
+| elbow z, E string (Preludio / Paganini) | +5.8 / +5.3 | +0.7 / +2.9 | |
+| elbow z, D string | +6.3 / +5.5 | +0.3 / +1.7 | |
+| elbow z, G string (Paganini) | +6.5 | +2.7 | |
+| swing E → D (Paganini) | +0.2 | −1.2 cm | −2.5 cm |
+| elbow toward the midline, all strings | | 4–5 cm | |
+| left wrist bend, 90th pct (Preludio) | 7.7° | 11.6° | ≤ 15° |
+| elbow within a position, 95 % / max | 0.4 / 1.6 cm | 0.9 / 1.7 cm | still |
+| wrist-mode vibrato: forearm angle swing, p-p (Adagio) | 0.6° | 1.1° (elbow still, 0.16 cm) | wrist flexes, forearm still |
+| arm-mode vibrato: elbow travel p-p (Adagio) | 0.17 cm | 0.17 cm | ±0.5 cm |
+
+The elbow is 4–5 cm further under the fingerboard on every string, and swings
+about half the teaching's amount from E to D within the wrist budget. Arm-mode
+vibrato is no different from before: the hand's travel (`anchorU`, ±0.22 cm)
+reaches the elbow at 0.17 cm either way; a visible forearm swing would need
+the knuckles to stay put and the fingertip's travel to come from the elbow,
+which is `motion.js`'s to give (the stop moves; where the hand pivots is the
+rig's). A first attempt that moved the elbow reference by −0.4 × `vib` moved
+nothing (the search's smoothing ate it) and was taken out. The posture test's
+left-wrist budget (90th percentile ≤ 15°) and the collision sweep pass on
+every piece; the forearm's nearest approach to the violin is unchanged.
+
 ## 3. References
 
 Those of `01_violinist_biomechanics.md` §7: Lionello & Ramírez 2018; Margulies
