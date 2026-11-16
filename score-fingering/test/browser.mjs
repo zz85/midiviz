@@ -208,16 +208,16 @@ const loadImageSample = target => target.evaluate(async () => {
       fingers:S.items.slice(index, index + 3).map(item => item.assignment.finger),
       bases:S.items.slice(index, index + 3).map(item => item.assignment.base),
       fifths:S.model.staves.map(staff => staff.key.fifths),
-      inferred:S.model.staves.every(staff => staff.key.detected === 2 || staff.key.documentInferred),
+      inferred:S.model.staves.every(staff => staff.key.detected === 2 || staff.key.documentInferred || staff.key.keylessSection),
     }
   })
-  check(chromaticApproach.index === 11 && chromaticApproach.names.join() === 'E♯3,F♯3,A3' && chromaticApproach.pitches.join() === '53,54,57' && chromaticApproach.fingers.join() === '2,3,1' && chromaticApproach.bases.every(base => base === 2) && chromaticApproach.fifths.every(fifths => fifths === 2) && chromaticApproach.inferred, `page 2 carries D major and fingers E♯-F♯-A as 2-3-1 (${chromaticApproach.names.join(' · ')} / ${chromaticApproach.fingers.join('-')})`)
+  check(chromaticApproach.index === 11 && chromaticApproach.names.join() === 'E♯3,F♯3,A3' && chromaticApproach.pitches.join() === '53,54,57' && chromaticApproach.fingers.join() === '2,3,1' && chromaticApproach.bases.every(base => base === 2) && chromaticApproach.fifths.join() === '2,2,2,2,2,2,2,2,2,0,0,0,0' && chromaticApproach.inferred, `page 2 carries D major, ends in its keyless C section, and fingers E♯-F♯-A as 2-3-1 (${chromaticApproach.names.join(' · ')} / ${chromaticApproach.fingers.join('-')}; keys ${chromaticApproach.fifths.join(',')})`)
   await samplePage.evaluate(() => __scoreFingering.openPage(3, { fit:true }))
   await samplePage.waitForFunction(() => __scoreFingering.S.activePageState?.index === 3 && __scoreFingering.S.model !== window.__directPage3Model && getComputedStyle(document.getElementById('busy')).display === 'none', null, { timeout:30000 })
   const refreshedPage3 = await samplePage.evaluate(() => ({ fifths:__scoreFingering.S.model.staves.map(staff => staff.key.fifths), keyless:__scoreFingering.S.model.staves.filter(staff => staff.key.keylessSection && staff.key.fifths === 0).length, recognized:__scoreFingering.S.activePageState.recognizedFifths }))
-  // Page 3 prints no key signature (a C section, accidentals written out): recognized again with
-  // page 2's D major as context, its keyless staves stay in C rather than inheriting D.
-  check(refreshedPage3.recognized === 2 && refreshedPage3.keyless >= 10, `cached page 3 is re-recognized after page 2 establishes its key context, keeping its keyless section in C (keys ${refreshedPage3.fifths.join(',')}, carried ${refreshedPage3.recognized})`)
+  // Page 3 prints no key signature (a C section, accidentals written out, begun at the end of
+  // page 2): recognized again with page 2's ending key as context, every staff stays in C.
+  check(refreshedPage3.recognized === 0 && refreshedPage3.keyless === refreshedPage3.fifths.length, `cached page 3 is re-recognized after page 2 establishes its key context, keeping its keyless section in C (keys ${refreshedPage3.fifths.join(',')}, carried ${refreshedPage3.recognized})`)
   check(sampleErrors.length === 0, `no built-in sample browser errors${sampleErrors.length ? ': ' + sampleErrors.join(' | ') : ''}`)
   await sampleContext.close()
 

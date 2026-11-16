@@ -317,6 +317,7 @@ Hands from the score or automatic (#032, #045, #049, #050)
 - Double stops stack closer, with the same small gap between numbers at every size (centres one numeral height plus 4 px apart, was 26 px).
 - Finger numbers move off printed markings such as **div.**, dynamics and other notes: the page is sampled with staff lines removed and a number that would sit on ink moves to the nearest clear spot, a little higher or to the side; a double stop moves as one, and numbers keep clear of each other.
 - A finger that repeats the one just written is not written again (three 3s in a row show one 3). It is written again on a new system, after a rest of a beat or more, after six beats without one, or when the string or position changes; repeated double stops are treated the same way. **repeated fingers** shows them all.
+- Key signatures: the C section from bar 121 (end of page 2) through page 4 no longer picks up D major on staves that open with a sharp on their first note or are divisi systems; D returns where page 4 prints it again (ScoreShift fix upstream).
 - Tests: `stand.test.js` (frame round trips, rotated boxes, drag / wheel axes, one turn per gesture); the browser smoke adds 10 checks (layout and fit, tap / scroll / ↓ turns, read-ahead, ink position on the turned page, flip, exit).
 
 ## 26 Oct 2026
