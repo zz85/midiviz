@@ -31,7 +31,7 @@ Browser experiments with MIDI, piano and violin rendering, synthesis and audio a
 
 ## Violin and strings
 
-- [#053 OMR against the MIDI](053_omr_eval.html) - ScoreShift reads the 17 pages of the Sibelius 2 viola part; every note head is checked against the symphony's MIDI, page by page, and the OMR fixed where the errors clustered: 86.8% → 93.8% of notes at the right pitch ([notes](omr-eval/README.md), [details](CHANGELOG.md#16-nov-2026))
+- [#053 OMR against the MIDI](053_omr_eval.html) - ScoreShift reads the 17 pages of the Sibelius 2 viola part; every note head is checked against the symphony's MIDI, page by page, and the OMR fixed where the errors clustered: 86.8% → 94.9% of notes at the right pitch ([notes](omr-eval/README.md), [details](CHANGELOG.md#16-nov-2026))
 - [#051 Duo in the Park](038_duo.html?stage=park) - #038's duo on the lawn under the tree of Sorairo's hillside: sky, grass, wind, birds and painterly post, at any hour ([details](CHANGELOG.md#2-nov-2026))
 - [#048 Bowed Violin](048_bowed_violin.html) - play a physical bowed-string model as violin, viola, cello or double bass, with pressure, bow position, vibrato, body responses, room sound and Web MIDI ([notes](physical-violin/README.md))
 - [#046 Score Fingering](046_score_fingering.html) - photograph or open a PDF of printed music, auto-detect violin/viola, choose among ranked fingerings, edit the reading, read it as a score with playback, metronome, page turns and pen ink, and export annotated pages ([notes](score-fingering/README.md), [details](CHANGELOG.md#21-oct-2026))

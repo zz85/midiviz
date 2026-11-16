@@ -8,7 +8,7 @@ pawchestra's `sibelius-2-{1,2,3-4}.mid`, sequenced by Jack Gilbert, copied into 
 
 The point is to measure the OMR where there is no MusicXML transcription, find where it fails,
 and fix ScoreShift's `omr.js` (in `../random-sketches/vibes/scoreshift/`) where the errors cluster.
-On this part the pitch accuracy went from 86.8% to 93.8% (see below for what the first 60.8%
+On this part the pitch accuracy went from 86.8% to 94.9% (see below for what the first 60.8%
 figure was).
 
 ```
@@ -75,6 +75,7 @@ pages again).
 | ScoreShift before | 98.7% | 86.8% | 733 | 119 | 75 |
 | after the first round (clefs, staves, key glyphs) | 98.8% | 89.8% | 549 | 122 | 77 |
 | after the second (accidentals) | 98.8% | 93.8% | 303 | 122 | 77 |
+| after the third (divisi chords, p. 4) | 99.3% | 94.9% | 270 | 138 | 43 |
 
 The first run of the evaluator reported 60.8% with the same reads. The difference is all in the
 truth and the alignment: the second movement's octave (+9.3), the divisi staves merged by onset and
@@ -118,11 +119,20 @@ with its head, a beam or a slur. The fixes, again each with a fixture:
 - **A ring in a tight key signature of flats** passed for a half note and ended the key before it
   began (p. 12, G flat major read in C).
 
-What is left: the braced divisi systems, where a quarter-note chord of a third is sometimes not
-found and its stem then passes for a barline, which also breaks the carry of accidentals through
-the bar (p. 4, 76%, the worst page); accidentals under a slur's end where the slur runs along a
-stroke; and the lower divisi staff matched to a MIDI that often plays one of the two lines. The
-111 "other" errors are scattered: alignment noise in chord passages the MIDI plays differently.
+The third round was p. 4's divisi systems, half-note chords a third apart on two braced staves
+(76% before, 85% after). Two hollow heads touching put their holes either side of the ring's
+wall, which the hole merge took for a staff line: halves now merge only across a line (an even
+staff position), a half leaking into the hole below is clipped to a head's height, a stem
+against the wall no longer reads as the wall's thickness, and the hole's width is its middle
+rows' widest. The chords' stems, meeting the upper staff's at one x, passed as system barlines
+(seven on one staff for three) and reset each bar's accidentals: a thin column that runs on past
+the staff and ends in the open, inside another staff or in a head is a stem. Stacked accidentals
+before a chord are cut apart.
+
+What is left (270 wrong, 138 extra, 43 missed): p. 4 (85%) and p. 15 (86%), the divisi
+passages, where the lower staff is matched to a MIDI that often plays one of the two lines;
+p. 1 (89%) and p. 3 (91%). The 98 "other" errors are scattered: alignment noise in chord
+passages the MIDI plays differently.
 
 ## The viewer (`053_omr_eval.html`, `viewer.js`)
 

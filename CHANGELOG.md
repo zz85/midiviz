@@ -11,6 +11,9 @@ What each experiment does and how, newest first. The short list is in the [READM
 - The live stats window covers at least 16 periods, so one boundary slip on a low note no longer reads as multiple slipping. The pressure slider goes to 1.
 - `node --test physical-violin/test/*.test.mjs` adds every open string of viola, cello and bass in Helmholtz motion, and attack times against limits (`attackMs` in `test/offline.mjs`, from each slip-to-slip interval).
 
+[#053 OMR against the MIDI](053_omr_eval.html): the divisi chords
+- Third round on the viola part: p. 4's half-note chords a third apart on two braced staves (76% → 85%). Two touching hollow heads put their holes either side of the ring's wall, which ScoreShift's hole merge took for a staff line; the chords' stems passed as system barlines and reset each bar's accidentals. Pitch right 93.8% → 94.9%, heads found 99.3%, missed notes 77 → 43. ScoreShift: 1 fixture, 64 tests, smoke 49 all passing.
+
 [#053 OMR against the MIDI](053_omr_eval.html): the accidentals
 - The second round of ScoreShift fixes from the viola part went after the 331 heads read a semitone off, which are accidentals; of each, most had nothing left of it as a component of its own. A flat now marks the note at its bowl's middle, not its glyph's bottom (52 notes from one line); an accidental fused with its head, a beam or a slur is read from the ink of the window left of a head that has none, other heads, stems and long horizontal runs kept out and the glyph cut to its own strokes; two touching flats of a chord a third apart are cut between their stems; a ring in a tight flat key signature is no half note. Pitch right 89.8% → 93.8% (5,759 of 6,139 notes), semitone errors 331 → 115. ScoreShift: 4 more fixtures, 63 tests, its own fixtures unchanged but for `grace`, up 2.
 
