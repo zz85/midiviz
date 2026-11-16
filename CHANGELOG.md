@@ -2,6 +2,11 @@
 
 What each experiment does and how, newest first. The short list is in the [README](README.md).
 
+## 16 Nov 2026
+
+[#045 Path-traced Pianist](045_pathtracer.html): three-mesh-bvh 0.9.18
+- pathtrace/tools/vendor.mjs bundles three-mesh-bvh 0.9.18 (from 0.9.17) into both three-gpu-pathtracer tracers, and pathtrace/test/shadow-opacity.html's import map follows. 0.9.18 fixes rays parallel to an axis missing bounds they lie on the face of. three-gpu-pathtracer stays 0.0.28: its faster shadow rays, which also need 0.9.18, are on GitHub main and not released yet. A 320x180, 16 spp WebGPU still traces with no WebGPU errors and the same picture as on 0.9.17, with and without OIDN (llvmpipe); the WebGL tracer runs as before. MuTracer doesn't use three-mesh-bvh, and its build is unchanged.
+
 ## 15 Nov 2026
 
 Crossings are hands past each other, not thumbs that meet (#032, #038, #045, #049, #050)

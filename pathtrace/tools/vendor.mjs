@@ -21,7 +21,7 @@ import os from 'node:os'
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../..')
 // three-gpu-pathtracer 0.0.28 or later: 0.0.27's WebGPU kernels don't compile on three r187, which
 // binds every storage buffer as an array (fixed upstream in PR #911, released in 0.0.28).
-const VERSIONS = { 'three-gpu-pathtracer': '0.0.28', 'three-mesh-bvh': '0.9.17', '@meimu/mutracer': '0.3.0', three: '0.187.0', 'oidn-webgpu': '0.6.0', 'xatlas-web': '0.1.0' }
+const VERSIONS = { 'three-gpu-pathtracer': '0.0.28', 'three-mesh-bvh': '0.9.18', '@meimu/mutracer': '0.3.0', three: '0.187.0', 'oidn-webgpu': '0.6.0', 'xatlas-web': '0.1.0' }
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pt-vendor-'))
 const sh = (cmd, cwd = tmp) => execSync(cmd, { cwd, stdio: 'inherit' })
