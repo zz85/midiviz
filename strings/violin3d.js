@@ -501,6 +501,9 @@ export function buildViolin(instrument, { finish = 'amber' } = {}) {
     // the back of the neck under the fingerboard centre line (where a thumb rests)
     neckBackY: x => fbY(Math.max(0, x), 0) - 0.6 * k - (lerp(1.9, 2.5, clamp(x / x0, 0, 1)) * k * (cello ? 1.2 : 1)),
     stringY, stringZ, fbY, topY, fbHalf, fbEnd, yBridge, layoutStrings,
+    // Objects whose local transforms or visibility change when layoutStrings runs.
+    // Kept public so deterministic frame capture need not record the static violin mesh.
+    motionObjects: strings.flatMap(({ a, b, tail, head, blur }) => [a, b, tail, head, blur]),
     uOfSemis: n => stopMM(n, instrument.L) / 10,
     bowContact(s, beta = 2.6 * k) {
       // a point on string s (float) at beta cm from the bridge

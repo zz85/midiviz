@@ -54,6 +54,123 @@ The violinist and the #032 pianist (AvatarSample_A in her concert dress, `pianis
 - She looks up at him (head and eyes, `pianist/rig.js` `state.lookAt`) in his solos (he plays and she strikes nothing for 1.2 s or more), from just before his entries after a rest of 1.5 s or more, and where her part is light while his is busy; about one glance every 20–30 s in the sonatas (`soloGlances` in 038_duo.html).
 - Cameras: front, wide, two closer two-shots (duo, duoLow), him, his face, bow, her, her face, keys, over her shoulder, over his. Auto plans the whole piece when it loads: takes of 5–12 s ending on phrase boundaries. Where both parts are near their usual busyness (a duet passage) it takes two-shots; otherwise it prefers whichever part is busier against its own average.
 - Liner notes (`liner/`, as #032): intertitles while it plays, the notes panel (I), sections on the seek bar; the Notes menu picks intertitles, every note or none on screen (`?notes=`), and #032's look keys work in the address bar (`itstyle`, `itstylea`, `itcol`, `itpos`, `itheads`, `itseed`). Automatic placement puts each intertitle on the side with more room past the two players. Pieces with notes have ⓘ in the list: Gounod's Ave Maria so far (`liner/pieces/gounod-ave-maria.md`). Times come from the MIDI's bars, scaled by the page's tempo factor. No MP4 export on this page yet.
+
+### Deterministic motion bake (prototype)
+
+Real-time simulation remains the default. The Motion control adds **Bake**, **Load bake**, **Save bake** and **Clear bake** without changing an ordinary visit. Each bake may contain the violinist and violin, the pianist and piano, or both. A loaded bundle owns only its recorded channels; a missing bundle continues to run live. A fully deterministic export requires every participating performer bundle to use the same timebase. The director can remain the existing song-seeded function, with an optional camera bundle when an export must preserve a manually operated camera too.
+
+Baking runs the existing planners and rigs sequentially at a fixed 120 Hz. A built-in piece starts on a fresh page with the rigs' existing fixed random seeds; an opened local MIDI starts from the current page because its file would not survive a reload. Tick 0 is the first instant of music. Negative ticks cover the optional 11 s bow and instrument-taking introduction; positive ticks continue through the hall and applause tail selected for export. The state at tick `n` is evaluated at exactly `n / 120` song seconds, not from `requestAnimationFrame`, `performance.now()` or the audio clock. Stateful hair, cloth, jacket and spring motion is warmed and stepped from the first tick rather than evaluated by seeking.
+
+Replay indexes the two samples around the requested song time directly. It linearly interpolates positions, scalar controls and simulation points, and spherically interpolates quaternions. Seeking therefore needs no simulation warm-up. Loaded channels bypass their live planner and simulation, while sound, lighting and any bundle not loaded continue normally. Video export may use Live, Bake current motion, or Load bake; Bake current motion completes first and the exporter then requests exact frame times from that same bake, independently of export frame rate.
+
+The cache key for each bundle is SHA-256 over canonical JSON containing the source MIDI or score identity, its selected parts and timebase, performer timing/expression and fingering results, rig and planner versions, model and instrument binding, secondary-motion topology, movement controls and fixed rate. Rendering-only choices such as resolution, lights and a fixed camera do not invalidate performer motion. Loading an incompatible bundle reports which input differs and leaves that bundle Live; it never silently applies a stale bake.
+
+The prototype is implemented in `duo/duobake.js` and `duo/motion-bake.js`, with controls in `038_duo.html`. It records the final local transforms of both skeletons, violin and bow object state, morph weights, and the piano's visible keys, hammers, dampers and pedals. Starting Bake on a built-in piece reloads once and runs before the display loop starts, which gives every bake the same initial state. Opened local MIDI files bake in the current page because a reload would discard the file. Secondary cloth geometry is not recorded yet. `node --test duo/test/*.test.mjs` checks the codec and sampler; `node duo/test/motion-bake.browser.mjs` checks Live as the default, a short real-scene bake, save/load, independent bundles and matching payload digests from two fresh runs.
+
+#### `.duobake` version 1
+
+A saved `.duobake` is a gzip stream. After decompression it contains:
+
+| Bytes | Value |
+| --- | --- |
+| 0–7 | ASCII magic `MDVBAKE1` |
+| 8–11 | unsigned 32-bit little-endian JSON-header byte length |
+| 12… | UTF-8 JSON header |
+| next 8-byte boundary… | binary payload; every block starts on an 8-byte boundary |
+
+Track offsets are measured from the first payload byte. All payload numbers are little-endian IEEE-754 `float32`. The header records SHA-256 digests for the complete payload and each track. The loader caps compressed input before decompression, aborts if streamed output exceeds the uncompressed limit, checks sizes and multiplication overflow before allocating track arrays, and rejects non-finite values and truncated blocks. It also limits duration and track count.
+
+The header has this shape; the values below illustrate a file containing both performers:
+
+```json
+{
+  "format": "midiviz-duo-motion",
+  "version": 1,
+  "generator": "midiviz-038",
+  "created": "2026-11-14T00:00:00Z",
+  "timeline": {
+    "rate": 120,
+    "origin": "music-start",
+    "startTick": -1320,
+    "endTick": 37800,
+    "frameCount": 39121
+  },
+  "source": {
+    "kind": "score",
+    "sha256": "<64 lowercase hex digits>",
+    "selectionSha256": "<64 lowercase hex digits>"
+  },
+  "bundles": [
+    {
+      "id": "violinist",
+      "cacheKey": "<64 lowercase hex digits>",
+      "bindingSha256": "<64 lowercase hex digits>",
+      "requiredTracks": ["violinist.pose", "violinist.props"]
+    },
+    {
+      "id": "pianist",
+      "cacheKey": "<64 lowercase hex digits>",
+      "bindingSha256": "<64 lowercase hex digits>",
+      "requiredTracks": ["pianist.pose", "piano.pose", "piano.action"]
+    }
+  ],
+  "tracks": [
+    {
+      "id": "violinist.pose",
+      "bundle": "violinist",
+      "type": "transform7f",
+      "names": ["hips", "spine", "leftUpperArm"],
+      "offset": 0,
+      "byteLength": 3286164,
+      "sha256": "<64 lowercase hex digits>"
+    },
+    {
+      "id": "violinist.props",
+      "bundle": "violinist",
+      "type": "transform7f",
+      "names": ["violin", "bow"],
+      "offset": 3286168,
+      "byteLength": 2190776,
+      "sha256": "<64 lowercase hex digits>"
+    },
+    {
+      "id": "pianist.pose",
+      "bundle": "pianist",
+      "type": "transform7f",
+      "names": ["hips", "spine", "leftUpperArm"],
+      "offset": 5476944,
+      "byteLength": 3286164,
+      "sha256": "<64 lowercase hex digits>"
+    },
+    {
+      "id": "piano.pose",
+      "bundle": "pianist",
+      "type": "transform7f",
+      "names": ["piano"],
+      "offset": 8763112,
+      "byteLength": 1095388,
+      "sha256": "<64 lowercase hex digits>"
+    },
+    {
+      "id": "piano.action",
+      "bundle": "pianist",
+      "type": "scalar1f",
+      "names": ["key.0", "hammer.0", "damper.0", "pedal.sustain"],
+      "offset": 9858504,
+      "byteLength": 625936,
+      "sha256": "<64 lowercase hex digits>"
+    }
+  ],
+  "payloadSha256": "<64 lowercase hex digits>"
+}
+```
+
+`transform7f` stores frame-major, then name-major `tx, ty, tz, qx, qy, qz, qw` in the named object's local parent space. Static scale stays in the model binding. `scalar1f` stores one value per named mechanism channel. `points3f` stores frame-major local `x, y, z` values for optional cloth, hair, jacket-tail or spring guides; its binding digest includes the ordered guide topology. `morph1f` stores named facial or corrective morph weights. An optional `camera.pose` uses `transform7f`, and `camera.target` uses `points3f` with one point. Every track contains exactly `frameCount × names.length × components` values, with no per-frame timestamps because ticks are implicit.
+
+Required v1 content is the final local bone pose for each included performer; the violin and bow transforms for the violinist bundle; and the piano transform plus all animated keys, hammers, dampers and pedals for the pianist bundle. Gaze, breathing and body motion are already present in the final pose. Secondary simulations and morphs are optional track types; when their settings are enabled, their track IDs are included in the bundle's `requiredTracks`. Audio, geometry, materials, lighting and MIDI events are not stored.
+
+A loader accepts version 1 only, verifies the source timebase and each selected bundle independently, then verifies every required track and binding digest. It may ignore an unknown optional track, but it rejects an unknown required type or a partial required bundle. This keeps separate violinist and pianist bakes reusable while ensuring that a claimed deterministic full-Duo replay cannot mix different pieces, tempo maps or introductions.
+
 - Headless: `038_duo.html?shot&view=front&t=20` (sets `__done`, `__info`, `__dbg`).
 
 ## Not done yet

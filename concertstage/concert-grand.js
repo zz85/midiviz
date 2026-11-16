@@ -1028,6 +1028,7 @@ export function buildGrandPiano({ bench = true, mirror = true } = {}) {
   const api = {
     root, keys, keyMeshes, materials: mat, bench: benchGroup, lid, get desk() { return deskRef },
     outline: fullPoly, feet: [[-66.5, -12], [66.5, -12], [-36, -185], [0, -8]],
+    action, pedals: pedals.map(p => p.pivot),
     noteOn(midi, velocity = 0.7) {
       const k = keys.get(midi); if (!k) return
       k.held = true; k.vel = velocity

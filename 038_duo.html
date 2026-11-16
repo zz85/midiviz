@@ -101,6 +101,10 @@
     <select id="vsound" title="Violin sound (#034's engines; the piano's sound is in the Mixer)"><option value="gm">Violin: GM soundfont</option><option value="hybrid">Violin: hybrid sampler (#034)</option><option value="waveguide">Violin: bowed waveguide (#034)</option><option value="source">Violin: Helmholtz source-filter (#034)</option></select>
     <label title="Ink outlines"><input type="checkbox" id="outline" checked> Ink</label>
     <label title="They bow to the hall, then he gives her a nod to start"><input type="checkbox" id="intro" checked> Bow</label>
+    <select id="motion" title="Live motion is the default. Bake the current piece at a fixed 120 steps per second, or load a .duobake for repeatable playback and video frames"><option value="live">Motion: live</option><option value="bake">Motion: bake current piece…</option><option value="load">Motion: load .duobake…</option><option value="baked" hidden>Motion: baked</option></select>
+    <button id="motionSave" hidden title="Save the active deterministic motion as a .duobake file">Save bake</button>
+    <button id="motionClear" hidden title="Return to live simulation">Clear bake</button>
+    <input type="file" id="motionFile" accept=".duobake,application/gzip" hidden>
     <select id="notes" title="Liner notes on screen while it plays, for pieces that have them (ⓘ in the list). Press I for all the notes"><option value="intertitles">Notes: intertitles</option><option value="notes">Notes: every note</option><option value="off">Notes: none on screen</option></select>
   </div>
   <div id="bottom" class="bar">
@@ -155,6 +159,8 @@
     import { createPark, TIMES } from './park/park.js'
     import { createLinerLibrary, clockOfMidi, buildTimeline } from './liner/liner.js'
     import { createLinerOverlay } from './liner/overlay.js'
+    import { cacheKey, decodeDuobake, encodeDuobake } from './duo/duobake.js'
+    import { bakeFixedStep, createReplay, scalarBinding, transformBinding } from './duo/motion-bake.js'
 
     const $ = id => document.getElementById(id)
     const Q = new URLSearchParams(location.search)
@@ -1273,39 +1279,277 @@
       linerLib.ready.then(() => { for (const o of $('song').options) if (linerLib.idOf('violinist/midis/' + o.value)) o.text += '  ⓘ' })
     }
 
+    // ── Deterministic performer motion (.duobake) ──────────────────────────
+    // This first version records final local transforms and instrument action.
+    // Secondary cloth geometry is intentionally left out; live mode remains the default.
+    const MOTION_RATE = 120, MOTION_RECIPE = '038-motion-1'
+    let motionReplay = null, motionBytes = null, motionLabel = '', motionDigest = ''
+    const motionAutoKey = `midiviz:duobake:${location.pathname}`
+
+    function treeTransforms(label, root, keep = () => true) {
+      const out = []; let index = 0
+      root.traverse(object => { const i = index++; if (keep(object)) out.push({ name: `${label}/${i}:${object.name || object.type}`, object }) })
+      return out
+    }
+    function uniqueTransforms(entries) {
+      const seen = new Set()
+      return entries.filter(entry => !seen.has(entry.object) && seen.add(entry.object))
+    }
+    function expressionBinding(id, bundle, rig, vrm) {
+      return scalarBinding(id, bundle, [{
+        name: 'blink',
+        get: () => Math.max(rig.state?.blink || rig.st?.blink || 0, rig.state?.lidDrop || 0),
+        set: value => { vrm.expressionManager?.setValue('blink', value); vrm.expressionManager?.update?.() },
+      }], 'morph1f')
+    }
+    function violinPropStateBinding(entries) {
+      const state = []
+      for (const { name, object } of entries) {
+        for (const axis of ['x', 'y', 'z']) state.push({ name: `${name}.scale.${axis}`, get: () => object.scale[axis], set: value => { object.scale[axis] = value } })
+        state.push({ name: `${name}.visible`, get: () => object.visible ? 1 : 0, set: value => { object.visible = value >= 0.5 } })
+        for (const [mi, material] of [].concat(object.material || []).entries()) if (material && 'opacity' in material)
+          state.push({ name: `${name}.material.${mi}.opacity`, get: () => material.opacity, set: value => { material.opacity = value } })
+      }
+      return scalarBinding('violinist.props.state', 'violinist', state)
+    }
+    function pianoActionBinding() {
+      const orderedKeys = [...piano.keys.entries()].sort((a, b) => a[0] - b[0])
+      if (Array.isArray(piano.action)) {
+        const entries = orderedKeys.map(([m, key]) => ({ name: `key.${m}.rotation`, get: () => key.pivot.rotation.x, set: value => { key.pivot.rotation.x = value } }))
+        for (const [index, action] of piano.action.entries()) {
+          entries.push({ name: `hammer.${index}.height`, get: () => action.hammer.position.y, set: value => { action.hammer.position.y = value } })
+          if (action.damper) entries.push({ name: `damper.${index}.height`, get: () => action.damper.position.y, set: value => { action.damper.position.y = value } })
+        }
+        for (const [index, pedal] of (piano.pedals || []).entries()) entries.push({ name: `pedal.${index}.rotation`, get: () => pedal.rotation.x, set: value => { pedal.rotation.x = value } })
+        return scalarBinding('piano.action', 'pianist', entries)
+      }
+      if (piano.kind === 'upright') {
+        const arrays = ['keys', 'hammers', 'dampers', 'strings', 'jacks', 'bridles', 'leans', 'checks']
+        const names = orderedKeys.map(([m]) => `key.${m}.rotation`).concat(arrays.flatMap(field => [...piano.action.frame[field]].map((_, i) => `${field}.${i}`)), ['damperRail', 'softPedal'])
+        const scratch = Object.fromEntries(arrays.map(field => [field, new Float32Array(piano.action.frame[field].length)]))
+        scratch.damperRail = 0; scratch.softPedal = 0
+        return {
+          id: 'piano.action', bundle: 'pianist', type: 'scalar1f', names,
+          read(out, offset) {
+            for (const [, key] of orderedKeys) out[offset++] = key.pivot.rotation.x
+            for (const field of arrays) { out.set(piano.action.frame[field], offset); offset += piano.action.frame[field].length }
+            out[offset++] = piano.action.frame.damperRail; out[offset] = piano.action.frame.softPedal
+          },
+          write(values) {
+            let offset = 0
+            for (const [, key] of orderedKeys) key.pivot.rotation.x = values[offset++]
+            for (const field of arrays) { scratch[field].set(values.subarray(offset, offset + scratch[field].length)); offset += scratch[field].length }
+            scratch.damperRail = values[offset++]; scratch.softPedal = values[offset]
+            piano.interior.update(scratch)
+          },
+        }
+      }
+      const actionKeys = piano.action.keys, dampers = (piano.dampers || []).map((object, index) => ({ object, index })).filter(entry => entry.object), pedals = piano.pedals || []
+      const names = orderedKeys.map(([m]) => `key.${m}.rotation`)
+        .concat(dampers.map(({ index }) => `damper.${index}.height`), pedals.map((_, i) => `pedal.${i}.rotation`), actionKeys.flatMap((_, i) => [`hammer.${i}.height`, `hammer.${i}.low`, `hammer.${i}.high`]), 'softShift')
+      const scratch = { keys: actionKeys.map(() => ({ h: 0, hMin: 0, hMax: 0 })) }
+      return {
+        id: 'piano.action', bundle: 'pianist', type: 'scalar1f', names,
+        read(out, offset) {
+          for (const [, key] of orderedKeys) out[offset++] = key.pivot.rotation.x
+          for (const { object } of dampers) out[offset++] = object.position.y
+          for (const pedal of pedals) out[offset++] = pedal.rotation.x
+          for (const key of actionKeys) { out[offset++] = key.h; out[offset++] = key.hMin; out[offset++] = key.hMax }
+          out[offset] = piano.action.soft
+        },
+        write(values) {
+          let offset = 0
+          for (const [, key] of orderedKeys) key.pivot.rotation.x = values[offset++]
+          for (const { object } of dampers) object.position.y = values[offset++]
+          for (const pedal of pedals) pedal.rotation.x = values[offset++]
+          for (const key of scratch.keys) { key.h = values[offset++]; key.hMin = values[offset++]; key.hMax = values[offset++] }
+          piano.hammers.update(scratch, values[offset])
+        },
+      }
+    }
+    function motionBindings() {
+      const violinBones = treeTransforms('violinist', him.scene, object => object === him.scene || object.isBone)
+      const propEntries = uniqueTransforms([
+        { name: 'instrument/violin', object: V.group },
+        { name: 'instrument/bow', object: bow.group },
+        ...(V.motionObjects || []).map((object, i) => ({ name: `instrument/string.${i}`, object })),
+      ])
+      const pianistBones = uniqueTransforms([
+        { name: 'pianist/root', object: her.group },
+        ...(her.bones || []).map((object, i) => ({ name: `pianist/source.${i}:${object.name || object.type}`, object })),
+        ...Object.entries(her.humanoid || {}).filter(([, object]) => object).map(([name, object]) => ({ name: `pianist/humanoid.${name}`, object })),
+      ])
+      const pianoEntries = [{ name: 'piano/root', object: piano.root }]
+      return [
+        transformBinding('violinist.pose', 'violinist', violinBones),
+        transformBinding('violinist.props', 'violinist', propEntries),
+        violinPropStateBinding(propEntries),
+        expressionBinding('violinist.morphs', 'violinist', vRig, him),
+        transformBinding('pianist.pose', 'pianist', pianistBones),
+        expressionBinding('pianist.morphs', 'pianist', pRig, her.vrm),
+        transformBinding('piano.pose', 'pianist', pianoEntries),
+        pianoActionBinding(),
+      ]
+    }
+    const noteSignature = note => [note.pitch, +note.on.toFixed(6), +note.off.toFixed(6), +(note.velocity ?? 0).toFixed(5), note.hand || '', note.finger || 0]
+    async function motionSpec(bindings) {
+      const selection = { file: song.entry?.file, source: $('source').value, violinPart: $('vpart').value, pianoPart: $('ppart').value }
+      const selectionSha256 = await cacheKey(selection)
+      const sourceSha256 = await cacheKey({ selection, duration: +song.duration.toFixed(6), intro: $('intro').checked })
+      const bundles = []
+      for (const id of ['violinist', 'pianist']) {
+        const own = bindings.filter(binding => binding.bundle === id)
+        const bindingSha256 = await cacheKey(own.map(({ id, type, names }) => ({ id, type, names })))
+        const settings = id === 'violinist'
+          ? { model: $('model').value, outfit: $('outfit').value, turn: TURN, source: $('source').value, performer: $('performer').value, bowing: $('bowing').value }
+          : { model: PMODEL, dress: $('vdress').value, hands: $('hands').value, piano: piano.kind || 'grand', layout: LAYOUT }
+        const motionInputSha256 = await cacheKey(id === 'violinist' ? song.violin.map(noteSignature) : { notes: song.piano.map(noteSignature), pedal: song.pedal })
+        bundles.push({ id, motionInputSha256, bindingSha256, requiredTracks: own.map(binding => binding.id), cacheKey: await cacheKey({ sourceSha256, motionInputSha256, bindingSha256, settings, rate: MOTION_RATE, recipe: MOTION_RECIPE }) })
+      }
+      return { source: { kind: song.entry?.score ? 'score' : 'midi', sha256: sourceSha256, selectionSha256 }, bundles }
+    }
+    function showMotion(label = '') {
+      motionLabel = label
+      $('motion').value = motionReplay ? 'baked' : 'live'
+      $('motion').options[3].hidden = !motionReplay
+      $('motion').options[3].textContent = motionReplay ? `Motion: baked${label ? ` (${label})` : ''}` : 'Motion: baked'
+      $('motionSave').hidden = !motionBytes
+      $('motionClear').hidden = !motionReplay
+    }
+    async function bakeMotion(endSeconds = song.duration + 1.5) {
+      if (clock.playing) pause()
+      const bindings = motionBindings(), spec = await motionSpec(bindings)
+      keys.reset(); pRig.clear(); pRig.setNotes(song.piano); wasStanding = false
+      const startTick = $('intro').checked ? -INTRO * MOTION_RATE : 0
+      const endTick = Math.ceil(Math.min(song.duration + 1.5, Math.max(0, endSeconds)) * MOTION_RATE)
+      setStatus('Baking motion… 0%')
+      const baked = await bakeFixedStep({ rate: MOTION_RATE, startTick, endTick, bindings, yieldEvery: MOTION_RATE,
+        step: (time, dt) => frame(time, dt, true),
+        onProgress: ({ frame, frameCount }) => { if (frame === frameCount || frame % MOTION_RATE === 0) setStatus(`Baking motion… ${Math.floor(frame / frameCount * 100)}%`) },
+      })
+      const encoded = await encodeDuobake({ timeline: baked.timeline, source: spec.source, bundles: spec.bundles, tracks: baked.tracks, generator: MOTION_RECIPE })
+      motionReplay = createReplay(baked, bindings); motionBytes = encoded.bytes; motionDigest = encoded.header.payloadSha256
+      clock.t = 0; frame(0, 0); showMotion('current piece')
+      setStatus(`Motion baked: ${(motionBytes.byteLength / 1048576).toFixed(1)} MB`, 3500)
+    }
+    async function loadMotion(file) {
+      if (!file) return
+      if (clock.playing) pause()
+      setStatus('Checking motion bake…')
+      const input = new Uint8Array(await file.arrayBuffer())
+      const decoded = await decodeDuobake(input)
+      const bindings = motionBindings(), expected = await motionSpec(bindings)
+      if (decoded.header.source.sha256 !== expected.source.sha256 || decoded.header.source.selectionSha256 !== expected.source.selectionSha256) throw new Error('This bake was made for another score, part selection, tempo map or introduction')
+      const expectedBundles = new Map(expected.bundles.map(bundle => [bundle.id, bundle]))
+      const compatible = new Set(decoded.header.bundles.filter(bundle => {
+        const want = expectedBundles.get(bundle.id)
+        return want && want.cacheKey === bundle.cacheKey && want.bindingSha256 === bundle.bindingSha256
+      }).map(bundle => bundle.id))
+      if (!compatible.size) throw new Error('No performer bundle matches the current models, instruments and movement settings')
+      const tracks = decoded.tracks.filter(track => compatible.has(track.bundle))
+      motionReplay = createReplay({ timeline: decoded.header.timeline, tracks }, bindings.filter(binding => compatible.has(binding.bundle)))
+      motionBytes = input; motionDigest = decoded.header.payloadSha256
+      clock.t = Math.max(0, Math.min(clock.t, song.duration)); frame(clock.t, 0)
+      showMotion([...compatible].join(' + ')); setStatus(`Loaded ${file.name}`, 3000)
+    }
+    function saveMotion() {
+      if (!motionBytes) return
+      const stem = (song.entry?.title || song.entry?.file || 'duo').replace(/\.(mid|midi)$/i, '').replace(/[^a-z0-9._-]+/gi, '-').replace(/^-|-$/g, '') || 'duo'
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(new Blob([motionBytes], { type: 'application/gzip' })); a.download = `${stem}.duobake`; a.click()
+      setTimeout(() => URL.revokeObjectURL(a.href), 60000)
+    }
+    function clearMotion() {
+      if (!song.entry?.local) { location.reload(); return }
+      motionReplay = null; motionBytes = null; motionDigest = ''; clock.t = 0; keys.reset(); wasStanding = false
+      frame(0, 1 / MOTION_RATE, true); showMotion(); setStatus('Live motion restored', 2500)
+    }
+    function setupMotionControls() {
+      showMotion()
+      $('motion').onchange = () => {
+        const action = $('motion').value
+        if (action === 'bake') {
+          if (song.entry?.local) { showMotion(motionLabel); bakeMotion().catch(error => { console.error(error); setStatus(`Motion bake failed: ${error.message}`, 6000) }) }
+          else { sessionStorage.setItem(motionAutoKey, JSON.stringify({ search: location.search })); location.reload() }
+          return
+        }
+        if (action === 'load') { $('motionFile').click(); showMotion(motionLabel); return }
+        if (action === 'live' && motionReplay) clearMotion()
+      }
+      $('motionFile').onchange = async () => {
+        const file = $('motionFile').files[0]; $('motionFile').value = ''
+        try { await loadMotion(file) } catch (error) { console.error(error); setStatus(error.message, 5000); showMotion(motionLabel) }
+      }
+      $('motionSave').onclick = saveMotion
+      $('motionClear').onclick = clearMotion
+      const invalidates = new Set(['song', 'vpart', 'ppart', 'model', 'outfit', 'vdress', 'hands', 'pianoType', 'layout', 'bowing', 'source', 'performer', 'intro'])
+      $('top').addEventListener('change', event => { if (motionReplay && invalidates.has(event.target.id)) {
+        if (song.entry?.local) { motionReplay = null; motionBytes = null; motionDigest = ''; showMotion(); setStatus('Motion bake cleared because the performance changed', 3000) }
+        else setTimeout(() => location.reload(), 0)
+      } })
+      window.__duo.motion = {
+        bake: endSeconds => bakeMotion(endSeconds),
+        apply: time => { clock.t = time; frame(time, 0) },
+        load: file => loadMotion(file),
+        bytes: () => motionBytes ? Array.from(motionBytes) : null,
+        bindings: () => motionBindings().map(binding => ({ id: binding.id, type: binding.type, names: binding.names.length })),
+        spec: () => motionSpec(motionBindings()),
+        state: () => ({ mode: motionReplay ? 'baked' : 'live', label: motionLabel, bytes: motionBytes?.byteLength || 0, digest: motionDigest, bundles: motionReplay ? [...motionReplay.bundles] : [] }),
+      }
+    }
+
     // ── Load ───────────────────────────────────────────────────────────────
     await Promise.all([loadHim(), loadSong($('song').value)])
     director.reset()
+    setupMotionControls()
+    let autoBake = null
+    try { autoBake = JSON.parse(sessionStorage.getItem(motionAutoKey) || 'null') } catch {}
+    sessionStorage.removeItem(motionAutoKey)
+    if (autoBake?.search === location.search && !SHOT) {
+      try { await bakeMotion(autoBake.endSeconds) } catch (error) { console.error(error); setStatus(`Motion bake failed: ${error.message}`, 6000) }
+    }
     if (!SHOT) ensureSound()
 
     // ── Loop ───────────────────────────────────────────────────────────────
     let idleT = performance.now()
     addEventListener('pointermove', () => { idleT = performance.now(); document.body.classList.remove('idle') })
     addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); park?.setSize() })
-    function frame(t, dt) {
+    function frame(t, dt, forceLive = false) {
       const I = t < 0.4 ? introPose(t) : null
       const standing = !!I?.standing
-      if (standing !== wasStanding) placeHer(standing)
+      const replay = !forceLive ? motionReplay : null
+      if (replay) {
+        replay.apply(t)
+        him.scene.updateMatrixWorld(true)
+        V.group.updateMatrixWorld(true)
+        her.group.updateMatrixWorld(true)
+        piano.root.updateMatrixWorld(true)
+      }
+      if (!replay?.owns('pianist') && standing !== wasStanding) placeHer(standing)
       // him
       subjects()
-      const pose = standing ? null : song.motion?.poseAt(Math.max(0, t))
-      vRig.update(pose, {
-        t, energy: song.drive?.energy(Math.max(0, t)) ?? 0.4, breath: song.drive?.breath(t) ?? 0,
-        rest: standing, bend: standing ? I.bend : 0, nod: I?.nod || 0,
-        look: I?.cue ? S.herHead.clone().add(v3(0, -4, 0)) : standing && t > BOW0 + 2.7 ? S.herHead.clone() : null,
-      }, dt)
-      him.update(dt)
+      if (!replay?.owns('violinist')) {
+        const pose = standing ? null : song.motion?.poseAt(Math.max(0, t))
+        vRig.update(pose, {
+          t, energy: song.drive?.energy(Math.max(0, t)) ?? 0.4, breath: song.drive?.breath(t) ?? 0,
+          rest: standing, bend: standing ? I.bend : 0, nod: I?.nod || 0,
+          look: I?.cue ? S.herHead.clone().add(v3(0, -4, 0)) : standing && t > BOW0 + 2.7 ? S.herHead.clone() : null,
+        }, dt)
+        him.update(dt)
+      }
       // her
-      keys.drive(t + 0.03)
-      piano.update(dt)
-      pRig.setPedals(false, false, keys.sustain)
-      pRig.state.bowLean = standing ? I.herBend : 0
-      pRig.state.lookAt = (I?.cue && t > STAND_END + 0.9) || (!I && glanceAt(t)) ? her.group.worldToLocal(S.hisHead.clone()) : null
-      pRig.update(t, dt)
-      her.group.updateMatrixWorld(true)
-      her.update(dt)
-      if (PARK && her.dress?.cloth && her.dress.cloth.mesh.layers.mask !== 2) her.dress.cloth.mesh.layers.set(1)
-      if (standing !== wasStanding) { wasStanding = standing; her.dress?.cloth?.settle(1) }
+      if (!replay?.owns('pianist')) {
+        keys.drive(t + 0.03)
+        piano.update(dt)
+        pRig.setPedals(false, false, keys.sustain)
+        pRig.state.bowLean = standing ? I.herBend : 0
+        pRig.state.lookAt = (I?.cue && t > STAND_END + 0.9) || (!I && glanceAt(t)) ? her.group.worldToLocal(S.hisHead.clone()) : null
+        pRig.update(t, dt)
+        her.group.updateMatrixWorld(true)
+        her.update(dt)
+        if (PARK && her.dress?.cloth && her.dress.cloth.mesh.layers.mask !== 2) her.dress.cloth.mesh.layers.set(1)
+        if (standing !== wasStanding) { wasStanding = standing; her.dress?.cloth?.settle(1) }
+      }
       // camera
       subjects()
       if ($('cam').value === 'auto') director.update(t)
