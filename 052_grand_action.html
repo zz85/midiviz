@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>Experiment #052 - Grand Action</title>
+  <!--
+    Experiment #052 - the action of the #030 concert grand, key to hammer and
+    damper: concertstage/grand-action.js (the double escapement, timed so each
+    hammer reaches its string on its note at the speed its velocity asks for)
+    and concertstage/grand-action-mesh.js (the hammers). Slow motion, x-ray, a
+    trace of one key, and passages that show what the action does.
+  -->
+  <script type="importmap">
+    { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/"
+    } }
+  </script>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0d0c0b; color: #e8e2d6; font: 13px/1.4 system-ui, sans-serif; overflow: hidden; }
+    canvas#view { display: block; }
+    #panel { position: absolute; top: 10px; left: 10px; width: 270px; background: rgba(24, 22, 20, 0.86); border: 1px solid #3a352f; border-radius: 10px; padding: 10px 12px; backdrop-filter: blur(6px); }
+    #panel h1 { font-size: 14px; margin: 0 0 6px; font-weight: 600; }
+    #panel .row { display: flex; gap: 6px; align-items: center; margin: 5px 0; flex-wrap: wrap; }
+    #panel label { color: #b9b1a3; }
+    button, select { background: #2c2925; color: #eee6d8; border: 1px solid #4a443c; border-radius: 6px; padding: 4px 8px; font: inherit; cursor: pointer; }
+    button:hover, select:hover { background: #38342e; }
+    .passages { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+    #chart { position: absolute; left: 10px; right: 10px; bottom: 10px; height: 170px; background: rgba(16, 15, 14, 0.85); border: 1px solid #3a352f; border-radius: 10px; }
+    #status { color: #d9a35a; min-height: 1.2em; }
+    .note { color: #8e877b; font-size: 12px; }
+    a { color: #d9b46a; }
+  </style>
+</head>
+<body>
+  <canvas id="view"></canvas>
+  <div id="panel">
+    <h1>#052 Grand Action</h1>
+    <div class="passages" id="passages"></div>
+    <div class="row"><button id="open">Open MIDI…</button><input type="file" id="file" accept=".mid,.midi" hidden><button id="stop">Stop</button></div>
+    <div class="row"><label>Speed</label>
+      <select id="speed"><option value="1">1×</option><option value="0.25">¼×</option><option value="0.1">1/10×</option><option value="0.03">1/30×</option><option value="0.01">1/100×</option></select>
+      <label>Velocity</label><input type="range" id="vel" min="0" max="1" step="0.01" value="0.7" style="width:70px">
+    </div>
+    <div class="row"><label>View</label>
+      <select id="view-sel">
+        <option value="hammers">The hammers</option>
+        <option value="line">Along the hammer line</option>
+        <option value="side">Side, x-ray</option>
+        <option value="keys">The keys</option>
+      </select>
+    </div>
+    <div class="row"><label><input type="checkbox" id="xray"> X-ray (case off)</label><label><input type="checkbox" id="blur" checked> Motion blur</label></div>
+    <div class="row"><label><input type="checkbox" id="sound" checked> Sound (at 1×)</label></div>
+    <div id="status"></div>
+    <div class="note">Click a key in the picture to play it. The trace below follows the last key played: its dip, its hammer from rest to the string, and its damper. Details: <a href="CHANGELOG.md#13-nov-2026">changelog</a>.</div>
+  </div>
+  <canvas id="chart"></canvas>
+  <script src="tonejs-midi.js"></script>
+  <script type="module">
+    import * as THREE from 'three'
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+    import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
+    import { SoundFontEngine } from './soundfont-engine/src/index.js'
+    import { midiToSchedule } from './notation3d/midi-score.js'
+    import { buildGrandPiano, LOW } from './concertstage/concert-grand.js'
+
+    const $ = id => document.getElementById(id)
+    const Q = new URLSearchParams(location.search)
+    const setStatus = s => { $('status').textContent = s }
+
+    // ── Scene ──────────────────────────────────────────────────────────────
+    const renderer = new THREE.WebGLRenderer({ canvas: $('view'), antialias: true })
+    renderer.setPixelRatio(Math.min(2, devicePixelRatio))
+    renderer.toneMapping = THREE.ACESFilmicToneMapping
+    renderer.toneMappingExposure = 0.95
+    renderer.shadowMap.enabled = true
+    renderer.shadowMap.type = THREE.PCFShadowMap
+    const scene = new THREE.Scene()
+    scene.background = new THREE.Color(0x14120f)
+    const pmrem = new THREE.PMREMGenerator(renderer)
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
+    scene.environmentIntensity = 0.45
+    const camera = new THREE.PerspectiveCamera(36, 1, 0.3, 3000)
+    const controls = new OrbitControls(camera, renderer.domElement)
+    controls.enableDamping = true
+
+    const piano = buildGrandPiano({ mirror: false, bench: false })
+    piano.setDesk(false)
+    scene.add(piano.root)
+    const key = new THREE.DirectionalLight(0xfff1dc, 2.4)
+    key.position.set(-80, 260, 90); key.target.position.set(0, 85, -50)
+    key.castShadow = true
+    key.shadow.mapSize.set(2048, 2048)
+    Object.assign(key.shadow.camera, { left: -110, right: 110, top: 140, bottom: -140, near: 50, far: 600 })
+    key.shadow.bias = -0.0004
+    scene.add(key, key.target)
+    // a lamp over the strike line: the hammers sit in the case's shade
+    const lamp = new THREE.SpotLight(0xffe6c4, 9000, 0, 0.5, 0.6, 2)
+    lamp.position.set(-10, 150, -10); lamp.target.position.set(0, 84, -38)
+    scene.add(lamp, lamp.target)
+
+    const C4x = piano.keyX(60)
+    const VIEWS = {
+      hammers: { pos: [C4x + 5, 104, -17], at: [C4x, 84.5, -37.5], fov: 34 },
+      line: { pos: [56, 87.0, -33.5], at: [-20, 84.8, -37.2], fov: 30, xray: false },
+      side: { pos: [-150, 92, -26], at: [-40, 84, -32], fov: 26, xray: true },
+      keys: { pos: [C4x + 30, 112, 48], at: [C4x, 74, -6] },
+    }
+    function setView(name) {
+      const v = VIEWS[name] || VIEWS.hammers
+      camera.position.set(...v.pos); controls.target.set(...v.at)
+      camera.fov = v.fov || 36; camera.updateProjectionMatrix(); controls.update()
+      if (v.xray != null) { $('xray').checked = v.xray; setXray(v.xray) }
+    }
+    $('view-sel').onchange = () => setView($('view-sel').value)
+
+    // X-ray: everything but the keys, hammers and dampers hidden
+    const kept = new Set([piano.hammers.group, ...piano.dampers.filter(Boolean), ...[...piano.keys.values()].map(k => k.pivot)])
+    const wasVisible = new Map()
+    function setXray(on) {
+      piano.root.traverse(o => {
+        if (!o.isMesh) return
+        let p = o, keep = false
+        while (p) { if (kept.has(p)) { keep = true; break } p = p.parent }
+        if (keep) return
+        if (on) { if (!wasVisible.has(o)) wasVisible.set(o, o.visible); o.visible = false }
+        else if (wasVisible.has(o)) { o.visible = wasVisible.get(o); wasVisible.delete(o) }
+      })
+      piano.xray = on
+    }
+    $('xray').onchange = () => setXray($('xray').checked)
+    $('blur').onchange = () => { piano.hammers.motionBlur = $('blur').checked }
+
+    function resize() {
+      renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix()
+      const c = $('chart'); c.width = c.clientWidth * devicePixelRatio; c.height = c.clientHeight * devicePixelRatio
+    }
+    addEventListener('resize', resize); resize()
+
+    // ── Sound ──────────────────────────────────────────────────────────────
+    const audioCtx = new AudioContext()
+    const engine = new SoundFontEngine({ backend: 'oxisynth', vendorPath: new URL('./vendor', import.meta.url).href, audioContext: audioCtx })
+    let soundReady = false
+    if (!Q.has('shot')) engine.loadSoundFont('soundfonts/Full Grand Piano.sf3').then(() => { for (let c = 0; c < 16; c++) engine.programChange(c, 0); soundReady = true }).catch(e => setStatus('No sound: ' + e.message))
+    const unlock = () => { if (audioCtx.state !== 'running') audioCtx.resume().then(() => engine.resume?.()).catch(() => {}) }
+    addEventListener('pointerdown', unlock, { capture: true })
+    const sounding = () => soundReady && $('sound').checked && speed === 1
+
+    // ── The song clock ─────────────────────────────────────────────────────
+    // Keys go down KEY_LEAD before their notes, and each is told exactly when
+    // its note is, so its hammer reaches the string on it at any speed
+    const KEY_LEAD = 0.03
+    let song = null, t = 0, idx = 0, active = [], ccIdx = 0, speed = 1, watched = 60
+    const held = new Map()
+    $('speed').onchange = () => { speed = +$('speed').value; if (speed !== 1) engine.allSoundOff?.() }
+    function load(s) {
+      stop()
+      song = s; t = Math.min(0, (s.notes[0]?.time ?? 0) - 0.3); idx = 0; ccIdx = 0; active = []
+      if (s.notes.length) watched = s.watch ?? s.notes[0].midi
+    }
+    function stop() {
+      for (const m of held.keys()) piano.noteOff(m)
+      held.clear(); active = []; song = null
+      piano.setSustain(false); piano.setPedal(0, false); piano.setPedal(1, false)
+      engine.allSoundOff?.()
+    }
+    $('stop').onclick = stop
+    function advance(dt) {
+      if (!song) return
+      const t1 = t + dt
+      // releases first, so a repeated note lets go before it is pressed again
+      for (let i = active.length - 1; i >= 0; i--) {
+        const n = active[i]
+        if (n.time + n.duration <= t1) {
+          active.splice(i, 1)
+          const c = (held.get(n.midi) || 1) - 1
+          if (c <= 0) { held.delete(n.midi); piano.noteOff(n.midi) } else held.set(n.midi, c)
+          if (sounding()) engine.noteOff(n.midi, 0)
+        }
+      }
+      const ccs = song.controlChanges || []
+      while (ccIdx < ccs.length && ccs[ccIdx].time <= t1) {
+        const c = ccs[ccIdx++]
+        if (c.controller === 64) piano.setSustain(c.value >= 64)
+        if (c.controller === 67) piano.setPedal(0, c.value >= 64)
+        if (c.controller === 66) piano.setPedal(1, c.value >= 64)
+        if (sounding()) engine.controlChange(0, c.controller, c.value)
+      }
+      while (idx < song.notes.length && song.notes[idx].time - KEY_LEAD <= t1) {
+        const n = song.notes[idx++]
+        // the action's clock is at t (it steps after this): the strike is n.time - t away
+        piano.noteOn(n.midi, n.velocity, Math.max(0.004, n.time - t))
+        held.set(n.midi, (held.get(n.midi) || 0) + 1); active.push(n)
+        n.sounded = false
+        watched = n.midi
+      }
+      for (const n of active) if (!n.sounded && n.time <= t1) { n.sounded = true; if (sounding()) engine.noteOn(n.midi, n.velocity, 0) }
+      t = t1
+      if (idx >= song.notes.length && !active.length && t > (song.end ?? 0) + 2) song = null
+    }
+
+    // ── Passages ───────────────────────────────────────────────────────────
+    const vel = () => +$('vel').value
+    const N = (midi, time, duration, velocity = vel()) => ({ midi, time, duration, velocity })
+    const PASSAGES = {
+      'pp, mf, ff': () => ({ notes: [N(60, 0.2, 0.6, 0.12), N(60, 1.2, 0.6, 0.55), N(60, 2.2, 0.6, 1)] }),
+      'Staccato': () => ({ notes: [0, 1, 2, 3].map(i => N(60, 0.2 + i * 0.35, 0.05)) }),
+      'Repeat from halfway': () => ({ notes: Array.from({ length: 16 }, (_, i) => N(60, 0.2 + i / 14, 0.035)) }),
+      'Trill': () => ({ notes: Array.from({ length: 28 }, (_, i) => N(i % 2 ? 62 : 60, 0.2 + i / 14, 1 / 14 - 0.01)), watch: 60 }),
+      'Scale': () => ({ notes: [0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23, 24].map((s, i) => N(48 + s, 0.2 + i / 8, 1 / 8 + 0.02)), watch: 60 }),
+      'Chord, pedalled': () => ({
+        notes: [48, 55, 60, 64, 67].map(m => N(m, 0.3, 0.4)).concat([53, 57, 60, 65, 69].map(m => N(m, 1.5, 0.4))),
+        controlChanges: [{ time: 0.25, controller: 64, value: 127 }, { time: 1.45, controller: 64, value: 0 }, { time: 1.5, controller: 64, value: 127 }, { time: 2.8, controller: 64, value: 0 }], watch: 60,
+      }),
+      'Una corda': () => ({ notes: [60, 64, 67].map(m => N(m, 0.6, 1.2, 0.35)), controlChanges: [{ time: 0.1, controller: 67, value: 127 }, { time: 2.2, controller: 67, value: 0 }], watch: 60 }),
+      'Bass to treble': () => ({ notes: [21, 33, 45, 57, 69, 81, 93, 105].map((m, i) => N(m, 0.2 + i * 0.25, 0.22)) }),
+    }
+    for (const [name, make] of Object.entries(PASSAGES)) {
+      const b = document.createElement('button'); b.textContent = name
+      b.onclick = () => { unlock(); const s = make(); s.end = Math.max(...s.notes.map(n => n.time + n.duration)); load(s) }
+      $('passages').append(b)
+    }
+    $('open').onclick = () => $('file').click()
+    $('file').onchange = async () => {
+      const f = $('file').files[0]; if (!f) return
+      unlock()
+      const s = midiToSchedule(new Midi(await f.arrayBuffer()))
+      s.notes = s.notes.filter(n => n.channel !== 9 && n.midi >= LOW && n.midi <= 108)
+      s.end = Math.max(...s.notes.map(n => n.time + n.duration))
+      load(s); setStatus(f.name)
+    }
+
+    // click a key: it plays at the velocity chosen
+    const ray = new THREE.Raycaster(), ptr = new THREE.Vector2()
+    renderer.domElement.addEventListener('pointerdown', ev => {
+      ptr.set(ev.clientX / innerWidth * 2 - 1, -ev.clientY / innerHeight * 2 + 1)
+      ray.setFromCamera(ptr, camera)
+      const hit = ray.intersectObjects(piano.keyMeshes, false)[0]
+      if (!hit) return
+      for (const [m, k] of piano.keys) if (k.pivot === hit.object.parent || k.mesh === hit.object) {
+        if (!song) load({ notes: [], end: 0 })
+        song.notes.splice(idx, 0, N(m, t + KEY_LEAD, 0.4))
+        song.end = Math.max(song.end, t + 1)
+        break
+      }
+    })
+
+    // ── The trace of one key ───────────────────────────────────────────────
+    const trace = []
+    const R = piano.action.regulation
+    function record() {
+      const a = piano.action.keys[watched - LOW]
+      trace.push({ t, dip: piano.action.dipShare(watched - LOW), h: a.h, hMax: a.hMax, dy: a.dy, mode: a.mode })
+      while (trace.length > 4000) trace.shift()
+    }
+    function drawChart() {
+      const c = $('chart'), g = c.getContext('2d'), W = c.width, H = c.height, s = devicePixelRatio
+      g.clearRect(0, 0, W, H)
+      const a = piano.action.keys[watched - LOW]
+      const win = Math.min(1.2, Math.max(0.04, 1.2 * speed))
+      const x = tt => W - 12 * s - (t - tt) / win * (W - 70 * s)
+      const top = 18 * s, bot = H - 22 * s
+      const y = h => bot - h / a.blow * (bot - top)
+      g.font = `${11 * s}px system-ui`
+      const lines = [[a.blow, 'string', '#d9a35a'], [a.letoffLift, 'let-off', '#8e877b'], [a.cap, 'drop', '#6d675e'], [a.blow - R.check, 'check', '#6d675e']]
+      for (const [h, label, col] of lines) {
+        g.strokeStyle = col; g.setLineDash([4 * s, 4 * s]); g.beginPath(); g.moveTo(58 * s, y(h)); g.lineTo(W - 10 * s, y(h)); g.stroke()
+        g.setLineDash([]); g.fillStyle = col; g.fillText(label, 8 * s, y(h) + 4 * s)
+      }
+      const plot = (f, col, w = 1.6) => {
+        g.strokeStyle = col; g.lineWidth = w * s; g.beginPath(); let first = true
+        for (const p of trace) { if (p.t < t - win) continue; const X = x(p.t); if (first) g.moveTo(X, f(p)); else g.lineTo(X, f(p)); first = false }
+        g.stroke(); g.lineWidth = 1
+      }
+      plot(p => y(p.dip * a.blow), '#5d8fd6')                         // the key, scaled to the blow
+      plot(p => y(p.dy / R.damperLift * a.blow * 0.35), '#c4505a')     // the damper
+      plot(p => y(p.h), '#f2eee6', 2.2)                                // the hammer
+      const name = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'][watched % 12] + (Math.floor(watched / 12) - 1)
+      const last = trace.at(-1)
+      g.fillStyle = '#e8e2d6'
+      g.fillText(`${name}: hammer ${last ? last.h.toFixed(2) : 0} cm (${last?.mode ?? ''}), last strike ${(a.strikeSpeed / 100).toFixed(2)} m/s, ${a.strikes} strikes — window ${(win * 1000).toFixed(0)} ms`, 60 * s, 13 * s)
+      g.fillStyle = '#5d8fd6'; g.fillText('key', W - 120 * s, H - 6 * s)
+      g.fillStyle = '#f2eee6'; g.fillText('hammer', W - 90 * s, H - 6 * s)
+      g.fillStyle = '#c4505a'; g.fillText('damper', W - 45 * s, H - 6 * s)
+    }
+
+    // ── Loop ───────────────────────────────────────────────────────────────
+    setView(Q.get('view') || 'hammers')
+    $('view-sel').value = Q.get('view') || 'hammers'
+    if (Q.has('speed')) { speed = +Q.get('speed'); $('speed').value = Q.get('speed') }
+    let last = performance.now()
+    function frame(dtReal, draw = true) {
+      const dt = Math.min(0.05, dtReal) * speed
+      advance(dt)
+      piano.update(dt)
+      record()
+      if (!draw) return
+      controls.update()
+      renderer.render(scene, camera)
+      drawChart()
+    }
+    renderer.setAnimationLoop(() => { const now = performance.now(); frame((now - last) / 1000); last = now })
+
+    // headless stills: ?shot&passage=Trill&t=0.62 renders the frame at that song time
+    window.__grandAction = { piano, load, PASSAGES, frame, setXray, setCam: (p, a, fov) => { camera.position.set(...p); controls.target.set(...a); if (fov) camera.fov = fov; camera.updateProjectionMatrix(); controls.update() }, get t() { return t } }
+    if (Q.has('shot')) {
+      renderer.setAnimationLoop(null)
+      window.__shot = (name = Q.get('passage') || 'pp, mf, ff', at = +(Q.get('t') || 0.2), fps = 60) => {
+        const s = PASSAGES[name](); s.end = Math.max(...s.notes.map(n => n.time + n.duration)); load(s)
+        speed = 1
+        while (t < at - 1e-9) frame(Math.min(1 / fps, at - t), false)
+        return { t, hammer: piano.action.keys[watched - LOW].h, mode: piano.action.keys[watched - LOW].mode }
+      }
+    }
+  </script>
+</body>
+</html>

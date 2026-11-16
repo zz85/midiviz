@@ -24,6 +24,8 @@
 
 import * as THREE from 'three'
 import { Reflector } from 'three/addons/objects/Reflector.js'
+import { createGrandAction, REGULATION } from './grand-action.js'
+import { createHammerRow } from './grand-action-mesh.js'
 
 // ── Dimensions ───────────────────────────────────────────────────────────
 export const DIM = {
@@ -342,6 +344,7 @@ function makeMaterials() {
   m.hammerFelt = new THREE.MeshPhysicalMaterial({ color: 0xffffff, emissive: 0x5a5a56, roughness: 1, sheen: 1, sheenRoughness: 0.6, sheenColor: 0xffffff })
   // (the glow stands in for the light under the lid in the raster picture; a path tracer lights the felt itself)
   m.hammerFelt.userData.rasterEmissive = true
+  m.hammerWood = new THREE.MeshStandardMaterial({ roughness: 0.55 })   // shanks and knuckles (vertex colours)
   const ivoryRough = noiseTexture(17, 70, 110); ivoryRough.repeat.set(1 / 3, 1 / 3)
   m.whiteKey = new THREE.MeshPhysicalMaterial({ color: 0xf3efe6, roughness: 0.85, roughnessMap: ivoryRough, clearcoat: 0.7, clearcoatRoughness: 0.08, sheen: 0.25, sheenColor: 0xfff8e8 })
   m.whiteKeySide = new THREE.MeshPhysicalMaterial({ color: 0xcfc8ba, roughness: 0.5, clearcoat: 0.4 })
@@ -460,7 +463,7 @@ function casterGroup(mat, brass) {
 }
 
 // ── The piano ────────────────────────────────────────────────────────────
-export function buildGrandPiano({ bench = true, mirror = true } = {}) {
+export function buildGrandPiano({ bench = true, mirror = true, blow = REGULATION.blow } = {}) {
   let fallMirror = null
   const mat = makeMaterials()
   const root = new THREE.Group()
@@ -737,9 +740,9 @@ export function buildGrandPiano({ bench = true, mirror = true } = {}) {
     }
   }
 
-  // Hammers (under the strings at the strike slot) and dampers (on top)
-  const hammerGeo = roundedBox(1, 3.2, 2.3, 0.55, 3)   // the felt
-  const moldingGeo = roundedBox(1, 1.6, 2.6, 0.2, 2)  // its wooden core, under the felt
+  // Hammers (under the strings at the strike slot) and dampers (on top). The
+  // action itself, key to hammer and damper, is grand-action.js; the hammers
+  // are drawn by grand-action-mesh.js, swinging about their flanges
   // a grand's damper: a thin felt pad under a low wooden block (~1.8 cm in all)
   const damperFeltGeo = new THREE.BoxGeometry(1, 0.6, 4.2)
   const damperHeadGeo = roundedBox(1, 1.2, 4.6, 0.25, 2)
@@ -750,27 +753,17 @@ export function buildGrandPiano({ bench = true, mirror = true } = {}) {
     const sh = new THREE.Shape([new THREE.Vector2(-0.5, 0), new THREE.Vector2(0.5, 0), new THREE.Vector2(0, -1)])
     const g = new THREE.ExtrudeGeometry(sh, { depth: 1, bevelEnabled: false }); g.translate(0, 0, -0.5); return g
   })()
-  const action = []
+  const dampers = []      // per key: { damper, dRestY } (null above E6)
+  const hammerList = []
   for (const n of notes) {
     const midi = LOW + n.k
     const tH = n.at(D.STRIKE_Z), tD = n.at(D.DAMPER_Z)
     const hx = n.front[0] + n.dir[0] * tH, dx = n.front[0] + n.dir[0] * tD
     const w = n.spacing * 0.86
-    const hammer = new THREE.Group()
-    const head = new THREE.Mesh(hammerGeo, mat.hammerFelt)
-    head.scale.x = w
-    const molding = new THREE.Mesh(moldingGeo, mat.wood)
-    molding.scale.x = w * 0.7; molding.position.y = -2.2
-    const shank = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 9, 6), mat.wood)
-    shank.rotation.x = Math.PI / 2; shank.position.set(0, -2.6, 5)
-    hammer.add(head, molding, shank)
-    hammer.rotation.y = Math.atan2(n.dir[0], -n.dir[1]) * -1
-    // rest ~3.4 cm under the string (a grand's blow distance is 4–5 cm; less, so the row shows through the strike slot); the felt's
-    // crown (1.6 above the group's origin) meets the string at strikeY
-    const restY = n.y - n.r - 1.6 - 3.4, strikeY = n.y - n.r - 1.6
-    hammer.position.set(hx, restY, D.STRIKE_Z)
-    hammer.traverse(o => { if (o.isMesh) o.castShadow = o.receiveShadow = true })
-    root.add(hammer)
+    const rotY = Math.atan2(n.dir[0], -n.dir[1]) * -1
+    // the crown meets the string's underside at the strike; heads are graded,
+    // the bass a third larger than the treble
+    hammerList.push({ x: hx, y: n.y - n.r, z: D.STRIKE_Z, rotY, width: w, grade: 1.15 - 0.32 * n.k / 87 })
     let damper = null, dRestY = 0
     if (midi <= 88) {
       damper = new THREE.Group()
@@ -792,14 +785,18 @@ export function buildGrandPiano({ bench = true, mirror = true } = {}) {
           damper.add(wdg)
         }
       }
-      damper.rotation.y = hammer.rotation.y
+      damper.rotation.y = rotY
       dRestY = n.y + n.r
       damper.position.set(dx, dRestY, D.DAMPER_Z)
       damper.traverse(o => { if (o.isMesh) o.castShadow = o.receiveShadow = true })
       root.add(damper)
     }
-    action.push({ hammer, restY, strikeY, damper, dRestY, hv: 0, hy: restY, dy: 0, dv: 0, sost: false })
+    dampers.push({ damper, dRestY })
   }
+  const action = createGrandAction({ regulation: { blow } })
+  const hammers = createHammerRow(hammerList, { feltMaterial: mat.hammerFelt, woodMaterial: mat.hammerWood, blow })
+  root.add(hammers.group)
+  hammers.update(action)
 
   // ── Keys ───────────────────────────────────────────────────────────────
   const keys = new Map()
@@ -1020,24 +1017,24 @@ export function buildGrandPiano({ bench = true, mirror = true } = {}) {
 
   // ── State and animation ────────────────────────────────────────────────
   let lidAngle = 0, lidTarget = THREE.MathUtils.degToRad(32), flapAngle = Math.PI, sustain = false
-  const PRESS_W = 0.95 / (0 - D.PIVOT_Z), PRESS_B = 0.95 / (0 - D.PIVOT_Z)   // ~0.95 cm key dip
-  const DAMPER_LIFT = 0.9    // cm off the strings, fully lifted
-  const DAMPER_G = 420      // cm/s², a falling damper (its weight slowed by the lever it drags)
-  const KEY_TRAVEL = 0.03   // s for a full key stroke (the pages start a key down this long before its note)
+  const PRESS = action.regulation.dip / (0 - D.PIVOT_Z)   // key angle at the full dip (1 cm at the front)
+  const KEY_LEAD = 0.03     // s: the pages start a key down this long before its note
 
   const api = {
     root, keys, keyMeshes, materials: mat, bench: benchGroup, lid, get desk() { return deskRef },
     outline: fullPoly, feet: [[-66.5, -12], [66.5, -12], [-36, -185], [0, -8]],
-    action, pedals: pedals.map(p => p.pivot),
-    noteOn(midi, velocity = 0.7) {
+    action, hammers, dampers: dampers.map(d => d.damper), pedals: pedals.map(p => p.pivot),
+    // A key goes down; its hammer reaches the string `lead` s later (the
+    // pages press keys KEY_LEAD before their notes), as fast as the velocity says
+    noteOn(midi, velocity = 0.7, lead = KEY_LEAD) {
       const k = keys.get(midi); if (!k) return
       k.held = true; k.vel = velocity
-      const a = action[midi - LOW]
-      a.hv = 90 + 260 * velocity    // hammer flies up (cm/s) and rebounds off the string
+      action.press(midi - LOW, velocity, lead)
     },
     noteOff(midi) {
       const k = keys.get(midi); if (!k) return
       k.held = false
+      action.release(midi - LOW)
     },
     setSustain(on) { sustain = on; pedals[2].target = on ? 1 : 0 },
     // Colour a key while it is down (hand colours); null clears it.
@@ -1051,8 +1048,7 @@ export function buildGrandPiano({ bench = true, mirror = true } = {}) {
       if (i === 2) return api.setSustain(on)
       // sostenuto (middle): its rod catches the dampers raised by keys held
       // at that moment (not by the right pedal) and keeps them up until released
-      if (i === 1 && on && !pedals[1].target) for (const [m, k] of keys) { const a = action[m - LOW]; a.sost = !!(k.held && a.damper) }
-      if (i === 1 && !on) for (const a of action) a.sost = false
+      if (i === 1) action.setSostenuto(on)
       pedals[i].target = on ? 1 : 0
     },
     setLid(mode) {
@@ -1072,14 +1068,13 @@ export function buildGrandPiano({ bench = true, mirror = true } = {}) {
     },
     update(dt) {
       dt = Math.min(dt, 0.05)
-      // keys: fast down, spring back up
+      // the pedals first: the action reads where they are
+      for (const p of pedals) p.value += (p.target - p.value) * Math.min(1, dt * 18)
+      action.setSustain(pedals[2].value)
+      action.setSoft(pedals[0].value)
+      action.step(dt)
       for (const [m, k] of keys) {
-        const target = k.held ? (k.black ? PRESS_B : PRESS_W) : 0
-        // down at a steady speed, a full stroke in KEY_TRAVEL (so a key that
-        // starts down that long before its note bottoms out on it, with the
-        // finger, at any frame rate); back up on a spring
-        if (k.held) k.angle = Math.min(target, k.angle + target * dt / KEY_TRAVEL)
-        else k.angle += (target - k.angle) * Math.min(1, dt * 28)
+        k.angle = action.dipShare(m - LOW) * PRESS
         k.pivot.rotation.x = k.angle
         const g = k.held && k.tint && api.keyGlow > 0 ? 1 : 0
         k.glow += (g - k.glow) * Math.min(1, dt * (g ? 40 : 6))
@@ -1087,47 +1082,13 @@ export function buildGrandPiano({ bench = true, mirror = true } = {}) {
           if (k.tint) k.top.emissive.copy(k.tint)
           k.top.emissiveIntensity = k.glow > 0.002 ? k.glow * api.keyGlow * (k.black ? 1.6 : 1) : 0
         }
-        const a = action[m - LOW]
-        // hammer: ballistic up, falls back; rests a little raised (checked) while held
-        // while the key is held the backcheck catches it ~1.8 cm under the string
-        const rest = k.held ? a.strikeY - 1.8 : a.restY
-        if (a.hv > 0) {
-          a.hy += a.hv * dt
-          if (a.hy >= a.strikeY) { a.hy = a.strikeY; a.hv = -60 }
-        } else {
-          a.hv = 0
-          a.hy += (rest - a.hy) * Math.min(1, dt * 14)
-        }
-        a.hammer.position.y = a.hy
-        if (a.damper) {
-          // its key lifts it (the key's back end through the damper lever),
-          // the right pedal lifts them all (the tray under every damper
-          // lever), the middle pedal holds those that were up when it went down
-          // What holds it up: the key's lever starts lifting it halfway down
-          // the key's travel, so the string is free just before the hammer
-          // arrives; the tray rises with the pedal past its free play
-          const full = k.black ? PRESS_B : PRESS_W
-          const byKey = DAMPER_LIFT * THREE.MathUtils.smoothstep(k.angle / full, 0.45, 1)
-          const byTray = DAMPER_LIFT * THREE.MathUtils.smoothstep(pedals[2].value, 0.15, 1)
-          const hold = Math.max(byKey, byTray, a.sost ? DAMPER_LIFT : 0)
-          if (a.dy <= hold) { a.dy = hold; a.dv = 0 }   // carried up by the lever or the tray
-          else {
-            // nothing under it moves as fast as it falls: it drops by its own
-            // weight (slowed by the lever it rides on) and settles on the felt
-            // with a small bounce, or rides the lever / tray down if they're slower
-            a.dv -= DAMPER_G * dt; a.dy += a.dv * dt
-            if (a.dy <= hold) {
-              if (hold > 0) { a.dy = hold; a.dv = 0 }
-              else { a.dy = -a.dy * 0.3; a.dv = Math.abs(a.dv) > 6 ? -a.dv * 0.3 : 0; if (!a.dv) a.dy = 0 }
-            }
-          }
-          a.damper.position.y = a.dRestY + a.dy
-        }
+        const d = dampers[m - LOW]
+        if (d.damper) d.damper.position.y = d.dRestY + action.keys[m - LOW].dy
       }
-      for (const p of pedals) {
-        p.value += (p.target - p.value) * Math.min(1, dt * 18)
-        p.pivot.rotation.x = -0.05 + p.value * 0.09
-      }
+      // una corda: the keys and the action slide to the treble, so each hammer
+      // strikes one string fewer (the keys stay put here, under the fingers)
+      hammers.update(action, action.soft)
+      for (const p of pedals) p.pivot.rotation.x = -0.05 + p.value * 0.09
       // lid: fold the flap first when opening, unfold last when closing
       const flapTarget = lidTarget > 0.01 ? Math.PI : (lidAngle < 0.01 ? 0 : Math.PI)
       flapAngle += (flapTarget - flapAngle) * Math.min(1, dt * 3)

@@ -211,6 +211,9 @@ function expandInstances(o) {
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3))
   g.setAttribute('normal', new THREE.BufferAttribute(nor, 3))
   if (uv) g.setAttribute('uv', new THREE.BufferAttribute(uv, 2))
+  // vertex colours (the grand's hammers: felt, underfelt, wood in one mesh), the same for every instance
+  const C = src.attributes.color
+  if (C) { const col = new Float32Array(n * vc * 3); for (let k = 0; k < n; k++) for (let i = 0; i < vc; i++) { col[(k * vc + i) * 3] = C.getX(i); col[(k * vc + i) * 3 + 1] = C.getY(i); col[(k * vc + i) * 3 + 2] = C.getZ(i) } g.setAttribute('color', new THREE.BufferAttribute(col, 3)) }
   g.setIndex(new THREE.BufferAttribute(idx, 1))
   if (!Nn) g.computeVertexNormals()
   return g
