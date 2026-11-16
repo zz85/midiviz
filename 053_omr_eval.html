@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>#053 OMR vs MIDI - Sibelius 2, viola</title>
+  <style>
+    :root { color-scheme: light; }
+    body { margin: 0; font: 14px/1.4 system-ui, sans-serif; background: #f4f1ea; color: #222; }
+    header { padding: 12px 18px; background: #2b2520; color: #f4f1ea; }
+    header h1 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
+    header p { margin: 0; opacity: .85; font-size: 13px; }
+    header a { color: #ffd98a; }
+    main { display: grid; grid-template-columns: 400px 1fr; gap: 18px; padding: 14px 18px; align-items: start; }
+    @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+    table { border-collapse: collapse; width: 100%; font-size: 12.5px; background: #fff; }
+    th, td { padding: 3px 6px; text-align: right; border-bottom: 1px solid #e3ded4; }
+    th { background: #eae5da; }
+    th:first-child, td:first-child { text-align: left; }
+    tbody tr { cursor: pointer; }
+    tbody tr:hover { background: #fff4d6; }
+    tbody tr.on { background: #ffe8a8; }
+    .bar { display: inline-block; height: 8px; background: #2a9d4a; vertical-align: middle; border-radius: 2px; }
+    #page { position: relative; background: #fff; box-shadow: 0 2px 10px rgba(0,0,0,.15); }
+    #page canvas { display: block; width: 100%; height: auto; }
+    .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 8px; font-size: 13px; }
+    .legend label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+    .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+    .nav { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+    button, select { font: inherit; padding: 4px 10px; }
+    #tip { position: absolute; pointer-events: none; background: #2b2520; color: #fff; padding: 4px 8px; border-radius: 4px; font-size: 12px; white-space: pre; display: none; }
+    #staves { margin-top: 10px; font-size: 12px; color: #444; }
+    #staves span { display: inline-block; margin: 0 10px 2px 0; }
+    .muted { color: #777; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>#053 OMR against the MIDI: Sibelius, Symphony No. 2, viola part</h1>
+  <p id="summary">Loading…</p>
+  <p class="muted">ScoreShift's OMR reads each page of the printed part; each note head is matched to the viola notes of the pawchestra MIDI files. <a href="omr-eval/README.md">How it works</a>.</p>
+</header>
+<main>
+  <section>
+    <div class="nav">
+      <label>Run <select id="run"><option value="omr-eval/results.json">current</option><option value="omr-eval/baseline.json">baseline (before the OMR fixes)</option></select></label>
+    </div>
+    <table>
+      <thead><tr><th>page</th><th>staves</th><th>heads</th><th>right</th><th>wrong</th><th>extra</th><th>missed</th><th>pitch %</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div id="staves"></div>
+  </section>
+  <section>
+    <div class="nav">
+      <button id="prev">◀</button><span id="pageno"></span><button id="next">▶</button>
+      <span class="muted" id="pagestats"></span>
+    </div>
+    <div class="legend" id="legend"></div>
+    <div id="page"><canvas id="canvas"></canvas><div id="tip"></div></div>
+  </section>
+</main>
+<script type="module">
+  import { CATEGORIES, drawMarks, markAt, tableRows, summaryLine, noteName } from './omr-eval/viewer.js'
+  const $ = id => document.getElementById(id)
+  const show = new Set(Object.keys(CATEGORIES))
+  let run = null, cur = 1, img = null
+  const params = new URLSearchParams(location.search)
+  if (params.get('page')) cur = +params.get('page')
+  if (params.get('run')) $('run').value = params.get('run')
+
+  for (const [k, c] of Object.entries(CATEGORIES)) {
+    const l = document.createElement('label')
+    l.innerHTML = `<input type="checkbox" checked data-cat="${k}"><span class="dot" style="background:${c.color}"></span>${c.label}`
+    l.querySelector('input').onchange = e => { e.target.checked ? show.add(k) : show.delete(k); draw() }
+    $('legend').appendChild(l)
+  }
+
+  async function load() {
+    run = await (await fetch($('run').value)).json()
+    $('summary').textContent = summaryLine(run.summary)
+    const rows = tableRows(run)
+    $('rows').innerHTML = rows.map(r => `<tr data-page="${r.page}"><td>${r.page}${r.error ? ' ⚠' : ''}</td><td>${r.staves}</td><td>${r.heads}</td><td>${r.match}</td><td>${r.wrong}</td><td>${r.extra}${r.chord ? `<span class="muted">+${r.chord}</span>` : ''}</td><td>${r.missed}</td><td><span class="bar" style="width:${r.pitch * 0.5}px"></span> ${r.pitch}</td></tr>`).join('')
+    for (const tr of $('rows').querySelectorAll('tr')) tr.onclick = () => go(+tr.dataset.page)
+    await go(cur)
+  }
+
+  async function go(n) {
+    const pages = run.read.map(p => p.page)
+    if (!pages.includes(n)) n = pages[0]
+    cur = n
+    history.replaceState(null, '', `?page=${n}${$('run').value !== 'omr-eval/results.json' ? '&run=' + encodeURIComponent($('run').value) : ''}`)
+    for (const tr of $('rows').querySelectorAll('tr')) tr.classList.toggle('on', +tr.dataset.page === n)
+    const p = run.read.find(p => p.page === n), s = run.pages.find(p => p.page === n)
+    $('pageno').textContent = `page ${n} of ${pages[pages.length - 1]}`
+    $('pagestats').textContent = `${s.heads} heads, ${s.match} right, ${s.wrong} wrong, ${s.extra} extra, ${s.missed} missed · ${s.pitchCorrect}% · ${s.ms} ms`
+    $('staves').innerHTML = p.staves.map(st => `<span><b>${st.i}</b> ${st.clef}${st.clefDetected ? '' : '?'} ${st.fifths >= 0 ? st.fifths + '♯' : -st.fifths + '♭'}${st.keyInferred ? '*' : ''}${(st.clefChanges || []).map(c => ' →' + c.type).join('')} <span class="muted">${st.covers || ''}</span> ${st.count.match}/${st.count.heads}${st.midiOctave ? ' (MIDI 8vb)' : ''}</span>`).join('')
+    img = new Image(); img.src = `omr-eval/pages/p${String(n).padStart(3, '0')}.png`
+    await img.decode()
+    draw()
+  }
+
+  function draw() {
+    const p = run.read.find(p => p.page === cur), c = $('canvas')
+    c.width = img.naturalWidth; c.height = img.naturalHeight
+    const g = c.getContext('2d'); g.drawImage(img, 0, 0)
+    drawMarks(g, p, 1, { show: [...show] })
+  }
+
+  $('canvas').onmousemove = e => {
+    const p = run.read.find(p => p.page === cur), c = $('canvas'), r = c.getBoundingClientRect()
+    const x = (e.clientX - r.left) * c.width / r.width, y = (e.clientY - r.top) * c.height / r.height
+    const m = markAt(p, x, y), tip = $('tip')
+    if (!m) { tip.style.display = 'none'; return }
+    tip.style.display = 'block'; tip.style.left = (e.clientX - r.left + 12) + 'px'; tip.style.top = (e.clientY - r.top + 12) + 'px'
+    tip.textContent = m.cat === 'missed' ? `missed: ${noteName(m.midi)}  (${m.mvt} bar ${m.bar} + ${m.beat})` : `${CATEGORIES[m.cat].label}: read ${m.name}${m.truth ? `, MIDI ${noteName(m.truth.midi)} (${m.truth.mvt} bar ${m.truth.bar} + ${m.truth.beat})` : ''}${m.accid != null ? `, accidental ${m.accid}` : ''}`
+  }
+  $('canvas').onmouseleave = () => { $('tip').style.display = 'none' }
+  $('prev').onclick = () => go(cur - 1); $('next').onclick = () => go(cur + 1)
+  $('run').onchange = load
+  addEventListener('keydown', e => { if (e.key === 'ArrowLeft') go(cur - 1); if (e.key === 'ArrowRight') go(cur + 1) })
+  load()
+</script>
+</body>
+</html>
