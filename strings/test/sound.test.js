@@ -29,14 +29,16 @@ function renderRaw(perf, { instrument = 'violin', model = 'waveguide', secs, opt
 }
 
 test('waveguide: sustained notes sound at pitch in Helmholtz motion over the range (p, mf, f)', () => {
-  for (const [instrument, lo] of [['violin', 55], ['viola', 48], ['cello', 36]]) {
+  for (const [instrument, lo] of [['violin', 55], ['viola', 48], ['cello', 36], ['bass', 28]]) {
     let ok = 0, tot = 0, worst = 0
     for (const vel of [0.3, 0.75, 1]) for (let m = lo; m <= lo + 40; m += 2) {
-      const notes = finger([{ pitch: m, on: 0.1, off: 1.0, velocity: vel }], instrument)
+      const notes = finger([{ pitch: m, on: 0.1, off: 1.5, velocity: vel }], instrument)
       if (notes[0].string == null) continue
       const perf = renderPerformance(notes, { instrument, style: { vibrato: 0 } })
-      const { raw, L } = renderRaw(perf, { instrument, secs: 0.8 })
-      const f = midiHz(m), seg = raw.subarray(Math.round(0.5 * SR), Math.round(0.5 * SR) + 8192)
+      // the bass's E1 is 41 Hz: 8192 samples hold 7 periods, a 32k window resolves f0/2 from f0
+      const long = instrument === 'bass', secs = long ? 1.4 : 0.8
+      const { raw, L } = renderRaw(perf, { instrument, secs })
+      const f = midiHz(m), seg = raw.subarray(Math.round(0.5 * SR), Math.round(0.5 * SR) + (long ? 32768 : 8192))
       const h = spectrumDb(seg, SR, [f / 2, f, 2 * f, 3 * f])
       tot++
       if (h[1] - Math.max(h[2], h[3]) >= 1 && h[0] < h[1] - 15) ok++
@@ -216,9 +218,9 @@ const flat = { vibrato: 0, intonation: 0, timing: 0, variance: 0 }
 
 test('hybrid: the recordings follow the f0 curve on every string, p to f (≤ 6 cents without vibrato); vibrato comes from the curve', async t => {
   const H = await hybrid(); if (!H) return t.skip('no Iowa bank or no ffmpeg')
-  for (const instrument of ['violin', 'viola', 'cello']) {
+  for (const instrument of ['violin', 'viola', 'cello', 'bass']) {
     if (!H.hasBank(instrument)) continue
-    const bank = H.loadBankNode(instrument), lo = { violin: 55, viola: 48, cello: 36 }[instrument]
+    const bank = H.loadBankNode(instrument), lo = { violin: 55, viola: 48, cello: 36, bass: 28 }[instrument]
     let worst = 0, n = 0
     for (const vel of [0.3, 0.75, 1]) for (let m = lo; m <= lo + 38; m += 3) {
       const notes = finger([{ pitch: m, on: 0.1, off: 1.2, velocity: vel }], instrument)
@@ -448,7 +450,7 @@ test('measured body (Iowa): beats the modal body on held-out notes, and the FIR 
   const { BODY_IOWA } = await import('../sound/body-iowa.js')
   const { curveDb } = await import('../sound/body.js')
   const { fft } = await import('./audio-util.js')
-  for (const inst of ['violin', 'viola', 'cello']) for (const model of ['waveguide', 'source']) {
+  for (const inst of ['violin', 'viola', 'cello', 'bass']) for (const model of ['waveguide', 'source']) {
     const st = BODY_IOWA[inst][model].stats
     assert.ok(st.heldOutMad < st.modalMad - 1 && st.heldOutP90 < st.modalP90 - 3, `${inst} ${model}: held-out ${st.heldOutMad} / ${st.heldOutP90} dB vs modal ${st.modalMad} / ${st.modalP90}`)
   }
@@ -539,7 +541,7 @@ test('waveguide attacks from rest follow the Iowa violin onsets: the level rises
     })
   }
   const med = a => [...a].sort((x, y) => x - y)[a.length >> 1]
-  const bank = loadBankNode('violin'), err = [], early = []
+  const bank = loadBankNode('violin'), err = [], early = [], earlyIowa = []
   for (const [dyn, velocity] of [['pp', 0.35], ['mf', 0.68], ['ff', 0.95]]) {
     const iowa = [], ours = []
     for (let s = 0; s < 4; s++) for (const d of [2, 7]) {
@@ -551,16 +553,18 @@ test('waveguide attacks from rest follow the Iowa violin onsets: the level rises
     }
     TS.forEach((_, k) => err.push(Math.abs(med(iowa.map(c => c[k].db)) - med(ours.map(c => c[k].db)))))
     early.push(med(ours.map(c => c[0].r)), med(ours.map(c => c[1].r)))
+    earlyIowa.push(med(iowa.map(c => c[0].r)), med(iowa.map(c => c[1].r)))
   }
-  // before (every stroke up to speed in 25–70 ms): 6.4 dB, 0.91; Iowa 0.2–0.9
+  // before (every stroke up to speed in 25–70 ms): 6.4 dB, 0.91; Iowa 0.2–0.9 (median 0.81
+  // over these six, which the fixed 0.8 bar used before would have failed)
   const e = err.reduce((a, b) => a + b) / err.length
   assert.ok(e < 4, `level after the onset: ${e.toFixed(2)} dB from the recordings`)
-  assert.ok(med(early) < 0.8, `periodicity 10–20 ms after the onset ${med(early).toFixed(2)}`)
+  assert.ok(med(early) < med(earlyIowa) + 0.05, `periodicity 10–20 ms after the onset ${med(early).toFixed(2)}, the recordings ${med(earlyIowa).toFixed(2)}`)
 })
 
-test('measured body (Philharmonia): fitted for violin, viola and cello, beats no body on its held-out notes; unfitted models play the Iowa body', async () => {
+test('measured body (Philharmonia): fitted for violin, viola, cello and bass, beats no body on its held-out notes; unfitted models play the Iowa body', async () => {
   const { BODY_PHIL } = await import('../sound/body-philharmonia.js')
-  for (const instrument of ['violin', 'viola', 'cello']) {
+  for (const instrument of ['violin', 'viola', 'cello', 'bass']) {
     const spec = BODY_PHIL[instrument]?.source
     assert.ok(spec, `${instrument}: no Philharmonia fit for the source model`)
     const st = spec.stats
@@ -636,12 +640,13 @@ test('bow-force brightness: louder bowing is brighter by about what the recordin
 
 test('measured body (Iowa): long-term band energy above 1.6 kHz matches the recordings within 3 dB (it was 5–14 dB short)', async () => {
   const { BODY_IOWA } = await import('../sound/body-iowa.js')
-  for (const inst of ['violin', 'viola', 'cello']) for (const model of ['waveguide', 'source']) {
+  for (const inst of ['violin', 'viola', 'cello', 'bass']) for (const model of ['waveguide', 'source']) {
     const e = BODY_IOWA[inst][model].stats.energy
     const hi = j => e.bands[j] >= 1600
     const after = Math.max(...e.after.filter((_, j) => hi(j)).map(Math.abs)), before = Math.min(...e.before.filter((_, j) => hi(j)))
     assert.ok(after < 3, `${inst} ${model}: worst band ${after} dB from the recordings`)
-    assert.ok(before < -4, `${inst} ${model}: the median fit alone was ${before} dB short`)
+    // the bass's median fit was 13 dB over at 10–13 kHz and only 0.4 dB short at its shortest band
+    if (inst !== 'bass') assert.ok(before < -4, `${inst} ${model}: the median fit alone was ${before} dB short`)
   }
 })
 

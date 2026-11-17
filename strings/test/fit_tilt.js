@@ -35,8 +35,10 @@ const INSTS = arg('instrument', 'violin,viola,cello').split(',')
 const QUICK = process.argv.includes('--quick')
 const SOURCES = arg('sources', 'phil,iowa').split(',')
 const SR = 48000, DIR = here + '../data/Philharmonia/Strings/'
+// the Philharmonia folder and file prefix of an instrument (the double bass is "double bass" / "double-bass_")
+const PDIR = i => i === 'bass' ? 'double bass' : i, PPRE = i => i === 'bass' ? 'double-bass' : i
 const VEL = { pianissimo: 0.3, 'mezzo-forte': 0.68, fortissimo: 0.95 }
-if (!INSTS.every(i => existsSync(DIR + i))) { console.error('run node strings/test/fit_body_philharmonia.js first (it downloads the samples)'); process.exit(1) }
+if (!INSTS.every(i => existsSync(DIR + PDIR(i)))) { console.error('run node strings/test/fit_body_philharmonia.js first (it downloads the samples)'); process.exit(1) }
 
 const centroid = (x, a, b) => {
   const N = 4096; let s = 0, w = 0
@@ -54,13 +56,13 @@ const median = a => a.slice().sort((x, y) => x - y)[a.length >> 1]
 
 /** Pairs of recorded pp / ff notes per instrument: { midi, rec: cents ff − pp }. */
 function recorded(instrument) {
-  const files = readdirSync(DIR + instrument), by = {}
-  for (const f of files) { const m = f.match(new RegExp(`^${instrument}_([A-G]s?\\d)_(15|1)_(pianissimo|fortissimo)_arco-normal\\.mp3$`)); if (m) (by[m[1]] ??= {})[m[3]] = f }
+  const files = readdirSync(DIR + PDIR(instrument)), by = {}
+  for (const f of files) { const m = f.match(new RegExp(`^${PPRE(instrument)}_([A-G]s?\\d)_(15|1)_(pianissimo|fortissimo)_arco-normal\\.mp3$`)); if (m) (by[m[1]] ??= {})[m[3]] = f }
   const out = []
   for (const [note, d] of Object.entries(by)) {
     if (!d.pianissimo || !d.fortissimo) continue
     const c = {}
-    for (const dyn of ['pianissimo', 'fortissimo']) { const x = decode(DIR + `${instrument}/` + d[dyn]); const [a, b] = steady(x); c[dyn] = b - a >= 8192 ? centroid(x, a, b) : null }
+    for (const dyn of ['pianissimo', 'fortissimo']) { const x = decode(DIR + `${PDIR(instrument)}/` + d[dyn]); const [a, b] = steady(x); c[dyn] = b - a >= 8192 ? centroid(x, a, b) : null }
     if (c.pianissimo && c.fortissimo) out.push({ midi: parseNote(note.replace('s', '#')), rec: 1200 * Math.log2(c.fortissimo / c.pianissimo) })
   }
   return QUICK ? out.filter((_, i) => i % 3 === 0) : out

@@ -502,7 +502,7 @@ class GMEngine extends BufferEngine {
     const sr = this.lab.ctx.sampleRate
     const s = await this.synth(sr)
     if (job !== this.job) return
-    const program = { violin: 40, viola: 41, cello: 42 }[perf.instrument] ?? 40
+    const program = { violin: 40, viola: 41, cello: 42, bass: 43 }[perf.instrument] ?? 40
     // each note on its own channel (rotating, drums skipped) so its tuning can
     // carry the attack error (humanize.js) without detuning its neighbours.
     // OxiSynthRaw has no pitch bend; RPN 1 (channel fine tuning, ±100 cents)

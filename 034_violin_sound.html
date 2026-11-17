@@ -85,8 +85,8 @@
       <div class="row" id="perfRow" hidden title="Play the piece as a real violinist did: the timing, the dynamics and each note's pitch (vibrato, intonation) measured from their recording in the Bach Violin Dataset (strings/expression.js, violinist/performances). The bowing still comes from the score (Articulation). Rules: the MIDI's timing with #034's own dynamics and vibrato"><label>Performer</label><select id="performer"></select><span class="val" id="perfV"></span></div>
       <div class="row"><label>Type</label><input id="typed" type="text" spellcheck="false" title="Notes: A4 B4 C#5 · double stops D4+B4 · length E5:2 · rest r · string lock E5/A"
         value="G4 A4 B4 C5 D5:2 B4 G4:2 D4+B4:2"><button class="b" id="typedGo">Go</button></div>
-      <div class="row" title="Violin, viola or cello: the fingering, the string model and the body change with it"><label>Instrument</label><select id="instrument">
-        <option value="violin">Violin</option><option value="viola">Viola</option><option value="cello">Cello</option>
+      <div class="row" title="Violin, viola, cello or double bass: the fingering, the string model and the body change with it (the bass: the waveguide, Helmholtz source, GM and hybrid engines; DDSP and the VSCO samples are violin only)"><label>Instrument</label><select id="instrument">
+        <option value="violin">Violin</option><option value="viola">Viola</option><option value="cello">Cello</option><option value="bass">Double bass</option>
       </select></div>
       <div class="row" title="How the left hand chooses strings and positions (#033 fingering styles)"><label>Fingering</label><select id="mode">
         <option value="standard">Standard</option><option value="expressive">Expressive (stay on a string)</option>
@@ -712,7 +712,7 @@
       s.parts.forEach((p, i) => $('track').add(new Option(p.name, i)))
       $('track').value = s.part; $('trackRow').hidden = s.parts.length < 2
       const pn = (s.parts[s.part]?.name || '').toLowerCase()
-      const inst = /viol(on)?cello|cello/.test(pn) ? 'cello' : /viola|alto/.test(pn) ? 'viola' : /violin|violon|violino/.test(pn) ? 'violin' : null
+      const inst = /contrabass|double ?bass|kontrabass|contrebasse|contrabbasso|\bbass(es)?\b/.test(pn) ? 'bass' : /viol(on)?cello|cello/.test(pn) ? 'cello' : /viola|alto/.test(pn) ? 'viola' : /violin|violon|violino/.test(pn) ? 'violin' : null
       if (inst && $('instrument').value !== inst) $('instrument').value = inst
       state.tempo = s.tempo[0]?.bpm || 100
       const title = [s.title || name, s.parts.length > 1 ? s.parts[s.part]?.name : ''].filter(Boolean).join(' — ')

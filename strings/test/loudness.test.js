@@ -17,7 +17,7 @@ const level = (pitch, model, body) => {
 }
 
 test('level by pitch: with a measured body the top of the E string stays within 6 dB of G4 (the Iowa recordings are level there; it was 9–13 dB down)', () => {
-  for (const instrument of ['violin', 'viola', 'cello']) for (const body of ['iowa', 'phil']) for (const model of ['waveguide', 'source']) {
+  for (const instrument of ['violin', 'viola', 'cello', 'bass']) for (const body of ['iowa', 'phil']) for (const model of ['waveguide', 'source']) {
     const v = LEVEL_BODY[instrument]?.[body]?.[model]
     assert.ok(v && v.dB.length > 30 && v.dB.every(x => Math.abs(x) <= 12), `${instrument} ${body} ${model}`)
   }

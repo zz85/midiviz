@@ -119,7 +119,7 @@ for (const instrument of INSTS) {
     const spec = { from: GRID.from, step: GRID.step, lo: Math.round(F.lo), hi: Math.round(Math.min(F.hi, FMAX)), gainDb: 0, dB: [dB0, dB0.map((v, i) => Math.round((v + rp[i]) * 100) / 100)] }
     const em = process.argv.includes('--no-energy') ? null : energyMatch(instrument, model, spec)
     // level: match the modal body chain on a few mezzo-forte notes
-    const open = { violin: [55, 62, 69, 76], viola: [48, 55, 62, 69], cello: [36, 43, 50, 57] }[instrument]
+    const open = { violin: [55, 62, 69, 76], viola: [48, 55, 62, 69], cello: [36, 43, 50, 57], bass: [28, 33, 38, 43] }[instrument]
     let gm = 0, gi = 0
     for (let s = 0; s < 4; s++) for (const d of [2, 5, 9]) {
       gm += actRms(renderRaw(instrument, model, open[s] + d, s, 0.68, 1.6, 'modal').subarray(0.5 * SR))

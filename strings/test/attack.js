@@ -1,6 +1,6 @@
 // Attack quality of the bowed waveguide (Guettler's criterion), for #034.
 //
-//   node strings/test/attack.js [--verbose]    (also used by sound.test.js)
+//   node strings/test/attack.js [--verbose] [--bass]    (also used by sound.test.js)
 //
 // A bowed attack is good when Helmholtz motion (one slip per period, at the
 // period) starts within a few periods of the bow starting; listeners accept
@@ -91,10 +91,14 @@ export function attack(sl, a) {
 // a good attack reaches Helmholtz motion in time and stays in it (≥ 90 % regular periods afterwards)
 export const good = r => r.ms <= (r.kind === 'loose' ? 90 : OK_MS) && r.stays >= 0.9
 
-/** The test set: from rest and with bow changes, three instruments, all strings, p / mf / f. */
-export function suite() {
+/** The instruments of the suite with their open strings; the bass only with `bass` (its 24–100 ms periods make Guettler's 50 ms two periods, so it is reported apart). */
+export const SUITE_INSTRUMENTS = [['violin', [55, 62, 69, 76]], ['viola', [48, 55, 62, 69]], ['cello', [36, 43, 50, 57]]]
+export const BASS = ['bass', [28, 33, 38, 43]]
+
+/** The test set: from rest and with bow changes, three instruments (four with `bass`), all strings, p / mf / f. */
+export function suite({ bass = false } = {}) {
   const cases = []
-  for (const [instrument, open] of [['violin', [55, 62, 69, 76]], ['viola', [48, 55, 62, 69]], ['cello', [36, 43, 50, 57]]]) for (const vel of [0.35, 0.7, 1]) {
+  for (const [instrument, open] of bass ? [...SUITE_INSTRUMENTS, BASS] : SUITE_INSTRUMENTS) for (const vel of [0.35, 0.7, 1]) {
     const notes = []
     let t = 0.1
     for (let s = 0; s < 4; s++) for (const d of [0, 3, 7]) {
@@ -109,9 +113,9 @@ export function suite() {
 }
 
 /** Run the suite: { total, good, byKind, ms (median), rows }. */
-export function evaluate({ params = {}, style = {}, quick = false } = {}) {
+export function evaluate({ params = {}, style = {}, quick = false, bass = false } = {}) {
   const rows = []
-  for (const c of suite()) {
+  for (const c of suite({ bass })) {
     if (quick && c.vel === 0.7) continue
     const notes = c.notes.map(n => ({ ...n }))
     fingerLine(notes, { instrument: c.instrument })
@@ -129,9 +133,10 @@ export function evaluate({ params = {}, style = {}, quick = false } = {}) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const r = evaluate()
+  const bass = process.argv.includes('--bass')
+  const r = evaluate({ bass })
   console.log(`good attacks ${r.good}/${r.total} (in time ${r.inTime}, stays in Helmholtz ${r.stays}); median ${r.ms?.toFixed(1)} ms, p90 ${r.p90?.toFixed(1)} ms; ${JSON.stringify(r.byKind)}`)
-  for (const inst of ['violin', 'viola', 'cello']) for (const ch of [false, true]) {
+  for (const inst of [...SUITE_INSTRUMENTS.map(x => x[0]), ...(bass ? ['bass'] : [])]) for (const ch of [false, true]) {
     const sub = r.rows.filter(x => x.instrument === inst && x.change === ch)
     console.log(`  ${inst.padEnd(6)} ${ch ? 'bow change' : 'from rest '}: ${sub.filter(good).length}/${sub.length}`)
   }

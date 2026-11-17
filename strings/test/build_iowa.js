@@ -29,17 +29,19 @@ const HEAD = 3.2, TAIL_PRE = 0.12, TAIL = 0.7   // s
 const SR = 48000
 const SRC = here + `../data/iowa/${INSTRUMENT}/`
 const OUT = here + `../sound/samples/iowa/${INSTRUMENT}/`
-const PAGE = { violin: 'MISviolin2012.html', viola: 'MISviola2012.html', cello: 'MIScello2012.html' }[INSTRUMENT]
+const PAGE = { violin: 'MISviolin2012.html', viola: 'MISviola2012.html', cello: 'MIScello2012.html', bass: 'MISDoubleBass2012.html' }[INSTRUMENT]
 const BASE = 'https://theremin.music.uiowa.edu/'
-const STRINGS = { violin: ['G', 'D', 'A', 'E'], viola: ['C', 'G', 'D', 'A'], cello: ['C', 'G', 'D', 'A'] }[INSTRUMENT]
-const OPEN = { violin: [55, 62, 69, 76], viola: [48, 55, 62, 69], cello: [36, 43, 50, 57] }[INSTRUMENT]
+const STRINGS = { violin: ['G', 'D', 'A', 'E'], viola: ['C', 'G', 'D', 'A'], cello: ['C', 'G', 'D', 'A'], bass: ['E', 'A', 'D', 'G'] }[INSTRUMENT]
+const OPEN = { violin: [55, 62, 69, 76], viola: [48, 55, 62, 69], cello: [36, 43, 50, 57], bass: [28, 33, 38, 43] }[INSTRUMENT]
 const DYNS = ['pp', 'mf', 'ff']
 
 // ── 1. download ──
 mkdirSync(SRC, { recursive: true }); mkdirSync(OUT, { recursive: true })
 if (!process.argv.includes('--no-download')) {
   const html = execFileSync('curl', ['-sfL', BASE + PAGE], { encoding: 'latin1', maxBuffer: 1 << 26 })
-  const links = [...new Set([...html.matchAll(/href="([^"]*\.arco\.[^"]*\.mono\.aif)"/g)].map(m => m[1]))]
+  // mono files where the page has them (violin, viola, cello); the 2012 double bass is stereo only
+  const all = [...new Set([...html.matchAll(/href="([^"]*\.arco\.[^"]*\.(?:mono|stereo)\.aif)"/g)].map(m => m[1]))]
+  const links = all.some(l => l.endsWith('.mono.aif')) ? all.filter(l => l.endsWith('.mono.aif')) : all
   console.log(`${links.length} arco scale files on ${PAGE}`)
   for (const l of links) {
     const name = l.split('/').pop().replace(/\s+/g, '')
@@ -51,8 +53,10 @@ if (!process.argv.includes('--no-download')) {
 
 // ── helpers ──
 // rate: the true sample rate when a file's header is wrong (see below)
+// the rumble high-pass sits below the lowest open string (60 Hz for the violin, 25 for the bass)
+const HP = Math.round(Math.min(60, 0.6 * 440 * 2 ** ((OPEN[0] - 69) / 12)))
 const decode = (f, rate = 0) => {
-  const af = (rate ? `asetrate=${rate},aresample=${SR},` : '') + 'highpass=f=60:poles=2'
+  const af = (rate ? `asetrate=${rate},aresample=${SR},` : '') + `highpass=f=${HP}:poles=2`
   const buf = execFileSync('ffmpeg', ['-v', 'error', '-i', f, '-ac', '1', '-ar', String(SR), '-af', af, '-f', 'f32le', '-'], { maxBuffer: 1 << 30 })
   return new Float32Array(buf.buffer, buf.byteOffset, buf.length / 4).slice()
 }
@@ -99,13 +103,16 @@ function pitchWide(x, i0, N, fmin = 150, fmax = 3600) {
 
 // ── 2–3. cut and measure ──
 const H = 960                                     // 20 ms envelope hop
+// the naming window: at least 4 periods of the lowest open string (the bass's E1 is 1,170 samples)
+const NW = Math.max(4096, Math.ceil(4 * SR / (440 * 2 ** ((OPEN[0] - 69) / 12)) / 1024) * 1024)
 const notes = []                                  // { string, dyn, midi, x, ... }
-// names: Violin.arco.pp.sulG.G3B3.mono.aif, Viola.arco.sulC.pp.C3B3.mono.aif
+// names: Violin.arco.pp.sulG.G3B3.mono.aif, Viola.arco.sulC.pp.C3B3.mono.aif, Bass.arco.sulE.pp.E1Bb1.stereo.aif
 const parseName = f => {
-  const m = f.match(/\.arco\.(?:(pp|mf|ff)\.sul([A-G])|sul([A-G])\.(pp|mf|ff))\.([A-Gb#0-9]+)\.mono\.aif$/)
+  const m = f.match(/\.arco\.(?:(pp|mf|ff)\.sul([A-G])|sul([A-G])\.(pp|mf|ff))\.([A-Gb#0-9]+)\.(?:mono|stereo)\.aif$/)
   return m && [m[1] || m[4], m[2] || m[3], m[5]]
 }
-const files = readdirSync(SRC).filter(parseName).sort()
+// a string the model does not have (the bass's C extension) is left out
+const files = readdirSync(SRC).filter(f => parseName(f) && STRINGS.includes(parseName(f)[1])).sort()
 for (const f of files) {
   const [dyn, sname, range] = parseName(f)
   const s = STRINGS.indexOf(sname)
@@ -119,7 +126,7 @@ for (const f of files) {
   {
     const e = envelope(x, 4800)
     let k = 0; for (let j = 1; j < e.length; j++) if (e[j] > e[k]) k = j
-    const fw = pitchWide(x, Math.max(0, k * 4800 - 2048), 4096, 0.4 * 440 * 2 ** ((OPEN[0] - 69) / 12))
+    const fw = pitchWide(x, Math.max(0, k * 4800 - NW / 2), NW, 0.4 * 440 * 2 ** ((OPEN[0] - 69) / 12))
     const mi = 69 + 12 * Math.log2(fw / 440), up = 12 * Math.log2(96000 / 44100)
     if (isFinite(mi) && mi < lo - 3 && mi + up > lo - 1.5 && mi + up < hi + 1.5) { console.log(`  ${f}: 96 kHz under a 44.1 kHz header, re-read`); x = decode(SRC + f, 96000) }
   }
@@ -160,7 +167,7 @@ for (const f of files) {
     let ke = e.length - 1; while (ke > kb && e[ke] < pk / 4) ke--
     if ((ke - kb) * 0.05 < 0.25) continue
     const mid = i0 + Math.round((kb + ke) / 2 * 2400)
-    cand.push({ i0, i1, fw: pitchWide(x, mid - 2048, 4096, 0.8 * 440 * 2 ** ((OPEN[0] - 69) / 12)) })
+    cand.push({ i0, i1, fw: pitchWide(x, Math.max(i0, mid - NW / 2), NW, 0.8 * 440 * 2 ** ((OPEN[0] - 69) / 12)) })
   }
   // the files are chromatic scales: with one segment per note, the order names them
   const byOrder = cand.length === hi - lo + 1
@@ -207,8 +214,8 @@ function analyse(n) {
   // release: the bow leaves where the level falls below half the bowed median for good
   let kr = ke; while (kr > ka && e[kr] < 0.5 * sus) kr--
   const release = Math.max(attackEnd + Math.round(0.08 * SR), (kr + 1) * H)
-  // pitch track, 10 ms hop, 2048-sample windows, from the onset to just after the release
-  const N = 2048, hop = 480
+  // pitch track, 10 ms hop, 2048-sample windows (at least 4 periods: the bass's E is 1,170 samples), from the onset to just after the release
+  const N = Math.max(2048, Math.round(4 * SR / f)), hop = 480
   const track = []
   for (let i = onset; i + N + 1200 < x.length && i < release + 0.3 * SR; i += hop) {
     const p = pitchNear(x, i, N, f, 1.2)

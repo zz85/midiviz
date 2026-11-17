@@ -197,6 +197,12 @@ const rng = rngH
  */
 export function renderPerformance(notesIn, { instrument = 'violin', style = {}, frameRate = FRAME_RATE, seed = 7, tail = 2, expression = null } = {}) {
   const S = { ...STYLE, ...style }
+  // an instrument's own bow-force scale (SYNTH[].press, [at pp, at ff] or one value):
+  // the planner's F_min ∝ Z^1.5 overshoots the waveguide's window on the heaviest
+  // strings (its own F_min grows about as Z^1.2, strings/test/schelleng.js, and its
+  // F_max as Z, so the window closes at the top), so the bass plays lighter than the
+  // formula says, and lighter still at forte
+  const pressI = (SYNTH[instrument] || SYNTH.violin).press, pressAt = d => Array.isArray(pressI) ? pressI[0] + (pressI[1] - pressI[0]) * d : (pressI ?? 1)
   const inst = INSTRUMENTS[instrument] || INSTRUMENTS.violin
   const R = rng(seed)
   const playable = onePlayerNotes(notesIn)
@@ -482,10 +488,11 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
           // Schelleng: F ∝ v/β (geometric middle of the window), a bite on détaché attacks
           const bite = 1 + (st.short ? 0.5 : 0.2) * atkK * (1 - lgI)
           // harmonics are bowed lighter (HARM_F, measured on the waveguide); tremolo a little lighter
-          const Fk = (0.55 + 0.9 * dyn) * S.pressure * (n.harm ? HARM_F : 1) * (st.trem ? 0.85 : 1) * (1 + 0.05 * (n.bowVar ?? 0)) * Zs[s] * Math.sqrt(0.1 / bet) * (1 + (bite - 1) * Math.exp(-Math.max(0, t - st.t0) / 0.035))
+          const pS = S.pressure * pressAt(dyn)
+          const Fk = (0.55 + 0.9 * dyn) * pS * (n.harm ? HARM_F : 1) * (st.trem ? 0.85 : 1) * (1 + 0.05 * (n.bowVar ?? 0)) * Zs[s] * Math.sqrt(0.1 / bet) * (1 + (bite - 1) * Math.exp(-Math.max(0, t - st.t0) / 0.035))
           let F = Math.max(vF, 0.04 + 0.06 * dyn) * Fk * PRESS * fAuto
           // stay above Schelleng's minimum (F_min ∝ Z² v / β², measured on the waveguide)
-          F = Math.max(F, FMIN * S.pressure * (n.harm ? HARM_F : 1) * Math.pow(Zr[s], ZEXP) * vF / (bet * bet))
+          F = Math.max(F, FMIN * pS * (n.harm ? HARM_F : 1) * Math.pow(Zr[s], ZEXP) * vF / (bet * bet))
           // the bow presses in to catch the string and eases off: ×2 at the start, back in ~40 ms
           if (t >= st.t0 - 0.004 && !sk) F *= 1 + ((st.short ? ATK_F_SHORT : ATK_F) - 1) * atkK * (1 - (1 - LEG_PRESS) * lgI) * Math.exp(-Math.max(0, t - st.t0) / ATK_T)
           // the force follows the dip less than the speed does (the bow grips
@@ -494,7 +501,7 @@ export function renderPerformance(notesIn, { instrument = 'violin', style = {}, 
           if (sk) {
             // the stroke's full-speed force, for the pinch and the rest on the string
             const vS = st.V * (0.5 + 0.7 * dyn) * pg
-            const Fs = Math.max(Math.max(vS, 0.04 + 0.06 * dyn) * Fk * PRESS, FMIN * S.pressure * Math.pow(Zr[s], ZEXP) * vS / (bet * bet))
+            const Fs = Math.max(Math.max(vS, 0.04 + 0.06 * dyn) * Fk * PRESS, FMIN * pS * Math.pow(Zr[s], ZEXP) * vS / (bet * bet))
             if (sk === 'spiccato') { const x = (t - st.t0) / spC; F = x <= 0 || x >= 1 ? 0 : Fs * Math.pow(Math.sin(Math.PI * x), 0.8) }
             else {
               const x = t - st.t0

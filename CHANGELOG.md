@@ -2,6 +2,14 @@
 
 What each experiment does and how, newest first. The short list is in the [README](README.md).
 
+## 17 Nov 2026
+
+[Experiment #034 - Violin Sound Lab](034_violin_sound.html): a double bass, and a softer bow contact, both from #048 ([notes](strings/README.md#double-bass-and-bow-hair-compliance-in-the-waveguide))
+- The waveguide's friction junction sees 97 % of the string's velocity (`WaveguideString.coupling`, after #048's bow-hair compliance): the bow is a ribbon of hairs that give, not a rigid point, and the softer contact lets the secondary slips that trapped an attack in multiple slipping die out. `attack.js`, 432 bow starts: good attacks 263 → 291 (cello 68 → 91), median time to Helmholtz 41 → 34 ms, 406 → 414 stay in Helmholtz; the steady tone unchanged (harmonics 2–8 within 0.5 dB). Swept 0.8–1: below 0.95 the string under-sticks and attacks turn raucous (0.9: 249, 0.8: 104).
+- Instrument: Double bass for the waveguide, Helmholtz source, GM and hybrid engines, picked too by a part named contrabass or basses. Open strings E1 A1 D2 G2, impedances twice the cello's, a modal fallback body; the planned bow force is scaled per dynamic (0.8 × at pp, 0.5 × at ff), since the planner's F_min ∝ Z^1.5 overshoots the waveguide's window on strings this heavy (`schelleng.js`: the E string plays at 10–14 N where the plan asked 23). Sustained sweep in Helmholtz on 62 of 63 notes (50 at the formula's force), within 12 cents; attacks slow, as on #048 (bow changes 31 of 72 good, from rest 5 of 72, Helmholtz within 9 periods).
+- The Iowa double-bass bank (286 notes, 6.7 MB; stereo-only source files, the C-extension string skipped, the rumble high-pass at 25 Hz instead of 60, which would have cut the E string, pitch windows of at least four periods), and bodies fitted from it and from the Philharmonia samples: held-out residual 2.4–3.5 dB median, in line with violin, viola and cello; level-by-pitch voicing and bow-force tilt fitted too. The body grid now starts at 30 Hz.
+- Tests: the Helmholtz sweep, hybrid pitch, body and energy tests take the bass; the attacks-from-rest periodicity bar is the Iowa recordings' own median (the fixed 0.8 would have failed the recordings, at 0.81); the Source model starts at a seeded phase, so its tests repeat (one swung 2 dB from run to run). `node --test strings/test/sound.test.js` 36, `node strings/test/attack.js [--bass]`.
+
 ## 16 Nov 2026
 
 #038 Duo on WebGPU, the hall (`?gpu=webgpu`, work in progress)

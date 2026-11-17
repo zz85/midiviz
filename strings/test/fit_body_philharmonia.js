@@ -45,6 +45,8 @@ const INSTS = arg('instrument', 'violin,viola,cello').split(',')
 const MODELS = arg('model', 'source,waveguide').split(',')
 const QUICK = process.argv.includes('--quick')
 const DIR = here + '../data/Philharmonia/'
+// the Philharmonia folder and file prefix of an instrument (the double bass is "double bass" / "double-bass_")
+export const PHIL_DIR = i => i === 'bass' ? 'double bass' : i, PHIL_PREFIX = i => i === 'bass' ? 'double-bass' : i
 const ZIP = 'https://philharmonia-assets.s3-eu-west-1.amazonaws.com/uploads/2020/02/12112005/Strings.zip'
 const OUT = here + '../sound/body-philharmonia.js'
 if (!hasFfmpeg()) { console.error('needs ffmpeg'); process.exit(1) }
@@ -56,7 +58,7 @@ const DYN = {
 }
 
 async function ensureSamples() {
-  if (INSTS.every(i => existsSync(DIR + 'Strings/' + i))) return
+  if (INSTS.every(i => existsSync(DIR + 'Strings/' + PHIL_DIR(i)))) return
   mkdirSync(DIR, { recursive: true })
   const zip = DIR + 'Strings.zip'
   if (!existsSync(zip)) {
@@ -65,15 +67,15 @@ async function ensureSamples() {
     if (!r.ok) throw new Error(`${ZIP}: ${r.status}`)
     writeFileSync(zip, Buffer.from(await r.arrayBuffer()))
   }
-  execFileSync('unzip', ['-o', '-q', zip, ...INSTS.map(i => `Strings/${i}/*`), '-d', DIR])
+  execFileSync('unzip', ['-o', '-q', zip, ...INSTS.map(i => `Strings/${PHIL_DIR(i)}/*`), '-d', DIR])
 }
 
 /** The sustained notes: arco-normal, 1.5 s (or 1 s where no 1.5 s take exists). */
 function listNotes(instrument) {
-  const files = readdirSync(DIR + 'Strings/' + instrument)
+  const files = readdirSync(DIR + 'Strings/' + PHIL_DIR(instrument))
   const pick = new Map()
   for (const f of files) {
-    const m = f.match(new RegExp(`^${instrument}_([A-G]s?\\d)_(15|1)_([a-z-]+)_arco-normal\\.mp3$`))
+    const m = f.match(new RegExp(`^${PHIL_PREFIX(instrument)}_([A-G]s?\\d)_(15|1)_([a-z-]+)_arco-normal\\.mp3$`))
     if (!m || !DYN[m[3]]) continue
     const key = m[1] + '_' + m[3], prev = pick.get(key)
     if (!prev || m[2] === '15') pick.set(key, { file: f, midi: parseNote(m[1]), dyn: m[3] })
@@ -155,7 +157,7 @@ function collectPhil(instrument, model) {
     }
     const o = ours.get(key)
     if (!o) { skipped++; continue }
-    const x = decode(DIR + `Strings/${instrument}/` + n.file)
+    const x = decode(DIR + `Strings/${PHIL_DIR(instrument)}/` + n.file)
     const [a, b] = sustain(x)
     if (b - a < 0.4 * SR) { skipped++; continue }
     let frames = frameHarmonics(x, a, b, midiHz(n.midi))

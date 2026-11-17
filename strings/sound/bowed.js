@@ -78,7 +78,7 @@ export function wgWindow(Fp, av, bPlan, b, Z) {
 }
 // bow-force brightness tilt per string model and instrument: k = exp(c·(r − r0)) − 1 above ~3·f0
 // (r: log10 bow force over the string's Z^1.5 scale). Fitted by strings/test/fit_tilt.js
-export const TILT = {"waveguide":{"violin":{"c":1.77,"r0":-0.212},"viola":{"c":2.04,"r0":-0.212},"cello":{"c":1.55,"r0":-0.212}},"source":{"violin":{"c":1.63,"r0":-0.212},"viola":{"c":2.52,"r0":-0.212},"cello":{"c":1.83,"r0":-0.212}}}
+export const TILT = {"waveguide":{"violin":{"c":1.77,"r0":-0.212},"viola":{"c":2.04,"r0":-0.212},"cello":{"c":1.55,"r0":-0.212},"bass":{"c":3.27,"r0":-0.212}},"source":{"violin":{"c":1.63,"r0":-0.212},"viola":{"c":2.52,"r0":-0.212},"cello":{"c":1.83,"r0":-0.212},"bass":{"c":2.68,"r0":-0.212}}}
 export const CH = { f0: 0, vel: 1, force: 2, beta: 3, damp: 4, tap: 5, harm: 6 }
 export const NCH = 7
 
@@ -109,6 +109,25 @@ export const INSTRUMENTS = {
       modes: [[100, 14, 0.8], [145, 20, 0.45], [175, 24, 1], [195, 20, 0.5], [220, 26, 1], [275, 24, 0.55], [320, 26, 0.55], [380, 28, 0.55], [440, 28, 0.45], [510, 30, 0.45]],
       dense: { from: 540, to: 6000, count: 46, hill: 1500, hillWidth: 0.6, hillGain: 1.5, dip: 800, rolloff: 2500 },
       air: 1, gain: 1.1,
+    },
+  },
+  // double bass, tuned in fourths (E1 A1 D2 G2). Z from the strings' tension
+  // (~280–300 N, Askenfelt) and linear density at the 1.05 m scale: E 3.4,
+  // G 1.35 kg/s, twice the cello's. Body: Askenfelt 1982 / Brown 2004, A0 near
+  // 60 Hz, the first strong wood modes 90–200 Hz, a bridge hill near 1 kHz
+  bass: {
+    // press: × the planned bow force at pp and at ff (performance.js). The planner's
+    // F_min ∝ Z^1.5 puts the bass above the waveguide's window (schelleng.js: the E
+    // string at β 0.1, v 0.3 m/s plays at 10–14 N, the plan asks 23), and the
+    // window closes at forte (F_max grows as Z, F_min faster). Sustained sweep, 21
+    // notes a dynamic: pp in Helmholtz 21 at 0.7–0.85 (19 at 1), ff 21 at ≤ 0.5
+    // (17 at 0.7, with the E string raucous and 28 cents flat); [0.8, 0.5]: 62 of
+    // 63 and attacks (attack.js --bass) 36 of 144 good, Helmholtz in 9 periods (median)
+    open: [28, 33, 38, 43], Z: [3.4, 2.5, 1.85, 1.35], t60: [5.5, 5, 4.4, 4], press: [0.8, 0.5],
+    body: {
+      modes: [[60, 12, 0.8], [90, 18, 0.45], [107, 22, 1], [118, 18, 0.5], [135, 24, 1], [165, 22, 0.55], [195, 24, 0.55], [230, 26, 0.55], [265, 26, 0.45], [305, 28, 0.45]],
+      dense: { from: 330, to: 5000, count: 48, hill: 1000, hillWidth: 0.65, hillGain: 1.4, dip: 550, rolloff: 1800 },
+      air: 1, gain: 1.15,
     },
   },
 }
@@ -177,6 +196,7 @@ const onePoleDelay = (a, w) => Math.atan2(a * Math.sin(w), 1 - a * Math.cos(w)) 
 // friction (rosin on gut / synthetic strings)
 // (tuned with strings/test/bowed.test.js: Helmholtz motion over the range at p…f)
 const MU_S = 1.2, MU_D = 0.3, V0 = 0.3
+export const COUPLING = 0.97      // bow-hair compliance (WaveguideString.coupling)
 
 // interactive bow pressure: a kick of ±14 dB of force, decaying in 25 ms; tuned on
 // the Helmholtz sweep (/strings/README.md: 343 → 359 of 369 notes at the default pressure)
@@ -220,6 +240,15 @@ export class WaveguideString {
     this.kF = 0; this.slips = 0; this.acc = 0; this.spp = 1; this.bowAge = 0; this.cool = 0; this.kick = 1; this.kicks = 0; this.stick = 0
     this.rosin = 1         // × rosin grain (μs jitter)
     this.jMu = 0; this.jF = 0   // per-slip jitter of static friction and bow force
+    // bow-hair compliance (after #048's bowCoupling): the share of the string's
+    // velocity the bow contact sees. The hair's give and the ribbon's width
+    // (many hairs over several mm of string, each gripping and letting go at its
+    // own moment) soften the contact; below 1 this damps the secondary slips
+    // that trap an attack in multiple slipping. Swept on attack.js: 1 → 263 of
+    // 432 good, 0.97 → 291, 0.95 → 295 but the sustained sweep loses 5 notes
+    // (182 → 177 of 189; 0.97 keeps 181), 0.9 → 249: the string under-sticks
+    // and attacks turn raucous. Steady harmonics 2–8 within 0.5 dB
+    this.coupling = COUPLING
   }
   reset() { this.bridge.clear(); this.nut.clear(); this.tA.clear(); this.tB.clear(); this.tC.clear(); this.harm = 0; this.lpB = this.lpN = 0; this.slipping = false; this.out = 0; this.kF = 0; this.spp = 1; this.bowAge = 0 }
   noise() { let s = this.seed; s ^= s << 13; s ^= s >>> 17; s ^= s << 5; this.seed = s >>> 0; return (this.seed / 4294967296) * 2 - 1 }
@@ -310,7 +339,7 @@ export class WaveguideString {
       // friction junction (velocity jump dv added to both outgoing waves)
       const c = F * (1 + this.jF) / (2 * this.Z)
       const mus = MU_S * (1 + this.jMu + 0.015 * Math.sqrt(this.os) * this.rosin * this.noise())   // rosin grain
-      const u = vb - vh
+      const u = vb - this.coupling * vh
       const au = Math.abs(u)
       if (!this.slipping && au <= c * mus) dv = u                  // stick
       else {
@@ -367,7 +396,7 @@ const JIT_R = 0.5, JIT_Q = Math.sqrt(1 - JIT_R * JIT_R)   // per-period jitter: 
 export class SourceString {
   constructor(sr, { open = 55, Z = 0.3, t60 = 2.5 } = {}) {
     this.sr = sr; this.openHz = midiHz(open); this.Z = Z; this.t60 = t60
-    this.ph = Math.random(); this.env = 0; this.atk = 0; this.lastV = 0
+    this.ph = ((open * 2654435761) >>> 0) / 4294967296; this.env = 0; this.atk = 0; this.lastV = 0   // a seeded start phase: renders repeat (the test of the gaps between harmonics swung 36.7–38.8 dB on it)
     this.lp1 = 0; this.lp2 = 0; this.nz1 = 0; this.nz2 = 0
     this.seed = (open * 104729) >>> 0
     this.jit = 0
@@ -524,9 +553,9 @@ export class Body {
  * at(t, out) → fills out[string * NCH + channel] for time t (s).
  */
 export class ViolinSynth {
-  constructor(sr, { instrument = 'violin', model = 'waveguide', tone = null, bowPress = true, rosin = 1, resonance = 1, body = 'iowa', oversample = 3, tilt = 1, wgPress = 1, wgPos = 1, wgLimits = true } = {}) {
+  constructor(sr, { instrument = 'violin', model = 'waveguide', tone = null, bowPress = true, rosin = 1, resonance = 1, body = 'iowa', oversample = 3, tilt = 1, wgPress = 1, wgPos = 1, wgLimits = true, coupling = COUPLING } = {}) {
     this.sr = sr
-    this.opts = { bowPress, rosin, resonance, body, tilt, wgPress, wgPos, wgLimits }
+    this.opts = { bowPress, rosin, resonance, body, tilt, wgPress, wgPos, wgLimits, coupling }
     this.fLo = new Float32Array(4); this.fHi = new Float32Array(4).fill(Infinity); this.fR = new Float32Array(4).fill(1)
     this.tiltLp = new Float64Array(4); this.tiltK = new Float32Array(4); this.tiltKt = new Float32Array(4); this.tiltA = new Float32Array(4)
     this.relF = new Float32Array(4)
@@ -561,12 +590,12 @@ export class ViolinSynth {
     this.cur.fill(0); this.nxt.fill(0)
     for (let s = 0; s < 4; s++) { this.cur[s * NCH] = this.nxt[s * NCH] = midiHz(I.open[s]); this.cur[s * NCH + 3] = this.nxt[s * NCH + 3] = 0.1 }
   }
-  /** bowPress (interactive bow pressure, waveguide), rosin (× grain / bow noise), resonance (× sympathetic coupling). */
+  /** bowPress (interactive bow pressure, waveguide), rosin (× grain / bow noise), resonance (× sympathetic coupling), coupling (bow-hair compliance, waveguide). */
   setParams(p) {
     const key = b => (typeof b === 'object' && b ? b.id ?? b : b)
     const was = key(this.opts.body)
     Object.assign(this.opts, p)
-    for (const st of this.strings) { st.bowPress = !!this.opts.bowPress; st.rosin = this.opts.rosin }
+    for (const st of this.strings) { st.bowPress = !!this.opts.bowPress; st.rosin = this.opts.rosin; st.coupling = this.opts.coupling ?? COUPLING }
     if (this.body && p.body != null && key(p.body) !== was) this.makeBody()
   }
   /**
@@ -599,7 +628,9 @@ export class ViolinSynth {
       this.voicing = typeof b === 'string' ? LEVEL_BODY[instrument]?.[this.bodyKind]?.[model] ?? null : null
     } else {
       this.body = new Body(this.sr, I.body, instrument.length * 31 + 7)
-      this.eq = new EQ(this.sr, this.toneBands ?? TONE[instrument]?.[model] ?? TONE.violin[model] ?? [])
+      // (the violin's VSCO EQ stands in for the viola's and cello's, as before; a
+      // bass is two octaves down, so it plays its modal body flat)
+      this.eq = new EQ(this.sr, this.toneBands ?? TONE[instrument]?.[model] ?? (instrument === 'bass' ? null : TONE.violin[model]) ?? [])
       // voicing: per-pitch gain that evens out the body's peaks and dips (tone.js)
       this.voicing = this.toneBands ? null : LEVEL[instrument]?.[model] ?? null
     }

@@ -52,7 +52,7 @@ export const notched = H => new Set(H.filter((h, i) => {
 export function renderRaw(instrument, model, midi, s, vel, secs = 1.6, body = null) {
   const notes = [{ pitch: midi, on: 0.1, off: secs, velocity: vel }]
   fingerLine(notes, { instrument })
-  const open = { violin: [55, 62, 69, 76], viola: [48, 55, 62, 69], cello: [36, 43, 50, 57] }[instrument]
+  const open = { violin: [55, 62, 69, 76], viola: [48, 55, 62, 69], cello: [36, 43, 50, 57], bass: [28, 33, 38, 43] }[instrument]
   notes[0].string = s; notes[0].finger = midi === open[s] ? 0 : (notes[0].finger || 1)
   const perf = renderPerformance(notes, { instrument, style: { vibrato: 0, timing: 0, intonation: 0, variance: 0 } })
   const syn = new ViolinSynth(SR, { instrument, model, body: body ?? 'modal' })
@@ -132,7 +132,8 @@ export const actRms = L => { let s = 0, n = 0; for (let i = 0; i < L.length; i++
 
 
 // ── the body fit (fit_body.js, fit_body_philharmonia.js) ──
-export const GRID = { from: 60, step: 1 / 48, to: 16000 }
+// from 30 Hz: the bass's E string plays 41–55 Hz (a stored body keeps its own `from`)
+export const GRID = { from: 30, step: 1 / 48, to: 16000 }
 export const SIG = 1 / 40
 export const G0 = Math.log2(GRID.from), NG = Math.ceil((Math.log2(GRID.to) - G0) / GRID.step) + 1
 /** Fit B (grid dB), g per row, s per dynamic. */
