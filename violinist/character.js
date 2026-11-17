@@ -8,6 +8,7 @@
 // Units: the VRM is scaled to centimetres, standing at the origin facing +z.
 
 import * as THREE from 'three'
+import { vrmPluginOptions } from './vrm-materials.js'
 import { scaleSpringBones } from './vrm-springs.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { tuneMToon } from './stage.js'
@@ -35,7 +36,7 @@ async function getLoader() {
   const mod = await import('@pixiv/three-vrm')
   VRMUtils = mod.VRMUtils
   loader = new GLTFLoader()
-  loader.register(p => new mod.VRMLoaderPlugin(p))
+  loader.register(p => new mod.VRMLoaderPlugin(p, vrmPluginOptions(mod, p)))   // (vrm-materials.js: MToon as node materials on WebGPU)
   return loader
 }
 

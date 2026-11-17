@@ -13,6 +13,7 @@
 // Units: centimetres, the violinist at the origin facing +z.
 
 import * as THREE from 'three'
+import { tagTSL } from '../pianist/tsl-tags.js'
 
 let ramp = null
 export function toonRamp() {
@@ -26,7 +27,7 @@ export function toonRamp() {
 
 /** Back faces pushed out by `px` pixels in clip space, drawn in ink. */
 export function inkMaterial(px = 1.6, color = 0x1a0f0c) {
-  return new THREE.ShaderMaterial({
+  const m = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     uniforms: { width: { value: px }, res: { value: new THREE.Vector2(1920, 1080) }, color: { value: new THREE.Color(color) } },
     vertexShader: `
@@ -41,6 +42,9 @@ export function inkMaterial(px = 1.6, color = 0x1a0f0c) {
       }`,
     fragmentShader: `uniform vec3 color; void main() { gl_FragColor = vec4(color, 1.0); }`,
   })
+  // (the same hull in TSL for the WebGPU renderer: pathtrace/tsl-patches.js)
+  tagTSL(m, 'ink', m.uniforms)
+  return m
 }
 
 const inks = new Set()

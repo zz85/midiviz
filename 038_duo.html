@@ -17,7 +17,10 @@
     { "imports": {
       "three": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js",
       "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/",
-      "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.5.5/lib/three-vrm.module.min.js"
+      "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.5.5/lib/three-vrm.module.min.js",
+      "@pixiv/three-vrm/nodes": "./vendor/three-vrm-nodes/index.module.js",
+      "three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.webgpu.js",
+      "three/tsl": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.tsl.js"
     } }
   </script>
   <style>
@@ -88,6 +91,7 @@
       <option value="overHim">Past him, to her</option>
       <option value="free">Free</option>
     </select>
+    <select id="gpuSel" title="Renderer. WebGL: the page as it has always been drawn. WebGPU (the hall alone, work in progress): three.js's WebGPU renderer with screen-space global illumination and reflections, the models' toon shading as node materials. Changing it reloads the page"><option value="webgl">WebGL</option><option value="webgpu">WebGPU (SSGI, SSR)</option></select>
     <select id="venue" title="Where they play: the concert hall, or outdoors on Sorairo's hillside (park/, from random-sketches/vibes/sorairo: the tree, wind in the grass, the sky, birds and a painterly finish). Changing it reloads the page"><option value="hall">Venue: concert hall</option><option value="park">Venue: the park</option></select>
     <select id="layout" title="Where he stands: beside the keyboard end, about a metre to her left and a little in front (the usual recital layout), or in front of the piano's curve. Changing it reloads the page"><option value="keys">Layout: by the keyboard</option><option value="curve">Layout: by the curve</option></select>
     <select id="pscale" hidden title="The park's size around the two, who stay as they are. Changing it reloads the page"><option value="0.45" selected>Park: 0.45 size</option><option value="0.5">Park: 1/2 size</option><option value="0.75">Park: 3/4 size</option><option value="1">Park: full size</option></select>
@@ -194,7 +198,13 @@
     // pianist sits at the keyboard on the far side, in profile to the
     // audience, and sees him over her right shoulder (he sees her past his
     // scroll).
-    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: SHOT })
+    // ?gpu=webgpu: three.js's WebGPU renderer, with SSGI and SSR (duo/gpu.js; the hall
+    // alone, the park's passes are GLSL). ?gpuout=target renders offscreen (headless)
+    const GPU = Q.get('gpu') === 'webgpu' && !PARK && navigator.gpu ? await (await import('./duo/gpu.js')).createRenderer() : null
+    $('gpuSel').value = GPU ? 'webgpu' : 'webgl'
+    if (!navigator.gpu || PARK) { $('gpuSel').options[1].disabled = true; $('gpuSel').options[1].text += PARK ? ' (the hall alone)' : ' (not in this browser)' }
+    $('gpuSel').onchange = () => { saveUrl(); const p = new URLSearchParams(location.search); if ($('gpuSel').value === 'webgpu') p.set('gpu', 'webgpu'); else p.delete('gpu'); location.search = p.toString() }
+    const renderer = GPU ? GPU.renderer : new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: SHOT })
     renderer.setPixelRatio(Math.min(2, devicePixelRatio))
     renderer.setSize(innerWidth, innerHeight)
     renderer.shadowMap.enabled = true
@@ -205,6 +215,9 @@
     const camera = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 1, 8000)
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.enableDamping = true
+    const gpuPost = GPU ? (await import('./duo/gpu.js')).duoPost(GPU, scene, camera, { offscreen: Q.get('gpuout') === 'target', grade: Q.get('grade') || 'flat', quality: Q.get('gpuq') || 'medium' }) : null
+    const draw = () => gpuPost ? gpuPost.draw() : renderer.render(scene, camera)
+    window.__live = gpuPost?.live
 
     const pianoSide = new THREE.Group()
     pianoSide.name = 'piano side'
@@ -225,6 +238,8 @@
     const before = new Set(scene.children)
     const stage = buildStage(scene, renderer, { target: [MID.x, 100, MID.z], angle: 0.36, pool: [MID.x, MID.z + 40], poolSize: 620 })
     const stageParts = scene.children.filter(o => !before.has(o))
+    // (WebGPU: the pool of light on the boards after the grade, as the WebGL canvas blends it)
+    if (gpuPost) stageParts.splice(stageParts.indexOf(stage.pool), 1, gpuPost.addDisplay(stage.pool))
     // a warm spot of her own, from the hall side
     const herSpot = new THREE.SpotLight(0xffe0b8, 2.6, 0, 0.2, 0.7, 0)
     herSpot.position.set(HER.x - 120, 640, HER.z + 620); herSpot.target.position.copy(HER).setY(80)
@@ -233,7 +248,7 @@
     stageParts.push(herSpot)
     // the piano's lacquer and plate need something to reflect (as #032)
     {
-      const pmrem = new THREE.PMREMGenerator(renderer), s = new THREE.Scene()
+      const pmrem = new (GPU ? GPU.TG.PMREMGenerator : THREE.PMREMGenerator)(renderer), s = new THREE.Scene()
       s.background = new THREE.Color(0x010101)
       const box = (w, h, p, k, c) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(c).multiplyScalar(k), side: THREE.DoubleSide })); m.position.set(...p); m.lookAt(0, 90, 0); s.add(m) }
       box(260, 260, [-200, 640, 300], 6, 0xffcf9a); box(900, 140, [0, 650, -150], 0.6, 0xffd7a8); box(700, 220, [150, 420, 900], 1.2, 0xffe2c0)
@@ -282,7 +297,7 @@
       // the lacquer and the violin's varnish reflect the sky (once per change of the hour)
       if (envFor !== s.changed) {
         envFor = s.changed
-        const pm = new THREE.PMREMGenerator(renderer), es = new THREE.Scene()
+        const pm = new (GPU ? GPU.TG.PMREMGenerator : THREE.PMREMGenerator)(renderer), es = new THREE.Scene()
         const g = new THREE.SphereGeometry(100, 32, 16), col = []
         const P = g.attributes.position
         for (let i = 0; i < P.count; i++) { const y = P.getY(i) / 100; const c = y > 0 ? s.horizon.clone().lerp(s.sky, Math.sqrt(y)) : s.ground.clone().multiplyScalar(0.6); col.push(c.r, c.g, c.b) }
@@ -1250,6 +1265,8 @@
       if (!$('intro').checked) p.set('intro', '0')
       if ($('notes').value !== 'intertitles') p.set('notes', $('notes').value)
       for (const k of ['itstyle', 'itstylea', 'itcol', 'itpos', 'itheads', 'itseed']) if (Q.has(k)) p.set(k, Q.get(k))
+      if (GPU) p.set('gpu', 'webgpu')
+      for (const k of ['grade', 'gpuq', 'gpuout']) if (Q.has(k)) p.set(k, Q.get(k))
       history.replaceState(null, '', '?' + p.toString())
     }
 
@@ -1513,7 +1530,7 @@
     // ── Loop ───────────────────────────────────────────────────────────────
     let idleT = performance.now()
     addEventListener('pointermove', () => { idleT = performance.now(); document.body.classList.remove('idle') })
-    addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); park?.setSize() })
+    addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); gpuPost?.setSize(innerWidth, innerHeight); park?.setSize() })
     function frame(t, dt, forceLive = false) {
       const I = t < 0.4 ? introPose(t) : null
       const standing = !!I?.standing
@@ -1575,7 +1592,7 @@
       if ($('cam').value !== 'auto') setView(camStart(), true)
       controls.update()
       camera.lookAt(controls.target)
-      if (park) { park.update(0, camera); parkLights(); park.render(scene, camera) } else renderer.render(scene, camera)
+      if (park) { park.update(0, camera); parkLights(); park.render(scene, camera) } else if (GPU) { for (let i = 0; i < 8; i++) draw() } else draw()   // (WebGPU: SSGI, SSR and TRAA settle over frames)
       window.__dbg = { director, THREE, scene, camera, renderer, him, her, vRig, pRig, V, bow, piano, pianoSide, song, frame, subjects, S, songDuration: song.duration }
       window.__info = { t, take: director.at(t)?.v, violin: song.violin.length, piano: song.piano.length }
       window.__done = true
@@ -1593,7 +1610,7 @@
         if (clock.playing && t > song.duration + 1.5) { pause(); clock.t = 0; t = 0 }
         frame(t, dt)
         controls.update()
-        if (park) { camera.updateMatrixWorld(); park.update(dt, camera); parkLights(); park.render(scene, camera) } else renderer.render(scene, camera)
+        if (park) { camera.updateMatrixWorld(); park.update(dt, camera); parkLights(); park.render(scene, camera) } else draw()
         liner.update(t)
         if (document.activeElement !== $('seek')) $('seek').value = Math.max(0, Math.min(1, t / song.duration))
         $('time').textContent = `${fmt(Math.max(0, Math.min(t, song.duration)))} / ${fmt(song.duration)}`

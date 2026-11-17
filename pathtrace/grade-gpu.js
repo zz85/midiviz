@@ -33,6 +33,8 @@ const N = { contrast: 1, saturation: 1, accent: 0, warmth: 0, rolloff: 0, fade: 
 /** The looks. grain and vignette multiply the page's sliders; the rest are as The Mechanical Pianist's grade takes them. */
 export const GRADES = {
   stage: { label: 'Stage (as the WebGL page)', ...N },
+  // (no tone curve: a page whose WebGL renderer has none, such as #038 Duo; values above 1 clip)
+  flat: { label: 'No tone curve', ...N, curve: 'none' },
   golden: {
     label: 'Golden hour', ...N, curve: 'aces', warmth: 0.55, rolloff: 0.6, saturation: 0.92, contrast: 1.06,
     lift: [0.012, 0.006, 0], gain: [1.03, 1, 0.94], shadowTint: [1.04, 0.98, 0.9], highlightTint: [1.03, 1, 0.94], blackTint: [0.025, 0.012, 0], aberration: 0.004, streaks: 0.25,
@@ -77,7 +79,7 @@ export function grade(hdr, page) {
     lift: uniform(new THREE.Vector3()), gamma: uniform(new THREE.Vector3(1, 1, 1)), gain: uniform(new THREE.Vector3(1, 1, 1)),
     shadowTint: uniform(new THREE.Vector3(1, 1, 1)), highlightTint: uniform(new THREE.Vector3(1, 1, 1)), blackTint: uniform(new THREE.Vector3()),
     aberration: uniform(0), streaks: uniform(0), streakThreshold: uniform(1.2), letterbox: uniform(0), grain: uniform(1), vignette: uniform(1),
-    aces: uniform(0),
+    aces: uniform(0), flat: uniform(0),
   }
   const src = convertToTexture(hdr)
 
@@ -102,7 +104,7 @@ export function grade(hdr, page) {
     c = c.mul(toneMappingExposure)
     // highlight roll-off before the curve
     c = c.div(U.rolloff.mul(max(dot(c, LUMA).sub(0.35), 0)).add(1))
-    c = select(U.aces.greaterThan(0.5), acesFitted(c), agxToneMapping(c, float(1)))
+    c = select(U.flat.greaterThan(0.5), clamp(c, 0, 1), select(U.aces.greaterThan(0.5), acesFitted(c), agxToneMapping(c, float(1))))
     c = c.mul(U.gain).add(U.lift.mul(float(1).sub(c)))
     c = pow(max(c, 0), vec3(1).div(U.gamma))
     c = c.mul(mix(U.shadowTint, U.highlightTint, smoothstep(0.05, 0.7, dot(c, LUMA))))
@@ -136,7 +138,7 @@ export function grade(hdr, page) {
     current = GRADES[name] ? name : 'stage'
     for (const [k, v] of Object.entries(g)) {
       if (k === 'label') continue
-      if (k === 'curve') { U.aces.value = v === 'aces' ? 1 : 0; continue }
+      if (k === 'curve') { U.aces.value = v === 'aces' ? 1 : 0; U.flat.value = v === 'none' ? 1 : 0; continue }
       if (Array.isArray(v)) U[k].value.set(...v); else U[k].value = v
     }
     return g

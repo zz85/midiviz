@@ -8,7 +8,7 @@ pawchestra's `sibelius-2-{1,2,3-4}.mid`, sequenced by Jack Gilbert, copied into 
 
 The point is to measure the OMR where there is no MusicXML transcription, find where it fails,
 and fix ScoreShift's `omr.js` (in `../random-sketches/vibes/scoreshift/`) where the errors cluster.
-On this part the pitch accuracy went from 86.8% to 94.9% (see below for what the first 60.8%
+On this part the pitch accuracy went from 86.8% to 95.2% (see below for what the first 60.8%
 figure was).
 
 ```
@@ -76,6 +76,7 @@ pages again).
 | after the first round (clefs, staves, key glyphs) | 98.8% | 89.8% | 549 | 122 | 77 |
 | after the second (accidentals) | 98.8% | 93.8% | 303 | 122 | 77 |
 | after the third (divisi chords, p. 4) | 99.3% | 94.9% | 270 | 138 | 43 |
+| after the fourth (flag hooks, fused crossbars, slur ends) | 99.3% | 95.2% | 250 | 138 | 43 |
 
 The first run of the evaluator reported 60.8% with the same reads. The difference is all in the
 truth and the alignment: the second movement's octave (+9.3), the divisi staves merged by onset and

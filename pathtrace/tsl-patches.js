@@ -24,7 +24,7 @@ import {
   Fn, attribute, uniform, reference, texture, uv, vec2, vec3, vec4, float, mod, floor, fract, atan, normalize, cross, dot, mix, clamp,
   smoothstep, select, max, min, positionLocal, positionGeometry, normalLocal, normalView, normalViewGeometry, materialColor,
   transformDirection, cameraViewMatrix, BRDF_Lambert, diffuseColor, normalMap, luminance, materialOpacity,
-  interleavedGradientNoise, screenCoordinate, frameId,
+  interleavedGradientNoise, screenCoordinate, frameId, cameraProjectionMatrix, modelViewMatrix, length,
 } from 'three/tsl'
 import { tslTags } from '../pianist/tsl-tags.js'
 
@@ -98,10 +98,32 @@ function ditherCoverage(nm, src) {
   nm.alphaToCoverage = false; nm.alphaTest = 0
 }
 
+// A GLSL ShaderMaterial has no node material to convert to: these stand in for the
+// tagged ones, made once each
+const STANDINS = {
+  // violinist/stage.js's ink: back faces pushed out a constant width on screen, in clip space
+  ink(src, u) {
+    const width = reference('value', 'float', u.width), res = uniform(u.res.value), col = uniform(u.color.value)
+    const c = cameraProjectionMatrix.mul(modelViewMatrix).mul(vec4(positionLocal, 1))
+    const d = cameraProjectionMatrix.mul(vec4(normalize(normalView), 0)).xy
+    const off = select(length(d).greaterThan(1e-5), normalize(d), vec2(0)).mul(width.mul(2)).div(res).mul(c.w)
+    const m = new THREE.MeshBasicNodeMaterial({ side: THREE.BackSide })
+    m.name = 'InkTSL'
+    m.vertexNode = vec4(c.xy.add(off), c.z, c.w)
+    m.colorNode = vec4(col, 1)
+    return m
+  },
+}
+const standins = new WeakMap()
+
 /** Apply each material's tagged patches as the WebGPU renderer converts it. */
 export function installPatches(renderer) {
   const lib = renderer.library, from = lib.fromMaterial.bind(lib)
   lib.fromMaterial = material => {
+    if (material.isShaderMaterial && !material.isNodeMaterial) {
+      const tags = tslTags(material), kind = tags && Object.keys(tags).find(k => STANDINS[k])
+      if (kind) { if (!standins.has(material)) standins.set(material, STANDINS[kind](material, tags[kind])); return standins.get(material) }
+    }
     const nm = from(material)
     if (nm && !material.isNodeMaterial && material.alphaToCoverage && !material.transparent) ditherCoverage(nm, material)
     const tags = nm && !material.isNodeMaterial ? tslTags(material) : null

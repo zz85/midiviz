@@ -27,7 +27,7 @@ import * as THREE from 'three/webgpu'
 import {
   pass, mrt, output, normalView, metalness, roughness, diffuseColor, velocity, packNormalToRGB, unpackRGBToNormal,
   sample, vec2, vec3, vec4, add, uniform, uv, Fn, float, fract, sin, cos, dot, floor, mix, max, min, renderOutput, select,
-  attribute, abs, clamp, length, convertToTexture, clearcoat, clearcoatRoughness, positionViewDirection, pow, exp, varying, modelViewMatrix, screenDPR, Discard, screenUV, positionView, perspectiveDepthToViewZ, cameraNear, cameraFar,
+  attribute, abs, clamp, length, texture, materialColor, materialOpacity, sRGBTransferOETF, convertToTexture, clearcoat, clearcoatRoughness, positionViewDirection, pow, exp, varying, modelViewMatrix, screenDPR, Discard, screenUV, positionView, perspectiveDepthToViewZ, cameraNear, cameraFar,
 } from 'three/tsl'
 import { ssgi } from 'three/addons/tsl/display/SSGINode.js'
 import { ssr } from 'three/addons/tsl/display/SSRNode.js'
@@ -172,7 +172,12 @@ export function livePost(renderer, scene, camera, { offscreen = false } = {}) {
   // the grade (pathtrace/grade-gpu.js): tone curve, colour, the page's vignette and grain
   // and the look's own lens and film effects; 'stage' is the WebGL page's picture
   const graded = gradeMod.grade(bloomed, { grainAmt: U.grainAmt, vig: U.vig, time: U.time, res: U.res })
-  pipe.outputNode = graded.node
+  // light added after the grade, on the encoded picture, as a WebGL page with no tone curve
+  // blends an additive decal onto its canvas (the Duo's pool of light on the boards): its own
+  // pass, added to the graded picture (addDisplay)
+  const display = new THREE.Scene()
+  const displayPass = pass(display, camera)
+  pipe.outputNode = vec4(graded.node.rgb.add(displayPass.getTextureNode('output').rgb), 1)
 
   // the target a frame renders into in place of the canvas: always where offscreen
   // (headless), and while capturing (the exports, which read every frame back)
@@ -274,7 +279,30 @@ export function livePost(renderer, scene, camera, { offscreen = false } = {}) {
   setQuality('medium')
   fx.setQuality = setQuality; fx.qualities = Object.keys(QUALITY)
   Object.defineProperty(fx, 'quality', { get: () => quality })
-  return { composer, bokeh, bloom, grain, fx, frame, pipe, overlay, capture, picture }
+  /**
+   * Draw an additive decal, a Mesh of a map and a colour, after the grade, as a WebGL page
+   * with no tone curve blends it onto its canvas: its encoded colour times its alpha, added
+   * to the encoded picture. It leaves the scene for the display pass, and keeps the depth
+   * test against the scene's depth (what stands on it hides it).
+   */
+  function addDisplay(mesh) {
+    const src = mesh.material
+    const t = src.map ? texture(src.map) : vec4(1)
+    const m = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending })
+    m.name = 'DisplayAdd'
+    m.colorNode = Fn(() => {
+      Discard(positionView.z.lessThan(perspectiveDepthToViewZ(depth.sample(screenUV).x, cameraNear, cameraFar).sub(0.5)))
+      // (WebGL encodes the decal's colour for the canvas before it blends: encoded, times alpha)
+      return vec4(sRGBTransferOETF(t.rgb.mul(materialColor.rgb)).mul(t.a).mul(materialOpacity), 1)
+    })()
+    mesh.removeFromParent()
+    mesh.updateMatrixWorld(true)
+    const copy = new THREE.Mesh(mesh.geometry, m)
+    copy.matrixAutoUpdate = false; copy.matrix.copy(mesh.matrixWorld); copy.matrixWorld.copy(mesh.matrixWorld)
+    display.add(copy)
+    return copy
+  }
+  return { composer, bokeh, bloom, grain, fx, frame, pipe, overlay, capture, picture, addDisplay }
 }
 
 // the scene pass's depth, for the dust's own depth test (set by livePost)

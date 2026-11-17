@@ -18,6 +18,7 @@
 // and right… } of THREE.Bones, from VRM's humanoid or from bone names.
 
 import * as THREE from 'three'
+import { vrmPluginOptions } from '../violinist/vrm-materials.js'
 import { scaleSpringBones } from '../violinist/vrm-springs.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { subdivide } from './subdivide.js'
@@ -224,7 +225,7 @@ export async function loadAltCharacter(key, base = new URL('./assets/', import.m
   if (spec.kind === 'vrm') {
     const mod = await import('@pixiv/three-vrm')
     VRMUtils = mod.VRMUtils
-    loader.register(p => new mod.VRMLoaderPlugin(p))
+    loader.register(p => new mod.VRMLoaderPlugin(p, vrmPluginOptions(mod, p)))   // (vrm-materials.js: MToon as node materials on WebGPU)
   }
   const gltf = await loader.loadAsync(base + spec.url)
   let model = gltf.scene
