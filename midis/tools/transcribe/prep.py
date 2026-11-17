@@ -10,8 +10,9 @@ import work as W
 
 SCALE = 1.25  # staff spacing about 26 px, from 21 in the 1879 scan
 
-def prep(src, out):
-    im = Image.open(src).convert('L'); a = np.asarray(im)
+def crop_box(im):
+    """The printed area of a page, with a margin: (x0, y0, x1, y1) in the scan's pixels."""
+    a = np.asarray(im.convert('L'))
     ink = a < 128
     # the scanner's black surround: rows, then columns of that band, that are almost all dark
     r = np.where(ink.mean(1) < 0.5)[0]; y0, y1 = r[0], r[-1] + 1
@@ -23,7 +24,11 @@ def prep(src, out):
     m = 60
     y0, y1 = max(y0, y0 + rows[0] - m), min(y1, y0 + rows[-1] + m)
     x0, x1 = max(x0, x0 + cols[0] - m), min(x1, x0 + cols[-1] + m)
-    c = im.crop((x0, y0, x1, y1))
+    return int(x0), int(y0), int(x1), int(y1)
+
+def prep(src, out):
+    im = Image.open(src).convert('L')
+    c = im.crop(crop_box(im))
     c.resize((int(c.size[0] * SCALE), int(c.size[1] * SCALE)), Image.LANCZOS).save(out)
 
 def main():

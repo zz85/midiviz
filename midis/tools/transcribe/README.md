@@ -65,6 +65,31 @@ so a run from fresh scans can read some bars differently. After `extract.py`, ru
 again: a bar the new reading gets wrong and the fixes don't cover is flagged, and `build.py`
 refuses a note that runs past its barline.
 
+## A second reader, and a vote (Op. 78, I)
+
+ScoreShift (`../random-sketches/vibes/scoreshift`, or `SCORESHIFT=<dir>`) reads the same scans:
+
+    node scoreshift_eval.mjs brahms_op78 1      # ScoreShift's heads against our transcription, page by page
+    node scoreshift_read.mjs brahms_op78        # every score and violin-part page -> cache/<work>/scoreshift-*.json
+    python3 fuse.py brahms_op78 1 --truth       # vote across the readings -> cache/<work>/fused-1.json
+
+`fuse.py` puts four readings into bars: Audiveris on the score and on the violin part, ScoreShift
+on the score and on the violin part. Per bar and staff it keeps the Audiveris reading the others
+agree with most (the violin part's on a tie) and marks it confirmed where a second reader read the
+same heads. Staves exactly right, of 243, against the checked transcription:
+
+| Staff | Audiveris, score | Audiveris, part | ScoreShift, score | ScoreShift, part | Vote |
+|---|---|---|---|---|---|
+| Violin | 137 | 201 | 77 | 163 | 200 |
+| Piano upper | 150 | - | 112 | - | 150 |
+| Piano lower | 136 | - | 95 | - | 136 |
+
+389 of the 729 staves are confirmed, and 348 of those are right; the other 340 are the ones to check
+by eye, and they hold 202 of the vote's 243 wrong staves. ScoreShift reads 56.1% of the movement's
+heads at the right pitch (39.4% before the fixes for this edition: the cue-size violin staff, the
+brace read as a note head, which cleared the key, and stacked open chords). `build.py` doesn't use
+the vote yet.
+
 ## Limits
 
 - Durations in corrected bars are the OMR's where it read the note, else inferred from the

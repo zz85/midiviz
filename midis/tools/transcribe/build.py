@@ -54,7 +54,7 @@ def bars(w, mv):
                 k = (n[0], n[1], n[4])
                 if k not in keep or n[2] > keep[k][2]: keep[k] = n
             b[s][:] = list(keep.values())
-    if clipped: print(f'OMR durations cut at the barline in {len(clipped)} staves:', ', '.join(clipped))
+    if clipped: print(f'OMR durations cut at the barline in {len(clipped)} staves:', ', '.join(clipped), file=sys.stderr)
     return out, fx
 
 def sounding(bs, bl):
@@ -121,7 +121,15 @@ def write(w, mv, notes, nbars, out):
         chunks.append(track(ev))
     with open(out, 'wb') as f: f.write(b'MThd' + struct.pack('>IHHH', 6, 1, len(chunks), PPQ) + b''.join(chunks))
 
+def heads(w, mv):
+    """The printed note heads of each bar's staff, grace notes left out: [[[onset, midi], ...] x 3] per bar,
+    a tied note's second head included (the page prints it), sorted by onset, then low to high."""
+    bs, fx = bars(w, mv)
+    return [[sorted([str(o), p] for o, p, d, t, g in b[s] if not g) for s in range(3)] for b in bs]
+
 def main():
+    if sys.argv[1] == '--heads':  # build.py --heads <work> <movement>: the heads as JSON, for the ScoreShift evaluator
+        w = W.load(sys.argv[2]); json.dump({'pages': W.bar_pages(w, int(sys.argv[3])), 'heads': heads(w, int(sys.argv[3]))}, sys.stdout); return 0
     w = W.load(sys.argv[1]); mv = int(sys.argv[2]); m = W.movement(w, mv)
     out = sys.argv[3] if len(sys.argv) > 3 else os.path.join(W.HERE, '..', '..', '..', m['out'])
     bl = F(m['meter'][0] * 4, m['meter'][1])
