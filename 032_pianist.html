@@ -640,9 +640,10 @@
     if (!ch) { ALT = ''; $('model').value = ''; ch = await loadCharacter(new URL('./pianist/assets/', import.meta.url).href) }
     scene.add(ch.group)
     if (ALT) {
-      // the wardrobe fields (Look … up to Pose) are MakeHuman's: hide them
+      // the wardrobe fields (Look … to the end of the Pianist section) are MakeHuman's: hide them
+      // (up to the next heading: Pose, where this used to stop, is in the Performance menu now)
       document.body.classList.add('altmodel')
-      for (let el = $('model').closest('.field').nextElementSibling; el && !(el.classList.contains('sect') && el.textContent === 'Pose'); el = el.nextElementSibling) if (!el.querySelector('#smooth')) el.style.display = 'none'
+      for (let el = $('model').closest('.field').nextElementSibling; el && !el.classList.contains('sect'); el = el.nextElementSibling) if (!el.querySelector('#smooth')) el.style.display = 'none'
       // a model with a concert dress (alt-model.js MODELS[].dress): its colour menu and the skirt simulation
       if (ch.dress) {
         $('vdressField').style.display = ''

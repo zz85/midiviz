@@ -287,9 +287,10 @@ export async function boot(plug = {}) {
     if (!ch) { ALT = ''; $('model').value = ''; ch = await loadCharacter(new URL('../pianist/assets/', import.meta.url).href) }
     scene.add(ch.group)
     if (ALT) {
-      // the wardrobe fields (Look … up to Pose) are MakeHuman's: hide them
+      // the wardrobe fields (Look … to the end of the Pianist section) are MakeHuman's: hide them
+      // (up to the next heading: Pose, where this used to stop, is in the Performance menu now)
       document.body.classList.add('altmodel')
-      for (let el = $('model').closest('.field').nextElementSibling; el && !(el.classList.contains('sect') && el.textContent === 'Pose'); el = el.nextElementSibling) if (!el.querySelector('#smooth')) el.style.display = 'none'
+      for (let el = $('model').closest('.field').nextElementSibling; el && !el.classList.contains('sect'); el = el.nextElementSibling) if (!el.querySelector('#smooth')) el.style.display = 'none'
       // a model with a concert dress (alt-model.js MODELS[].dress): its colour menu and the skirt simulation
       if (ch.dress) {
         $('vdressField').style.display = ''
@@ -1414,7 +1415,7 @@ export async function boot(plug = {}) {
       const job = ++fingerJob
       const hr = assignHands(notes, song?.trackNames, $('hands').value)
       handsSource = hr.source
-      $('handsV') && ($('handsV').textContent = handsSource === 'tracks' ? 'from the tracks' : handsSource === 'crossings' ? `${hr.passages.length} crossing${hr.passages.length === 1 ? '' : 's'} from the tracks` : 'automatic')
+      $('handsV') && ($('handsV').textContent = handsSource === 'tracks' ? `from the ${hr.by === 'staves' ? 'staves' : 'tracks'}` : handsSource === 'crossings' ? `${hr.passages.length} crossing${hr.passages.length === 1 ? '' : 's'} from the ${hr.by === 'staves' ? 'staves' : 'tracks'}` : 'automatic')
       fingerWorker?.terminate()
       const url = new URL('../fingering/fingering.js', import.meta.url).href
       const src = `import { fingerPiece, CHOPIN } from ${JSON.stringify(url)}
