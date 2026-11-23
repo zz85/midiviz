@@ -708,5 +708,7 @@ Attacks, `attack.js --bass` (the bass is reported apart: at 41–98 Hz Guettler'
 
 The loose failures it takes away come back as raucous, and the violin, viola and cello each lose a few at any rate, so `earlyRate` is per instrument in `INSTRUMENTS`: 0.02 on the bass (36 → 43 good, from rest 5 → 14, the sustained sweep 62 → 63 of 63), 0 elsewhere. The bass regime is chaotic at this scale (0.01 → 35, 0.015 → 30, 0.02 → 43, 0.025 → 33 good), so the gain is at the edge of the scatter. `attack.js --bass`: 334 of 576. The `earlyRate` and `earlyCap` options of `ViolinSynth` override it.
 
+Both are controls in #034's Bowing panel (Timbre block): **Bow hair**, the coupling, 0.9–1 with 1 the rigid contact of before, and **Early slips**, the instrument's own rate, off, or 0.02 / 0.05 / 0.1; `coupling=` and `earlySlip=` in the URL, which #038 Duo's Mixer reads from a pasted link. Offline A/B renders of the same détaché phrase: `node` with `renderCurves(perf, { model: 'waveguide', params: { coupling, earlyRate } })`.
+
 Tests: the sustained Helmholtz sweep, the hybrid pitch test, both measured-body tests and the energy test take the bass (its sustained notes are measured over 1.4 s with a 32k window); the attacks-from-rest periodicity bar is now the Iowa recordings' own median plus 0.05 (the fixed 0.8 would have failed the recordings themselves, at 0.81). `SourceString` starts at a seeded phase (it was `Math.random()`: the test of the gaps between its harmonics swung 36.7–38.8 dB from run to run). `node --test strings/test/sound.test.js`: 36, loudness 1.
 

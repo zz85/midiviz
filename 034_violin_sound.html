@@ -219,6 +219,8 @@
       variance: 'Note-to-note variety in dynamics and bowing. Right = more variety (closer to real players around 2.5), 0 = uniform',
       tremoloMin: 'Sync tremolo modes: the slowest strokes per second allowed',
       wgPress: 'Waveguide only (engine 1). A raw multiplier on the bow force the string gets, on top of the automatic bowing: < 1 lighter (often less scratch), > 1 heavier. 1 = as planned. The meters show the result',
+      coupling: 'Waveguide only (engine 1). How much of the string’s motion the bow contact feels: 1 = a rigid point, less = the hair gives (softer attacks; too low and the bow slides)',
+      earlySlip: 'Waveguide only (engine 1). Whether the bow presses a little harder when a slip comes too early in an attack; the instrument’s own setting, off, or a rate',
       wgPos: 'Waveguide only (engine 1). A raw multiplier on the bow–bridge distance the string gets, on top of the automatic bowing: < 1 nearer the bridge, > 1 toward the fingerboard. 1 = as planned. Force is not replanned (use WG pressure with it). The meters show the result',
       rosin: 'Physical models. Right = grittier bow (more grain and noise), 0 = glassy',
       resonance: 'Physical models. How much the open strings ring along. Right = more halo, 0 = dry',
@@ -329,6 +331,8 @@
       ['sordino', 'Sordino', [['0', 'Off'], ['1', 'On (mute)']], '0', 'A mute on the bridge: the bridge hill and everything above ~2 kHz drop about 12 dB (all engines)'],
       ['wgPress', 'WG pressure', 0.25, 1.5, 0.05, 1, 'Waveguide only: scales the bow force the string feels (0.5 = half). The brightness that follows bow force is left as planned, so this changes only how the bow grips: lower can mean less scratch, too low gives a whistly, unsteady or octave-high tone. Interactive bow press still corrects real double slipping'],
       ['wgPos', 'WG position', 0.3, 2, 0.05, 1, 'Waveguide only: scales the bow–bridge distance the string feels (< 1 nearer the bridge, > 1 toward the fingerboard). Unlike Contact (Expression block), the bow force is not replanned for it: nearer the bridge a string needs more force (its minimum rises as 1/distance²), so low values can lose the clean tone (a thin, whistly, surface sound) and high values can turn raucous unless WG pressure is lowered too'],
+      ['coupling', 'Bow hair', 0.9, 1, 0.01, 0.97, 'Waveguide only: the share of the string’s velocity the bow contact sees (bow-hair compliance, after #048). The bow is a ribbon of hairs that give, not a rigid point: below 1 the contact is softer and the extra slips that keep an attack in multiple slipping die out. 1 = the rigid contact the model had before; below about 0.95 the string under-sticks and attacks turn raucous. Measured on 432 bow starts: good attacks 263 at 1, 291 at 0.97, 295 at 0.95 but with sustained notes lost, 249 at 0.9; the steady tone does not change'],
+      ['earlySlip', 'Early slips', [['auto', 'Instrument’s (bass 0.02)'], ['0', 'Off'], ['0.02', '0.02'], ['0.05', '0.05'], ['0.1', '0.1']], 'auto', 'Waveguide only: the early-slip boost (after #048). Inside an attack, before interactive bow pressure acts (0.1 s), a slip that comes before 0.79 of a period after the last one means the bow broke free too soon (double or multiple slipping), so the force rises by this much for the next period, up to 2.5 ×; a slip at the right spacing lets it decay. It helps the bass (36 → 43 of 144 good attacks at 0.02, and its sustained E string at forte settles) and costs attacks on violin, viola and cello at any rate (the loose failures come back as raucous), so Instrument’s is 0.02 on the bass and off elsewhere'],
       ['wgLimits', 'WG limits', [['on', 'Keep playable'], ['off', 'Off (raw)']], 'on', 'Keep playable: the bow stays between 1/50 and 1/4 of the string from the bridge, and the force inside the range where the string can sound cleanly at that spot and speed. Off: the multipliers apply as they are'],
       ['rosin', 'Rosin', 0, 2, 0.05, 1, 'Physical models: grain of the rosin (stick-slip jitter, bow noise)'],
       ['resonance', 'Resonance', 0, 3, 0.05, 1, 'Physical models: how much the other strings ring in sympathy through the bridge'],
@@ -361,7 +365,7 @@
         tremolo: opt.tremolo, tremoloMode: opt.tremoloMode, tremoloMin: +opt.tremoloMin, harmonics: opt.harmonics === 'auto' ? 'auto' : +opt.harmonics }
       const changed = Object.keys(st).some(k => style[k] !== st[k]) || state.useExpr !== (opt.expr === 'auto')
       Object.assign(style, st); state.useExpr = opt.expr === 'auto'
-      lab.setParams({ bowPress: opt.bowPress === 'on', rosin: +opt.rosin, resonance: +opt.resonance, body: opt.body, wgPress: +opt.wgPress, wgPos: +opt.wgPos, wgLimits: opt.wgLimits !== 'off' })
+      lab.setParams({ bowPress: opt.bowPress === 'on', rosin: +opt.rosin, resonance: +opt.resonance, body: opt.body, wgPress: +opt.wgPress, wgPos: +opt.wgPos, wgLimits: opt.wgLimits !== 'off', coupling: +opt.coupling, earlyRate: opt.earlySlip === 'auto' ? null : +opt.earlySlip })
       lab.setSordino(opt.sordino === '1')
       const artKey = opt.art + '/' + opt.repeats
       if (re && state.artMode !== undefined && state.artMode !== artKey) { state.artMode = artKey; reloadPiece(); return }

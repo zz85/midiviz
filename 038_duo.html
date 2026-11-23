@@ -852,7 +852,7 @@
       // options #034 turns into style (applyOpts there)
       styleOpt: { bowStart: Number, keepBow: v => v === '1', bowLift: String, crossMute: Number, tremolo: String, tremoloMode: String, tremoloMin: Number, harmonics: v => v === 'auto' ? 'auto' : +v },
       // and into the engines' parameters
-      labOpt: { bowPress: v => v === 'on', rosin: Number, resonance: Number, body: String, wgPress: Number, wgPos: Number, wgLimits: v => v !== 'off' },
+      labOpt: { bowPress: v => v === 'on', rosin: Number, resonance: Number, body: String, wgPress: Number, wgPos: Number, wgLimits: v => v !== 'off', coupling: Number, earlySlip: v => v === 'auto' ? null : Number(v) },
       // what Duo has its own controls or no counterpart for
       skip: { song: 'the piece', track: 'the track', demo: 'the piece', typed: 'the piece', performer: 'Performer', speed: 'Speed', instrument: 'the instrument (a violin here)', art: 'Bowing', repeats: 'Bowing', expr: 'Performer' },
       ENGINES: ['gm', 'hybrid', 'waveguide', 'source'], MODES: ['standard', 'expressive', 'beginner', 'nearest'],
@@ -868,7 +868,7 @@
       for (const [k, v] of q) {
         if (VS.style.includes(k)) { if (num(v)) { style[k] = +v; used.push(k) } else bad.push(k) }
         else if (k in VS.styleOpt) { const x = VS.styleOpt[k](v); if (typeof x !== 'number' || isFinite(x)) { style[k] = x; used.push(k) } else bad.push(k) }
-        else if (k in VS.labOpt) { const x = VS.labOpt[k](v); if (typeof x !== 'number' || isFinite(x)) { lab[k] = x; used.push(k) } else bad.push(k) }
+        else if (k in VS.labOpt) { const x = VS.labOpt[k](v); if (typeof x !== 'number' || isFinite(x)) { lab[k === 'earlySlip' ? 'earlyRate' : k] = x; used.push(k) } else bad.push(k) }   // #034 saves the early-slip boost as earlySlip
         else if (k === 'sordino') { sordino = v === '1'; used.push(k) }
         else if (k === 'take') { if (num(v)) { seed = 7 + 1000 * (+v - 1); used.push(k) } else bad.push(k) }   // #034's seed for take n
         else if (k === 'mode') { if (VS.MODES.includes(v)) { mode = v; used.push(k) } else bad.push(k) }
@@ -998,7 +998,7 @@
           applyHall()
         }
         // #034's engine parameters (rosin, resonance, body…) and mute, from the imported settings
-        if (this.labVersion !== vs.version) { this.labVersion = vs.version; this.lab.setParams({ bowPress: true, rosin: 1, resonance: 1, body: 'phil', wgPress: 1, wgPos: 1, wgLimits: true, ...vs.lab }); this.lab.setSordino(vs.sordino) }
+        if (this.labVersion !== vs.version) { this.labVersion = vs.version; this.lab.setParams({ bowPress: true, rosin: 1, resonance: 1, body: 'phil', wgPress: 1, wgPos: 1, wgLimits: true, coupling: 0.97, earlyRate: null, ...vs.lab }); this.lab.setSordino(vs.sordino) }
         if (this.using !== this.name) { this.using = this.name; await this.lab.use(this.name); applyBalance() }
         if (this.perfFor !== song.violin || this.speed !== clock.speed || this.vsVersion !== vs.version) {
           this.perfFor = song.violin; this.speed = clock.speed; this.vsVersion = vs.version

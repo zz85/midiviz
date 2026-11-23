@@ -2,6 +2,13 @@
 
 What each experiment does and how, newest first. The short list is in the [README](README.md).
 
+## 23 Nov 2026
+
+[Experiment #032 - Pianist](032_pianist.html): the piano can play what her hands play (Performance > Piano plays, `?played=hands`)
+- Until now the sound and the keys played the MIDI file as written while the hands played less of it: a key the fingering left unfingered (more than five at once with nothing to take them, fingering.js `sharedUnits`) was never touched but sounded, and a key the hands let go early (one they can't keep down, `letGoTimes`; the hand moved on, SHIFT; a repeated chord or octave, `detached`; a leap, `leapDetached`) sounded on and stayed down after the finger had left it. **Piano plays** now offers the file (the default, as before) or what her hands play: [pianist/performed.js](pianist/performed.js) builds a second schedule from the file's notes and the hands' (`rig.hands.notes`, matched by pitch and onset), each note ending where the finger lets go (at least 30 ms), an unfingered one silent, a shared one (a cluster, the thumb across two keys) held as long as the finger that leads it; the pedals stay as written. The scheduler and the keys (`driveKeys`) take whichever is chosen, the video export and the stills too; switching while a song plays reloads the scheduler at the same position (the worklet keeps its clock). Onsets and velocities don't change: her hands' timing and the sound's are one already.
+- The panel says what differs: the Raindrop prelude, 1,518 notes, 662 let go early, 227 s of written sound cut (most of it under the pedal); Rush E, 45,497 notes, 12,197 silent and 8,741 let go early. `bun test pianist/test/performed.test.js` (6); `node pianist/test/performed.mjs [song.mid]` plays a piece headless, switches mid-song and checks the scheduler's schedule, position and the readout.
+- Not yet: the keys' own travel still runs from its 30 ms lead-in (`KEY_LEAD`), not from the fingertip's depth in the motion's pose; and nothing is sounded from the fingertips themselves (the picture's clock would then set the sound's, frame by frame).
+
 ## 17 Nov 2026
 
 [Experiment #034 - Violin Sound Lab](034_violin_sound.html): a double bass, and a softer bow contact, both from #048 ([notes](strings/README.md#double-bass-and-bow-hair-compliance-in-the-waveguide))
