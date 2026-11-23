@@ -462,7 +462,7 @@
       // else (only keyboards): he plays the top line of the highest big one, she the rest of it
       const best = melodic[0] || tracks.slice().sort((a, b) => b.t.notes.length * Math.max(0, mean(b) - 48) - a.t.notes.length * Math.max(0, mean(a) - 48))[0]
       const piano = all.filter(x => x !== best && x.t.instrument.number < 8).map(x => x.i)
-      return { violinTracks: best ? [best.i] : [], pianoTracks: piano, violinTop: !!best && !melodic[0] }
+      return { violinTracks: best ? [best.i] : [], pianoTracks: piano, violinTop: !!best && !melodic[0], violinNone: !best }
     }
     /** The top line of a keyboard part: at each onset the highest note from middle C up, if it sounds over the notes before it. */
     function topLine(notes) {
@@ -492,10 +492,11 @@
         if (!t.notes.length || isDrums(t)) return ''
         const name = `${i}. ${(t.name || t.instrument.name).replace(/[<&]/g, '')} (${t.instrument.name}, ${t.notes.length})`
         return `<option value="${i}">Violin: ${name}</option><option value="${i}:top">Violin: the top line of ${name}</option>`
-      }).join('')
-      $('vpart').value = e.violinTracks[0] + (e.violinTop ? ':top' : '')
+      }).join('') + '<option value="none">Violin: silent (she plays it all)</option>'
+      $('vpart').value = e.violinNone ? 'none' : e.violinTracks[0] + (e.violinTop ? ':top' : '')
       $('ppart').value = e.herAll || !e.pianoTracks?.length ? 'all' : 'piano'
       $('ppart').options[0].disabled = !e.pianoTracks?.length
+      $('ppart').disabled = !!e.violinNone
     }
     async function loadSong(file) {
       const e = entryOf(file)
@@ -505,8 +506,9 @@
       showParts(e, midi)
       const k = e.suggestedBpm && e.bpm ? e.bpm / e.suggestedBpm : 1
       // the violin: by its note count (tonejs splits a track at a program change)
-      let solo = e.violinTracks ? e.violinTracks.map(i => midi.tracks[i]).filter(Boolean) : midi.tracks.filter(t => t.notes.length === e.violinNotes)
-      if (!e.violinTracks && solo.length !== 1) {
+      // (Violin: silent: he holds his violin and listens, she plays every track)
+      let solo = e.violinNone ? [] : e.violinTracks ? e.violinTracks.map(i => midi.tracks[i]).filter(Boolean) : midi.tracks.filter(t => t.notes.length === e.violinNotes)
+      if (!e.violinNone && !e.violinTracks && solo.length !== 1) {
         const ch = [...new Set(midi.tracks.map(t => t.channel))].find(c => midi.tracks.filter(t => t.channel === c).reduce((a, t) => a + t.notes.length, 0) === e.violinNotes)
         solo = ch != null ? midi.tracks.filter(t => t.channel === ch) : [midi.tracks[e.violinTrack]]
       }
@@ -523,7 +525,7 @@
       const scale = n => ({ ...n, on: n.on * k, off: n.off * k })
       const violin = piece ? piece.violin.map(scale) : midiNotes
       // the piano: every other track (or staff of the score); two of them are the hands (the higher one the right)
-      const herTracks = !e.score && e.pianoTracks?.length && !e.herAll ? [...e.pianoTracks.map(i => midi.tracks[i]), ...(top ? solo : [])] : null
+      const herTracks = !e.score && !e.violinNone && e.pianoTracks?.length && !e.herAll ? [...e.pianoTracks.map(i => midi.tracks[i]), ...(top ? solo : [])] : null
       const others = midi.tracks.filter(t => (top || !solo.includes(t)) && t.notes.length && !isDrums(t) && (!herTracks || herTracks.includes(t)))
       const mean = ns => ns.reduce((a, n) => a + n, 0) / ns.length
       let parts = piece
@@ -568,7 +570,7 @@
       // the solo track's hairpins (CC11 / CC7 / CC2) for the hybrid violin
       // (or the recorded performer's dynamics)
       // (the score's own dynamics are in its notes' loudness already)
-      let ex = piece ? null : expressionFromCC(solo[0].controlChanges)
+      let ex = piece || !solo.length ? null : expressionFromCC(solo[0].controlChanges)
       if (ex) ex.points = ex.points.map(([t, v]) => [T(t), v])
       if (song.performer?.expression) ex = song.performer.expression.recorded || !ex ? song.performer.expression : { ...ex, timing: true }
       if (song.modelled) ex = song.modelled.expression
@@ -1103,7 +1105,7 @@
     $('bowing').onchange = async () => { const was = clock.playing, t = clock.t; pause(); await loadSong($('song').value); clock.t = t; if (hybrid.on && hybrid.lab) hybrid.ensure(); if (was) play(); saveUrl() }
     // the parts of a piece not from a score, and MIDI files opened here (Open MIDI…, or dropped on the page)
     const reloadParts = async () => { const was = clock.playing; pause(); await loadSong($('song').value); director.reset(); clock.t = 0; if (hybrid.on && hybrid.lab) hybrid.ensure(); if (was) play() }
-    $('vpart').onchange = () => { const e = entryOf($('song').value), [i, top] = $('vpart').value.split(':'); e.violinTracks = [+i]; e.violinTop = !!top; if (!top) e.pianoTracks = (e.pianoTracks || []).filter(j => j !== +i); reloadParts() }
+    $('vpart').onchange = () => { const e = entryOf($('song').value); e.violinNone = $('vpart').value === 'none'; if (e.violinNone) return reloadParts(); const [i, top] = $('vpart').value.split(':'); e.violinTracks = [+i]; e.violinTop = !!top; if (!top) e.pianoTracks = (e.pianoTracks || []).filter(j => j !== +i); reloadParts() }
     $('ppart').onchange = () => { entryOf($('song').value).herAll = $('ppart').value === 'all'; reloadParts() }
     async function openMidi(f) {
       if (!f) return
