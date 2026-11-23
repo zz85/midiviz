@@ -70,3 +70,50 @@ test('the live detector: a finger lifted off its key lets it go, and the same ke
   det.reset()
   assert.deepEqual(log[3], ['off', 62])
 })
+
+test('the velocity comes from the fingertip\'s speed through the key: soft notes press slowly, loud ones fast, read back in order', { skip }, async () => {
+  const { simulateContacts } = await load()
+  const { buildMotion, TOUCH, KEY } = await import('../../fingering/motion.js')
+  // a slow scale, one finger each, velocities 0.2 .. 1
+  const vs = [0.2, 0.4, 0.6, 0.8, 1.0, 0.3, 0.5, 0.7, 0.9]
+  const notes = vs.map((v, i) => ({ pitch: 60 + [0, 2, 4, 5, 7][i % 5], on: 1 + i * 0.6, off: 1.5 + i * 0.6, hand: 'R', finger: 1 + i % 5, velocity: v }))
+  const r = await simulateContacts(notes, dims, { fps: 240 })
+  assert.equal(r.notes.length, 9)
+  // (on the piece's scale, its 10th to 95th percentile: the loudest note reads as the 95th, 0.9)
+  const { loudnessScale } = await import('../../fingering/motion.js'), [lo, hi] = loudnessScale(notes)
+  assert.deepEqual([lo, hi], [0.2, 0.9])
+  for (let i = 0; i < 9; i++) assert.ok(Math.abs(r.notes[i].velocity - Math.min(hi, Math.max(lo, vs[i]))) < 0.03, `note ${i}: read ${r.notes[i].velocity.toFixed(2)} written ${vs[i]}`)
+  // the press itself: the quietest note's key takes TRAVEL.pp to go down, the loudest TRAVEL.ff; the hammer leaves (press 0.75) at the onset
+  const m = buildMotion(notes, { touch: 'fall' })
+  const pressAt = (n, t) => m.poseAt(t).R.fingers[n.finger - 1].press
+  for (const [n, T] of [[notes[0], TOUCH.TRAVEL.pp], [notes[4], TOUCH.TRAVEL.ff]]) {
+    assert.ok(Math.abs(pressAt(n, n.on) - TOUCH.STRIKE) < 0.02, `press at the onset ${pressAt(n, n.on)}`)
+    let t0 = null, t1 = null
+    for (let t = n.on - 0.15; t < n.on + 0.1; t += 0.0005) { const p = pressAt(n, t); if (t0 == null && p > 0.001) t0 = t; if (p > 0.999 && t1 == null) t1 = t }
+    assert.ok(Math.abs(t1 - t0 - T) < 0.004, `travel ${(t1 - t0).toFixed(3)} vs ${T}`)
+    assert.ok(Math.abs(m.poseAt(n.on).R.fingers[n.finger - 1].strike - KEY.DIP / T) < 0.5)
+  }
+})
+
+test('a fast soft trill: each finger has half the time free, the key is pressed part way at the soft speed, so it stays soft; the same finger legato can\'t, and is louder', { skip }, async () => {
+  const { simulateContacts } = await load()
+  const { buildMotion, TOUCH, KEY } = await import('../../fingering/motion.js')
+  // the piece's scale: a loud chord sets ff, the trill is pp, 2nd and 3rd fingers every 110 ms, legato
+  const chord = [{ pitch: 48, on: 0.5, off: 0.9, hand: 'L', finger: 5, velocity: 1 }, { pitch: 52, on: 0.5, off: 0.9, hand: 'L', finger: 1, velocity: 1 }]
+  const trill = [...chord]
+  for (let i = 0; i < 12; i++) trill.push({ pitch: 60 + (i % 2) * 2, on: 2 + i * 0.11, off: 2.11 + i * 0.11, hand: 'R', finger: 2 + i % 2, velocity: 0.2 })
+  const r = await simulateContacts(trill, dims, { fps: 240 })
+  const run = r.notes.filter(n => n.midi >= 60)
+  assert.equal(run.length, 12)
+  for (const n of run) assert.ok(n.velocity < 0.25, `trill read ${n.velocity.toFixed(2)}`)
+  const m = buildMotion(trill, { touch: 'fall' }), p = m.poseAt(2 + 4 * 0.11 + 0.02).R.fingers[1]
+  assert.ok(p.dip >= TOUCH.STRIKE && p.dip < 1, `dip ${p.dip}`)
+  assert.ok(Math.abs(p.strike - KEY.DIP / TOUCH.TRAVEL.pp) < 0.5, `strike ${p.strike} (the soft speed)`)
+  // the same run on one finger: the key has to come up each time, the press is quicker, and louder
+  const same = [...chord]
+  for (let i = 0; i < 12; i++) same.push({ pitch: 60 + (i % 4) * 2, on: 2 + i * 0.11, off: 2.11 + i * 0.11, hand: 'R', finger: 2, velocity: 0.2 })
+  const r2 = await simulateContacts(same, dims, { fps: 240 })
+  const run2 = r2.notes.filter(n => n.midi >= 60)
+  assert.equal(run2.length, 12)
+  assert.ok(run2[0].velocity < 0.25 && run2.slice(1).every(n => n.velocity > 0.4 && n.velocity < 1), `same finger read ${run2.map(n => n.velocity.toFixed(2)).join(' ')}`)
+})

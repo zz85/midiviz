@@ -12,17 +12,21 @@
 // (a repeated note on one key: off, then on again). A planned press that
 // never meets its key is a miss: the note stays silent.
 //
-// The velocity is the note's written one (the pose's `vel`): the fingertip's
-// own speed isn't read yet.
+// The velocity comes from the fingertip's speed through the key (the pose's
+// `strike`, cm/s: fingering/motion.js makes a quiet note's travel slow and a
+// loud one's fast), read on the piece's own scale (velocityFromStrike), so a
+// travel the free time cut short sounds louder than written; the written
+// velocity is used only where the detector is given no scale.
 //
 // Units as hand-driver.js: cm in the piano's frame, key tops at y = 73.
 
 import { createHandsDriver } from './hand-driver.js'
 import { keyX, isBlack } from '../fingering/keyboard.js'
+import { loudnessScale, velocityFromStrike } from '../fingering/motion.js'
 
 export const CONTACT = {
-  PRESS_ON: 0.5,    // the planned press (0..1) at which a key down counts
-  PRESS_OFF: 0.3,   // ...and under which it is let go
+  PRESS_ON: 0.75,   // the planned press (0..1) at which a key down counts: where the hammer leaves (motion.js TOUCH.STRIKE), at the onset
+  PRESS_OFF: 0.4,   // ...and under which it is let go (of the note's dip, where the key isn't pressed to the bottom)
   X_SLACK: 0.3,     // cm the tip may be off the key's half width
   Y_OVER: 1.9,      // cm the tip may be over the key's top
   KEY_TOP: 73,
@@ -37,9 +41,12 @@ export function onKey(T, p) {
 /**
  * A detector over a pair of hands (createHandsDriver, updated by its owner).
  * `fire.on(pitch, velocity, hand, finger)` and `fire.off(pitch)` are called as
- * keys go down and up; a key two fingers hold goes up with the last.
+ * keys go down and up; a key two fingers hold goes up with the last. `scale`,
+ * [vLo, vHi] (loudnessScale of the notes), reads each velocity from the
+ * fingertip's speed through the key; without it the written velocity is used.
+ * `setScale` changes it (for the next piece).
  */
-export function createContactDetector(hands, fire) {
+export function createContactDetector(hands, fire, scale = null) {
   const cur = { L: [null, null, null, null, null], R: [null, null, null, null, null] }   // per finger: { pitch, on } sounding
   const tried = { L: [null, null, null, null, null], R: [null, null, null, null, null] } // per finger: the onset of the press under way, and whether it met its key
   const down = new Map()   // pitch → how many fingers hold it
@@ -52,14 +59,14 @@ export function createContactDetector(hands, fire) {
       for (let i = 0; i < 5; i++) {
         const c = C[i]
         const p = D.pitch[i], on = D.on[i], press = D.press[i]
-        const planned = d.visible && p != null && press >= (c ? CONTACT.PRESS_OFF : CONTACT.PRESS_ON)
+        const planned = d.visible && p != null && press >= (c ? CONTACT.PRESS_OFF * (D.dip?.[i] ?? 1) : CONTACT.PRESS_ON - 1e-6)
         const touching = planned && onKey(d.joints.fingers[i + 1][3], p)
         // the press under way: counted as a miss once it passes with no contact
         const a = A[i]
         if (a && (!planned || a.on !== on || a.pitch !== p)) { if (!a.met) stats.missed++; A[i] = null }
         if (planned && !A[i]) A[i] = { pitch: p, on, met: false }
         if (c && (!touching || c.pitch !== p || c.on !== on)) { keyOff(c.pitch); C[i] = null }
-        if (!C[i] && touching) { C[i] = { pitch: p, on }; A[i].met = true; stats.onsets++; keyOn(p, D.vel[i], side, i + 1) }
+        if (!C[i] && touching) { C[i] = { pitch: p, on }; A[i].met = true; stats.onsets++; keyOn(p, scale ? velocityFromStrike(D.strike[i], scale) : D.vel[i], side, i + 1) }
       }
     }
   }
@@ -67,7 +74,7 @@ export function createContactDetector(hands, fire) {
     for (const side of ['L', 'R']) for (let i = 0; i < 5; i++) { if (cur[side][i]) keyOff(cur[side][i].pitch); cur[side][i] = null; tried[side][i] = null }
     down.clear()
   }
-  return { update, reset, stats, /** the keys down now */ get down() { return [...down.keys()] } }
+  return { update, reset, stats, setScale: s => { scale = s }, /** the keys down now */ get down() { return [...down.keys()] } }
 }
 
 /**
@@ -88,7 +95,7 @@ export async function simulateContacts(notes, dims, { touch, fps = 60, from = -I
   const det = createContactDetector(hands, {
     on: (p, v) => open.set(p, { midi: p, time: Math.max(0, t), velocity: v, channel: 0 }),
     off: p => { const n = open.get(p); if (n) { n.duration = Math.max(0.03, t - n.time); out.push(n); open.delete(p) } },
-  })
+  }, loudnessScale(own))
   const dt = 1 / fps
   const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now())
   let slice = now()

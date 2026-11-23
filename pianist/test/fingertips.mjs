@@ -30,11 +30,14 @@ try {
     const log = []
     const piano = P.piano, on0 = piano.noteOn.bind(piano)
     piano.noteOn = (m, v) => { log.push([m, P.songNow(), v]); on0(m, v) }
+    // ...and the sound's velocities, read from the ear's fingertips (engine.noteOn), against the written ones
+    const earLog = [], eng = P.engine, eOn = eng.noteOn.bind(eng)
+    eng.noteOn = (m, v, c) => { earLog.push([m, P.earTime() ?? P.songNow(), v]); return eOn(m, v, c) }
     let frames = 0; const raf = () => { frames++; requestAnimationFrame(raf) }; requestAnimationFrame(raf)
     const t0 = P.songNow(), w0 = performance.now()
     await new Promise(r => setTimeout(r, SECONDS * 1000))
     const t1 = P.songNow(), fps = frames / ((performance.now() - w0) / 1000)
-    piano.noteOn = on0
+    piano.noteOn = on0; eng.noteOn = eOn
     const written = P.rig.hands.notes.filter(n => n.on > t0 + 0.5 && n.on < t1 - 0.5)
     // each written onset: the nearest logged key of its pitch
     let hit = 0, dts = []
@@ -44,9 +47,15 @@ try {
       if (best != null) { hit++; dts.push(best - n.on) }
     }
     dts.sort((a, b) => a - b)
+    // velocity: each ear note to the written note of its pitch nearest in time (the ear runs ahead of the song clock by the lag)
+    const dv = []
+    // (the ear's own time, ahead of the song clock by the audio lag; the first second after a start or a jump re-fires the keys already down, as a seek does)
+    for (const [m, te, v] of earLog) { if (te < t0 + 1.5) continue; let best = null; for (const n of P.rig.hands.notes) if (n.pitch === m && (!best || Math.abs(n.on - te) < Math.abs(best.on - te))) best = n; if (best && Math.abs(best.on - te) < 0.08) dv.push([best.velocity, v]) }
+    const corr = (a, b) => { const n = a.length, ma = a.reduce((s, x) => s + x) / n, mb = b.reduce((s, x) => s + x) / n; let sab = 0, saa = 0, sbb = 0; for (let i = 0; i < n; i++) { sab += (a[i] - ma) * (b[i] - mb); saa += (a[i] - ma) ** 2; sbb += (b[i] - mb) ** 2 } return sab / Math.sqrt(saa * sbb) }
+    const dd = dv.map(([w, v]) => v - w).sort((a, b) => a - b)
     const q = p => dts.length ? dts[Math.floor(p * (dts.length - 1))] : null
     return { fps, t0, t1, written: written.length, hit, logged: log.length, keys: P.keysDet.stats, ear: P.earDet()?.stats, lag: P.avs.lag, measured: P.avs.measured,
-      dtMedian: q(0.5), dt10: q(0.1), dt90: q(0.9), text: document.getElementById('playedV').textContent }
+      dtMedian: q(0.5), dt10: q(0.1), dt90: q(0.9), vel: { n: dv.length, r: dv.length > 2 ? corr(dv.map(x => x[0]), dv.map(x => x[1])) : null, median: dd[dd.length >> 1], p90: dd[Math.floor(0.9 * (dd.length - 1))] }, text: document.getElementById('playedV').textContent }
   }, SECONDS)
   console.log(JSON.stringify(r))
   const frame = 1 / r.fps
@@ -56,6 +65,7 @@ try {
   check(r.dtMedian != null && r.dtMedian > -0.03 && r.dtMedian < 0.03 + frame, `key down ${(r.dtMedian * 1000).toFixed(0)} ms from the written onset (median; 10-90 %: ${(r.dt10 * 1000).toFixed(0)}..${(r.dt90 * 1000).toFixed(0)} ms)`)
   check(r.ear && r.ear.onsets > 0, `the ear's hands sounded ${r.ear?.onsets} notes (${r.ear?.missed} missed); the keys ${r.keys.onsets} (${r.keys.missed} missed); audio lag ${(r.lag * 1000).toFixed(0)} ms${r.measured ? '' : ' (not measured)'}`)
   check(/sounded/.test(r.text), `readout: "${r.text}"`)
+  check(r.vel.n > 20 && (r.vel.r == null || r.vel.r > 0.6), `velocity from the fingertips' speed: ${r.vel.n} notes, r ${r.vel.r?.toFixed(2)} against the written velocity, read - written median ${(r.vel.median * 127).toFixed(1)}, 90 % ${(r.vel.p90 * 127).toFixed(1)} of 127`)
   check(!errors.length, 'no page errors' + (errors.length ? ': ' + errors.join(' | ') : ''))
 } catch (e) { console.log('FAIL', e.message); failed++ }
 await browser.close().catch(() => {})

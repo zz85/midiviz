@@ -1670,7 +1670,7 @@
     $('avsync').oninput()
     window.__pianist.avs = avs
     window.__pianist.sounding = sounding; window.__pianist.performed = () => played; window.__pianist.songNow = songNow; window.__pianist.heldKeys = () => [...held.keys()]
-    window.__pianist.keysDet = keysDet; window.__pianist.earDet = () => earDet
+    window.__pianist.keysDet = keysDet; window.__pianist.earDet = () => earDet; window.__pianist.engine = engine; window.__pianist.earTime = () => earT
     async function ensureScheduler() {
       if (scheduler) return scheduler
       scheduler = new MidiScheduler(songTarget)

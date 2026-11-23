@@ -45,8 +45,13 @@ const clearOfBlack = p => [p - 1, p + 1].every(q => !isBlack(q) || Math.abs(keyX
 // ── Touch: 'fall' (Chopin's: let the finger fall onto the key) ────────────
 // With touch 'fall' a finger is not pushed to the key: it rises in the free
 // time before its note, by how loud the note is and by its own character,
-// and falls, still moving when it meets the key top (CONTACT before the
-// onset; the key then bottoms out BOTTOM after it, as with 'press'). Each
+// and falls, still moving when it meets the key top, and pushes it through
+// its travel: TRAVEL.ff s for the piece's loudest notes, TRAVEL.pp for its
+// quietest (a soft note is pressed slowly from the key, a loud one struck
+// through it), the hammer leaving at STRIKE of the way down, at the onset
+// (as with 'press'). The fingertip's speed through the key, KEY.DIP over the
+// travel, is the pose's `strike` (cm/s): the sound's velocity, read back
+// from the moving finger (pianist/fingertips.js). Each
 // finger moves its own way (Chopin's "each finger a different singer"):
 //  • thumb: moves from the base of the hand, low and sideways, little lift;
 //  • 2nd: light and quick, the hand's sensitive leader;
@@ -56,7 +61,19 @@ const clearOfBlack = p => [p - 1, p + 1].every(q => !isBlack(q) || Math.abs(keyX
 // Only the fingertip paths change (and when a press starts); the wrist and
 // arm are pianist/stroke.js's.
 export const TOUCH = {
-  CONTACT: 0.012, BOTTOM: 0.018,   // the press: key top at on − CONTACT, bottom at on + BOTTOM
+  // the press: the key's travel runs from TRAVEL.pp for the piece's quietest
+  // notes to TRAVEL.ff for its loudest (Goebl & Bresin: 20-30 ms at ff, ~100
+  // ms at pp); the hammer leaves the key STRIKE of the way down, at the
+  // onset, so the finger meets the key top before it and the key bottoms
+  // out after. Where the finger's free time before the note is shorter than
+  // the travel it wants, the key isn't pressed to the bottom: the dip is
+  // shortened to fit the free time less LIFT_MIN (half the free time at
+  // least; never below STRIKE, or the note wouldn't sound), at the same
+  // speed, so a fast soft run stays soft; only where even that doesn't fit
+  // does the finger go faster, and louder.
+  TRAVEL: { pp: 0.08, ff: 0.025 }, STRIKE: 0.75,
+  LIFT_MIN: 0.04,     // s the finger keeps to come up and over between two of its own keys, at least half its free time
+  CONTACT: 0.019, BOTTOM: 0.006,   // (a full ff press, for readers: key top at on − CONTACT, bottom at on + BOTTOM)
   LIFT: [0, 0.45, 1.0, 0.7, 0.6, 0.95],   // per finger, × the note's lift
   QUICK: [0, 1, 0.75, 1, 1, 1],         // approach time per finger (2nd: quicker)
   H0: 0.4, H1: 2.2,   // lift above the key (cm): pp → ff, before the per-finger factor
@@ -64,6 +81,23 @@ export const TOUCH = {
   TIE: 0.35,          // a free 4th (3rd) rises this share of the 3rd's (4th's) lift
   VMIN: 0.35,         // relative loudness that starts to lift (quieter stays near the key)
   HOVER: 0.35,        // a free finger rests this close above the keys (it rises for its own note)
+}
+
+/** The piece's quiet and loud velocities, [vLo, vHi]: its 10th and 95th percentiles (0.4 and 0.8 with no notes). */
+export function loudnessScale(notes) {
+  const vs = notes.map(n => n.velocity ?? 0.7).sort((a, b) => a - b)
+  return vs.length ? [vs[Math.floor(0.1 * (vs.length - 1))], vs[Math.floor(0.95 * (vs.length - 1))]] : [0.4, 0.8]
+}
+/**
+ * The velocity a fingertip's speed through the key (`strike`, cm/s, the
+ * pose's) means on the piece's scale: the key travel it took, KEY.DIP /
+ * strike, read against TRAVEL.pp and TRAVEL.ff, and that loudness on [vLo,
+ * vHi]. A travel the free time cut short reads louder than written.
+ */
+export function velocityFromStrike(strike, [vLo, vHi]) {
+  const T = TOUCH.TRAVEL, tv = KEY.DIP / Math.max(1e-6, strike)
+  const L = Math.min(1, Math.max(0, (T.pp - tv) / (T.pp - T.ff)))
+  return vLo + L * Math.max(0.05, vHi - vLo)
 }
 
 /**
@@ -90,9 +124,37 @@ export function buildMotion(notes, { approach = 0.09, release = 0.03, travel = 0
   const fall = touch === 'fall'
   // loudness relative to the piece (MIDI files run their velocities at
   // different levels): 0 = its quiet notes, 1 = its loud ones
-  const vs = notes.map(n => n.velocity ?? 0.7).sort((a, b) => a - b)
-  const vLo = vs.length ? vs[Math.floor(0.1 * (vs.length - 1))] : 0.4, vHi = vs.length ? vs[Math.floor(0.95 * (vs.length - 1))] : 0.8
+  const [vLo, vHi] = loudnessScale(notes)
   const loud = n => Math.min(1, Math.max(0, ((n.velocity ?? 0.7) - vLo) / Math.max(0.05, vHi - vLo)))
+  // each note's press (pressOf): the travel it wants from its loudness, and
+  // what fits its finger's free time
+  const presses = new Map()
+  const wantedTravel = n => TOUCH.TRAVEL.pp + (TOUCH.TRAVEL.ff - TOUCH.TRAVEL.pp) * loud(n)
+  // the press curve, 0..1 over the travel: 'press' eases from rest to rest;
+  // 'fall' arrives moving, so the key goes down fast and slows at the bottom
+  // (the louder, the more so)
+  const curve = (n, u) => {
+    if (!fall) return smooth(u)
+    if (u <= 0) return 0
+    if (u >= 1) return 1
+    const hit = 1 - (1 - u) ** 2, L = loud(n)
+    return smooth(u) * (1 - L) + hit * L
+  }
+  // { t: the travel (s), dip: how far down the key goes (0..1), u0: the share
+  // of the travel at the onset, where the hammer leaves (press STRIKE),
+  // strike: the fingertip's speed through the key (cm/s) }
+  function planPress(n, free) {
+    const tw = wantedTravel(n), S = TOUCH.STRIKE, fits = Math.max(0.5 * free, free - TOUCH.LIFT_MIN)
+    let dip = Math.min(1, Math.max(S, fits / tw)), t = dip * tw
+    if (t > fits) t = Math.max(TOUCH.TRAVEL.ff * dip, fits)   // (even STRIKE of the travel doesn't fit: faster)
+    // u0: curve(u0) = STRIKE / dip, by bisection
+    const goal = S / dip
+    let lo = 0, hi = 1
+    for (let i = 0; i < 24; i++) { const m = (lo + hi) / 2; if (curve(n, m) < goal) lo = m; else hi = m }
+    return { t, dip, u0: (lo + hi) / 2, strike: KEY.DIP * dip / t }
+  }
+  const pressOf = n => presses.get(n) ?? (presses.set(n, planPress(n, Infinity)), presses.get(n))
+  const contact = n => { const p = pressOf(n); return p.u0 * p.t }
   for (const hand of ['L', 'R']) {
     // (a key a finger shares with another, n.shared: the finger goes to the
     // one leading it, fingering.js sharedUnits; the hand covers the rest)
@@ -100,6 +162,10 @@ export function buildMotion(notes, { approach = 0.09, release = 0.03, travel = 0
     // per finger: the notes it plays, in time order
     const fingers = [1, 2, 3, 4, 5].map(() => [])
     for (const n of own) fingers[n.finger - 1].push(n)
+    for (const list of fingers) for (let j = 0; j < list.length; j++) {
+      const n = list[j], free = j ? Math.max(0.01, n.on - up(list[j - 1])) : Infinity
+      presses.set(n, planPress(n, free))
+    }
     // anchor keyframes: one per onset group, from every key held at that moment
     const keys = []
     let i = 0
@@ -184,12 +250,14 @@ export function buildMotion(notes, { approach = 0.09, release = 0.03, travel = 0
     // pressing (or holding) its current key
     if (cur && t < up(cur)) {
       const k = target(cur)
-      return { ...k, y: k.y - KEY.DIP * pressAt(cur, t), press: pressAt(cur, t), rest: 0, pitch: cur.pitch, vel: cur.velocity ?? 0.7, on: cur.on }
+      const P = pressOf(cur), p = pressAt(cur, t)
+      return { ...k, y: k.y - KEY.DIP * p, press: p, dip: P.dip, strike: P.strike, rest: 0, pitch: cur.pitch, vel: cur.velocity ?? 0.7, on: cur.on }
     }
-    // falling: already on the next key's top, the onset just ahead
-    if (fall && next && t >= next.on - TOUCH.CONTACT) {
-      const k = target(next), p = pressAt(next, t)
-      return { ...k, y: k.y - KEY.DIP * p, press: p, rest: 0, pitch: next.pitch, vel: next.velocity ?? 0.7, on: next.on }
+    // pressing the next key already: on its top, the onset just ahead ('fall'
+    // falls onto it; 'press' pushes it from the key)
+    if (next && t >= next.on - contact(next)) {
+      const k = target(next), P = pressOf(next), p = pressAt(next, t)
+      return { ...k, y: k.y - KEY.DIP * p, press: p, dip: P.dip, strike: P.strike, rest: 0, pitch: next.pitch, vel: next.velocity ?? 0.7, on: next.on }
     }
     // free: lift off the last key, rest, then fly to the next one.
     // rest (0..1) says how settled the finger is: 1 = nothing to do, so the
@@ -203,7 +271,7 @@ export function buildMotion(notes, { approach = 0.09, release = 0.03, travel = 0
     }
     if (next && fall) {
       // rise and fall onto the key, arriving at its top CONTACT early
-      const k = target(next), arrive = next.on - TOUCH.CONTACT
+      const k = target(next), arrive = next.on - contact(next)
       const free = Math.max(0.03, arrive - (cur ? up(cur) : -1))
       const window = Math.min((approach + travel * Math.abs(k.x - pos.x)) * TOUCH.QUICK[f] * (1 + 0.6 * loud(next)), free)
       const u = (t - (arrive - window)) / window
@@ -229,8 +297,10 @@ export function buildMotion(notes, { approach = 0.09, release = 0.03, travel = 0
       }
     } else if (next) {
       const k = target(next)
-      const window = Math.min(approach + travel * Math.abs(k.x - pos.x), Math.max(0.03, next.on - (cur ? up(cur) : -1)))
-      const u = (t - (next.on - window)) / window
+      // (arriving on the key top as its press starts, contact before the onset)
+      const arrive = next.on - contact(next)
+      const window = Math.min(approach + travel * Math.abs(k.x - pos.x), Math.max(0.03, arrive - (cur ? up(cur) : -1)))
+      const u = (t - (arrive - window)) / window
       if (u > 0) {
         const e = smooth(u)
         restW *= 1 - e
@@ -247,16 +317,11 @@ export function buildMotion(notes, { approach = 0.09, release = 0.03, travel = 0
     return { ...pos, press: 0, rest: restW }
   }
 
-  // how far the key is down (0..1): 'press' eases from rest to rest; 'fall'
-  // arrives moving, so the key goes down fast and slows at the bottom (the
-  // louder, the more so); both bottom out at on + BOTTOM
+  // how far the key is down (0..1) at t: its press's curve over its travel,
+  // the onset at u0 (press STRIKE), scaled to its dip
   function pressAt(n, t) {
-    const u = (t - n.on + TOUCH.CONTACT) / (TOUCH.CONTACT + TOUCH.BOTTOM)
-    if (!fall) return smooth(u)
-    if (u <= 0) return 0
-    if (u >= 1) return 1
-    const hit = 1 - (1 - u) ** 2, L = loud(n)
-    return smooth(u) * (1 - L) + hit * L
+    const P = pressOf(n)
+    return P.dip * curve(n, (t - n.on) / P.t + P.u0)
   }
 
   function poseAt(t) {

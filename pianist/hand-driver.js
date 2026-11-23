@@ -267,8 +267,8 @@ export function createHandDriver(side, dims) {
   // smoothed hand placement: middle knuckle (x, z), yaw, plus a reach slide
   const hand = { x: s * 12, z: KNUCKLE_Z, yaw: 0, init: false }
   const slide = v3(), slideGoal = v3()
-  // (pitch, vel, on: the key each fingertip plays or is about to, its note's velocity and onset, from the pose; null between notes)
-  const diag = { splay: [0, 0, 0, 0, 0], err: [0, 0, 0, 0, 0], press: [0, 0, 0, 0, 0], pitch: [null, null, null, null, null], vel: [0, 0, 0, 0, 0], on: [null, null, null, null, null], target: [v3(), v3(), v3(), v3(), v3()] }
+  // (pitch, vel, on, strike: the key each fingertip plays or is about to, its note's velocity and onset, and the tip's speed through the key in cm/s, from the pose; null between notes)
+  const diag = { splay: [0, 0, 0, 0, 0], err: [0, 0, 0, 0, 0], press: [0, 0, 0, 0, 0], pitch: [null, null, null, null, null], vel: [0, 0, 0, 0, 0], on: [null, null, null, null, null], strike: [0, 0, 0, 0, 0], dip: [1, 1, 1, 1, 1], target: [v3(), v3(), v3(), v3(), v3()] }
   // rotate a hand-frame (x, z) offset by the yaw; θ > 0 turns the fingers toward +x
   const rot = (x, z, th) => { const c = Math.cos(th), n = Math.sin(th); return [x * c - z * n, x * n + z * c] }
 
@@ -760,7 +760,7 @@ export function createHandDriver(side, dims) {
       basePos(f, P[0])
       const [wx2, wz2] = rot(s * lx[i], lz[i], hand.yaw)
       tip.set(hand.x + slide.x + wx2, ty[i], hand.z + slide.z + wz2)
-      diag.press[i] = tips[i].press; diag.pitch[i] = tips[i].pitch ?? null; diag.vel[i] = tips[i].vel ?? 0; diag.on[i] = tips[i].on ?? null
+      diag.press[i] = tips[i].press; diag.pitch[i] = tips[i].pitch ?? null; diag.vel[i] = tips[i].vel ?? 0; diag.on[i] = tips[i].on ?? null; diag.strike[i] = tips[i].strike ?? 0; diag.dip[i] = tips[i].dip ?? 1
       // a free fingertip never sinks into the keys: it stays a little above
       // the key top under it (a black key's where there is one), even when
       // the hand is carried low (a held key out of reach slides it down)
@@ -834,6 +834,8 @@ export function createHandsDriver(dims) {
   const SHIFT = 3, MIN_HOLD = 0.1, HOLD_SHARE = 0.4
   // (repeated chords and octaves: the share of the time to the next one the hand is off the keys)
   const DETACH = 0.4
+  // (a finger that plays another key next: the share of the time to it the key is let go before)
+  const FINGER_FREE = 0.4
   const written = new WeakMap()   // each note's release as the fingering gave it
   // 0 while she plays, rising to 1 as the hands lift off the last chord
   // (the lift-off takes ~2.4 s, stroke.js): she comes back to the middle
@@ -957,12 +959,15 @@ export function createHandsDriver(dims) {
       // gap the hand holds nothing in). Written legato, each one touching the
       // next, they left no gap. So every key the hand holds is let go DETACH
       // of the time to the next one before it (40-150 ms), the sound unchanged.
+      // A single note repeated on one key is let go the same way: the key has
+      // to come up before the finger can press it again (motion.js plans the
+      // press in the finger's free time).
       detached = 0
       for (const side of ['L', 'R']) {
         const mine = own.filter(m => m.hand === side).sort((a, b) => a.on - b.on), groups = []
         for (const m of mine) { const g = groups[groups.length - 1]; if (g && m.on - g.t < 0.04) g.ps.push(m.pitch); else groups.push({ t: m.on, ps: [m.pitch], i: mine.indexOf(m) }) }
         for (const g of groups) g.ps.sort((a, b) => a - b)
-        const same = (a, b) => a.ps.length > 1 && a.ps.length === b.ps.length && a.ps.every((p, k) => p === b.ps[k])
+        const same = (a, b) => a.ps.length === b.ps.length && a.ps.every((p, k) => p === b.ps[k])
         const octave = g => g.ps.length >= 2 && g.ps.length <= 3 && g.ps[g.ps.length - 1] - g.ps[0] >= 11 && g.ps[g.ps.length - 1] - g.ps[0] <= 14
         for (let k = 0; k + 1 < groups.length; k++) {
           const g = groups[k], q = groups[k + 1], ioi = q.t - g.t
@@ -972,6 +977,20 @@ export function createHandsDriver(dims) {
             const m = mine[i]
             if (m.on < at - 0.05 && (m.release ?? m.off) > at) { m.release = at; detached++ }
           }
+        }
+      }
+      // A finger can't hold one key and press the next with the same finger:
+      // each of a finger's notes is let go FINGER_FREE of the time to its next
+      // one before it (40-120 ms), whatever the spacing, so the finger has
+      // time to come up, move and press (motion.js plans the press in it;
+      // a soft press wants 80 ms, the pedal covers the gap)
+      for (const side of ['L', 'R']) for (let f = 1; f <= 5; f++) {
+        const mine = own.filter(m => m.hand === side && m.finger === f).sort((a, b) => a.on - b.on)
+        for (let i = 0; i + 1 < mine.length; i++) {
+          const a = mine[i], b = mine[i + 1], ioi = b.on - a.on
+          if (ioi <= 0) continue
+          const at = b.on - Math.min(0.12, Math.max(0.04, FINGER_FREE * ioi))
+          if (a.on < at && (a.release ?? a.off) > at) { a.release = at; detached++ }
         }
       }
       if (detached) motion = buildMotion(own, motionOpts)
