@@ -9,6 +9,7 @@ import {
   costOf, toPIG, fromPIG, PARNCUTT, markCrossings, crossOver,
 } from '../fingering.js'
 import { exercises, scale, scaleExpect, line } from '../exercises.js'
+import { handsOfTracks, tracksNameHands, assignHands } from '../hands.js'
 import { runSuite } from './bench.js'
 import { metrics, recombinedCost, loadPiece } from '../pigeval.js'
 
@@ -305,6 +306,37 @@ test('hand split keeps hands that are already assigned', () => {
   const notes = [{ pitch: 40, on: 0, off: 1, hand: 'R' }, { pitch: 80, on: 0, off: 1 }]
   splitHands(notes)
   assert.equal(notes[0].hand, 'R')
+})
+
+// ── Hands from the tracks (hands.js) ──────────────────────────────────────
+const staff = (track, midis) => midis.map((midi, i) => ({ midi, time: i, duration: 0.5, track }))
+
+test('tracks named for the hands give the hands, whatever their order', () => {
+  const notes = [...staff(0, [40, 43, 47]), ...staff(1, [72, 76, 79])]
+  const r = handsOfTracks(notes, ['Left hand', 'Right hand'])
+  assert.deepEqual([r.by, r.hand[0], r.hand[1]], ['names', 'L', 'R'])
+})
+
+test("a notation program's two staff tracks of one name: the upper (first) is the right hand", () => {
+  // MuseScore's export of one piano part: both tracks named after the part, the top staff first
+  const notes = [...staff(0, [72, 76, 79, 60]), ...staff(1, [40, 43, 47, 52])]
+  const r = handsOfTracks(notes, ['Piano', 'Piano'])
+  assert.deepEqual([r.by, r.hand[0], r.hand[1]], ['staves', 'R', 'L'])
+  assignHands(notes, ['Piano', 'Piano'], 'tracks')
+  assert.deepEqual(notes.map(n => n.hand), ['R', 'R', 'R', 'R', 'L', 'L', 'L', 'L'])
+  // unnamed tracks are read the same way; the two staves may also come lower first
+  assert.equal(handsOfTracks(notes, ['', '']).by, 'staves')
+  const flipped = [...staff(0, [40, 43, 47]), ...staff(1, [72, 76, 79])]
+  assert.equal(handsOfTracks(flipped, ['Piano', 'Piano']).by, null)
+})
+
+test('two tracks of different names, or more than two, are left to the fingering', () => {
+  const two = [...staff(0, [72, 76, 79]), ...staff(1, [40, 43, 47])]
+  assert.equal(handsOfTracks(two, ['Violin', 'Piano']).by, null)
+  assert.equal(tracksNameHands(two, ['Violin', 'Piano']), false)
+  const three = [...two, ...staff(2, [55, 57])]
+  assert.equal(handsOfTracks(three, ['Piano', 'Piano', 'Piano']).by, null)
+  assert.deepEqual(assignHands(three, ['Piano', 'Piano', 'Piano'], 'tracks'), { source: 'auto', named: 0, by: null })
 })
 
 // ── Real music ────────────────────────────────────────────────────────────

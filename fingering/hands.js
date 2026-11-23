@@ -7,8 +7,13 @@
 // 'tracks': where the file names its tracks for the hands ("Right hand" / "Left
 // hand", RH / LH, treble / bass, upper / lower), each note of such a track takes
 // that hand: the edition's split, Bach's hand crossings included (the Bach files
-// in midis/ are written this way by midis/tools/bach_hands.mjs). Notes of other
-// tracks, and files without such names, are left to the fingering.
+// in midis/ are written this way by midis/tools/bach_hands.mjs). Where the names
+// don't say, a notation program's export of one piano part still does: MuseScore
+// (and so webmscore.html) writes the two staves as two tracks, the upper staff
+// first, both named after the part ("Piano", "Piano"). Where exactly two tracks
+// carry notes, share a name (or have none) and the first lies higher than the
+// second (by median pitch), the first is the right hand and the second the left.
+// Notes of other tracks, and files that fit neither, are left to the fingering.
 // 'auto': every note is left to the fingering's own split (splitHands, the
 // split whose fingering costs least), whatever the tracks say.
 // 'crossings': the fingering's split, except where the tracks cross: a passage where the
@@ -25,7 +30,7 @@
 // Used by pathtrace/app.js (#045, #049, #050) and 032_pianist.html.
 
 
-export const HAND_MODES = { crossings: 'Automatic, with the tracks\' hand crossings', tracks: 'From the score\'s tracks (when named)', auto: 'Automatic (best fit for the fingers)' }
+export const HAND_MODES = { crossings: 'Automatic, with the tracks\' hand crossings', tracks: 'From the score\'s tracks (named, or a part\'s two staves)', auto: 'Automatic (best fit for the fingers)' }
 // the default: the fingering's split, and the file's own where its tracks cross (a file whose
 // tracks don't name the hands is automatic in every mode)
 export const DEFAULT_HAND_MODE = 'crossings'
@@ -39,16 +44,37 @@ export function handOfTrackName(name) {
   return RIGHT.test(name) ? 'R' : LEFT.test(name) ? 'L' : null
 }
 
-/** Do the tracks the notes use name both hands? */
+const median = xs => { const s = [...xs].sort((a, b) => a - b); return s.length ? (s[(s.length - 1) >> 1] + s[s.length >> 1]) / 2 : NaN }
+
+/**
+ * The hand of each track, by index: from the tracks' names where they name both
+ * hands (`by: 'names'`), else from a part's two staves where the file is written
+ * that way (`by: 'staves'`: two note tracks, one name or none, the first higher),
+ * else none (`by: null`).
+ */
+export function handsOfTracks(notes, trackNames = []) {
+  const byName = trackNames.map(handOfTrackName), used = [...new Set(notes.map(n => n.track))].sort((a, b) => a - b)
+  if (used.some(t => byName[t] === 'R') && used.some(t => byName[t] === 'L')) return { hand: byName, by: 'names' }
+  if (used.length === 2) {
+    const [up, lo] = used, name = t => String(trackNames[t] || '').trim().toLowerCase()
+    const pitch = t => median(notes.filter(n => n.track === t).map(n => n.midi))
+    if (name(up) === name(lo) && pitch(up) > pitch(lo)) {
+      const hand = []; hand[up] = 'R'; hand[lo] = 'L'
+      return { hand, by: 'staves' }
+    }
+  }
+  return { hand: [], by: null }
+}
+
+/** Do the tracks the notes use give both hands, by name or as a part's two staves? */
 export function tracksNameHands(notes, trackNames = []) {
-  const hand = trackNames.map(handOfTrackName), used = new Set(notes.map(n => n.track))
-  return [...used].some(t => hand[t] === 'R') && [...used].some(t => hand[t] === 'L')
+  return handsOfTracks(notes, trackNames).by !== null
 }
 
 export function assignHands(notes, trackNames = [], mode = DEFAULT_HAND_MODE, opts = {}) {
   for (const n of notes) delete n.hand
-  if (mode === 'auto' || !tracksNameHands(notes, trackNames)) return { source: 'auto', named: 0 }
-  const hand = trackNames.map(handOfTrackName)
+  const { hand, by } = handsOfTracks(notes, trackNames)
+  if (mode === 'auto' || !by) return { source: 'auto', named: 0, by: null }
   if (mode === 'crossings') {
     const passages = crossings(notes, hand, opts)
     let named = 0, k = 0
@@ -56,11 +82,11 @@ export function assignHands(notes, trackNames = [], mode = DEFAULT_HAND_MODE, op
       while (k < passages.length && passages[k][1] < n.time) k++
       if (hand[n.track] && k < passages.length && n.time >= passages[k][0]) { n.hand = hand[n.track]; named++ }
     }
-    return { source: passages.length ? 'crossings' : 'auto', named, passages }
+    return { source: passages.length ? 'crossings' : 'auto', named, passages, by }
   }
   let named = 0
   for (const n of notes) if (hand[n.track]) { n.hand = hand[n.track]; named++ }
-  return { source: 'tracks', named }
+  return { source: 'tracks', named, by }
 }
 
 /**
