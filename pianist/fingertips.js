@@ -12,11 +12,11 @@
 // (a repeated note on one key: off, then on again). A planned press that
 // never meets its key is a miss: the note stays silent.
 //
-// The velocity comes from the fingertip's speed through the key (the pose's
-// `strike`, cm/s: fingering/motion.js makes a quiet note's travel slow and a
-// loud one's fast), read on the piece's own scale (velocityFromStrike), so a
-// travel the free time cut short sounds louder than written; the written
-// velocity is used only where the detector is given no scale.
+// The velocity is the note's written one, or, with a scale given, read from
+// the fingertip's speed through the key (the pose's `strike`, cm/s:
+// fingering/motion.js makes a quiet note's travel slow and a loud one's
+// fast) on the piece's own scale (velocityFromStrike), so a travel the free
+// time cut short sounds louder than written.
 //
 // Units as hand-driver.js: cm in the piano's frame, key tops at y = 73.
 
@@ -81,9 +81,10 @@ export function createContactDetector(hands, fire, scale = null) {
  * Play fingered notes on a fresh pair of hands offline and collect what the
  * fingertips sound: a schedule { notes: [{ midi, time, duration, velocity, channel }], stats }
  * for the video export. `notes` as rig.hands.notes (pitch, on, off, release,
- * hand, finger, velocity). Steps at `fps`; yields every `yieldMs` ms where set.
+ * hand, finger, velocity). Steps at `fps`; yields every `yieldMs` ms where set;
+ * `strikeVelocity` reads each velocity from the fingertip's speed in place of the written one.
  */
-export async function simulateContacts(notes, dims, { touch, fps = 60, from = -Infinity, to = Infinity, yieldMs = 0, cancelled = () => false } = {}) {
+export async function simulateContacts(notes, dims, { touch, fps = 60, from = -Infinity, to = Infinity, yieldMs = 0, cancelled = () => false, strikeVelocity = false } = {}) {
   const hands = createHandsDriver(dims)
   if (touch) hands.touch = touch
   hands.setNotes(notes.map(n => ({ ...n })))
@@ -95,7 +96,7 @@ export async function simulateContacts(notes, dims, { touch, fps = 60, from = -I
   const det = createContactDetector(hands, {
     on: (p, v) => open.set(p, { midi: p, time: Math.max(0, t), velocity: v, channel: 0 }),
     off: p => { const n = open.get(p); if (n) { n.duration = Math.max(0.03, t - n.time); out.push(n); open.delete(p) } },
-  }, loudnessScale(own))
+  }, strikeVelocity ? loudnessScale(own) : null)
   const dt = 1 / fps
   const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now())
   let slice = now()

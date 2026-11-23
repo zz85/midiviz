@@ -20,7 +20,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 320, height: 240 } })
   const errors = []
   page.on('pageerror', e => errors.push(e.message))
-  await page.goto(`${BASE}032_pianist.html?q=low&hairsim=0&clothsim=0&start=0&sw=0&played=fingers&song=${encodeURIComponent(song)}`)
+  await page.goto(`${BASE}032_pianist.html?q=low&hairsim=0&clothsim=0&start=0&sw=0&played=fingers&vel=strike&song=${encodeURIComponent(song)}`)
   await page.waitForFunction(() => window.__pianist?.rig, null, { timeout: 180000 })
   await page.evaluate(() => document.getElementById('playBtn').click())
   await page.waitForFunction(() => window.__pianist.rig.hands.notes.length > 0 && window.__pianist.performed(), null, { timeout: 240000 })

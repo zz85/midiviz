@@ -17,6 +17,7 @@ test('a five-finger position: every note sounds once, within a frame of its onse
   fingerPiece(notes)
   const r = await simulateContacts(notes, dims, { fps: 120 })
   assert.equal(r.stats.onsets, 9)
+  // (without strikeVelocity the written velocity)
   assert.equal(r.stats.missed, 0)
   assert.deepEqual(r.notes.map(n => n.midi), notes.map(n => n.pitch))
   for (let i = 0; i < 9; i++) {
@@ -77,7 +78,7 @@ test('the velocity comes from the fingertip\'s speed through the key: soft notes
   // a slow scale, one finger each, velocities 0.2 .. 1
   const vs = [0.2, 0.4, 0.6, 0.8, 1.0, 0.3, 0.5, 0.7, 0.9]
   const notes = vs.map((v, i) => ({ pitch: 60 + [0, 2, 4, 5, 7][i % 5], on: 1 + i * 0.6, off: 1.5 + i * 0.6, hand: 'R', finger: 1 + i % 5, velocity: v }))
-  const r = await simulateContacts(notes, dims, { fps: 240 })
+  const r = await simulateContacts(notes, dims, { fps: 240, strikeVelocity: true })
   assert.equal(r.notes.length, 9)
   // (on the piece's scale, its 10th to 95th percentile: the loudest note reads as the 95th, 0.9)
   const { loudnessScale } = await import('../../fingering/motion.js'), [lo, hi] = loudnessScale(notes)
@@ -102,7 +103,7 @@ test('a fast soft trill: each finger has half the time free, the key is pressed 
   const chord = [{ pitch: 48, on: 0.5, off: 0.9, hand: 'L', finger: 5, velocity: 1 }, { pitch: 52, on: 0.5, off: 0.9, hand: 'L', finger: 1, velocity: 1 }]
   const trill = [...chord]
   for (let i = 0; i < 12; i++) trill.push({ pitch: 60 + (i % 2) * 2, on: 2 + i * 0.11, off: 2.11 + i * 0.11, hand: 'R', finger: 2 + i % 2, velocity: 0.2 })
-  const r = await simulateContacts(trill, dims, { fps: 240 })
+  const r = await simulateContacts(trill, dims, { fps: 240, strikeVelocity: true })
   const run = r.notes.filter(n => n.midi >= 60)
   assert.equal(run.length, 12)
   for (const n of run) assert.ok(n.velocity < 0.25, `trill read ${n.velocity.toFixed(2)}`)
@@ -112,7 +113,7 @@ test('a fast soft trill: each finger has half the time free, the key is pressed 
   // the same run on one finger: the key has to come up each time, the press is quicker, and louder
   const same = [...chord]
   for (let i = 0; i < 12; i++) same.push({ pitch: 60 + (i % 4) * 2, on: 2 + i * 0.11, off: 2.11 + i * 0.11, hand: 'R', finger: 2, velocity: 0.2 })
-  const r2 = await simulateContacts(same, dims, { fps: 240 })
+  const r2 = await simulateContacts(same, dims, { fps: 240, strikeVelocity: true })
   const run2 = r2.notes.filter(n => n.midi >= 60)
   assert.equal(run2.length, 12)
   assert.ok(run2[0].velocity < 0.25 && run2.slice(1).every(n => n.velocity > 0.4 && n.velocity < 1), `same finger read ${run2.map(n => n.velocity.toFixed(2)).join(' ')}`)

@@ -376,6 +376,7 @@
     <label class="chk" title="Play the fingering on a copy of her hands first; where a fingertip cannot stay on a key it holds, finger that chord another way, and keep the new fingering only if her hands then miss fewer keys (after Mechanical Pianist). Takes a few seconds after a song loads; she starts with the plain fingering"><input type="checkbox" id="replanOn"> Check on her hands <small id="replanV"></small></label>
     <div class="field" title="Which hand plays each note. Automatic, with the tracks' hand crossings (the default): the fingering's own split, except in the passages where the MIDI's hand tracks cross (the left hand's track above the right's, as in the Goldberg's variations for two manuals), which keep the tracks' split. From the score's tracks: where the MIDI names its tracks for the hands (Right hand / Left hand, RH / LH, treble / bass), or writes one piano part as two staff tracks of one name, the upper first (MuseScore and webmscore.html do), the edition's own split, hand crossings included; other files fall back to automatic. Automatic: the fingering chooses the split that its fingers play most easily."><label>Hands <small id="handsV"></small></label><select id="hands"></select></div>
     <div class="field" title="What the piano sounds and which keys go down. The MIDI file: every note as written, for its written length (the hands play what they can of it). What her hands play: the notes her fingers reach, each sounding until the finger lets go; a key the fingering left unfingered (more than five at once with nothing to take them) stays silent, and a key the hand lets go early (to leap, to bounce on a repeated chord, or because it has moved on) stops sounding there. Her fingertips: each key goes down as her solved fingertip is down on it (the planned press past half, the tip on the key), and up as it leaves; a finger that can't reach its key plays nothing. The sound comes from a second pair of hands run ahead by the measured audio delay, so a note is heard as her finger reaches the key; the readout counts the notes sounded and missed. The sustain pedal is as written in every case."><label>Piano plays <small id="playedV"></small></label><select id="played"><option value="midi" selected>The MIDI file</option><option value="hands">What her hands play</option><option value="fingers">Her fingertips (live)</option></select></div>
+    <div class="field" title="With Piano plays = Her fingertips: how loud each note sounds. As written: the MIDI file's velocity. From the fingertip's speed: how fast her fingertip goes through the key, read on the piece's own scale; a quiet note is pressed slowly, a loud one struck fast, and where a finger has no time for a slow press (the same finger again within 60-100 ms) the note comes out louder than written, as a pianist's would."><label>Velocity</label><select id="velSrc"><option value="written" selected>As written</option><option value="strike">From the fingertip's speed</option></select></div>
     <div class="sect">Hands and arms<small>wrist strokes: lifts, drops, bounces</small></div>
     <div class="field" title="How much loudness comes from the arm: before a loud note the hand lifts in the time it has and falls into the key (0 = fingers only, the hand stays on the keys)"><label>Arm weight</label><input type="range" id="armw" min="0" max="2" step="0.1" value="1"><span id="armwV">1×</span></div>
     <div class="field" title="How high the hands go above the keys: scales every lift (preparation, bounce and lift-off) after the time limits, so at 2× even fast passages come off the keys"><label>Lift height</label><input type="range" id="lifth" min="0" max="2.5" step="0.1" value="1"><span id="lifthV">1×</span></div>
@@ -1008,6 +1009,10 @@
     // Piano plays (pianist/performed.js): the file as written, or what her hands play (?played=hands)
     $('played').value = ['hands', 'fingers'].includes(params.get('played')) ? params.get('played') : 'midi'
     $('played').onchange = () => { songTarget.allSoundOff(); if (fromFingers()) ensureEar(); showPerformed(); reloadSchedule() }
+    // Velocity (?vel=strike): the written one, or the fingertip's speed through the key (motion.js `strike`)
+    $('velSrc').value = params.get('vel') === 'strike' ? 'strike' : 'written'
+    $('velSrc').onchange = () => setVelocitySource()
+    function setVelocitySource() { const sc = $('velSrc').value === 'strike' && earNotes ? loudnessScale(earNotes) : null; keysDet.setScale(sc); earDet?.setScale(sc) }
     $('hairColor').oninput = () => hair.setColor($('hairColor').value)
     $('dressColor').oninput = () => dress.setColor($('dressColor').value)
     $('hairDensity').onchange = () => hair.setDensity(+$('hairDensity').value)
@@ -1569,7 +1574,7 @@
     function ensureEar() {
       if (!ear) { ear = createHandsDriver(rig.dims.R); earDet = createContactDetector(ear, { on: (p, v) => { if (soundReady) engine.noteOn(p, v, 0) }, off: p => engine.noteOff(p, 0) }) }
       ear.touch = rig.hands.touch
-      if (earNotes) { ear.setNotes(earNotes.map(n => ({ ...n }))); const sc = loudnessScale(earNotes); earDet.setScale(sc); keysDet.setScale(sc) }
+      if (earNotes) { ear.setNotes(earNotes.map(n => ({ ...n }))); setVelocitySource() }
     }
     // hand the scheduler the schedule it should play, keeping its place
     // (the worklet keeps its clock through a load; the keys restart on it)
@@ -1865,7 +1870,7 @@
       ['hair', 'hairStyle'], ['hcol', 'hairColor'], ['density', 'hairDensity'], ['hairon', 'hairOn'], ['hairsim', 'hairSim'],
       ['dresson', 'dressOn'], ['clothsim', 'clothSim'], ['vdress', 'vdress'], ['look', 'look'], ['smooth', 'smooth'], ['simplify', 'simplify'],
       ['gaze', 'gaze'], ['expr', 'expr'], ['rest', 'restAfter'], ['hips', 'hips'], ['posture', 'posture'], ['reach', 'reach'], ['rock', 'rock'], ['sway', 'sway'], ['nod', 'nod'], ['glances', 'glances'], ['armw', 'armw'], ['lifth', 'lifth'], ['wflex', 'wflex'], ['frot', 'frot'], ['elbow', 'elbowLead'], ['liftoff', 'liftoff'], ['bench', 'benchDist'], ['benchh', 'benchH'],
-      ['touch', 'touch'], ['fingering', 'fingering'], ['replan', 'replanOn'], ['hands', 'hands'], ['played', 'played'],
+      ['touch', 'touch'], ['fingering', 'fingering'], ['replan', 'replanOn'], ['hands', 'hands'], ['played', 'played'], ['vel', 'velSrc'],
       ['light', 'light'], ['exposure', 'exposure'], ['dof', 'dof'], ['tod', 'parkTod'], ['tree', 'parkTree'], ['birds', 'parkAmb'],
       ['move', 'camMove'], ['dpreset', 'dirPreset'], ['pace', 'dirPace'], ['favour', 'dirBias'], ['trans', 'dirTrans'], ['dstill', 'dirStill'], ['dmix', 'dirMix'], ['shotnames', 'shotLbl'], ['follow', 'camFollow'], ['dfar', 'dirFar'], ['dmed', 'dirMed'], ['dclose', 'dirClose'],
       ['sf', 'sf'], ['avsync', 'avsync'],
@@ -2291,7 +2296,7 @@
         let exNotes = sounding().notes
         if (fromFingers() && earNotes) {
           $('exStatus').textContent = 'Playing the piece on her fingertips…'
-          const r = await simulateContacts(earNotes, rig.dims.R, { touch: rig.hands.touch, from: clipA - 1, to: clipB + tailS + 1, yieldMs: 8, cancelled: () => exAbort.signal.aborted })
+          const r = await simulateContacts(earNotes, rig.dims.R, { touch: rig.hands.touch, strikeVelocity: $('velSrc').value === 'strike', from: clipA - 1, to: clipB + tailS + 1, yieldMs: 8, cancelled: () => exAbort.signal.aborted })
           if (!r) throw new Error('cancelled')
           exNotes = r.notes
         }
