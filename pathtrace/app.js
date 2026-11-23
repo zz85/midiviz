@@ -1573,6 +1573,7 @@ export async function boot(plug = {}) {
       for (const [k, id] of [['tod', 'parkTod'], ['tree', 'parkTree']]) if ([...$(id).options].some(o => o.value === params.get(k))) $(id).value = params.get(k)
       parkStage.opts.time = +$('parkTod').value; parkStage.opts.style = $('parkTree').value
       { const k = +params.get('pscale'); if (k >= 0.02 && k <= 4) parkStage.opts.scale = k }
+      if (params.has('pturn') && Number.isFinite(+params.get('pturn'))) parkStage.opts.turn = +params.get('pturn')
       $('stageSet').value = 'park'
       await setStageSet('park')
     }

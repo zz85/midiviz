@@ -56,7 +56,7 @@ function samplePreset(t) {
 const SUMMER_GROUND = ['#1f4a2a', '#4e9a3c', '#98c54e', '#24502b', '#4f8f34'].map((h) => C(h));
 const DIRT = C('#b49a74');
 
-export async function createPark(renderer, { time = 1.4, style = 'summer', azimuth = 55, clouds = 0.5, wind = 1.2, seed = 7, grassCount = 120000, paint = 2.5, scale = 1, layout = 'keys' } = {}) {
+export async function createPark(renderer, { time = 1.4, style = 'summer', azimuth = 55, clouds = 0.5, wind = 1.2, seed = 7, grassCount = 120000, paint = 2.5, scale = 1, layout = 'keys', turn = 0 } = {}) {
   // `scale`: the park's size against the duo's. At 0.5 the tree, hill, grass and poles are
   // half as big around the two as they are, who stay as they are: the park is drawn as it
   // is in its metres and the duo is mapped into it at 1/scale (2 cm of the park a cm), its
@@ -86,7 +86,8 @@ export async function createPark(renderer, { time = 1.4, style = 'summer', azimu
   // ── The duo's frame on the lawn: its origin (where he stands) at the lawn's centre, a
   // little forward, its +z (toward the audience) away from the tree, toward the hillside view
   const away = new THREE.Vector2(LAWN.x, LAWN.z).normalize();
-  const yaw = Math.atan2(away.x, away.y);
+  // `turn`: the frame turned on top of that, in radians (positive: anticlockwise seen from above)
+  const yaw = Math.atan2(away.x, away.y) + turn;
   // (the lawn centred between him and the piano's middle: with layout 'curve' the piano is
   // about 1 m on his right and 0.8 m behind him, with 'keys' about 2.6 m on his left and 0.7 m behind;
   // 'solo', the pianist alone (park/stage.js): the piano's middle, her bench 0.45 m in front of it)

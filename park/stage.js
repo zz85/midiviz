@@ -23,7 +23,8 @@ export const PARK_TREES = [['summer', 'Summer'], ['sakura', 'Cherry blossom'], [
 export function createParkStage({ renderer, scene, camera, stageParts = () => [], foreground = () => [], hair = () => null,
   center = new THREE.Vector3(0, 80, 20), lightK = 0.75, onStatus = () => {} }) {
   let park = null, on = false, building = null, envFor = -1, envMap = null
-  const opts = { time: 1, style: 'summer', scale: 0.45 }
+  // turn: the piano and her on the lawn, in degrees, positive clockwise seen from above (?pturn=)
+  const opts = { time: 1, style: 'summer', scale: 0.45, turn: 90 }
   const saved = {}
   const hidden = new Map()
 
@@ -68,7 +69,7 @@ export function createParkStage({ renderer, scene, camera, stageParts = () => []
 
   async function build() {
     onStatus('Growing the park…')
-    park = await createPark(renderer, { time: opts.time + 0.4, style: opts.style, scale: opts.scale, layout: 'solo' })
+    park = await createPark(renderer, { time: opts.time + 0.4, style: opts.style, scale: opts.scale, layout: 'solo', turn: -opts.turn * Math.PI / 180 })
     onStatus('')
   }
 

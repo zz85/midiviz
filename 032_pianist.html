@@ -338,7 +338,7 @@
     <div class="field" title="Automatic: each intertitle goes to the side of the frame away from the pianist (her head and hands as the camera sees them), and to the top when the shot looks down on the keys"><label>Intertitle position</label><select id="itPos"></select></div>
     <label class="chk" title="The small capitals over each line (a place and year, a bar, a term)"><input type="checkbox" id="itHeads" checked>Headings over the lines</label>
     <div class="sect">Stage</div>
-    <div class="field" title="Black stage: the piano under its spotlights on a dark floor. The park (#051): Sorairo's hillside, the tree, wind in the grass, the sky, birds and a painterly finish (park/); its own post-processing takes the place of the page's"><label>Stage</label><select id="stageSet"><option value="stage" selected>Black stage</option><option value="park">The park</option></select></div>
+    <div class="field" title="Black stage: the piano under its spotlights on a dark floor. Candlelit chamber (from #030): a stone wall with arches behind the piano, some 200 candles on two tiers and along the sides, sconces, a warm candle palette for the lights and the reflections. The park (#051): Sorairo's hillside, the tree, wind in the grass, the sky, birds and a painterly finish (park/); its own post-processing takes the place of the page's"><label>Stage</label><select id="stageSet"><option value="stage" selected>Black stage</option><option value="candle">Candlelit chamber</option><option value="park">The park</option></select></div>
     <div class="field parkOnly" style="display:none"><label>Time of day</label><select id="parkTod"></select></div>
     <div class="field parkOnly" style="display:none"><label>Tree</label><select id="parkTree"></select></div>
     <label class="chk parkOnly" style="display:none" title="Wind, songbirds and insects while she plays (Sorairo's ambience; not in exported videos)"><input type="checkbox" id="parkAmb" checked>Birds and wind</label>
@@ -486,6 +486,7 @@
     import { performedSchedule, describePerformed } from './pianist/performed.js'
     import { createContactDetector, simulateContacts, describeContacts } from './pianist/fingertips.js'
     import { createHandsDriver } from './pianist/hand-driver.js'
+    import { loudnessScale } from './fingering/motion.js'
     import { exportVideo, exportSupported, defaultBitrate } from './notation3d/video-export.js'
     import { installAcoustics, offlineHall, acousticParams, rt60Of, ROOMS, SEATS } from './concertstage/acoustics.js'
     import { buildGrandPiano, LOW, HIGH, DIM } from './concertstage/concert-grand.js'
@@ -507,6 +508,7 @@
     import { suggestClips, snapStart, snapEnd, clipOf, shortDescription, SHORT_MAX, SHORT_LENGTHS, SHORT_DEFAULT } from './pianist/shorts.js'
     import { createFocusPuller, SHOT_DOF } from './pianist/focus-puller.js'
     import { createParkStage, PARK_TIMES, PARK_TREES } from './park/stage.js'
+    import { buildCandleChamber, candleEnvironment, CANDLE } from './pathtrace/candle-chamber.js'
     import { createLinerLibrary, clockOfMidi, buildTimeline, toVTT, toChapters, titleScreen, withTitle, titleSecs } from './liner/liner.js'
     import { createLinerOverlay, drawLinerCaption, drawIntertitle, loadIntertitleFonts, INTERTITLE_STYLES, INTERTITLE_THEMES, INTERTITLE_POSITIONS } from './liner/overlay.js'
 
@@ -606,14 +608,34 @@
     const keyFill = new THREE.SpotLight(0xfff0e0, 0.8, 0, 0.5, 1, 0)
     keyFill.position.set(40, 260, 320); keyFill.target.position.set(0, 74, -10)
     scene.add(keyFill, keyFill.target)
-    const LIGHTS = [[spot, 4.2], [faceKey, 1.6], [rim, 4], [back, 4], [keyFill, 0.8]]
-    const applyLight = () => { const k = +$('light').value; for (const [l, i] of LIGHTS) l.intensity = i * k; lidLight.intensity = 0.55 * k }
+    const LIGHTS = [[spot, 4.2], [faceKey, 1.6], [rim, 4], [back, 4], [keyFill, 0.8], [lidLight, 0.55]]
+    // each stage's colours and strengths for these six (as #045: the candle chamber after #030's
+    // candle rig, its key / back / fill / lid against its concert rig, the face key and rim warmed to match)
+    const STAGE_LIGHTS = {
+      stage: [[0xffd2a0, 1], [0xffd9b8, 1], [0xffe6c8, 1], [0xffe2c0, 1], [0xfff0e0, 1], [0xffc28a, 1]],
+      candle: ((L, C) => [[L.key.color, L.key.intensity / C.key], [0xffc890, 0.85], [0xffb070, 0.8], [L.back.color, L.back.intensity / C.back], [L.fill.color, L.fill.intensity / C.fill], [L.lid.color, L.lid.intensity / C.lid]])(CANDLE.lights, CANDLE.concert),
+    }
+    const applyLight = () => {
+      const k = +$('light').value, look = STAGE_LIGHTS[$('stageSet').value] || STAGE_LIGHTS.stage
+      LIGHTS.forEach(([l, i], j) => { l.color.setHex(look[j][0]); l.intensity = i * look[j][1] * k })
+    }
     $('light').oninput = applyLight
     applyLight()
     $('exposure').oninput = () => { renderer.toneMappingExposure = +$('exposure').value }
 
     const pmrem = new THREE.PMREMGenerator(renderer)
-    {
+    // the reflections: a few glowing panels around the stage, or the candle chamber's (#030)
+    const ENVS = {}
+    function stageEnvironment(name) {
+      if (!ENVS[name]) {
+        if (name === 'candle') {
+          const e = candleEnvironment(THREE)
+          ENVS[name] = { map: pmrem.fromScene(e.scene, e.sigma, 1, e.far).texture, intensity: 0.55 * CANDLE.environmentIntensity / CANDLE.stageEnvironmentIntensity }
+        } else ENVS[name] = { map: stageEnvMap(), intensity: 0.55 }
+      }
+      scene.environment = ENVS[name].map; scene.environmentIntensity = ENVS[name].intensity
+    }
+    function stageEnvMap() {
       const s = new THREE.Scene(); s.background = new THREE.Color(0x010101)
       const box = (w, h, p, k, c = 0xffffff) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(c).multiplyScalar(k), side: THREE.DoubleSide })); m.position.set(...p); m.lookAt(0, 90, 0); s.add(m) }
       box(260, 260, [-200, 640, 300], 8, 0xffcf9a)
@@ -622,8 +644,23 @@
       box(60, 500, [900, 260, -100], 1.4, 0xffc890)
       box(700, 220, [150, 420, -900], 2, 0xffe2c0)
       box(1400, 300, [0, 120, 1100], 0.1, 0x8fa6c8)
-      scene.environment = pmrem.fromScene(s, 0.015, 1, 6000).texture
-      scene.environmentIntensity = 0.55
+      return pmrem.fromScene(s, 0.015, 1, 6000).texture
+    }
+    stageEnvironment('stage')
+    // the set (Visuals → Stage): the black stage, or the candle chamber (pathtrace/candle-chamber.js,
+    // from #030: wall, arches, ~200 candles, sconces), built the first time it is chosen
+    const STAGE_LOOK = { stage: { background: 0x000000, floor: 0x1a1512 }, candle: { background: CANDLE.background, floor: 0x180d08, props: 'candle' } }
+    const stageProps = {}
+    function setStage(name) {
+      if (!STAGE_LOOK[name]) name = 'stage'
+      $('stageSet').value = name
+      stageEnvironment(name)
+      scene.background.setHex(STAGE_LOOK[name].background)
+      floorMat.color.setHex(STAGE_LOOK[name].floor)
+      const want = STAGE_LOOK[name].props
+      if (want && !stageProps[want]) { stageProps[want] = buildCandleChamber(THREE, LOWQ); scene.add(stageProps[want].root) }
+      for (const [k, p] of Object.entries(stageProps)) p.root.visible = k === want
+      applyLight()
     }
 
     // ── The pianist ──────────────────────────────────────────────────────
@@ -1033,7 +1070,7 @@
     }
     // ── The park (#051) as a stage set (park/stage.js): Visuals → Stage, ?stage=park ──
     const parkStage = createParkStage({ renderer, scene, camera, onStatus: m => setStatus(m),
-      stageParts: () => [floor, spot, faceKey, rim, back, keyFill, dust],
+      stageParts: () => [floor, spot, faceKey, rim, back, keyFill, dust, ...Object.values(stageProps).map(p => p.root)],
       foreground: () => [ch.group, hair?.object, hair?.cap, dress?.object, shoes?.object],
       hair: () => hair })
     for (const [i, n] of PARK_TIMES) $('parkTod').add(new Option('' + n, i, i === 1, i === 1))
@@ -1043,13 +1080,16 @@
     $('parkAmb').onchange = () => parkStage.setSound($('parkAmb').checked && scheduler?.playing)
     async function setStageSet(name) {
       const park = name === 'park'
-      $('stageSet').value = park ? 'park' : 'stage'
       for (const el of document.querySelectorAll('#visualsPop .parkOnly')) el.style.display = park ? '' : 'none'
       // (the hall's own post-processing has no part in the park)
       for (const id of ['dof', 'bloom', 'filmGrain', 'dust']) $(id).closest('label').style.opacity = park ? 0.4 : ''
       $('stageSet').disabled = true
-      try { await parkStage.set(park) } catch (e) { console.error(e); setStatus('Could not grow the park: ' + e.message, true, 6000); $('stageSet').value = 'stage' }
+      try {
+        if (!park && parkStage.on) await parkStage.set(false)
+        if (park) await parkStage.set(true); else setStage(name)
+      } catch (e) { console.error(e); setStatus('Could not grow the park: ' + e.message, true, 6000); setStage('stage') }
       finally { $('stageSet').disabled = false }
+      $('stageSet').value = parkStage.on ? 'park' : STAGE_LOOK[name] ? name : 'stage'
       parkStage.setSound(parkStage.on && $('parkAmb').checked && scheduler?.playing)
       applyFx()
     }
@@ -1529,7 +1569,7 @@
     function ensureEar() {
       if (!ear) { ear = createHandsDriver(rig.dims.R); earDet = createContactDetector(ear, { on: (p, v) => { if (soundReady) engine.noteOn(p, v, 0) }, off: p => engine.noteOff(p, 0) }) }
       ear.touch = rig.hands.touch
-      if (earNotes) ear.setNotes(earNotes.map(n => ({ ...n })))
+      if (earNotes) { ear.setNotes(earNotes.map(n => ({ ...n }))); const sc = loudnessScale(earNotes); earDet.setScale(sc); keysDet.setScale(sc) }
     }
     // hand the scheduler the schedule it should play, keeping its place
     // (the worklet keeps its clock through a load; the keys restart on it)
@@ -1845,10 +1885,12 @@
     // load: controls the start-up code did not already take from the URL
     // (the wardrobe, pose and director keys are read above) get their value
     // and their own handler, exactly as if picked in the menu
+    if (params.get('stage') === 'candle') await setStageSet('candle')
     if (params.get('stage') === 'park') {
       for (const [k, id] of [['tod', 'parkTod'], ['tree', 'parkTree']]) if ([...$(id).options].some(o => o.value === params.get(k))) $(id).value = params.get(k)
       parkStage.opts.time = +$('parkTod').value; parkStage.opts.style = $('parkTree').value
       { const k = +params.get('pscale'); if (k >= 0.02 && k <= 4) parkStage.opts.scale = k }
+      if (params.has('pturn') && Number.isFinite(+params.get('pturn'))) parkStage.opts.turn = +params.get('pturn')
       await setStageSet('park')
     }
     for (const [k, id] of STATE) {
@@ -1886,7 +1928,7 @@
         if (same(v, base)) q.delete(k); else q.set(k, v)
       }
       if (view === 'back') q.delete('view'); else q.set('view', view)
-      if (parkStage.on) q.set('stage', 'park'); else q.delete('stage')
+      if ($('stageSet').value !== 'stage') q.set('stage', $('stageSet').value); else q.delete('stage')
       if (camFree && view !== 'auto' && withTime) snapCam()   // (Share: exactly what is on screen)
       if (camFree && view !== 'auto' && camSnap) q.set('cam', camSnap); else q.delete('cam')
       if (speeds[speedI] === 1) q.delete('speed'); else q.set('speed', speeds[speedI])

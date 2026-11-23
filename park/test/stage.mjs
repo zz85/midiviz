@@ -26,6 +26,7 @@ async function open(url) {
 const shotQ = 'shot&q=low&hairsim=0&clothsim=0&song=Prelude1.mid&t=20'
 const stills = [
   ['032_stage', `032_pianist.html?${shotQ}&view=shoulder`],
+  ['032_candle', `032_pianist.html?${shotQ}&view=audience&stage=candle`],
   ['032_park', `032_pianist.html?${shotQ}&view=shoulder&stage=park`],
   ['032_park_wide', `032_pianist.html?${shotQ}&view=audience&stage=park&tod=2&tree=sakura`],
   ['045_park', `045_pathtracer.html?${shotQ}&view=shoulder&scene=park`],
@@ -46,7 +47,7 @@ for (const [name, url] of stills.filter(([n]) => !process.env.ONLY || process.en
   await page.close()
 }
 // live: on and off again, frames drawn each way
-if (!process.env.ONLY) {
+if (!process.env.ONLY || process.env.LIVE) {
   const { page, log } = await open('032_pianist.html?q=low&start=0&sw=0')
   await page.waitForFunction(() => window.__pianist?.hair && document.getElementById('stageSet'), null, { timeout: 300000 })
   await page.waitForTimeout(2000)
@@ -59,6 +60,13 @@ if (!process.env.ONLY) {
   await page.evaluate(() => { const s = document.getElementById('parkTod'); s.value = '4'; s.dispatchEvent(new Event('change')) })
   await page.waitForTimeout(1500)
   fs.writeFileSync(`${out}/032_live_park_night.png`, await page.screenshot())
+  await pick('candle')
+  await page.waitForFunction(() => !document.getElementById('stageSet').disabled, null, { timeout: 300000 })
+  await page.waitForTimeout(1500)
+  fs.writeFileSync(`${out}/032_live_candle.png`, await page.screenshot())
+  const c = await page.evaluate(() => ({ url: location.search, layer: window.__pianist.ch.group.children.find(o => o.isMesh || o.isSkinnedMesh)?.layers.mask, bg: window.__pianist.scene.background?.getHexString() }))
+  console.log('032 live      candle:', c)
+  if (c.layer !== 1 || !/stage=candle/.test(c.url) || c.bg === '000000') failed++
   await pick('stage')
   await page.waitForFunction(() => !document.getElementById('stageSet').disabled, null, { timeout: 300000 })
   await page.waitForTimeout(1500)
