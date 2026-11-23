@@ -375,7 +375,7 @@
     <div class="field" title="Chopin: the 4th finger is not avoided, the 5th takes the outer voice of a chord (the top in the right hand, the bass in the left), the 3rd sings long melody notes. Standard: the usual textbook rules"><label>Fingering</label><select id="fingering"><option value="standard" selected>Standard</option><option value="chopin">Chopin</option></select></div>
     <label class="chk" title="Play the fingering on a copy of her hands first; where a fingertip cannot stay on a key it holds, finger that chord another way, and keep the new fingering only if her hands then miss fewer keys (after Mechanical Pianist). Takes a few seconds after a song loads; she starts with the plain fingering"><input type="checkbox" id="replanOn"> Check on her hands <small id="replanV"></small></label>
     <div class="field" title="Which hand plays each note. Automatic, with the tracks' hand crossings (the default): the fingering's own split, except in the passages where the MIDI's hand tracks cross (the left hand's track above the right's, as in the Goldberg's variations for two manuals), which keep the tracks' split. From the score's tracks: where the MIDI names its tracks for the hands (Right hand / Left hand, RH / LH, treble / bass), the edition's own split, hand crossings included; other files fall back to automatic. Automatic: the fingering chooses the split that its fingers play most easily."><label>Hands <small id="handsV"></small></label><select id="hands"></select></div>
-    <div class="field" title="What the piano sounds and which keys go down. The MIDI file: every note as written, for its written length (the hands play what they can of it). What her hands play: the notes her fingers reach, each sounding until the finger lets go; a key the fingering left unfingered (more than five at once with nothing to take them) stays silent, and a key the hand lets go early (to leap, to bounce on a repeated chord, or because it has moved on) stops sounding there. The sustain pedal is as written either way."><label>Piano plays <small id="playedV"></small></label><select id="played"><option value="midi" selected>The MIDI file</option><option value="hands">What her hands play</option></select></div>
+    <div class="field" title="What the piano sounds and which keys go down. The MIDI file: every note as written, for its written length (the hands play what they can of it). What her hands play: the notes her fingers reach, each sounding until the finger lets go; a key the fingering left unfingered (more than five at once with nothing to take them) stays silent, and a key the hand lets go early (to leap, to bounce on a repeated chord, or because it has moved on) stops sounding there. Her fingertips: each key goes down as her solved fingertip is down on it (the planned press past half, the tip on the key), and up as it leaves; a finger that can't reach its key plays nothing. The sound comes from a second pair of hands run ahead by the measured audio delay, so a note is heard as her finger reaches the key; the readout counts the notes sounded and missed. The sustain pedal is as written in every case."><label>Piano plays <small id="playedV"></small></label><select id="played"><option value="midi" selected>The MIDI file</option><option value="hands">What her hands play</option><option value="fingers">Her fingertips (live)</option></select></div>
     <div class="sect">Hands and arms<small>wrist strokes: lifts, drops, bounces</small></div>
     <div class="field" title="How much loudness comes from the arm: before a loud note the hand lifts in the time it has and falls into the key (0 = fingers only, the hand stays on the keys)"><label>Arm weight</label><input type="range" id="armw" min="0" max="2" step="0.1" value="1"><span id="armwV">1×</span></div>
     <div class="field" title="How high the hands go above the keys: scales every lift (preparation, bounce and lift-off) after the time limits, so at 2× even fast passages come off the keys"><label>Lift height</label><input type="range" id="lifth" min="0" max="2.5" step="0.1" value="1"><span id="lifthV">1×</span></div>
@@ -484,6 +484,8 @@
     import { midiToSchedule } from './notation3d/midi-score.js'
     import { assignHands, handModeOf, HAND_MODES, DEFAULT_HAND_MODE } from './fingering/hands.js'
     import { performedSchedule, describePerformed } from './pianist/performed.js'
+    import { createContactDetector, simulateContacts, describeContacts } from './pianist/fingertips.js'
+    import { createHandsDriver } from './pianist/hand-driver.js'
     import { exportVideo, exportSupported, defaultBitrate } from './notation3d/video-export.js'
     import { installAcoustics, offlineHall, acousticParams, rt60Of, ROOMS, SEATS } from './concertstage/acoustics.js'
     import { buildGrandPiano, LOW, HIGH, DIM } from './concertstage/concert-grand.js'
@@ -966,8 +968,8 @@
     $('hands').value = handModeOf(params.get('hands'))
     $('hands').onchange = () => { if (song) fingerInWorker(song.notes) }
     // Piano plays (pianist/performed.js): the file as written, or what her hands play (?played=hands)
-    $('played').value = params.get('played') === 'hands' ? 'hands' : 'midi'
-    $('played').onchange = () => { showPerformed(); reloadSchedule() }
+    $('played').value = ['hands', 'fingers'].includes(params.get('played')) ? params.get('played') : 'midi'
+    $('played').onchange = () => { songTarget.allSoundOff(); if (fromFingers()) ensureEar(); showPerformed(); reloadSchedule() }
     $('hairColor').oninput = () => hair.setColor($('hairColor').value)
     $('dressColor').oninput = () => dress.setColor($('dressColor').value)
     $('hairDensity').onchange = () => hair.setDensity(+$('hairDensity').value)
@@ -1510,8 +1512,23 @@
     // what the piano plays (pianist/performed.js): the file, or the schedule
     // of what her hands play once the fingering is in (Performance > Piano plays)
     let played = null, loaded = null   // (loaded: the schedule the scheduler holds)
-    const sounding = () => $('played').value === 'hands' && played ? played : song
-    const showPerformed = () => { $('playedV').textContent = $('played').value === 'hands' ? (played ? describePerformed(played.stats) : song ? 'working out the fingering…' : '') : '' }
+    // (fingers: the scheduler holds the hands' schedule for its clock, its pedals and its end; the notes come from the fingertips)
+    const fromFingers = () => $('played').value === 'fingers'
+    const sounding = () => $('played').value !== 'midi' && played ? played : song
+    const showPerformed = () => { $('playedV').textContent = fromFingers() ? (earDet ? describeContacts(earDet.stats) : '') : $('played').value === 'hands' ? (played ? describePerformed(played.stats) : song ? 'working out the fingering…' : '') : '' }
+    // Her fingertips (pianist/fingertips.js): the keys go down under her hands'
+    // solved fingertips; the sound comes from a second pair of hands, the
+    // ear's, run ahead of the picture by the measured audio delay (avs.lag),
+    // so a note fired now is heard as her finger reaches the key. Both pairs
+    // play the same fingering; the ear's has no rig (no elbow, posture or
+    // crossing lift), so on a rare key the two can differ.
+    let ear = null, earDet = null, earNotes = null
+    const keysDet = createContactDetector(rig.hands, { on: (p, v) => piano.noteOn(p, v), off: p => piano.noteOff(p) })
+    function ensureEar() {
+      if (!ear) { ear = createHandsDriver(rig.dims.R); earDet = createContactDetector(ear, { on: (p, v) => { if (soundReady) engine.noteOn(p, v, 0) }, off: p => engine.noteOff(p, 0) }) }
+      ear.touch = rig.hands.touch
+      if (earNotes) ear.setNotes(earNotes.map(n => ({ ...n })))
+    }
     // hand the scheduler the schedule it should play, keeping its place
     // (the worklet keeps its clock through a load; the keys restart on it)
     function reloadSchedule() {
@@ -1533,8 +1550,8 @@
       audioContext: audioCtx,
       resume: () => audioCtx.resume(),
       // sound only: the keys and pedals follow the picture's clock (driveKeys)
-      noteOn(m, v, c) { if (c === 9) return; if (soundReady) engine.noteOn(m, v, c) },
-      noteOff(m, c) { if (c === 9) return; engine.noteOff(m, c) },
+      noteOn(m, v, c) { if (c === 9 || fromFingers()) return; if (soundReady) engine.noteOn(m, v, c) },
+      noteOff(m, c) { if (c === 9 || fromFingers()) return; engine.noteOff(m, c) },
       controlChange(c, cc, v) { engine.controlChange(c, cc, v) },
       allSoundOff() {
         for (let c = 0; c < 16; c++) engine.controlChange(c, 64, 0)
@@ -1551,13 +1568,14 @@
       for (const m of held.keys()) piano.noteOff(m)
       held.clear(); pedals.fill(false); piano.setSustain(false); piano.setPedal(0, false); piano.setPedal(1, false)
       keysAt.t = null; keysAt.active = []
+      keysDet.reset(); earDet?.reset()
     }
     // the keys and pedals at song time t (forward steps; a jump restarts)
-    const keysAt = { t: null, idx: 0, cc: 0, active: [], src: null }
+    const keysAt = { t: null, idx: 0, cc: 0, active: [], src: null }, NO_NOTES = []
     const keyOn = n => { held.set(n.midi, (held.get(n.midi) || 0) + 1); piano.noteOn(n.midi, n.velocity) }
     const keyOff = n => { const k = (held.get(n.midi) || 1) - 1; if (k <= 0) { held.delete(n.midi); piano.noteOff(n.midi) } else held.set(n.midi, k) }
     function driveKeys(t) {
-      const s = sounding(), notes = s.notes, ccs = s.controlChanges || [], K = keysAt
+      const s = sounding(), notes = fromFingers() ? NO_NOTES : s.notes, ccs = s.controlChanges || [], K = keysAt
       if (K.src !== notes) { K.src = notes; K.t = null }   // (the schedule changed under the keys)
       if (K.t == null || t < K.t || t > K.t + 0.5) {
         releaseKeys(); K.idx = 0; K.cc = 0
@@ -1610,6 +1628,7 @@
     $('avsync').oninput()
     window.__pianist.avs = avs
     window.__pianist.sounding = sounding; window.__pianist.performed = () => played; window.__pianist.songNow = songNow; window.__pianist.heldKeys = () => [...held.keys()]
+    window.__pianist.keysDet = keysDet; window.__pianist.earDet = () => earDet
     async function ensureScheduler() {
       if (scheduler) return scheduler
       scheduler = new MidiScheduler(songTarget)
@@ -1660,7 +1679,8 @@
       const out = notes.map((n, i) => { const [h, f, rel, sh] = rows[i]; return { pitch: n.midi, on: n.time, off: n.time + n.duration, release: rel, hand: h, finger: f, velocity: n.velocity, ...(sh ? { shared: sh } : {}) } })
       rig.setNotes(out)
       // (setNotes moved the releases the hands can't keep: the schedule of what they play)
-      played = performedSchedule(song, out); showPerformed(); reloadSchedule()
+      played = performedSchedule(song, out); earNotes = out; if (ear) ensureEar()
+      showPerformed(); reloadSchedule()
       dirSource = { duration: out.reduce((m, n) => Math.max(m, n.off), 0), ...rig.form(), energyAt: rig.music.energyAt }
       director.setSong(dirSource); director2?.setSong(dirSource)
     }
@@ -1709,7 +1729,7 @@
         if (!s.notes.length) throw new Error('no notes in file')
         s.duration = s.notes.reduce((m, n) => Math.max(m, n.time + n.duration), 0)
         s.title = s.title || String(name || '').replace(/\.midi?$/i, '')
-        song = s; fingered = false; played = null; showPerformed()
+        song = s; fingered = false; played = null; earNotes = null; if (fromFingers()) ensureEar(); showPerformed()
         attachLiner(midi, songFile || name, s.duration)
         rig.clear()
         fingerInWorker(s.notes)
@@ -1910,7 +1930,7 @@
     const eyesAt = () => hasEyes ? eyesC.copy(rig.pos('eye.L')).add(rig.pos('eye.R')).multiplyScalar(0.5) : head
     const dofOf = name => SHOT_DOF[name] ?? 1
     let lastShot2 = null
-    let fxT = 0, exporting = false, exTitleCard = false
+    let fxT = 0, exporting = false, exTitleCard = false, fingerFrames = 0
     function frame() {
       const dt = Math.min(clock.getDelta(), 1 / 20)
       step(dt, fixedT ?? pictureTime(dt), false)
@@ -1918,12 +1938,22 @@
     }
     // offline: the export drives song time and the keys itself (see stageAdapter)
     function step(dt, t, offline) {
-      if (offline || (fixedT == null && song && scheduler?.playing)) driveKeys(t + KEY_LEAD)
+      const playing = offline || (fixedT == null && song && scheduler?.playing)
+      if (playing) driveKeys(t + KEY_LEAD)
       fxT += dt
       dust.material.uniforms.uTime.value = fxT
       piano.update(dt)
       rig.setPedals(pedals[0], pedals[1], pedals[2])
       rig.update(t, dt)
+      if (fromFingers() && song && playing) {
+        keysDet.update()
+        if (!offline && ear) {
+          // (the ear's hands ahead by the audio delay, less the user's A/V offset, which puts the sound later)
+          ear.update(t + (Math.max(0, avs.lag) - +$('avsync').value / 1000) * (scheduler.speed || 1), dt)
+          earDet.update()
+          if (!(++fingerFrames % 30)) showPerformed()
+        }
+      }
       ch.group.updateMatrixWorld(true)
       wardrobeUpdate(dt)
       parkStage.update(dt)
@@ -2210,9 +2240,17 @@
       $('exStart').disabled = true
       const programs = new Map(); for (let ch = 0; ch < 16; ch++) if (ch !== 9) programs.set(ch, 0)
       try {
+        // (her fingertips: the piece played on a fresh pair of hands offline, what they sound)
+        let exNotes = sounding().notes
+        if (fromFingers() && earNotes) {
+          $('exStatus').textContent = 'Playing the piece on her fingertips…'
+          const r = await simulateContacts(earNotes, rig.dims.R, { touch: rig.hands.touch, from: clipA - 1, to: clipB + tailS + 1, yieldMs: 8, cancelled: () => exAbort.signal.aborted })
+          if (!r) throw new Error('cancelled')
+          exNotes = r.notes
+        }
         const blob = await exportVideo({
           stage: stageAdapter,
-          song: { schedule: { notes: sounding().notes, controlChanges: (song.controlChanges || []).filter(c => c.controller !== 7) }, programs, duration: song.duration, title: song.title },
+          song: { schedule: { notes: exNotes, controlChanges: (song.controlChanges || []).filter(c => c.controller !== 7) }, programs, duration: song.duration, title: song.title },
           width, height, fps, start: clipA,
           // a Short: on the music from the first frame, the room rings 0.6 s past the out point while it fades
           // the tail (Render → Tail after the end): past the piece's end, or a handle past a clip's out point
@@ -2522,7 +2560,8 @@
           rig.update(fixedT, 1 / 60); ch.group.updateMatrixWorld(true); wardrobeUpdate(1 / 60)
         }
         // keys down where notes are held at T
-        if (song) for (const n of sounding().notes) if (n.time <= T && n.time + n.duration > T) piano.noteOn(n.midi, 0.7)
+        if (song && fromFingers()) { keysDet.reset(); keysDet.update() }
+        else if (song) for (const n of sounding().notes) if (n.time <= T && n.time + n.duration > T) piano.noteOn(n.midi, 0.7)
         for (let i = 0; i < 30; i++) piano.update(1 / 60)
         const handsAt = (() => { const c = new THREE.Vector3(); for (const h of [rig.hands.L, rig.hands.R]) c.add(h.joints.W); return c.multiplyScalar(0.5) })()
         let focusOn = viewFocusHands(view) ? handsAt : rig.pos('head'), wide = viewWide(view)

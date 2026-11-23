@@ -88,8 +88,9 @@ export async function createPark(renderer, { time = 1.4, style = 'summer', azimu
   const away = new THREE.Vector2(LAWN.x, LAWN.z).normalize();
   const yaw = Math.atan2(away.x, away.y);
   // (the lawn centred between him and the piano's middle: with layout 'curve' the piano is
-  // about 1 m on his right and 0.8 m behind him, with 'keys' about 2.6 m on his left and 0.7 m behind)
-  const off = layout === 'curve' ? new THREE.Vector3(1.0, 0, 0.8) : new THREE.Vector3(-1.3, 0, 0.35)
+  // about 1 m on his right and 0.8 m behind him, with 'keys' about 2.6 m on his left and 0.7 m behind;
+  // 'solo', the pianist alone (park/stage.js): the piano's middle, her bench 0.45 m in front of it)
+  const off = layout === 'curve' ? new THREE.Vector3(1.0, 0, 0.8) : layout === 'solo' ? new THREE.Vector3(0, 0, -0.2) : new THREE.Vector3(-1.3, 0, 0.35)
   const origin = new THREE.Vector3(LAWN.x, LAWN.y, LAWN.z).add(off.divideScalar(scale).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw));
   const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw), qYawInv = qYaw.clone().invert();
   /** A point of the duo's frame (cm) in the park (m), and back. */

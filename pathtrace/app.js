@@ -46,6 +46,7 @@ import { createPathTraceStills } from '../pathtrace/still.js'
 import { pathTracedFrames } from '../pathtrace/video.js'
 import { createFrameSpace, LANDSCAPE_PLACES, portraitPlaces } from '../pianist/frame-space.js'
 import { createFocusPuller, SHOT_DOF } from '../pianist/focus-puller.js'
+import { createParkStage, PARK_TIMES, PARK_TREES } from '../park/stage.js'
 import { createLinerLibrary, clockOfMidi, buildTimeline, toVTT, toChapters, titleScreen, withTitle, titleSecs, layoutClip } from '../liner/liner.js'
 import { createLinerOverlay, drawLinerCaption, drawIntertitle, loadIntertitleFonts, INTERTITLE_STYLES, INTERTITLE_THEMES, INTERTITLE_POSITIONS } from '../liner/overlay.js'
 import { SHELL } from './shell.js'
@@ -737,6 +738,7 @@ export async function boot(plug = {}) {
       bokeh.render = (...a) => { const v = dust.visible; dust.visible = false; render(...a); dust.visible = v }
     }
     const pct = x => Math.round(x * 100) + '%'
+    let parkStage = null   // (the park stage set, below)
     function applyFx() {
       bokeh.enabled = $('dof').checked
       // (the most blur, a share of the frame: more of it with the Blur slider above 1)
@@ -744,7 +746,7 @@ export async function boot(plug = {}) {
       bloom.enabled = $('bloom').checked; bloom.strength = +$('bloomAmt').value
       const g = $('filmGrain').checked
       grain.uniforms.uAmount.value = g ? +$('grainAmt').value : 0; grain.uniforms.uVig.value = g ? +$('vig').value : 0
-      dust.visible = $('dust').checked; dust.material.uniforms.uOpacity.value = +$('dustAmt').value
+      dust.visible = $('dust').checked && (!parkStage || parkStage.shows(dust)); dust.material.uniforms.uOpacity.value = +$('dustAmt').value
       if (GPU) { live.fx.motionBlur = $('motionBlur').checked && +$('shutter').value > 0; live.fx.shutter = +$('shutter').value }
       $('dofAmtV').textContent = (+$('dofAmt').value).toFixed(2).replace(/0$/, '') + '×'
       $('bloomAmtV').textContent = (+$('bloomAmt').value).toFixed(2)
@@ -761,6 +763,35 @@ export async function boot(plug = {}) {
     for (const id of ['dof', 'dofBoth', 'bloom', 'filmGrain', 'dust', 'motionBlur']) $(id).onchange = applyFx
     for (const id of ['dofAmt', 'bloomAmt', 'grainAmt', 'vig', 'dustAmt', 'shutter']) $(id).oninput = applyFx
     applyFx()
+
+    // ── The park (#051) as a stage set (park/stage.js): Visuals → Stage, ?scene=park ──
+    // (the live WebGL picture only: its shaders are neither WebGPU's nor the tracers')
+    parkStage = createParkStage({ renderer, scene, camera, onStatus: m => setStatus(m),
+      stageParts: () => [floor, spot, faceKey, rim, back, keyFill, dust, ...Object.values(stageProps).map(p => p.root)],
+      foreground: () => [ch.group, hair?.object, hair?.cap, dress?.object, shoes?.object],
+      hair: () => hair })
+    if (GPU) { const o = $('stageSet').querySelector('option[value=park]'); o.disabled = true; o.text += ' - WebGL only' }
+    for (const [i, n] of PARK_TIMES) $('parkTod').add(new Option('' + n, i, i === 1, i === 1))
+    for (const [k, n] of PARK_TREES) $('parkTree').add(new Option(n, k, k === 'summer', k === 'summer'))
+    $('parkTod').onchange = () => parkStage.setTime($('parkTod').value)
+    $('parkTree').onchange = () => parkStage.setStyle($('parkTree').value)
+    $('parkAmb').onchange = () => parkStage.setSound($('parkAmb').checked && scheduler?.playing)
+    async function setStageSet(name) {
+      const park = name === 'park' && !GPU
+      for (const el of document.querySelectorAll('.parkOnly')) el.style.display = park ? '' : 'none'
+      for (const id of ['dof', 'bloom', 'filmGrain', 'dust', 'motionBlur']) { const l = $(id)?.closest('label'); if (l) l.style.opacity = park ? 0.4 : '' }
+      $('stageSet').disabled = true
+      try {
+        if (!park && parkStage.on) await parkStage.set(false)
+        if (park) await parkStage.set(true); else setStage(name)
+      } catch (e) { console.error(e); setStatus('Could not grow the park: ' + e.message, true, 6000); setStage('stage') }
+      finally { $('stageSet').disabled = false }
+      $('stageSet').value = parkStage.on ? 'park' : $('stageSet').value === 'park' ? 'stage' : $('stageSet').value
+      parkStage.setSound(parkStage.on && $('parkAmb').checked && scheduler?.playing)
+      applyFx()
+    }
+    $('stageSet').onchange = () => setStageSet($('stageSet').value)
+    const drawPost = () => parkStage.on ? parkStage.draw() : composer.render()
 
     // ── Cameras (framed after Concert Creator's shots) ───────────────────
     const VIEWS = {
@@ -1451,7 +1482,7 @@ export async function boot(plug = {}) {
       $('tLeft').textContent = '-' + fmt(Math.max(0, d - t))
       if (!seeking) { $('seek').value = d ? t / d : 0; $('seek').style.setProperty('--p', (d ? t / d * 100 : 0) + '%') }
     }
-    const setPlaying = on => { if (on) $('start').classList.add('gone'); $('playIcon').innerHTML = on ? '<path d="M6 4h4v16H6zm8 0h4v16h-4z"/>' : '<path d="M7 4v16l13-8z"/>'; poke() }
+    const setPlaying = on => { parkStage.setSound(on && $('parkAmb').checked); if (on) $('start').classList.add('gone'); $('playIcon').innerHTML = on ? '<path d="M6 4h4v16H6zm8 0h4v16h-4z"/>' : '<path d="M7 4v16l13-8z"/>'; poke() }
     async function togglePlay() {
       if (!song) {
         if (sharedSong) { const [f, at] = sharedSong; sharedSong = null; return loadSongUrl(f, SONGS.find(x => x[0] === f)?.[1] || f.split('/').pop(), at) }
@@ -1513,7 +1544,7 @@ export async function boot(plug = {}) {
       ['dresson', 'dressOn'], ['clothsim', 'clothSim'], ['vdress', 'vdress'], ['look', 'look'], ['smooth', 'smooth'], ['simplify', 'simplify'],
       ['gaze', 'gaze'], ['expr', 'expr'], ['rest', 'restAfter'], ['hips', 'hips'], ['posture', 'posture'], ['reach', 'reach'], ['rock', 'rock'], ['sway', 'sway'], ['nod', 'nod'], ['glances', 'glances'], ['armw', 'armw'], ['lifth', 'lifth'], ['wflex', 'wflex'], ['frot', 'frot'], ['elbow', 'elbowLead'], ['liftoff', 'liftoff'], ['bench', 'benchDist'], ['benchh', 'benchH'],
       ['touch', 'touch'], ['fingering', 'fingering'], ['hands', 'hands'],
-      ['light', 'light'], ['exposure', 'exposure'], ['dof', 'dof'], ['scene', 'stageSet'], ['finish', 'finish'], ['lid', 'lid'],
+      ['light', 'light'], ['exposure', 'exposure'], ['dof', 'dof'], ['scene', 'stageSet'], ['tod', 'parkTod'], ['tree', 'parkTree'], ['birds', 'parkAmb'], ['finish', 'finish'], ['lid', 'lid'],
       ['fasian', 'faceAsian'], ['fafrican', 'faceAfrican'], ['skintex', 'skinTex'],
       ['move', 'camMove'], ['dpreset', 'dirPreset'], ['pace', 'dirPace'], ['favour', 'dirBias'], ['trans', 'dirTrans'], ['dstill', 'dirStill'], ['dmix', 'dirMix'], ['shotnames', 'shotLbl'], ['follow', 'camFollow'], ['dfar', 'dirFar'], ['dmed', 'dirMed'], ['dclose', 'dirClose'], ['strings', 'dirStrings'], ['dpedals', 'dirPedals'], ['dopen', 'dirOpen'],
       ['sf', 'sf'], ['avsync', 'avsync'],
@@ -1537,6 +1568,13 @@ export async function boot(plug = {}) {
     // tracer, exptspp / exptdn the video's samples and denoise)
     if (/^(gpt|mu)-/.test(params.get('expt') || '')) { if (!params.has('ptengine')) params.set('ptengine', params.get('expt')); params.set('expt', 'pt') }
     for (const [o, n] of [['exptspp', 'ptspp'], ['exptdn', 'ptdn']]) if (params.has(o) && !params.has(n)) params.set(n, params.get(o))
+    if (params.get('scene') === 'park' && !GPU) {
+      for (const [k, id] of [['tod', 'parkTod'], ['tree', 'parkTree']]) if ([...$(id).options].some(o => o.value === params.get(k))) $(id).value = params.get(k)
+      parkStage.opts.time = +$('parkTod').value; parkStage.opts.style = $('parkTree').value
+      { const k = +params.get('pscale'); if (k >= 0.02 && k <= 4) parkStage.opts.scale = k }
+      $('stageSet').value = 'park'
+      await setStageSet('park')
+    }
     for (const [k, id] of STATE) {
       if (!params.has(k)) continue
       const el = $(id), v = params.get(k)
@@ -1647,6 +1685,7 @@ export async function boot(plug = {}) {
       rig.update(t, dt)
       ch.group.updateMatrixWorld(true)
       wardrobeUpdate(dt)
+      parkStage.update(dt)
       // the subjects: her head, the hands (where they rest when not playing)
       head.copy(rig.pos('head'))
       const hd = rig.hands
@@ -1725,6 +1764,7 @@ export async function boot(plug = {}) {
       if (!offline) { liner.update(songNow()); plug.onFrame?.(songNow(), app) }
       // nothing to post-process on the light path: draw straight to the screen
       if (stacked) drawStacked(t, dt, cameraSubjects)
+      else if (parkStage.on) parkStage.draw()
       else if (!GPU && LOWQ && !bokeh.enabled && !bloom.enabled && !$('filmGrain').checked) renderer.render(scene, camera)
       else composer.render()
     }
@@ -1744,7 +1784,7 @@ export async function boot(plug = {}) {
     const lens = (w, hh) => { camera.aspect = w / hh; camera.zoom = Math.max(0.55, Math.min(1, camera.aspect / 1.6)); camera.updateProjectionMatrix(); bokeh.uniforms.aspect.value = camera.aspect }
     function drawStacked(t, dt, live) {
       const { x: w, y: h } = renderer.getSize(_sz), [ht, hb] = stackHs(h)
-      const draw = () => !GPU && LOWQ && !bokeh.enabled && !bloom.enabled && !$('filmGrain').checked ? renderer.render(scene, camera) : composer.render()
+      const draw = () => parkStage.on ? parkStage.draw() : !GPU && LOWQ && !bokeh.enabled && !bloom.enabled && !$('filmGrain').checked ? renderer.render(scene, camera) : composer.render()
       const aspect0 = camera.aspect, zoom0 = camera.zoom, bokehOn = bokeh.enabled
       renderer.setScissorTest(true)
       lens(w, ht)
@@ -1821,7 +1861,7 @@ export async function boot(plug = {}) {
       const ch = stacked ? stackH(h) : h, ca = stacked ? stackHs(h)[0] : h
       camera.zoom = shortFrame && !stacked ? 1 : Math.max(0.55, Math.min(1, (w / ca) / 1.6))
       camera.aspect = w / ca; camera.updateProjectionMatrix()
-      renderer.setSize(w, h, style); composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(w, ch)
+      renderer.setSize(w, h, style); composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(w, ch); parkStage.setSize()
       dust.material.uniforms.uScale.value = ch * renderer.getPixelRatio()
       grain.uniforms.uRes.value.set(w * renderer.getPixelRatio(), ch * renderer.getPixelRatio())
     }
@@ -1898,7 +1938,7 @@ export async function boot(plug = {}) {
       const k = $('exFont').value
       await loadTitleFont(k)
       if (job !== previewJob) return
-      composer.render()   // (a fresh frame in the drawing buffer)
+      drawPost()   // (a fresh frame in the drawing buffer)
       g.clearRect(0, 0, w, h)
       const src = renderer.domElement, r = Math.max(w / src.width, h / src.height), sw = w / r, sh = h / r
       g.drawImage(src, (src.width - sw) / 2, (src.height - sh) / 2, sw, sh, 0, 0, w, h)
@@ -2156,6 +2196,14 @@ export async function boot(plug = {}) {
     $('exPtEdit').onclick = ev => { ev.stopPropagation(); closePops(); $('ptPop').classList.add('open') }
     $('exPt').onchange()
     window.__pianist.pt = ptStills
+    // the park isn't path traced (its sky, grass and tree are shaders the tracers don't run): stills and
+    // path-traced videos say so and wait for a stage
+    {
+      const parkSays = 'The park is drawn live only: choose the black stage or the candlelit chamber (Visuals → Stage) to path trace.'
+      for (const id of ['ptStart', 'ptAll']) { const f = $(id).onclick; $(id).onclick = (...a) => parkStage.on ? void ($('ptStatus').textContent = parkSays) : f(...a) }
+      const ex = $('exStart').onclick
+      $('exStart').onclick = (...a) => parkStage.on && $('exPt').value !== 'raster' ? void ($('exStatus').textContent = parkSays.replace('to path trace', 'for a path-traced video, or Renderer: raster')) : ex(...a)
+    }
     window.__pianist.titleFonts = { TITLE_FONTS, loadTitleFont }
 
     // ── YouTube Shorts: a clip of the piece, 9:16 ────────────────────────
@@ -2468,7 +2516,7 @@ export async function boot(plug = {}) {
         // (SSGI, SSR and TRAA settle over frames; each in a frame of its own, since the
         // nodes that read the camera update once a frame and the shot just moved it)
         else if (GPU) { for (let i = 0; i < +(params.get('gpuframes') || 8); i++) { await new Promise(r => requestAnimationFrame(r)); composer.render() } }
-        else composer.render()
+        else { parkStage.update(1 / 60); drawPost() }
         await plug.onFrame?.(T, app, { shot: true })
         return true
       }
