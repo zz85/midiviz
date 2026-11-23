@@ -374,7 +374,7 @@
     <div class="field" title="Fall: each finger rises in the free time before its note (higher for louder notes) and falls onto the key, each in its own way: the thumb low from the base of the hand, the 2nd light and quick, the 3rd steady, the 4th rising a little with the 3rd, the 5th firm. Press: every finger the same, pushed down as in #029 / #030"><label>Finger touch</label><select id="touch"><option value="fall" selected>Fall (each its own way)</option><option value="press">Press (all alike)</option></select></div>
     <div class="field" title="Chopin: the 4th finger is not avoided, the 5th takes the outer voice of a chord (the top in the right hand, the bass in the left), the 3rd sings long melody notes. Standard: the usual textbook rules"><label>Fingering</label><select id="fingering"><option value="standard" selected>Standard</option><option value="chopin">Chopin</option></select></div>
     <label class="chk" title="Play the fingering on a copy of her hands first; where a fingertip cannot stay on a key it holds, finger that chord another way, and keep the new fingering only if her hands then miss fewer keys (after Mechanical Pianist). Takes a few seconds after a song loads; she starts with the plain fingering"><input type="checkbox" id="replanOn"> Check on her hands <small id="replanV"></small></label>
-    <div class="field" title="Which hand plays each note. Automatic, with the tracks' hand crossings (the default): the fingering's own split, except in the passages where the MIDI's hand tracks cross (the left hand's track above the right's, as in the Goldberg's variations for two manuals), which keep the tracks' split. From the score's tracks: where the MIDI names its tracks for the hands (Right hand / Left hand, RH / LH, treble / bass), the edition's own split, hand crossings included; other files fall back to automatic. Automatic: the fingering chooses the split that its fingers play most easily."><label>Hands <small id="handsV"></small></label><select id="hands"></select></div>
+    <div class="field" title="Which hand plays each note. Automatic, with the tracks' hand crossings (the default): the fingering's own split, except in the passages where the MIDI's hand tracks cross (the left hand's track above the right's, as in the Goldberg's variations for two manuals), which keep the tracks' split. From the score's tracks: where the MIDI names its tracks for the hands (Right hand / Left hand, RH / LH, treble / bass), or writes one piano part as two staff tracks of one name, the upper first (MuseScore and webmscore.html do), the edition's own split, hand crossings included; other files fall back to automatic. Automatic: the fingering chooses the split that its fingers play most easily."><label>Hands <small id="handsV"></small></label><select id="hands"></select></div>
     <div class="field" title="What the piano sounds and which keys go down. The MIDI file: every note as written, for its written length (the hands play what they can of it). What her hands play: the notes her fingers reach, each sounding until the finger lets go; a key the fingering left unfingered (more than five at once with nothing to take them) stays silent, and a key the hand lets go early (to leap, to bounce on a repeated chord, or because it has moved on) stops sounding there. Her fingertips: each key goes down as her solved fingertip is down on it (the planned press past half, the tip on the key), and up as it leaves; a finger that can't reach its key plays nothing. The sound comes from a second pair of hands run ahead by the measured audio delay, so a note is heard as her finger reaches the key; the readout counts the notes sounded and missed. The sustain pedal is as written in every case."><label>Piano plays <small id="playedV"></small></label><select id="played"><option value="midi" selected>The MIDI file</option><option value="hands">What her hands play</option><option value="fingers">Her fingertips (live)</option></select></div>
     <div class="sect">Hands and arms<small>wrist strokes: lifts, drops, bounces</small></div>
     <div class="field" title="How much loudness comes from the arm: before a loud note the hand lifts in the time it has and falls into the key (0 = fingers only, the hand stays on the keys)"><label>Arm weight</label><input type="range" id="armw" min="0" max="2" step="0.1" value="1"><span id="armwV">1×</span></div>
@@ -1522,7 +1522,8 @@
     // so a note fired now is heard as her finger reaches the key. Both pairs
     // play the same fingering; the ear's has no rig (no elbow, posture or
     // crossing lift), so on a rare key the two can differ.
-    let ear = null, earDet = null, earNotes = null
+    let ear = null, earDet = null, earNotes = null, earT = null
+    const EAR_STEP = 1 / 240
     const keysDet = createContactDetector(rig.hands, { on: (p, v) => piano.noteOn(p, v), off: p => piano.noteOff(p) })
     function ensureEar() {
       if (!ear) { ear = createHandsDriver(rig.dims.R); earDet = createContactDetector(ear, { on: (p, v) => { if (soundReady) engine.noteOn(p, v, 0) }, off: p => engine.noteOff(p, 0) }) }
@@ -1568,7 +1569,7 @@
       for (const m of held.keys()) piano.noteOff(m)
       held.clear(); pedals.fill(false); piano.setSustain(false); piano.setPedal(0, false); piano.setPedal(1, false)
       keysAt.t = null; keysAt.active = []
-      keysDet.reset(); earDet?.reset()
+      keysDet.reset(); earDet?.reset(); earT = null
     }
     // the keys and pedals at song time t (forward steps; a jump restarts)
     const keysAt = { t: null, idx: 0, cc: 0, active: [], src: null }, NO_NOTES = []
@@ -1695,7 +1696,7 @@
       const job = ++fingerJob
       const hr = assignHands(notes, song?.trackNames, $('hands').value)
       handsSource = hr.source
-      $('handsV') && ($('handsV').textContent = handsSource === 'tracks' ? 'from the tracks' : handsSource === 'crossings' ? `${hr.passages.length} crossing${hr.passages.length === 1 ? '' : 's'} from the tracks` : 'automatic')
+      $('handsV') && ($('handsV').textContent = handsSource === 'tracks' ? `from the ${hr.by === 'staves' ? 'staves' : 'tracks'}` : handsSource === 'crossings' ? `${hr.passages.length} crossing${hr.passages.length === 1 ? '' : 's'} from the ${hr.by === 'staves' ? 'staves' : 'tracks'}` : 'automatic')
       fingerWorker?.terminate()
       const w = fingerWorker = newFingerWorker()
       const done = () => { w.terminate(); if (fingerWorker === w) fingerWorker = null }
@@ -1948,9 +1949,12 @@
       if (fromFingers() && song && playing) {
         keysDet.update()
         if (!offline && ear) {
-          // (the ear's hands ahead by the audio delay, less the user's A/V offset, which puts the sound later)
-          ear.update(t + (Math.max(0, avs.lag) - +$('avsync').value / 1000) * (scheduler.speed || 1), dt)
-          earDet.update()
+          // the ear's hands ahead by the audio delay, less the user's A/V
+          // offset (which puts the sound later), in steps of EAR_STEP so a
+          // note's onset isn't quantized to the frame (a frame at 60 Hz is 17 ms)
+          const goal = t + (Math.max(0, avs.lag) - +$('avsync').value / 1000) * (scheduler.speed || 1)
+          if (earT == null || goal < earT || goal > earT + 0.5) { earT = goal - dt; earDet.reset() }
+          while (earT < goal - 1e-6) { const h = Math.min(EAR_STEP, goal - earT); earT += h; ear.update(earT, h); earDet.update() }
           if (!(++fingerFrames % 30)) showPerformed()
         }
       }

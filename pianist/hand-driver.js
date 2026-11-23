@@ -267,7 +267,8 @@ export function createHandDriver(side, dims) {
   // smoothed hand placement: middle knuckle (x, z), yaw, plus a reach slide
   const hand = { x: s * 12, z: KNUCKLE_Z, yaw: 0, init: false }
   const slide = v3(), slideGoal = v3()
-  const diag = { splay: [0, 0, 0, 0, 0], err: [0, 0, 0, 0, 0], press: [0, 0, 0, 0, 0], target: [v3(), v3(), v3(), v3(), v3()] }
+  // (pitch, vel, on: the key each fingertip plays or is about to, its note's velocity and onset, from the pose; null between notes)
+  const diag = { splay: [0, 0, 0, 0, 0], err: [0, 0, 0, 0, 0], press: [0, 0, 0, 0, 0], pitch: [null, null, null, null, null], vel: [0, 0, 0, 0, 0], on: [null, null, null, null, null], target: [v3(), v3(), v3(), v3(), v3()] }
   // rotate a hand-frame (x, z) offset by the yaw; θ > 0 turns the fingers toward +x
   const rot = (x, z, th) => { const c = Math.cos(th), n = Math.sin(th); return [x * c - z * n, x * n + z * c] }
 
@@ -759,7 +760,7 @@ export function createHandDriver(side, dims) {
       basePos(f, P[0])
       const [wx2, wz2] = rot(s * lx[i], lz[i], hand.yaw)
       tip.set(hand.x + slide.x + wx2, ty[i], hand.z + slide.z + wz2)
-      diag.press[i] = tips[i].press
+      diag.press[i] = tips[i].press; diag.pitch[i] = tips[i].pitch ?? null; diag.vel[i] = tips[i].vel ?? 0; diag.on[i] = tips[i].on ?? null
       // a free fingertip never sinks into the keys: it stays a little above
       // the key top under it (a black key's where there is one), even when
       // the hand is carried low (a held key out of reach slides it down)
