@@ -698,5 +698,15 @@ The Iowa bank: `build_iowa.js --instrument=bass` reads the 2012 double bass page
 
 Attacks, `attack.js --bass` (the bass is reported apart: at 41–98 Hz Guettler's 50 ms is two to five periods): 36 of 144 good, Helmholtz within 9 periods (median); bow changes 31 of 72, from rest 5 of 72. The other three instruments are unchanged by the bass's settings.
 
-Tests: the sustained Helmholtz sweep, the hybrid pitch test, both measured-body tests and the energy test take the bass (its sustained notes are measured over 1.4 s with a 32k window); the attacks-from-rest periodicity bar is now the Iowa recordings' own median plus 0.05 (the fixed 0.8 would have failed the recordings themselves, at 0.81). `SourceString` starts at a seeded phase (it was `Math.random()`: the test of the gaps between its harmonics swung 36.7–38.8 dB from run to run). `node --test strings/test/sound.test.js`: 36.
+**Early-slip boost.** #048's other attack device, ported and measured. Interactive bow pressure only kicks after 0.1 s of bowing (pre-Helmholtz slipping is normal in an attack), so nothing corrected multiple slipping inside the attack itself. Now, after each counted slip (a stick of at least 0.3 period before it), a slip that comes before 0.79 of a period after the last one raises the bow force by the instrument's `earlyRate` (× (1 + rate) + rate/2, up to 2.5×) for the next period; a slip at the right spacing decays the excess by 0.8. Counting every slip, micro-slips included, read as early every time and wrecked every instrument (327 → 229 at rate 0.02). With counted slips only, on all four instruments:
+
+| rate (cap 2.5) | 0 | 0.02 | 0.05 | 0.1 |
+|---|---|---|---|---|
+| good attacks of 576 | 327 | 322 | 306 | 287 |
+| loose failures | 95 | 80 | 64 | 39 |
+| bass alone, of 144 | 36 | 43 | 40 | 41 |
+
+The loose failures it takes away come back as raucous, and the violin, viola and cello each lose a few at any rate, so `earlyRate` is per instrument in `INSTRUMENTS`: 0.02 on the bass (36 → 43 good, from rest 5 → 14, the sustained sweep 62 → 63 of 63), 0 elsewhere. The bass regime is chaotic at this scale (0.01 → 35, 0.015 → 30, 0.02 → 43, 0.025 → 33 good), so the gain is at the edge of the scatter. `attack.js --bass`: 334 of 576. The `earlyRate` and `earlyCap` options of `ViolinSynth` override it.
+
+Tests: the sustained Helmholtz sweep, the hybrid pitch test, both measured-body tests and the energy test take the bass (its sustained notes are measured over 1.4 s with a 32k window); the attacks-from-rest periodicity bar is now the Iowa recordings' own median plus 0.05 (the fixed 0.8 would have failed the recordings themselves, at 0.81). `SourceString` starts at a seeded phase (it was `Math.random()`: the test of the gaps between its harmonics swung 36.7–38.8 dB from run to run). `node --test strings/test/sound.test.js`: 36, loudness 1.
 

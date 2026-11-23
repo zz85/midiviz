@@ -123,7 +123,12 @@ export const INSTRUMENTS = {
     // notes a dynamic: pp in Helmholtz 21 at 0.7–0.85 (19 at 1), ff 21 at ≤ 0.5
     // (17 at 0.7, with the E string raucous and 28 cents flat); [0.8, 0.5]: 62 of
     // 63 and attacks (attack.js --bass) 36 of 144 good, Helmholtz in 9 periods (median)
-    open: [28, 33, 38, 43], Z: [3.4, 2.5, 1.85, 1.35], t60: [5.5, 5, 4.4, 4], press: [0.8, 0.5],
+    // earlyRate: the early-slip boost (WaveguideString), bass only. attack.js --bass,
+    // bass alone: 36 of 144 good at 0 → 43 at 0.02 (from rest 5 → 14), 30–43 over
+    // 0.01–0.1 (the regime is chaotic at this scale); the sustained sweep 62 → 63 of 63.
+    // On violin, viola and cello any rate costs attacks (327 → 322 at 0.02 on all four;
+    // the loose failures it takes away come back as raucous), so they stay at 0
+    open: [28, 33, 38, 43], Z: [3.4, 2.5, 1.85, 1.35], t60: [5.5, 5, 4.4, 4], press: [0.8, 0.5], earlyRate: 0.02,
     body: {
       modes: [[60, 12, 0.8], [90, 18, 0.45], [107, 22, 1], [118, 18, 0.5], [135, 24, 1], [165, 22, 0.55], [195, 24, 0.55], [230, 26, 0.55], [265, 26, 0.45], [305, 28, 0.45]],
       dense: { from: 330, to: 5000, count: 48, hill: 1000, hillWidth: 0.65, hillGain: 1.4, dip: 550, rolloff: 1800 },
@@ -204,6 +209,12 @@ const KF_MAX = Math.log(5)
 const TOUCH = 1.2                // harmonics: the touching finger's resistance relative to the string (2Z)
 const KICKS = 12                 // at most this many kicks per stroke
 const KICK_AFTER = 0.1, KICK_COOL = 0.12, SPP_A = 0.2   // s of bowing before the first kick, s between kicks, EMA of slips/period
+// early-slip boost (after #048): a counted slip before EARLY_AT of a period raises the
+// force by the instrument's earlyRate (INSTRUMENTS, or ViolinSynth's option), up to
+// EARLY_CAP (×); a timely slip decays the excess. EARLY_RATE is the rate where an
+// instrument sets none: 0, since it costs attacks on violin, viola and cello
+export const EARLY_AT = 0.79, EARLY_DECAY = 0.8
+export const EARLY_RATE = 0, EARLY_CAP = 2.5
 
 /** One waveguide string with a bow and a finger. */
 export class WaveguideString {
@@ -238,6 +249,14 @@ export class WaveguideString {
     // alternating up and down if one kick is not enough, with a cool-down
     this.bowPress = false
     this.kF = 0; this.slips = 0; this.acc = 0; this.spp = 1; this.bowAge = 0; this.cool = 0; this.kick = 1; this.kicks = 0; this.stick = 0
+    // early-slip boost (after #048's Helmholtz supervision): inside the attack, a
+    // slip that comes before EARLY_AT of a period after the last one means the bow
+    // broke free too soon (double or multiple slipping), so the force rises by
+    // earlyRate (× (1 + rate) + rate/2) for the next period, up to earlyCap; a slip
+    // at the right spacing lets it decay (× EARLY_DECAY of the excess). Interactive
+    // bow pressure only kicks after KICK_AFTER, so this is what acts in the attack
+    this.boost = 1; this.sinceSlip = 0
+    this.earlyRate = EARLY_RATE; this.earlyCap = EARLY_CAP
     this.rosin = 1         // × rosin grain (μs jitter)
     this.jMu = 0; this.jF = 0   // per-slip jitter of static friction and bow force
     // bow-hair compliance (after #048's bowCoupling): the share of the string's
@@ -250,7 +269,7 @@ export class WaveguideString {
     // and attacks turn raucous. Steady harmonics 2–8 within 0.5 dB
     this.coupling = COUPLING
   }
-  reset() { this.bridge.clear(); this.nut.clear(); this.tA.clear(); this.tB.clear(); this.tC.clear(); this.harm = 0; this.lpB = this.lpN = 0; this.slipping = false; this.out = 0; this.kF = 0; this.spp = 1; this.bowAge = 0 }
+  reset() { this.bridge.clear(); this.nut.clear(); this.tA.clear(); this.tB.clear(); this.tC.clear(); this.harm = 0; this.lpB = this.lpN = 0; this.slipping = false; this.out = 0; this.kF = 0; this.spp = 1; this.bowAge = 0; this.boost = 1; this.sinceSlip = 0 }
   noise() { let s = this.seed; s ^= s << 13; s ^= s >>> 17; s ^= s << 5; this.seed = s >>> 0; return (this.seed / 4294967296) * 2 - 1 }
 
   /** Per control step: geometry and losses for the next samples. */
@@ -333,7 +352,8 @@ export class WaveguideString {
       else { this.bowAge = 0; this.kicks = 0 }
       this.kF *= this.kDecay
       if (this.cool > 0) this.cool--
-      F *= Math.exp(this.kF)
+      F *= Math.exp(this.kF) * this.boost
+      this.sinceSlip++
     }
     if (F > 1e-4) {
       // friction junction (velocity jump dv added to both outgoing waves)
@@ -367,7 +387,18 @@ export class WaveguideString {
       // inside one slip phase do not: measured on the sweep, this separates
       // Helmholtz motion from double slipping on 338 of 343 good notes)
       if (!this.slipping) this.stick++
-      else if (!was) { if (this.stick > 0.3 * this.N) this.slips++; this.stick = 0 }
+      else if (!was) {
+        const counted = this.stick > 0.3 * this.N
+        if (counted) this.slips++
+        this.stick = 0
+        // only a counted slip (a stick of at least 0.3 period before it): the
+        // micro-slips inside one slip phase would read as early every time
+        if (counted && this.earlyRate > 0 && F > 1e-4) {
+          if (this.sinceSlip < EARLY_AT * this.N) this.boost = Math.min(this.earlyCap, this.boost * (1 + this.earlyRate) + 0.5 * this.earlyRate)
+          else this.boost = 1 + (this.boost - 1) * EARLY_DECAY
+          this.sinceSlip = 0
+        }
+      }
       if (++this.acc >= this.N) {
         this.acc -= this.N
         this.spp = (1 - SPP_A) * this.spp + SPP_A * this.slips
@@ -553,9 +584,9 @@ export class Body {
  * at(t, out) → fills out[string * NCH + channel] for time t (s).
  */
 export class ViolinSynth {
-  constructor(sr, { instrument = 'violin', model = 'waveguide', tone = null, bowPress = true, rosin = 1, resonance = 1, body = 'iowa', oversample = 3, tilt = 1, wgPress = 1, wgPos = 1, wgLimits = true, coupling = COUPLING } = {}) {
+  constructor(sr, { instrument = 'violin', model = 'waveguide', tone = null, bowPress = true, rosin = 1, resonance = 1, body = 'iowa', oversample = 3, tilt = 1, wgPress = 1, wgPos = 1, wgLimits = true, coupling = COUPLING, earlyRate = null, earlyCap = EARLY_CAP } = {}) {
     this.sr = sr
-    this.opts = { bowPress, rosin, resonance, body, tilt, wgPress, wgPos, wgLimits, coupling }
+    this.opts = { bowPress, rosin, resonance, body, tilt, wgPress, wgPos, wgLimits, coupling, earlyRate, earlyCap }
     this.fLo = new Float32Array(4); this.fHi = new Float32Array(4).fill(Infinity); this.fR = new Float32Array(4).fill(1)
     this.tiltLp = new Float64Array(4); this.tiltK = new Float32Array(4); this.tiltKt = new Float32Array(4); this.tiltA = new Float32Array(4)
     this.relF = new Float32Array(4)
@@ -595,7 +626,7 @@ export class ViolinSynth {
     const key = b => (typeof b === 'object' && b ? b.id ?? b : b)
     const was = key(this.opts.body)
     Object.assign(this.opts, p)
-    for (const st of this.strings) { st.bowPress = !!this.opts.bowPress; st.rosin = this.opts.rosin; st.coupling = this.opts.coupling ?? COUPLING }
+    for (const st of this.strings) { st.bowPress = !!this.opts.bowPress; st.rosin = this.opts.rosin; st.coupling = this.opts.coupling ?? COUPLING; st.earlyRate = this.opts.earlyRate ?? this.spec?.earlyRate ?? EARLY_RATE; st.earlyCap = this.opts.earlyCap ?? EARLY_CAP }
     if (this.body && p.body != null && key(p.body) !== was) this.makeBody()
   }
   /**
