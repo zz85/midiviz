@@ -355,6 +355,28 @@
     parkForeground(V.group)
     let him = null, vRig = null
     const TURN = +(Q.get('turn') ?? (LAYOUT === 'curve' ? -0.38 : 0.3))
+    /**
+     * Where he stands: in his place, or, with the violin silent, a step back from it, upstage and
+     * away from her (BACK, cm), turned most of the way toward her: he listens, the violin lowered.
+     * Only before his rig is made: violinist/rig.js measures his rest pose, feet and hands in world
+     * space, so a change of place makes him again (loadSong).
+     */
+    const BACK = v3(+(Q.get('backx') ?? 70), 0, -(+(Q.get('backz') ?? 150)))
+    function placeHim(silent) {
+      if (!him?.scene.userData.home) return
+      const { rotY } = him.scene.userData.home
+      him.scene.position.set(0, 0, 0)
+      let a = TURN
+      if (silent) {
+        const her0 = HER.clone()
+        him.scene.position.copy(BACK).setX(BACK.x * Math.sign(-(her0.x || -1)))   // (away from her side)
+        const d = her0.sub(him.scene.position)
+        a = 0.75 * Math.atan2(d.x, d.z)
+      }
+      him.scene.rotation.y = rotY + a
+      him.scene.userData.silent = silent
+      him.scene.updateMatrixWorld(true)
+    }
     async function loadHim() {
       setStatus('Loading the violinist…')
       const next = await loadViolinist($('model').value, { base: 'violinist/assets/models/', outfit: $('outfit').value })
@@ -363,6 +385,8 @@
       // turned a little toward the piano so the two can see each other (rig.js
       // measures everything from his rest pose, so it plays in any facing)
       him.scene.rotation.y += TURN      // (on top of rotateVRM0's half turn)
+      him.scene.userData.home = { rotY: him.scene.rotation.y - TURN }
+      placeHim(!!song.entry?.violinNone)
       scene.add(him.scene)
       parkForeground(him.scene)
       him.scene.updateMatrixWorld(true)
@@ -459,10 +483,11 @@
       }
       // a melody: a track of its own, not a keyboard, one note at a time (a violin or viola part whatever it holds)
       const melodic = tracks.filter(x => x.t.instrument.number >= 8 && (held(x) < 0.25 || x.t.instrument.number >= 40 && x.t.instrument.number <= 41)).sort((a, b) => rate(b) - rate(a))
-      // else (only keyboards): he plays the top line of the highest big one, she the rest of it
+      // else (only keyboards): he is silent and she plays it all; the menu's top line of the highest
+      // big one is for him, she the rest of it
       const best = melodic[0] || tracks.slice().sort((a, b) => b.t.notes.length * Math.max(0, mean(b) - 48) - a.t.notes.length * Math.max(0, mean(a) - 48))[0]
       const piano = all.filter(x => x !== best && x.t.instrument.number < 8).map(x => x.i)
-      return { violinTracks: best ? [best.i] : [], pianoTracks: piano, violinTop: !!best && !melodic[0], violinNone: !best }
+      return { violinTracks: best ? [best.i] : [], pianoTracks: piano, violinTop: !!best && !melodic[0], violinNone: !melodic[0] }
     }
     /** The top line of a keyboard part: at each onset the highest note from middle C up, if it sounds over the notes before it. */
     function topLine(notes) {
@@ -591,8 +616,9 @@
         : e.score ? `MIDI: ${e.credit || 'Mutopia Project'}, ${e.licence}`
         : `MIDI: ${e.local ? 'opened here' : e.credit}${oct ? `, the violin ${Math.abs(oct / 12)} octave${Math.abs(oct) > 12 ? 's' : ''} ${oct > 0 ? 'up' : 'down'}` : ''}`
       const name = [e.composer, e.title].filter(Boolean).join(' – ')
-      $('credit').innerHTML = `${name.replace(/[<&]/g, '')}<br>${src} · VRoid Project models (pixiv)${PMODEL === 'vroida' ? '' : ' · ' + PIANISTS[PMODEL].credit.replace(/[<&]/g, '')}${b && b.mode !== 'fixed' ? `<br>Bowing: ${b.mode === 'score' ? 'the Mutopia score' : 'inferred'} (${b.slurs} slurred notes)` : ''}${song.performer ? '<br>Played as ' + performerCredit(song.performer.rec, { pitch: hybrid.on }) : song.modelled ? '<br>Played as ' + modelledCredit(song.modelled.model) : ''}`
+      $('credit').innerHTML = `${name.replace(/[<&]/g, '')}<br>${src} · VRoid Project models (pixiv)${PMODEL === 'vroida' ? '' : ' · ' + PIANISTS[PMODEL].credit.replace(/[<&]/g, '')}${b && b.mode !== 'fixed' && !e.violinNone ? `<br>Bowing: ${b.mode === 'score' ? 'the Mutopia score' : 'inferred'} (${b.slurs} slurred notes)` : ''}${song.performer ? '<br>Played as ' + performerCredit(song.performer.rec, { pitch: hybrid.on }) : song.modelled ? '<br>Played as ' + modelledCredit(song.modelled.model) : ''}`
       $('startSong').textContent = name
+      if (him && !!him.scene.userData.silent !== !!e.violinNone) await loadHim()
       showMixerParts()
       clock.t = 0
       setStatus('')
@@ -1232,6 +1258,7 @@
     $('cam').onchange = () => { if ($('cam').value !== 'auto') setView($('cam').value); saveUrl() }
     controls.addEventListener('start', () => { tween = null; if ($('cam').value !== 'free') $('cam').value = 'free' })
     // (for tests: the camera close on one of her hands, offset in her frame, cm)
+    window.__duoHim = () => him ? him.scene.position.toArray().map(Math.round) : null   // (for tests)
     window.__duo = { lookAtHand(side, off) {
       $('cam').value = 'free'; tween = null
       const h = pRig.hands[side], w = her.group.localToWorld(h.joints.W.clone())
@@ -1548,11 +1575,14 @@
       // him
       subjects()
       if (!replay?.owns('violinist')) {
-        const pose = standing ? null : song.motion?.poseAt(Math.max(0, t))
+        const silent = !!song.entry?.violinNone
+        const pose = standing || silent ? null : song.motion?.poseAt(Math.max(0, t))
         vRig.update(pose, {
-          t, energy: song.drive?.energy(Math.max(0, t)) ?? 0.4, breath: song.drive?.breath(t) ?? 0,
-          rest: standing, bend: standing ? I.bend : 0, nod: I?.nod || 0,
-          look: I?.cue ? S.herHead.clone().add(v3(0, -4, 0)) : standing && t > BOW0 + 2.7 ? S.herHead.clone() : null,
+          t, energy: silent ? 0.2 : song.drive?.energy(Math.max(0, t)) ?? 0.4, breath: silent ? 0 : song.drive?.breath(t) ?? 0,
+          rest: standing || silent, bend: standing ? I.bend : 0, nod: I?.nod || 0,
+          // (silent: his eyes on her, now her face, now her hands, a few seconds each)
+          look: I?.cue ? S.herHead.clone().add(v3(0, -4, 0)) : standing && t > BOW0 + 2.7 ? S.herHead.clone()
+            : silent && !standing ? (Math.floor(t / 5.5) % 3 === 2 ? S.hands.clone() : S.herHead.clone()) : null,
         }, dt)
         him.update(dt)
       }
