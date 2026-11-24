@@ -649,7 +649,20 @@
       const phrases = []
       let lastOff = -10
       for (const x of notes) { if (x.on - lastOff > 0.35) phrases.push(x.on); lastOff = Math.max(lastOff, x.off) }
+      // long silences: from REST_GAP s with no note he lowers the violin (over 2.2 s, from 1.8 s
+      // in) and raises it again over 1.6 s, ready 1.2 s before his next note
+      const REST_GAP = 7, rests = []
+      { let off = -Infinity; for (const x of notes) { if (x.on - off >= REST_GAP && off > -Infinity) rests.push([off, x.on]); off = Math.max(off, x.off) } }
+      const sm = (t, a, b) => { const u = Math.min(1, Math.max(0, (t - a) / (b - a))); return u * u * u * (u * (u * 6 - 15) + 10) }
+      const restAt = t => {
+        let lo = 0, hi = rests.length - 1
+        while (lo < hi) { const m = (lo + hi + 1) >> 1; if (rests[m][0] <= t) lo = m; else hi = m - 1 }
+        const r = rests[lo]
+        if (!r || t < r[0] || t > r[1]) return 0
+        return Math.min(sm(t, r[0] + 1.8, r[0] + 4), 1 - sm(t, r[1] - 2.8, r[1] - 1.2))
+      }
       return {
+        restAt,
         energy: t => energy[Math.max(0, Math.min(n - 1, Math.round(t / step)))],
         breath(t) {
           let b = 0
@@ -1259,6 +1272,8 @@
     controls.addEventListener('start', () => { tween = null; if ($('cam').value !== 'free') $('cam').value = 'free' })
     // (for tests: the camera close on one of her hands, offset in her frame, cm)
     window.__duoHim = () => him ? him.scene.position.toArray().map(Math.round) : null   // (for tests)
+    window.__duoSeek = t => { pause(); clock.t = t; for (let i = 90; i >= 0; i--) frame(t - i / 60, 1 / 60) }   // (for tests: the pose at t, settled)
+    window.__duoRig = () => ({ pRig, vRig })
     window.__duo = { lookAtHand(side, off) {
       $('cam').value = 'free'; tween = null
       const h = pRig.hands[side], w = her.group.localToWorld(h.joints.W.clone())
@@ -1579,7 +1594,7 @@
         const pose = standing || silent ? null : song.motion?.poseAt(Math.max(0, t))
         vRig.update(pose, {
           t, energy: silent ? 0.2 : song.drive?.energy(Math.max(0, t)) ?? 0.4, breath: silent ? 0 : song.drive?.breath(t) ?? 0,
-          rest: standing || silent, bend: standing ? I.bend : 0, nod: I?.nod || 0,
+          rest: standing || silent ? true : song.drive?.restAt?.(t) ?? 0, bend: standing ? I.bend : 0, nod: I?.nod || 0,
           // (silent: his eyes on her, now her face, now her hands, a few seconds each)
           look: I?.cue ? S.herHead.clone().add(v3(0, -4, 0)) : standing && t > BOW0 + 2.7 ? S.herHead.clone()
             : silent && !standing ? (Math.floor(t / 5.5) % 3 === 2 ? S.hands.clone() : S.herHead.clone()) : null,

@@ -2,6 +2,13 @@
 
 What each experiment does and how, newest first. The short list is in the [README](README.md).
 
+## 24 Nov 2026
+
+Hands relaxed in a long silence: the violinist (#037, #038) and the pianist (#032, #038, #045, #049, #050)
+- **He lowers the violin.** With no note for 7 s or more, from 1.8 s into the silence he lowers the violin and bow to his sides over 2.2 s (the lowered pose of the intro's bow, violinist/rig.js restPose), and raises them again over 1.6 s so they are up 1.2 s before his next note. The rig's `rest` takes a number 0..1 now: it poses him playing, keeps every humanoid bone and the violin's and bow's transforms, poses him lowered, and slerps each by the amount (rig.js `update`); 0 and 1 are the two poses as before. The silences come from his notes (`drivers().restAt` in both pages).
+- **Her silent hand goes to her lap.** A hand with no key of its own for 7 s or more (pianist/hand-driver.js `REST_GAP`, from its last key let go to its next onset) goes down to her lap from 1.8 s in, is there by 4 s, and comes back up over 1.6 s to be over the keys 0.8 s before its next note (`restAt(side, t)`, `rests`), while the other hand plays on. It is the lap always, whatever Performance > Hands after the end says for the piece's end, and never while she stands. pianist/rig.js runs each hand's `toLap` by its own amount beside the end's.
+- [duo/test/fixtures/rests.mid](duo/test/fixtures/rests.mid): the violin rests 8-18 s, the left hand 6-18 s, the right hand plays throughout. `node duo/test/rests.mjs`: #038 at 4, 13, 17.3 and 20 s; at 13 s his drive reads 1 and her left wrist is at 69 cm (78 over the keys) with the right at 78; at 17.3 s both are over the keys again. #032 at 13 s reads the same (69 / 78), and at 16.6 s, a quarter of the way back (0.26), the wrist is at 79; #037 on the Beethoven concerto's finale, in the 265-302 s tutti, drives 1. `bun test pianist/test`: 44 pass.
+
 ## 23 Nov 2026
 
 [Experiment #038 - Duo](038_duo.html): Violin: silent, for a piano MIDI file

@@ -560,6 +560,7 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
       const a = arm[side]
       if (a.restPending) { a.restPending = false; restPose(a, restMode() || 'lap') }
       else if (state.lap > 0 && a.drv.visible) toLap(a, state.lap)
+      else if (a.rest > 0 && a.drv.visible) toLap(a, a.rest, 'lap')   // (one hand's rest mid-piece: always the lap)
     }
     // write locals
     for (let i = 0; i < N; i++) {
@@ -1084,8 +1085,8 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
   const _lapA = [], _lapB = [], _lapH = []
   const chainOf = a => a.chain || (a.chain = [a.ua1, a.ua2, a.la1, a.la2, a.wrist, ...a.fingers.flat()])
   const _lapP = v3(), _lapC = v3()
-  function toLap(a, u) {
-    const ch = chainOf(a), mode = restMode() || 'lap'
+  function toLap(a, u, mode = restMode() || 'lap') {
+    const ch = chainOf(a)
     // the pose as driven
     ch.forEach((i, k) => { solve(i); (_lapA[k] ||= new THREE.Quaternion()).copy(wQ[i]) })
     const W0 = a.drv.joints.W.clone()
@@ -1685,6 +1686,9 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     // she sits up and comes back square to the keyboard, weight even
     const fin = state.ending = hands.endingAt?.(state.songT + hands.lead) ?? 0
     state.lap = lapAt(state.songT + hands.lead)
+    // a hand silent for a while mid-piece rests in her lap, and comes back up before its next note
+    // (hand-driver.js restAt); never while she stands, and only where the end's rest would be the lap too
+    for (const side of ['L', 'R']) arm[side].rest = state.lapRest !== false && !state.stand ? hands.restAt?.(side, state.songT + hands.lead) ?? 0 : 0
     if (fin > 0) {
       const up = 0.02 + 0.28 * state.posture - 0.05
       state.lean += (up - state.lean) * fin

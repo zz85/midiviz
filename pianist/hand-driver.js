@@ -821,6 +821,10 @@ const PRESS_LEAD = 0.018
 // the end of the piece, after the last key is let go: from, to (s), with the
 // final lift-off (stroke.js, ~2.4 s) and inside a film's 2 s tail at most of it
 export const ENDING = [0.1, 2.2]
+// A hand's rest mid-piece: silent for REST_GAP s or more, it goes down to her lap from REST_DOWN
+// after its last key is let go, is there by REST_DOWN + REST_FALL, and comes back up over
+// REST_RISE s so it is over the keys REST_READY s before its next onset.
+export const REST_GAP = 7, REST_DOWN = 1.8, REST_FALL = 2.2, REST_RISE = 1.6, REST_READY = 0.8
 
 export function createHandsDriver(dims) {
   const L = createHandDriver('L', dims), R = createHandDriver('R', dims)
@@ -841,6 +845,30 @@ export function createHandsDriver(dims) {
   // (the lift-off takes ~2.4 s, stroke.js): she comes back to the middle
   const endingAt = t => THREE.MathUtils.smootherstep(t, endT + ENDING[0], endT + ENDING[1])
   L.setEnding(endingAt); R.setEnding(endingAt)
+  // each hand's long silences: [last key let go, next onset], sorted (restAt below)
+  const rests = { L: [], R: [] }
+  function planRests() {
+    for (const h of ['L', 'R']) {
+      const mine = own.filter(m => m.hand === h).sort((a, b) => a.on - b.on), out = []
+      let off = -Infinity
+      for (const m of mine) {
+        if (m.on - off >= REST_GAP) out.push([off, m.on])
+        off = Math.max(off, m.release ?? m.off)
+      }
+      rests[h] = out.filter(([a]) => a > -Infinity)
+    }
+  }
+  /** 0..1: how far hand side ('L' | 'R') is down in her lap at song time t, mid-piece (the end is endingAt's). */
+  function restAt(side, t) {
+    const list = rests[side]
+    let lo = 0, hi = list.length - 1
+    while (lo < hi) { const m = (lo + hi + 1) >> 1; if (list[m][0] <= t) lo = m; else hi = m - 1 }
+    const r = list[lo]
+    if (!r || t < r[0] || t > r[1]) return 0
+    const down = THREE.MathUtils.smootherstep(t, r[0] + REST_DOWN, r[0] + REST_DOWN + REST_FALL)
+    const up = 1 - THREE.MathUtils.smootherstep(t, r[1] - REST_READY - REST_RISE, r[1] - REST_READY)
+    return Math.min(down, up)
+  }
   // wrist strokes: { armWeight, flex, liftOff, height } (research/01_biomechanics.md §3.5)
   const strokeOpts = { armWeight: 1, flex: 1, liftOff: 1, height: 1, rotation: 1 }
   // Where each hand plays across the other (fingering.js markCrossings: a
@@ -1030,6 +1058,7 @@ export function createHandsDriver(dims) {
       plan()
       // the piece's end: the last key let go (its release, else its off)
       endT = own.reduce((e, m) => Math.max(e, m.release ?? m.off), -Infinity)
+      planRests()
       // bake the hands' placement over the song (60 Hz, interpolated)
       const h = 1 / 60
       const n = Math.ceil((t1 - t0) / h) + 1, poses = []
@@ -1037,9 +1066,13 @@ export function createHandsDriver(dims) {
       L.bakeTrack(t => poses[Math.round((t - t0) / h)]?.L, t0, n, h, moves.L)
       R.bakeTrack(t => poses[Math.round((t - t0) / h)]?.R, t0, n, h, moves.R)
     },
-    clear() { motion = buildMotion([]); own = []; crossing = { L: [], R: [] }; moves = { L: [], R: [] }; endT = Infinity; plan(); L.clearTrack(); R.clearTrack() },
+    clear() { motion = buildMotion([]); own = []; crossing = { L: [], R: [] }; moves = { L: [], R: [] }; endT = Infinity; rests.L = []; rests.R = []; plan(); L.clearTrack(); R.clearTrack() },
     /** 0 while she plays, 1 once she has lifted off the last chord and come back to the middle */
     endingAt,
+    /** 0..1: how far hand side ('L' | 'R') is down in her lap in a long silence of its own mid-piece */
+    restAt,
+    /** each hand's long silences, [last key let go, next onset] */
+    get rests() { return rests },
     /** song time of the last key let go (Infinity with no notes) */
     get endT() { return endT },
     /** how many held keys the hands let go of early (letGoTimes) */

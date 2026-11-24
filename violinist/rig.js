@@ -275,11 +275,32 @@ export function createViolinistRig({ vrm, V, bow, leftHand, bowHand }) {
   /**
    * pose: motion.js poseAt(t). drive: { t, energy (0..1), phrase (0..1 through
    * the phrase), breath (0..1, a cue before a phrase), playing,
-   * rest (violin and bow lowered in his hands), bend (a bow from the hips,
-   * radians), nod (radians, a cue with the violin up), look (world point for
-   * the eyes) }.
+   * rest (violin and bow lowered in his hands; a number 0..1 blends the
+   * lowered pose with the playing one, for a long silence mid-piece), bend (a
+   * bow from the hips, radians), nod (radians, a cue with the violin up), look
+   * (world point for the eyes) }.
    */
+  const blendBones = []
+  // (the rig writes the normalized humanoid nodes: those are what a blend reads)
+  for (const name of Object.keys(vrm.humanoid.humanBones)) { const b = H(name); if (b && !blendBones.includes(b)) blendBones.push(b) }
+  const _bq = blendBones.map(() => new THREE.Quaternion()), _bp = blendBones.map(() => new THREE.Vector3())
+  const _vq = new THREE.Quaternion(), _vp = new THREE.Vector3(), _wq2 = new THREE.Quaternion(), _wp2 = new THREE.Vector3(), _lk = new THREE.Vector3()
   function update(pose, drive, dt = 1 / 60) {
+    const r = typeof drive.rest === 'number' ? drive.rest : drive.rest ? 1 : 0
+    if (r <= 0 || r >= 1) return updatePose(pose, drive, dt, r >= 1)
+    // between: the playing pose, kept, then the lowered one, and each bone, the violin and the bow slerped by r
+    updatePose(pose, { ...drive, rest: false }, dt, false)
+    blendBones.forEach((b, i) => { _bq[i].copy(b.quaternion); _bp[i].copy(b.position) })
+    _vq.copy(V.group.quaternion); _vp.copy(V.group.position); _wq2.copy(bow.group.quaternion); _wp2.copy(bow.group.position); _lk.copy(lookObj.position)
+    updatePose(null, { ...drive, rest: true }, dt, true)
+    blendBones.forEach((b, i) => { b.quaternion.slerp(_bq[i], 1 - r); b.position.lerp(_bp[i], 1 - r) })
+    V.group.quaternion.slerp(_vq, 1 - r); V.group.position.lerp(_vp, 1 - r)
+    bow.group.quaternion.slerp(_wq2, 1 - r); bow.group.position.lerp(_wp2, 1 - r)
+    lookObj.position.lerp(_lk, 1 - r)
+    vrm.scene.updateMatrixWorld(true); V.group.updateMatrixWorld(true); bow.group.updateMatrixWorld(true)
+  }
+  function updatePose(pose, drive, dt, lowered) {
+    drive = { ...drive, rest: lowered }
     const t = drive.t
     const k = Math.min(1, dt * 4)
     blinks(dt, !drive.rest && !!pose?.bow?.playing)
