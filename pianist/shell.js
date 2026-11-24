@@ -511,11 +511,12 @@ export function coveredBy(ch, gg, tris, { reach = 12 } = {}) {
 // outline and the path tracers' snapshot see the same skin, and the smooth
 // (subdivided) body follows.
 export const SINK_CM = 0.8
+const DEEPEST = 8, CLEAR = 1.5   // cm: the deepest sink, and the skin's least depth under a garment that lies inside it
 export const keepSkin = () => typeof location === 'undefined' || new URLSearchParams(location.search).get('skin') !== 'hide'
 export function coverBody(ch, key, gg, tris, { reach = 4, depth = SINK_CM, fade = 2, rays = true } = {}) {
   const g = ch.parts.body.geometry, P = g.attributes.position.array, N = g.attributes.normal.array, NV = P.length / 3
   const sinks = (ch.parts.body.sinks ||= new Map())
-  if (!gg) { sinks.delete(key); return applySinks(ch) }
+  if (!gg) { sinks.delete(key); hideBody(ch, 'deep:' + key, null); return applySinks(ch) }
   const idx = bodyIndex(ch), d = g.userData.sinkDelta
   // rest positions (without the sink applied so far): rays start from the skin as modelled
   const at = (v, k) => P[v * 3 + k] - (d ? d[v * 3 + k] : 0)
@@ -547,7 +548,20 @@ export function coverBody(ch, key, gg, tris, { reach = 4, depth = SINK_CM, fade 
     for (const v of groups[w]) dir.x += N[v * 3], dir.y += N[v * 3 + 1], dir.z += N[v * 3 + 2]
     if (dir.lengthSq() < 1e-12) continue
     dir.normalize(); dirs.set([dir.x, dir.y, dir.z], w * 3)
-    if (!rays) { depthOf[w] = depth; continue }   // the caller's triangles are covered as they are
+    if (!rays) {
+      // the caller's triangles are covered as they are, but a shell fitted
+      // over a smoothed body (dress.js's round neck and sleeves) can lie
+      // inside the skin as modelled, up to 6 cm over the bust and the arms:
+      // the skin sinks below it, `depth` at least
+      const v = groups[w][0]
+      o.set(at(v, 0), at(v, 1), at(v, 2)).addScaledVector(dir, reach)
+      hits.length = 0; ray.set(o, dir.negate()); ray.far = reach + DEEPEST; ray.intersectObjects(meshes, false, hits); dir.negate(); ray.far = reach
+      let s = Infinity   // where the garment is along the normal, from the skin (+ outside)
+      // (on a face that looks the way the skin does: not a sleeve's side seen from the torso)
+      for (const h of hits) { const d = reach - h.distance; if (Math.abs(d) < Math.abs(s) && h.face && h.face.normal.dot(dir) * h.object.userData.out > 0.2) s = d }
+      depthOf[w] = s < Infinity ? Math.min(DEEPEST, Math.max(depth, CLEAR - s)) : depth
+      continue
+    }
     const v = groups[w][0]
     o.set(at(v, 0), at(v, 1), at(v, 2)).addScaledVector(dir, -0.05)
     hits.length = 0; ray.set(o, dir); ray.intersectObjects(meshes, false, hits)
@@ -565,6 +579,12 @@ export function coverBody(ch, key, gg, tris, { reach = 4, depth = SINK_CM, fade 
   const delta = new Float32Array(NV * 3)
   for (let w = 0; w < groups.length; w++) if (depthOf[w]) for (const v of groups[w]) for (let k = 0; k < 3; k++) delta[v * 3 + k] = -dirs[w * 3 + k] * depthOf[w]
   sinks.set(key, delta)
+  // the caller's triangles (rays: false, dress.js) are hidden too inside
+  // the fade, as before skin was kept: posing still brings skin out through
+  // a shell that lies inside it (the bust beside a sleeve as the arms come
+  // forward, the forearm in its cuff), however deep it sank. The sunk ring
+  // along the garment's edge stays, so its gaps show skin, not a hole
+  if (!rays) { const inner = w => depthOf[w] >= depth - 1e-4, hid = []; for (const t of tris) if (inner(wid[idx[t]]) && inner(wid[idx[t + 1]]) && inner(wid[idx[t + 2]])) hid.push(t); hideBody(ch, 'deep:' + key, hid.length ? hid : null) }
   return applySinks(ch)
 }
 // the deepest sink of the garments worn, written into the body's positions
