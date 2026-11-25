@@ -188,17 +188,29 @@ export async function loadCharacter(base = new URL('./assets/', import.meta.url)
   // ── Geometry ──
   const parts = {}
   const morphed = new Set(), face = Object.fromEntries((meta.faceMorphs || []).map(k => [k, 0]))
+  // body sliders (build-character.mjs bodyMorphs: the breast), -1..1: morph <key>+ or <key>- at |w|
+  const body = Object.fromEntries((meta.bodyMorphs || []).map(k => [k, 0]))
   function morphGeometry(g) {
     const a = g.attributes.position.array
     a.set(g.userData.rest)
-    for (const [k, w] of Object.entries(face)) {
+    const sg = w => (w > 0 ? '+' : '-')
+    const ws = [...Object.entries(face), ...Object.entries(body).map(([k, w]) => [k + sg(w), Math.abs(w)]),
+      // (the corners of a pair's grid, as MakeHuman blends its breast macro: build-character.mjs)
+      ...(meta.bodyCorners || []).map(([a, b]) => [a + sg(body[a]) + b + sg(body[b]), Math.abs(body[a] * body[b])])]
+    for (const [k, w] of ws) {
       const m = w && g.userData.morphs[k]; if (!m) continue
       const { index: I, delta: D } = m
       for (let j = 0; j < I.length; j++) { const i = I[j] * 3; a[i] += w * D[j * 3]; a[i + 1] += w * D[j * 3 + 1]; a[i + 2] += w * D[j * 3 + 2] }
     }
     // (the skin sunk under a garment: pianist/shell.js coverBody; normals as modelled)
     const sink = g.userData.sinkDelta
+    // (normals over every triangle: the index drawn leaves out the skin a
+    // garment hides, whose vertices would get none, and the next garment
+    // fitted to the body reads them; shell.js keeps the whole index as index0)
+    const full = parts.body?.geometry === g && parts.body.index0, drawn = g.index
+    if (full) g.setIndex(new THREE.BufferAttribute(full, 1))
     g.computeVertexNormals(); weldNormals(g)
+    if (full) g.setIndex(drawn)
     if (sink) for (let i = 0; i < a.length; i++) a[i] += sink[i]
     g.attributes.position.needsUpdate = true
     g.computeBoundingSphere()
@@ -222,9 +234,12 @@ export async function loadCharacter(base = new URL('./assets/', import.meta.url)
     // geometry, applied at the current weights now and on every setFace()
     if (p.morphs) {
       g.userData.rest = g.attributes.position.array.slice()
-      g.userData.morphs = Object.fromEntries(Object.entries(p.morphs).map(([k, m]) => [k, { index: arr(Uint32Array, m.index, name), delta: flip(arr(Float32Array, m.delta, name).slice()) }]))
+      g.userData.morphs = Object.fromEntries(Object.entries(p.morphs).map(([k, m]) => [k, {
+        index: arr(m.indexType === 'u16' ? Uint16Array : Uint32Array, m.index, name),
+        // (16-bit deltas times their morph's scale, build-character.mjs; or 32-bit floats)
+        delta: flip(m.scale ? Float32Array.from(arr(Int16Array, m.delta, name), x => x * m.scale) : arr(Float32Array, m.delta, name).slice()) }]))
       morphed.add(g); g.addEventListener('dispose', () => morphed.delete(g))
-      if (Object.values(face).some(w => w)) morphGeometry(g)
+      if ([...Object.values(face), ...Object.values(body)].some(w => w)) morphGeometry(g)
     }
     return g
   }
@@ -284,6 +299,13 @@ export async function loadCharacter(base = new URL('./assets/', import.meta.url)
     if (sum > 1) for (const k of Object.keys(face)) face[k] /= sum
     for (const g of morphed) morphGeometry(g)
   }
+  /** Body shape: { cup, firmness, nipplePoint, nippleSize }, -1..1 each (0 is
+   * MakeHuman's average). The same parts move as for setFace, and the same
+   * ones keep their rest shape until rebuilt. */
+  function setBody(w) {
+    for (const k of Object.keys(body)) body[k] = THREE.MathUtils.clamp(w[k] ?? body[k], -1, 1)
+    for (const g of morphed) morphGeometry(g)
+  }
   // Skin: MakeHuman's young women's skins (skin.jpg is caucasian; skin_<key>.jpg)
   const skins = { caucasian: skinMap }
   async function setSkin(key) {
@@ -293,7 +315,7 @@ export async function loadCharacter(base = new URL('./assets/', import.meta.url)
     return true
   }
   return { group, skeleton, bones, byName, restWorld, meshes, materials: { skin, eye, brow, lash }, meta, parts, joints, addPart, ensurePart, loadTexture: tex, baseUrl: base,
-    setFace, get face() { return { ...face } }, faceMorphs: Object.keys(face), setSkin,
+    setFace, get face() { return { ...face } }, faceMorphs: Object.keys(face), setBody, get body() { return { ...body } }, bodyMorphs: Object.keys(body), setSkin,
     /** a raw array of a part (e.g. a garment's deleteVerts) */
     partArray: (name, field, T) => meta.parts[name]?.[field] ? arr(T, meta.parts[name][field], name).slice() : null }
 }

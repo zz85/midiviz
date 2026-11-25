@@ -22,6 +22,7 @@ The MakeHuman sources are not in the repo (the system pack alone is ~280 MB). Pu
 ```
 mh-assets/
   base/     base.obj, default.mhskel, default_weights.mhw and the three .target files
+  base/breast/, torso/, stomach/, buttocks/, nose/, mouth/, eyes/, eyebrows/, cheek/, chin/, armslegs/   MakeHuman targets for the figure and face detail sliders (optional)
   sys/      makehuman_system_assets_cc0.zip, unpacked
   community/<nid>/   optional, see Community assets below
 ```
@@ -32,6 +33,8 @@ Where to get them (all CC0):
   - [3dobjs/base.obj](https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/3dobjs/base.obj)
   - [rigs/default.mhskel](https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/rigs/default.mhskel), [rigs/default_weights.mhw](https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/rigs/default_weights.mhw)
   - [targets/macrodetails/caucasian-female-young.target](https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/caucasian-female-young.target), [targets/macrodetails/universal-female-young-averagemuscle-minweight.target](https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-female-young-averagemuscle-minweight.target), [targets/macrodetails/proportions/female-young-averagemuscle-minweight-idealproportions.target](https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/proportions/female-young-averagemuscle-minweight-idealproportions.target)
+  - `base/torso/`, `base/stomach/`, `base/buttocks/` (optional): and `nose/`, `mouth/`, `eyes/`, `eyebrows/`, `cheek/`, `chin/`, `armslegs/`: the `<target>-<min|max>.target` files of `MODIFIERS` and `FACE_MODIFIERS` in `build-character.mjs`, from the same repository's `targets/<group>/`
+  - `base/breast/` (optional; without them the build leaves the body sliders out), from [targets/breast](https://github.com/makehumancommunity/makehuman/tree/master/makehuman/data/targets/breast): `female-young-averagemuscle-{minweight,averageweight}-{maxcup,mincup}-averagefirmness.target`, `female-young-averagemuscle-{minweight,averageweight}-averagecup-{maxfirmness,minfirmness}.target`, the corners `female-young-averagemuscle-{minweight,averageweight}-{maxcup,mincup}-{maxfirmness,minfirmness}.target`, and `nipple-point-{incr,decr}.target` and `nipple-size-{incr,decr}.target`
 - `sys/`: [makehuman_system_assets_cc0.zip](http://files.makehumancommunity.org/asset_packs/makehuman_system_assets/makehuman_system_assets_cc0.zip), unzipped so that `sys/skins`, `sys/eyes`, `sys/hair`… exist.
 
 Then run:

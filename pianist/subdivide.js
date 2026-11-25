@@ -279,9 +279,10 @@ export function createSmoother(ch) {
   }
   // lv: subdivision levels; simp: keep this fraction of the triangles first
   // (a low-poly cage for the subdivision to round off), 0 = as modelled
+  const shown = new Set()   // [base, sub] of every mesh smoothed now
   function apply(lv, extra = [], simp = simplify) {
     level = lv; simplify = simp
-    dynamic.clear()
+    dynamic.clear(); shown.clear()
     for (const o of list(extra)) {
       const base = o.userData.baseGeo || o.geometry, isBody = o === ch.meshes.body
       // the cage is the body's: the garments are shells fitted to the
@@ -305,6 +306,9 @@ export function createSmoother(ch) {
       if (isBody) info.cageTris = sub.cageTris ?? null
       o.userData.baseGeo = base
       o.geometry = sub.geometry
+      shown.add([base, sub])
+      // (a cached level made before a morph or a sink: brought to the cage as it is)
+      sub.update(base.attributes.position.array, base.attributes.normal?.array)
       // vertices moved on the CPU (not skinned): follow the source each frame
       if (!o.isSkinnedMesh && base.attributes.position.usage === THREE.DynamicDrawUsage) { dynamic.add([base, sub]); sub.update(base.attributes.position.array, base.attributes.normal?.array) }
     }
@@ -317,5 +321,7 @@ export function createSmoother(ch) {
     get cageTris() { return simplify ? info.cageTris : null },
     apply,
     update() { for (const [base, sub] of dynamic) sub.update(base.attributes.position.array, base.attributes.normal?.array) },
+    /** after the cages' vertices moved (character.js setFace / setBody): every smoothed mesh follows */
+    refresh() { for (const [base, sub] of shown) sub.update(base.attributes.position.array, base.attributes.normal?.array) },
   }
 }

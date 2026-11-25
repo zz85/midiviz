@@ -59,6 +59,8 @@
     .face { display: grid; gap: 2px; margin-top: 6px; }
     .face label { display: grid; grid-template-columns: 112px 1fr 38px; align-items: center; gap: 6px; color: #cfcac1; font-size: 12px; }
     .face input { width: 100%; accent-color: var(--acc); }
+    .face details summary { cursor: pointer; color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; margin: 4px 0 2px; }
+    .face details { display: grid; gap: 2px; }
     .face span { color: var(--dim); font-variant-numeric: tabular-nums; text-align: right; }
     .lbl2 { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 8px; }
     .sep { height: 1px; background: var(--line); margin: 10px 0; }
@@ -144,6 +146,8 @@
       <div class="sep"></div>
       <div class="lbl2">Look</div>
       <div class="seg" id="lookSeg"><button data-v="realistic">Realistic</button><button data-v="stylized">Stylized</button><button data-v="cel">Cel shaded</button></div>
+      <div class="lbl2" title="Loop subdivision of the body and the clothes (pianist/subdivide.js, as #032): 1x makes 4x the triangles, 2x 16x">Smooth</div>
+      <div class="seg" id="smoothSeg"><button data-v="0">Off</button><button data-v="1">1&times;</button><button data-v="2">2&times;</button></div>
       <div class="lbl2">Pose</div>
       <div class="seg" id="poseSeg"><button data-v="sides">Arms down</button><button data-v="stand">Hands clasped</button><button data-v="seated">At the piano</button></div>
       <div class="lbl2">Light</div>
@@ -195,6 +199,7 @@
     import { createMeshHair } from './pianist/hair-mesh.js'
     import { createShoes } from './pianist/shoes.js'
     import { createLook } from './pianist/look.js'
+    import { createSmoother } from './pianist/subdivide.js'
     import { createCommunity, communityList } from './pianist/community.js'
     import { createPathTraceStills } from './pathtrace/still.js'
     import { setLaceLining } from './pianist/fabric.js'
@@ -314,6 +319,7 @@
     rig.update(0, 1 / 60, false)
     ch.group.updateMatrixWorld(true)
     const look = createLook(ch)
+    const smoother = createSmoother(ch)
 
     // what the rails offer (community entries only when the build has them)
     const have = new Map(communityList(ch).map(e => [e.key, e]))
@@ -338,9 +344,46 @@
     const W = {
       outfit: 'fishtail-black', dress: 'c894', bottom: 'ours', dressColor: '#f2efe9', skirtColor: null, trim: null, fabric: 'made', slit: 'calf',
       hair: 'c3694', hairColor: '#d9c7a3', shoes: 'flats', shoeColor: '#151214', skinTex: 'caucasian', skin: '#fff0e6', lining: null, faceAsian: 0, faceAfrican: 0, backdrop: '#8d8a86',
-      look: 'realistic', pose: 'sides', light: 'studio',
+      look: 'realistic', smooth: '0', pose: 'sides', light: 'studio',
     }
-    const URLKEYS = { outfit: 'outfit', dress: 'dress', bottom: 'bottom', dressColor: 'dcol', skirtColor: 'skcol', trim: 'trim', fabric: 'fabric', lining: 'lin', slit: 'slit', hair: 'hair', hairColor: 'hcol', shoes: 'shoes', shoeColor: 'scol', skinTex: 'skintex', skin: 'skin', faceAsian: 'fasian', faceAfrican: 'fafrican', backdrop: 'bg', look: 'look', pose: 'pose', light: 'light' }
+    const URLKEYS = { outfit: 'outfit', dress: 'dress', bottom: 'bottom', dressColor: 'dcol', skirtColor: 'skcol', trim: 'trim', fabric: 'fabric', lining: 'lin', slit: 'slit', hair: 'hair', hairColor: 'hcol', shoes: 'shoes', shoeColor: 'scol', skinTex: 'skintex', skin: 'skin', faceAsian: 'fasian', faceAfrican: 'fafrican', backdrop: 'bg', look: 'look', smooth: 'smooth', pose: 'pose', light: 'light' }
+    // the body sliders (character.js setBody, MakeHuman's targets): its key -> ours
+    // [its key, ours, the link's, the label, what - and + do]; a slider the
+    // build doesn't have is left out (character.js bodyMorphs)
+    const BODY_SLIDERS = [
+      ['cup', 'bust', 'bust', 'Bust', 'smaller / larger'], ['firmness', 'firmness', 'firm', 'Firmness', 'softer / firmer'],
+      ['breastTrans', 'breastTrans', 'btrans', 'Bust height', 'lower / higher'], ['breastDist', 'breastDist', 'bdist', 'Bust spacing', 'closer / wider'],
+      ['breastPoint', 'breastPoint', 'bpoint', 'Bust point', 'rounder / more pointed'], ['breastVolumeVert', 'breastVolumeVert', 'bvol', 'Bust fullness', 'fuller below / fuller above'],
+      ['nipplePoint', 'nipplePoint', 'npoint', 'Nipples, point', 'flatter / more prominent'], ['nippleSize', 'nippleSize', 'nsize', 'Nipples, size', 'smaller / larger'],
+      ['pectoral', 'pectoral', 'pect', 'Pectorals', 'less / more'], ['dorsi', 'dorsi', 'dorsi', 'Back (lats)', 'less / more'],
+      ['stomachTone', 'stomachTone', 'stone', 'Stomach tone', 'softer / flatter'], ['stomachPregnant', 'stomachPregnant', 'preg', 'Pregnant', 'flatter / fuller'],
+      ['navelDepth', 'navelDepth', 'ndepth', 'Navel depth', 'deeper / shallower'], ['navelHeight', 'navelHeight', 'nheight', 'Navel height', 'lower / higher'],
+      ['buttocks', 'buttocks', 'butt', 'Buttocks', 'smaller / larger'],
+      ['shoulderMuscle', 'shoulderMuscle', 'shmus', 'Shoulders (deltoids)', 'less / more muscle'],
+      ['upperarmMuscle', 'upperarmMuscle', 'uamus', 'Upper arms, muscle', 'less / more (biceps, triceps)'], ['upperarmFat', 'upperarmFat', 'uafat', 'Upper arms, fat', 'leaner / fuller'],
+      ['lowerarmMuscle', 'lowerarmMuscle', 'lamus', 'Forearms, muscle', 'less / more'], ['lowerarmFat', 'lowerarmFat', 'lafat', 'Forearms, fat', 'leaner / fuller'],
+      ['upperlegMuscle', 'upperlegMuscle', 'ulmus', 'Thighs, muscle', 'less / more (quads, hamstrings)'], ['upperlegFat', 'upperlegFat', 'ulfat', 'Thighs, fat', 'leaner / fuller'],
+      ['lowerlegMuscle', 'lowerlegMuscle', 'llmus', 'Calves, muscle', 'less / more'], ['lowerlegFat', 'lowerlegFat', 'llfat', 'Calves, fat', 'leaner / fuller'],
+    ]
+    // the face's (the head only: no garment but the hair needs making again)
+    const FACE_SLIDERS = [
+      ['noseWidth', 'noseWidth', 'nwidth', 'Nose width', 'narrower / wider'], ['noseLength', 'noseLength', 'nlen', 'Nose length', 'shorter / longer'],
+      ['noseHump', 'noseHump', 'nhump', 'Nose bridge', 'straighter / more humped'], ['noseTip', 'noseTip', 'ntip', 'Nose tip', 'lower / upturned'],
+      ['nostrils', 'nostrils', 'nflare', 'Nostrils', 'narrower / flared'],
+      ['eyeSize', 'eyeSize', 'esize', 'Eye size', 'smaller / larger'], ['eyeTilt', 'eyeTilt', 'etilt', 'Eye tilt', 'outer corners down / up'],
+      ['epicanthus', 'epicanthus', 'efold', 'Eyelid fold', 'less / more (epicanthic)'],
+      ['browHeight', 'browHeight', 'bheight', 'Brow height', 'lower / higher'], ['browAngle', 'browAngle', 'bangle', 'Brow angle', 'down / up at the ends'],
+      ['cheekbones', 'cheekbones', 'cbones', 'Cheekbones', 'flatter / higher'], ['cheeks', 'cheeks', 'cheeks', 'Cheeks', 'hollower / fuller'],
+      ['mouthWidth', 'mouthWidth', 'mwidth', 'Mouth width', 'narrower / wider'], ['upperLip', 'upperLip', 'ulip', 'Upper lip', 'thinner / fuller'],
+      ['lowerLip', 'lowerLip', 'llip', 'Lower lip', 'thinner / fuller'], ['mouthCorners', 'mouthCorners', 'mcorner', 'Mouth corners', 'down / up'],
+      ['chinWidth', 'chinWidth', 'cwidth', 'Chin width', 'narrower / wider'], ['chinProminent', 'chinProminent', 'cprom', 'Chin', 'receding / prominent'],
+      ['chinHeight', 'chinHeight', 'cheight', 'Chin height', 'shorter / longer'],
+    ]
+    const FACE_DETAIL = new Set(FACE_SLIDERS.map(([k]) => k))
+    BODY_SLIDERS.push(...FACE_SLIDERS)
+    const BODYK = Object.fromEntries(BODY_SLIDERS.map(([k, w]) => [k, w]))
+    const BODY_LABEL = Object.fromEntries(BODY_SLIDERS.map(([k, , , l, d]) => [k, [l, d]]))
+    for (const [, w, q] of BODY_SLIDERS) { W[w] = 0; URLKEYS[w] = q }
     function outfitInto(k) {
       const o = OUTFITS[k]; if (!o) return false
       Object.assign(W, { outfit: k, dress: o.dress, bottom: o.bottom || 'ours', dressColor: o.color, skirtColor: o.skirtColor || null, trim: o.trim || null, fabric: o.fabric, lining: o.lining || null, slit: o.slit || 'calf', hair: o.hair, hairColor: o.hairColor, shoes: o.shoes, shoeColor: o.shoeColor || '#151214' })
@@ -357,14 +400,17 @@
     if (!LIGHTS[W.light]) W.light = 'studio'
     W.faceAsian = Math.min(1, Math.max(0, +W.faceAsian || 0)); W.faceAfrican = Math.min(1 - W.faceAsian, Math.max(0, +W.faceAfrican || 0))
     if (!SKINS.some(([k]) => k === W.skinTex)) W.skinTex = 'caucasian'
+    for (const k of Object.values(BODYK)) W[k] = Math.min(1, Math.max(-1, +W[k] || 0))
     if (!['realistic', 'stylized', 'cel'].includes(W.look)) W.look = 'realistic'
     if (!['stand', 'sides', 'seated'].includes(W.pose)) W.pose = 'sides'
+    if (!['0', '1', '2'].includes(String(W.smooth))) W.smooth = '0'
+    W.smooth = String(W.smooth)
     let urlTimer = 0
     function saveUrl() {
       clearTimeout(urlTimer)
       urlTimer = setTimeout(() => {
         const q = new URLSearchParams()
-        for (const [k, p] of Object.entries(URLKEYS)) { const v = W[k]; if (v == null || v === '' || (k === 'outfit' && !v)) continue; q.set(p, typeof v === 'string' ? v.replace(/^#/, '') : v) }
+        for (const [k, p] of Object.entries(URLKEYS)) { const v = W[k]; if (v == null || v === '' || (k === 'outfit' && !v) || (Object.values(BODYK).includes(k) && !+v)) continue; q.set(p, typeof v === 'string' ? v.replace(/^#/, '') : v) }
         for (const k of ['q', 'shot']) if (params.has(k)) q.set(k, params.get(k))
         history.replaceState(null, '', '?' + q.toString())
       }, 250)
@@ -393,7 +439,12 @@
     }
     let hair = null, dress = null, shoes = null
     const extras = () => [dress?.object]
-    function applyLook() { look.apply(W.look, extras()); look.recolor(extras()) }
+    // the smoothing (pianist/subdivide.js, as #032) works on the realistic
+    // materials, so the look goes on over it
+    function applyLook() {
+      look.apply('realistic', extras()); smoother.apply(+W.smooth, [dress?.object, shoes?.object])
+      look.apply(W.look, extras()); look.recolor(extras())
+    }
     // Modesty (as #032): nothing would cover her → the body stays hidden
     const skinMeshes = () => { const l = []; ch.group.traverse(o => { if (o.isMesh && (o.material === ch.materials.skin || o.userData.origMat === ch.materials.skin || o.name === 'body')) l.push(o) }); return l }
     const coverBody = on => { for (const o of skinMeshes()) { o.userData.modest = !on; o.visible = on } }
@@ -618,6 +669,19 @@
             inp.oninput = () => { activate(r.k); setFace(inp.dataset.face, +inp.value, false) }
             inp.onchange = () => setFace(inp.dataset.face, +inp.value, true)
           }
+          // and the figure (character.js setBody): MakeHuman's targets, -100..100 % from its average
+          const slider = k => `<label title="MakeHuman's ${k} modifier, ${BODY_LABEL[k][1]} (-100 to 100 %, 0 is its average)${FACE_DETAIL.has(k) ? '' : '; the clothes follow, and are refitted on release'}">${BODY_LABEL[k][0]}<input type="range" min="-1" max="1" step="0.01" data-body="${k}"><span></span></label>`
+          for (const [title, face] of [['Face detail', true], ['Figure', false]]) {
+            const ks = ch.bodyMorphs.filter(k => BODYK[k] && FACE_DETAIL.has(k) === face)
+            if (!ks.length) continue
+            const fig = document.createElement('details'); fig.className = 'face'
+            fig.innerHTML = `<summary>${title}</summary>` + ks.map(slider).join('')
+            fs.appendChild(fig)
+          }
+          for (const inp of fs.querySelectorAll('input[data-body]')) {
+            inp.oninput = () => { activate(r.k); setBody({ [inp.dataset.body]: +inp.value }, false) }
+            inp.onchange = () => setBody({ [inp.dataset.body]: +inp.value }, true)
+          }
           el.appendChild(fs)
         }
         el.addEventListener('pointerdown', () => activate(r.k))
@@ -662,8 +726,12 @@
           const v = W[faceKey(inp.dataset.face)]
           inp.value = v; inp.nextElementSibling.textContent = Math.round(v * 100) + ' %'
         }
+        for (const inp of el.querySelectorAll('[data-body]')) {
+          const v = W[BODYK[inp.dataset.body]]
+          inp.value = v; inp.nextElementSibling.textContent = (v > 0 ? '+' : '') + Math.round(v * 100) + ' %'
+        }
       }
-      for (const [id, k] of [['lookSeg', 'look'], ['poseSeg', 'pose'], ['lightSeg', 'light']]) for (const b of $(id).children) b.classList.toggle('on', b.dataset.v === W[k])
+      for (const [id, k] of [['lookSeg', 'look'], ['smoothSeg', 'smooth'], ['poseSeg', 'pose'], ['lightSeg', 'light']]) for (const b of $(id).children) b.classList.toggle('on', b.dataset.v === W[k])
       const o = OUTFITS[W.outfit]
       $('caption').innerHTML = `<b>${o ? o.name : 'Custom look'}</b>${[nameOf(HAIRS, W.hair), nameOf(DRESSES, W.dress), isTop(W.dress) ? nameOf(BOTTOMS, W.bottom)?.toLowerCase() : null, FABRICS.find(f => f[0] === W.fabric)?.[1].toLowerCase(), nameOf(SHOES, W.shoes)].filter(Boolean).join(' · ')}`
     }
@@ -722,12 +790,27 @@
     // hair holds its rest shape, strands their roots)
     function applyFace(commit) {
       ch.setFace(Object.fromEntries(ch.faceMorphs.map(f => [f, W[faceKey(f)]])))
+      smoother.refresh()
       rig.measureEyes()
       for (const f of ch.faceMorphs) W[faceKey(f)] = ch.face[f]
       refreshRails(); saveUrl()
       if (commit && hair && (hair.kind === 'strands' || hair.cloth)) return wearHair(W.hair)
     }
     function setFace(f, v, commit) { W[faceKey(f)] = v; return applyFace(commit) }
+    // live while dragging; on release the dress is made again (our dresses are
+    // cut from the body, and every garment's sunk skin is measured on it), and
+    // hair that kept the old shape
+    const bodyOf = () => Object.fromEntries(ch.bodyMorphs.filter(k => BODYK[k]).map(k => [k, W[BODYK[k]] || 0]))
+    function setBody(v, commit) {
+      for (const [k, x] of Object.entries(v)) if (BODYK[k]) W[BODYK[k]] = x
+      ch.setBody(bodyOf())
+      smoother.refresh(); rig.measureEyes()
+      refreshRails(); saveUrl()
+      if (!commit) return
+      // (the face's sliders move no garment's skin: only the hair keeps the old head)
+      const figure = Object.keys(v).some(k => !FACE_DETAIL.has(k))
+      return Promise.all([figure ? wearDress(W.dress) : null, hair && (hair.kind === 'strands' || hair.cloth) ? wearHair(W.hair) : null])
+    }
     const wearSkin = slot('skinTex', async () => { await ch.setSkin(W.skinTex); paint('lining'); look.recolor(extras()) })
     function setColor(key, c) {
       W[key] = c
@@ -761,9 +844,11 @@
 
     // ── Look, pose, light ────────────────────────────────────────────────
     function setLook(v) { W.look = v; applyLook(); refreshRails(); saveUrl() }
+    function setSmooth(v) { W.smooth = String(v); applyLook(); refreshRails(); saveUrl() }
     function setPose(v) { W.pose = v; applyPose(); refreshRails(); saveUrl() }
     function setLight(v) { W.light = v; applyLight(v); refreshRails(); saveUrl() }
     for (const b of $('lookSeg').children) b.onclick = () => setLook(b.dataset.v)
+    for (const b of $('smoothSeg').children) b.onclick = () => setSmooth(b.dataset.v)
     for (const b of $('poseSeg').children) b.onclick = () => setPose(b.dataset.v)
     for (const b of $('lightSeg').children) b.onclick = () => setLight(b.dataset.v)
 
@@ -834,10 +919,16 @@
       if (before.skinTex !== W.skinTex) wearSkin()
       const faceChanged = ch.faceMorphs.some(f => before[faceKey(f)] !== W[faceKey(f)])
       if (faceChanged) { ch.setFace(Object.fromEntries(ch.faceMorphs.map(f => [f, W[faceKey(f)] || 0]))); rig.measureEyes() }
+      for (const k of Object.values(BODYK)) W[k] = +W[k] || 0
+      const bodyChanged = Object.values(BODYK).some(k => (+before[k] || 0) !== W[k])
+      const figureChanged = BODY_SLIDERS.some(([k, w]) => !FACE_DETAIL.has(k) && (+before[w] || 0) !== W[w])
+      if (bodyChanged) { ch.setBody(bodyOf()); rig.measureEyes() }
+      if (faceChanged || bodyChanged) smoother.refresh()
+      if (before.smooth !== W.smooth) applyLook()
       const jobs = []
-      if (before.dress !== W.dress || (isTop(W.dress) && before.bottom !== W.bottom) || (isOurs(W.dress) && (before.slit !== W.slit || before.trim !== W.trim))) jobs.push(wearDress(W.dress))
+      if (figureChanged || before.dress !== W.dress || (isTop(W.dress) && before.bottom !== W.bottom) || (isOurs(W.dress) && (before.slit !== W.slit || before.trim !== W.trim))) jobs.push(wearDress(W.dress))
       else { paint('dress'); paint('skirt'); paint('trim'); if (before.fabric !== W.fabric) dress?.setFabric?.(W.fabric) }
-      if (before.hair !== W.hair || (faceChanged && (hair?.kind === 'strands' || hair?.cloth))) jobs.push(wearHair(W.hair)); else paint('hair')
+      if (before.hair !== W.hair || ((faceChanged || bodyChanged) && (hair?.kind === 'strands' || hair?.cloth))) jobs.push(wearHair(W.hair)); else paint('hair')
       if (before.shoes !== W.shoes) jobs.push(wearShoes(W.shoes)); else paint('shoes')
       if (before.look !== W.look || before.fabric !== W.fabric) applyLook()
       await Promise.all(jobs)
@@ -875,6 +966,7 @@
       ch.group.updateMatrixWorld(true)
       keepModest()
       hair?.update(dt); dress?.update(dt); shoes?.update?.(dt)
+      smoother.update()
       look.update()
     }
     function render() { renderer.render(scene, camera) }
@@ -925,6 +1017,7 @@
     ch.materials.skin.color.set(W.skin)
     // (the face before any hair is fitted)
     ch.setFace(Object.fromEntries(ch.faceMorphs.map(f => [f, W[faceKey(f)]])))
+    ch.setBody(bodyOf())
     rig.measureEyes()
     await ch.setSkin(W.skinTex)
     paint('lining')
@@ -942,7 +1035,7 @@
     if (!params.has('shot')) renderer.setAnimationLoop(frame)
     window.__wardrobe = {
       W, THREE, scene, camera, renderer, ch, rig, look, pt, get dress() { return dress }, get hair() { return hair }, get shoes() { return shoes },
-      choose, cycle, setColor, setFace, setLook, setPose, setLight, frameTo, shuffleAll, shuffleColours, saveLook, wearLook,
+      choose, cycle, setColor, setFace, setBody, setLook, setSmooth, smoother, setPose, setLight, frameTo, shuffleAll, shuffleColours, saveLook, wearLook,
       idle: async () => { while (busy.size) await new Promise(r => setTimeout(r, 30)) },
       /** headless: n frames, then the picture */
       shot(n = 30) { for (let i = 0; i < n; i++) step(1 / 30); render(); return renderer.domElement.toDataURL('image/png') },

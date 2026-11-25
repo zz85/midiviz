@@ -351,6 +351,97 @@ for (const [key, file] of Object.entries(FACE_MORPHS)) {
   console.log(`face morph ${key}: ${moved} parts move, up to ${max.toFixed(2)} cm`)
 }
 
+// ── Body morphs (the breast sliders) ───────────────────────────────────────
+// MakeHuman's breast targets (makehuman/data/targets/breast, CC0), in
+// base/breast/. Each slider is signed: key+ and key- are its two ends at
+// full weight. Cup and firmness are MakeHuman's breast macro, a grid of
+// targets over min / average / max cup and firmness (average and average is
+// the base mesh, which our recipe is), blended over its weight axis as the
+// recipe's minweight 0.4 puts it (minweight 0.4, averageweight 0.6). As in
+// MakeHuman, the two blend bilinearly: cup c and firmness f give
+// c T(cup, avg) + f T(avg, firm) + c f (T(cup, firm) - T(cup, avg) - T(avg, firm)),
+// so each corner of the grid is its own morph, cup<s>firmness<s>, at |c f|
+// (character.js bodyCorners). The nipple's point and size are its plain
+// modifier targets. Every part fitted to the body is refitted, as for the
+// face morphs.
+const MACRO = (cup, firm) => [['minweight', 0.4], ['averageweight', 0.6]].map(([w, k]) => [`female-young-averagemuscle-${w}-${cup}cup-${firm}firmness.target`, k])
+const END = { '+': 'max', '-': 'min' }
+const BODY_MORPHS = {
+  'cup+': MACRO('max', 'average'), 'cup-': MACRO('min', 'average'),
+  'firmness+': MACRO('average', 'max'), 'firmness-': MACRO('average', 'min'),
+  'nipplePoint+': [['nipple-point-incr.target', 1]], 'nipplePoint-': [['nipple-point-decr.target', 1]],
+  'nippleSize+': [['nipple-size-incr.target', 1]], 'nippleSize-': [['nipple-size-decr.target', 1]],
+}
+// MakeHuman's other modifiers of the torso (modifiers/modeling_modifiers.json),
+// each from targets/<group>/<target>-<min|max>.target as its min and max ends.
+// Only those that leave the skeleton where it is: a joint is the centroid of
+// its reference vertices, and none of these moves one by more than 0.6 cm
+// (the breasts' own bones aside, which nothing animates). The rest of the
+// torso, hip and pelvis groups (scale, translation, v-shape, waist, pelvis
+// tone) move the root, the spine, the clavicles or the hands by 1-10 cm, and
+// would need the skeleton refitted.
+const MODIFIERS = [
+  // [slider, group, target, min end, max end]
+  ['breastTrans', 'breast', 'breast-trans', 'down', 'up'],
+  ['breastDist', 'breast', 'breast-dist', 'decr', 'incr'],
+  ['breastPoint', 'breast', 'breast-point', 'decr', 'incr'],
+  ['breastVolumeVert', 'breast', 'breast-volume-vert', 'down', 'up'],
+  ['pectoral', 'torso', 'torso-muscle-pectoral', 'decr', 'incr'],
+  ['dorsi', 'torso', 'torso-muscle-dorsi', 'decr', 'incr'],
+  ['stomachTone', 'stomach', 'stomach-tone', 'decr', 'incr'],
+  ['stomachPregnant', 'stomach', 'stomach-pregnant', 'decr', 'incr'],
+  ['navelDepth', 'stomach', 'stomach-navel', 'in', 'out'],
+  ['navelHeight', 'stomach', 'stomach-navel', 'down', 'up'],
+  ['buttocks', 'buttocks', 'buttocks-volume', 'decr', 'incr'],
+]
+// and the face's: MakeHuman's nose, mouth, eye, cheek, chin and eyebrow
+// modifiers. Those MakeHuman keeps per side (eyes, cheeks) are one slider
+// here, both sides at once, and the eyes' tilt is its two corner targets
+// together (corner1 the outer, corner2 the inner): outer up and inner down.
+// They move only the head's skin, as the ethnicity morphs do
+const both = (g, t, e) => ['l', 'r'].map(s => [`../${g}/${s}-${t}-${e}.target`, 1])
+const FACE_MODIFIERS = {
+  noseWidth: ['nose', 'nose-scale-horiz', 'decr', 'incr'], noseLength: ['nose', 'nose-scale-vert', 'decr', 'incr'],
+  noseHump: ['nose', 'nose-hump', 'decr', 'incr'], noseTip: ['nose', 'nose-point', 'down', 'up'], nostrils: ['nose', 'nose-flaring', 'decr', 'incr'],
+  mouthWidth: ['mouth', 'mouth-scale-horiz', 'decr', 'incr'], upperLip: ['mouth', 'mouth-upperlip-volume', 'decr', 'incr'],
+  lowerLip: ['mouth', 'mouth-lowerlip-volume', 'decr', 'incr'], mouthCorners: ['mouth', 'mouth-angles', 'down', 'up'],
+  chinWidth: ['chin', 'chin-width', 'decr', 'incr'], chinProminent: ['chin', 'chin-prominent', 'decr', 'incr'], chinHeight: ['chin', 'chin-height', 'decr', 'incr'],
+  browHeight: ['eyebrows', 'eyebrows-trans', 'down', 'up'], browAngle: ['eyebrows', 'eyebrows-angle', 'down', 'up'],
+}
+for (const [k, [g, t, lo, hi]] of Object.entries(FACE_MODIFIERS)) { BODY_MORPHS[k + '+'] = [[`../${g}/${t}-${hi}.target`, 1]]; BODY_MORPHS[k + '-'] = [[`../${g}/${t}-${lo}.target`, 1]] }
+// and the limbs': MakeHuman's arm and leg muscle and fat modifiers, both
+// sides at once; none moves a joint more than 0.4 cm
+for (const [k, t] of [['upperarmMuscle', 'upperarm-muscle'], ['upperarmFat', 'upperarm-fat'], ['shoulderMuscle', 'upperarm-shoulder-muscle'], ['lowerarmMuscle', 'lowerarm-muscle'], ['lowerarmFat', 'lowerarm-fat'], ['upperlegMuscle', 'upperleg-muscle'], ['upperlegFat', 'upperleg-fat'], ['lowerlegMuscle', 'lowerleg-muscle'], ['lowerlegFat', 'lowerleg-fat']]) { BODY_MORPHS[k + '+'] = both('armslegs', t, 'incr'); BODY_MORPHS[k + '-'] = both('armslegs', t, 'decr') }
+for (const [k, g, t, lo, hi] of [['eyeSize', 'eyes', 'eye-scale', 'decr', 'incr'], ['epicanthus', 'eyes', 'eye-epicanthus', 'in', 'out'], ['cheekbones', 'cheek', 'cheek-bones', 'decr', 'incr'], ['cheeks', 'cheek', 'cheek-volume', 'decr', 'incr']]) { BODY_MORPHS[k + '+'] = both(g, t, hi); BODY_MORPHS[k + '-'] = both(g, t, lo) }
+BODY_MORPHS['eyeTilt+'] = [...both('eyes', 'eye-corner1', 'up'), ...both('eyes', 'eye-corner2', 'down')]
+BODY_MORPHS['eyeTilt-'] = [...both('eyes', 'eye-corner1', 'down'), ...both('eyes', 'eye-corner2', 'up')]
+for (const [k, g, t, lo, hi] of MODIFIERS) { BODY_MORPHS[k + '+'] = [[`../${g}/${t}-${hi}.target`, 1]]; BODY_MORPHS[k + '-'] = [[`../${g}/${t}-${lo}.target`, 1]] }
+// the corners: the corner's own target less the two edge targets it holds
+for (const a of '+-') for (const b of '+-')
+  BODY_MORPHS[`cup${a}firmness${b}`] = [...MACRO(END[a], END[b]), ...MACRO(END[a], 'average').map(([f, k]) => [f, -k]), ...MACRO('average', END[b]).map(([f, k]) => [f, -k])]
+const bodyMorphs = {}, bodyCorners = new Set()
+for (const [key, list] of Object.entries(BODY_MORPHS)) {
+  const files = list.map(([f, w]) => [path.join(SRC, 'base/breast', f), w])
+  if (files.some(([f]) => !fs.existsSync(f))) { console.warn(`body morph ${key}: needs ${list.map(l => l[0]).join(', ')} in base/breast`); continue }
+  const at = Float64Array.from(pos)
+  for (const [f, w] of files) for (const [v, d] of readTarget(f)) for (let j = 0; j < 3; j++) at[v * 3 + j] += w * d[j]
+  let moved = 0, max = 0
+  for (const p of parts) {
+    if (!p.refit) continue
+    const q = p.refit(at), idx = [], d = []
+    for (let i = 0; i < p.position.length / 3; i++) {
+      const dx = q.position[i * 3] - p.position[i * 3], dy = q.position[i * 3 + 1] - p.position[i * 3 + 1], dz = q.position[i * 3 + 2] - p.position[i * 3 + 2]
+      const l = Math.hypot(dx, dy, dz)
+      if (l < 0.002) continue
+      idx.push(i); d.push(dx, dy, dz); max = Math.max(max, l)
+    }
+    if (idx.length) { (p.morphs ||= {})[key] = { index: idx, delta: d }; moved++ }
+  }
+  const corner = key.match(/^(\w+)[+-](\w+)[+-]$/)
+  if (corner) bodyCorners.add(corner[1] + ',' + corner[2]); else bodyMorphs[key.slice(0, -1)] = true
+  console.log(`body morph ${key}: ${moved} parts move, up to ${max.toFixed(2)} cm`)
+}
+
 // ── Write ──────────────────────────────────────────────────────────────────
 // community parts go to their own files (community/<key>.bin), fetched only
 // when chosen; everything else to character.bin
@@ -370,6 +461,8 @@ const meta = {
   units: 'cm, y up, facing +z, feet on y = 0',
   targets: TARGETS,
   faceMorphs: Object.keys(morphs),
+  bodyMorphs: Object.keys(bodyMorphs),   // signed sliders: morphs <key>+ and <key>-
+  bodyCorners: [...bodyCorners].map(c => c.split(',')),   // slider pairs blended bilinearly: morph <a><s><b><s> at |a b|
   bones,
   joints: Object.fromEntries(Object.entries(joint).map(([k, v]) => [k, v.map(c => +(c * SCALE).toFixed(3))])),
   parts: {},
@@ -392,7 +485,12 @@ for (const p of [...parts.filter(p => !ownBin(p)), ...parts.filter(ownBin)]) {
     indexType: nv > 65535 ? 'u32' : 'u16',
     source: put(new Uint16Array(p.source)), // base-mesh vertex each came from (body / helpers)
     ...(p.deleteVerts?.length ? { deleteVerts: put(new Uint16Array(p.deleteVerts)) } : {}),
-    ...(p.morphs ? { morphs: Object.fromEntries(Object.entries(p.morphs).map(([k, m]) => [k, { index: put(new Uint32Array(m.index)), delta: put(new Float32Array(m.delta)) }])) } : {}),
+    // morphs as 16-bit: the vertex in u16 where the part has room, and each
+    // delta in i16 of its morph's largest (≤ 10 cm / 32767: under 4 µm)
+    ...(p.morphs ? { morphs: Object.fromEntries(Object.entries(p.morphs).map(([k, m]) => {
+      const scale = Math.max(...m.delta.map(Math.abs)) / 32767 || 1, small = nv <= 65535
+      return [k, { index: put(small ? new Uint16Array(m.index) : new Uint32Array(m.index)), indexType: small ? 'u16' : 'u32', delta: put(Int16Array.from(m.delta, x => Math.round(x / scale))), scale }]
+    })) } : {}),
   }
   if (own) { fs.mkdirSync(path.join(OUT, 'community'), { recursive: true }); fs.writeFileSync(path.join(OUT, meta.parts[p.name].bin), Buffer.concat(chunks)); const prev = communityBins.pop(); chunks = prev[1]; offset = prev[2] }
 }

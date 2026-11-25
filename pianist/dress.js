@@ -26,7 +26,7 @@
 // Units: centimetres in the piano's frame.
 
 import * as THREE from 'three'
-import { cutShell, piping, skinned, hideBody, underGarment, coverBody, keepSkin } from './shell.js'
+import { cutShell, piping, skinned, hideBody, underGarment, coverBody, keepSkin, withoutSinks } from './shell.js'
 import { applyFabric, fabricMapOf } from './fabric.js'
 
 let serial = 0   // each dress hides the body under it under its own key (two can overlap while switching)
@@ -86,7 +86,9 @@ function knitTextures(size = 256, cells = 16) {
 //           and along the diagonal front opening, with three knot buttons
 //   Fabric: plain jersey by default (no pattern, a faint fine weave);
 //           setFabric('knit') brings back the diamond knit
-export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1d1b', length = 'midi', skirt: skirtMode = 'cloth', bodice: withBodice = true, waist = 4, sleeves = 'none', slits = length === 'gown', slitAt = -14, neck = 'halter', trim: trimColor = null } = {}) {
+// (fitted to the body as modelled, whatever the garment worn now has sunk)
+export function createDress(ch, rig, opts) { return withoutSinks(ch, () => makeDress(ch, rig, opts)) }
+function makeDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1d1b', length = 'midi', skirt: skirtMode = 'cloth', bodice: withBodice = true, waist = 4, sleeves = 'none', slits = length === 'gown', slitAt = -14, neck = 'halter', trim: trimColor = null } = {}) {
   const qipao = neck === 'qipao' && sleeves === 'none'
   const body = ch.parts.body.geometry
   const P = body.attributes.position.array, Nn = body.attributes.normal.array
@@ -264,8 +266,28 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
   }
   const gown = length === 'gown'
   // (the gown's waistband hugs the waist a little tighter)
-  const ringR = ringAt(hipY, 0.9)
   const ringOf = new Map()   // rows above the hips: follow the waist, over the bodice
+  // over our bodice the waistband hugs the bodice itself, 3 mm out: the body's
+  // cross-section (+1.5 cm) stood off the bodice's smoothed shell by 1-2 cm,
+  // a ledge whose open top showed the dark inside of the skirt at her sides
+  const BP = withBodice ? bodiceShell.geometry.attributes.position.array : null
+  function bodiceRingAt(y0, pad) {
+    // (the torso's alone: a long sleeve's cuff hangs at this height, out to her side)
+    const rr = new Float32Array(C), body = ringAt(y0, 3)
+    for (let i = 0; i < BP.length; i += 3) {
+      if (Math.abs(BP[i + 1] - y0) > 1.2) continue
+      const dx = BP[i] - ctr.x, dz = BP[i + 2] - ctr.z
+      const b = Math.floor(((Math.atan2(dz, dx) + Math.PI) / (2 * Math.PI)) * C) % C, d = Math.hypot(dx, dz)
+      if (d < body[b]) rr[b] = Math.max(rr[b], d)
+    }
+    for (let it = 0; it < 6; it++) for (let b = 0; b < C; b++) if (!rr[b]) rr[b] = Math.max(rr[(b + C - 1) % C], rr[(b + 1) % C])
+    if (!rr.some(x => x)) return null
+    const rs = rr.slice(); for (let b = 0; b < C; b++) rr[b] = (rs[(b + C - 1) % C] + 2 * rs[b] + rs[(b + 1) % C]) / 4 + pad
+    return rr
+  }
+  const waistRing = y => { const b = BP && bodiceRingAt(y, 0.3); return b || ringAt(y, gown ? 0.8 : 1.5) }
+  // (and round the hips too: the bodice goes 4 cm below them)
+  const ringR = (BP && bodiceRingAt(hipY, 0.3)) || ringAt(hipY, 0.9)
   const NPt = C * R
   const id = (r, c) => r * C + ((c + C) % C)
   // rest (standing) shape: a gentle A-line
@@ -275,7 +297,7 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
     const y = hipY + TOP - r * seg
     const t = Math.max(0, (hipY - y) / (L - TOP)), flare = 1 + (gown ? 0.55 : 0.3) * (qipao ? 0.5 : 1) * t * t + 0.12 * t
     let rad = ringR[c] * flare
-    if (y > hipY) { if (!ringOf.has(r)) ringOf.set(r, ringAt(y, gown ? 0.8 : 1.5)); rad = Math.max(ringOf.get(r)[c], 0) * (1 - (hipY - y) / -TOP * 0) ; rad = THREE.MathUtils.lerp(ringR[c], ringOf.get(r)[c], (y - hipY) / TOP) }
+    if (y > hipY) { if (!ringOf.has(r)) ringOf.set(r, waistRing(y)); rad = Math.max(ringOf.get(r)[c], 0) * (1 - (hipY - y) / -TOP * 0) ; rad = THREE.MathUtils.lerp(ringR[c], ringOf.get(r)[c], (y - hipY) / TOP) }
     const i = id(r, c) * 3
     rest[i] = ctr.x + Math.cos(a) * rad; rest[i + 1] = y; rest[i + 2] = ctr.z + Math.sin(a) * rad
   }
@@ -351,7 +373,7 @@ export function createDress(ch, rig, { seatY = 55.4, bench = null, color = '#8e1
   sg.computeVertexNormals()
   const skirtMat = withRepeat(1)
   const fitted = skinned(ch, sg, skirtMat)
-  if (keepSkin()) coverBody(ch, HIDE_KEY, withBodice ? [bodiceShell.geometry, sg] : [sg], underTris, { rays: false, fade: 1, depth: 2 })
+  if (keepSkin()) coverBody(ch, HIDE_KEY, withBodice ? [bodiceShell.geometry, sg] : [sg], underTris, { rays: false, fade: 1, depth: 2, bare: v => weightOf(v, /^(lowerarm|wrist)/) > 0.3 })
 
   // the same skirt as cloth
   const cg = new THREE.BufferGeometry()
