@@ -261,6 +261,7 @@
     <div class="field" id="uprightPanelField" hidden title="Remove the upright's upper front panel to show its hammers, dampers, action and strings"><label>Front panel</label><select id="uprightPanel"><option value="open" selected>Off - show the action</option><option value="closed">On - cover the action</option></select></div>
     <div class="sect">Pianist</div>
     <div class="field"><label>Model</label><select id="model"><option value="">MakeHuman (realistic, CC0)</option></select></div>
+    <div class="field" id="vhandsField" style="display:none" title="Her hands on another model. The pianist's: the MakeHuman woman's own hands (fingers lengthened to a woman's proportions) set on the model's wrists (pianist/hand-graft.js), cel-shaded in the model's skin colour with its ink, or in the realistic skin; the fingering is sized to them. The model's: its own anime hands, with the fingering sized to their reach (pianist/hand-size.js). Changing it reloads the page"><label>Hands</label><select id="vhands"><option value="pianist">The pianist's, cel-shaded</option><option value="real">The pianist's, realistic skin</option><option value="model">The model's own</option></select></div>
     <div class="field" id="vdressField" style="display:none" title="The VRoid pianist's concert dress (VRoid HairSample_Female's, refitted to her), or her own cardigan and shorts"><label>Concert dress</label><select id="vdress"><option value="wine" selected>Wine</option><option value="black">Black</option><option value="navy">Navy</option><option value="emerald">Emerald</option><option value="rose">Rose</option><option value="white">White</option><option value="off">Her own clothes</option></select></div>
     <div class="field"><label>Look</label><select id="look"><option value="realistic">Realistic</option><option value="stylized">Stylized (animated feature)</option><option value="cel" selected>Cel shaded (outlines)</option></select></div>
     <div class="field"><label>Smooth (subdivided)</label><select id="smooth"><option value="0">Off</option><option value="1">1× (4× the triangles)</option><option value="2">2× (16×)</option></select></div>
@@ -339,11 +340,6 @@
     <label class="chk" title="The small capitals over each line (a place and year, a bar, a term)"><input type="checkbox" id="itHeads" checked>Headings over the lines</label>
     <div class="sect">Stage</div>
     <div class="field" title="Black stage: the piano under its spotlights on a dark floor. Candlelit chamber (from #030): a stone wall with arches behind the piano, some 200 candles on two tiers and along the sides, sconces, a warm candle palette for the lights and the reflections. The hall of water (waterhall/, after the Wallace sets of Blade Runner 2049): the piano on a wooden deck in a flooded concrete room, light off the water climbing the walls, a slit of light swinging over her. The park (#051): Sorairo's hillside, the tree, wind in the grass, the sky, birds and a painterly finish (park/); its own post-processing takes the place of the page's. The lake (#054): Afterglow's mountain lake after sunset (lake/), the water ringing from the piano's legs as she plays and reflecting her"><label>Stage</label><select id="stageSet"><option value="stage" selected>Black stage</option><option value="candle">Candlelit chamber</option><option value="park">The park</option><option value="lake">The lake (Afterglow)</option><option value="hall">The hall of water</option></select></div>
-    <div class="field lakeOnly" style="display:none" title="The sun below the horizon, as in Afterglow: from just after sunset to the blue hour, or set along the song from start to end"><label>Sky</label><select id="lakeTod"></select></div>
-    <div class="field parkOnly" style="display:none"><label>Time of day</label><select id="parkTod"></select></div>
-    <div class="field parkOnly" style="display:none"><label>Tree</label><select id="parkTree"></select></div>
-    <label class="chk parkOnly" style="display:none" title="Wind, songbirds and insects while she plays (Sorairo's ambience; not in exported videos)"><input type="checkbox" id="parkAmb" checked>Birds and wind</label>
-    <label class="chk parkOnly" style="display:none" title="Draw her into the painting: she goes through the park's light shafts, grade and painterly brush with the piano, so her outlines soften into strokes. Off: she is graded apart and laid sharp over the painted park"><input type="checkbox" id="parkPaint">Paint her with the park</label>
     <div class="field"><label>Main light</label><input type="range" id="light" min="0" max="2" step="0.01" value="1"></div>
     <div class="field"><label>Exposure</label><input type="range" id="exposure" min="0.3" max="2.5" step="0.01" value="1"></div>
     <div class="sect">Post-processing</div>
@@ -497,6 +493,8 @@
     import { createLessonView, LESSON_VIEWS } from './pianist/lesson.js'
     import { loadCharacter } from './pianist/character.js'
     import { loadAltCharacter, MODELS } from './pianist/alt-model.js'
+    import { graftPianistHands } from './pianist/hand-graft.js'
+    import { fingeringHandSize } from './pianist/hand-size.js'
     import { createRig } from './pianist/rig.js'
     import { createHair } from './pianist/hair.js'
     import { createDress } from './pianist/dress.js'
@@ -510,8 +508,7 @@
     import { hideBody } from './pianist/shell.js'
     import { suggestClips, snapStart, snapEnd, clipOf, shortDescription, SHORT_MAX, SHORT_LENGTHS, SHORT_DEFAULT } from './pianist/shorts.js'
     import { createFocusPuller, SHOT_DOF } from './pianist/focus-puller.js'
-    import { createParkStage, PARK_TIMES, PARK_TREES } from './park/stage.js'
-    import { createLakeStage, LAKE_TIMES } from './lake/stage.js'
+    import { createStageSets } from './stages/sets.js'
     import { buildCandleChamber, candleEnvironment, CANDLE } from './pathtrace/candle-chamber.js'
     import { buildWaterHall, HALL } from './waterhall/water-hall.js'
     import { createLinerLibrary, clockOfMidi, buildTimeline, toVTT, toChapters, titleScreen, withTitle, titleSecs } from './liner/liner.js'
@@ -686,13 +683,23 @@
     let ch = null
     if (ALT) try { ch = await loadAltCharacter(ALT, new URL('./pianist/assets/', import.meta.url).href) }
     catch (e) { console.error(e); setStatus(`Could not load ${MODELS[ALT].label} (${e.message}): see pianist/README.md`, true, 8000) }
+    // her hands on another model: the MakeHuman woman's (pianist/hand-graft.js), set on its wrists
+    // before the rig is made (it moves the proxy fingers to the new hands' joints), or its own
+    // (a VRM: the pianist's, cel-shaded, unless ?vhands=; a glTF model keeps its own)
+    if (ch) {
+      $('vhandsField').style.display = ''
+      $('vhands').value = ['pianist', 'real', 'model'].includes(params.get('vhands')) ? params.get('vhands') : MODELS[ALT].kind === 'vrm' ? 'pianist' : 'model'
+      $('vhands').onchange = () => { if ($('vhands').disabled) return; const q = new URLSearchParams(location.search); q.set('vhands', $('vhands').value); location.search = q.toString() }
+      if ($('vhands').value !== 'model') await graftPianistHands(ch, { base: new URL('./pianist/assets/', import.meta.url).href, look: $('vhands').value === 'real' ? 'real' : 'toon' })
+        .catch(e => { console.warn('hands:', e.message); $('vhands').value = 'model'; $('vhands').disabled = true })
+    }
     if (!ch) { ALT = ''; $('model').value = ''; ch = await loadCharacter(new URL('./pianist/assets/', import.meta.url).href) }
     scene.add(ch.group)
     if (ALT) {
       // the wardrobe fields (Look … to the end of the Pianist section) are MakeHuman's: hide them
       // (up to the next heading: Pose, where this used to stop, is in the Performance menu now)
       document.body.classList.add('altmodel')
-      for (let el = $('model').closest('.field').nextElementSibling; el && !el.classList.contains('sect'); el = el.nextElementSibling) if (!el.querySelector('#smooth')) el.style.display = 'none'
+      for (let el = $('model').closest('.field').nextElementSibling; el && !el.classList.contains('sect'); el = el.nextElementSibling) if (!el.querySelector('#smooth, #vhands')) el.style.display = 'none'
       // a model with a concert dress (alt-model.js MODELS[].dress): its colour menu and the skirt simulation
       if (ch.dress) {
         $('vdressField').style.display = ''
@@ -1085,56 +1092,23 @@
       const render = bokeh.render.bind(bokeh)
       bokeh.render = (...a) => { const v = dust.visible; dust.visible = false; render(...a); dust.visible = v }
     }
-    // ── The park (#051) as a stage set (park/stage.js): Visuals → Stage, ?stage=park ──
-    const parkStage = createParkStage({ renderer, scene, camera, onStatus: m => setStatus(m),
+    // ── The sets that take over the picture: the park (#051) and the lake (#054), Visuals → Stage,
+    // ?stage=park|lake; their controls, keys and hooks are stages/sets.js's ──
+    const stageSets = createStageSets({ renderer, scene, camera, piano, select: $('stageSet'), setStatus: (...a) => setStatus(...a),
       stageParts: () => [floor, spot, faceKey, rim, back, keyFill, dust, ...Object.values(stageProps).map(p => p.root)],
       foreground: () => [ch.group, hair?.object, hair?.cap, dress?.object, shoes?.object],
-      hair: () => hair })
-    // ── The lake (#054, Afterglow's world) as a stage set (lake/stage.js): Visuals → Stage, ?stage=lake ──
-    const lakeStage = createLakeStage({ renderer, scene, camera, onStatus: m => setStatus(m),
-      stageParts: () => [floor, spot, faceKey, rim, back, keyFill, dust, ...Object.values(stageProps).map(p => p.root)],
-      foreground: () => [ch.group, hair?.object, hair?.cap, dress?.object, shoes?.object],
-      hair: () => hair, progress: () => scheduler?.duration ? songNow() / scheduler.duration : 0 })
-    for (const [i, n] of LAKE_TIMES) $('lakeTod').add(new Option(n, i, i === 0, i === 0))
-    $('lakeTod').onchange = () => lakeStage.setTime($('lakeTod').value)
-    // the rings: the keys and the pedals as the piano plays them
-    { const on = piano.noteOn.bind(piano), sus = piano.setSustain.bind(piano)
-      piano.noteOn = (m, v, ...a) => { lakeStage.noteOn(m, v); return on(m, v, ...a) }
-      piano.setSustain = (d, ...a) => { lakeStage.pedal(d); return sus(d, ...a) } }
-    window.__lake = lakeStage
-    const altStage = () => parkStage.on ? parkStage : lakeStage.on ? lakeStage : null
-    for (const [i, n] of PARK_TIMES) $('parkTod').add(new Option('' + n, i, i === 1, i === 1))
-    for (const [k, n] of PARK_TREES) $('parkTree').add(new Option(n, k, k === 'summer', k === 'summer'))
-    $('parkTod').onchange = () => parkStage.setTime($('parkTod').value)
-    $('parkTree').onchange = () => parkStage.setStyle($('parkTree').value)
-    $('parkPaint').onchange = () => parkStage.setPainted($('parkPaint').checked)
-    $('parkAmb').onchange = () => parkStage.setSound($('parkAmb').checked && scheduler?.playing)
-    async function setStageSet(name) {
-      const park = name === 'park', lake = name === 'lake'
-      for (const el of document.querySelectorAll('#visualsPop .parkOnly')) el.style.display = park ? '' : 'none'
-      for (const el of document.querySelectorAll('#visualsPop .lakeOnly')) el.style.display = lake ? '' : 'none'
-      // (the hall's own post-processing has no part in the park or the lake)
-      for (const id of ['dof', 'bloom', 'filmGrain', 'dust']) $(id).closest('label').style.opacity = park || lake ? 0.4 : ''
-      $('stageSet').disabled = true
-      try {
-        if (!park && parkStage.on) await parkStage.set(false)
-        if (!lake && lakeStage.on) await lakeStage.set(false)
-        if (park) await parkStage.set(true); else if (lake) await lakeStage.set(true); else setStage(name)
-      } catch (e) { console.error(e); setStatus('Could not set the stage: ' + e.message, true, 6000); setStage('stage') }
-      finally { $('stageSet').disabled = false }
-      $('stageSet').value = parkStage.on ? 'park' : lakeStage.on ? 'lake' : STAGE_LOOK[name] ? name : 'stage'
-      parkStage.setSound(parkStage.on && $('parkAmb').checked && scheduler?.playing)
-      applyFx()
-    }
+      hair: () => hair, progress: () => scheduler?.duration ? songNow() / scheduler.duration : 0, playing: () => !!scheduler?.playing,
+      dim: ['dof', 'bloom', 'filmGrain', 'dust'] })
+    async function setStageSet(name) { await stageSets.choose(name, setStage); applyFx() }
     $('stageSet').onchange = () => setStageSet($('stageSet').value)
-    const drawPost = () => altStage() ? altStage().draw() : composer.render()
+    const drawPost = () => stageSets.draw() || composer.render()
     const pct = x => Math.round(x * 100) + '%'
     function applyFx() {
       bokeh.enabled = $('dof').checked
       bloom.enabled = $('bloom').checked; bloom.strength = +$('bloomAmt').value
       const g = $('filmGrain').checked
       grain.uniforms.uAmount.value = g ? +$('grainAmt').value : 0; grain.uniforms.uVig.value = g ? +$('vig').value : 0
-      dust.visible = $('dust').checked && parkStage.shows(dust) && lakeStage.shows(dust); dust.material.uniforms.uOpacity.value = +$('dustAmt').value
+      dust.visible = $('dust').checked && stageSets.shows(dust); dust.material.uniforms.uOpacity.value = +$('dustAmt').value
       $('dofAmtV').textContent = (+$('dofAmt').value).toFixed(2).replace(/0$/, '') + '×'
       $('bloomAmtV').textContent = (+$('bloomAmt').value).toFixed(2)
       $('grainAmtV').textContent = pct(+$('grainAmt').value / 0.035)
@@ -1741,7 +1715,7 @@
     function newFingerWorker() {
       const url = new URL('./fingering/fingering.js', import.meta.url).href
       const src = `import { fingerPiece, CHOPIN } from ${JSON.stringify(url)}
-        onmessage = e => { const o = e.data.chopin ? { ...CHOPIN } : {}; if (e.data.bans) o.bans = e.data.bans
+        onmessage = e => { const o = e.data.chopin ? { ...CHOPIN } : {}; if (e.data.bans) o.bans = e.data.bans; if (e.data.handSize) o.handSize = e.data.handSize
           const r = fingerPiece(e.data.notes, o); postMessage({ id: e.data.id, rows: r.notes.map(n => [n.hand, n.finger || 0, n.release, n.shared]) }) }`
       return new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })), { type: 'module' })
     }
@@ -1751,7 +1725,7 @@
         const id = ++fingerReq
         const h = e => { if (e.data.id !== id) return; worker.removeEventListener('message', h); resolve(e.data.rows) }
         worker.addEventListener('message', h)
-        worker.postMessage({ id, chopin, bans, notes })
+        worker.postMessage({ id, chopin, bans, notes, handSize: fingeringHandSize(ch, rig, params.get('handsize')) })
       })
     }
     function applyFingering(notes, rows) {
@@ -1842,7 +1816,7 @@
       $('tLeft').textContent = '-' + fmt(Math.max(0, d - t))
       if (!seeking) { $('seek').value = d ? t / d : 0; $('seek').style.setProperty('--p', (d ? t / d * 100 : 0) + '%') }
     }
-    const setPlaying = on => { parkStage.setSound(on && $('parkAmb').checked); if (on) $('start').classList.add('gone'); $('playIcon').innerHTML = on ? '<path d="M6 4h4v16H6zm8 0h4v16h-4z"/>' : '<path d="M7 4v16l13-8z"/>'; poke() }
+    const setPlaying = on => { stageSets.setPlaying(on); if (on) $('start').classList.add('gone'); $('playIcon').innerHTML = on ? '<path d="M6 4h4v16H6zm8 0h4v16h-4z"/>' : '<path d="M7 4v16l13-8z"/>'; poke() }
     async function togglePlay() {
       if (!song) {
         if (sharedSong) { const [f, at] = sharedSong; sharedSong = null; return loadSongUrl(f, SONGS.find(x => x[0] === f)?.[1] || f.split('/').pop(), at) }
@@ -1903,8 +1877,8 @@
       ['hair', 'hairStyle'], ['hcol', 'hairColor'], ['density', 'hairDensity'], ['hairon', 'hairOn'], ['hairsim', 'hairSim'],
       ['dresson', 'dressOn'], ['clothsim', 'clothSim'], ['vdress', 'vdress'], ['look', 'look'], ['smooth', 'smooth'], ['simplify', 'simplify'],
       ['gaze', 'gaze'], ['expr', 'expr'], ['rest', 'restAfter'], ['hips', 'hips'], ['posture', 'posture'], ['reach', 'reach'], ['rock', 'rock'], ['sway', 'sway'], ['nod', 'nod'], ['glances', 'glances'], ['armw', 'armw'], ['lifth', 'lifth'], ['wflex', 'wflex'], ['frot', 'frot'], ['elbow', 'elbowLead'], ['liftoff', 'liftoff'], ['bench', 'benchDist'], ['benchh', 'benchH'],
-      ['touch', 'touch'], ['fingering', 'fingering'], ['replan', 'replanOn'], ['hands', 'hands'], ['played', 'played'], ['vel', 'velSrc'],
-      ['light', 'light'], ['exposure', 'exposure'], ['dof', 'dof'], ['tod', 'parkTod'], ['tree', 'parkTree'], ['ppaint', 'parkPaint'], ['birds', 'parkAmb'],
+      ['touch', 'touch'], ['fingering', 'fingering'], ['vhands', 'vhands'], ['replan', 'replanOn'], ['hands', 'hands'], ['played', 'played'], ['vel', 'velSrc'],
+      ['light', 'light'], ['exposure', 'exposure'], ['dof', 'dof'], ...stageSets.state,
       ['move', 'camMove'], ['dpreset', 'dirPreset'], ['pace', 'dirPace'], ['favour', 'dirBias'], ['trans', 'dirTrans'], ['dstill', 'dirStill'], ['dmix', 'dirMix'], ['shotnames', 'shotLbl'], ['follow', 'camFollow'], ['dfar', 'dirFar'], ['dmed', 'dirMed'], ['dclose', 'dirClose'],
       ['sf', 'sf'], ['avsync', 'avsync'],
       ['dofamt', 'dofAmt'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
@@ -1925,21 +1899,7 @@
     // and their own handler, exactly as if picked in the menu
     if (params.get('stage') === 'candle') await setStageSet('candle')
     if (params.get('stage') === 'hall') await setStageSet('hall')
-    if (params.get('stage') === 'lake') {
-      if ([...$('lakeTod').options].some(o => o.value === params.get('sky'))) $('lakeTod').value = params.get('sky')
-      lakeStage.setTime($('lakeTod').value)
-      for (const k of ['keyGain', 'fillGain', 'envGain', 'exposure']) if (params.has(k)) lakeStage.opts[k] = +params.get(k)
-      await setStageSet('lake')
-    }
-    if (params.get('stage') === 'park') {
-      for (const [k, id] of [['tod', 'parkTod'], ['tree', 'parkTree']]) if ([...$(id).options].some(o => o.value === params.get(k))) $(id).value = params.get(k)
-      parkStage.opts.time = +$('parkTod').value; parkStage.opts.style = $('parkTree').value
-      if (params.get('ppaint') === '1') $('parkPaint').checked = true
-      parkStage.opts.painted = $('parkPaint').checked
-      { const k = +params.get('pscale'); if (k >= 0.02 && k <= 4) parkStage.opts.scale = k }
-      if (params.has('pturn') && Number.isFinite(+params.get('pturn'))) parkStage.opts.turn = +params.get('pturn')
-      await setStageSet('park')
-    }
+    await stageSets.readUrl(params, 'stage', setStageSet)
     for (const [k, id] of STATE) {
       if (!params.has(k)) continue
       const el = $(id), v = params.get(k)
@@ -2051,7 +2011,7 @@
       }
       ch.group.updateMatrixWorld(true)
       wardrobeUpdate(dt)
-      parkStage.update(dt); lakeStage.update(dt)
+      stageSets.update(dt)
       // the subjects: her head, the hands (where they rest when not playing)
       head.copy(rig.pos('head'))
       const hd = rig.hands
@@ -2113,7 +2073,7 @@
       if (!offline) liner.update(songNow())
       // nothing to post-process on the light path: draw straight to the screen
       if (stacked) drawStacked(t, dt, live)
-      else if (altStage()) altStage().draw()
+      else if (stageSets.draw()) {}
       else if (LOWQ && !bokeh.enabled && !bloom.enabled && !$('filmGrain').checked) renderer.render(scene, camera)
       else composer.render()
     }
@@ -2133,7 +2093,7 @@
     const lens = (w, hh) => { camera.aspect = w / hh; camera.zoom = Math.max(0.55, Math.min(1, camera.aspect / 1.6)); camera.updateProjectionMatrix(); bokeh.uniforms.aspect.value = camera.aspect }
     function drawStacked(t, dt, live) {
       const { x: w, y: h } = renderer.getSize(_sz), [ht, hb] = stackHs(h)
-      const draw = () => altStage() ? altStage().draw() : LOWQ && !bokeh.enabled && !bloom.enabled && !$('filmGrain').checked ? renderer.render(scene, camera) : composer.render()
+      const draw = () => stageSets.draw() || LOWQ && !bokeh.enabled && !bloom.enabled && !$('filmGrain').checked ? renderer.render(scene, camera) : composer.render()
       const aspect0 = camera.aspect, zoom0 = camera.zoom, bokehOn = bokeh.enabled
       renderer.setScissorTest(true)
       lens(w, ht)
@@ -2210,7 +2170,7 @@
       const ch = stacked ? stackH(h) : h, ca = stacked ? stackHs(h)[0] : h
       camera.zoom = shortFrame && !stacked ? 1 : Math.max(0.55, Math.min(1, (w / ca) / 1.6))
       camera.aspect = w / ca; camera.updateProjectionMatrix()
-      renderer.setSize(w, h, style); composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(w, ch); parkStage.setSize(); lakeStage.setSize()
+      renderer.setSize(w, h, style); composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(w, ch); stageSets.setSize()
       dust.material.uniforms.uScale.value = ch * renderer.getPixelRatio()
     }
     addEventListener('resize', () => { if (!exporting) liveResize() })
@@ -2692,8 +2652,8 @@
         if (stacked) { drawStacked(T, 1 / 60, { hands: handsAt, head: rig.pos('head') }); window.__shotInfo2 = director2.update(T, 0, { hands: handsAt, head: rig.pos('head') }).shot }
         else {
           // the lake: the rings of the last 12 s already spreading
-          if (lakeStage.on && song) for (const n of sounding().notes) if (n.time <= T && n.time > T - 12) lakeStage.noteOn(n.midi, n.velocity ?? 0.7, T - n.time)
-          parkStage.update(1 / 60); lakeStage.update(1 / 60); drawPost()
+          stageSets.shot(T, song ? sounding().notes : [])
+          stageSets.update(1 / 60); drawPost()
         }
         return true
       }
