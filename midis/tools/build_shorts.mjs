@@ -21,6 +21,10 @@
 //   - timing: a few milliseconds of seeded spread inside chords
 //   - pedal: off, per bar, or per beat group (CC 64 lifted just after each
 //     change and pressed again)
+//   - voices: an optional gain per LilyPond voice (`voiceGain`, by a part of
+//     the voice's key), so an accompaniment sits under its melody
+// A source may also be one of Mutopia's LilyPond files kept in
+// midis/tools/mutopia/ (`lyPath`), with its repeats played out (`unfold`).
 // Two tracks: Piano right / Piano left.
 import { readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -33,6 +37,49 @@ const { Midi } = createRequire(import.meta.url)(root + 'tonejs-midi.js')
 const SRC = root + 'midis/shorts-src/'
 const DATA = root + 'strings/data/IMSLP/shorts/'
 const PPQ = 480
+
+const MUT = root + 'midis/tools/mutopia/'
+// a tempo change spread over [q0, q1) in steps of an eighth: [[q, bpm] ...]
+const ramp = (q0, q1, b0, b1) => { const out = []; for (let q = q0; q < q1 - 1e-9; q += 0.5) out.push([q, b0 + (b1 - b0) * (q - q0) / (q1 - q0)]); return out }
+// a bar map of dynamics in which every hairpin ([from, to]) ends on its last level the bar after,
+// unless that bar has a level of its own
+const hairpins = d => { const o = { ...d }; for (const [b, v] of Object.entries(d)) if (Array.isArray(v) && !(+b + 1 in d)) o[+b + 1] = v[1]; return o }
+// the same map again, `shift` bars later (a repeat played out)
+const again = (d, shift) => Object.fromEntries(Object.entries(d).map(([b, v]) => [+b + shift, v]))
+
+// Gymnopedie No. 1: 78 bars of 3/4, the second time through (bars 40-78) like the first
+const GYM_DYN = { 1: 'p', 5: ['p', 'mp'], 6: 'mp', 7: ['mp', 'p'], 13: ['p', 'mp'], 15: 'mp', 16: ['mp', 'p'],
+  22: ['p', 'mp'], 24: 'mp', 25: ['mp', 'p'], 26: ['p', 'mp'], 28: 'mp', 29: ['mp', 'p'], 32: ['p', 'mp'], 33: 'mp', 34: 'p', 36: ['p', 'pp'] }
+// Arabesque No. 1: bars 1-93 of 4/4, bar 94 of 2/4, bars 95-107 of 4/4
+const arabQ = b => b <= 94 ? (b - 1) * 4 : 374 + (b - 95) * 4
+const ARAB_A = 104, ARAB_RUBATO = 92
+const ARAB_TEMPO = [
+  [0, ARAB_A], ...ramp(arabQ(5) + 2, arabQ(6), ARAB_A, 80),                   // rit.
+  [arabQ(6), ARAB_A], ...ramp(arabQ(13), arabQ(16) + 2, ARAB_A, 114),          // stringendo
+  ...ramp(arabQ(16) + 2, arabQ(17), 114, 84), [arabQ(17), ARAB_A],             // rit., a tempo
+  ...ramp(arabQ(22) + 2, arabQ(23) + 2, ARAB_A, 84), [arabQ(23) + 2, ARAB_A],  // rit., a tempo
+  ...ramp(arabQ(24) + 2, arabQ(26), ARAB_A, 80), [arabQ(26), ARAB_A],          // rit., a tempo
+  ...ramp(arabQ(37), arabQ(39), ARAB_A, 84),
+  [arabQ(39), ARAB_RUBATO], [arabQ(47), 100], ...ramp(arabQ(50), arabQ(51), 100, 84), // Tempo rubato, mosso, rit.
+  [arabQ(51), 100], [arabQ(55), ARAB_RUBATO],                                  // mosso, a tempo
+  [arabQ(63), ARAB_A], ...ramp(arabQ(67), arabQ(71), ARAB_A, 78),              // Risoluto, dim. molto, piu dim.
+  [arabQ(71), ARAB_A], ...ramp(arabQ(75) + 2, arabQ(76), ARAB_A, 80),          // Tempo I, rit.
+  [arabQ(76), ARAB_A], ...ramp(arabQ(83), arabQ(86) + 2, ARAB_A, 114),         // stringendo
+  ...ramp(arabQ(86) + 2, arabQ(87), 114, 84), [arabQ(87), ARAB_A],             // rit., a tempo
+  ...ramp(arabQ(101), arabQ(108), ARAB_A, 66),                                 // the close
+]
+const ARAB_DYN = {
+  1: 'p', 2: ['p', 'mp'], 3: ['mp', 'mf'], 4: ['mf', 'mp'], 5: ['mp', 'p'], 6: 'pp', 10: ['pp', 'p'],
+  13: ['p', 'mp'], 14: ['mp', 'mf'], 15: 'mf', 16: ['mf', 'p'], 17: 'p', 19: ['p', 'mp'], 20: ['mp', 'p'],
+  23: ['p', 'mp'], 24: ['mp', 'p'], 26: 'pp', 28: ['pp', 'p'], 30: ['p', 'mp'], 32: ['mp', 'mf'], 34: ['mf', 'f'], 35: 'f',
+  36: ['f', 'mp'], 37: 'p', 38: ['p', 'pp'],
+  39: 'p', 41: ['p', 'mf'], 42: ['mf', 'f'], 43: 'f', 45: ['f', 'mf'], 46: ['mf', 'p'],
+  47: ['p', 'mf'], 48: ['mf', 'f'], 49: 'f', 50: ['f', 'p'], 51: ['p', 'mf'], 52: ['mf', 'f'], 53: 'f', 54: ['f', 'p'],
+  55: 'p', 59: ['p', 'mp'], 61: ['mp', 'p'], 63: 'f', 65: ['f', 'mf'], 67: ['mf', 'p'], 69: ['p', 'pp'],
+  71: 'p', 72: ['p', 'mp'], 73: ['mp', 'mf'], 74: ['mf', 'mp'], 75: ['mp', 'p'], 76: 'pp', 80: ['pp', 'p'],
+  83: ['p', 'mp'], 84: ['mp', 'mf'], 85: 'mf', 86: ['mf', 'p'], 87: 'p', 89: 'mf', 91: ['mf', 'f'], 93: 'f', 94: ['f', 'mf'],
+  95: ['mf', 'p'], 97: ['p', 'pp'], 104: ['pp', 'ppp'],
+}
 
 export const PIECES = {
   'new-doll': {
@@ -168,6 +215,29 @@ export const PIECES = {
     bpm: 72, rit: { from: 4, to: 0.75 }, hold: { last: 2 },
     pedal: 'bar', meter: [[0, 4, 4]], roll: 0.022,
   },
+  // park pieces (#032 ?stage=park): Mutopia's LilyPond, repeats played out
+  'satie-gymnopedie-1': {
+    out: 'midis/satie_gymnopedie_1.mid',
+    title: 'Satie: Gymnopedie No. 1',
+    credit: 'From the Mutopia Project edition typeset by Evin Robertson (Mutopia-2014/12/14-37), public domain.',
+    lyPath: MUT + 'SatieE-gymnopedie_1/gymnopedie_1.ly', unfold: true, dedupe: true,
+    // Lent et douloureux
+    bpm: 66, tempoMap: [[0, 66], ...ramp(36 * 3, 39 * 3, 66, 56), [39 * 3, 66]],
+    rit: { from: 74 * 3, to: 0.72 }, hold: { last: 2.5 },
+    pedal: 'bar', meter: [[0, 3, 4]],
+    voiceGain: { accomp: 0.8 },
+    dyn: hairpins({ ...GYM_DYN, ...again(GYM_DYN, 39), 78: 'pp' }),
+  },
+  'debussy-arabesque-1': {
+    out: 'midis/deb_arabesque_1.mid',
+    title: 'Debussy: Arabesque No. 1, L. 66 No. 1',
+    credit: 'From the Mutopia Project edition typeset by Keith OHara (Mutopia-2011/10/25-1777), public domain.',
+    lyPath: MUT + 'DebussyC-L66-1/debussy_Arabesque_1.ly', dedupe: true, dedupeHands: true,
+    // Andantino con moto; Tempo rubato (un peu moins vite); Risoluto; Tempo I
+    bpm: ARAB_A, tempoMap: ARAB_TEMPO, rit: null, hold: { last: 3 },
+    pedal: 'group', groups: [2, 2], meter: [[0, 4, 4], [arabQ(94), 2, 4], [arabQ(95), 4, 4]],
+    dyn: hairpins(ARAB_DYN),
+  },
 }
 
 const LEVEL = { ppp: 22, pp: 34, p: 48, mp: 62, mf: 76, f: 90, ff: 104, fff: 116 }
@@ -189,8 +259,9 @@ function readNotes(cfg) {
     })
     return { notes: out, bpmAt: () => 60 }
   }
-  if (cfg.ly) {
-    const text = readFileSync(SRC + cfg.ly, 'utf8')
+  if (cfg.ly || cfg.lyPath) {
+    let text = readFileSync(cfg.lyPath ?? SRC + cfg.ly, 'utf8')
+    if (cfg.unfold) text = text.replace(/\\repeat\s+volta/g, '\\repeat unfold')
     for (const part of [0, 1]) for (const n of readLilyPond(text, { part, graces: true }).notes) out.push({ ...n, hand: part })
     return { notes: out, bpmAt: readerTempo(readLilyPond(text, { part: 0, graces: true })) }
   }
@@ -215,11 +286,14 @@ export function build(id) {
     const shift = cfg.skipRanges.reduce((sum, [from, to]) => sum + (n.q >= to - 1e-7 ? to - from : 0), 0)
     return [{ ...n, q: n.q - shift }]
   }) : read.notes
+  const gainOf = n => Object.entries(cfg.voiceGain ?? {}).find(([k]) => String(n.art?.vk ?? '').includes(k))?.[1] ?? 1
+  for (const n of performed) n.gain = gainOf(n)
   const notes = cfg.dedupe ? [...performed.reduce((m, n) => {
-    const key = `${n.hand}:${n.q.toFixed(6)}:${n.pitch}`
+    // dedupeHands: a key both hands strike at once is one note, in the hand that has it first
+    const key = `${cfg.dedupeHands ? '' : n.hand}:${n.q.toFixed(6)}:${n.pitch}`
     const old = m.get(key)
     if (!old) m.set(key, { ...n })
-    else { old.off = Math.max(old.off, n.off); old.velocity = Math.max(old.velocity, n.velocity) }
+    else { old.off = Math.max(old.off, n.off); old.velocity = Math.max(old.velocity, n.velocity); old.gain = Math.max(old.gain, n.gain) }
     return m
   }, new Map()).values()] : performed
   const rand = rng(hash(id))
@@ -245,15 +319,26 @@ export function build(id) {
   midi.header.update()
 
   // loudness per note
-  const barLen = cfg.meter[0][1] * 4 / cfg.meter[0][2]
-  const barOf = q => cfg.pickup ? (q < cfg.pickup ? 0 : 1 + Math.floor((q - cfg.pickup) / barLen + 1e-9)) : 1 + Math.floor(q / barLen + 1e-9)
-  const barStart = b => cfg.pickup ? (b === 0 ? 0 : cfg.pickup + (b - 1) * barLen) : (b - 1) * barLen
+  // bars, from the meter list (each entry starts a new bar), after an optional pickup
+  const starts = cfg.pickup ? [0] : []
+  {
+    const ms = cfg.meter.map(([q, n, d]) => [q + (cfg.pickup || 0), n * 4 / d])
+    for (let i = 0, q = cfg.pickup || 0; q < end + 64; ) {
+      while (i + 1 < ms.length && ms[i + 1][0] <= q + 1e-9) i++
+      starts.push(q); q += ms[i][1]
+      if (i + 1 < ms.length && ms[i + 1][0] < q - 1e-9) q = ms[i + 1][0]
+    }
+  }
+  const first = cfg.pickup ? 0 : 1
+  const barOf = q => { let lo = 0, hi = starts.length - 1; while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (starts[mid] <= q + 1e-9) lo = mid; else hi = mid - 1 } return lo + first }
+  const barStart = b => starts[b - first] ?? starts.at(-1)
+  const barLenAt = b => (starts[b - first + 1] ?? barStart(b) + 4) - barStart(b)
   const level = q => {
     if (!cfg.dyn) return null
     const b = barOf(q), d = cfg.dyn[b] ?? cfg.dyn[Object.keys(cfg.dyn).map(Number).filter(k => k <= b).pop()]
     if (!d) return LEVEL.mf
     if (!Array.isArray(d)) return LEVEL[d]
-    const f = (q - barStart(b)) / barLen
+    const f = (q - barStart(b)) / barLenAt(b)
     return LEVEL[d[0]] + (LEVEL[d[1]] - LEVEL[d[0]]) * f
   }
   const chordTop = new Map()
@@ -267,6 +352,7 @@ export function build(id) {
     const dur = (n.off - n.on) * bpmAt(n.on) / 60
     let v = level(n.q) ?? Math.round(n.velocity * 110 + 10)
     if (n.art?.stroke === 'accent' && cfg.dyn) v += 10
+    v *= n.gain ?? 1
     if (n.hand === 1) v *= 0.84
     if (n.hand === 0 && chordTop.get(n.q.toFixed(4)) === n.pitch) v += 6
     const inBar = (n.q - barStart(barOf(n.q)))
@@ -302,6 +388,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   for (const id of ids) {
     if (!PIECES[id]) { console.error('unknown piece', id); process.exitCode = 1; continue }
     const cfg = PIECES[id]
+    if (cfg.lyPath && !existsSync(cfg.lyPath)) { console.log(id, 'skipped: no source', cfg.lyPath); continue }
     if (cfg.ly && !existsSync(SRC + cfg.ly)) { console.log(id, 'skipped: no source', cfg.ly); continue }
     try { console.log(JSON.stringify(build(id))) } catch (e) { console.error(id, 'failed:', e.message); process.exitCode = 1 }
   }

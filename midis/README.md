@@ -142,6 +142,8 @@ A curated collection of classical, modern, and video game piano pieces in MIDI f
 | `mz_332_1.mid` | Mozart | Piano Sonata K.332 (1st mvt) |
 | `mz_333_1.mid` | Mozart | Piano Sonata K.333 (1st mvt) |
 | `mz_570_1.mid` | Mozart | Piano Sonata K.570 (1st mvt) |
+| `deb_arabesque_1.mid` | Debussy | Arabesque No. 1, L. 66 No. 1 ** |
+| `satie_gymnopedie_1.mid` | Satie | Gymnopédie No. 1 ** |
 
 ## Symphonic Works
 
@@ -197,6 +199,8 @@ License: [CC BY-SA 3.0](http://creativecommons.org/licenses/by-sa/3.0/de/deed.en
 **Bach, MAESTRO performances (marked ‡):** for comparison with the engraved files above, the same preludes and fugues as played at the International Piano-e-Competition on a Yamaha Disklavier, from the [MAESTRO dataset](https://magenta.tensorflow.org/datasets/maestro) v3.0.0 (Google Magenta), one performance per piece (the year is in each title; MAESTRO doesn't name the pianists). Not in MAESTRO: WTC I No.16 (BWV 861) and No.24 (BWV 869), and the Goldberg Variations. License: [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/), non-commercial only, like the Pletnev file below.
 
 **Tchaikovsky / Pletnev, Andante maestoso (marked †):** from the [MAESTRO dataset](https://magenta.tensorflow.org/datasets/maestro) v3.0.0 (Google Magenta), a performance recorded on a Yamaha Disklavier at the 2008 International Piano-e-Competition (`2008/MIDI-Unprocessed_02_R2_2008_01-05_ORIG_MID--AUDIO_02_R2_2008_wav--5.midi`, 4:33). License: [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/), non-commercial only, unlike the rest of the collection. Pletnev's arrangement (1978) is itself still under copyright.
+
+**Debussy, Arabesque No. 1 and Satie, Gymnopédie No. 1 (marked \*\*):** from the [Mutopia Project](https://www.mutopiaproject.org)'s LilyPond editions, Arabesque typeset by Keith OHara (Mutopia-2011/10/25-1777), Gymnopédie by Evin Robertson (Mutopia-2014/12/14-37), both public domain; the sources are kept unedited in [`tools/mutopia/`](tools/mutopia/) and Mutopia's own MIDI in `shorts-src/`. `node midis/tools/build_shorts.mjs debussy-arabesque-1 satie-gymnopedie-1` builds them, with a performance chosen for these files and not from a recording. Notes: the score's, the Gymnopédie with its repeat played out (78 bars; Mutopia's MIDI plays the 31-bar body once, 47 bars), a key both hands or two voices strike at once played once. Tempo: Gymnopédie ♩=66, a slowing into the first ending's last bars and a ritardando over the last five; Arabesque ♩=104, the printed rit., a tempo, stringendo, Tempo rubato (♩=92), mosso (♩=100), Risoluto and Tempo I as a tempo map, a slowing over the last seven bars. Dynamics: a level per bar after the printed marks and hairpins, the Gymnopédie one step above Satie's pp so it carries outdoors (leaving out the f this edition prints in the accompaniment at bar 9, inside the melody's pp), its chords 20 % under the melody. Sustain pedal: changed every bar in the Gymnopédie, every half bar in the Arabesque. Arabesque 4:18, Gymnopédie 3:37.
 
 **Symphonic works:** [mfiles.co.uk](https://www.mfiles.co.uk)  
 Classical MIDI files for educational use.
