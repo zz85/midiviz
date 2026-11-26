@@ -146,7 +146,7 @@ const MTOON_GAIN = 0.42
 // is set to CEL_INK, and every outline takes the ink's colour
 const CEL_INK = 0.14, CEL_INK_HAIR = 0.12
 const HAIR_ARM_PAD = 1   // cm
-const CEL_INK_COLOR = 0x0c0806
+export const CEL_INK_COLOR = 0x0c0806
 
 /**
  * The MToon outlines of a VRM model drawn as our cel ink.

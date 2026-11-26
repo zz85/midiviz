@@ -158,7 +158,7 @@
     import { createViolinistRig } from './violinist/rig.js'
     import { toonify, buildStage } from './violinist/stage.js'
     import { loadViolinist, disposeVRM, setOutline, MODELS as VIOLINISTS, OUTFITS } from './violinist/character.js'
-    import { loadAltCharacter, MODELS as PIANISTS } from './pianist/alt-model.js'
+    import { loadAltCharacter, MODELS as PIANISTS, CEL_INK_COLOR } from './pianist/alt-model.js'
     import { createRig as createPianistRig } from './pianist/rig.js'
     import { graftPianistHands } from './pianist/hand-graft.js'
     import { createPark } from './park/park.js'
@@ -439,6 +439,10 @@
           if (m.userData.authoredOutlineWidth != null) { m.userData.ow ??= m.outlineWidthFactor; continue }
           m.userData.ow = (m.userData.ow ?? m.outlineWidthFactor) * k
           if (m.outlineWidthFactor) m.outlineWidthFactor = m.userData.ow
+          // the pianist's ink colour too (#032's cel ink): unlit near-black, in place of the
+          // VRoid export's own outline colour mixed with the lit colour (a maroon line in the sun)
+          m.outlineColorFactor?.set(CEL_INK_COLOR)
+          if ('outlineLightingMixFactor' in m) m.outlineLightingMixFactor = 0
         }
       })
     }
