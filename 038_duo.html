@@ -98,6 +98,7 @@
     <select id="tod" hidden title="Time of day in the park"></select>
     <select id="tstyle" hidden title="The tree in the park"><option value="summer">Tree: summer</option><option value="sakura">Tree: cherry blossom</option><option value="autumn">Tree: autumn</option><option value="maple">Tree: maple</option></select>
     <label id="ambBox" hidden title="Wind, songbirds and insects in the park (Sorairo's ambience)"><input type="checkbox" id="amb" checked> Birds</label>
+    <label id="ppaintBox" hidden title="Draw the duo into the painting: they go through the park's light shafts, grade and painterly brush with the piano, so their outlines soften into strokes. Off: they are graded apart and laid sharp over the painted park"><input type="checkbox" id="ppaint"> Painted duo</label>
     <select id="room" title="Room"></select>
     <select id="bowing" title="Which notes share a bow. Score: the slurs, marks and bowings of the Mutopia LilyPond source the MIDI was made from (violinist/scores). Inferred: slurs guessed from the music (strings/articulation.js). Fixed rule: up to 4 fast notes per bow"><option value="score">Bowing: score (Mutopia)</option><option value="infer">Bowing: inferred</option><option value="fixed">Bowing: fixed rule</option></select>
     <select id="source" hidden title="What they play from. Score (the default): the Mutopia LilyPond source itself (violinist/scores, read by strings/lilypond.js): its notes, grace notes, slurs and marks, its dynamics and hairpins, and the piano or orchestral staves for her. MIDI file: the MIDI LilyPond made from that source (violinist/midis), as before; the bowing still comes from the score"><option value="score">Notes: score (Mutopia source)</option><option value="midi">Notes: MIDI file</option></select>
@@ -270,13 +271,16 @@
       for (const [i, n] of TIMES) $('tod').add(new Option('Time: ' + n.toLowerCase(), i))
       $('tod').value = TIMES.some(([i]) => String(i) === Q.get('tod')) ? Q.get('tod') : '1'
       if ([...$('tstyle').options].some(o => o.value === Q.get('tree'))) $('tstyle').value = Q.get('tree')
-      $('tod').hidden = $('tstyle').hidden = $('ambBox').hidden = $('pscale').hidden = false
+      $('tod').hidden = $('tstyle').hidden = $('ambBox').hidden = $('ppaintBox').hidden = $('pscale').hidden = false
       if (Q.get('amb') === '0') $('amb').checked = false
+      if (Q.get('ppaint') === '1') $('ppaint').checked = true
       setStatus('Growing the park…')
       park = await createPark(renderer, { time: +$('tod').value + 0.4, style: $('tstyle').value, scale: pscale, layout: LAYOUT })
       $('tod').onchange = () => { park.setTime(+$('tod').value + 0.4); saveUrl() }
       $('tstyle').onchange = () => { park.setStyle($('tstyle').value); saveUrl() }
       $('amb').onchange = () => { park.sound.setOn($('amb').checked); saveUrl() }
+      park.S.paintPerformers = $('ppaint').checked
+      $('ppaint').onchange = () => { park.S.paintPerformers = $('ppaint').checked; saveUrl() }
       // the sun (and moon) and the sky's light, from the park's, for their own materials;
       // three.js divides diffuse light by pi, Sorairo's cel light doesn't: hence the pi
       sunLight = new THREE.DirectionalLight(0xffffff, 1)
@@ -1298,7 +1302,7 @@
       if ($('hands').value !== 'pianist') p.set('hands', $('hands').value)
       if ($('room').value !== (PARK ? 'dry' : 'hall')) p.set('room', $('room').value)
       if (LAYOUT === 'curve') p.set('layout', 'curve')
-      if (PARK) { p.set('stage', 'park'); if ($('tod').value !== '1') p.set('tod', $('tod').value); if ($('tstyle').value !== 'summer') p.set('tree', $('tstyle').value); if (!$('amb').checked) p.set('amb', '0'); if ($('pscale').value !== '0.45') p.set('pscale', $('pscale').value) }
+      if (PARK) { p.set('stage', 'park'); if ($('tod').value !== '1') p.set('tod', $('tod').value); if ($('tstyle').value !== 'summer') p.set('tree', $('tstyle').value); if (!$('amb').checked) p.set('amb', '0'); if ($('ppaint').checked) p.set('ppaint', '1'); if ($('pscale').value !== '0.45') p.set('pscale', $('pscale').value) }
       if (hybrid.on) p.set('violin', hybrid.name)
       if (levels.violin || levels.piano) p.set('vol', `${levels.violin},${levels.piano}`)
       if ($('psynth').value !== 'oxisynth') p.set('psynth', $('psynth').value)

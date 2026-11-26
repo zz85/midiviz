@@ -63,7 +63,7 @@ export async function createPark(renderer, { time = 1.4, style = 'summer', azimu
   // lawn and its place on it widened with it.
   const CM = CM1 / scale;
   LAWN.r = LAWN_R / scale; LAWN.blend = LAWN_BLEND / scale;
-  const S = { time, style, azimuth, clouds, towers: 1, wind, windDir: 30, paint, bloom: 0.55, birds: true, contrail: true, ambience: 0.7 };
+  const S = { time, style, azimuth, clouds, towers: 1, wind, windDir: 30, paint, paintPerformers: false, bloom: 0.55, birds: true, contrail: true, ambience: 0.7 };
   const shared = makeShared();
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 8000);
@@ -262,17 +262,22 @@ export async function createPark(renderer, { time = 1.4, style = 'summer', azimu
     renderShadow(duoScene)
     const au = renderer.autoClear
     renderer.autoClear = false
-    const renderDuoLayer = layer => {
+    // (layers by mask: 1 = layer 0, the piano; 2 = layer 1, the performers)
+    const renderDuoLayers = layers => {
       const bg = duoScene.background, mask = duoCam.layers.mask
-      duoScene.background = null; duoCam.layers.set(layer)
+      duoScene.background = null; duoCam.layers.mask = layers
       try { renderer.render(duoScene, duoCam) }
       finally { duoScene.background = bg; duoCam.layers.mask = mask }
     }
+    // S.paintPerformers: the performers drawn with the piano and painted with the park
+    // (light shafts, bloom, grade, Kuwahara, edge pigment), in place of their own grade
+    // composited over the painting; the cel ink then goes soft and brushy with the rest
+    const together = S.paintPerformers
     post.render(scene, camera, {
       bloom: S.bloom, paint: Math.min(6, S.paint * renderer.getPixelRatio()),
-      background: () => renderDuoLayer(0),
+      background: () => renderDuoLayers(together ? 3 : 1),
       depthScene: duoScene, depthCamera: duoCam,
-      overlay: () => renderDuoLayer(1),
+      overlay: together ? null : () => renderDuoLayers(2),
     })
     post.final.uniforms.uTime.value = shared.uTime.value
     renderer.autoClear = au

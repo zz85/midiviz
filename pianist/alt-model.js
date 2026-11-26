@@ -19,7 +19,7 @@
 
 import * as THREE from 'three'
 import { vrmPluginOptions } from '../violinist/vrm-materials.js'
-import { scaleSpringBones } from '../violinist/vrm-springs.js'
+import { scaleSpringBones, padHairArmColliders } from '../violinist/vrm-springs.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { subdivide } from './subdivide.js'
 import { createSkirtCloth } from './vrm-skirt.js'
@@ -141,6 +141,60 @@ async function addDress(model, spec, base, colorKey) {
 const MH_LEG = 78.9   // hip joint → ankle, cm
 const MH_ARM = 43.7   // shoulder joint → wrist, cm
 const MTOON_GAIN = 0.42
+// the cel look's ink on the MakeHuman pianist (pianist/look.js outlineMaterial): 0.14 cm
+// on her body, 0.12 on the rest, unlit near-black. A VRM model's thickest MToon outline
+// is set to CEL_INK, and every outline takes the ink's colour
+const CEL_INK = 0.14, CEL_INK_HAIR = 0.12
+const HAIR_ARM_PAD = 1   // cm
+const CEL_INK_COLOR = 0x0c0806
+
+/**
+ * The MToon outlines of a VRM model drawn as our cel ink.
+ *  • Width. MToon's world-coordinate outline width is in the scene's units whatever
+ *    the model's scale (three-vrm cancels it: outlineWidthFactor * |normalMatrix n|).
+ *    VRoid authors it in metres (0.0008 m on pixiv's twist sample, 0.075 cm in VRM 0.x),
+ *    so on our centimetre stage it came out ~0.0008 cm, no outline at all. The model's
+ *    thickest outline is set to `ink` cm, the others keeping their authored ratio to it.
+ *  • Colour. The authored outline colour, mixed with the lit colour (lighting mix 1 on
+ *    the VRoid exports: a maroon line that brightens in the sun), becomes the ink's
+ *    fixed near-black, unlit, as the MakeHuman outline is (a MeshBasicMaterial).
+ *  • Hair. VRoid Studio exports hair without an outline (mode none); it is given one,
+ *    as three-vrm makes them (MToonMaterialLoaderPlugin._generateOutline: a back-face
+ *    clone as a second material over the whole geometry), at CEL_INK_HAIR cm. Its clone
+ *    keeps the hair's texture and alpha test, so the cut-out strand cards are inked
+ *    along their cut edges, not round their quads.
+ * Screen-coordinate outlines keep their width. Idempotent (the authored width is kept
+ * in userData.authoredOutlineWidth).
+ */
+function inkMToonOutlines(model, ink) {
+  const world = m => m?.isMToonMaterial && m.isOutline && m.outlineWidthMode === 'worldCoordinates'
+  const authored = () => {
+    const mats = new Set()
+    model.traverse(o => { if (o.isMesh) for (const m of [].concat(o.material)) if (world(m)) mats.add(m) })
+    for (const m of mats) m.userData.authoredOutlineWidth ??= m.outlineWidthFactor
+    return mats
+  }
+  let mats = authored()
+  const max = Math.max(0, ...[...mats].map(m => m.userData.authoredOutlineWidth))
+  const unit = max > 0 ? max / ink : 1   // (authored width per cm of ink)
+  model.traverse(o => {
+    if (!o.isMesh || Array.isArray(o.material) || !o.material?.isMToonMaterial || o.material.isOutline) return
+    if (!/HAIR/i.test(o.material.name) || o.material.outlineWidthMode !== 'none') return
+    const ol = o.material.clone()
+    ol.name += ' (Outline)'; ol.isOutline = true; ol.side = THREE.BackSide
+    ol.outlineWidthMode = 'worldCoordinates'
+    ol.userData.authoredOutlineWidth = CEL_INK_HAIR * unit
+    o.material = [o.material, ol]
+    const n = o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count
+    o.geometry.clearGroups(); o.geometry.addGroup(0, n, 0); o.geometry.addGroup(0, n, 1)
+  })
+  mats = authored()
+  for (const m of mats) {
+    m.outlineWidthFactor = m.userData.authoredOutlineWidth / unit
+    m.outlineColorFactor?.set(CEL_INK_COLOR)
+    if ('outlineLightingMixFactor' in m) m.outlineLightingMixFactor = 0
+  }
+}
 
 const FINGER = { 1: 'Thumb', 2: 'Index', 3: 'Middle', 4: 'Ring', 5: 'Little' }
 const PHAL = { 1: ['Metacarpal', 'Proximal', 'Distal'], 2: ['Proximal', 'Intermediate', 'Distal'] }
@@ -280,6 +334,8 @@ export async function loadAltCharacter(key, base = new URL('./assets/', import.m
     // with the model (×~100, metres to centimetres: violinist/vrm-springs.js)
     group.updateMatrixWorld(true)
     scaleSpringBones(vrm, model.getWorldScale(v3()).x)
+    // hair kept a centimetre further off her arms than its tails' radius (vrm-springs.js)
+    padHairArmColliders(vrm, HAIR_ARM_PAD)
     // MToon is close to unlit: under the stage's spotlights it burns out, so
     // take its lit and shade colours down to the scene's exposure
     model.traverse(o => {
@@ -290,6 +346,7 @@ export async function loadAltCharacter(key, base = new URL('./assets/', import.m
         mt.shadeColorFactor?.multiplyScalar(spec.gain ?? MTOON_GAIN)
       }
     })
+    inkMToonOutlines(model, spec.ink ?? CEL_INK)
   }
 
   // ── Target joint positions (rest, piano frame) ──

@@ -338,11 +338,12 @@
     <div class="field" title="Automatic: each intertitle goes to the side of the frame away from the pianist (her head and hands as the camera sees them), and to the top when the shot looks down on the keys"><label>Intertitle position</label><select id="itPos"></select></div>
     <label class="chk" title="The small capitals over each line (a place and year, a bar, a term)"><input type="checkbox" id="itHeads" checked>Headings over the lines</label>
     <div class="sect">Stage</div>
-    <div class="field" title="Black stage: the piano under its spotlights on a dark floor. Candlelit chamber (from #030): a stone wall with arches behind the piano, some 200 candles on two tiers and along the sides, sconces, a warm candle palette for the lights and the reflections. The hall of water (waterhall/, after the Wallace sets of Blade Runner 2049): the piano on a wooden deck in a flooded concrete room, light off the water climbing the walls, a slit of light swinging over her. The park (#051): Sorairo's hillside, the tree, wind in the grass, the sky, birds and a painterly finish (park/); its own post-processing takes the place of the page's"><label>Stage</label><select id="stageSet"><option value="stage" selected>Black stage</option><option value="candle">Candlelit chamber</option><option value="park">The park</option><option value="lake">The lake (Afterglow)</option><option value="hall">The hall of water</option></select></div>
+    <div class="field" title="Black stage: the piano under its spotlights on a dark floor. Candlelit chamber (from #030): a stone wall with arches behind the piano, some 200 candles on two tiers and along the sides, sconces, a warm candle palette for the lights and the reflections. The hall of water (waterhall/, after the Wallace sets of Blade Runner 2049): the piano on a wooden deck in a flooded concrete room, light off the water climbing the walls, a slit of light swinging over her. The park (#051): Sorairo's hillside, the tree, wind in the grass, the sky, birds and a painterly finish (park/); its own post-processing takes the place of the page's. The lake (#054): Afterglow's mountain lake after sunset (lake/), the water ringing from the piano's legs as she plays and reflecting her"><label>Stage</label><select id="stageSet"><option value="stage" selected>Black stage</option><option value="candle">Candlelit chamber</option><option value="park">The park</option><option value="lake">The lake (Afterglow)</option><option value="hall">The hall of water</option></select></div>
     <div class="field lakeOnly" style="display:none" title="The sun below the horizon, as in Afterglow: from just after sunset to the blue hour, or set along the song from start to end"><label>Sky</label><select id="lakeTod"></select></div>
     <div class="field parkOnly" style="display:none"><label>Time of day</label><select id="parkTod"></select></div>
     <div class="field parkOnly" style="display:none"><label>Tree</label><select id="parkTree"></select></div>
     <label class="chk parkOnly" style="display:none" title="Wind, songbirds and insects while she plays (Sorairo's ambience; not in exported videos)"><input type="checkbox" id="parkAmb" checked>Birds and wind</label>
+    <label class="chk parkOnly" style="display:none" title="Draw her into the painting: she goes through the park's light shafts, grade and painterly brush with the piano, so her outlines soften into strokes. Off: she is graded apart and laid sharp over the painted park"><input type="checkbox" id="parkPaint">Paint her with the park</label>
     <div class="field"><label>Main light</label><input type="range" id="light" min="0" max="2" step="0.01" value="1"></div>
     <div class="field"><label>Exposure</label><input type="range" id="exposure" min="0.3" max="2.5" step="0.01" value="1"></div>
     <div class="sect">Post-processing</div>
@@ -1106,6 +1107,7 @@
     for (const [k, n] of PARK_TREES) $('parkTree').add(new Option(n, k, k === 'summer', k === 'summer'))
     $('parkTod').onchange = () => parkStage.setTime($('parkTod').value)
     $('parkTree').onchange = () => parkStage.setStyle($('parkTree').value)
+    $('parkPaint').onchange = () => parkStage.setPainted($('parkPaint').checked)
     $('parkAmb').onchange = () => parkStage.setSound($('parkAmb').checked && scheduler?.playing)
     async function setStageSet(name) {
       const park = name === 'park', lake = name === 'lake'
@@ -1902,7 +1904,7 @@
       ['dresson', 'dressOn'], ['clothsim', 'clothSim'], ['vdress', 'vdress'], ['look', 'look'], ['smooth', 'smooth'], ['simplify', 'simplify'],
       ['gaze', 'gaze'], ['expr', 'expr'], ['rest', 'restAfter'], ['hips', 'hips'], ['posture', 'posture'], ['reach', 'reach'], ['rock', 'rock'], ['sway', 'sway'], ['nod', 'nod'], ['glances', 'glances'], ['armw', 'armw'], ['lifth', 'lifth'], ['wflex', 'wflex'], ['frot', 'frot'], ['elbow', 'elbowLead'], ['liftoff', 'liftoff'], ['bench', 'benchDist'], ['benchh', 'benchH'],
       ['touch', 'touch'], ['fingering', 'fingering'], ['replan', 'replanOn'], ['hands', 'hands'], ['played', 'played'], ['vel', 'velSrc'],
-      ['light', 'light'], ['exposure', 'exposure'], ['dof', 'dof'], ['tod', 'parkTod'], ['tree', 'parkTree'], ['birds', 'parkAmb'],
+      ['light', 'light'], ['exposure', 'exposure'], ['dof', 'dof'], ['tod', 'parkTod'], ['tree', 'parkTree'], ['ppaint', 'parkPaint'], ['birds', 'parkAmb'],
       ['move', 'camMove'], ['dpreset', 'dirPreset'], ['pace', 'dirPace'], ['favour', 'dirBias'], ['trans', 'dirTrans'], ['dstill', 'dirStill'], ['dmix', 'dirMix'], ['shotnames', 'shotLbl'], ['follow', 'camFollow'], ['dfar', 'dirFar'], ['dmed', 'dirMed'], ['dclose', 'dirClose'],
       ['sf', 'sf'], ['avsync', 'avsync'],
       ['dofamt', 'dofAmt'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
@@ -1932,6 +1934,8 @@
     if (params.get('stage') === 'park') {
       for (const [k, id] of [['tod', 'parkTod'], ['tree', 'parkTree']]) if ([...$(id).options].some(o => o.value === params.get(k))) $(id).value = params.get(k)
       parkStage.opts.time = +$('parkTod').value; parkStage.opts.style = $('parkTree').value
+      if (params.get('ppaint') === '1') $('parkPaint').checked = true
+      parkStage.opts.painted = $('parkPaint').checked
       { const k = +params.get('pscale'); if (k >= 0.02 && k <= 4) parkStage.opts.scale = k }
       if (params.has('pturn') && Number.isFinite(+params.get('pturn'))) parkStage.opts.turn = +params.get('pturn')
       await setStageSet('park')

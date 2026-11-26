@@ -24,7 +24,7 @@ export function createParkStage({ renderer, scene, camera, stageParts = () => []
   center = new THREE.Vector3(0, 80, 20), lightK = 0.75, onStatus = () => {} }) {
   let park = null, on = false, building = null, envFor = -1, envMap = null
   // turn: the piano and her on the lawn, in degrees, positive clockwise seen from above (?pturn=)
-  const opts = { time: 1, style: 'summer', scale: 0.45, turn: 90 }
+  const opts = { time: 1, style: 'summer', scale: 0.45, turn: 90, painted: false }
   const saved = {}
   const hidden = new Map()
 
@@ -70,6 +70,7 @@ export function createParkStage({ renderer, scene, camera, stageParts = () => []
   async function build() {
     onStatus('Growing the park…')
     park = await createPark(renderer, { time: opts.time + 0.4, style: opts.style, scale: opts.scale, layout: 'solo', turn: -opts.turn * Math.PI / 180 })
+    park.S.paintPerformers = opts.painted
     onStatus('')
   }
 
@@ -110,6 +111,8 @@ export function createParkStage({ renderer, scene, camera, stageParts = () => []
     keepHidden(o) { if (on) { hidden.set(o, hidden.get(o) ?? true); o.visible = false } },
     setTime(i) { opts.time = +i; park?.setTime(opts.time + 0.4) },
     setStyle(s) { opts.style = s; park?.setStyle(s) },
+    /** Paint her with the park (true) or grade her apart and lay her over it (false, the default). */
+    setPainted(v) { opts.painted = !!v; if (park) park.S.paintPerformers = opts.painted },
     setSound(v) { if (park) park.sound.setOn(!!v && on) },
     update(dt) {
       if (!on) return

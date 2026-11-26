@@ -797,11 +797,12 @@ export async function boot(plug = {}) {
       piano.setSustain = (d, ...a) => { lakeStage.pedal(d); return sus(d, ...a) } }
     window.__lake = lakeStage
     const altStage = () => parkStage.on ? parkStage : lakeStage.on ? lakeStage : null
-    if (GPU) for (const v of ['park', 'lake']) { const o = $('stageSet').querySelector(`option[value=${v}]`); o.disabled = true; o.text += ' - WebGL only' }
+    if (GPU) for (const v of ['park', 'lake', 'hall']) { const o = $('stageSet').querySelector(`option[value=${v}]`); o.disabled = true; o.text += ' - WebGL only' }
     for (const [i, n] of PARK_TIMES) $('parkTod').add(new Option('' + n, i, i === 1, i === 1))
     for (const [k, n] of PARK_TREES) $('parkTree').add(new Option(n, k, k === 'summer', k === 'summer'))
     $('parkTod').onchange = () => parkStage.setTime($('parkTod').value)
     $('parkTree').onchange = () => parkStage.setStyle($('parkTree').value)
+    $('parkPaint').onchange = () => parkStage.setPainted($('parkPaint').checked)
     $('parkAmb').onchange = () => parkStage.setSound($('parkAmb').checked && scheduler?.playing)
     async function setStageSet(name) {
       const park = name === 'park' && !GPU, lake = name === 'lake' && !GPU
@@ -1577,7 +1578,7 @@ export async function boot(plug = {}) {
       ['dresson', 'dressOn'], ['clothsim', 'clothSim'], ['vdress', 'vdress'], ['look', 'look'], ['smooth', 'smooth'], ['simplify', 'simplify'],
       ['gaze', 'gaze'], ['expr', 'expr'], ['rest', 'restAfter'], ['hips', 'hips'], ['posture', 'posture'], ['reach', 'reach'], ['rock', 'rock'], ['sway', 'sway'], ['nod', 'nod'], ['glances', 'glances'], ['armw', 'armw'], ['lifth', 'lifth'], ['wflex', 'wflex'], ['frot', 'frot'], ['elbow', 'elbowLead'], ['liftoff', 'liftoff'], ['bench', 'benchDist'], ['benchh', 'benchH'],
       ['touch', 'touch'], ['fingering', 'fingering'], ['hands', 'hands'],
-      ['light', 'light'], ['exposure', 'exposure'], ['dof', 'dof'], ['scene', 'stageSet'], ['tod', 'parkTod'], ['tree', 'parkTree'], ['sky', 'lakeTod'], ['birds', 'parkAmb'], ['finish', 'finish'], ['lid', 'lid'],
+      ['light', 'light'], ['exposure', 'exposure'], ['dof', 'dof'], ['scene', 'stageSet'], ['tod', 'parkTod'], ['tree', 'parkTree'], ['ppaint', 'parkPaint'], ['sky', 'lakeTod'], ['birds', 'parkAmb'], ['finish', 'finish'], ['lid', 'lid'],
       ['fasian', 'faceAsian'], ['fafrican', 'faceAfrican'], ['skintex', 'skinTex'],
       ['move', 'camMove'], ['dpreset', 'dirPreset'], ['pace', 'dirPace'], ['favour', 'dirBias'], ['trans', 'dirTrans'], ['dstill', 'dirStill'], ['dmix', 'dirMix'], ['shotnames', 'shotLbl'], ['follow', 'camFollow'], ['dfar', 'dirFar'], ['dmed', 'dirMed'], ['dclose', 'dirClose'], ['strings', 'dirStrings'], ['dpedals', 'dirPedals'], ['dopen', 'dirOpen'],
       ['sf', 'sf'], ['avsync', 'avsync'],
@@ -1604,6 +1605,8 @@ export async function boot(plug = {}) {
     if (params.get('scene') === 'park' && !GPU) {
       for (const [k, id] of [['tod', 'parkTod'], ['tree', 'parkTree']]) if ([...$(id).options].some(o => o.value === params.get(k))) $(id).value = params.get(k)
       parkStage.opts.time = +$('parkTod').value; parkStage.opts.style = $('parkTree').value
+      if (params.get('ppaint') === '1') $('parkPaint').checked = true
+      parkStage.opts.painted = $('parkPaint').checked
       { const k = +params.get('pscale'); if (k >= 0.02 && k <= 4) parkStage.opts.scale = k }
       if (params.has('pturn') && Number.isFinite(+params.get('pturn'))) parkStage.opts.turn = +params.get('pturn')
       $('stageSet').value = 'park'
