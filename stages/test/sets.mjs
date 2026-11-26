@@ -1,4 +1,4 @@
-// The stage sets live, on #032 and #045: black stage -> park -> lake -> black stage, then the
+// The stage sets live, on #032 and #045: candle -> hall -> park -> lake -> black stage, then the
 // lake's Sky menu, checking at each step which set is on, which controls show, that the hall's
 // floor is back after and that the page logs no errors. Each step's still goes to OUT.
 //   node stages/test/sets.mjs        (the folder served at BASE, as lake/test/shoot.mjs)
@@ -33,13 +33,15 @@ for (const [name, url] of [['032', '032_pianist.html?q=low&hairsim=0&clothsim=0&
     shown: [...document.querySelectorAll('.stageCtl')].filter(b => b.style.display !== 'none').map(b => b.dataset.set),
     floor: window.__pianist.floorVisible ? window.__pianist.floorVisible() : null,
   }))
-  for (const v of ['park', 'lake', 'stage']) {
+  for (const v of ['candle', 'hall', 'park', 'lake', 'stage']) {
     await pick(v)
     const s = await state()
-    const want = v === 'stage' ? null : v
+    const want = ['park', 'lake'].includes(v) ? v : null
     check(s.active === want && s.menu === v, `${v}: on ${s.active}, menu ${s.menu}`)
     check(JSON.stringify(s.shown) === JSON.stringify(want ? [want] : []), `${v}: controls shown ${JSON.stringify(s.shown)}`)
-    if (v === 'stage' && s.floor !== null) check(s.floor === true, 'stage: the floor is back')
+    if (s.floor !== null && v !== 'park' && v !== 'lake') check(s.floor === (v !== 'hall'), `${v}: floor ${s.floor ? 'shown' : 'hidden'}`)
+    const props = await page.evaluate(() => Object.entries(window.__pianist.stageProps).filter(([, p]) => p.root.visible).map(([k]) => k))
+    check(JSON.stringify(props) === JSON.stringify(['candle', 'hall'].includes(v) ? [v] : []), `${v}: props shown ${JSON.stringify(props)}`)
     await page.screenshot({ path: `${OUT}/${name}_${v}.png` })
   }
   // the lake again, its sky changed from the menu

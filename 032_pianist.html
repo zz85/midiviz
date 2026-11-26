@@ -509,8 +509,7 @@
     import { suggestClips, snapStart, snapEnd, clipOf, shortDescription, SHORT_MAX, SHORT_LENGTHS, SHORT_DEFAULT } from './pianist/shorts.js'
     import { createFocusPuller, SHOT_DOF } from './pianist/focus-puller.js'
     import { createStageSets } from './stages/sets.js'
-    import { buildCandleChamber, candleEnvironment, CANDLE } from './pathtrace/candle-chamber.js'
-    import { buildWaterHall, HALL } from './waterhall/water-hall.js'
+    import { createInsceneStages } from './stages/inscene.js'
     import { createLinerLibrary, clockOfMidi, buildTimeline, toVTT, toChapters, titleScreen, withTitle, titleSecs } from './liner/liner.js'
     import { createLinerOverlay, drawLinerCaption, drawIntertitle, loadIntertitleFonts, INTERTITLE_STYLES, INTERTITLE_THEMES, INTERTITLE_POSITIONS } from './liner/overlay.js'
 
@@ -611,66 +610,19 @@
     keyFill.position.set(40, 260, 320); keyFill.target.position.set(0, 74, -10)
     scene.add(keyFill, keyFill.target)
     const LIGHTS = [[spot, 4.2], [faceKey, 1.6], [rim, 4], [back, 4], [keyFill, 0.8], [lidLight, 0.55]]
-    // each stage's colours and strengths for these six (as #045: the candle chamber after #030's
-    // candle rig, its key / back / fill / lid against its concert rig, the face key and rim warmed to match)
-    const STAGE_LIGHTS = {
-      stage: [[0xffd2a0, 1], [0xffd9b8, 1], [0xffe6c8, 1], [0xffe2c0, 1], [0xfff0e0, 1], [0xffc28a, 1]],
-      candle: ((L, C) => [[L.key.color, L.key.intensity / C.key], [0xffc890, 0.85], [0xffb070, 0.8], [L.back.color, L.back.intensity / C.back], [L.fill.color, L.fill.intensity / C.fill], [L.lid.color, L.lid.intensity / C.lid]])(CANDLE.lights, CANDLE.concert),
-      // the hall of water: the slit overhead is the key (waterhall/), these dimmed and gilded for her face
-      hall: [[0xffc060, 0.3], [0xffcf90, 0.75], [0xffb050, 0.6], [0xffa040, 0.35], [0xffd8a0, 0.4], [0xffb060, 0.9]],
-    }
+    // the in-scene sets (Visuals → Stage): the black stage, the candlelit chamber, the hall of
+    // water; their looks, light palettes, props and reflections are stages/inscene.js's
+    const pmrem = new THREE.PMREMGenerator(renderer)
+    const inscene = createInsceneStages({ THREE, renderer, scene, pmrem, floor, floorMat, lowQuality: LOWQ })
+    const stageProps = inscene.props
     const applyLight = () => {
-      const k = +$('light').value, look = STAGE_LIGHTS[$('stageSet').value] || STAGE_LIGHTS.stage
+      const k = +$('light').value, look = inscene.lights($('stageSet').value)
       LIGHTS.forEach(([l, i], j) => { l.color.setHex(look[j][0]); l.intensity = i * look[j][1] * k })
     }
     $('light').oninput = applyLight
     applyLight()
     $('exposure').oninput = () => { renderer.toneMappingExposure = +$('exposure').value }
-
-    const pmrem = new THREE.PMREMGenerator(renderer)
-    // the reflections: a few glowing panels around the stage, or the candle chamber's (#030)
-    const ENVS = {}
-    function stageEnvironment(name) {
-      if (!ENVS[name]) {
-        if (name === 'candle') {
-          const e = candleEnvironment(THREE)
-          ENVS[name] = { map: pmrem.fromScene(e.scene, e.sigma, 1, e.far).texture, intensity: 0.55 * CANDLE.environmentIntensity / CANDLE.stageEnvironmentIntensity }
-        } else if (name === 'hall') {
-          const e = stageProps.hall.environment()
-          ENVS[name] = { map: pmrem.fromScene(e.scene, e.sigma, 1, e.far).texture, intensity: HALL.environmentIntensity }
-        } else ENVS[name] = { map: stageEnvMap(), intensity: 0.55 }
-      }
-      scene.environment = ENVS[name].map; scene.environmentIntensity = ENVS[name].intensity
-    }
-    function stageEnvMap() {
-      const s = new THREE.Scene(); s.background = new THREE.Color(0x010101)
-      const box = (w, h, p, k, c = 0xffffff) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(c).multiplyScalar(k), side: THREE.DoubleSide })); m.position.set(...p); m.lookAt(0, 90, 0); s.add(m) }
-      box(260, 260, [-200, 640, 300], 8, 0xffcf9a)
-      box(900, 140, [0, 650, -150], 0.8, 0xffd7a8)
-      box(60, 500, [-900, 300, -300], 2, 0xffbf80)
-      box(60, 500, [900, 260, -100], 1.4, 0xffc890)
-      box(700, 220, [150, 420, -900], 2, 0xffe2c0)
-      box(1400, 300, [0, 120, 1100], 0.1, 0x8fa6c8)
-      return pmrem.fromScene(s, 0.015, 1, 6000).texture
-    }
-    stageEnvironment('stage')
-    // the set (Visuals → Stage): the black stage, or the candle chamber (pathtrace/candle-chamber.js,
-    // from #030: wall, arches, ~200 candles, sconces), built the first time it is chosen
-    const STAGE_LOOK = { stage: { background: 0x000000, floor: 0x1a1512 }, candle: { background: CANDLE.background, floor: 0x180d08, props: 'candle' }, hall: { background: HALL.background, floor: 0x1a1512, props: 'hall', noFloor: true } }
-    const stageProps = {}
-    const STAGE_BUILD = { candle: () => buildCandleChamber(THREE, LOWQ), hall: () => buildWaterHall(renderer, { lowQuality: LOWQ }) }
-    function setStage(name) {
-      if (!STAGE_LOOK[name]) name = 'stage'
-      $('stageSet').value = name
-      const want = STAGE_LOOK[name].props
-      if (want && !stageProps[want]) { stageProps[want] = STAGE_BUILD[want](); scene.add(stageProps[want].root) }
-      for (const [k, p] of Object.entries(stageProps)) p.root.visible = k === want
-      stageEnvironment(name)
-      scene.background.setHex(STAGE_LOOK[name].background)
-      floorMat.color.setHex(STAGE_LOOK[name].floor)
-      floor.visible = !STAGE_LOOK[name].noFloor
-      applyLight()
-    }
+    function setStage(name) { $('stageSet').value = inscene.set(name); applyLight() }
 
     // ── The pianist ──────────────────────────────────────────────────────
     setStatus('Loading the pianist…')
@@ -1993,7 +1945,7 @@
       if (playing) driveKeys(t + KEY_LEAD)
       fxT += dt
       dust.material.uniforms.uTime.value = fxT
-      if (stageProps.hall?.root.visible) stageProps.hall.update(dt, fxT)
+      inscene.update(dt, fxT)
       piano.update(dt)
       rig.setPedals(pedals[0], pedals[1], pedals[2])
       rig.update(t, dt)

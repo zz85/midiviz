@@ -26,8 +26,6 @@ import { chooseParts, newJob, writeJob, writeText, openJob, pickFolder, jobLeft,
 import { installAcoustics, offlineHall, acousticParams, rt60Of, ROOMS, SEATS } from '../concertstage/acoustics.js'
 import { buildGrandPiano, LOW, HIGH, DIM, FINISHES } from '../concertstage/concert-grand.js'
 import { loadUprightPiano } from '../pianist/upright-piano.js'
-import { buildCandleChamber, candleEnvironment, CANDLE } from '../pathtrace/candle-chamber.js'
-import { buildWaterHall, HALL } from '../waterhall/water-hall.js'
 import { createLessonView, LESSON_VIEWS } from '../pianist/lesson.js'
 import { loadCharacter } from '../pianist/character.js'
 import { loadAltCharacter, MODELS } from '../pianist/alt-model.js'
@@ -50,6 +48,7 @@ import { pathTracedFrames } from '../pathtrace/video.js'
 import { createFrameSpace, LANDSCAPE_PLACES, portraitPlaces } from '../pianist/frame-space.js'
 import { createFocusPuller, SHOT_DOF } from '../pianist/focus-puller.js'
 import { createStageSets } from '../stages/sets.js'
+import { createInsceneStages } from '../stages/inscene.js'
 import { createLinerLibrary, clockOfMidi, buildTimeline, toVTT, toChapters, titleScreen, withTitle, titleSecs, layoutClip } from '../liner/liner.js'
 import { createLinerOverlay, drawLinerCaption, drawIntertitle, loadIntertitleFonts, INTERTITLE_STYLES, INTERTITLE_THEMES, INTERTITLE_POSITIONS } from '../liner/overlay.js'
 import { SHELL } from './shell.js'
@@ -188,15 +187,12 @@ export async function boot(plug = {}) {
     keyFill.position.set(40, 260, 320); keyFill.target.position.set(0, 74, -10)
     scene.add(keyFill, keyFill.target)
     const LIGHTS = [[spot, 4.2], [faceKey, 1.6], [rim, 4], [back, 4], [keyFill, 0.8], [lidLight, 0.55]]
-    // each stage's colours and strengths for these six (the candle chamber after
-    // #030's candle rig: its key / back / fill / lid against its concert rig, the
-    // face key and rim warmed to match)
-    const STAGE_LIGHTS = {
-      stage: [[0xffd2a0, 1], [0xffd9b8, 1], [0xffe6c8, 1], [0xffe2c0, 1], [0xfff0e0, 1], [0xffc28a, 1]],
-      candle: ((L, C) => [[L.key.color, L.key.intensity / C.key], [0xffc890, 0.85], [0xffb070, 0.8], [L.back.color, L.back.intensity / C.back], [L.fill.color, L.fill.intensity / C.fill], [L.lid.color, L.lid.intensity / C.lid]])(CANDLE.lights, CANDLE.concert),
-      // the hall of water: the slit overhead is the key (waterhall/), these dimmed and gilded for her face (as #032)
-      hall: [[0xffc060, 0.3], [0xffcf90, 0.75], [0xffb050, 0.6], [0xffa040, 0.35], [0xffd8a0, 0.4], [0xffb060, 0.9]],
-    }
+    // the in-scene sets (Visuals → Stage): the black stage, the candlelit chamber, the hall of
+    // water; their looks, light palettes, props and reflections are stages/inscene.js's (the
+    // path tracers bake inscene.envScene, the panels behind scene.environment)
+    const pmrem = GPU ? new TG.PMREMGenerator(renderer) : new THREE.PMREMGenerator(renderer)
+    const inscene = createInsceneStages({ THREE, renderer, scene, pmrem, floor, floorMat, lowQuality: LOWQ, gpu: !!GPU })
+    const stageProps = inscene.props
     const CINEMATIC_LIGHTS = {
       golden: [[0xffd2a0, 1.1], [0xffd9b8, 0.95], [0xffe6c8, 1.05], [0xffe2c0, 0.9], [0xfff0e0, 0.9], [0xffc28a, 1.1]],
       noir: [[0xffe2c0, 1.25], [0xffd8c0, 0.3], [0xffffff, 1.5], [0xffd0b0, 0.45], [0xdde5f0, 0.3], [0xffd0a0, 1.2]],
@@ -206,65 +202,14 @@ export async function boot(plug = {}) {
       studio: [[0xffe3ca, 0.6], [0xffffff, 1.4], [0xdde8ff, 1.5], [0xd8e4ff, 0.7], [0xfff6ee, 2.2], [0xffd2a8, 0.9]],
     }
     const applyLight = () => {
-      const k = +$('light').value, stageLook = STAGE_LIGHTS[$('stageSet').value] || STAGE_LIGHTS.stage
+      const k = +$('light').value, stageLook = inscene.lights($('stageSet').value)
       const cinematic = CINEMATIC_LIGHTS[$('grade')?.value]
       LIGHTS.forEach(([l, i], j) => { const look = cinematic?.[j] || stageLook[j]; l.color.setHex(look[0]); l.intensity = i * look[1] * k })
     }
     $('light').oninput = applyLight
     applyLight()
     $('exposure').oninput = () => { renderer.toneMappingExposure = +$('exposure').value }
-
-    const pmrem = GPU ? new TG.PMREMGenerator(renderer) : new THREE.PMREMGenerator(renderer)
-    // the reflections: a few glowing panels around the stage, prefiltered for the
-    // page; envScene is the panels themselves (#045: the path tracers ray cast them
-    // into an equirect map). Black stage: our own; the candle chamber's from #030
-    let envScene
-    const ENVS = {}
-    function stageEnvironment(name) {
-      if (!ENVS[name]) {
-        if (name === 'stage') {
-          const s = new THREE.Scene(); s.background = new THREE.Color(0x010101)
-          const box = (w, h, p, k, c = 0xffffff) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(c).multiplyScalar(k), side: THREE.DoubleSide })); m.position.set(...p); m.lookAt(0, 90, 0); s.add(m) }
-          box(260, 260, [-200, 640, 300], 8, 0xffcf9a)
-          box(900, 140, [0, 650, -150], 0.8, 0xffd7a8)
-          box(60, 500, [-900, 300, -300], 2, 0xffbf80)
-          box(60, 500, [900, 260, -100], 1.4, 0xffc890)
-          box(700, 220, [150, 420, -900], 2, 0xffe2c0)
-          box(1400, 300, [0, 120, 1100], 0.1, 0x8fa6c8)
-          ENVS[name] = { scene: s, map: pmrem.fromScene(s, 0.015, 1, 6000).texture, intensity: 0.55 }
-        } else if (name === 'hall') {
-          const e = stageProps.hall.environment()
-          ENVS[name] = { scene: e.scene, map: pmrem.fromScene(e.scene, e.sigma, 1, e.far).texture, intensity: HALL.environmentIntensity }
-        } else {
-          const e = candleEnvironment(THREE)
-          // (the page's 0.55 against #030's 0.7 for the black stage, kept in proportion)
-          ENVS[name] = { scene: e.scene, map: pmrem.fromScene(e.scene, e.sigma, 1, e.far).texture, intensity: 0.55 * CANDLE.environmentIntensity / CANDLE.stageEnvironmentIntensity }
-        }
-      }
-      const E = ENVS[name]
-      envScene = E.scene; scene.environment = E.map; scene.environmentIntensity = E.intensity
-    }
-    stageEnvironment('stage')
-
-    // Stage, piano finish and lid (Visuals → Stage). The candle chamber's set
-    // (pathtrace/candle-chamber.js, from #030: wall, arches, ~200 candles,
-    // sconces with their own small lights) is built the first time it is chosen
-    const STAGE_LOOK = { stage: { background: 0x000000, floor: 0x1a1512 }, candle: { background: CANDLE.background, floor: 0x180d08, props: 'candle' }, hall: { background: HALL.background, floor: 0x1a1512, props: 'hall', noFloor: true } }
-    const stageProps = {}
-    // (the hall's water light is traced in WebGL shaders: not on ?gpu=webgpu)
-    const STAGE_BUILD = { candle: () => buildCandleChamber(THREE, LOWQ), hall: () => buildWaterHall(renderer, { lowQuality: LOWQ }) }
-    function setStage(name) {
-      if (!STAGE_LOOK[name] || (name === 'hall' && GPU)) name = 'stage'
-      $('stageSet').value = name
-      const want = STAGE_LOOK[name].props
-      if (want && !stageProps[want]) { stageProps[want] = STAGE_BUILD[want](); scene.add(stageProps[want].root) }
-      for (const [k, p] of Object.entries(stageProps)) p.root.visible = k === want
-      stageEnvironment(name)
-      scene.background.setHex(STAGE_LOOK[name].background)
-      floorMat.color.setHex(STAGE_LOOK[name].floor)
-      floor.visible = !STAGE_LOOK[name].noFloor
-      applyLight()
-    }
+    function setStage(name) { $('stageSet').value = inscene.set(name); applyLight() }
     $('stageSet').onchange = () => setStage($('stageSet').value)
     for (const [k, f] of Object.entries(FINISHES)) $('finish').add(new Option(f.label, k))
     $('finish').value = 'ebony'
@@ -1689,7 +1634,7 @@ export async function boot(plug = {}) {
       fxT += dt
       dust.material.uniforms.uTime.value = fxT
       piano.update(dt)
-      for (const p of Object.values(stageProps)) if (p.root.visible) p.update?.(dt, fxT)
+      inscene.update(dt, fxT)
       rig.setPedals(pedals[0], pedals[1], pedals[2])
       rig.update(t, dt)
       ch.group.updateMatrixWorld(true)
@@ -2168,7 +2113,7 @@ export async function boot(plug = {}) {
     let ptPR = 1
     const ptCopy = src => { const c = document.createElement('canvas'); c.width = src.width; c.height = src.height; c.getContext('2d', { willReadFrequently: true }).drawImage(src, 0, 0); return c }
     const ptStage = {
-      scene, camera, get envScene() { return envScene }, get envIntensity() { return scene.environmentIntensity },
+      scene, camera, get envScene() { return inscene.envScene }, get envIntensity() { return scene.environmentIntensity },
       hair: () => hair, exposure: () => +$('exposure').value, liveExposure: () => renderer.toneMappingExposure,
       // the depth of field this frame, for the tracers' lens (null when off)
       dof: () => bokeh.enabled ? (physicalLens ? { ...physicalLens, physical: true } : { focus: bokeh.uniforms.focus.value, aperture: bokeh.uniforms.aperture.value }) : null,
