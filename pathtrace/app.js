@@ -1537,6 +1537,7 @@ export async function boot(plug = {}) {
         K('ptengine', 'ptEngine'), K('ptspp', 'ptSpp', { urlAliases: ['exptspp'] }), K('ptbounces', 'ptBounces'), K('pthair', 'ptHair'), K('ptdn', 'ptDenoise', { urlAliases: ['exptdn'] }), K('ptfx', 'ptFx'), K('ptsize', 'ptSize'),
       ] },
     ].map(sec => ({ ...sec, items: sec.items.filter(it => $(it.el)) }))).bind(document)
+    window.__settings = settings
     // load: controls the start-up code did not already take from the URL
     // (the wardrobe, pose and director keys are read above) get their value
     // and their own handler, exactly as if picked in the menu

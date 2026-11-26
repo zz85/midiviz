@@ -40,7 +40,8 @@ for (let q of LINKS) {
   const errs = []; p.on('pageerror', e => errs.push(e.message))
   await p.goto(`${BASE}${page}?${Q0}${q ? '&' + q : ''}`)
   await p.waitForFunction(() => window.__pianist && (window.__pianist.pt || window.__stageSets), null, { timeout: 300000 })
-  await p.waitForTimeout(1800)   // (the address bar refreshes every 500 ms)
+  // (the address bar refreshes every 500 ms while paused, once the start-up handlers are done: wait for it to settle)
+  for (let last = null, same = 0, i = 0; same < 3 && i < 20; i++) { await p.waitForTimeout(600); const now = await p.evaluate(() => location.search); same = now === last ? same + 1 : 0; last = now }
   const got = await p.evaluate(() => ({
     search: location.search,
     controls: Object.fromEntries([...document.querySelectorAll('select[id], input[id]')].filter(e => e.type !== 'file' && e.id !== 'seek').map(e => [e.id, e.type === 'checkbox' ? e.checked : e.value])),
