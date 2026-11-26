@@ -2,6 +2,12 @@
 
 What each experiment does and how, newest first. The short list is in the [README](README.md).
 
+## 26 Nov 2026
+
+The park and the lake behind one module, [stages/sets.js](stages/sets.js), for #032 and pathtrace/app.js (#045, #049, #050, #054)
+- Each takeover set is a descriptor: its controls (built after the Stage menu, shown while it is on), the URL keys they keep (`tod`, `tree`, `ppaint`, `birds`, `sky`; `pscale`, `pturn`), how it reads them, and what a still seeds (the lake's rings). `createStageSets()` does the switching, the dimmed post controls, the piano's note and sustain hooks, the draw, update and resize, and the WebGL-only marks. The two pages lose about 60 lines each of copied wiring; the links are unchanged. The black stage, candlelit chamber and hall of water are still each page's `setStage()`.
+- Checked: headless stills of every set on #032, #045, #049 and #054 match those from before to the pixel (the park differs by 2/255 between two runs of the old code too); `node stages/test/sets.mjs` switches stage → park → lake → stage and the lake's sky live on #032 and #045, checking the set on, the controls shown, the floor back and no page errors: all pass.
+
 ## 25 Nov 2026
 
 [Experiment #054 - Afterglow Lake](054_afterglow_lake.html): the lake of [Afterglow](https://github.com/Leonxlnx/afterglow) as a stage set, for [#032](032_pianist.html?stage=lake) and through pathtrace/app.js for [#045](045_pathtracer.html?scene=lake), [#049](049_sheet_scan.html?scene=lake) and [#050](050_sheet_engraved.html?scene=lake)
