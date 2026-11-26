@@ -53,6 +53,7 @@ import { createStageSets } from '../stages/sets.js'
 import { createLinerLibrary, clockOfMidi, buildTimeline, toVTT, toChapters, titleScreen, withTitle, titleSecs, layoutClip } from '../liner/liner.js'
 import { createLinerOverlay, drawLinerCaption, drawIntertitle, loadIntertitleFonts, INTERTITLE_STYLES, INTERTITLE_THEMES, INTERTITLE_POSITIONS } from '../liner/overlay.js'
 import { SHELL } from './shell.js'
+import { createSettings } from '../ui/settings.js'
 import { assignHands, handModeOf, HAND_MODES, DEFAULT_HAND_MODE } from '../fingering/hands.js'
 
 export async function boot(plug = {}) {
@@ -62,8 +63,10 @@ export async function boot(plug = {}) {
     const app = {
       get $() { return $ }, get params() { return params }, get song() { return song }, get songFile() { return songFile },
       get playing() { return !!scheduler?.playing }, get exporting() { return exporting }, get renderer() { return renderer }, get camera() { return camera }, get scene() { return scene },
-      // keep controls of its own in the address bar and shared links: [key, element id], as STATE
-      addState: (...e) => STATE.push(...e),
+      // keep controls of its own in the address bar and shared links: a section of ui/settings.js
+      // items ({ key, el, url, ... }), or [key, element id] pairs as before
+      addState: (...e) => settings.add({ id: 'plugin', items: e.map(x => Array.isArray(x) ? { key: x[1], el: x[1], url: x[0] } : x) }),
+      get settings() { return settings },
       // where the pianist and the piano are in the frame (pianist/frame-space.js): the place of
       // `places` ({ name: { u0, v0, u1, v1 } }, frame fractions) they fill least, `prefer` unless another is
       // emptier by `margin`; the scores of every place beside it
@@ -1550,47 +1553,52 @@ export async function boot(plug = {}) {
     // ones that differ from the default, or from the chosen outfit), so a
     // reload or a copied link brings back the same scene. Share adds the
     // song position (&at=); a shared song starts on the first click.
-    const STATE = [
-      // key, control (selects / ranges / colours: value; checkboxes: 1 / 0)
-      ['piano', 'pianoType'], ['outfit', 'outfit'], ['dress', 'dressStyle'], ['slit', 'slit'], ['fabric', 'fabric'], ['dcol', 'dressColor'], ['shoes', 'shoeStyle'],
-      ['hair', 'hairStyle'], ['hcol', 'hairColor'], ['density', 'hairDensity'], ['hairon', 'hairOn'], ['hairsim', 'hairSim'],
-      ['dresson', 'dressOn'], ['clothsim', 'clothSim'], ['vdress', 'vdress'], ['look', 'look'], ['smooth', 'smooth'], ['simplify', 'simplify'],
-      ['gaze', 'gaze'], ['expr', 'expr'], ['rest', 'restAfter'], ['hips', 'hips'], ['posture', 'posture'], ['reach', 'reach'], ['rock', 'rock'], ['sway', 'sway'], ['nod', 'nod'], ['glances', 'glances'], ['armw', 'armw'], ['lifth', 'lifth'], ['wflex', 'wflex'], ['frot', 'frot'], ['elbow', 'elbowLead'], ['liftoff', 'liftoff'], ['bench', 'benchDist'], ['benchh', 'benchH'],
-      ['touch', 'touch'], ['fingering', 'fingering'], ['vhands', 'vhands'], ['hands', 'hands'],
-      ['light', 'light'], ['exposure', 'exposure'], ['dof', 'dof'], ['scene', 'stageSet'], ...stageSets.state, ['finish', 'finish'], ['lid', 'lid'],
-      ['fasian', 'faceAsian'], ['fafrican', 'faceAfrican'], ['skintex', 'skinTex'],
-      ['move', 'camMove'], ['dpreset', 'dirPreset'], ['pace', 'dirPace'], ['favour', 'dirBias'], ['trans', 'dirTrans'], ['dstill', 'dirStill'], ['dmix', 'dirMix'], ['shotnames', 'shotLbl'], ['follow', 'camFollow'], ['dfar', 'dirFar'], ['dmed', 'dirMed'], ['dclose', 'dirClose'], ['strings', 'dirStrings'], ['dpedals', 'dirPedals'], ['dopen', 'dirOpen'],
-      ['sf', 'sf'], ['avsync', 'avsync'],
-      ['dofamt', 'dofAmt'], ['dofboth', 'dofBoth'], ['motion', 'motionBlur'], ['shutter', 'shutter'], ['bloom', 'bloom'], ['bloomamt', 'bloomAmt'], ['grain', 'filmGrain'], ['grainamt', 'grainAmt'], ['vig', 'vig'], ['grade', 'grade'], ['gpuq', 'gpuQual'], ['dust', 'dust'], ['dustamt', 'dustAmt'],
-      ['vol', 'vol'], ['room', 'room'], ['seat', 'seat'], ['rv', 'rvAmt'], ['decay', 'rvDecay'], ['tone', 'rvTone'], ['boost', 'boost'], ['amb', 'amb'], ['applause', 'applause'],
-      ['exformat', 'exFormat'], ['exlayout', 'exLayout'], ['exsplit', 'exSplit'], ['exhands', 'exHandsHalf'], ['exlview', 'exLessonView'], ['excam', 'exCam'], ['exfont', 'exFont'], ['exres', 'exRes'], ['exfps', 'exFps'], ['extail', 'exTail'], ['exlead', 'exLead'], ['exend', 'exEnd'], ['exfadelen', 'exFadeLen'], ['exsub', 'exSub'], ['excard', 'exCard'], ['excaps', 'exCaps'], ['exvtt', 'exVtt'], ['exlen', 'exLen'], ['exparts', 'exParts'], ['exhold', 'exHold'],
-      ['notes', 'linerMode'], ['itstyle', 'itStyle'], ['itstylea', 'itStyleA'], ['itcol', 'itTheme'], ['itpos', 'itPos'], ['itheads', 'itHeads'], ['extitle', 'exTitle'], ['expt', 'exPt'], ['ptengine', 'ptEngine'], ['ptspp', 'ptSpp'], ['ptbounces', 'ptBounces'], ['pthair', 'ptHair'], ['ptdn', 'ptDenoise'], ['ptfx', 'ptFx'], ['ptsize', 'ptSize'],
-    ].filter(([, id]) => $(id))
-    const OUTFIT_KEYS = { dress: 'dress', slit: 'slit', fabric: 'fabric', dcol: 'color', shoes: 'shoes', hair: 'hair', hcol: 'hairColor' }
-    // (colours without their #, so links stay readable)
-    const hex = v => String(v).replace(/^#/, '')
-    const ctlGet = el => el.type === 'checkbox' ? (el.checked ? '1' : '0') : el.type === 'color' ? hex(el.value) : String(el.value)
-    const ctlDefault = el => el.type === 'checkbox' ? (el.defaultChecked ? '1' : '0')
-      : el.tagName === 'SELECT' ? ([...el.options].find(o => o.defaultSelected) || el.options[0])?.value ?? ''
-      : el.type === 'color' ? hex(el.defaultValue) : el.defaultValue
-    const same = (a, b) => a === b || (a !== '' && b !== '' && !isNaN(a) && !isNaN(b) && +a === +b) || a.toLowerCase?.() === b.toLowerCase?.()
+    // The schema (ui/settings.js): each control once, by its element id, with its query key
+    // (selects / ranges / colours: the value, colours without their #; checkboxes 1 / 0),
+    // grouped as the menus are. Its default is the markup's, or the chosen outfit's for the
+    // wardrobe keys. The store reads the address bar into the controls and writes it back.
+    const K = (url, el = url, more = {}) => ({ key: el, el, url, ...more })
+    const outfitBase = f => s => OUTFITS[s.outfit]?.[f]
+    const settings = createSettings([
+      { id: 'piano', label: 'Piano', items: [K('piano', 'pianoType'), K('finish'), K('lid'), K('scene', 'stageSet'), ...stageSets.state.map(([url, el]) => K(url, el))] },
+      { id: 'wardrobe', label: 'Outfit', items: [
+        K('outfit'), K('dress', 'dressStyle', { base: outfitBase('dress') }), K('slit', 'slit', { base: outfitBase('slit') }), K('fabric', 'fabric', { base: outfitBase('fabric') }),
+        K('dcol', 'dressColor', { base: outfitBase('color') }), K('shoes', 'shoeStyle', { base: outfitBase('shoes') }), K('hair', 'hairStyle', { base: outfitBase('hair') }), K('hcol', 'hairColor', { base: outfitBase('hairColor') }),
+        K('density', 'hairDensity'), K('hairon', 'hairOn'), K('hairsim', 'hairSim'), K('dresson', 'dressOn'), K('clothsim', 'clothSim'), K('vdress'),
+        K('look'), K('smooth'), K('simplify'), K('fasian', 'faceAsian'), K('fafrican', 'faceAfrican'), K('skintex', 'skinTex'), K('vhands'),
+      ] },
+      { id: 'performance', label: 'Performance', items: [
+        K('gaze'), K('expr'), K('rest', 'restAfter'), K('hips'), K('posture'), K('reach'), K('rock'), K('sway'), K('nod'), K('glances'),
+        K('armw'), K('lifth'), K('wflex'), K('frot'), K('elbow', 'elbowLead'), K('liftoff'), K('bench', 'benchDist'), K('benchh', 'benchH'),
+        K('touch'), K('fingering'), K('hands'),
+      ] },
+      { id: 'camera', label: 'Camera', items: [
+        K('move', 'camMove'), K('dpreset', 'dirPreset'), K('pace', 'dirPace'), K('favour', 'dirBias'), K('trans', 'dirTrans'), K('dstill', 'dirStill'), K('dmix', 'dirMix'),
+        K('shotnames', 'shotLbl'), K('follow', 'camFollow'), K('dfar', 'dirFar'), K('dmed', 'dirMed'), K('dclose', 'dirClose'), K('strings', 'dirStrings'), K('dpedals', 'dirPedals'), K('dopen', 'dirOpen'),
+      ] },
+      { id: 'visuals', label: 'Visuals', items: [
+        K('light'), K('exposure'), K('dof'), K('dofamt', 'dofAmt'), K('dofboth', 'dofBoth'), K('motion', 'motionBlur'), K('shutter'), K('bloom'), K('bloomamt', 'bloomAmt'),
+        K('grain', 'filmGrain'), K('grainamt', 'grainAmt'), K('vig'), K('grade'), K('gpuq', 'gpuQual'), K('dust'), K('dustamt', 'dustAmt'),
+        K('notes', 'linerMode'), K('itstyle', 'itStyle'), K('itstylea', 'itStyleA'), K('itcol', 'itTheme'), K('itpos', 'itPos'), K('itheads', 'itHeads'),
+      ] },
+      { id: 'hall', label: 'Hall', items: [K('sf'), K('avsync'), K('vol'), K('room'), K('seat'), K('rv', 'rvAmt'), K('decay', 'rvDecay'), K('tone', 'rvTone'), K('boost'), K('amb'), K('applause')] },
+      { id: 'render', label: 'Render', items: [
+        K('exformat', 'exFormat'), K('exlayout', 'exLayout'), K('exsplit', 'exSplit'), K('exhands', 'exHandsHalf'), K('exlview', 'exLessonView'), K('excam', 'exCam'), K('exfont', 'exFont'),
+        K('exres', 'exRes'), K('exfps', 'exFps'), K('extail', 'exTail'), K('exlead', 'exLead'), K('exend', 'exEnd'), K('exfadelen', 'exFadeLen'), K('exsub', 'exSub'), K('excard', 'exCard'),
+        K('excaps', 'exCaps'), K('exvtt', 'exVtt'), K('exlen', 'exLen'), K('exparts', 'exParts'), K('exhold', 'exHold'), K('extitle', 'exTitle'), K('expt', 'exPt'),
+      ] },
+      // (links from before the path-trace settings were one set: exptspp / exptdn named the video's samples and denoise)
+      { id: 'pathtrace', label: 'Path trace', items: [
+        K('ptengine', 'ptEngine'), K('ptspp', 'ptSpp', { urlAliases: ['exptspp'] }), K('ptbounces', 'ptBounces'), K('pthair', 'ptHair'), K('ptdn', 'ptDenoise', { urlAliases: ['exptdn'] }), K('ptfx', 'ptFx'), K('ptsize', 'ptSize'),
+      ] },
+    ].map(sec => ({ ...sec, items: sec.items.filter(it => $(it.el)) }))).bind(document)
     // load: controls the start-up code did not already take from the URL
     // (the wardrobe, pose and director keys are read above) get their value
     // and their own handler, exactly as if picked in the menu
-    // (links from before the path-trace settings were one set: expt named the
-    // tracer, exptspp / exptdn the video's samples and denoise)
+    // (a link from before the path-trace settings were one set: expt named the tracer)
     if (/^(gpt|mu)-/.test(params.get('expt') || '')) { if (!params.has('ptengine')) params.set('ptengine', params.get('expt')); params.set('expt', 'pt') }
-    for (const [o, n] of [['exptspp', 'ptspp'], ['exptdn', 'ptdn']]) if (params.has(o) && !params.has(n)) params.set(n, params.get(o))
     await stageSets.readUrl(params, 'scene', setStageSet)
-    for (const [k, id] of STATE) {
-      if (!params.has(k)) continue
-      const el = $(id), v = params.get(k)
-      if (same(ctlGet(el), el.type === 'color' ? hex(v) : v === '' && el.type === 'checkbox' ? '1' : v)) continue
-      if (el.tagName === 'SELECT' && ![...el.options].some(o => o.value === v)) continue   // (unknown or old value: keep what the page chose)
-      if (el.type === 'color' && !/^#?[0-9a-f]{6}$/i.test(v)) continue
-      if (el.type === 'checkbox') el.checked = v !== '0'; else el.value = el.type === 'color' ? '#' + hex(v) : v
-      el.dispatchEvent(new Event(el.type === 'range' || el.type === 'color' ? 'input' : 'change'))
-    }
+    settings.read(params)
     if (params.get('speed') && speeds.includes(+params.get('speed'))) { speedI = speeds.indexOf(+params.get('speed')); $('speedLbl').textContent = speeds[speedI] + '×' }
     if (params.get('loop') === '1') { loop = true; $('loopBtn').classList.remove('off') }
     {
@@ -1609,13 +1617,7 @@ export async function boot(plug = {}) {
       if (params.has('shot') || params.get('start') === '0') $('start').classList.add('gone')
     }
     function stateQuery(withTime = false) {
-      const q = new URLSearchParams(location.search)
-      const o = OUTFITS[$('outfit').value]
-      for (const [k, id] of STATE) {
-        const el = $(id), v = ctlGet(el)
-        const base = o && o[OUTFIT_KEYS[k]] != null ? (el.type === 'color' ? hex(o[OUTFIT_KEYS[k]]) : o[OUTFIT_KEYS[k]]) : ctlDefault(el)
-        if (same(v, base)) q.delete(k); else q.set(k, v)
-      }
+      const q = settings.query(location.search)
       if (view === 'back') q.delete('view'); else q.set('view', view)
       if (camFree && view !== 'auto' && withTime) snapCam()   // (Share: exactly what is on screen)
       if (camFree && view !== 'auto' && camSnap) q.set('cam', camSnap); else q.delete('cam')
@@ -1627,7 +1629,7 @@ export async function boot(plug = {}) {
       q.delete('short')
       const t = song ? songNow() : sharedSong?.[1] || 0
       if ((withTime || sharedSong) && songFile && t > 0.5) q.set('at', t.toFixed(1)); else q.delete('at')   // (a shared position stays until it plays)
-      return q.toString().replace(/%2F/g, '/').replace(/%2C/g, ',')
+      return settings.queryString(q)
     }
     // keep the address bar current (cheap: a string build twice a second), but
     // not while a song plays: rewriting it under the user breaks typing or
@@ -1644,7 +1646,7 @@ export async function boot(plug = {}) {
     $('gpuSel').onchange = () => {
       const q = new URLSearchParams(stateQuery(true))
       if ($('gpuSel').value === 'webgpu') q.set('gpu', 'webgpu'); else q.delete('gpu')
-      location.href = location.pathname + '?' + q.toString().replace(/%2F/g, '/').replace(/%2C/g, ',') + location.hash
+      location.href = location.pathname + '?' + settings.queryString(q) + location.hash
     }
     // restore defaults: reload with no options (keeps ?q=low, the song and where it was)
     $('resetAll').onclick = () => {

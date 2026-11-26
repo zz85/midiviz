@@ -21,7 +21,7 @@ Browser experiments with MIDI, piano and violin rendering, synthesis and audio a
 - [#049 Score Scan](049_sheet_scan.html) - #045's pianist with the printed page (Bach-Gesellschaft, 1853) sliced into systems over her, bars and barlines found in the scan; in videos too ([notes](sheet/README.md), [details](CHANGELOG.md#1-nov-2026))
 - [#047 Wardrobe](047_wardrobe.html) - try hair, dresses, fabrics, shoes and colours on the pianist in one click each; realistic, stylized or cel-shaded, path-traced stills ([notes](wardrobe/README.md), [details](CHANGELOG.md#22-oct-2026))
 - [#045 Path-traced Pianist](045_pathtracer.html) - #032 path traced: three-gpu-pathtracer and MuTracer, stills and video, against the page's own picture ([notes](pathtrace/README.md), [details](CHANGELOG.md#21-oct-2026))
-- [#032 Pianist](032_pianist.html) - a pianist at a concert grand playing any MIDI file, filmed by an automatic director; [character notes](pianist/README.md), [liner notes](liner/README.md) ([details](CHANGELOG.md#19-oct-2026), [the piano playing what her hands play](CHANGELOG.md#23-nov-2026), [in the park](032_pianist.html?stage=park)) and [YouTube Shorts](pianist/README.md#youtube-shorts) ([details](CHANGELOG.md#20-oct-2026))
+- [#032 Pianist](032_pianist.html) - a pianist at a concert grand playing any MIDI file, filmed by an automatic director; [character notes](pianist/README.md), [liner notes](liner/README.md) ([details](CHANGELOG.md#19-oct-2026), [the piano playing what her hands play](CHANGELOG.md#23-nov-2026), [in the park](032_pianist.html?stage=park), [playing Debussy's Arabesque there](032_pianist.html?stage=park&song=midis/deb_arabesque_1.mid) ([details](CHANGELOG.md#26-nov-2026))) and [YouTube Shorts](pianist/README.md#youtube-shorts) ([details](CHANGELOG.md#20-oct-2026))
 - [#031 RoboPianist vs #029](031_robopianist.html) - MuJoCo Shadow Hands: their RL policy against our fingering ([details](CHANGELOG.md#15-oct-2026))
 - [#030 Concert Stage](030_concert_stage.html) - the grand on a spotlit stage, pianist hands, lesson mode, hall reverb, MP4 export ([details](CHANGELOG.md#15-oct-2026))
 - [#029 Piano Fingering](029_piano_fingering.html) - automatic fingering from MIDI, shown as hands ([details](CHANGELOG.md#15-oct-2026), [checked on her hands, and a baseline to test changes against](CHANGELOG.md#13-nov-2026))
@@ -64,6 +64,7 @@ Browser experiments with MIDI, piano and violin rendering, synthesis and audio a
 
 ## Tools and tests
 
+- [ui/settings.js](ui/settings.js) - the settings store behind the controls of #045 (#049, #050, #054) and #038: one schema per page, bound to its markup, kept in the address bar ([details](CHANGELOG.md#26-nov-2026))
 - [WebMscore](webmscore.html) - MuseScore's renderer (libmscore in WebAssembly): load scores, export SVG / PDF / MIDI ([details](CHANGELOG.md#15-mar-2026))
 - [SF3 to SF2 Converter](test_sf3_to_sf2.html), [FluidWeb Piano Test](fluidweb/fluidweb_piano_test.html), [FluidWeb Piano (ScriptProcessor)](fluidweb/fluidweb_piano_scriptprocessor.html), [FluidWeb Test](fluidweb/fluidweb_test.html), [Audio Test](audio_test.html), [Piano Test](piano_test.html)
 

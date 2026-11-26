@@ -161,7 +161,9 @@
     import { loadAltCharacter, MODELS as PIANISTS } from './pianist/alt-model.js'
     import { createRig as createPianistRig } from './pianist/rig.js'
     import { graftPianistHands } from './pianist/hand-graft.js'
-    import { createPark, TIMES } from './park/park.js'
+    import { createPark } from './park/park.js'
+    import { parkSettings, fillParkOptions, wirePark } from './park/controls.js'
+    import { createSettings } from './ui/settings.js'
     import { createLinerLibrary, clockOfMidi, buildTimeline } from './liner/liner.js'
     import { createLinerOverlay } from './liner/overlay.js'
     import { cacheKey, decodeDuobake, encodeDuobake } from './duo/duobake.js'
@@ -170,28 +172,62 @@
     const $ = id => document.getElementById(id)
     const Q = new URLSearchParams(location.search)
     const SHOT = Q.has('shot')
-    const PIANO_TYPE = Q.get('piano') === 'upright' ? 'upright' : 'grand'
-    $('pianoType').value = PIANO_TYPE
-    $('uprightPanel').hidden = PIANO_TYPE !== 'upright'
-    $('uprightPanel').value = Q.get('panel') === 'closed' ? 'closed' : 'open'
-    $('pianoType').onchange = () => {
-      const p = new URLSearchParams(location.search)
-      if ($('pianoType').value === 'upright') p.set('piano', 'upright'); else p.delete('piano')
-      location.search = p.toString()
-    }
-    $('uprightPanel').onchange = () => { piano.setPanelOpen?.($('uprightPanel').value === 'open'); saveUrl() }
-    // #051: the park (park/park.js) in place of the concert hall
     const PARK = Q.get('stage') === 'park'
-    const parkForeground = root => { if (PARK) root.traverse(object => object.layers.set(1)) }
-    $('venue').value = PARK ? 'park' : 'hall'
-    $('venue').onchange = () => { const p = new URLSearchParams(location.search); if ($('venue').value === 'park') p.set('stage', 'park'); else p.delete('stage'); location.search = p.toString() }
-    if (PARK) { $('title').textContent = '#051 Duo in the Park'; document.title = '#051 Duo in the Park' }
-    const v3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z)
-    const setStatus = (msg, ms = 0) => { $('status').textContent = msg; $('status').style.display = msg ? 'block' : 'none'; if (ms) setTimeout(() => setStatus(''), ms) }
+    // ── The settings (ui/settings.js): each control once, with its query key and its default ──
+    // The address bar keeps the ones off their default (saveUrl); a link puts them back. The
+    // ones marked reload are chosen at start-up (the piano, the venue, the layout, the
+    // renderer, the pianist's model and hands, the park's size): a change reloads the page
+    // with every setting kept. Selects the page fills later (the song, the piano's sound,
+    // the performer) are read from the link where they are filled, as before.
     for (const [f, l] of Object.entries(VIOLINISTS)) $('model').add(new Option(l, f))
     for (const [k, o] of Object.entries(OUTFITS)) $('outfit').add(new Option(o.label, k))
     for (const [k, r] of Object.entries(ROOMS)) $('room').add(new Option(r.label, k, k === 'hall', k === 'hall'))
-    for (const [id, key] of [['model', 'model'], ['outfit', 'outfit'], ['vdress', 'vdress'], ['cam', 'view']]) if (Q.get(key) && [...$(id).options].some(o => o.value === Q.get(key))) $(id).value = Q.get(key)
+    const settings = createSettings([
+      { id: 'stage', label: 'Stage', items: [
+        { key: 'pianoType', type: 'select', default: 'grand', url: 'piano', reload: true },
+        { key: 'uprightPanel', type: 'select', default: 'open', url: 'panel', when: s => s.pianoType === 'upright', urlWhenHidden: false },
+        { key: 'song', type: 'select', default: 'beethoven_kreutzer_3_presto.mid', url: 'song', urlIf: v => !v.startsWith('local:') },
+        { key: 'model', type: 'select', default: Object.keys(VIOLINISTS)[0], url: 'model' },
+        { key: 'outfit', type: 'select', default: 'concert', url: 'outfit' },
+        { key: 'bowing', type: 'select', default: 'score', url: 'bowing' },
+        // (the performer list is made per piece: until it shows, the wish from the link stands)
+        { key: 'performer', el: null, type: 'text', default: MODELLED, url: 'performer', serialize: v => v || 'none', value: () => $('performer').hidden ? ($('performer').dataset.want ?? MODELLED) : $('performer').value },
+        { key: 'source', type: 'select', default: 'score', url: 'src', parse: t => t === 'midi' ? 'midi' : 'score' },
+        { key: 'pmodel', type: 'select', default: 'vroida', url: 'pmodel', reload: true },
+        { key: 'vdress', type: 'select', default: 'wine', url: 'vdress' },
+        { key: 'hands', type: 'select', default: 'pianist', url: 'hands', reload: true },
+        { key: 'room', type: 'select', default: PARK ? 'dry' : 'hall', url: 'room' },
+        { key: 'layout', type: 'select', default: 'keys', url: 'layout', reload: true },
+        { key: 'venue', type: 'select', default: 'hall', url: 'stage', reload: true, parse: t => t === 'park' ? 'park' : 'hall' },
+      ] },
+      parkSettings({ ids: { tod: 'tod', tree: 'tstyle', amb: 'amb', paint: 'ppaint', scale: 'pscale' }, birdsKey: 'amb', scale: true, when: () => PARK }),
+      { id: 'sound', label: 'Sound', items: [
+        { key: 'vsound', type: 'select', default: 'gm', url: 'violin', urlIf: () => hybrid.on },
+        { key: 'levels', el: null, type: 'text', default: '', url: 'vol', value: () => levels.violin || levels.piano ? `${levels.violin},${levels.piano}` : '' },
+        { key: 'psynth', type: 'select', default: 'oxisynth', url: 'psynth' },
+        { key: 'psf', type: 'select', default: '', url: 'psf' },   // (the default is the first font, set once the list is made)
+        { key: 'pprog', type: 'number', default: 0, url: 'pprog' },
+        { key: 'vs', el: null, type: 'text', default: '', url: 'vs', value: () => vs.query || '' },
+      ] },
+      { id: 'picture', label: 'Picture', items: [
+        { key: 'cam', type: 'select', default: 'auto', url: 'view' },
+        { key: 'intro', type: 'bool', url: 'intro' },
+        { key: 'notes', type: 'select', default: 'intertitles', url: 'notes' },
+        // the liner notes' look as #032 writes it, and the WebGPU post: kept in a link as they came
+        ...['itstyle', 'itstylea', 'itcol', 'itpos', 'itheads', 'itseed'].map(k => ({ key: k, el: null, type: 'text', default: '', url: k, value: () => Q.get(k) || '' })),
+        { key: 'gpu', el: 'gpuSel', type: 'select', default: 'webgl', url: 'gpu', reload: true },
+        ...['grade', 'gpuq', 'gpuout'].map(k => ({ key: k, el: null, type: 'text', default: '', url: k, value: () => Q.get(k) || '' })),
+      ] },
+    ]).bind(document)
+    fillParkOptions(settings, { timeLabel: n => 'Time: ' + n.toLowerCase(), treeLabel: n => 'Tree: ' + n.toLowerCase(), scaleLabel: n => 'Park: ' + n, search: Q })
+    settings.read(Q)
+    const PIANO_TYPE = settings.get('pianoType')
+    $('uprightPanel').onchange = () => { piano.setPanelOpen?.($('uprightPanel').value === 'open'); saveUrl() }
+    // #051: the park (park/park.js) in place of the concert hall
+    const parkForeground = root => { if (PARK) root.traverse(object => object.layers.set(1)) }
+    if (PARK) { $('title').textContent = '#051 Duo in the Park'; document.title = '#051 Duo in the Park' }
+    const v3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z)
+    const setStatus = (msg, ms = 0) => { $('status').textContent = msg; $('status').style.display = msg ? 'block' : 'none'; if (ms) setTimeout(() => setStatus(''), ms) }
 
     // ── Renderer and stage ─────────────────────────────────────────────────
     // The violinist stands at the origin facing the hall (+z). The piano is
@@ -202,9 +238,8 @@
     // ?gpu=webgpu: three.js's WebGPU renderer, with SSGI and SSR (duo/gpu.js; the hall
     // alone, the park's passes are GLSL). ?gpuout=target renders offscreen (headless)
     const GPU = Q.get('gpu') === 'webgpu' && !PARK && navigator.gpu ? await (await import('./duo/gpu.js')).createRenderer() : null
-    $('gpuSel').value = GPU ? 'webgpu' : 'webgl'
+    settings.set('gpu', GPU ? 'webgpu' : 'webgl', { silent: true })
     if (!navigator.gpu || PARK) { $('gpuSel').options[1].disabled = true; $('gpuSel').options[1].text += PARK ? ' (the hall alone)' : ' (not in this browser)' }
-    $('gpuSel').onchange = () => { saveUrl(); const p = new URLSearchParams(location.search); if ($('gpuSel').value === 'webgpu') p.set('gpu', 'webgpu'); else p.delete('gpu'); location.search = p.toString() }
     const renderer = GPU ? GPU.renderer : new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: SHOT })
     renderer.setPixelRatio(Math.min(2, devicePixelRatio))
     renderer.setSize(innerWidth, innerHeight)
@@ -227,9 +262,7 @@
     // the keyboard end, about 1 m to her left and a little in front, the piano's tail away
     // from him on his left; most violin-piano recitals), or 'curve' (he stands in front of
     // the piano's bent side, the keyboard upstage on his right; #038's first layout)
-    const LAYOUT = Q.get('layout') === 'curve' ? 'curve' : 'keys'
-    $('layout').value = LAYOUT
-    $('layout').onchange = () => { const p = new URLSearchParams(location.search); if ($('layout').value === 'curve') p.set('layout', 'curve'); else p.delete('layout'); location.search = p.toString() }
+    const LAYOUT = settings.get('layout') === 'curve' ? 'curve' : 'keys'
     if (LAYOUT === 'curve') pianoSide.position.set(-185, 0, -150)
     else pianoSide.position.set(150, 0, -72)   // her seat at about (105, -63)
     scene.add(pianoSide)
@@ -262,25 +295,15 @@
     if (PARK) {
       for (const o of stageParts) o.visible = false
       scene.background = null; scene.fog = null
-      // any size from 0.02 to 4 in the URL; the menu defaults to 0.45
-      { const k = +Q.get('pscale'); if (k >= 0.02 && k <= 4) { const v = String(k); if (![...$('pscale').options].some(o => o.value === v)) $('pscale').add(new Option(`Park: ${v} size`, v)); $('pscale').value = v } }
-      const pscale = +$('pscale').value
-      $('pscale').onchange = () => { const p = new URLSearchParams(location.search); if ($('pscale').value === '0.45') p.delete('pscale'); else p.set('pscale', $('pscale').value); location.search = p.toString() }
-      // the park's camera is this one at scale/100: its 0.1-8000 m, here in cm
+      // the park's size (?pscale=, the menu's 0.45 by default; park/controls.js) and its camera:
+      // this one at scale/100, its 0.1-8000 m here in cm
+      const pscale = +settings.get('parkScale')
       camera.near = 10; camera.far = 800000 * pscale; camera.updateProjectionMatrix()
-      for (const [i, n] of TIMES) $('tod').add(new Option('Time: ' + n.toLowerCase(), i))
-      $('tod').value = TIMES.some(([i]) => String(i) === Q.get('tod')) ? Q.get('tod') : '1'
-      if ([...$('tstyle').options].some(o => o.value === Q.get('tree'))) $('tstyle').value = Q.get('tree')
-      $('tod').hidden = $('tstyle').hidden = $('ambBox').hidden = $('ppaintBox').hidden = $('pscale').hidden = false
-      if (Q.get('amb') === '0') $('amb').checked = false
-      if (Q.get('ppaint') === '1') $('ppaint').checked = true
       setStatus('Growing the park…')
-      park = await createPark(renderer, { time: +$('tod').value + 0.4, style: $('tstyle').value, scale: pscale, layout: LAYOUT })
-      $('tod').onchange = () => { park.setTime(+$('tod').value + 0.4); saveUrl() }
-      $('tstyle').onchange = () => { park.setStyle($('tstyle').value); saveUrl() }
-      $('amb').onchange = () => { park.sound.setOn($('amb').checked); saveUrl() }
-      park.S.paintPerformers = $('ppaint').checked
-      $('ppaint').onchange = () => { park.S.paintPerformers = $('ppaint').checked; saveUrl() }
+      // (the hours here are the park's + 0.4: the sun a little higher than the pianist's pages have it)
+      park = await createPark(renderer, { time: +settings.get('parkTod') + 0.4, style: settings.get('parkTree'), scale: pscale, layout: LAYOUT })
+      park.S.paintPerformers = settings.get('parkPaint')
+      wirePark(settings, park, { timeOffset: 0.4, onChange: saveUrl })
       // the sun (and moon) and the sky's light, from the park's, for their own materials;
       // three.js divides diffuse light by pi, Sorairo's cel light doesn't: hence the pi
       sunLight = new THREE.DirectionalLight(0xffffff, 1)
@@ -324,17 +347,14 @@
     $('pmodel').innerHTML = ''
     for (const [k, m] of Object.entries(PIANISTS).sort(([a], [b]) => (b === 'vroida') - (a === 'vroida'))) if (m.kind === 'vrm') $('pmodel').add(new Option('Pianist: ' + m.label.replace(/^VRoid · |^VRM · /, ''), k))
     const PMODEL = PIANISTS[Q.get('pmodel')]?.kind === 'vrm' ? Q.get('pmodel') : 'vroida'
-    $('pmodel').value = PMODEL
-    $('pmodel').onchange = () => { saveUrl(); const p = new URLSearchParams(location.search); if ($('pmodel').value === 'vroida') p.delete('pmodel'); else p.set('pmodel', $('pmodel').value); location.search = p.toString() }
+    settings.set('pmodel', PMODEL, { silent: true })
     const her = await loadAltCharacter(PMODEL, new URL('./pianist/assets/', import.meta.url).href)
     $('vdress').hidden = !her.dress
     pianoSide.add(her.group)
     // her hands: #032's pianist's, fitted to hers (pianist/hand-graft.js), or the model's own
-    if (['model', 'real'].includes(Q.get('hands'))) $('hands').value = Q.get('hands')
     // (before the rig is made: it moves her skeleton's fingers to the new hands' joints)
     if ($('hands').value !== 'model') await graftPianistHands(her, { base: new URL('./pianist/assets/', import.meta.url).href, look: $('hands').value === 'real' ? 'real' : 'toon' }).catch(e => { console.warn('hands:', e.message); $('hands').value = 'model'; $('hands').disabled = true })
-    // (the rig is made on one skeleton or the other: a change reloads the page)
-    $('hands').onchange = () => { saveUrl(); location.reload() }
+    // (the rig is made on one skeleton or the other: a change reloads the page, through the store)
     const pRig = createPianistRig(her, { seat: v3(0, SEAT_Y + 8.6, 44) })
     her.attachRig?.(pRig)
     pRig.state.gazeMode = 'music'
@@ -427,7 +447,6 @@
       setOutline(him, on); setOutline(her.vrm, on)
     }
     $('outline').onchange = applyOutline
-    if (Q.get('intro') === '0') $('intro').checked = false
     $('intro').onchange = () => saveUrl()
     $('model').onchange = $('outfit').onchange = async () => { await loadHim(); saveUrl() }
 
@@ -830,7 +849,7 @@
     ]
     for (const f of PIANO_FONTS) $('psf').appendChild(new Option('Soundfont: ' + f.label, f.file))
     const pianoFont = () => PIANO_FONTS.find(f => f.file === $('psf').value) || PIANO_FONTS[0]
-    if ([...$('psynth').options].some(o => o.value === Q.get('psynth'))) $('psynth').value = Q.get('psynth')
+    settings.item('psf')._default = PIANO_FONTS[0].file
     $('psf').value = PIANO_FONTS.some(f => f.file === Q.get('psf')) ? Q.get('psf') : PIANO_FONTS[0].file
     const wantProg = Q.get('pprog') != null && isFinite(+Q.get('pprog')) ? +Q.get('pprog') : 0
     /** The presets of a soundfont (bank 0), read from its phdr chunk (SF2 and SF3 alike). */
@@ -1057,8 +1076,6 @@
       time() { return this.lab ? this.lab.time() * clock.speed : 0 },
     }
     $('room').onchange = () => { applyHall(); saveUrl() }
-    if (Q.get('room') && ROOMS[Q.get('room')]) $('room').value = Q.get('room')
-    else if (PARK) $('room').value = 'dry'            // (outdoors: no hall)
     applyHall()
     let scheduler = null
     const target = {
@@ -1127,10 +1144,8 @@
       if (was) play()
       saveUrl()
     }
-    if ([...$('vsound').options].some(o => o.value === Q.get('violin'))) $('vsound').value = Q.get('violin')
     function seekTo(t) { clock.t = Math.max(0, Math.min(t, song.duration)); clock.wall = performance.now(); if (clock.playing) { target.allSoundOff(); scheduler.seek(clock.t); if (clock.pending) { clock.pending = false; scheduler.play() } if (hybrid.on) hybrid.start(clock.t) } }
     $('seek').oninput = () => seekTo(+$('seek').value * song.duration)
-    $('bowing').value = ['infer', 'fixed'].includes(Q.get('bowing')) ? Q.get('bowing') : 'score'
     /** The Performer menu: the recordings of this piece (violinist/performances). */
     async function showPerformers(file) {
       const list = await performersFor(file)
@@ -1142,7 +1157,6 @@
       $('performer').hidden = false
     }
     $('performer').dataset.want = Q.get('performer') === 'none' ? '' : Q.get('performer') || MODELLED
-    $('source').value = Q.get('src') === 'midi' ? 'midi' : 'score'
     $('source').onchange = async () => { const was = clock.playing; pause(); await loadSong($('song').value); director.reset(); clock.t = 0; if (hybrid.on && hybrid.lab) hybrid.ensure(); if (was) play(); saveUrl() }
     $('performer').onchange = async () => { const was = clock.playing; pause(); await loadSong($('song').value); director.reset(); clock.t = 0; if (hybrid.on && hybrid.lab) hybrid.ensure(); if (was) play(); saveUrl() }
     $('bowing').onchange = async () => { const was = clock.playing, t = clock.t; pause(); await loadSong($('song').value); clock.t = t; if (hybrid.on && hybrid.lab) hybrid.ensure(); if (was) play(); saveUrl() }
@@ -1286,36 +1300,10 @@
       camera.position.copy(her.group.localToWorld(her.group.worldToLocal(tg.clone()).add(v3(...off)))); controls.target.copy(tg); camera.fov = 30; camera.updateProjectionMatrix()
     }, her, pRig, cut(v) { $('cam').value = v; setView(v, true) }, get park() { return park }, scene, camera }
 
+    // the address bar: every setting off its default, from the schema above (ui/settings.js)
     function saveUrl() {
       if (SHOT) return
-      const p = new URLSearchParams()
-      if (PIANO_TYPE === 'upright') p.set('piano', 'upright')
-      if (PIANO_TYPE === 'upright' && $('uprightPanel').value === 'closed') p.set('panel', 'closed')
-      if ($('song').value !== 'beethoven_kreutzer_3_presto.mid' && !$('song').value.startsWith('local:')) p.set('song', $('song').value)
-      if ($('model').selectedIndex) p.set('model', $('model').value)
-      if ($('outfit').value !== 'concert') p.set('outfit', $('outfit').value)
-      if ($('bowing').value !== 'score') p.set('bowing', $('bowing').value)
-      if ($('performer').value !== MODELLED) p.set('performer', $('performer').value || 'none')
-      if ($('source').value === 'midi') p.set('src', 'midi')
-      if (PMODEL !== 'vroida') p.set('pmodel', PMODEL)
-      if ($('vdress').value !== 'wine') p.set('vdress', $('vdress').value)
-      if ($('hands').value !== 'pianist') p.set('hands', $('hands').value)
-      if ($('room').value !== (PARK ? 'dry' : 'hall')) p.set('room', $('room').value)
-      if (LAYOUT === 'curve') p.set('layout', 'curve')
-      if (PARK) { p.set('stage', 'park'); if ($('tod').value !== '1') p.set('tod', $('tod').value); if ($('tstyle').value !== 'summer') p.set('tree', $('tstyle').value); if (!$('amb').checked) p.set('amb', '0'); if ($('ppaint').checked) p.set('ppaint', '1'); if ($('pscale').value !== '0.45') p.set('pscale', $('pscale').value) }
-      if (hybrid.on) p.set('violin', hybrid.name)
-      if (levels.violin || levels.piano) p.set('vol', `${levels.violin},${levels.piano}`)
-      if ($('psynth').value !== 'oxisynth') p.set('psynth', $('psynth').value)
-      if ($('psf').value !== PIANO_FONTS[0].file) p.set('psf', $('psf').value)
-      if (+$('pprog').value) p.set('pprog', $('pprog').value)
-      if (vs.query) p.set('vs', vs.query)
-      if ($('cam').value !== 'auto') p.set('view', $('cam').value)
-      if (!$('intro').checked) p.set('intro', '0')
-      if ($('notes').value !== 'intertitles') p.set('notes', $('notes').value)
-      for (const k of ['itstyle', 'itstylea', 'itcol', 'itpos', 'itheads', 'itseed']) if (Q.has(k)) p.set(k, Q.get(k))
-      if (GPU) p.set('gpu', 'webgpu')
-      for (const k of ['grade', 'gpuq', 'gpuout']) if (Q.has(k)) p.set(k, Q.get(k))
-      history.replaceState(null, '', '?' + p.toString())
+      history.replaceState(null, '', '?' + settings.query('').toString())
     }
 
     // the overlay. Intertitles placed automatically go to the side of the frame
@@ -1337,7 +1325,6 @@
       if (Q.get('itpos')) liner.position = Q.get('itpos')
       if (Q.get('itheads') === '0') liner.kickers = false
       if (+Q.get('itseed') > 1) liner.seed = +Q.get('itseed')
-      if ([...$('notes').options].some(o => o.value === Q.get('notes'))) $('notes').value = Q.get('notes')
       liner.mode = $('notes').value
       $('notes').onchange = () => { liner.mode = $('notes').value; saveUrl() }
       // the pieces with notes get an ⓘ in the list

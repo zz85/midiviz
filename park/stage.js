@@ -18,7 +18,7 @@ import * as THREE from 'three'
 import { createPark, TIMES } from './park.js'
 
 export const PARK_TIMES = TIMES
-export const PARK_TREES = [['summer', 'Summer'], ['sakura', 'Cherry blossom'], ['autumn', 'Autumn'], ['maple', 'Maple']]
+export { PARK_TREES } from './controls.js'   // (the controls, once, for every page: park/controls.js)
 
 export function createParkStage({ renderer, scene, camera, stageParts = () => [], foreground = () => [], hair = () => null,
   center = new THREE.Vector3(0, 80, 20), lightK = 0.75, onStatus = () => {} }) {

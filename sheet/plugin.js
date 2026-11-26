@@ -6,9 +6,9 @@
 //   boot(sheetPlugin({ title, href, defaultSong, build: async (song, midi, file, app) => ({ layout, timeline, inkFrom, note }) }))
 //
 // It adds a Score section to Visuals (Show, Style, Position (automatic: sheet/placer.js), Rows, Size,
-// Follow with, In videos), kept in the address bar as sheet, sstyle, spos,
-// srows, ssize, shl, svideo; draws on a canvas over the picture each frame,
-// and onto every frame of a video the Render menu exports.
+// Follow with, In videos), a section of the page's settings (ui/settings.js) kept in the
+// address bar as sheet, smode, sstyle, spos, srows, ssize, shl, svideo; draws on a canvas
+// over the picture each frame, and onto every frame of a video the Render menu exports.
 
 import { createSheetOverlay, STYLES, POSITIONS, HIGHLIGHTS, MODES } from './overlay.js'
 import { createPlacer } from './placer.js'
@@ -17,12 +17,13 @@ export function sheetPlugin({ title, href = 'sheet/README.md', defaultSong, buil
   let app = null, ov = null, canvas = null, g = null, note = '', job = 0, placer = null, ready = null
   const newPlacer = o => createPlacer(o, { survey: r => app.surveyFrame(r), key: () => app.surveyKey(), reserve: r => app.reserve(r) })
   const opt = id => app.$(id)
-  const settings = () => ({ mode: opt('sMode').value, style: opt('sStyle').value, position: opt('sPos').value, rows: +opt('sRows').value, size: +opt('sSize').value, highlight: opt('sHl').value })
+  const S = () => app.settings
+  const settings = () => ({ mode: S().get('sMode'), style: S().get('sStyle'), position: S().get('sPos'), rows: +S().get('sRows'), size: +S().get('sSize'), highlight: S().get('sHl') })
   function resize() {
     const k = Math.min(devicePixelRatio || 1, 2)
     canvas.width = Math.round(innerWidth * k); canvas.height = Math.round(innerHeight * k)
   }
-  const shown = () => opt('sOn').checked && ov
+  const shown = () => S().get('sOn') && ov
   function frame(t, fresh = false) {
     if (!g) return
     g.setTransform(1, 0, 0, 1, 0, 0)
@@ -53,21 +54,20 @@ export function sheetPlugin({ title, href = 'sheet/README.md', defaultSong, buil
         <div class="field"><label>Size <span class="val" id="sSizeV"></span></label><input type="range" id="sSize" min="0.1" max="0.4" step="0.01" value="0.2"></div>
         <div class="field"><label>Follow with</label>${sel('sHl', HIGHLIGHTS, 'bar')}</div>
         <label class="chk" title="Draw the score into every frame of a video from Render, as it shows here (path-traced videos too)"><input type="checkbox" id="sVideo" checked> In videos</label>`, { first: true })
-      const p = app.params
-      if (p.get('sheet') === '0') opt('sOn').checked = false
-      for (const [k, id] of [['smode', 'sMode'], ['sstyle', 'sStyle'], ['spos', 'sPos'], ['srows', 'sRows'], ['ssize', 'sSize'], ['shl', 'sHl']]) if (p.has(k)) opt(id).value = p.get(k)
-      if (p.get('svideo') === '0') opt('sVideo').checked = false
-      app.addState(['sheet', 'sOn'], ['smode', 'sMode'], ['sstyle', 'sStyle'], ['spos', 'sPos'], ['srows', 'sRows'], ['ssize', 'sSize'], ['shl', 'sHl'], ['svideo', 'sVideo'])
+      // the section: bound to the markup above, read from the address bar, kept in it
+      app.settings.add({ id: 'sheet', label: 'Score', items: [
+        { key: 'sOn', url: 'sheet', label: 'Show the score' }, { key: 'sMode', url: 'smode', label: 'Layout' }, { key: 'sStyle', url: 'sstyle', label: 'Style' },
+        { key: 'sPos', url: 'spos', label: 'Position' }, { key: 'sRows', url: 'srows', label: 'Systems shown', when: s => s.sMode !== 'scroll' },
+        { key: 'sSize', url: 'ssize', label: 'Size', format: v => Math.round(v * 100) + '%' }, { key: 'sHl', url: 'shl', label: 'Follow with' }, { key: 'sVideo', url: 'svideo', label: 'In videos' },
+      ] })
+      app.settings.read(app.params, ['sOn', 'sMode', 'sStyle', 'sPos', 'sRows', 'sSize', 'sHl', 'sVideo'])
       const apply = () => {
-        opt('sSizeV').textContent = Math.round(+opt('sSize').value * 100) + '%'
-        opt('sRowsF').style.display = opt('sMode').value === 'scroll' ? 'none' : ''
         const was = ov?.opts.mode
         ov?.set(settings())
         // (the panel's shape changes with the layout: its place is chosen again)
         if (ov && was !== ov.opts.mode) placer = newPlacer(ov)
       }
-      for (const id of ['sMode', 'sStyle', 'sPos', 'sRows', 'sHl']) opt(id).onchange = apply
-      opt('sSize').oninput = apply
+      for (const k of ['sMode', 'sStyle', 'sPos', 'sRows', 'sSize', 'sHl']) app.settings.subscribe(k, apply)
       apply()
       addEventListener('keydown', e => { if ((e.key === 's' || e.key === 'S') && !e.metaKey && !e.ctrlKey && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName)) opt('sOn').click() })
     },
@@ -91,7 +91,7 @@ export function sheetPlugin({ title, href = 'sheet/README.md', defaultSong, buil
     // (a ?shot still: placed for its own frame alone)
     onFrame(t, a, o) { frame(t, !!o?.shot) },
     overlay() {
-      if (!ov || !opt('sOn').checked || !opt('sVideo').checked) return null
+      if (!ov || !S().get('sOn') || !S().get('sVideo')) return null
       // a placer of its own for the video's frame (its shape), chosen on its first frame
       const o = ov, pl = newPlacer(o)
       // (a score of many pages: the export starts here, or at the start)
