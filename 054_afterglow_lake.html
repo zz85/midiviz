@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Pianist">
+  <link rel="apple-touch-icon" href="pianist/icon-180.png">
+  <title>Experiment #054 - Afterglow Lake</title>
+  <!--
+    Experiment #054 - Afterglow Lake: #045's pianist and concert grand on the
+    lake of Afterglow (github.com/Leonxlnx/afterglow, MIT): its sky after
+    sunset, the mountains, and water that mirrors her and rings from the
+    piano's legs as she plays. The world is Afterglow's own code (lake/world/),
+    the stage set that puts the page's scene on it is lake/stage.js; see
+    lake/README.md. Drawn live (WebGL); the path tracers stay on the stages.
+  -->
+  <script src="playback_controls.js"></script>
+  <script type="importmap">
+    { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/",
+      "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/",
+      "three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.webgpu.js",
+      "three/tsl": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.tsl.js",
+      "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.5.5/lib/three-vrm.module.min.js"
+    } }
+  </script>
+  <link rel="stylesheet" href="pathtrace/app.css">
+</head>
+<body>
+  <script src="tonejs-midi.js"></script>
+  <script type="module">
+    import { boot } from './pathtrace/app.js'
+    boot({ title: '#054 · Afterglow Lake', defaultSong: 'midis/chpn-p15.mid',
+      params: { scene: 'lake', view: 'lakeWide' } })
+  </script>
+</body>
+</html>

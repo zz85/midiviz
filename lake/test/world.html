@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>lake/world standalone</title>
+  <!-- Afterglow's world (lake/world/) alone, with a box where the piano stands:
+       lake/test/world.html?a=47&d=31&h=1.18&sun=-1 (rig-frame orbit, as Afterglow's shots) -->
+  <script type="importmap">
+    { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/"
+    } }
+  </script>
+  <style>html, body { margin: 0; background: #000; overflow: hidden } canvas { display: block }</style>
+</head>
+<body>
+<script type="module">
+  import * as THREE from 'three'
+  import { create } from '../world/index.js'
+  const q = new URLSearchParams(location.search)
+  const W = innerWidth, H = innerHeight
+  const renderer = new THREE.WebGLRenderer({ antialias: false, preserveDrawingBuffer: true })
+  renderer.setPixelRatio(1); renderer.setSize(W, H)
+  renderer.toneMapping = THREE.NeutralToneMapping
+  renderer.outputColorSpace = THREE.SRGBColorSpace
+  document.body.appendChild(renderer.domElement)
+  const scene = new THREE.Scene()
+  const rig = new THREE.Group(); rig.rotation.y = 120 * Math.PI / 180; scene.add(rig)
+  const box = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1, 2.6), new THREE.MeshStandardMaterial({ color: 0x080808, roughness: 0.2, metalness: 0 }))
+  box.position.set(0, 0.5, 1.2); rig.add(box)
+  const t0 = performance.now()
+  const world = await create({ renderer, width: W, height: H, quality: q.get('quality') || 'preview', rigGroup: rig, scene })
+  const tCreate = performance.now() - t0
+  scene.add(world.group)
+  const D = Math.PI / 180, a = +(q.get('a') ?? 47), d = +(q.get('d') ?? 31), h = +(q.get('h') ?? 1.18)
+  const camera = new THREE.PerspectiveCamera(+(q.get('fov') ?? 27), W / H, 0.05, 60000)
+  const local = new THREE.Vector3(-d * Math.sin(a * D), h, 1 - d * Math.cos(a * D))
+  rig.updateMatrixWorld(true)
+  camera.position.copy(local.applyMatrix4(rig.matrixWorld))
+  camera.lookAt(new THREE.Vector3(0, +(q.get('ly') ?? 0.9), 1).applyMatrix4(rig.matrixWorld))
+  if (q.has('sun')) world.setSunElevation(+q.get('sun'))
+  const T = +(q.get('t') ?? 20)
+  const frame = () => {
+    const t1 = performance.now()
+    world.prepareFrame(T, { camera, frame: 0 })
+    const t2 = performance.now()
+    scene.environment = world.envMap
+    renderer.render(scene, camera)
+    renderer.getContext().finish()
+    return { prepare: t2 - t1, render: performance.now() - t2 }
+  }
+  frame()
+  const tm = frame()
+  window.__info = { tCreate, ...tm, info: world.info() }
+  window.__done = true
+</script>
+</body>
+</html>

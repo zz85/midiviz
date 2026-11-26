@@ -2,6 +2,14 @@
 
 What each experiment does and how, newest first. The short list is in the [README](README.md).
 
+## 25 Nov 2026
+
+[Experiment #054 - Afterglow Lake](054_afterglow_lake.html): the lake of [Afterglow](https://github.com/Leonxlnx/afterglow) as a stage set, for [#032](032_pianist.html?stage=lake) and through pathtrace/app.js for [#045](045_pathtracer.html?scene=lake), [#049](049_sheet_scan.html?scene=lake) and [#050](050_sheet_engraved.html?scene=lake)
+- [lake/world/](lake/world/) is Afterglow's world code (MIT, commit ced1038) copied whole: sky, clouds, terrain, boulders and water. Two changes in index.js: `prepareFrame` can skip the environment capture (`env: false`), and `setSize` resizes its targets with the canvas. [lake/stage.js](lake/stage.js) has park/stage.js's interface: it puts the page's scene (cm) under a bridge group (×0.01, turned 180°) in Afterglow's rig (yaw 120°), carries the camera across and draws one scene, so the water's reflector mirrors her and the piano. The hall's floor, lights and dust are hidden; she is lit by the world's environment (refreshed every 0.25 s), a key from the horizon glow and a cool sky fill, through PBR Neutral tone mapping as in Afterglow.
+- The rings come from the notes: each note rings the bass or treble leg, a low loud note the tail leg too, at 0.18-1.3 mm by velocity; the sustain pedal rings the lyre. A still seeds the last 12 s of rings.
+- Visuals > Stage > The lake, with Sky: -1°, -1.6°, -2.5°, -4.5°, or Afterglow's arc over the song (`sky=0..4`). Two new views on every pianist page: Across the water (Afterglow's S01) and Lost profile. `boot()` takes `params`, defaults for keys the address doesn't give; #054 is #045 with `scene=lake`, `view=lakeWide` and the Raindrop prelude.
+- Checked headless on llvmpipe with `node lake/test/shoot.mjs` (new): stills of #032, #045 and #054 on the lake from eight views and two skies, against Afterglow's stills (docs/stills/hero.jpg), and #032 switched from the lake back to the black stage with its lights and floor restored; no page errors. The world builds in about 12 s and adds about 12 ms a frame at 960×540 there. Not path traced and not on WebGPU; no video export on the lake checked yet. Notes: [lake/README.md](lake/README.md).
+
 ## 24 Nov 2026
 
 Hands relaxed in a long silence: the violinist (#037, #038) and the pianist (#032, #038, #045, #049, #050)

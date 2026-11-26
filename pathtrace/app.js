@@ -4,7 +4,7 @@
 // the same app with a plugin that draws the score over it (sheet/).
 //
 //   import { boot } from './pathtrace/app.js'
-//   boot({ title, href, defaultSong, onReady(app), onSong(song, midi, app), onFrame(t, app), overlay(g, w, h, t) })
+//   boot({ title, href, defaultSong, params: { key: default }, onReady(app), onSong(song, midi, app), onFrame(t, app), overlay(g, w, h, t) })
 //
 // The page needs, before this module: the import map (three, three/addons/,
 // @pixiv/three-vrm), playback_controls.js and tonejs-midi.js as classic
@@ -47,6 +47,7 @@ import { pathTracedFrames } from '../pathtrace/video.js'
 import { createFrameSpace, LANDSCAPE_PLACES, portraitPlaces } from '../pianist/frame-space.js'
 import { createFocusPuller, SHOT_DOF } from '../pianist/focus-puller.js'
 import { createParkStage, PARK_TIMES, PARK_TREES } from '../park/stage.js'
+import { createLakeStage, LAKE_TIMES } from '../lake/stage.js'
 import { createLinerLibrary, clockOfMidi, buildTimeline, toVTT, toChapters, titleScreen, withTitle, titleSecs, layoutClip } from '../liner/liner.js'
 import { createLinerOverlay, drawLinerCaption, drawIntertitle, loadIntertitleFonts, INTERTITLE_STYLES, INTERTITLE_THEMES, INTERTITLE_POSITIONS } from '../liner/overlay.js'
 import { SHELL } from './shell.js'
@@ -76,6 +77,8 @@ export async function boot(plug = {}) {
     window.__app = app
     const $ = id => document.getElementById(id)
     const params = new URLSearchParams(location.search)
+    // a plugin's defaults for keys the address doesn't give (#054: ?scene=lake)
+    for (const [k, v] of Object.entries(plug.params ?? {})) if (!params.has(k)) params.set(k, v)
     // phones and tablets (a coarse pointer) take the light path unless ?q=high
     // touch screens get the phone layout (?touch=1 / 0 to force it)
     // offline cache and install (sw.js): assets once, code fresh (?sw=0 to skip)
@@ -739,7 +742,7 @@ export async function boot(plug = {}) {
       bokeh.render = (...a) => { const v = dust.visible; dust.visible = false; render(...a); dust.visible = v }
     }
     const pct = x => Math.round(x * 100) + '%'
-    let parkStage = null   // (the park stage set, below)
+    let parkStage = null, lakeStage = null   // (the park and lake stage sets, below)
     function applyFx() {
       bokeh.enabled = $('dof').checked
       // (the most blur, a share of the frame: more of it with the Blur slider above 1)
@@ -747,7 +750,7 @@ export async function boot(plug = {}) {
       bloom.enabled = $('bloom').checked; bloom.strength = +$('bloomAmt').value
       const g = $('filmGrain').checked
       grain.uniforms.uAmount.value = g ? +$('grainAmt').value : 0; grain.uniforms.uVig.value = g ? +$('vig').value : 0
-      dust.visible = $('dust').checked && (!parkStage || parkStage.shows(dust)); dust.material.uniforms.uOpacity.value = +$('dustAmt').value
+      dust.visible = $('dust').checked && (!parkStage || parkStage.shows(dust)) && (!lakeStage || lakeStage.shows(dust)); dust.material.uniforms.uOpacity.value = +$('dustAmt').value
       if (GPU) { live.fx.motionBlur = $('motionBlur').checked && +$('shutter').value > 0; live.fx.shutter = +$('shutter').value }
       $('dofAmtV').textContent = (+$('dofAmt').value).toFixed(2).replace(/0$/, '') + '×'
       $('bloomAmtV').textContent = (+$('bloomAmt').value).toFixed(2)
@@ -771,28 +774,43 @@ export async function boot(plug = {}) {
       stageParts: () => [floor, spot, faceKey, rim, back, keyFill, dust, ...Object.values(stageProps).map(p => p.root)],
       foreground: () => [ch.group, hair?.object, hair?.cap, dress?.object, shoes?.object],
       hair: () => hair })
-    if (GPU) { const o = $('stageSet').querySelector('option[value=park]'); o.disabled = true; o.text += ' - WebGL only' }
+    // ── The lake (#054, Afterglow's world) as a stage set (lake/stage.js): Visuals → Stage, ?scene=lake ──
+    lakeStage = createLakeStage({ renderer, scene, camera, onStatus: m => setStatus(m),
+      stageParts: () => [floor, spot, faceKey, rim, back, keyFill, dust, ...Object.values(stageProps).map(p => p.root)],
+      foreground: () => [ch.group, hair?.object, hair?.cap, dress?.object, shoes?.object],
+      hair: () => hair, progress: () => scheduler?.duration ? songNow() / scheduler.duration : 0 })
+    for (const [i, n] of LAKE_TIMES) $('lakeTod').add(new Option(n, i, i === 0, i === 0))
+    $('lakeTod').onchange = () => lakeStage.setTime($('lakeTod').value)
+    // the rings: the keys and the sustain pedal as the piano plays them
+    { const on = piano.noteOn.bind(piano), sus = piano.setSustain.bind(piano)
+      piano.noteOn = (m, v, ...a) => { lakeStage.noteOn(m, v); return on(m, v, ...a) }
+      piano.setSustain = (d, ...a) => { lakeStage.pedal(d); return sus(d, ...a) } }
+    window.__lake = lakeStage
+    const altStage = () => parkStage.on ? parkStage : lakeStage.on ? lakeStage : null
+    if (GPU) for (const v of ['park', 'lake']) { const o = $('stageSet').querySelector(`option[value=${v}]`); o.disabled = true; o.text += ' - WebGL only' }
     for (const [i, n] of PARK_TIMES) $('parkTod').add(new Option('' + n, i, i === 1, i === 1))
     for (const [k, n] of PARK_TREES) $('parkTree').add(new Option(n, k, k === 'summer', k === 'summer'))
     $('parkTod').onchange = () => parkStage.setTime($('parkTod').value)
     $('parkTree').onchange = () => parkStage.setStyle($('parkTree').value)
     $('parkAmb').onchange = () => parkStage.setSound($('parkAmb').checked && scheduler?.playing)
     async function setStageSet(name) {
-      const park = name === 'park' && !GPU
+      const park = name === 'park' && !GPU, lake = name === 'lake' && !GPU
       for (const el of document.querySelectorAll('.parkOnly')) el.style.display = park ? '' : 'none'
-      for (const id of ['dof', 'bloom', 'filmGrain', 'dust', 'motionBlur']) { const l = $(id)?.closest('label'); if (l) l.style.opacity = park ? 0.4 : '' }
+      for (const el of document.querySelectorAll('.lakeOnly')) el.style.display = lake ? '' : 'none'
+      for (const id of ['dof', 'bloom', 'filmGrain', 'dust', 'motionBlur']) { const l = $(id)?.closest('label'); if (l) l.style.opacity = park || lake ? 0.4 : '' }
       $('stageSet').disabled = true
       try {
         if (!park && parkStage.on) await parkStage.set(false)
-        if (park) await parkStage.set(true); else setStage(name)
-      } catch (e) { console.error(e); setStatus('Could not grow the park: ' + e.message, true, 6000); setStage('stage') }
+        if (!lake && lakeStage.on) await lakeStage.set(false)
+        if (park) await parkStage.set(true); else if (lake) await lakeStage.set(true); else setStage(name)
+      } catch (e) { console.error(e); setStatus('Could not set the stage: ' + e.message, true, 6000); setStage('stage') }
       finally { $('stageSet').disabled = false }
-      $('stageSet').value = parkStage.on ? 'park' : $('stageSet').value === 'park' ? 'stage' : $('stageSet').value
+      $('stageSet').value = parkStage.on ? 'park' : lakeStage.on ? 'lake' : ['park', 'lake'].includes($('stageSet').value) ? 'stage' : $('stageSet').value
       parkStage.setSound(parkStage.on && $('parkAmb').checked && scheduler?.playing)
       applyFx()
     }
     $('stageSet').onchange = () => setStageSet($('stageSet').value)
-    const drawPost = () => parkStage.on ? parkStage.draw() : composer.render()
+    const drawPost = () => altStage() ? altStage().draw() : composer.render()
 
     // ── Cameras (framed after Concert Creator's shots) ───────────────────
     const VIEWS = {
@@ -818,6 +836,9 @@ export async function boot(plug = {}) {
       overKeys: { pos: [32.3, 475.6, -108.6], target: [0.7, 113.6, 24.6], fov: 38 },
       lowLeft: { pos: [-140.1, 102, 123.5], target: [-0.7, 86, -45], fov: 38 },
       lowRightBack: { pos: [140.1, 102, 123.5], target: [0.7, 86, -45], fov: 38 },
+      // Afterglow's shots, for the lake (#032 has the same two)
+      lakeWide: { pos: [2267, 121, 2014], target: [0, 93, -100], fov: 27, orbitMax: 3 },
+      lakeProfile: { pos: [154, 138, 211], target: [-8, 118, 10], fov: 30, orbitMax: 4 },
       // through her eyes down to the keys: placed every frame (playerView)
       player: { pos: [0, 128, 24], target: [0, 73, -2], fov: 52, pov: true, orbitMax: 4 },
     }
@@ -842,6 +863,7 @@ export async function boot(plug = {}) {
       const KIND_TAG = { hands: 'hands', pianist: 'her', piano: 'piano' }, list = $('viewList')
       const entries = Object.keys(SPOTS).map(k => ({ k, label: SPOTS[k].label, size: SPOTS[k].size, kind: spotKind(k) }))
       entries.push({ k: 'player', label: "Player's view", size: 0, kind: 'hands' })
+      entries.push({ k: 'lakeWide', label: 'Across the water (lake)', size: 2, kind: 'piano' }, { k: 'lakeProfile', label: 'Lost profile (lake)', size: 1, kind: 'pianist' })
       const ORDER = ['piano', 'pianist', 'hands']
       for (const size of [2, 1, 0]) {
         list.insertAdjacentHTML('beforeend', `<div class="sect">${SIZES[size]}<small>${['the hands, the face, the mechanism', 'her and the keyboard', 'the stage and the piano'][size]}</small></div>`)
@@ -1545,7 +1567,7 @@ export async function boot(plug = {}) {
       ['dresson', 'dressOn'], ['clothsim', 'clothSim'], ['vdress', 'vdress'], ['look', 'look'], ['smooth', 'smooth'], ['simplify', 'simplify'],
       ['gaze', 'gaze'], ['expr', 'expr'], ['rest', 'restAfter'], ['hips', 'hips'], ['posture', 'posture'], ['reach', 'reach'], ['rock', 'rock'], ['sway', 'sway'], ['nod', 'nod'], ['glances', 'glances'], ['armw', 'armw'], ['lifth', 'lifth'], ['wflex', 'wflex'], ['frot', 'frot'], ['elbow', 'elbowLead'], ['liftoff', 'liftoff'], ['bench', 'benchDist'], ['benchh', 'benchH'],
       ['touch', 'touch'], ['fingering', 'fingering'], ['hands', 'hands'],
-      ['light', 'light'], ['exposure', 'exposure'], ['dof', 'dof'], ['scene', 'stageSet'], ['tod', 'parkTod'], ['tree', 'parkTree'], ['birds', 'parkAmb'], ['finish', 'finish'], ['lid', 'lid'],
+      ['light', 'light'], ['exposure', 'exposure'], ['dof', 'dof'], ['scene', 'stageSet'], ['tod', 'parkTod'], ['tree', 'parkTree'], ['sky', 'lakeTod'], ['birds', 'parkAmb'], ['finish', 'finish'], ['lid', 'lid'],
       ['fasian', 'faceAsian'], ['fafrican', 'faceAfrican'], ['skintex', 'skinTex'],
       ['move', 'camMove'], ['dpreset', 'dirPreset'], ['pace', 'dirPace'], ['favour', 'dirBias'], ['trans', 'dirTrans'], ['dstill', 'dirStill'], ['dmix', 'dirMix'], ['shotnames', 'shotLbl'], ['follow', 'camFollow'], ['dfar', 'dirFar'], ['dmed', 'dirMed'], ['dclose', 'dirClose'], ['strings', 'dirStrings'], ['dpedals', 'dirPedals'], ['dopen', 'dirOpen'],
       ['sf', 'sf'], ['avsync', 'avsync'],
@@ -1576,6 +1598,13 @@ export async function boot(plug = {}) {
       if (params.has('pturn') && Number.isFinite(+params.get('pturn'))) parkStage.opts.turn = +params.get('pturn')
       $('stageSet').value = 'park'
       await setStageSet('park')
+    }
+    if (params.get('scene') === 'lake' && !GPU) {
+      if ([...$('lakeTod').options].some(o => o.value === params.get('sky'))) $('lakeTod').value = params.get('sky')
+      lakeStage.setTime($('lakeTod').value)
+      for (const k of ['keyGain', 'fillGain', 'envGain', 'exposure']) if (params.has(k)) lakeStage.opts[k] = +params.get(k)
+      $('stageSet').value = 'lake'
+      await setStageSet('lake')
     }
     for (const [k, id] of STATE) {
       if (!params.has(k)) continue
@@ -1687,7 +1716,7 @@ export async function boot(plug = {}) {
       rig.update(t, dt)
       ch.group.updateMatrixWorld(true)
       wardrobeUpdate(dt)
-      parkStage.update(dt)
+      parkStage.update(dt); lakeStage.update(dt)
       // the subjects: her head, the hands (where they rest when not playing)
       head.copy(rig.pos('head'))
       const hd = rig.hands
@@ -1766,7 +1795,7 @@ export async function boot(plug = {}) {
       if (!offline) { liner.update(songNow()); plug.onFrame?.(songNow(), app) }
       // nothing to post-process on the light path: draw straight to the screen
       if (stacked) drawStacked(t, dt, cameraSubjects)
-      else if (parkStage.on) parkStage.draw()
+      else if (altStage()) altStage().draw()
       else if (!GPU && LOWQ && !bokeh.enabled && !bloom.enabled && !$('filmGrain').checked) renderer.render(scene, camera)
       else composer.render()
     }
@@ -1786,7 +1815,7 @@ export async function boot(plug = {}) {
     const lens = (w, hh) => { camera.aspect = w / hh; camera.zoom = Math.max(0.55, Math.min(1, camera.aspect / 1.6)); camera.updateProjectionMatrix(); bokeh.uniforms.aspect.value = camera.aspect }
     function drawStacked(t, dt, live) {
       const { x: w, y: h } = renderer.getSize(_sz), [ht, hb] = stackHs(h)
-      const draw = () => parkStage.on ? parkStage.draw() : !GPU && LOWQ && !bokeh.enabled && !bloom.enabled && !$('filmGrain').checked ? renderer.render(scene, camera) : composer.render()
+      const draw = () => altStage() ? altStage().draw() : !GPU && LOWQ && !bokeh.enabled && !bloom.enabled && !$('filmGrain').checked ? renderer.render(scene, camera) : composer.render()
       const aspect0 = camera.aspect, zoom0 = camera.zoom, bokehOn = bokeh.enabled
       renderer.setScissorTest(true)
       lens(w, ht)
@@ -1863,7 +1892,7 @@ export async function boot(plug = {}) {
       const ch = stacked ? stackH(h) : h, ca = stacked ? stackHs(h)[0] : h
       camera.zoom = shortFrame && !stacked ? 1 : Math.max(0.55, Math.min(1, (w / ca) / 1.6))
       camera.aspect = w / ca; camera.updateProjectionMatrix()
-      renderer.setSize(w, h, style); composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(w, ch); parkStage.setSize()
+      renderer.setSize(w, h, style); composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(w, ch); parkStage.setSize(); lakeStage.setSize()
       dust.material.uniforms.uScale.value = ch * renderer.getPixelRatio()
       grain.uniforms.uRes.value.set(w * renderer.getPixelRatio(), ch * renderer.getPixelRatio())
     }
@@ -2201,10 +2230,10 @@ export async function boot(plug = {}) {
     // the park isn't path traced (its sky, grass and tree are shaders the tracers don't run): stills and
     // path-traced videos say so and wait for a stage
     {
-      const parkSays = 'The park is drawn live only: choose the black stage or the candlelit chamber (Visuals → Stage) to path trace.'
-      for (const id of ['ptStart', 'ptAll']) { const f = $(id).onclick; $(id).onclick = (...a) => parkStage.on ? void ($('ptStatus').textContent = parkSays) : f(...a) }
+      const parkSays = 'The park and the lake are drawn live only: choose the black stage or the candlelit chamber (Visuals → Stage) to path trace.'
+      for (const id of ['ptStart', 'ptAll']) { const f = $(id).onclick; $(id).onclick = (...a) => altStage() ? void ($('ptStatus').textContent = parkSays) : f(...a) }
       const ex = $('exStart').onclick
-      $('exStart').onclick = (...a) => parkStage.on && $('exPt').value !== 'raster' ? void ($('exStatus').textContent = parkSays.replace('to path trace', 'for a path-traced video, or Renderer: raster')) : ex(...a)
+      $('exStart').onclick = (...a) => altStage() && $('exPt').value !== 'raster' ? void ($('exStatus').textContent = parkSays.replace('to path trace', 'for a path-traced video, or Renderer: raster')) : ex(...a)
     }
     window.__pianist.titleFonts = { TITLE_FONTS, loadTitleFont }
 
@@ -2518,7 +2547,11 @@ export async function boot(plug = {}) {
         // (SSGI, SSR and TRAA settle over frames; each in a frame of its own, since the
         // nodes that read the camera update once a frame and the shot just moved it)
         else if (GPU) { for (let i = 0; i < +(params.get('gpuframes') || 8); i++) { await new Promise(r => requestAnimationFrame(r)); composer.render() } }
-        else { parkStage.update(1 / 60); drawPost() }
+        else {
+          // the lake: the rings of the last 12 s already spreading
+          if (lakeStage.on && song) for (const n of song.notes) if (n.time <= T && n.time > T - 12) lakeStage.noteOn(n.midi, n.velocity ?? 0.7, T - n.time)
+          parkStage.update(1 / 60); lakeStage.update(1 / 60); drawPost()
+        }
         await plug.onFrame?.(T, app, { shot: true })
         return true
       }

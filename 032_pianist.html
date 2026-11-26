@@ -338,7 +338,8 @@
     <div class="field" title="Automatic: each intertitle goes to the side of the frame away from the pianist (her head and hands as the camera sees them), and to the top when the shot looks down on the keys"><label>Intertitle position</label><select id="itPos"></select></div>
     <label class="chk" title="The small capitals over each line (a place and year, a bar, a term)"><input type="checkbox" id="itHeads" checked>Headings over the lines</label>
     <div class="sect">Stage</div>
-    <div class="field" title="Black stage: the piano under its spotlights on a dark floor. Candlelit chamber (from #030): a stone wall with arches behind the piano, some 200 candles on two tiers and along the sides, sconces, a warm candle palette for the lights and the reflections. The park (#051): Sorairo's hillside, the tree, wind in the grass, the sky, birds and a painterly finish (park/); its own post-processing takes the place of the page's"><label>Stage</label><select id="stageSet"><option value="stage" selected>Black stage</option><option value="candle">Candlelit chamber</option><option value="park">The park</option></select></div>
+    <div class="field" title="Black stage: the piano under its spotlights on a dark floor. Candlelit chamber (from #030): a stone wall with arches behind the piano, some 200 candles on two tiers and along the sides, sconces, a warm candle palette for the lights and the reflections. The park (#051): Sorairo's hillside, the tree, wind in the grass, the sky, birds and a painterly finish (park/); its own post-processing takes the place of the page's"><label>Stage</label><select id="stageSet"><option value="stage" selected>Black stage</option><option value="candle">Candlelit chamber</option><option value="park">The park</option><option value="lake">The lake (Afterglow)</option></select></div>
+    <div class="field lakeOnly" style="display:none" title="The sun below the horizon, as in Afterglow: from just after sunset to the blue hour, or set along the song from start to end"><label>Sky</label><select id="lakeTod"></select></div>
     <div class="field parkOnly" style="display:none"><label>Time of day</label><select id="parkTod"></select></div>
     <div class="field parkOnly" style="display:none"><label>Tree</label><select id="parkTree"></select></div>
     <label class="chk parkOnly" style="display:none" title="Wind, songbirds and insects while she plays (Sorairo's ambience; not in exported videos)"><input type="checkbox" id="parkAmb" checked>Birds and wind</label>
@@ -509,6 +510,7 @@
     import { suggestClips, snapStart, snapEnd, clipOf, shortDescription, SHORT_MAX, SHORT_LENGTHS, SHORT_DEFAULT } from './pianist/shorts.js'
     import { createFocusPuller, SHOT_DOF } from './pianist/focus-puller.js'
     import { createParkStage, PARK_TIMES, PARK_TREES } from './park/stage.js'
+    import { createLakeStage, LAKE_TIMES } from './lake/stage.js'
     import { buildCandleChamber, candleEnvironment, CANDLE } from './pathtrace/candle-chamber.js'
     import { createLinerLibrary, clockOfMidi, buildTimeline, toVTT, toChapters, titleScreen, withTitle, titleSecs } from './liner/liner.js'
     import { createLinerOverlay, drawLinerCaption, drawIntertitle, loadIntertitleFonts, INTERTITLE_STYLES, INTERTITLE_THEMES, INTERTITLE_POSITIONS } from './liner/overlay.js'
@@ -1078,35 +1080,50 @@
       stageParts: () => [floor, spot, faceKey, rim, back, keyFill, dust, ...Object.values(stageProps).map(p => p.root)],
       foreground: () => [ch.group, hair?.object, hair?.cap, dress?.object, shoes?.object],
       hair: () => hair })
+    // ── The lake (#054, Afterglow's world) as a stage set (lake/stage.js): Visuals → Stage, ?stage=lake ──
+    const lakeStage = createLakeStage({ renderer, scene, camera, onStatus: m => setStatus(m),
+      stageParts: () => [floor, spot, faceKey, rim, back, keyFill, dust, ...Object.values(stageProps).map(p => p.root)],
+      foreground: () => [ch.group, hair?.object, hair?.cap, dress?.object, shoes?.object],
+      hair: () => hair, progress: () => scheduler?.duration ? songNow() / scheduler.duration : 0 })
+    for (const [i, n] of LAKE_TIMES) $('lakeTod').add(new Option(n, i, i === 0, i === 0))
+    $('lakeTod').onchange = () => lakeStage.setTime($('lakeTod').value)
+    // the rings: the keys and the pedals as the piano plays them
+    { const on = piano.noteOn.bind(piano), sus = piano.setSustain.bind(piano)
+      piano.noteOn = (m, v, ...a) => { lakeStage.noteOn(m, v); return on(m, v, ...a) }
+      piano.setSustain = (d, ...a) => { lakeStage.pedal(d); return sus(d, ...a) } }
+    window.__lake = lakeStage
+    const altStage = () => parkStage.on ? parkStage : lakeStage.on ? lakeStage : null
     for (const [i, n] of PARK_TIMES) $('parkTod').add(new Option('' + n, i, i === 1, i === 1))
     for (const [k, n] of PARK_TREES) $('parkTree').add(new Option(n, k, k === 'summer', k === 'summer'))
     $('parkTod').onchange = () => parkStage.setTime($('parkTod').value)
     $('parkTree').onchange = () => parkStage.setStyle($('parkTree').value)
     $('parkAmb').onchange = () => parkStage.setSound($('parkAmb').checked && scheduler?.playing)
     async function setStageSet(name) {
-      const park = name === 'park'
+      const park = name === 'park', lake = name === 'lake'
       for (const el of document.querySelectorAll('#visualsPop .parkOnly')) el.style.display = park ? '' : 'none'
-      // (the hall's own post-processing has no part in the park)
-      for (const id of ['dof', 'bloom', 'filmGrain', 'dust']) $(id).closest('label').style.opacity = park ? 0.4 : ''
+      for (const el of document.querySelectorAll('#visualsPop .lakeOnly')) el.style.display = lake ? '' : 'none'
+      // (the hall's own post-processing has no part in the park or the lake)
+      for (const id of ['dof', 'bloom', 'filmGrain', 'dust']) $(id).closest('label').style.opacity = park || lake ? 0.4 : ''
       $('stageSet').disabled = true
       try {
         if (!park && parkStage.on) await parkStage.set(false)
-        if (park) await parkStage.set(true); else setStage(name)
-      } catch (e) { console.error(e); setStatus('Could not grow the park: ' + e.message, true, 6000); setStage('stage') }
+        if (!lake && lakeStage.on) await lakeStage.set(false)
+        if (park) await parkStage.set(true); else if (lake) await lakeStage.set(true); else setStage(name)
+      } catch (e) { console.error(e); setStatus('Could not set the stage: ' + e.message, true, 6000); setStage('stage') }
       finally { $('stageSet').disabled = false }
-      $('stageSet').value = parkStage.on ? 'park' : STAGE_LOOK[name] ? name : 'stage'
+      $('stageSet').value = parkStage.on ? 'park' : lakeStage.on ? 'lake' : STAGE_LOOK[name] ? name : 'stage'
       parkStage.setSound(parkStage.on && $('parkAmb').checked && scheduler?.playing)
       applyFx()
     }
     $('stageSet').onchange = () => setStageSet($('stageSet').value)
-    const drawPost = () => parkStage.on ? parkStage.draw() : composer.render()
+    const drawPost = () => altStage() ? altStage().draw() : composer.render()
     const pct = x => Math.round(x * 100) + '%'
     function applyFx() {
       bokeh.enabled = $('dof').checked
       bloom.enabled = $('bloom').checked; bloom.strength = +$('bloomAmt').value
       const g = $('filmGrain').checked
       grain.uniforms.uAmount.value = g ? +$('grainAmt').value : 0; grain.uniforms.uVig.value = g ? +$('vig').value : 0
-      dust.visible = $('dust').checked && parkStage.shows(dust); dust.material.uniforms.uOpacity.value = +$('dustAmt').value
+      dust.visible = $('dust').checked && parkStage.shows(dust) && lakeStage.shows(dust); dust.material.uniforms.uOpacity.value = +$('dustAmt').value
       $('dofAmtV').textContent = (+$('dofAmt').value).toFixed(2).replace(/0$/, '') + '×'
       $('bloomAmtV').textContent = (+$('bloomAmt').value).toFixed(2)
       $('grainAmtV').textContent = pct(+$('grainAmt').value / 0.035)
@@ -1145,6 +1162,10 @@
       overKeys: { pos: [32.3, 475.6, -108.6], target: [0.7, 113.6, 24.6], fov: 38 },
       lowLeft: { pos: [-140.1, 102, 123.5], target: [-0.7, 86, -45], fov: 38 },
       lowRightBack: { pos: [140.1, 102, 123.5], target: [0.7, 86, -45], fov: 38 },
+      // Afterglow's shots, for the lake (its rig frame in metres, turned into the page's centimetres):
+      // S01, 31 m out on the treble side behind her, a 50 mm lens; and its lost profile, past her shoulder
+      lakeWide: { pos: [2267, 121, 2014], target: [0, 93, -100], fov: 27, orbitMax: 3 },
+      lakeProfile: { pos: [154, 138, 211], target: [-8, 118, 10], fov: 30, orbitMax: 4 },
       // through her eyes down to the keys: placed every frame (playerView)
       player: { pos: [0, 128, 24], target: [0, 73, -2], fov: 52, pov: true, orbitMax: 4 },
     }
@@ -1169,6 +1190,7 @@
       const KIND_TAG = { hands: 'hands', pianist: 'her', piano: 'piano' }, list = $('viewList')
       const entries = Object.keys(SPOTS).map(k => ({ k, label: SPOTS[k].label, size: SPOTS[k].size, kind: spotKind(k) }))
       entries.push({ k: 'player', label: "Player's view", size: 0, kind: 'hands' })
+      entries.push({ k: 'lakeWide', label: 'Across the water (lake)', size: 2, kind: 'piano' }, { k: 'lakeProfile', label: 'Lost profile (lake)', size: 1, kind: 'pianist' })
       const ORDER = ['piano', 'pianist', 'hands']
       for (const size of [2, 1, 0]) {
         list.insertAdjacentHTML('beforeend', `<div class="sect">${SIZES[size]}<small>${['the hands, the face, the mechanism', 'her and the keyboard', 'the stage and the piano'][size]}</small></div>`)
@@ -1891,6 +1913,12 @@
     // (the wardrobe, pose and director keys are read above) get their value
     // and their own handler, exactly as if picked in the menu
     if (params.get('stage') === 'candle') await setStageSet('candle')
+    if (params.get('stage') === 'lake') {
+      if ([...$('lakeTod').options].some(o => o.value === params.get('sky'))) $('lakeTod').value = params.get('sky')
+      lakeStage.setTime($('lakeTod').value)
+      for (const k of ['keyGain', 'fillGain', 'envGain', 'exposure']) if (params.has(k)) lakeStage.opts[k] = +params.get(k)
+      await setStageSet('lake')
+    }
     if (params.get('stage') === 'park') {
       for (const [k, id] of [['tod', 'parkTod'], ['tree', 'parkTree']]) if ([...$(id).options].some(o => o.value === params.get(k))) $(id).value = params.get(k)
       parkStage.opts.time = +$('parkTod').value; parkStage.opts.style = $('parkTree').value
@@ -2008,7 +2036,7 @@
       }
       ch.group.updateMatrixWorld(true)
       wardrobeUpdate(dt)
-      parkStage.update(dt)
+      parkStage.update(dt); lakeStage.update(dt)
       // the subjects: her head, the hands (where they rest when not playing)
       head.copy(rig.pos('head'))
       const hd = rig.hands
@@ -2070,7 +2098,7 @@
       if (!offline) liner.update(songNow())
       // nothing to post-process on the light path: draw straight to the screen
       if (stacked) drawStacked(t, dt, live)
-      else if (parkStage.on) parkStage.draw()
+      else if (altStage()) altStage().draw()
       else if (LOWQ && !bokeh.enabled && !bloom.enabled && !$('filmGrain').checked) renderer.render(scene, camera)
       else composer.render()
     }
@@ -2090,7 +2118,7 @@
     const lens = (w, hh) => { camera.aspect = w / hh; camera.zoom = Math.max(0.55, Math.min(1, camera.aspect / 1.6)); camera.updateProjectionMatrix(); bokeh.uniforms.aspect.value = camera.aspect }
     function drawStacked(t, dt, live) {
       const { x: w, y: h } = renderer.getSize(_sz), [ht, hb] = stackHs(h)
-      const draw = () => parkStage.on ? parkStage.draw() : LOWQ && !bokeh.enabled && !bloom.enabled && !$('filmGrain').checked ? renderer.render(scene, camera) : composer.render()
+      const draw = () => altStage() ? altStage().draw() : LOWQ && !bokeh.enabled && !bloom.enabled && !$('filmGrain').checked ? renderer.render(scene, camera) : composer.render()
       const aspect0 = camera.aspect, zoom0 = camera.zoom, bokehOn = bokeh.enabled
       renderer.setScissorTest(true)
       lens(w, ht)
@@ -2167,7 +2195,7 @@
       const ch = stacked ? stackH(h) : h, ca = stacked ? stackHs(h)[0] : h
       camera.zoom = shortFrame && !stacked ? 1 : Math.max(0.55, Math.min(1, (w / ca) / 1.6))
       camera.aspect = w / ca; camera.updateProjectionMatrix()
-      renderer.setSize(w, h, style); composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(w, ch); parkStage.setSize()
+      renderer.setSize(w, h, style); composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(w, ch); parkStage.setSize(); lakeStage.setSize()
       dust.material.uniforms.uScale.value = ch * renderer.getPixelRatio()
     }
     addEventListener('resize', () => { if (!exporting) liveResize() })
@@ -2647,7 +2675,11 @@
         bokeh.enabled = !params.has('nodof')
         renderer.toneMappingExposure = +$('exposure').value
         if (stacked) { drawStacked(T, 1 / 60, { hands: handsAt, head: rig.pos('head') }); window.__shotInfo2 = director2.update(T, 0, { hands: handsAt, head: rig.pos('head') }).shot }
-        else { parkStage.update(1 / 60); drawPost() }
+        else {
+          // the lake: the rings of the last 12 s already spreading
+          if (lakeStage.on && song) for (const n of sounding().notes) if (n.time <= T && n.time > T - 12) lakeStage.noteOn(n.midi, n.velocity ?? 0.7, T - n.time)
+          parkStage.update(1 / 60); lakeStage.update(1 / 60); drawPost()
+        }
         return true
       }
     }
