@@ -27,6 +27,7 @@ import { installAcoustics, offlineHall, acousticParams, rt60Of, ROOMS, SEATS } f
 import { buildGrandPiano, LOW, HIGH, DIM, FINISHES } from '../concertstage/concert-grand.js'
 import { loadUprightPiano } from '../pianist/upright-piano.js'
 import { buildCandleChamber, candleEnvironment, CANDLE } from '../pathtrace/candle-chamber.js'
+import { buildWaterHall, HALL } from '../waterhall/water-hall.js'
 import { createLessonView, LESSON_VIEWS } from '../pianist/lesson.js'
 import { loadCharacter } from '../pianist/character.js'
 import { loadAltCharacter, MODELS } from '../pianist/alt-model.js'
@@ -189,6 +190,8 @@ export async function boot(plug = {}) {
     const STAGE_LIGHTS = {
       stage: [[0xffd2a0, 1], [0xffd9b8, 1], [0xffe6c8, 1], [0xffe2c0, 1], [0xfff0e0, 1], [0xffc28a, 1]],
       candle: ((L, C) => [[L.key.color, L.key.intensity / C.key], [0xffc890, 0.85], [0xffb070, 0.8], [L.back.color, L.back.intensity / C.back], [L.fill.color, L.fill.intensity / C.fill], [L.lid.color, L.lid.intensity / C.lid]])(CANDLE.lights, CANDLE.concert),
+      // the hall of water: the slit overhead is the key (waterhall/), these dimmed and gilded for her face (as #032)
+      hall: [[0xffc060, 0.3], [0xffcf90, 0.75], [0xffb050, 0.6], [0xffa040, 0.35], [0xffd8a0, 0.4], [0xffb060, 0.9]],
     }
     const CINEMATIC_LIGHTS = {
       golden: [[0xffd2a0, 1.1], [0xffd9b8, 0.95], [0xffe6c8, 1.05], [0xffe2c0, 0.9], [0xfff0e0, 0.9], [0xffc28a, 1.1]],
@@ -225,6 +228,9 @@ export async function boot(plug = {}) {
           box(700, 220, [150, 420, -900], 2, 0xffe2c0)
           box(1400, 300, [0, 120, 1100], 0.1, 0x8fa6c8)
           ENVS[name] = { scene: s, map: pmrem.fromScene(s, 0.015, 1, 6000).texture, intensity: 0.55 }
+        } else if (name === 'hall') {
+          const e = stageProps.hall.environment()
+          ENVS[name] = { scene: e.scene, map: pmrem.fromScene(e.scene, e.sigma, 1, e.far).texture, intensity: HALL.environmentIntensity }
         } else {
           const e = candleEnvironment(THREE)
           // (the page's 0.55 against #030's 0.7 for the black stage, kept in proportion)
@@ -239,17 +245,20 @@ export async function boot(plug = {}) {
     // Stage, piano finish and lid (Visuals → Stage). The candle chamber's set
     // (pathtrace/candle-chamber.js, from #030: wall, arches, ~200 candles,
     // sconces with their own small lights) is built the first time it is chosen
-    const STAGE_LOOK = { stage: { background: 0x000000, floor: 0x1a1512 }, candle: { background: CANDLE.background, floor: 0x180d08, props: 'candle' } }
+    const STAGE_LOOK = { stage: { background: 0x000000, floor: 0x1a1512 }, candle: { background: CANDLE.background, floor: 0x180d08, props: 'candle' }, hall: { background: HALL.background, floor: 0x1a1512, props: 'hall', noFloor: true } }
     const stageProps = {}
+    // (the hall's water light is traced in WebGL shaders: not on ?gpu=webgpu)
+    const STAGE_BUILD = { candle: () => buildCandleChamber(THREE, LOWQ), hall: () => buildWaterHall(renderer, { lowQuality: LOWQ }) }
     function setStage(name) {
-      if (!STAGE_LOOK[name]) name = 'stage'
+      if (!STAGE_LOOK[name] || (name === 'hall' && GPU)) name = 'stage'
       $('stageSet').value = name
+      const want = STAGE_LOOK[name].props
+      if (want && !stageProps[want]) { stageProps[want] = STAGE_BUILD[want](); scene.add(stageProps[want].root) }
+      for (const [k, p] of Object.entries(stageProps)) p.root.visible = k === want
       stageEnvironment(name)
       scene.background.setHex(STAGE_LOOK[name].background)
       floorMat.color.setHex(STAGE_LOOK[name].floor)
-      const want = STAGE_LOOK[name].props
-      if (want && !stageProps[want]) { stageProps[want] = buildCandleChamber(THREE, LOWQ); scene.add(stageProps[want].root) }
-      for (const [k, p] of Object.entries(stageProps)) p.root.visible = k === want
+      floor.visible = !STAGE_LOOK[name].noFloor
       applyLight()
     }
     $('stageSet').onchange = () => setStage($('stageSet').value)
@@ -497,6 +506,7 @@ export async function boot(plug = {}) {
     const keepModest = () => { for (const o of skinMeshes()) if (o.userData.modest) o.visible = false }
     function wardrobeUpdate(dt) { ch.update?.(dt); keepModest(); hair.update(dt); dress?.update(dt); shoes?.update(dt); smoother.update(); look.update() }
     window.__pianist = { ch, rig, piano, hair, dress, shoes, look, scene, camera, smoother }
+    Object.assign(window.__pianist, { renderer, THREE, stageProps })
     for (const n of (params.get('hide') || '').split(',')) if (ch.meshes[n]) ch.meshes[n].visible = false
     if (params.get('hide')?.includes('hair')) hair.object.visible = false
     setStatus('')

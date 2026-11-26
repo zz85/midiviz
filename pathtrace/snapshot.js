@@ -140,6 +140,12 @@ function convertMaterial(m, seen, skipped, keep = null) {
     out.setValues({ color: m.color, map: m.map, normalMap: m.normalMap, roughness: m.isMeshPhongMaterial ? Math.max(0.15, 1 - Math.sqrt(m.shininess / 200)) : 0.85, metalness: 0,
       emissive: m.emissive, emissiveMap: m.emissiveMap, alphaMap: m.alphaMap, transparent: m.transparent, opacity: m.opacity, side: m.side, alphaTest: m.alphaTest, vertexColors: m.vertexColors })
   } else skipped.add(m.type + (m.name ? ` (${m.name})` : ''))
+  // light a raster page casts with a projected map, which no tracer reads, baked onto the surface it lands on
+  // (waterhall/water-hall.js: the walls lit by the water): the surface glows with it
+  const glow = out && m.userData.traceEmissive?.()
+  if (glow) { out.emissive.set(0xffffff); out.emissiveMap = glow; out.emissiveIntensity = glow.userData.emissiveIntensity ?? 1 }
+  // emission a raster page shows bright for the eye, which a tracer would also take as that much light
+  if (out && m.userData.traceEmissiveScale != null) out.emissiveIntensity *= m.userData.traceEmissiveScale
   const baked = out && m.userData.traceMap ? traceMapOf(m) : null
   if (baked) { out.map = baked; out.color.set(0xffffff) }
   if (prev && prev !== out) prev.dispose()
@@ -346,6 +352,7 @@ export function snapshotScene(live, opts = {}) {
 
   function lightOf(l) {
     if (!l.intensity) return
+    if (l.userData.traceSkip) return skipped.add(l.userData.traceSkip)
     const p = l.getWorldPosition(new THREE.Vector3())
     if (l.isSpotLight || l.isPointLight) {
       const target = l.isSpotLight ? l.target.getWorldPosition(new THREE.Vector3()) : null

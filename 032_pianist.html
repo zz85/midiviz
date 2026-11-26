@@ -338,7 +338,7 @@
     <div class="field" title="Automatic: each intertitle goes to the side of the frame away from the pianist (her head and hands as the camera sees them), and to the top when the shot looks down on the keys"><label>Intertitle position</label><select id="itPos"></select></div>
     <label class="chk" title="The small capitals over each line (a place and year, a bar, a term)"><input type="checkbox" id="itHeads" checked>Headings over the lines</label>
     <div class="sect">Stage</div>
-    <div class="field" title="Black stage: the piano under its spotlights on a dark floor. Candlelit chamber (from #030): a stone wall with arches behind the piano, some 200 candles on two tiers and along the sides, sconces, a warm candle palette for the lights and the reflections. The park (#051): Sorairo's hillside, the tree, wind in the grass, the sky, birds and a painterly finish (park/); its own post-processing takes the place of the page's"><label>Stage</label><select id="stageSet"><option value="stage" selected>Black stage</option><option value="candle">Candlelit chamber</option><option value="park">The park</option><option value="lake">The lake (Afterglow)</option></select></div>
+    <div class="field" title="Black stage: the piano under its spotlights on a dark floor. Candlelit chamber (from #030): a stone wall with arches behind the piano, some 200 candles on two tiers and along the sides, sconces, a warm candle palette for the lights and the reflections. The hall of water (waterhall/, after the Wallace sets of Blade Runner 2049): the piano on a wooden deck in a flooded concrete room, light off the water climbing the walls, a slit of light swinging over her. The park (#051): Sorairo's hillside, the tree, wind in the grass, the sky, birds and a painterly finish (park/); its own post-processing takes the place of the page's"><label>Stage</label><select id="stageSet"><option value="stage" selected>Black stage</option><option value="candle">Candlelit chamber</option><option value="park">The park</option><option value="lake">The lake (Afterglow)</option><option value="hall">The hall of water</option></select></div>
     <div class="field lakeOnly" style="display:none" title="The sun below the horizon, as in Afterglow: from just after sunset to the blue hour, or set along the song from start to end"><label>Sky</label><select id="lakeTod"></select></div>
     <div class="field parkOnly" style="display:none"><label>Time of day</label><select id="parkTod"></select></div>
     <div class="field parkOnly" style="display:none"><label>Tree</label><select id="parkTree"></select></div>
@@ -512,6 +512,7 @@
     import { createParkStage, PARK_TIMES, PARK_TREES } from './park/stage.js'
     import { createLakeStage, LAKE_TIMES } from './lake/stage.js'
     import { buildCandleChamber, candleEnvironment, CANDLE } from './pathtrace/candle-chamber.js'
+    import { buildWaterHall, HALL } from './waterhall/water-hall.js'
     import { createLinerLibrary, clockOfMidi, buildTimeline, toVTT, toChapters, titleScreen, withTitle, titleSecs } from './liner/liner.js'
     import { createLinerOverlay, drawLinerCaption, drawIntertitle, loadIntertitleFonts, INTERTITLE_STYLES, INTERTITLE_THEMES, INTERTITLE_POSITIONS } from './liner/overlay.js'
 
@@ -617,6 +618,8 @@
     const STAGE_LIGHTS = {
       stage: [[0xffd2a0, 1], [0xffd9b8, 1], [0xffe6c8, 1], [0xffe2c0, 1], [0xfff0e0, 1], [0xffc28a, 1]],
       candle: ((L, C) => [[L.key.color, L.key.intensity / C.key], [0xffc890, 0.85], [0xffb070, 0.8], [L.back.color, L.back.intensity / C.back], [L.fill.color, L.fill.intensity / C.fill], [L.lid.color, L.lid.intensity / C.lid]])(CANDLE.lights, CANDLE.concert),
+      // the hall of water: the slit overhead is the key (waterhall/), these dimmed and gilded for her face
+      hall: [[0xffc060, 0.3], [0xffcf90, 0.75], [0xffb050, 0.6], [0xffa040, 0.35], [0xffd8a0, 0.4], [0xffb060, 0.9]],
     }
     const applyLight = () => {
       const k = +$('light').value, look = STAGE_LIGHTS[$('stageSet').value] || STAGE_LIGHTS.stage
@@ -634,6 +637,9 @@
         if (name === 'candle') {
           const e = candleEnvironment(THREE)
           ENVS[name] = { map: pmrem.fromScene(e.scene, e.sigma, 1, e.far).texture, intensity: 0.55 * CANDLE.environmentIntensity / CANDLE.stageEnvironmentIntensity }
+        } else if (name === 'hall') {
+          const e = stageProps.hall.environment()
+          ENVS[name] = { map: pmrem.fromScene(e.scene, e.sigma, 1, e.far).texture, intensity: HALL.environmentIntensity }
         } else ENVS[name] = { map: stageEnvMap(), intensity: 0.55 }
       }
       scene.environment = ENVS[name].map; scene.environmentIntensity = ENVS[name].intensity
@@ -652,17 +658,19 @@
     stageEnvironment('stage')
     // the set (Visuals → Stage): the black stage, or the candle chamber (pathtrace/candle-chamber.js,
     // from #030: wall, arches, ~200 candles, sconces), built the first time it is chosen
-    const STAGE_LOOK = { stage: { background: 0x000000, floor: 0x1a1512 }, candle: { background: CANDLE.background, floor: 0x180d08, props: 'candle' } }
+    const STAGE_LOOK = { stage: { background: 0x000000, floor: 0x1a1512 }, candle: { background: CANDLE.background, floor: 0x180d08, props: 'candle' }, hall: { background: HALL.background, floor: 0x1a1512, props: 'hall', noFloor: true } }
     const stageProps = {}
+    const STAGE_BUILD = { candle: () => buildCandleChamber(THREE, LOWQ), hall: () => buildWaterHall(renderer, { lowQuality: LOWQ }) }
     function setStage(name) {
       if (!STAGE_LOOK[name]) name = 'stage'
       $('stageSet').value = name
+      const want = STAGE_LOOK[name].props
+      if (want && !stageProps[want]) { stageProps[want] = STAGE_BUILD[want](); scene.add(stageProps[want].root) }
+      for (const [k, p] of Object.entries(stageProps)) p.root.visible = k === want
       stageEnvironment(name)
       scene.background.setHex(STAGE_LOOK[name].background)
       floorMat.color.setHex(STAGE_LOOK[name].floor)
-      const want = STAGE_LOOK[name].props
-      if (want && !stageProps[want]) { stageProps[want] = buildCandleChamber(THREE, LOWQ); scene.add(stageProps[want].root) }
-      for (const [k, p] of Object.entries(stageProps)) p.root.visible = k === want
+      floor.visible = !STAGE_LOOK[name].noFloor
       applyLight()
     }
 
@@ -866,6 +874,7 @@
     const keepModest = () => { for (const o of skinMeshes()) if (o.userData.modest) o.visible = false }
     function wardrobeUpdate(dt) { ch.update?.(dt); keepModest(); hair.update(dt); dress?.update(dt); shoes?.update(dt); smoother.update(); look.update() }
     window.__pianist = { ch, rig, piano, hair, dress, shoes, look, scene, camera, smoother }
+    Object.assign(window.__pianist, { renderer, THREE, stageProps, floorVisible: () => floor.visible })
     for (const n of (params.get('hide') || '').split(',')) if (ch.meshes[n]) ch.meshes[n].visible = false
     if (params.get('hide')?.includes('hair')) hair.object.visible = false
     setStatus('')
@@ -1913,6 +1922,7 @@
     // (the wardrobe, pose and director keys are read above) get their value
     // and their own handler, exactly as if picked in the menu
     if (params.get('stage') === 'candle') await setStageSet('candle')
+    if (params.get('stage') === 'hall') await setStageSet('hall')
     if (params.get('stage') === 'lake') {
       if ([...$('lakeTod').options].some(o => o.value === params.get('sky'))) $('lakeTod').value = params.get('sky')
       lakeStage.setTime($('lakeTod').value)
@@ -2019,6 +2029,7 @@
       if (playing) driveKeys(t + KEY_LEAD)
       fxT += dt
       dust.material.uniforms.uTime.value = fxT
+      if (stageProps.hall?.root.visible) stageProps.hall.update(dt, fxT)
       piano.update(dt)
       rig.setPedals(pedals[0], pedals[1], pedals[2])
       rig.update(t, dt)
