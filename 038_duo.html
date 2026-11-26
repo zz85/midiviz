@@ -435,6 +435,8 @@
         for (const m of [].concat(o.material)) {
           if (!m.isMToonMaterial || m.outlineWidthMode !== 'worldCoordinates' || inked.has(m)) continue
           inked.add(m)
+          // (the pianist, from pianist/alt-model.js: inked there already, in cm as #032's cel ink)
+          if (m.userData.authoredOutlineWidth != null) { m.userData.ow ??= m.outlineWidthFactor; continue }
           m.userData.ow = (m.userData.ow ?? m.outlineWidthFactor) * k
           if (m.outlineWidthFactor) m.outlineWidthFactor = m.userData.ow
         }
