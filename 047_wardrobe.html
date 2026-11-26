@@ -148,6 +148,8 @@
       <div class="seg" id="lookSeg"><button data-v="realistic">Realistic</button><button data-v="stylized">Stylized</button><button data-v="cel">Cel shaded</button></div>
       <div class="lbl2" title="Loop subdivision of the body and the clothes (pianist/subdivide.js, as #032): 1x makes 4x the triangles, 2x 16x">Smooth</div>
       <div class="seg" id="smoothSeg"><button data-v="0">Off</button><button data-v="1">1&times;</button><button data-v="2">2&times;</button></div>
+      <div class="lbl2" title="How light falls on her skin: Plain is three.js's own; Soft wraps the light past the shadow's edge; Curvature softens it where the skin curves tightly, with warmer shadow edges; Subsurface adds light spreading under the skin, red furthest (Realistic look only)">Skin</div>
+      <div class="seg" id="skinSeg"><button data-v="plain">Plain</button><button data-v="wrap">Soft</button><button data-v="curve">Curvature</button><button data-v="sss">Subsurface</button></div>
       <div class="lbl2">Pose</div>
       <div class="seg" id="poseSeg"><button data-v="sides">Arms down</button><button data-v="stand">Hands clasped</button><button data-v="seated">At the piano</button></div>
       <div class="lbl2">Light</div>
@@ -200,6 +202,9 @@
     import { createShoes } from './pianist/shoes.js'
     import { createLook } from './pianist/look.js'
     import { createSmoother } from './pianist/subdivide.js'
+    import { createSkinSSS } from './pianist/skin-sss.js'
+    import { setSkinShading, SKIN_SHADES } from './pianist/skin.js'
+    import { useSkinDetail } from './pianist/skin-detail.js'
     import { createCommunity, communityList } from './pianist/community.js'
     import { createPathTraceStills } from './pathtrace/still.js'
     import { setLaceLining } from './pianist/fabric.js'
@@ -320,6 +325,8 @@
     ch.group.updateMatrixWorld(true)
     const look = createLook(ch)
     const smoother = createSmoother(ch)
+    // the skin's shading (pianist/skin.js), and its blur on screen for Subsurface (pianist/skin-sss.js)
+    const skinSSS = createSkinSSS(renderer, scene, camera, ch.materials.skin)
 
     // what the rails offer (community entries only when the build has them)
     const have = new Map(communityList(ch).map(e => [e.key, e]))
@@ -344,9 +351,9 @@
     const W = {
       outfit: 'fishtail-black', dress: 'c894', bottom: 'ours', dressColor: '#f2efe9', skirtColor: null, trim: null, fabric: 'made', slit: 'calf',
       hair: 'c3694', hairColor: '#d9c7a3', shoes: 'flats', shoeColor: '#151214', skinTex: 'caucasian', skin: '#fff0e6', lining: null, faceAsian: 0, faceAfrican: 0, backdrop: '#8d8a86',
-      look: 'realistic', smooth: '0', pose: 'sides', light: 'studio',
+      look: 'realistic', skinShade: 'sss', smooth: '0', pose: 'sides', light: 'studio',
     }
-    const URLKEYS = { outfit: 'outfit', dress: 'dress', bottom: 'bottom', dressColor: 'dcol', skirtColor: 'skcol', trim: 'trim', fabric: 'fabric', lining: 'lin', slit: 'slit', hair: 'hair', hairColor: 'hcol', shoes: 'shoes', shoeColor: 'scol', skinTex: 'skintex', skin: 'skin', faceAsian: 'fasian', faceAfrican: 'fafrican', backdrop: 'bg', look: 'look', smooth: 'smooth', pose: 'pose', light: 'light' }
+    const URLKEYS = { outfit: 'outfit', dress: 'dress', bottom: 'bottom', dressColor: 'dcol', skirtColor: 'skcol', trim: 'trim', fabric: 'fabric', lining: 'lin', slit: 'slit', hair: 'hair', hairColor: 'hcol', shoes: 'shoes', shoeColor: 'scol', skinTex: 'skintex', skin: 'skin', faceAsian: 'fasian', faceAfrican: 'fafrican', backdrop: 'bg', look: 'look', skinShade: 'skinshade', smooth: 'smooth', pose: 'pose', light: 'light' }
     // the body sliders (character.js setBody, MakeHuman's targets): its key -> ours
     // [its key, ours, the link's, the label, what - and + do]; a slider the
     // build doesn't have is left out (character.js bodyMorphs)
@@ -404,6 +411,7 @@
     if (!['realistic', 'stylized', 'cel'].includes(W.look)) W.look = 'realistic'
     if (!['stand', 'sides', 'seated'].includes(W.pose)) W.pose = 'sides'
     if (!['0', '1', '2'].includes(String(W.smooth))) W.smooth = '0'
+    if (!SKIN_SHADES.includes(W.skinShade)) W.skinShade = 'sss'
     W.smooth = String(W.smooth)
     let urlTimer = 0
     function saveUrl() {
@@ -731,7 +739,7 @@
           inp.value = v; inp.nextElementSibling.textContent = (v > 0 ? '+' : '') + Math.round(v * 100) + ' %'
         }
       }
-      for (const [id, k] of [['lookSeg', 'look'], ['smoothSeg', 'smooth'], ['poseSeg', 'pose'], ['lightSeg', 'light']]) for (const b of $(id).children) b.classList.toggle('on', b.dataset.v === W[k])
+      for (const [id, k] of [['lookSeg', 'look'], ['skinSeg', 'skinShade'], ['smoothSeg', 'smooth'], ['poseSeg', 'pose'], ['lightSeg', 'light']]) for (const b of $(id).children) b.classList.toggle('on', b.dataset.v === W[k])
       const o = OUTFITS[W.outfit]
       $('caption').innerHTML = `<b>${o ? o.name : 'Custom look'}</b>${[nameOf(HAIRS, W.hair), nameOf(DRESSES, W.dress), isTop(W.dress) ? nameOf(BOTTOMS, W.bottom)?.toLowerCase() : null, FABRICS.find(f => f[0] === W.fabric)?.[1].toLowerCase(), nameOf(SHOES, W.shoes)].filter(Boolean).join(' · ')}`
     }
@@ -844,10 +852,13 @@
 
     // ── Look, pose, light ────────────────────────────────────────────────
     function setLook(v) { W.look = v; applyLook(); refreshRails(); saveUrl() }
+    function applySkin() { setSkinShading(ch.materials.skin, W.skinShade); skinSSS.enabled = W.skinShade === 'sss' }
+    function setSkinShade(v) { W.skinShade = v; applySkin(); refreshRails(); saveUrl() }
     function setSmooth(v) { W.smooth = String(v); applyLook(); refreshRails(); saveUrl() }
     function setPose(v) { W.pose = v; applyPose(); refreshRails(); saveUrl() }
     function setLight(v) { W.light = v; applyLight(v); refreshRails(); saveUrl() }
     for (const b of $('lookSeg').children) b.onclick = () => setLook(b.dataset.v)
+    for (const b of $('skinSeg').children) b.onclick = () => setSkinShade(b.dataset.v)
     for (const b of $('smoothSeg').children) b.onclick = () => setSmooth(b.dataset.v)
     for (const b of $('poseSeg').children) b.onclick = () => setPose(b.dataset.v)
     for (const b of $('lightSeg').children) b.onclick = () => setLight(b.dataset.v)
@@ -925,6 +936,7 @@
       if (bodyChanged) { ch.setBody(bodyOf()); rig.measureEyes() }
       if (faceChanged || bodyChanged) smoother.refresh()
       if (before.smooth !== W.smooth) applyLook()
+      if (before.skinShade !== W.skinShade) applySkin()
       const jobs = []
       if (figureChanged || before.dress !== W.dress || (isTop(W.dress) && before.bottom !== W.bottom) || (isOurs(W.dress) && (before.slit !== W.slit || before.trim !== W.trim))) jobs.push(wearDress(W.dress))
       else { paint('dress'); paint('skirt'); paint('trim'); if (before.fabric !== W.fabric) dress?.setFabric?.(W.fabric) }
@@ -969,7 +981,7 @@
       smoother.update()
       look.update()
     }
-    function render() { renderer.render(scene, camera) }
+    function render() { skinSSS.render() }
     function frame() { step(Math.min(clock.getDelta(), 1 / 20)); render() }
     function resize(w = stageEl.clientWidth, h = stageEl.clientHeight, style = true) {
       camera.aspect = w / h
@@ -1018,6 +1030,10 @@
     // (the face before any hair is fitted)
     ch.setFace(Object.fromEntries(ch.faceMorphs.map(f => [f, W[faceKey(f)]])))
     ch.setBody(bodyOf())
+    applySkin()
+    // the skin's own pores, furrows and oilier T-zone, baked for its UVs (pianist/skin-detail.js)
+    const skinDetail = useSkinDetail(renderer, ch)
+    if (skinDetail) console.log(`skin detail baked in ${skinDetail.ms} ms`)
     rig.measureEyes()
     await ch.setSkin(W.skinTex)
     paint('lining')
@@ -1035,7 +1051,7 @@
     if (!params.has('shot')) renderer.setAnimationLoop(frame)
     window.__wardrobe = {
       W, THREE, scene, camera, renderer, ch, rig, look, pt, get dress() { return dress }, get hair() { return hair }, get shoes() { return shoes },
-      choose, cycle, setColor, setFace, setBody, setLook, setSmooth, smoother, setPose, setLight, frameTo, shuffleAll, shuffleColours, saveLook, wearLook,
+      choose, cycle, setColor, setFace, setBody, setLook, setSmooth, setSkinShade, skinSSS, smoother, setPose, setLight, frameTo, shuffleAll, shuffleColours, saveLook, wearLook,
       idle: async () => { while (busy.size) await new Promise(r => setTimeout(r, 30)) },
       /** headless: n frames, then the picture */
       shot(n = 30) { for (let i = 0; i < n; i++) step(1 / 30); render(); return renderer.domElement.toDataURL('image/png') },

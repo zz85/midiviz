@@ -124,7 +124,7 @@ export function loopOnce(geo) {
     g.setAttribute('normal', new THREE.BufferAttribute(n, 3))
   }
   // per split vertex: copy on even vertices, midpoint on odd ones
-  for (const name of ['uv', 'uv1', 'color']) {
+  for (const name of ['uv', 'uv1', 'color', 'curvature']) {
     const A = geo.attributes[name]; if (!A) continue
     const s = A.itemSize, src = A.array, d = new Float32Array(NN * s)
     d.set(src.subarray(0, NV * s))

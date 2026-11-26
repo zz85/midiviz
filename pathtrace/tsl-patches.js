@@ -6,6 +6,7 @@
 //
 //  • outline  (pianist/look.js, the cel look's ink): the inverted hull pushed
 //    out along the skinned normal by `width`, after skinning as the GLSL is;
+//  • skinPreint (pianist/skin.js): skin's pre-integrated subsurface diffuse;
 //  • skinWrap (pianist/character.js): skin's wrapped, red-shifted diffuse, in
 //    place of Lambert's in the lighting model (the GLSL's SKIN_WRAP);
 //  • hairCloth (pianist/hair-cloth.js): the simulated hair's displacement, read
@@ -27,12 +28,32 @@ import {
   interleavedGradientNoise, screenCoordinate, frameId, cameraProjectionMatrix, modelViewMatrix, length,
 } from 'three/tsl'
 import { tslTags } from '../pianist/tsl-tags.js'
+import { CURV_MAX } from '../pianist/skin.js'
 
 const PATCHES = {
   outline(nm, { width }) {
     nm.positionNode = positionLocal.add(normalize(normalLocal).mul(width))
   },
 
+  skinPreint(nm, { lut }) {
+    // the GLSL (pianist/skin.js): the direct diffuse from the pre-integrated
+    // table, by N.L and the vertex's curvature, in place of Lambert's
+    const base = nm.setupLightingModel
+    const curv = attribute('curvature', 'float')
+    nm.setupLightingModel = function (builder) {
+      const lm = base.call(this, builder)
+      const direct = lm.direct.bind(lm)
+      lm.direct = (inputs, b) => {
+        direct(inputs, b)
+        const { lightDirection, lightColor, reflectedLight } = inputs
+        const nl = normalViewGeometry.dot(lightDirection)
+        const s = texture(lut, vec2(nl.mul(0.5).add(0.5), clamp(curv.div(CURV_MAX), 0, 1))).rgb
+        const dotNL = normalView.dot(lightDirection).clamp()
+        reflectedLight.directDiffuse.addAssign(s.mul(s).sub(dotNL).mul(lightColor).mul(BRDF_Lambert({ diffuseColor: diffuseColor.rgb })))
+      }
+      return lm
+    }
+  },
   skinWrap(nm) {
     // the GLSL: wd = clamp((nl + w) / (1 + w)), w = (0.5, 0.24, 0.16), softened, in place of nl
     const base = nm.setupLightingModel

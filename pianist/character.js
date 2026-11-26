@@ -17,35 +17,20 @@
 //  • eyebrows and eyelashes — alpha-tested cards, tinted to the hair.
 
 import * as THREE from 'three'
-import { tagTSL } from './tsl-tags.js'
+import { addCurvature, patchSkinShader, setSkinShading, skinShadeFromUrl } from './skin.js'
 
-const SKIN_WRAP = /* glsl */`
-#ifdef SKIN_WRAP
-  {
-    float nl = dot( geometryNormal, directLight.direction );
-    vec3 w = vec3( 0.5, 0.24, 0.16 );
-    vec3 wd = clamp( ( vec3( nl ) + w ) / ( 1.0 + w ), 0.0, 1.0 );
-    wd *= wd * ( 3.0 - 2.0 * wd ) * 0.35 + 0.65;   // soften the falloff a little
-    reflectedLight.directDiffuse += wd * directLight.color * BRDF_Lambert( material.diffuseColor );
-  }
-#else
-  reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseColor );
-#endif
-`
-
-/** Patch a physical material so its direct diffuse wraps like skin. */
+/** Patch a physical material so its direct diffuse is skin's (pianist/skin.js):
+ * ?skinshade= plain, wrap, curve (the default) or sss, which shades as curve
+ * and is blurred on screen where the page runs pianist/skin-sss.js. */
 export function useSkinWrap(material) {
   const prev = material.onBeforeCompile
   material.onBeforeCompile = (shader, r) => {
     prev?.(shader, r)
-    shader.fragmentShader = shader.fragmentShader.replace('#include <lights_physical_pars_fragment>',
-      THREE.ShaderChunk.lights_physical_pars_fragment.replace(
-        'reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseColor );', SKIN_WRAP))
+    patchSkinShader(shader)
   }
-  material.defines = { ...(material.defines || {}), SKIN_WRAP: '' }
-  tagTSL(material, 'skinWrap')
+  setSkinShading(material, skinShadeFromUrl())
   const key = material.customProgramCacheKey?.bind(material)
-  material.customProgramCacheKey = () => (key ? key() : '') + '|skinwrap'
+  material.customProgramCacheKey = () => (key ? key() : '') + '|skin'
   return material
 }
 
@@ -148,10 +133,14 @@ const flip = (a, n = 3) => { for (let i = 0; i < a.length; i += n) { a[i] = -a[i
  * Load the character. base: URL of the assets folder.
  * Returns { group, skeleton, bones, byName, meshes, materials, meta, parts }.
  */
+// character.json gives offsets into the .bin files, so all of them must come
+// from the same build: ask the server each time (a 304 when unchanged)
+const NOCACHE = { cache: 'no-cache' }
+
 export async function loadCharacter(base = new URL('./assets/', import.meta.url).href, { hairColor = 0x4a3324, thumb = THUMB, fingers } = {}) {
   const [meta, bin] = await Promise.all([
-    fetch(base + 'character.json').then(r => r.json()),
-    fetch(base + 'character.bin').then(r => r.arrayBuffer()),
+    fetch(base + 'character.json', NOCACHE).then(r => r.json()),
+    fetch(base + 'character.bin', NOCACHE).then(r => r.arrayBuffer()),
   ])
   // her thumbs a little longer than MakeHuman's (THUMB): before the
   // skeleton is made, so every part skins to them and the rig measures them
@@ -229,6 +218,8 @@ export async function loadCharacter(base = new URL('./assets/', import.meta.url)
     g.computeVertexNormals()
     weldNormals(g)
     parts[name] = { geometry: g, source: arr(Uint16Array, p.source, name).slice() }
+    // the skin's curvature, for its shading (pianist/skin.js), from the rest shape
+    if (name === 'body') addCurvature(g)
     // face morphs (build-character.mjs: sparse deltas, cm, turned round like
     // the positions): kept with the
     // geometry, applied at the current weights now and on every setFace()
@@ -285,7 +276,7 @@ export async function loadCharacter(base = new URL('./assets/', import.meta.url)
   /** fetch a part's own .bin (community assets) before addPart / partArray */
   const ensurePart = async name => {
     const f = meta.parts[name]?.bin
-    if (f && !bins[name]) bins[name] = await fetch(base + f).then(r => { if (!r.ok) throw new Error(`${f}: ${r.status}`); return r.arrayBuffer() })
+    if (f && !bins[name]) bins[name] = await fetch(base + f, NOCACHE).then(r => { if (!r.ok) throw new Error(`${f}: ${r.status}`); return r.arrayBuffer() })
   }
   /**
    * Face shape: { asian, african } weights, 0–1 each (the rest caucasian; the
