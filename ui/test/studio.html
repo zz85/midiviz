@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>ui/studio.js test page</title>
+  <!-- A small page with the pianist pages' kind of markup, its store (ui/settings.js) and the
+       studio panel (ui/studio.js) over it; ui/test/studio.mjs drives it headless and checks
+       that the panel and the controls agree both ways. Open it served to look at the panel. -->
+  <link rel="stylesheet" href="../studio.css">
+  <style> body { background: #111; color: #eee; font: 13px sans-serif; margin: 20px } .field { margin: 4px 0 } .chk { display: block } </style>
+</head>
+<body>
+  <div id="menu">
+    <div class="field"><label>Main light</label><input type="range" id="light" min="0" max="2" step="0.01" value="1"></div>
+    <label class="chk"><input type="checkbox" id="dof"> Depth of field</label>
+    <div class="field"><label>Blur <span class="val" id="dofAmtV"></span></label><input type="range" id="dofAmt" min="0.2" max="4" step="0.05" value="1"></div>
+    <div class="field"><label>Hair colour</label><input type="color" id="hairColor" value="#5a3e2a"></div>
+    <div class="field"><label>Stage</label><select id="stageSet"><option value="stage" selected>Black stage</option><option value="park">The park</option><option value="lake">The lake</option></select></div>
+    <div class="field"><label>Time of day</label><select id="parkTod"><option value="0">Dawn</option><option value="1" selected>Noon</option><option value="2">Dusk</option></select></div>
+    <div class="field"><label>Subtitle</label><input type="text" id="exSub" value="Midiviz Pianist"></div>
+  </div>
+  <script type="module">
+    import { createSettings } from '../settings.js'
+    import { createStudio } from '../studio.js'
+    const S = createSettings([
+      { id: 'visuals', label: 'Visuals', items: [
+        { key: 'light', url: 'light' }, { key: 'dof', url: 'dof' }, { key: 'dofAmt', url: 'dofamt', format: v => v.toFixed(2) + 'x' }, { key: 'hairColor', url: 'hcol' },
+      ] },
+      { id: 'stage', label: 'Stage', items: [
+        { key: 'stageSet', url: 'scene' }, { key: 'parkTod', url: 'tod', when: s => s.stageSet === 'park' },
+        { key: 'loop', el: null, type: 'bool', default: false, url: 'loop' },
+        { key: 'levels', el: null, type: 'text', default: '', url: 'vol', value: () => '' },
+      ] },
+      { id: 'render', label: 'Render', items: [{ key: 'exSub', url: 'exsub' }] },
+      { id: 'hidden', label: 'Not in the studio', studio: false, items: [{ key: 'secret', el: null, type: 'text', default: 'x' }] },
+    ]).bind(document)
+    S.read(location.search)
+    window.__studio = await createStudio(S, { title: 'Studio', expanded: ['visuals', 'stage'] })
+    window.__S = S
+  </script>
+</body>
+</html>

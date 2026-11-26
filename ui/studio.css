@@ -1,0 +1,33 @@
+/* The studio panel (ui/studio.js) in the pages' own dress: Tweakpane's variables set to the
+   dark menus of #032 / #045 (pathtrace/app.css .pop), the page font, a fixed place at the
+   top right under the pill bar, scrolling where it is taller than the window. */
+.studio {
+  --tp-base-background-color: rgba(28, 28, 32, 0.92);
+  --tp-base-shadow-color: rgba(0, 0, 0, 0.3);
+  --tp-button-background-color: rgba(255, 255, 255, 0.12);
+  --tp-button-background-color-active: rgba(255, 255, 255, 0.3);
+  --tp-button-background-color-focus: rgba(255, 255, 255, 0.22);
+  --tp-button-background-color-hover: rgba(255, 255, 255, 0.18);
+  --tp-button-foreground-color: #eee;
+  --tp-container-background-color: rgba(255, 255, 255, 0.06);
+  --tp-container-background-color-active: rgba(255, 255, 255, 0.16);
+  --tp-container-background-color-focus: rgba(255, 255, 255, 0.12);
+  --tp-container-background-color-hover: rgba(255, 255, 255, 0.1);
+  --tp-container-foreground-color: #eee;
+  --tp-groove-foreground-color: rgba(255, 255, 255, 0.1);
+  --tp-input-background-color: rgba(255, 255, 255, 0.08);
+  --tp-input-background-color-active: rgba(255, 255, 255, 0.2);
+  --tp-input-background-color-focus: rgba(255, 255, 255, 0.16);
+  --tp-input-background-color-hover: rgba(255, 255, 255, 0.12);
+  --tp-input-foreground-color: #eee;
+  --tp-label-foreground-color: rgba(255, 255, 255, 0.72);
+  --tp-monitor-background-color: rgba(0, 0, 0, 0.3);
+  --tp-monitor-foreground-color: rgba(255, 255, 255, 0.6);
+  --tp-base-border-radius: 8px;
+  position: fixed; top: 58px; right: 10px; width: 300px; max-height: calc(100vh - 70px); overflow-y: auto; z-index: 30;
+  font-size: 12px; backdrop-filter: blur(10px);
+}
+.studio, .studio .tp-rotv { font-family: -apple-system, "Segoe UI", Inter, "Helvetica Neue", Arial, sans-serif; }
+.studio .tp-lblv_l { white-space: normal; line-height: 1.25; }
+.studio::-webkit-scrollbar { width: 6px; }
+.studio::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 3px; }

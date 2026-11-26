@@ -1,4 +1,4 @@
-// #045 (and #049 / #050 through its plugin) address bar, headless: load each link, wait for
+// #045 (and #049 / #050 through its plugin, or #032 as the page) address bar, headless: load each link, wait for
 // the page, and record the address bar after it refreshes (every 500 ms while paused), each
 // control's value and what is hidden. Run before and after a change to the settings wiring
 // and diff the two files (ui/test/url-diff.mjs): a link keeps meaning the same thing.
@@ -27,14 +27,19 @@ const LINKS = [
   'scene=lake&sky=2',
   'piano=upright&finish=walnut&lid=closed&skintex=asian&fasian=0.5&vhands=real',
   'sheet=0&sstyle=ink&spos=tl&srows=3&ssize=0.8&shl=notes&svideo=0',
+  'piano=upright&panel=closed&replan=0&played=hands&vel=hands&exltilt=0.5&exformat=short&exlayout=stack&exhands=lesson',
+  'scene=candle&stage=candle',
 ]
+// (#032 names the stage set ?stage=, the pathtrace pages ?scene=)
+const P032 = /^032/.test(page)
 const b = await chromium.launch({ executablePath: CHROME, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'] })
 const res = {}
-for (const q of LINKS) {
+for (let q of LINKS) {
+  if (P032) q = q.replace(/\bscene=/g, 'stage=')
   const p = await b.newPage({ viewport: { width: 800, height: 450 } }); p.setDefaultTimeout(0)
   const errs = []; p.on('pageerror', e => errs.push(e.message))
   await p.goto(`${BASE}${page}?${Q0}${q ? '&' + q : ''}`)
-  await p.waitForFunction(() => window.__pianist?.pt, null, { timeout: 300000 })
+  await p.waitForFunction(() => window.__pianist && (window.__pianist.pt || window.__stageSets), null, { timeout: 300000 })
   await p.waitForTimeout(1800)   // (the address bar refreshes every 500 ms)
   const got = await p.evaluate(() => ({
     search: location.search,
