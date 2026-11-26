@@ -5,6 +5,9 @@
 // sky. Same interface as the park (park/stage.js):
 //
 //   const lakeStage = createLakeStage({ renderer, scene, camera, stageParts, foreground, hair })
+//   (the duo, #038: center, the page point that stands at the rig's origin; pianoFrame, the group
+//   the piano stands in, whose frame its legs are in; emitters, more feet in the water, page cm;
+//   yaw, the rig's turn: 120 deg puts the glow behind the pianist pages' views across the water, 180 the duo's from the hall)
 //   await lakeStage.set(true)          // builds the world the first time (a few seconds)
 //   each frame: lakeStage.update(dt)   // the lake's clock, her lights
 //   to draw:    lakeStage.draw()       // in place of the page's own composer
@@ -29,6 +32,7 @@ const SUN = [-1, -1.6, -2.5, -4.5]
 const lum = v => 0.2126 * v.x + 0.7152 * v.y + 0.0722 * v.z
 
 export function createLakeStage({ renderer, scene, camera, stageParts = () => [], foreground = () => [], hair = () => null,
+  center = [0, 0], pianoFrame = null, emitters: extraFeet = [], yaw = 120,
   piano = {}, progress = () => 0, onStatus = () => {} }) {
   let world = null, on = false, building = null
   const opts = { time: 0, keyGain: 4, fillGain: 1, envGain: 1.6, envEvery: 0.25, exposure: 1 }
@@ -38,11 +42,20 @@ export function createLakeStage({ renderer, scene, camera, stageParts = () => []
 
   const lake = new THREE.Scene(); lake.name = 'lake'
   // the rig (Afterglow's: yaw 120 deg, the pianist facing the glow) and the bridge into it
-  const rig = new THREE.Group(); rig.name = 'lake rig'; rig.rotation.y = 120 * Math.PI / 180
+  const rig = new THREE.Group(); rig.name = 'lake rig'; rig.rotation.y = yaw * Math.PI / 180
   const bridge = new THREE.Group(); bridge.name = 'lake bridge'
-  bridge.scale.setScalar(0.01); bridge.rotation.y = Math.PI; bridge.position.y = -0.03   // the casters just under the surface
+  bridge.scale.setScalar(0.01); bridge.rotation.y = Math.PI; bridge.position.set(center[0] / 100, -0.03, center[1] / 100)   // the casters just under the surface; `center` at the rig's origin
   rig.add(bridge); lake.add(rig)
-  const toRig = ([x, z]) => [-x / 100, -z / 100]   // page cm -> rig m (the bridge's turn and scale)
+  const toRig = ([x, z]) => [-(x - center[0]) / 100, -(z - center[1]) / 100]   // page cm -> rig m (the bridge's turn and scale)
+  // a point of the piano's (its own cm) in the page's scene
+  const _pm = new THREE.Matrix4(), _pv = new THREE.Vector3()
+  const onPiano = ([x, z]) => {
+    if (!pianoFrame) return [x, z]
+    scene.updateMatrixWorld(true)
+    _pm.copy(scene.matrixWorld).invert().multiply(pianoFrame.matrixWorld)
+    _pv.set(x, 0, z).applyMatrix4(_pm)
+    return [_pv.x, _pv.z]
+  }
   const cam = new THREE.PerspectiveCamera(); cam.name = 'lake camera'
 
   // the key: from the horizon glow, its colour pulled toward white (Afterglow's rimNeutral), soft shadows
@@ -83,7 +96,7 @@ export function createLakeStage({ renderer, scene, camera, stageParts = () => []
   // from its solver's leg and foot vibration; here from the notes as they sound)
   let clock = 0, ripples = [], ripplesDirty = false
   function ring(at, amp, src, ago = 0) { ripples.push({ t: clock - ago, pos: [at[0], 0, at[1]], amp, src }); ripplesDirty = true }
-  const legsR = () => LEGS.map(toRig), lyreR = () => toRig(LYRE)
+  const legsR = () => LEGS.map(p => toRig(onPiano(p))), lyreR = () => toRig(onPiano(LYRE))
   // (velocity 0-1, as the piano takes it, or MIDI 0-127)
   // (`ago`: seconds since it sounded, to seed a still with the rings already spreading)
   function noteOn(midi, v = 0.7, ago = 0) {
@@ -109,7 +122,7 @@ export function createLakeStage({ renderer, scene, camera, stageParts = () => []
     lake.add(world.group)
     // the piano's legs and the bench's as continuous micro rings, the bed shallow under the piano
     const bench = piano.bench ?? [[-26, 33], [26, 33], [-26, 61], [26, 61]]
-    world.setEmitters([...LEGS, ...bench].map(([x, z], i) => { const [rx, rz] = toRig([x, z]); return { x: rx, z: rz, amp: world.params.water.microAmp * (0.7 + 0.15 * (i % 4)), wavelength: world.params.water.microLambda, radius: world.params.water.microRadius, phase: i * 1.7 } }))
+    world.setEmitters([...[...LEGS, ...bench].map(onPiano), ...extraFeet].map(([x, z], i) => { const [rx, rz] = toRig([x, z]); return { x: rx, z: rz, amp: world.params.water.microAmp * (0.7 + 0.15 * (i % 4)), wavelength: world.params.water.microLambda, radius: world.params.water.microRadius, phase: i * 1.7 } }))
     world.setPerfRipples([])
     onStatus('')
   }
@@ -161,6 +174,10 @@ export function createLakeStage({ renderer, scene, camera, stageParts = () => []
     Object.assign(saved, { tm: renderer.toneMapping, bg: scene.background, envS: scene.environment, fog: scene.fog })
     scene.background = null; scene.fog = null
     bridge.add(scene)
+    // a VRM's ink (MToon) in world units would draw 100 times too wide at the bridge's scale
+    const inks = []
+    scene.traverseVisible(o => { for (const m of [o.material].flat()) if (m?.isMToonMaterial && m.outlineWidthMode === 'worldCoordinates' && !inks.includes(m)) inks.push(m) })
+    for (const m of inks) m.outlineWidthFactor *= bridge.scale.x
     try {
       world.prepareFrame(clock, { camera: cam, env })
       lake.environment = world.envMap; lake.environmentIntensity = opts.envGain
@@ -172,6 +189,7 @@ export function createLakeStage({ renderer, scene, camera, stageParts = () => []
       renderer.render(lake, cam)
       renderer.toneMappingExposure = ex
     } finally {
+      for (const m of inks) m.outlineWidthFactor /= bridge.scale.x
       bridge.remove(scene)
       if (parent) parent.add(scene)
       renderer.toneMapping = saved.tm

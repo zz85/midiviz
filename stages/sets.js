@@ -13,6 +13,11 @@
 //   each frame: sets.update(dt); sets.draw() || composer.render()
 //   resize: sets.setSize(); play/pause: sets.setPlaying(on); a still: sets.shot(T, notes)
 //
+// A page with controls of its own (#038's toolbar, bound by its settings store and
+// park/controls.js) passes controls: false: no boxes, no wiring, no URL reading; it calls
+// choose() itself. host.park and host.lake are more options for those two stages (the duo's
+// layout, centre and sun; the lake's centre, the piano's frame and more feet in the water).
+//
 // Each set is a descriptor: its controls (markup put after the Stage menu, shown while
 // it is on), the URL keys they keep, and how it builds and drives its stage.
 import { createParkStage, PARK_TIMES, PARK_TREES } from '../park/stage.js'
@@ -24,7 +29,7 @@ export const SETS = [
   {
     id: 'park',
     make: h => createParkStage({ renderer: h.renderer, scene: h.scene, camera: h.camera, onStatus: h.setStatus,
-      stageParts: h.stageParts, foreground: h.foreground, hair: h.hair }),
+      stageParts: h.stageParts, foreground: h.foreground, hair: h.hair, ...h.park }),
     controls: `
     <div class="field"><label>Time of day</label><select id="parkTod">${opt(PARK_TIMES.map(([i, n]) => [i, '' + n]), 1)}</select></div>
     <div class="field"><label>Tree</label><select id="parkTree">${opt(PARK_TREES, 'summer')}</select></div>
@@ -50,7 +55,7 @@ export const SETS = [
   {
     id: 'lake',
     make: h => createLakeStage({ renderer: h.renderer, scene: h.scene, camera: h.camera, onStatus: h.setStatus,
-      stageParts: h.stageParts, foreground: h.foreground, hair: h.hair, progress: h.progress }),
+      stageParts: h.stageParts, foreground: h.foreground, hair: h.hair, progress: h.progress, ...h.lake }),
     controls: `
     <div class="field" title="The sun below the horizon, as in Afterglow: from just after sunset to the blue hour, or set along the song from start to end"><label>Sky</label><select id="lakeTod">${opt(LAKE_TIMES, 0)}</select></div>`,
     state: [['sky', 'lakeTod']],
@@ -66,19 +71,21 @@ export const SETS = [
 ]
 
 export function createStageSets(host) {
-  const { select, piano, dim = [], gpu = false } = host
+  const { select, piano, dim = [], gpu = false, controls = true } = host
   const $ = id => document.getElementById(id)
   const sets = new Map(), boxes = new Map()
   // the controls, after the Stage menu, each set's in a box shown while it is on
-  let at = select.closest('.field')
+  let at = controls ? select.closest('.field') : null
   for (const d of SETS) {
-    const box = document.createElement('div')
-    box.className = 'stageCtl'; box.dataset.set = d.id; box.style.display = 'none'
-    box.innerHTML = d.controls
-    at.after(box); at = box; boxes.set(d.id, box)
     const s = d.make(host)
     sets.set(d.id, s)
-    d.wire(s, $, host)
+    if (controls) {
+      const box = document.createElement('div')
+      box.className = 'stageCtl'; box.dataset.set = d.id; box.style.display = 'none'
+      box.innerHTML = d.controls
+      at.after(box); at = box; boxes.set(d.id, box)
+      d.wire(s, $, host)
+    }
     if (gpu) { const o = select.querySelector(`option[value=${d.id}]`); if (o) { o.disabled = true; o.text += ' - WebGL only' } }
   }
   const desc = id => SETS.find(d => d.id === id)
@@ -96,7 +103,7 @@ export function createStageSets(host) {
     get: id => sets.get(id),
     active, activeId,
     has: id => sets.has(id) && !gpu,
-    state: SETS.flatMap(d => d.state),
+    state: controls ? SETS.flatMap(d => d.state) : [],
     /** Switch to `name`: a set of these, or the page's own (`inscene(name)`). */
     async choose(name, inscene) {
       const want = gpu ? null : sets.has(name) ? name : null
@@ -119,7 +126,7 @@ export function createStageSets(host) {
     /** The set the address asks for (?stage= or ?scene=), with its own keys, before the page's STATE loop. */
     async readUrl(params, key, choose) {
       const id = params.get(key)
-      if (!api.has(id)) return false
+      if (!controls || !api.has(id)) return false
       desc(id).fromUrl(sets.get(id), $, params)
       select.value = id
       await choose(id)
@@ -129,7 +136,7 @@ export function createStageSets(host) {
     /** Draw the frame if a set is on; false leaves it to the page. */
     draw() { const s = active(); if (!s) return false; s.draw(); return true },
     setSize() { for (const s of sets.values()) s.setSize() },
-    setPlaying(on) { for (const d of SETS) d.playing?.(sets.get(d.id), $, on) },
+    setPlaying(on) { if (controls) for (const d of SETS) d.playing?.(sets.get(d.id), $, on) },
     shows: o => [...sets.values()].every(s => s.shows(o)),
     /** A still at T (?shot): what the active set seeds from the song's notes. */
     shot(T, notes = []) { const id = activeId(); if (id) desc(id).shot?.(sets.get(id), T, notes) },

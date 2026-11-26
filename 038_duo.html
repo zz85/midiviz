@@ -92,7 +92,8 @@
       <option value="free">Free</option>
     </select>
     <select id="gpuSel" title="Renderer. WebGL: the page as it has always been drawn. WebGPU (the hall alone, work in progress): three.js's WebGPU renderer with screen-space global illumination and reflections, the models' toon shading as node materials. Changing it reloads the page"><option value="webgl">WebGL</option><option value="webgpu">WebGPU (SSGI, SSR)</option></select>
-    <select id="venue" title="Where they play: the concert hall, or outdoors on Sorairo's hillside (park/, from random-sketches/vibes/sorairo: the tree, wind in the grass, the sky, birds and a painterly finish). Changing it reloads the page"><option value="hall">Venue: concert hall</option><option value="park">Venue: the park</option></select>
+    <select id="venue" title="Where they play: the concert hall, or outdoors on Sorairo's hillside (park/, from random-sketches/vibes/sorairo: the tree, wind in the grass, the sky, birds and a painterly finish), or on Afterglow's mountain lake after sunset (lake/), the water mirroring them and ringing from the piano's legs. Changing it reloads the page"><option value="hall">Venue: concert hall</option><option value="park">Venue: the park</option><option value="lake">Venue: the lake</option></select>
+    <select id="lakeSky" hidden title="The sun below the horizon, as in Afterglow: from just after sunset to the blue hour, or set along the piece from start to end"></select>
     <select id="layout" title="Where he stands: beside the keyboard end, about a metre to her left and a little in front (the usual recital layout), or in front of the piano's curve. Changing it reloads the page"><option value="keys">Layout: by the keyboard</option><option value="curve">Layout: by the curve</option></select>
     <select id="pscale" hidden title="The park's size around the two, who stay as they are. Changing it reloads the page"><option value="0.45" selected>Park: 0.45 size</option><option value="0.5">Park: 1/2 size</option><option value="0.75">Park: 3/4 size</option><option value="1">Park: full size</option></select>
     <select id="tod" hidden title="Time of day in the park"></select>
@@ -161,7 +162,8 @@
     import { loadAltCharacter, MODELS as PIANISTS, CEL_INK_COLOR } from './pianist/alt-model.js'
     import { createRig as createPianistRig } from './pianist/rig.js'
     import { graftPianistHands } from './pianist/hand-graft.js'
-    import { createPark } from './park/park.js'
+    import { createStageSets } from './stages/sets.js'
+    import { LAKE_TIMES } from './lake/stage.js'
     import { parkSettings, fillParkOptions, wirePark } from './park/controls.js'
     import { createSettings } from './ui/settings.js'
     import { createLinerLibrary, clockOfMidi, buildTimeline } from './liner/liner.js'
@@ -172,7 +174,9 @@
     const $ = id => document.getElementById(id)
     const Q = new URLSearchParams(location.search)
     const SHOT = Q.has('shot')
-    const PARK = Q.get('stage') === 'park'
+    // the venue (?stage=): the hall, or a set that takes over the picture (stages/sets.js): the park (#051) or the lake (#054)
+    const VENUE = ['park', 'lake'].includes(Q.get('stage')) ? Q.get('stage') : 'hall'
+    const PARK = VENUE === 'park', LAKE = VENUE === 'lake', OUTDOORS = PARK || LAKE
     // ── The settings (ui/settings.js): each control once, with its query key and its default ──
     // The address bar keeps the ones off their default (saveUrl); a link puts them back. The
     // ones marked reload are chosen at start-up (the piano, the venue, the layout, the
@@ -182,6 +186,7 @@
     for (const [f, l] of Object.entries(VIOLINISTS)) $('model').add(new Option(l, f))
     for (const [k, o] of Object.entries(OUTFITS)) $('outfit').add(new Option(o.label, k))
     for (const [k, r] of Object.entries(ROOMS)) $('room').add(new Option(r.label, k, k === 'hall', k === 'hall'))
+    for (const [i, n] of LAKE_TIMES) $('lakeSky').add(new Option('Sky: ' + n.toLowerCase(), String(i), i === 0, i === 0))
     const settings = createSettings([
       { id: 'stage', label: 'Stage', items: [
         { key: 'pianoType', type: 'select', default: 'grand', url: 'piano', reload: true },
@@ -196,11 +201,12 @@
         { key: 'pmodel', type: 'select', default: 'vroida', url: 'pmodel', reload: true },
         { key: 'vdress', type: 'select', default: 'wine', url: 'vdress' },
         { key: 'hands', type: 'select', default: 'pianist', url: 'hands', reload: true },
-        { key: 'room', type: 'select', default: PARK ? 'dry' : 'hall', url: 'room' },
+        { key: 'room', type: 'select', default: OUTDOORS ? 'dry' : 'hall', url: 'room' },
         { key: 'layout', type: 'select', default: 'keys', url: 'layout', reload: true },
-        { key: 'venue', type: 'select', default: 'hall', url: 'stage', reload: true, parse: t => t === 'park' ? 'park' : 'hall' },
+        { key: 'venue', type: 'select', default: 'hall', url: 'stage', reload: true, parse: t => ['park', 'lake'].includes(t) ? t : 'hall' },
       ] },
       parkSettings({ ids: { tod: 'tod', tree: 'tstyle', amb: 'amb', paint: 'ppaint', scale: 'pscale' }, birdsKey: 'amb', scale: true, when: () => PARK }),
+      { id: 'lake', label: 'The lake', when: () => LAKE, items: [{ key: 'lakeSky', type: 'select', default: '0', url: 'sky', label: 'Sky' }] },
       { id: 'sound', label: 'Sound', items: [
         { key: 'vsound', type: 'select', default: 'gm', url: 'violin', urlIf: () => hybrid.on },
         { key: 'levels', el: null, type: 'text', default: '', url: 'vol', value: () => levels.violin || levels.piano ? `${levels.violin},${levels.piano}` : '' },
@@ -226,6 +232,7 @@
     // #051: the park (park/park.js) in place of the concert hall
     const parkForeground = root => { if (PARK) root.traverse(object => object.layers.set(1)) }
     if (PARK) { $('title').textContent = '#051 Duo in the Park'; document.title = '#051 Duo in the Park' }
+    if (LAKE) { $('title').textContent = '#038 Duo on the Lake'; document.title = '#038 Duo on the Lake' }
     const v3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z)
     const setStatus = (msg, ms = 0) => { $('status').textContent = msg; $('status').style.display = msg ? 'block' : 'none'; if (ms) setTimeout(() => setStatus(''), ms) }
 
@@ -237,9 +244,9 @@
     // scroll).
     // ?gpu=webgpu: three.js's WebGPU renderer, with SSGI and SSR (duo/gpu.js; the hall
     // alone, the park's passes are GLSL). ?gpuout=target renders offscreen (headless)
-    const GPU = Q.get('gpu') === 'webgpu' && !PARK && navigator.gpu ? await (await import('./duo/gpu.js')).createRenderer() : null
+    const GPU = Q.get('gpu') === 'webgpu' && !OUTDOORS && navigator.gpu ? await (await import('./duo/gpu.js')).createRenderer() : null
     settings.set('gpu', GPU ? 'webgpu' : 'webgl', { silent: true })
-    if (!navigator.gpu || PARK) { $('gpuSel').options[1].disabled = true; $('gpuSel').options[1].text += PARK ? ' (the hall alone)' : ' (not in this browser)' }
+    if (!navigator.gpu || OUTDOORS) { $('gpuSel').options[1].disabled = true; $('gpuSel').options[1].text += OUTDOORS ? ' (the hall alone)' : ' (not in this browser)' }
     const renderer = GPU ? GPU.renderer : new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: SHOT })
     renderer.setPixelRatio(Math.min(2, devicePixelRatio))
     renderer.setSize(innerWidth, innerHeight)
@@ -290,51 +297,9 @@
       scene.environmentIntensity = 0.45
     }
 
-    // ── The park (#051): Sorairo's hillside around them, drawn with their scene (park/park.js) ──
-    let park = null, sunLight = null, skyLight = null, envFor = -1
-    if (PARK) {
-      for (const o of stageParts) o.visible = false
-      scene.background = null; scene.fog = null
-      // the park's size (?pscale=, the menu's 0.45 by default; park/controls.js) and its camera:
-      // this one at scale/100, its 0.1-8000 m here in cm
-      const pscale = +settings.get('parkScale')
-      camera.near = 10; camera.far = 800000 * pscale; camera.updateProjectionMatrix()
-      setStatus('Growing the park…')
-      // (the hours here are the park's + 0.4: the sun a little higher than the pianist's pages have it)
-      park = await createPark(renderer, { time: +settings.get('parkTod') + 0.4, style: settings.get('parkTree'), scale: pscale, layout: LAYOUT })
-      park.S.paintPerformers = settings.get('parkPaint')
-      wirePark(settings, park, { timeOffset: 0.4, onChange: saveUrl })
-      // the sun (and moon) and the sky's light, from the park's, for their own materials;
-      // three.js divides diffuse light by pi, Sorairo's cel light doesn't: hence the pi
-      sunLight = new THREE.DirectionalLight(0xffffff, 1)
-      sunLight.castShadow = true; sunLight.shadow.mapSize.set(2048, 2048)
-      Object.assign(sunLight.shadow.camera, { left: -450, right: 450, top: 450, bottom: -450, near: 10, far: 3000 })
-      sunLight.shadow.bias = -0.0004; sunLight.shadow.normalBias = 0.6
-      sunLight.target.position.copy(MID).setY(80)
-      skyLight = new THREE.HemisphereLight(0xffffff, 0x446633, 1)
-      sunLight.layers.enable(1); skyLight.layers.enable(1)
-      scene.add(sunLight, sunLight.target, skyLight)
-    }
-    const LIGHT_K = +(Q.get('lightk') || 0.75)
-    function parkLights() {
-      const s = park.sun
-      sunLight.position.copy(sunLight.target.position).addScaledVector(s.dir, 1500)
-      sunLight.color.copy(s.color); sunLight.intensity = Math.PI * LIGHT_K
-      skyLight.color.copy(s.ambient); skyLight.groundColor.copy(s.ground).multiplyScalar(1 / Math.max(1e-3, s.ambient.r)); skyLight.intensity = Math.PI * LIGHT_K
-      // the lacquer and the violin's varnish reflect the sky (once per change of the hour)
-      if (envFor !== s.changed) {
-        envFor = s.changed
-        const pm = new (GPU ? GPU.TG.PMREMGenerator : THREE.PMREMGenerator)(renderer), es = new THREE.Scene()
-        const g = new THREE.SphereGeometry(100, 32, 16), col = []
-        const P = g.attributes.position
-        for (let i = 0; i < P.count; i++) { const y = P.getY(i) / 100; const c = y > 0 ? s.horizon.clone().lerp(s.sky, Math.sqrt(y)) : s.ground.clone().multiplyScalar(0.6); col.push(c.r, c.g, c.b) }
-        g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3))
-        es.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })))
-        scene.environment?.dispose?.()
-        scene.environment = pm.fromScene(es, 0.02).texture; scene.environmentIntensity = 0.6
-        pm.dispose(); g.dispose()
-      }
-    }
+    // ── The park (#051) and the lake (#054) around them: stages/sets.js, made once the two are in
+    // the scene (below, before the views); `park` is the park's own (park/park.js), for its views and sound
+    let stageSets = null, park = null
 
     // ── The piano and the pianist (#032) ───────────────────────────────────
     const piano = PIANO_TYPE === 'upright' ? await loadUprightPiano() : buildGrandPiano({ mirror: false })
@@ -1223,6 +1188,21 @@
       overHim: LAYOUT === 'curve' ? () => [S.hisHead.clone().add(v3(38, 14, -62)), S.herHead.clone().add(v3(0, -15, 0)), 34]
         : () => [S.hisHead.clone().add(v3(-85, 18, 95)), S.herHead.clone().add(v3(0, -15, 0)), 34],
     }
+    if (OUTDOORS) {
+      // the hall's parts hidden and its post set aside while the park or the lake draws the picture;
+      // the controls are this page's own toolbar (the settings store, park/controls.js)
+      stageSets = createStageSets({ renderer, scene, camera, piano, select: $('venue'), controls: false, setStatus,
+        stageParts: () => stageParts, foreground: () => [her.group, V.group, him?.scene], hair: () => null,
+        progress: () => song?.duration ? now() / song.duration : 0, playing: () => !!clock.playing,
+        park: { layout: LAYOUT, center: MID.clone().setY(80), sun: 'directional', near: 10, lightK: +(Q.get('lightk') || 0.75) },
+        lake: { center: [MID.x, MID.z], pianoFrame: pianoSide, emitters: [[0, 0]], yaw: 180 } })
+      const ps = stageSets.get('park')
+      Object.assign(ps.opts, { time: +settings.get('parkTod'), style: settings.get('parkTree'), scale: +settings.get('parkScale'), painted: settings.get('parkPaint') })
+      stageSets.get('lake').setTime(settings.get('lakeSky'))
+      await stageSets.choose(VENUE, () => {})
+      if (PARK) { park = ps.park; wirePark(settings, park, { timeOffset: 0.4, onChange: saveUrl }) }
+      if (LAKE) settings.subscribe('lakeSky', v => { stageSets.get('lake').setTime(v); saveUrl() })
+    }
     if (PARK) {
       // Sorairo's bloom takes anything brighter than 1.35 (the sun, backlit cloud rims). The duo's
       // materials in full sun reach 2 on white keys, shirt cuffs and the lacquer's highlights,
@@ -1571,7 +1551,7 @@
     // ── Loop ───────────────────────────────────────────────────────────────
     let idleT = performance.now()
     addEventListener('pointermove', () => { idleT = performance.now(); document.body.classList.remove('idle') })
-    addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); gpuPost?.setSize(innerWidth, innerHeight); park?.setSize() })
+    addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); gpuPost?.setSize(innerWidth, innerHeight); stageSets?.setSize() })
     function frame(t, dt, forceLive = false) {
       const I = t < 0.4 ? introPose(t) : null
       const standing = !!I?.standing
@@ -1636,7 +1616,7 @@
       if ($('cam').value !== 'auto') setView(camStart(), true)
       controls.update()
       camera.lookAt(controls.target)
-      if (park) { park.update(0, camera); parkLights(); park.render(scene, camera) } else if (GPU) { for (let i = 0; i < 8; i++) draw() } else draw()   // (WebGPU: SSGI, SSR and TRAA settle over frames)
+      if (stageSets) { stageSets.shot(t, song.piano.map(n => ({ midi: n.pitch, time: n.on, velocity: n.velocity ?? 0.7 }))); stageSets.update(0); stageSets.draw() } else if (GPU) { for (let i = 0; i < 8; i++) draw() } else draw()   // (WebGPU: SSGI, SSR and TRAA settle over frames)
       window.__dbg = { director, THREE, scene, camera, renderer, him, her, vRig, pRig, V, bow, piano, pianoSide, song, frame, subjects, S, songDuration: song.duration }
       window.__info = { t, take: director.at(t)?.v, violin: song.violin.length, piano: song.piano.length }
       window.__done = true
@@ -1654,7 +1634,7 @@
         if (clock.playing && t > song.duration + 1.5) { pause(); clock.t = 0; t = 0 }
         frame(t, dt)
         controls.update()
-        if (park) { camera.updateMatrixWorld(); park.update(dt, camera); parkLights(); park.render(scene, camera) } else draw()
+        if (stageSets) { stageSets.update(dt); stageSets.draw() } else draw()
         liner.update(t)
         if (document.activeElement !== $('seek')) $('seek').value = Math.max(0, Math.min(1, t / song.duration))
         $('time').textContent = `${fmt(Math.max(0, Math.min(t, song.duration)))} / ${fmt(song.duration)}`

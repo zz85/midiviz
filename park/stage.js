@@ -20,8 +20,11 @@ import { createPark, TIMES } from './park.js'
 export const PARK_TIMES = TIMES
 export { PARK_TREES } from './controls.js'   // (the controls, once, for every page: park/controls.js)
 
+// For the duo (#038): layout 'keys' or 'curve' (the lawn centred on the two, park/park.js),
+// center the middle of them, and sun 'directional' (#038's own: her VRM hair is lit by any light)
+// with its shadow box; the pianist pages keep the solo layout and the far spot light.
 export function createParkStage({ renderer, scene, camera, stageParts = () => [], foreground = () => [], hair = () => null,
-  center = new THREE.Vector3(0, 80, 20), lightK = 0.75, onStatus = () => {} }) {
+  center = new THREE.Vector3(0, 80, 20), lightK = 0.75, onStatus = () => {}, layout = 'solo', sun: sunKind = 'spot', near = 4 }) {
   let park = null, on = false, building = null, envFor = -1, envMap = null
   // turn: the piano and her on the lawn, in degrees, positive clockwise seen from above (?pturn=)
   const opts = { time: 1, style: 'summer', scale: 0.45, turn: 90, painted: false }
@@ -29,10 +32,16 @@ export function createParkStage({ renderer, scene, camera, stageParts = () => []
   const hidden = new Map()
 
   // the sun and the sky's light, for her and the piano
-  const sun = new THREE.SpotLight(0xffffff, 1, 0, 0.42, 0.35, 0)
+  const directional = sunKind === 'directional', sunDist = directional ? 1500 : 2000
+  const sun = directional ? new THREE.DirectionalLight(0xffffff, 1) : new THREE.SpotLight(0xffffff, 1, 0, 0.42, 0.35, 0)
   sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048)
-  sun.shadow.camera.near = 1200; sun.shadow.camera.far = 3200
-  sun.shadow.bias = -0.0012; sun.shadow.normalBias = 1.2; sun.shadow.radius = 3   // (her skin and hair self-shadow in stipples below these)
+  if (directional) {
+    Object.assign(sun.shadow.camera, { left: -450, right: 450, top: 450, bottom: -450, near: 10, far: 3000 })
+    sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.6
+  } else {
+    sun.shadow.camera.near = 1200; sun.shadow.camera.far = 3200
+    sun.shadow.bias = -0.0012; sun.shadow.normalBias = 1.2; sun.shadow.radius = 3   // (her skin and hair self-shadow in stipples below these)
+  }
   sun.target.position.copy(center)
   const sky = new THREE.HemisphereLight(0xffffff, 0x446633, 1)
   for (const l of [sun, sky]) l.layers.enable(1)
@@ -44,7 +53,7 @@ export function createParkStage({ renderer, scene, camera, stageParts = () => []
 
   function lights() {
     const s = park.sun
-    sun.position.copy(center).addScaledVector(s.dir, 2000)
+    sun.position.copy(center).addScaledVector(s.dir, sunDist)
     sun.color.copy(s.color); sun.intensity = Math.PI * lightK
     sky.color.copy(s.ambient); sky.groundColor.copy(s.ground).multiplyScalar(1 / Math.max(1e-3, s.ambient.r)); sky.intensity = Math.PI * lightK
     const h = hair()
@@ -69,7 +78,7 @@ export function createParkStage({ renderer, scene, camera, stageParts = () => []
 
   async function build() {
     onStatus('Growing the park…')
-    park = await createPark(renderer, { time: opts.time + 0.4, style: opts.style, scale: opts.scale, layout: 'solo', turn: -opts.turn * Math.PI / 180 })
+    park = await createPark(renderer, { time: opts.time + 0.4, style: opts.style, scale: opts.scale, layout, turn: layout === 'solo' ? -opts.turn * Math.PI / 180 : 0 })
     park.S.paintPerformers = opts.painted
     onStatus('')
   }
@@ -82,7 +91,7 @@ export function createParkStage({ renderer, scene, camera, stageParts = () => []
       for (const o of stageParts()) if (o) { hidden.set(o, o.visible); o.visible = false }
       scene.background = null; scene.fog = null
       // the park's camera is this one at scale/100: its 0.1-8000 m, here in cm
-      camera.near = 4; camera.far = 800000 * opts.scale; camera.updateProjectionMatrix()
+      camera.near = near; camera.far = 800000 * opts.scale; camera.updateProjectionMatrix()
       scene.add(sun, sun.target, sky)
       envFor = -1
       on = true

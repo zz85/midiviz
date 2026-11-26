@@ -1,4 +1,4 @@
-// The stage sets live, on #032 and #045: candle -> hall -> park -> lake -> black stage, then the
+// The stage sets live, on #032 and #045 (and #038's three venues, each from its link): candle -> hall -> park -> lake -> black stage, then the
 // lake's Sky menu, checking at each step which set is on, which controls show, that the hall's
 // floor is back after and that the page logs no errors. Each step's still goes to OUT.
 //   node stages/test/sets.mjs        (the folder served at BASE, as lake/test/shoot.mjs)
@@ -51,6 +51,24 @@ for (const [name, url] of [['032', '032_pianist.html?q=low&hairsim=0&clothsim=0&
   check(await page.evaluate(() => window.__lake.opts.time === 3), 'lake: Sky -> blue hour')
   await page.screenshot({ path: `${OUT}/${name}_lake_blue.png` })
   check(errors.length === 0, 'no page errors' + (errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''))
+  await page.close()
+}
+// #038: the venue is chosen at load (a change reloads the page), so each link once
+console.log('038')
+for (const v of ['hall', 'park', 'lake']) {
+  const page = await browser.newPage()
+  await page.setViewport({ width: 960, height: 540 })
+  const errors = []
+  page.on('pageerror', e => errors.push(e.message))
+  await page.goto(BASE + `038_duo.html?hairsim=0${v === 'hall' ? '' : '&stage=' + v}`)
+  await page.waitForFunction(() => window.__duo && document.getElementById('room')?.options.length, { timeout: 300000, polling: 500 })
+  await page.waitForFunction(v => v === 'hall' || window.__stageSets?.activeId() === v, { timeout: 300000, polling: 500 }, v)
+  await new Promise(r => setTimeout(r, 1500))
+  const s = await page.evaluate(() => ({ active: window.__stageSets?.activeId() ?? null, venue: document.getElementById('venue').value, sky: !document.getElementById('lakeSky').hidden, tod: !document.getElementById('tod').hidden }))
+  check(s.active === (v === 'hall' ? null : v) && s.venue === v, `${v}: on ${s.active}, venue ${s.venue}`)
+  check(s.sky === (v === 'lake') && s.tod === (v === 'park'), `${v}: sky control ${s.sky ? 'shown' : 'hidden'}, park controls ${s.tod ? 'shown' : 'hidden'}`)
+  await page.screenshot({ path: `${OUT}/038_${v}.png` })
+  check(errors.length === 0, `${v}: no page errors` + (errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''))
   await page.close()
 }
 await browser.close()
