@@ -1,9 +1,13 @@
 // The page's menus trimmed to the audience's list: the settings marked `tail` (ui/settings.js)
-// are hidden in the pop-up menus and live in the studio panel (ui/studio.js). Each menu that
-// loses some gets a line at its end, "N more in the studio", which opens the panel. A heading
+// are hidden in the menus and live in the studio panel (ui/studio.js). Each menu that loses
+// some gets a line at its end, "N more in the studio", which opens the panel. A heading
 // (.sect) whose fields are all tail is hidden with them. ?menus=all shows everything as before.
+// A menu is a pop-up of .field / .chk rows (the pianist pages) or a toolbar of bare selects
+// and labels (#038): `menus` selects the containers, and every select, input, label, .field,
+// .chk and .stageCtl child of one is a row.
 //
 //   trimMenus(settings, { menus: '.pop', open: () => studio.open() })
+//   trimMenus(settings, { menus: '#top', open, line: 'pill' })   // a toolbar: the line as a button beside the others
 //
 // PIANIST_TAIL: the element ids of the pianist pages' (#032, #045, #049, #050, #054) long tail,
 // for createSettings(sections, { tail: PIANIST_TAIL }). What stays in each menu: Camera: the
@@ -35,37 +39,43 @@ export const PIANIST_TAIL = [
 ]
 
 const CSS = `
-.pop:not(.all) .tail { display: none !important; }
-.pop .tailMore { padding: 6px 2px 2px; font-size: 11.5px; opacity: .75; }
-.pop .tailMore button { background: none; border: 0; color: inherit; font: inherit; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
-.pop .tailMore button:hover { opacity: 1; }
+.menuTrim:not(.all) .tail { display: none !important; }
+.menuTrim .tailMore { padding: 6px 2px 2px; font-size: 11.5px; opacity: .75; }
+.menuTrim .tailMore button { background: none; border: 0; color: inherit; font: inherit; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.menuTrim .tailMore button:hover { opacity: 1; }
+.menuTrim .tailMore.pill { padding: 0; opacity: .85; }
+.menuTrim .tailMore.pill button { text-decoration: none; }
 `
+const ROW = 'SELECT, INPUT, LABEL'
 
-export function trimMenus(settings, { menus = '.pop', open = null, doc = globalThis.document, all = new URLSearchParams(globalThis.location?.search || '').get('menus') === 'all' } = {}) {
+export function trimMenus(settings, { menus = '.pop', open = null, line = 'line', doc = globalThis.document, all = new URLSearchParams(globalThis.location?.search || '').get('menus') === 'all' } = {}) {
   if (!doc) return { refresh() {}, counts: () => ({}) }
   if (!doc.getElementById('menusTailCss')) { const st = doc.createElement('style'); st.id = 'menusTailCss'; st.textContent = CSS; doc.head.append(st) }
   const counts = {}
+  const isRow = el => el.classList.contains('field') || el.classList.contains('chk') || el.classList.contains('stageCtl') || ROW.includes(el.tagName)
   function refresh() {
     for (const pop of doc.querySelectorAll(menus)) {
-      pop.classList.toggle('all', all)
+      pop.classList.add('menuTrim'); pop.classList.toggle('all', all)
       // a heading goes with its fields: hidden where every field under it is tail
       let sect = null, kept = 0, fields = 0
       const settle = () => { if (sect) sect.classList.toggle('tail', fields > 0 && kept === 0) }
       for (const el of pop.children) {
         if (el.classList.contains('sect')) { settle(); sect = el; kept = 0; fields = 0; continue }
         if (el.classList.contains('tailMore')) continue
-        if (!(el.classList.contains('field') || el.classList.contains('chk') || el.tagName === 'LABEL' || el.classList.contains('stageCtl'))) continue
+        if (!isRow(el)) continue
         fields++
         if (!el.classList.contains('tail')) kept++
       }
       settle()
-      const n = [...pop.querySelectorAll('.tail')].filter(e => !e.classList.contains('sect') && !e.closest('.tail:not(.sect) .tail')).length
+      // (a row the page hides itself, such as the park's hour out of the park, isn't counted)
+      const n = [...pop.querySelectorAll('.tail')].filter(e => !e.classList.contains('sect') && !e.closest('.tail:not(.sect) .tail') && !e.hidden && e.style.display !== 'none').length
       counts[pop.id] = n
       let more = pop.querySelector('.tailMore')
       if (!n || all) { more?.remove(); continue }
       if (!more) {
-        more = doc.createElement('div'); more.className = 'tailMore'
+        more = doc.createElement('div'); more.className = 'tailMore' + (line === 'pill' ? ' pill' : '')
         const b = doc.createElement('button'); b.type = 'button'; b.title = 'Every setting of the page in one panel (also the ` key)'
+        if (line === 'pill') b.className = 'sec'
         b.onclick = ev => { ev.stopPropagation(); open?.() }
         more.append(b); pop.append(more)
       }

@@ -15,7 +15,8 @@
 // with it closed doesn't carry it; each open and close sets it, so a page that writes its
 // address bar on changes alone subscribes to it (settings.subscribe('studio', saveUrl)). It
 // answers { open(), close(), toggle(), studio (a promise of the panel once opened) }. With `trim`, the page's menus are trimmed to the settings not
-// marked tail (ui/menus.js), each with a line that opens the panel; with `hands`, a getter of
+// marked tail (ui/menus.js), each with a line that opens the panel (`trim` may be trimMenus's
+// options, such as { menus: '#top', line: 'pill' }); with `hands`, a getter of
 // the pianist's rig, the panel has a Hands folder of the baked tracks (ui/hands-monitor.js).
 //
 //   const studio = await createStudio(settings, { title: 'Studio', container, expanded: ['visuals'] })

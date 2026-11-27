@@ -111,6 +111,7 @@
     <button id="motionSave" hidden title="Save the active deterministic motion as a .duobake file">Save bake</button>
     <button id="motionClear" hidden title="Return to live simulation">Clear bake</button>
     <input type="file" id="motionFile" accept=".duobake,application/gzip" hidden>
+    <button id="shareBtn" title="Copy a link to this exact scene: the piece, the two of them, the venue, the camera, the sound and the moment it is at">Share</button>
     <select id="notes" title="Liner notes on screen while it plays, for pieces that have them (ⓘ in the list). Press I for all the notes"><option value="intertitles">Notes: intertitles</option><option value="notes">Notes: every note</option><option value="off">Notes: none on screen</option></select>
   </div>
   <div id="bottom" class="bar">
@@ -221,19 +222,31 @@
       { id: 'picture', label: 'Picture', items: [
         { key: 'cam', type: 'select', default: 'auto', url: 'view' },
         { key: 'intro', type: 'bool', url: 'intro' },
+        { key: 'outline', type: 'bool', url: 'ink' },
         { key: 'notes', type: 'select', default: 'intertitles', url: 'notes' },
         // the liner notes' look as #032 writes it, and the WebGPU post: kept in a link as they came
         ...['itstyle', 'itstylea', 'itcol', 'itpos', 'itheads', 'itseed'].map(k => ({ key: k, el: null, type: 'text', default: '', url: k, value: () => Q.get(k) || '' })),
         { key: 'gpu', el: 'gpuSel', type: 'select', default: 'webgl', url: 'gpu', reload: true },
         ...['grade', 'gpuq', 'gpuout'].map(k => ({ key: k, el: null, type: 'text', default: '', url: k, value: () => Q.get(k) || '' })),
       ] },
-    ]).bind(document)
+    // the toolbar's long tail: in the studio (ui/menus.js), behind "N more in the studio"; what stays is the piece
+    // and its parts, the two of them, the camera, the venue and its hour and tree, the room, the performer, the
+    // violin's sound, the motion, the notes and Share
+    ], { tail: ['hands', 'pianoType', 'uprightPanel', 'gpuSel', 'layout', 'pscale', 'amb', 'ppaint', 'bowing', 'source', 'outline', 'intro'] }).bind(document)
     fillParkOptions(settings, { timeLabel: n => 'Time: ' + n.toLowerCase(), treeLabel: n => 'Tree: ' + n.toLowerCase(), scaleLabel: n => 'Park: ' + n, search: Q })
     settings.read(Q)
     window.__settings = settings
     // the studio panel (ui/studio.js): every setting, with her hands' baked tracks, on ?studio=1 or the ` key
-    mountStudio(settings, { on: Q.get('studio') === '1', expanded: ['stage'], hands: () => pRig })
+    mountStudio(settings, { on: Q.get('studio') === '1', expanded: ['stage'], hands: () => pRig, trim: { menus: '#top', line: 'pill' } })
     settings.subscribe('studio', () => saveUrl())
+    // Share: the address bar's link with the moment it is at (&at=); a link with ?at= starts there
+    $('shareBtn').onclick = async () => {
+      const q = settings.query(''), t = song.duration > 1 ? now() : 0
+      if (t > 0.5) q.set('at', t.toFixed(1))
+      const url = location.origin + location.pathname + '?' + q.toString().replace(/%2F/g, '/').replace(/%2C/g, ',')
+      try { await navigator.clipboard.writeText(url); setStatus('Link copied' + (t > 0.5 ? ' (with the moment)' : ''), 2500) }
+      catch { prompt('Copy this link:', url) }
+    }
     const PIANO_TYPE = settings.get('pianoType')
     $('uprightPanel').onchange = () => { piano.setPanelOpen?.($('uprightPanel').value === 'open'); saveUrl() }
     // the title for each venue (#051: the park)
@@ -1581,6 +1594,7 @@
 
     // ── Load ───────────────────────────────────────────────────────────────
     await Promise.all([loadHim(), loadSong($('song').value)])
+    if (+Q.get('at') > 0 && song.duration > 1) seekTo(+Q.get('at'))   // (a shared link's moment)
     director.reset(); directorReady = true
     setupMotionControls()
     let autoBake = null
