@@ -71,6 +71,33 @@ for (const v of ['hall', 'park', 'lake']) {
   check(errors.length === 0, `${v}: no page errors` + (errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''))
   await page.close()
 }
+// #038 live: the venue switched from the toolbar in one page, hall -> park -> lake -> hall
+console.log('038 live')
+{
+  const page = await browser.newPage()
+  await page.setViewport({ width: 960, height: 540 })
+  const errors = []
+  page.on('pageerror', e => errors.push(e.message))
+  await page.goto(BASE + '038_duo.html?hairsim=0')
+  await page.waitForFunction(() => window.__duo && window.__stageSets && document.getElementById('room')?.options.length, { timeout: 300000, polling: 500 })
+  await new Promise(r => setTimeout(r, 1500))
+  for (const v of ['park', 'lake', 'hall']) {
+    await page.evaluate(v => { const s = document.getElementById('venue'); s.value = v; s.dispatchEvent(new Event('change')) }, v)
+    await page.waitForFunction(v => (window.__stageSets.activeId() ?? 'hall') === v && !document.getElementById('venue').disabled, { timeout: 300000, polling: 300 }, v)
+    await new Promise(r => setTimeout(r, 1500))
+    const s = await page.evaluate(() => ({ url: location.search, room: document.getElementById('room').value, title: document.title,
+      sky: !document.getElementById('lakeSky').hidden, tod: !document.getElementById('tod').hidden,
+      views: [...document.getElementById('cam').options].map(o => o.value).filter(x => x === 'tree' || x === 'hill').sort() }))
+    check(s.url === (v === 'hall' ? '' : '?stage=' + v), `${v}: address ${JSON.stringify(s.url)}`)
+    check(s.room === (v === 'hall' ? 'hall' : 'dry'), `${v}: room ${s.room}`)
+    check(s.sky === (v === 'lake') && s.tod === (v === 'park'), `${v}: sky control ${s.sky ? 'shown' : 'hidden'}, park controls ${s.tod ? 'shown' : 'hidden'}`)
+    check(JSON.stringify(s.views) === JSON.stringify(v === 'park' ? ['hill', 'tree'] : []), `${v}: park views ${JSON.stringify(s.views)}`)
+    check(/Park/.test(s.title) === (v === 'park') && /Lake/.test(s.title) === (v === 'lake'), `${v}: title ${s.title}`)
+    await page.screenshot({ path: `${OUT}/038_live_${v}.png` })
+  }
+  check(errors.length === 0, 'live: no page errors' + (errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''))
+  await page.close()
+}
 await browser.close()
 console.log(fails ? `${fails} failed` : 'all passed', '- stills in', OUT)
 process.exit(fails ? 1 : 0)

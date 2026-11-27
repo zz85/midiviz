@@ -4,6 +4,10 @@ What each experiment does and how, newest first. The short list is in the [READM
 
 ## 26 Nov 2026
 
+#038's venue switches live: the toolbar's Venue (hall, park, lake) takes effect at once, without reloading
+- Each outdoor set is built the first time it is chosen (a few seconds; the duo's settings, song and place in it stay); the hall comes back with its floor, lights and reflections. With it: the title, the park's two views (In the grass, From the hillside) and its bloom knee on the duo's materials come and go, the director's wide takes follow the venue, and the room goes to Dry outdoors and back to the hall, unless you chose another room yourself (the room's default now follows the venue in the address bar). WebGPU (`?gpu=webgpu`) is still the hall alone.
+- Checked: stills of the three venues from their links as before (942e866) to the pixel; `node ui/test/duo-url.mjs` gives the same seven addresses; `node stages/test/sets.mjs` adds a live switch on one page, hall -> park -> lake -> hall, checking the address bar, the room, the controls, the park's views, the title and no page errors: all pass.
+
 #038 Duo's venue on stages/sets.js: the park as before, and [the lake](038_duo.html?stage=lake) (#054's) as a third venue
 - The park's own copy in 038_duo.html (its build, sun, sky light and reflections, about 50 lines) is gone: park/stage.js takes `layout` ('keys' or 'curve', the lawn around the two), `center`, `sun: 'directional'` with #038's shadow box and `near`. The toolbar and its links stay the settings store's (park/controls.js); stages/sets.js takes `controls: false` for a page with controls of its own. The venue still reloads the page (`?stage=park|lake`).
 - The lake on the duo: lake/stage.js takes `center` (the middle of the two at the rig's origin), `pianoFrame` (the rings start from the legs of a piano that stands turned and away from the origin), more feet in the water (his) and `yaw` (180 here, so the glow is behind them from the hall's views). A VRM's ink is drawn at the bridge's scale (MToon's world-unit outlines were 100 times too wide). Sky menu in the toolbar, `?sky=0..4`.
