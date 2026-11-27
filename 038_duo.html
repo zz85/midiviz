@@ -92,7 +92,7 @@
       <option value="free">Free</option>
     </select>
     <select id="gpuSel" title="Renderer. WebGL: the page as it has always been drawn. WebGPU (the hall alone, work in progress): three.js's WebGPU renderer with screen-space global illumination and reflections, the models' toon shading as node materials. Changing it reloads the page"><option value="webgl">WebGL</option><option value="webgpu">WebGPU (SSGI, SSR)</option></select>
-    <select id="venue" title="Where they play: the concert hall, or outdoors on Sorairo's hillside (park/, from random-sketches/vibes/sorairo: the tree, wind in the grass, the sky, birds and a painterly finish), or on Afterglow's mountain lake after sunset (lake/), the water mirroring them and ringing from the piano's legs. Each is built the first time it is chosen (a few seconds)"><option value="hall">Venue: concert hall</option><option value="park">Venue: the park</option><option value="lake">Venue: the lake</option></select>
+    <select id="venue"></select>
     <select id="lakeSky" hidden title="The sun below the horizon, as in Afterglow: from just after sunset to the blue hour, or set along the piece from start to end"></select>
     <select id="layout" title="Where he stands: beside the keyboard end, about a metre to her left and a little in front (the usual recital layout), or in front of the piano's curve. Changing it reloads the page"><option value="keys">Layout: by the keyboard</option><option value="curve">Layout: by the curve</option></select>
     <select id="pscale" hidden title="The park's size around the two, who stay as they are. Changing it reloads the page"><option value="0.45" selected>Park: 0.45 size</option><option value="0.5">Park: 1/2 size</option><option value="0.75">Park: 3/4 size</option><option value="1">Park: full size</option></select>
@@ -165,6 +165,7 @@
     import { graftPianistHands } from './pianist/hand-graft.js'
     import { createStageSets } from './stages/sets.js'
     import { LAKE_TIMES } from './lake/stage.js'
+    import { fillStageMenu } from './stages/menu.js'
     import { parkSettings, fillParkOptions, wirePark } from './park/controls.js'
     import { createSettings } from './ui/settings.js'
     import { mountStudio } from './ui/studio.js'
@@ -190,6 +191,9 @@
     for (const [f, l] of Object.entries(VIOLINISTS)) $('model').add(new Option(l, f))
     for (const [k, o] of Object.entries(OUTFITS)) $('outfit').add(new Option(o.label, k))
     for (const [k, r] of Object.entries(ROOMS)) $('room').add(new Option(r.label, k, k === 'hall', k === 'hall'))
+    // the venues, from the sets' descriptors (stages/menu.js): the concert hall, the park, the lake
+    fillStageMenu($('venue'), { own: [['hall', 'concert hall', 'the concert hall, the page\'s own']], sets: ['park', 'lake'], prefix: 'Venue: ', lower: true,
+      gpu: Q.get('gpu') === 'webgpu' && !!navigator.gpu && VENUE === 'hall', intro: 'Where they play. ', note: 'Each is built the first time it is chosen (a few seconds)' })
     for (const [i, n] of LAKE_TIMES) $('lakeSky').add(new Option('Sky: ' + n.toLowerCase(), String(i), i === 0, i === 0))
     const settings = createSettings([
       { id: 'stage', label: 'Stage', items: [

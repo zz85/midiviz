@@ -40,7 +40,8 @@ function markup(section) {
 
 export const SETS = [
   {
-    id: 'park',
+    id: 'park', label: 'The park', webgpu: false, pathTraced: false,
+    about: "#051: Sorairo's hillside, the tree, wind in the grass, the sky, birds and a painterly finish (park/)",
     make: h => createParkStage({ renderer: h.renderer, scene: h.scene, camera: h.camera, onStatus: h.setStatus,
       stageParts: h.stageParts, foreground: h.foreground, hair: h.hair, ...h.park }),
     // ?tod, ?tree, ?birds, ?ppaint: park/controls.js (the hours there are the park's own; park/stage.js adds its 0.4)
@@ -54,7 +55,8 @@ export const SETS = [
     playing(s, settings, on) { s.setSound(on && s.on && settings.get('parkAmb')) },
   },
   {
-    id: 'lake',
+    id: 'lake', label: 'The lake (Afterglow)', webgpu: false, pathTraced: false,
+    about: "#054: Afterglow's mountain lake after sunset (lake/), the water ringing from the piano's legs as she plays and reflecting her",
     make: h => createLakeStage({ renderer: h.renderer, scene: h.scene, camera: h.camera, onStatus: h.setStatus,
       stageParts: h.stageParts, foreground: h.foreground, hair: h.hair, progress: h.progress, ...h.lake }),
     section: { id: 'lake', label: 'The lake', items: [
@@ -81,13 +83,14 @@ export function createStageSets(host) {
   for (const d of SETS) {
     const s = d.make(host)
     sets.set(d.id, s)
+    // (on WebGPU: marked here too for a menu stages/menu.js didn't build)
+    if (gpu) { const o = select.querySelector(`option[value=${d.id}]`); if (o && !o.disabled) { o.disabled = true; o.text += ' - WebGL only' } }
     if (controls) {
       const box = document.createElement('div')
       box.className = 'stageCtl'; box.dataset.set = d.id; box.style.display = 'none'
       box.innerHTML = markup(d.section)
       at.after(box); at = box; boxes.set(d.id, box)
     }
-    if (gpu) { const o = select.querySelector(`option[value=${d.id}]`); if (o) { o.disabled = true; o.text += ' - WebGL only' } }
   }
   const desc = id => SETS.find(d => d.id === id)
   const active = () => { for (const s of sets.values()) if (s.on) return s; return null }

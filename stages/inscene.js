@@ -32,12 +32,14 @@ function blackStageEnvironment(THREE) {
 
 export const INSCENE = {
   stage: {
+    label: 'Black stage', about: 'the piano under its spotlights on a dark floor',
     look: { background: 0x000000, floor: 0x1a1512 },
     lights: [[0xffd2a0, 1], [0xffd9b8, 1], [0xffe6c8, 1], [0xffe2c0, 1], [0xfff0e0, 1], [0xffc28a, 1]],
     environment: h => blackStageEnvironment(h.THREE), envIntensity: 0.55,
   },
   // after #030's candle rig: its key / back / fill / lid against its concert rig, the face key and rim warmed to match
   candle: {
+    label: 'Candlelit chamber', about: 'from #030: a stone wall with arches behind the piano, some 200 candles on two tiers and along the sides, sconces, a warm candle palette for the lights and the reflections',
     look: { background: CANDLE.background, floor: 0x180d08 },
     lights: ((L, C) => [[L.key.color, L.key.intensity / C.key], [0xffc890, 0.85], [0xffb070, 0.8], [L.back.color, L.back.intensity / C.back], [L.fill.color, L.fill.intensity / C.fill], [L.lid.color, L.lid.intensity / C.lid]])(CANDLE.lights, CANDLE.concert),
     build: h => buildCandleChamber(h.THREE, h.lowQuality),
@@ -47,6 +49,7 @@ export const INSCENE = {
   // the slit overhead is the key (waterhall/); the hall's lights dimmed and gilded for her face.
   // Its water light is traced in WebGL shaders: not on ?gpu=webgpu
   hall: {
+    label: 'The hall of water', about: 'waterhall/, after the Wallace sets of Blade Runner 2049: the piano on a wooden deck in a flooded concrete room, light off the water climbing the walls, a slit of light swinging over her; path traced with the walls glowing with that light',
     look: { background: HALL.background, floor: 0x1a1512, noFloor: true }, webgpu: false,
     lights: [[0xffc060, 0.3], [0xffcf90, 0.75], [0xffb050, 0.6], [0xffa040, 0.35], [0xffd8a0, 0.4], [0xffb060, 0.9]],
     build: h => buildWaterHall(h.renderer, { lowQuality: h.lowQuality }),
