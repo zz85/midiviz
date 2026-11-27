@@ -16,6 +16,13 @@ const errs = []; p.on('pageerror', e => errs.push(e.message))
 let fails = 0
 const check = (ok, what) => { console.log(ok ? 'ok  ' : 'FAIL', what); if (!ok) fails++ }
 await p.goto(`${BASE}ui/test/studio.html?dof=1&scene=park`)
+await p.waitForFunction(() => window.__mount)
+check(await p.evaluate(() => !window.__studio && !document.querySelector('.studio') && !document.querySelector('link[href*="studio.css"]')), 'without ?studio=1 nothing is loaded')
+await p.keyboard.press('`'); await p.waitForFunction(() => document.querySelector('.studio'))
+check(await p.evaluate(() => window.__mount.shown && !!document.querySelector('link[href*="studio.css"]') && window.__S.get('studio') === true && window.__S.queryString(window.__S.query('')).includes('studio=1')), 'the ` key opens it, loads the css, and ?studio=1 goes in the address bar')
+await p.keyboard.press('`'); await p.waitForTimeout(50)
+check(await p.evaluate(() => !window.__mount.shown && document.querySelector('.studio').offsetParent === null && !window.__S.queryString(window.__S.query('')).includes('studio')), 'the key again hides it and takes studio out of the address bar')
+await p.goto(`${BASE}ui/test/studio.html?dof=1&scene=park&studio=1`)
 await p.waitForFunction(() => window.__studio)
 const read = () => p.evaluate(() => {
   const st = window.__studio, S = window.__S
@@ -56,6 +63,11 @@ check(r.labels.dofAmt === 'Blur  2.50x', `format follows: ${r.labels.dofAmt}`)
 await p.evaluate(() => window.__S.set('stageSet', 'park')); await p.waitForTimeout(50)
 r = await read()
 check(r.hidden.parkTod === false, `store -> panel: the park's hour shown again`)
+// the page rebuilds a select's options: the list follows
+await p.evaluate(() => { const e = document.getElementById('parkTod'); e.innerHTML = ''; for (const [v, l] of [['0', 'Dawn'], ['1', 'Noon'], ['2', 'Dusk'], ['3', 'Night']]) e.append(new Option(l, v, false, v === '3')) })
+await p.waitForTimeout(100)
+const rebuilt = await p.evaluate(() => ({ n: window.__studio.bindings.get('parkTod').binding.element.querySelectorAll('option').length, v: window.__studio.bindings.get('parkTod').binding.controller.value.rawValue, at: window.__studio.folders.get('stage').children.indexOf(window.__studio.bindings.get('parkTod').binding) }))
+check(rebuilt.n === 4 && rebuilt.v === '3' && rebuilt.at === 1, `a select rebuilt by the page: ${rebuilt.n} options, value ${rebuilt.v}, in place (${rebuilt.at})`)
 await p.screenshot({ path: '/tmp/studio.png' })
 check(errs.length === 0, `no page errors${errs.length ? ': ' + errs.join(' | ') : ''}`)
 await b.close()

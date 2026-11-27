@@ -27,7 +27,7 @@
   position: fixed; top: 58px; right: 10px; width: 300px; max-height: calc(100vh - 70px); overflow-y: auto; z-index: 30;
   font-size: 12px; backdrop-filter: blur(10px);
 }
-.studio, .studio .tp-rotv { font-family: -apple-system, "Segoe UI", Inter, "Helvetica Neue", Arial, sans-serif; }
+.studio.tp-rotv, .studio .tp-rotv { font-family: -apple-system, "Segoe UI", Inter, "Helvetica Neue", Arial, sans-serif; font-size: 12px; }
 .studio .tp-lblv_l { white-space: normal; line-height: 1.25; }
 .studio::-webkit-scrollbar { width: 6px; }
 .studio::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 3px; }

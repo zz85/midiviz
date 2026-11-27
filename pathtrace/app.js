@@ -2481,3 +2481,6 @@ export async function boot(plug = {}) {
       }
     }
 }
+import { mountStudio } from '../ui/studio.js'
+    // the studio panel (ui/studio.js): every setting, drawn from the schema, on ?studio=1 or the ` key
+    mountStudio(settings, { on: params.get('studio') === '1' })

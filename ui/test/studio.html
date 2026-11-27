@@ -6,7 +6,6 @@
   <!-- A small page with the pianist pages' kind of markup, its store (ui/settings.js) and the
        studio panel (ui/studio.js) over it; ui/test/studio.mjs drives it headless and checks
        that the panel and the controls agree both ways. Open it served to look at the panel. -->
-  <link rel="stylesheet" href="../studio.css">
   <style> body { background: #111; color: #eee; font: 13px sans-serif; margin: 20px } .field { margin: 4px 0 } .chk { display: block } </style>
 </head>
 <body>
@@ -21,7 +20,7 @@
   </div>
   <script type="module">
     import { createSettings } from '../settings.js'
-    import { createStudio } from '../studio.js'
+    import { mountStudio } from '../studio.js'
     const S = createSettings([
       { id: 'visuals', label: 'Visuals', items: [
         { key: 'light', url: 'light' }, { key: 'dof', url: 'dof' }, { key: 'dofAmt', url: 'dofamt', format: v => v.toFixed(2) + 'x' }, { key: 'hairColor', url: 'hcol' },
@@ -35,8 +34,9 @@
       { id: 'hidden', label: 'Not in the studio', studio: false, items: [{ key: 'secret', el: null, type: 'text', default: 'x' }] },
     ]).bind(document)
     S.read(location.search)
-    window.__studio = await createStudio(S, { title: 'Studio', expanded: ['visuals', 'stage'] })
-    window.__S = S
+    const mount = mountStudio(S, { on: new URLSearchParams(location.search).get('studio') === '1', expanded: ['visuals', 'stage'] })
+    window.__mount = mount; window.__S = S
+    if (mount.studio) window.__studio = await mount.studio
   </script>
 </body>
 </html>
