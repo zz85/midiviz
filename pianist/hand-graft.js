@@ -287,6 +287,11 @@ function toonSkin(alt) {
 export async function graftPianistHands(alt, { base = new URL('./assets/', import.meta.url).href, look = 'toon' } = {}) {
   const mh = await loadCharacter(base, { fingers: { 2: FINGER_K, 3: FINGER_K, 4: FINGER_K, 5: FINGER_K } })
   const toon = look === 'toon' ? toonSkin(alt) : null
+  // (the realistic skin drawn on both sides: the forearm's cut end, inside her arm, is open,
+  // and seen past her arm's edge its inside showed as a dark band round the wrist; the
+  // toon skin's outline pass draws its back faces already)
+  const realSkin = toon ? null : Object.assign(mh.materials.skin.clone(), { side: THREE.DoubleSide })
+  if (realSkin) { realSkin.onBeforeCompile = mh.materials.skin.onBeforeCompile; realSkin.customProgramCacheKey = mh.materials.skin.customProgramCacheKey }
   const src = mh.meshes.body.geometry, srcBones = mh.bones.map(b => b.name)
   const P = src.attributes.position, UV = src.attributes.uv, SI = src.attributes.skinIndex, SW = src.attributes.skinWeight, IDX = src.index
   const meshes = []
@@ -354,7 +359,7 @@ export async function graftPianistHands(alt, { base = new URL('./assets/', impor
     rebuildBone(alt, 'wrist' + d)
     for (let f = 1; f <= 5; f++) for (let k = 1; k <= 3; k++) rebuildBone(alt, `finger${f}-${k}${d}`)
     if (toon) for (let i = 0; i < toon.length; i++) g.addGroup(0, tri.length, i)
-    const mesh = new THREE.SkinnedMesh(g, toon ? (toon.length > 1 ? toon : toon[0]) : mh.materials.skin)
+    const mesh = new THREE.SkinnedMesh(g, toon ? (toon.length > 1 ? toon : toon[0]) : realSkin)
     mesh.name = 'pianist-hand' + d
     mesh.castShadow = mesh.receiveShadow = true
     mesh.frustumCulled = false
@@ -378,5 +383,5 @@ export async function graftPianistHands(alt, { base = new URL('./assets/', impor
     if (len > 1e-6) b.position.copy(par.worldToLocal(h.lerp(e, Math.min(0.5, FOLD_CM * g / len))))
     b.scale.setScalar(0.02); b.updateMatrixWorld(true)
   }
-  return { meshes: meshes.map(m => m.mesh), material: toon || mh.materials.skin, look: toon ? 'toon' : 'real', saved }
+  return { meshes: meshes.map(m => m.mesh), material: toon || realSkin, look: toon ? 'toon' : 'real', saved }
 }
