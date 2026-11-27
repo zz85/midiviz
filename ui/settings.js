@@ -33,6 +33,9 @@
 // `urlIf(value, state)`: kept in the address bar only while true (a song opened from disk isn't);
 // `urlWhenHidden: false`: a hidden setting (its `when` false) comes out of the address bar.
 // `parse(text)` / `serialize(value)`: for a key of its own shape ('violin,piano' levels).
+// `tail: true`: a setting for the studio (ui/menus.js) rather than the page's menus: its field gets the
+// class `tail`, which the menus hide; `createSettings(sections, { tail: ids })` marks each item whose
+// element id is in `ids` the same way, so a page keeps its list apart from the schema.
 // `el: null`: no control; the page sets it (speed, loop) and it still goes in the address bar.
 // `value()`: no control either, read from the page each time it is asked for (a mixer's levels).
 // A select whose options the page fills later keeps its `default` until `sync(key)` writes it.
@@ -50,7 +53,8 @@
 
 const CONTAINER = '.field, .chk, label, .stageCtl'
 
-export function createSettings(sections = []) {
+export function createSettings(sections = [], { tail = null } = {}) {
+  const tailIds = new Set(tail || [])
   const items = new Map()          // key -> item
   const byUrl = new Map()          // url key (and aliases) -> item
   const order = []                 // keys, in schema order
@@ -94,17 +98,20 @@ export function createSettings(sections = []) {
       if (it.el === undefined) it.el = it.key
       if (it.type == null) { it.type = 'text'; it._inferType = true }
       if (it.when == null && sec.when) it.when = sec.when
+      if (it.el && tailIds.has(it.el)) it.tail = true
       items.set(it.key, it); order.push(it.key)
       if (it.url) { byUrl.set(it.url, it); for (const a of it.urlAliases || []) byUrl.set(a, it) }
       state[it.key] = it.default !== undefined ? coerce(it, it.default) : (isBool(it) ? false : isNum(it) ? 0 : '')
       it._default = state[it.key]
     }
     if (doc) { bindItems(sec.items); showHide() }
+    for (const f of subs.get('add') || []) f(sec)
     return sec
   }
 
   // ── the DOM ──
   const el = it => it.el && doc ? doc.getElementById(it.el) : null
+  const boxOf = (it, e) => (it.container && doc.getElementById(it.container)) || e.closest(CONTAINER) || e
   function domDefault(it, e) {
     if (e.type === 'checkbox') return e.defaultChecked
     if (e.tagName === 'SELECT') return ([...e.options].find(o => o.defaultSelected) || e.options[0])?.value ?? ''
@@ -128,6 +135,7 @@ export function createSettings(sections = []) {
       if (it.default === undefined) { it._default = coerce(it, domDefault(it, e)); state[it.key] = domGet(it, e) ?? it._default }
       else domSet(it, e, state[it.key])   // (a select not filled yet keeps the default; sync(key) once it is)
       if (!it.el) continue
+      if (it.tail) boxOf(it, e).classList.add('tail')
       const onChange = () => { const v = domGet(it, e); if (v !== undefined) set(it.key, v, { fromDom: true }) }
       e.addEventListener('input', onChange)
       e.addEventListener('change', onChange)
@@ -144,8 +152,7 @@ export function createSettings(sections = []) {
     for (const it of items.values()) {
       if (!it.when) continue
       const e = el(it); if (!e) continue
-      const box = (it.container && doc.getElementById(it.container)) || e.closest(CONTAINER) || e
-      show(box, it.when(state))
+      show(boxOf(it, e), it.when(state))
     }
     for (const sec of secs) if (sec.when && sec.el) { const b = doc.getElementById(sec.el); if (b) show(b, sec.when(state)) }
   }
@@ -161,7 +168,8 @@ export function createSettings(sections = []) {
   // ── values ──
   // a bound control, or a value() getter, is read each time: the page may have written it itself
   function current(it) {
-    if (it.value) { const v = coerce(it, it.value()); if (v !== undefined) state[it.key] = v }
+    if (it.value) { let v; try { v = coerce(it, it.value()) } catch { v = undefined }   // (a page still loading: the value isn't made yet)
+      if (v !== undefined) state[it.key] = v }
     else { const e = el(it); if (e) { const v = domGet(it, e); if (v !== undefined) state[it.key] = v } }
     return state[it.key]
   }
@@ -238,6 +246,7 @@ export function createSettings(sections = []) {
   const api = {
     add, bind, read, query, queryString, reload, get, set, sync, subscribe, isDefault,
     sections: secs, items, state,
+    box: key => { const it = items.get(key), e = el(it); return e ? boxOf(it, e) : null },
     keys: () => [...order],
     item: key => items.get(key),
     element: key => el(items.get(key)),

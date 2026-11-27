@@ -65,7 +65,7 @@ Browser experiments with MIDI, piano and violin rendering, synthesis and audio a
 
 ## Tools and tests
 
-- [ui/settings.js](ui/settings.js) - the settings store behind the controls of #045 (#049, #050, #054) and #038: one schema per page, bound to its markup, kept in the address bar ([details](CHANGELOG.md#26-nov-2026))
+- [ui/settings.js](ui/settings.js) - the settings store behind the controls of #032, #045 (#049, #050, #054) and #038: one schema per page, bound to its markup, kept in the address bar ([details](CHANGELOG.md#26-nov-2026)); [ui/studio.js](ui/studio.js) - the studio panel over every setting (`?studio=1` or the ` key), with the hands' baked tracks as graphs, while the menus keep the audience's short list ([details](CHANGELOG.md#27-nov-2026))
 - [WebMscore](webmscore.html) - MuseScore's renderer (libmscore in WebAssembly): load scores, export SVG / PDF / MIDI ([details](CHANGELOG.md#15-mar-2026))
 - [SF3 to SF2 Converter](test_sf3_to_sf2.html), [FluidWeb Piano Test](fluidweb/fluidweb_piano_test.html), [FluidWeb Piano (ScriptProcessor)](fluidweb/fluidweb_piano_scriptprocessor.html), [FluidWeb Test](fluidweb/fluidweb_test.html), [Audio Test](audio_test.html), [Piano Test](piano_test.html)
 

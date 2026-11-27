@@ -17,13 +17,15 @@ export const PARK_DEFAULTS = { tod: 1, tree: 'summer', amb: true, paint: false, 
 
 const IDS = { tod: 'parkTod', tree: 'parkTree', amb: 'parkAmb', paint: 'parkPaint', scale: 'parkScale' }
 
-export function parkSettings({ ids = {}, birdsKey = 'birds', scale = false, when = null, timeOffset = 0 } = {}) {
+// `who`: the performers in the labels, 'them' (the duo) or 'her' (the pianist alone)
+export function parkSettings({ ids = {}, birdsKey = 'birds', scale = false, when = null, timeOffset = 0, who = 'them' } = {}) {
   const id = k => ids[k] ?? IDS[k]
+  const her = who === 'her', they = her ? 'she plays' : 'they play', them = her ? 'her' : 'them', their = her ? 'her' : 'their'
   const items = [
     { key: 'parkTod', el: id('tod'), type: 'select', default: String(PARK_DEFAULTS.tod), url: 'tod', label: 'Time of day', options: PARK_TIMES.map(([i, n]) => [String(i), '' + n]) },
     { key: 'parkTree', el: id('tree'), type: 'select', default: PARK_DEFAULTS.tree, url: 'tree', label: 'Tree', options: PARK_TREES },
-    { key: 'parkAmb', el: id('amb'), type: 'bool', default: PARK_DEFAULTS.amb, url: birdsKey, label: 'Birds and wind', title: "Wind, songbirds and insects while they play (Sorairo's ambience; not in exported videos)" },
-    { key: 'parkPaint', el: id('paint'), type: 'bool', default: PARK_DEFAULTS.paint, url: 'ppaint', label: 'Paint them with the park', title: "Draw the performers into the painting: through the park's light shafts, grade and painterly brush with the piano, so their outlines soften into strokes. Off: graded apart and laid sharp over the painted park" },
+    { key: 'parkAmb', el: id('amb'), type: 'bool', default: PARK_DEFAULTS.amb, url: birdsKey, label: 'Birds and wind', title: `Wind, songbirds and insects while ${they} (Sorairo's ambience; not in exported videos)` },
+    { key: 'parkPaint', el: id('paint'), type: 'bool', default: PARK_DEFAULTS.paint, url: 'ppaint', label: `Paint ${them} with the park`, title: `Draw ${them} into the painting: through the park's light shafts, grade and painterly brush with the piano, so ${their} outlines soften into strokes. Off: graded apart and laid sharp over the painted park` },
   ]
   // the park's size (#038): any value from 0.02 to 4 in a link, the menu's four by default; a change reloads
   if (scale) items.push({ key: 'parkScale', el: id('scale'), type: 'select', default: String(PARK_DEFAULTS.scale), url: 'pscale', label: 'Park size', reload: true, options: PARK_SCALES,
@@ -49,10 +51,11 @@ export function fillParkOptions(S, { timeLabel = n => '' + n, treeLabel = n => n
   }
 }
 
-// the store drives a built park: `park` is park/park.js's (its setTime, setStyle, sound, S.paintPerformers),
-// or a host with the same names (park/stage.js). `playing()` says whether the song plays, for the sound.
+// the store drives a park: `park` is park/park.js's (setTime, setStyle, sound.setOn, S.paintPerformers),
+// or park/stage.js's host of one (setTime, setStyle, setSound, setPainted, which add the stage's own
+// offset to the hour). `playing()` says whether the song plays, for the sound.
 export function wirePark(S, park, { playing = () => true, timeOffset = 0, onChange = () => {} } = {}) {
-  const sound = () => park.sound?.setOn?.(S.get('parkAmb') && playing())
+  const sound = () => { const on = S.get('parkAmb') && playing(); if (park.sound) park.sound.setOn(on); else park.setSound?.(on) }
   S.subscribe('parkTod', v => { park.setTime(+v + timeOffset); onChange() })
   S.subscribe('parkTree', v => { park.setStyle(v); onChange() })
   S.subscribe('parkAmb', () => { sound(); onChange() })

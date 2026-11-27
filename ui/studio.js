@@ -4,15 +4,19 @@
 // bar is the store's as before. For the person at the keyboard, not the audience: a page
 // opens it on ?studio=1 or a key, and never on a phone.
 //
-//   import { mountStudio } from './ui/studio.js'
-//   mountStudio(settings, { on: params.get('studio') === '1' })   // a page's whole hook
+//   import { mountStudio, PIANIST_TAIL } from './ui/studio.js'
+//   const settings = createSettings(schema, { tail: PIANIST_TAIL })
+//   mountStudio(settings, { on: params.get('studio') === '1', trim: true, hands: () => rig })   // a page's whole hook
 //
 // mountStudio opens the panel where `on`, and on the ` key (`key`) from then on; the key
 // toggles it. The panel, Tweakpane and ui/studio.css are loaded the first time it opens, so a
 // page that never opens it loads nothing. It adds the setting `studio` to the store, kept in
 // the address bar as ?studio=1 while the panel shows, so a reload keeps it and a link copied
-// with it closed doesn't carry it. It answers { open(), close(), toggle(), studio (a promise
-// of the panel once opened) }.
+// with it closed doesn't carry it; each open and close sets it, so a page that writes its
+// address bar on changes alone subscribes to it (settings.subscribe('studio', saveUrl)). It
+// answers { open(), close(), toggle(), studio (a promise of the panel once opened) }. With `trim`, the page's menus are trimmed to the settings not
+// marked tail (ui/menus.js), each with a line that opens the panel; with `hands`, a getter of
+// the pianist's rig, the panel has a Hands folder of the baked tracks (ui/hands-monitor.js).
 //
 //   const studio = await createStudio(settings, { title: 'Studio', container, expanded: ['visuals'] })
 //   studio.pane            // the Tweakpane Pane
@@ -50,6 +54,14 @@ export async function createStudio(settings, { title = 'Studio', container = nul
   const observed = new Map()     // select element -> MutationObserver
   const unsub = []
 
+  // a toolbar's select names itself in its options, "Piano: concert grand", "Piano: upright": that
+  // prefix is the label, and the options read without it
+  const prefixOf = e => {
+    const opts = e?.tagName === 'SELECT' ? [...e.options].filter(o => !o.hidden) : []
+    if (opts.length < 2) return null
+    const m = opts[0].text.match(/^([^:]{1,40}): /)
+    return m && opts.every(o => o.text.startsWith(m[1] + ': ')) ? m[1] : null
+  }
   const labelOf = it => {
     if (it.label) return it.label
     const e = settings.element(it.key)
@@ -57,12 +69,13 @@ export async function createStudio(settings, { title = 'Studio', container = nul
       const box = e.closest('.field, .chk, label')
       const l = box?.tagName === 'LABEL' ? box : box?.querySelector('label')
       if (l) { const c = l.cloneNode(true); for (const v of c.querySelectorAll('.val, [id$="V"], input, select')) v.remove(); const t = c.textContent.trim(); if (t) return t }
+      const pre = prefixOf(e); if (pre) return pre
     }
     return it.key
   }
   const optionsOf = it => {
-    const e = settings.element(it.key)
-    const list = e?.tagName === 'SELECT' ? [...e.options].filter(o => !o.hidden).map(o => [o.value, o.text]) : it.options || []
+    const e = settings.element(it.key), pre = prefixOf(e)
+    const list = e?.tagName === 'SELECT' ? [...e.options].filter(o => !o.hidden).map(o => [o.value, pre ? o.text.slice(pre.length + 2) : o.text]) : it.options || []
     return list.map(([value, text]) => ({ text: String(text), value: String(value) }))
   }
   const rangeOf = it => {
@@ -145,16 +158,20 @@ export async function createStudio(settings, { title = 'Studio', container = nul
 }
 
 const CSS = new URL('./studio.css', import.meta.url).href
+export { PIANIST_TAIL } from './menus.js'
 
-export function mountStudio(settings, { on = false, key = '`', title = 'Studio', expanded = ['visuals'], doc = globalThis.document, ...rest } = {}) {
-  let studio = null, opening = null, shown = false
-  if (!settings.item('studio')) settings.add({ id: 'studio', label: 'Studio', studio: false, items: [{ key: 'studio', el: null, type: 'bool', default: false, url: 'studio', value: () => shown }] })
+export function mountStudio(settings, { on = false, key = '`', title = 'Studio', expanded = ['visuals'], doc = globalThis.document, trim = false, hands = null, ...rest } = {}) {
+  let studio = null, opening = null, shown = false, menus = null
+  if (!settings.item('studio')) settings.add({ id: 'studio', label: 'Studio', studio: false, items: [{ key: 'studio', el: null, type: 'bool', default: false, url: 'studio' }] })
+  const mark = () => { if (settings.get('studio') !== shown) settings.set('studio', shown) }
   async function open() {
-    shown = true
+    shown = true; mark()
     if (!opening) {
       opening = (async () => {
         if (!doc.querySelector(`link[href="${CSS}"]`)) { const l = doc.createElement('link'); l.rel = 'stylesheet'; l.href = CSS; doc.head.append(l) }
         studio = await createStudio(settings, { title, expanded, doc, ...rest })
+        if (hands) { const { addHandsMonitor } = await import('./hands-monitor.js'); studio.hands = addHandsMonitor(studio, { rig: hands }) }
+        globalThis.__studio = studio   // (for the tests)
         return studio
       })()
     }
@@ -162,12 +179,13 @@ export function mountStudio(settings, { on = false, key = '`', title = 'Studio',
     s.show(shown)
     return s
   }
-  function close() { shown = false; studio?.show(false) }
+  function close() { shown = false; mark(); studio?.show(false) }
   function toggle() { shown ? close() : open() }
   if (key) doc.addEventListener('keydown', ev => {
     if (ev.key !== key || ev.ctrlKey || ev.metaKey || ev.altKey || /INPUT|SELECT|TEXTAREA/.test(ev.target.tagName)) return
     ev.preventDefault(); toggle()
   })
+  if (trim) import('./menus.js').then(m => { menus = m.trimMenus(settings, { open, doc, ...(trim === true ? {} : trim) }) })
   if (on) open()
-  return { open, close, toggle, get studio() { return opening }, get shown() { return shown } }
+  return { open, close, toggle, get studio() { return opening }, get shown() { return shown }, get menus() { return menus } }
 }

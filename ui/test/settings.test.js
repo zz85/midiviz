@@ -193,3 +193,18 @@ test('a value the page writes into a control, and a value() getter, reach the ad
   lv = { violin: -6, piano: 0 }
   assert.equal(S.queryString(S.query('')), 'light=0.3&vol=-6,0')
 })
+
+test('tail: marked in the schema or by element id, the field gets the class', () => {
+  const d = page()
+  for (const id of ['lightBox', 'dofBox', 'dofAmtBox']) d.getElementById(id).classList = { list: [], add(c) { this.list.push(c) }, contains(c) { return this.list.includes(c) } }
+  const added = []
+  const S = createSettings([{ id: 'x', items: [{ key: 'light', url: 'light' }, { key: 'dof', url: 'dof', tail: true }, { key: 'dofAmt', url: 'dofamt' }] }], { tail: ['dofAmt'] })
+  S.subscribe('add', sec => added.push(sec.id))
+  S.bind(d)
+  assert.equal(d.getElementById('lightBox').classList.contains('tail'), false)
+  assert.equal(d.getElementById('dofBox').classList.contains('tail'), true)
+  assert.equal(d.getElementById('dofAmtBox').classList.contains('tail'), true)
+  assert.equal(S.box('dof'), d.getElementById('dofBox'))
+  S.add({ id: 'later', items: [{ key: 'loop', el: null, type: 'bool', default: false }] })
+  assert.deepEqual(added, ['later'])
+})

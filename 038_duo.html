@@ -166,6 +166,7 @@
     import { LAKE_TIMES } from './lake/stage.js'
     import { parkSettings, fillParkOptions, wirePark } from './park/controls.js'
     import { createSettings } from './ui/settings.js'
+    import { mountStudio } from './ui/studio.js'
     import { createLinerLibrary, clockOfMidi, buildTimeline } from './liner/liner.js'
     import { createLinerOverlay } from './liner/overlay.js'
     import { cacheKey, decodeDuobake, encodeDuobake } from './duo/duobake.js'
@@ -193,17 +194,17 @@
       { id: 'stage', label: 'Stage', items: [
         { key: 'pianoType', type: 'select', default: 'grand', url: 'piano', reload: true },
         { key: 'uprightPanel', type: 'select', default: 'open', url: 'panel', when: s => s.pianoType === 'upright', urlWhenHidden: false },
-        { key: 'song', type: 'select', default: 'beethoven_kreutzer_3_presto.mid', url: 'song', urlIf: v => !v.startsWith('local:') },
-        { key: 'model', type: 'select', default: Object.keys(VIOLINISTS)[0], url: 'model' },
-        { key: 'outfit', type: 'select', default: 'concert', url: 'outfit' },
+        { key: 'song', label: 'Piece', type: 'select', default: 'beethoven_kreutzer_3_presto.mid', url: 'song', urlIf: v => !v.startsWith('local:') },
+        { key: 'model', label: 'Violinist', type: 'select', default: Object.keys(VIOLINISTS)[0], url: 'model' },
+        { key: 'outfit', label: 'His outfit', type: 'select', default: 'concert', url: 'outfit' },
         { key: 'bowing', type: 'select', default: 'score', url: 'bowing' },
         // (the performer list is made per piece: until it shows, the wish from the link stands)
         { key: 'performer', el: null, type: 'text', default: MODELLED, url: 'performer', serialize: v => v || 'none', value: () => $('performer').hidden ? ($('performer').dataset.want ?? MODELLED) : $('performer').value },
         { key: 'source', type: 'select', default: 'score', url: 'src', parse: t => t === 'midi' ? 'midi' : 'score' },
         { key: 'pmodel', type: 'select', default: 'vroida', url: 'pmodel', reload: true },
-        { key: 'vdress', type: 'select', default: 'wine', url: 'vdress' },
+        { key: 'vdress', label: 'Her dress', type: 'select', default: 'wine', url: 'vdress' },
         { key: 'hands', type: 'select', default: 'pianist', url: 'hands', reload: true },
-        { key: 'room', type: 'select', default: roomFor(VENUE), url: 'room', base: st => roomFor(st.venue) },
+        { key: 'room', label: 'Room', type: 'select', default: roomFor(VENUE), url: 'room', base: st => roomFor(st.venue) },
         { key: 'layout', type: 'select', default: 'keys', url: 'layout', reload: true },
         { key: 'venue', type: 'select', default: 'hall', url: 'stage', parse: t => ['park', 'lake'].includes(t) ? t : 'hall' },
       ] },
@@ -229,6 +230,10 @@
     ]).bind(document)
     fillParkOptions(settings, { timeLabel: n => 'Time: ' + n.toLowerCase(), treeLabel: n => 'Tree: ' + n.toLowerCase(), scaleLabel: n => 'Park: ' + n, search: Q })
     settings.read(Q)
+    window.__settings = settings
+    // the studio panel (ui/studio.js): every setting, with her hands' baked tracks, on ?studio=1 or the ` key
+    mountStudio(settings, { on: Q.get('studio') === '1', expanded: ['stage'], hands: () => pRig })
+    settings.subscribe('studio', () => saveUrl())
     const PIANO_TYPE = settings.get('pianoType')
     $('uprightPanel').onchange = () => { piano.setPanelOpen?.($('uprightPanel').value === 'open'); saveUrl() }
     // the title for each venue (#051: the park)

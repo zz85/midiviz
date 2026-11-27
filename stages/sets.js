@@ -8,8 +8,9 @@
 //   const sets = createStageSets({ renderer, scene, camera, piano, stageParts, foreground, hair,
 //     progress, playing, setStatus, select: $('stageSet'), dim: ['dof', 'bloom', ...], gpu })
 //   setStageSet = async name => { await sets.choose(name, setStage); applyFx() }
+//   const settings = createSettings([..., ...sets.sections, ...])   // their controls' schema (ui/settings.js)
+//   sets.attach(settings)                                            // the store drives the sets
 //   await sets.readUrl(params, 'stage', setStageSet)   // ?stage=lake&sky=2 (pathtrace: 'scene')
-//   STATE: [...sets.state]                             // tod, tree, ppaint, birds, sky
 //   each frame: sets.update(dt); sets.draw() || composer.render()
 //   resize: sets.setSize(); play/pause: sets.setPlaying(on); a still: sets.shot(T, notes)
 //
@@ -18,51 +19,51 @@
 // choose() itself. host.park and host.lake are more options for those two stages (the duo's
 // layout, centre and sun; the lake's centre, the piano's frame and more feet in the water).
 //
-// Each set is a descriptor: its controls (markup put after the Stage menu, shown while
-// it is on), the URL keys they keep, and how it builds and drives its stage.
-import { createParkStage, PARK_TIMES, PARK_TREES } from '../park/stage.js'
+// Each set is a descriptor: its controls as a section of the page's settings (the park's is
+// park/controls.js's, once for every page; the markup put after the Stage menu is built from
+// it, shown while the set is on), how the store drives it (`wire`), the URL keys outside the
+// controls (`fromUrl`), and how it builds its stage.
+import { createParkStage } from '../park/stage.js'
+import { parkSettings, wirePark } from '../park/controls.js'
 import { createLakeStage, LAKE_TIMES } from '../lake/stage.js'
 
-const opt = (list, def) => list.map(([v, n]) => `<option value="${v}"${String(v) === String(def) ? ' selected' : ''}>${n}</option>`).join('')
+const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
+// the markup of a section's items, as the pages' menus write a field: a select, or a checkbox
+function markup(section) {
+  return section.items.map(it => {
+    const title = it.title ? ` title="${esc(it.title)}"` : ''
+    if (it.type === 'bool') return `<label class="chk"${title}><input type="checkbox" id="${it.el}"${it.default ? ' checked' : ''}>${esc(it.label)}</label>`
+    const opts = (it.options || []).map(([v, n]) => `<option value="${esc(v)}"${String(v) === String(it.default) ? ' selected' : ''}>${esc(n)}</option>`).join('')
+    return `<div class="field"${title}><label>${esc(it.label)}</label><select id="${it.el}">${opts}</select></div>`
+  }).join('\n    ')
+}
 
 export const SETS = [
   {
     id: 'park',
     make: h => createParkStage({ renderer: h.renderer, scene: h.scene, camera: h.camera, onStatus: h.setStatus,
       stageParts: h.stageParts, foreground: h.foreground, hair: h.hair, ...h.park }),
-    controls: `
-    <div class="field"><label>Time of day</label><select id="parkTod">${opt(PARK_TIMES.map(([i, n]) => [i, '' + n]), 1)}</select></div>
-    <div class="field"><label>Tree</label><select id="parkTree">${opt(PARK_TREES, 'summer')}</select></div>
-    <label class="chk" title="Wind, songbirds and insects while she plays (Sorairo's ambience; not in exported videos)"><input type="checkbox" id="parkAmb" checked>Birds and wind</label>
-    <label class="chk" title="Draw her into the painting: she goes through the park's light shafts, grade and painterly brush with the piano, so her outlines soften into strokes. Off: she is graded apart and laid sharp over the painted park"><input type="checkbox" id="parkPaint">Paint her with the park</label>`,
-    state: [['tod', 'parkTod'], ['tree', 'parkTree'], ['ppaint', 'parkPaint'], ['birds', 'parkAmb']],
-    wire(s, $, h) {
-      $('parkTod').onchange = () => s.setTime($('parkTod').value)
-      $('parkTree').onchange = () => s.setStyle($('parkTree').value)
-      $('parkPaint').onchange = () => s.setPainted($('parkPaint').checked)
-      $('parkAmb').onchange = () => this.playing(s, $, h.playing())
-    },
-    fromUrl(s, $, params) {
-      for (const [k, id] of [['tod', 'parkTod'], ['tree', 'parkTree']]) if ([...$(id).options].some(o => o.value === params.get(k))) $(id).value = params.get(k)
-      s.opts.time = +$('parkTod').value; s.opts.style = $('parkTree').value
-      if (params.get('ppaint') === '1') $('parkPaint').checked = true
-      s.opts.painted = $('parkPaint').checked
+    // ?tod, ?tree, ?birds, ?ppaint: park/controls.js (the hours there are the park's own; park/stage.js adds its 0.4)
+    section: parkSettings({ birdsKey: 'birds', who: 'her' }),
+    wire(s, settings, h) { wirePark(settings, s, { playing: () => h.playing?.() ?? false }) },
+    fromUrl(s, settings, params) {
+      Object.assign(s.opts, { time: +settings.get('parkTod'), style: settings.get('parkTree'), painted: settings.get('parkPaint') })
       { const k = +params.get('pscale'); if (k >= 0.02 && k <= 4) s.opts.scale = k }
       if (params.has('pturn') && Number.isFinite(+params.get('pturn'))) s.opts.turn = +params.get('pturn')
     },
-    playing(s, $, on) { s.setSound(on && s.on && $('parkAmb').checked) },
+    playing(s, settings, on) { s.setSound(on && s.on && settings.get('parkAmb')) },
   },
   {
     id: 'lake',
     make: h => createLakeStage({ renderer: h.renderer, scene: h.scene, camera: h.camera, onStatus: h.setStatus,
       stageParts: h.stageParts, foreground: h.foreground, hair: h.hair, progress: h.progress, ...h.lake }),
-    controls: `
-    <div class="field" title="The sun below the horizon, as in Afterglow: from just after sunset to the blue hour, or set along the song from start to end"><label>Sky</label><select id="lakeTod">${opt(LAKE_TIMES, 0)}</select></div>`,
-    state: [['sky', 'lakeTod']],
-    wire(s, $) { $('lakeTod').onchange = () => s.setTime($('lakeTod').value) },
-    fromUrl(s, $, params) {
-      if ([...$('lakeTod').options].some(o => o.value === params.get('sky'))) $('lakeTod').value = params.get('sky')
-      s.setTime($('lakeTod').value)
+    section: { id: 'lake', label: 'The lake', items: [
+      { key: 'lakeTod', el: 'lakeTod', type: 'select', default: '0', url: 'sky', label: 'Sky', options: LAKE_TIMES.map(([v, n]) => [String(v), n]),
+        title: 'The sun below the horizon, as in Afterglow: from just after sunset to the blue hour, or set along the song from start to end' },
+    ] },
+    wire(s, settings) { settings.subscribe('lakeTod', v => s.setTime(v)) },
+    fromUrl(s, settings, params) {
+      s.setTime(settings.get('lakeTod'))
       for (const k of ['keyGain', 'fillGain', 'envGain', 'exposure']) if (params.has(k)) s.opts[k] = +params.get(k)
     },
     // a still: the rings of the last 12 s already spreading
@@ -74,6 +75,7 @@ export function createStageSets(host) {
   const { select, piano, dim = [], gpu = false, controls = true } = host
   const $ = id => document.getElementById(id)
   const sets = new Map(), boxes = new Map()
+  let settings = null   // the page's store, once attached
   // the controls, after the Stage menu, each set's in a box shown while it is on
   let at = controls ? select.closest('.field') : null
   for (const d of SETS) {
@@ -82,9 +84,8 @@ export function createStageSets(host) {
     if (controls) {
       const box = document.createElement('div')
       box.className = 'stageCtl'; box.dataset.set = d.id; box.style.display = 'none'
-      box.innerHTML = d.controls
+      box.innerHTML = markup(d.section)
       at.after(box); at = box; boxes.set(d.id, box)
-      d.wire(s, $, host)
     }
     if (gpu) { const o = select.querySelector(`option[value=${d.id}]`); if (o) { o.disabled = true; o.text += ' - WebGL only' } }
   }
@@ -103,7 +104,10 @@ export function createStageSets(host) {
     get: id => sets.get(id),
     active, activeId,
     has: id => sets.has(id) && !gpu,
-    state: controls ? SETS.flatMap(d => d.state) : [],
+    /** The sets' controls as sections of the page's settings schema (ui/settings.js), where the page has the controls. */
+    sections: controls ? SETS.map(d => d.section) : [],
+    /** The page's store, bound: from here the store drives the sets (the park's hour, tree, birds, paint; the lake's sky). */
+    attach(st) { settings = st; if (controls) for (const d of SETS) d.wire(sets.get(d.id), st, host); return api },
     /** Switch to `name`: a set of these, or the page's own (`inscene(name)`). */
     async choose(name, inscene) {
       const want = gpu ? null : sets.has(name) ? name : null
@@ -123,11 +127,12 @@ export function createStageSets(host) {
       if (activeId()) select.value = activeId()
       api.setPlaying(host.playing?.() ?? false)
     },
-    /** The set the address asks for (?stage= or ?scene=), with its own keys, before the page's STATE loop. */
+    /** The set the address asks for (?stage= or ?scene=), with its own keys, before the page reads the rest (after attach). */
     async readUrl(params, key, choose) {
       const id = params.get(key)
-      if (!controls || !api.has(id)) return false
-      desc(id).fromUrl(sets.get(id), $, params)
+      if (!controls || !api.has(id) || !settings) return false
+      settings.read(params, desc(id).section.items.map(it => it.key))
+      desc(id).fromUrl(sets.get(id), settings, params)
       select.value = id
       await choose(id)
       return true
@@ -136,7 +141,7 @@ export function createStageSets(host) {
     /** Draw the frame if a set is on; false leaves it to the page. */
     draw() { const s = active(); if (!s) return false; s.draw(); return true },
     setSize() { for (const s of sets.values()) s.setSize() },
-    setPlaying(on) { if (controls) for (const d of SETS) d.playing?.(sets.get(d.id), $, on) },
+    setPlaying(on) { if (controls && settings) for (const d of SETS) d.playing?.(sets.get(d.id), settings, on) },
     shows: o => [...sets.values()].every(s => s.shows(o)),
     /** A still at T (?shot): what the active set seeds from the song's notes. */
     shot(T, notes = []) { const id = activeId(); if (id) desc(id).shot?.(sets.get(id), T, notes) },

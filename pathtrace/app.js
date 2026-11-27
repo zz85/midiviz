@@ -54,7 +54,7 @@ import { createLinerLibrary, clockOfMidi, buildTimeline, toVTT, toChapters, titl
 import { createLinerOverlay, drawLinerCaption, drawIntertitle, loadIntertitleFonts, INTERTITLE_STYLES, INTERTITLE_THEMES, INTERTITLE_POSITIONS } from '../liner/overlay.js'
 import { SHELL } from './shell.js'
 import { createSettings } from '../ui/settings.js'
-import { mountStudio } from '../ui/studio.js'
+import { mountStudio, PIANIST_TAIL } from '../ui/studio.js'
 import { assignHands, handModeOf, HAND_MODES, DEFAULT_HAND_MODE } from '../fingering/hands.js'
 
 export async function boot(plug = {}) {
@@ -1503,7 +1503,7 @@ export async function boot(plug = {}) {
     const K = (url, el = url, more = {}) => ({ key: el, el, url, ...more })
     const outfitBase = f => s => OUTFITS[s.outfit]?.[f]
     const settings = createSettings([
-      { id: 'piano', label: 'Piano', items: [K('piano', 'pianoType', { reload: true }), K('finish'), K('lid'), K('scene', 'stageSet'), ...stageSets.state.map(([url, el]) => K(url, el))] },
+      { id: 'piano', label: 'Piano', items: [K('piano', 'pianoType', { reload: true }), K('finish'), K('lid'), K('scene', 'stageSet')] }, ...stageSets.sections,
       { id: 'wardrobe', label: 'Outfit', items: [
         K('outfit'), K('dress', 'dressStyle', { base: outfitBase('dress') }), K('slit', 'slit', { base: outfitBase('slit') }), K('fabric', 'fabric', { base: outfitBase('fabric') }),
         K('dcol', 'dressColor', { base: outfitBase('color') }), K('shoes', 'shoeStyle', { base: outfitBase('shoes') }), K('hair', 'hairStyle', { base: outfitBase('hair') }), K('hcol', 'hairColor', { base: outfitBase('hairColor') }),
@@ -1534,10 +1534,12 @@ export async function boot(plug = {}) {
       { id: 'pathtrace', label: 'Path trace', items: [
         K('ptengine', 'ptEngine'), K('ptspp', 'ptSpp', { urlAliases: ['exptspp'] }), K('ptbounces', 'ptBounces'), K('pthair', 'ptHair'), K('ptdn', 'ptDenoise', { urlAliases: ['exptdn'] }), K('ptfx', 'ptFx'), K('ptsize', 'ptSize'),
       ] },
-    ].map(sec => ({ ...sec, items: sec.items.filter(it => $(it.el)) }))).bind(document)
+    ].map(sec => ({ ...sec, items: sec.items.filter(it => $(it.el)) })), { tail: PIANIST_TAIL }).bind(document)
+    stageSets.attach(settings)
     window.__settings = settings
-    // the studio panel (ui/studio.js): every setting, drawn from the schema, on ?studio=1 or the ` key
-    mountStudio(settings, { on: params.get('studio') === '1' })
+    // the studio panel (ui/studio.js): every setting, drawn from the schema, with the hands' baked tracks,
+    // on ?studio=1 or the ` key; the menus keep the short list (ui/menus.js PIANIST_TAIL), the rest is there
+    mountStudio(settings, { on: params.get('studio') === '1', trim: true, hands: () => rig })
     // load: controls the start-up code did not already take from the URL
     // (the wardrobe, pose and director keys are read above) get their value
     // and their own handler, exactly as if picked in the menu
