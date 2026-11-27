@@ -78,33 +78,201 @@ function rebuildBone(alt, name) {
   alt.restWorld[i].copy(W)
 }
 
-/** Her skin's MToon materials (main and outline), cloned, untextured, coloured as her face.
- *  The face is what the hands are seen against: its material (lit and shade colours,
- *  toony shading, ink) and the median colour of its skin texels (its own mesh is skin
- *  only; the body's skin is authored darker, 0.4 of the face's colour factor, and its
- *  hand texels carry painted nails and creases). */
+// The seam at the wrist, seen on bare forearms (pixiv's twist sample). Her own hand is
+// folded away (its bones scaled to nothing), which left her forearm ending in a stump at
+// the wrist, a little wider than the new hand's forearm (2.0 cm in radius against its
+// 1.9): her arm's ink ran round the wrist where her stump stood out of it, and the
+// MakeHuman forearm cut out with the hand (FOREARM_CM of it) ended in an edge of its own.
+// The two arms are made to hand over smoothly, each end inside the other:
+//  • the new hand's forearm is shaped to hers, angle by angle round the arm: from inside
+//    hers at its cut end (CUT_IN cm in, its ink with it), out to OVER cm outside hers by
+//    OVER_AT cm from the wrist, and into the hand's own wrist over the last WRIST_CM;
+//  • her own forearm's skin (its SKIN materials: a sleeve keeps its cuff) is drawn in
+//    toward the arm's axis from OVER_AT cm to the wrist, to TAPER of its width, so her
+//    stump and its ink end inside the new hand's forearm; her skin over the last
+//    FOLD_SKIN_CM folds away with her hand, and her folded hand sits FOLD_CM up inside
+//    her forearm, not at the wrist.
+// Only the drawn meshes change: the joints, and so the rig and the fingering, are as before.
+const FOLD_CM = 2, FOLD_SKIN_CM = 1.4, OVER_AT = 2.4, WRIST_CM = 2.4, CUT_IN = 0.3, OVER = 0.15, TAPER = 0.6
+const BINS = 24
+const smooth01 = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t) }
+/** The arm's frame at the wrist: its axis toward the hand, and two directions across it. */
+function armFrame(alt, d) {
+  const W = alt.joints['wrist' + d + '____head'], E = alt.joints['lowerarm01' + d + '____head']
+  if (!W || !E) return null
+  const dir = W.clone().sub(E).normalize(), x = v3(1, 0, 0)
+  if (Math.abs(x.dot(dir)) > 0.9) x.set(0, 0, 1)
+  x.addScaledVector(dir, -x.dot(dir)).normalize()
+  const y = v3().crossVectors(dir, x)
+  const q = v3()
+  /** a point's distance up the arm from the wrist (back), its radius and its angle bin; q: its radial vector */
+  const at = p => { q.subVectors(p, W); const back = -q.dot(dir); q.addScaledVector(dir, back); const r = q.length()
+    return { back, r, bin: Math.floor((Math.atan2(q.dot(y), q.dot(x)) / (2 * Math.PI) + 0.5) * BINS) % BINS } }
+  return { W, dir, at, q }
+}
+/** Her forearm's radius at each angle round the arm, from OVER_AT to FOREARM_CM cm up from the
+ *  wrist: the outermost of her visible meshes there (skin or a sleeve); gaps from their neighbours. */
+function forearmRadii(alt, F) {
+  const bins = new Float32Array(BINS), v = v3()
+  alt.group.updateMatrixWorld(true)
+  alt.model.traverse(o => {
+    if (!o.isSkinnedMesh || /HAIR|EYE|FACE/i.test([].concat(o.material)[0]?.name || '')) return
+    for (let a = o; a; a = a.parent) if (!a.visible) return
+    o.skeleton.update()
+    const P = o.geometry.attributes.position
+    for (let i = 0; i < P.count; i++) {
+      o.getVertexPosition(i, v); alt.group.worldToLocal(v.applyMatrix4(o.matrixWorld))
+      const { back, r, bin } = F.at(v)
+      if (back < OVER_AT || back > FOREARM_CM + 0.5 || r > 5) continue
+      if (r > bins[bin]) bins[bin] = r
+    }
+  })
+  const got = [...bins].filter(r => r > 0.3)
+  if (got.length < BINS / 2) return null
+  for (let k = 0; k < BINS; k++) if (!(bins[k] > 0.3)) {
+    let a = 1; while (!(bins[(k - a + BINS) % BINS] > 0.3)) a++
+    let b = 1; while (!(bins[(k + b) % BINS] > 0.3)) b++
+    bins[k] = (bins[(k - a + BINS) % BINS] * b + bins[(k + b) % BINS] * a) / (a + b)
+  }
+  return bins
+}
+/** The new hand's forearm onto hers (pos: its vertices, in the group's frame; handW: their hand weights). */
+function fitStub(alt, d, pos, handW) {
+  const F = armFrame(alt, d); if (!F) return null
+  const her = forearmRadii(alt, F); if (!her) return null
+  const p = v3()
+  for (let j = 0; j < handW.length; j++) {
+    const { back, r, bin } = F.at(p.fromArray(pos, j * 3))
+    if (back <= 0 || r < 1e-6) continue
+    const outside = her[bin] + OVER, inside = her[bin] - CUT_IN - 0.14
+    // the radius it takes: its own at the wrist, outside hers from OVER_AT, inside hers at its cut
+    const target = r + (outside - r) * smooth01(0, WRIST_CM, back) + (inside - outside) * smooth01(OVER_AT, FOREARM_CM, back)
+    const s = 1 + (target / r - 1) * (1 - handW[j])
+    p.sub(F.q).addScaledVector(F.q, s).toArray(pos, j * 3)
+  }
+  return her
+}
+/** Her forearm's skin drawn in toward the arm's axis near the wrist (see above), in its bind shape. */
+function taperForearm(alt, d, backs = new Map()) {
+  const F = armFrame(alt, d); if (!F) return
+  const v = v3(), inv = new THREE.Matrix4()
+  alt.group.updateMatrixWorld(true)
+  alt.model.traverse(o => {
+    const name = [].concat(o.material)[0]?.name || ''
+    if (!o.isSkinnedMesh || !/SKIN/i.test(name) || /Face/i.test(name)) return
+    o.skeleton.update()
+    const P = o.geometry.attributes.position
+    // mesh-local -> the group's frame and back (at rest the skinned shape is the bind shape)
+    const toG = alt.group.matrixWorld.clone().invert().multiply(o.matrixWorld)
+    inv.copy(toG).invert()
+    // her folded hand's bone: the skin nearest the wrist is given to it whole, so it folds
+    // away with the hand (into the arm, on its axis) rather than ending in a stump there
+    const hb = o.skeleton.bones.indexOf(alt.humanoid[d === '.L' ? 'leftHand' : 'rightHand'])
+    const SI = o.geometry.attributes.skinIndex, SW = o.geometry.attributes.skinWeight
+    let n = 0
+    const B = backs.get(o) || backs.set(o, new Float32Array(P.count).fill(99)).get(o)
+    for (let i = 0; i < P.count; i++) {
+      o.getVertexPosition(i, v).applyMatrix4(toG)
+      const { back, r } = F.at(v)
+      if (r < 4 && back > -6) B[i] = Math.min(B[i], back)
+      if (back < -1 || back > OVER_AT || r > 4) continue
+      if (hb >= 0 && back < FOLD_SKIN_CM) { SI.setXYZW(i, hb, 0, 0, 0); SW.setXYZW(i, 1, 0, 0, 0) }
+      const k = 1 - (1 - TAPER) * smooth01(OVER_AT, OVER_AT - 1.2, back)
+      const pOld = v.clone().applyMatrix4(inv), pNew = v.addScaledVector(F.q, k - 1).applyMatrix4(inv)
+      P.setXYZ(i, P.getX(i) + pNew.x - pOld.x, P.getY(i) + pNew.y - pOld.y, P.getZ(i) + pNew.z - pOld.z)
+      n++
+    }
+    if (n) { P.needsUpdate = SI.needsUpdate = SW.needsUpdate = true; o.geometry.computeBoundingSphere() }
+  })
+}
+
+/**
+ * Her forearm's ink taken off near the wrist, where her arm goes in under the new hand's
+ * forearm: in the render her folded stump still stood out of it in places (the constraint
+ * twist bones of pixiv's sample turn her forearm's skin another way from the new hand's),
+ * and its outline drew the ring. The MToon outline's width is multiplied by a texture of
+ * her mesh's UVs (outlineWidthMultiplyTexture, its green), painted here per triangle from
+ * its distance up the arm: none below INK_FROM cm, all of it from INK_TO.
+ */
+const INK_FROM = 0.6, INK_TO = 4.5, INK_TEX = 1024
+function unInkWrists(backs) {
+  for (const [o, B] of backs) {
+    const mats = [].concat(o.material), ol = mats.find(m => m.isOutline)
+    const UV = o.geometry.attributes.uv, IDX = o.geometry.index
+    if (!ol || !UV || !IDX || ol.outlineWidthMultiplyTexture) continue
+    const cv = document.createElement('canvas'); cv.width = cv.height = INK_TEX
+    const cx = cv.getContext('2d')
+    cx.fillStyle = '#fff'; cx.fillRect(0, 0, INK_TEX, INK_TEX)
+    let painted = 0
+    for (let t = 0; t < IDX.count; t += 3) {
+      const ids = [IDX.getX(t), IDX.getX(t + 1), IDX.getX(t + 2)]
+      const back = (B[ids[0]] + B[ids[1]] + B[ids[2]]) / 3
+      if (!(back < INK_TO)) continue
+      const g = Math.round(255 * smooth01(INK_FROM, INK_TO, back))
+      cx.fillStyle = `rgb(${g},${g},${g})`; cx.strokeStyle = cx.fillStyle; cx.lineWidth = 1.5
+      cx.beginPath()
+      ids.forEach((i, k) => { const x = UV.getX(i) * INK_TEX, y = UV.getY(i) * INK_TEX; k ? cx.lineTo(x, y) : cx.moveTo(x, y) })
+      cx.closePath(); cx.fill(); cx.stroke(); painted++
+    }
+    if (!painted) continue
+    const tex = new THREE.CanvasTexture(cv)
+    tex.flipY = false; tex.colorSpace = THREE.NoColorSpace
+    ol.outlineWidthMultiplyTexture = tex
+    ol.needsUpdate = true
+  }
+}
+
+/** Her skin's MToon materials (main and outline), cloned, untextured, coloured as her
+ *  forearm, where the hand joins her: the body's skin material (lit and shade colours,
+ *  toony shading, ink) and the median colour of its forearm texels (its hand texels carry
+ *  painted nails and creases, so the forearm's are read). Coloured as her face, which was
+ *  the rule before, the hand met her arm at a visible edge: the body's skin is authored
+ *  with another colour factor and texture than the face's. A model without forearm skin
+ *  (vertices held by a lower arm bone), or whose forearm skin reads much darker than
+ *  its face (painted for under a sleeve), falls back to the face. */
 function toonSkin(alt) {
   const skinOf = rx => { let m = null; alt.model.traverse(o => { if (o.isSkinnedMesh && !m && rx.test([].concat(o.material)[0]?.name || '')) m = o }); return m }
-  const face = skinOf(/Face.*SKIN/i) || skinOf(/SKIN/i)
-  const mats = face && [].concat(face.material)
-  if (!mats?.[0]?.isMToonMaterial) return null
-  const g = face.geometry, UV = g.attributes.uv, img = mats[0].map?.image
-  let tint = new THREE.Color(1, 1, 1)
-  if (img && UV) {
-    const N = 256, cv = document.createElement('canvas'); cv.width = cv.height = N
-    const cx = cv.getContext('2d', { willReadFrequently: true }); cx.drawImage(img, 0, 0, N, N)
-    const px = cx.getImageData(0, 0, N, N).data
-    const ch = [[], [], []]
-    for (let i = 0; i < UV.count; i++) {
-      let u = UV.getX(i) % 1, v = UV.getY(i) % 1; if (u < 0) u++; if (v < 0) v++
-      const x = Math.min(N - 1, Math.floor(u * N)), y = Math.min(N - 1, Math.floor((mats[0].map.flipY ? 1 - v : v) * N))
-      const k = (y * N + x) * 4
-      if (px[k + 3] < 128) continue
-      for (let c = 0; c < 3; c++) ch[c].push(px[k + c])
-    }
-    const med = a => { a.sort((x, y) => x - y); return a[a.length >> 1] / 255 }
-    if (ch[0].length) tint = new THREE.Color().setRGB(med(ch[0]), med(ch[1]), med(ch[2]), THREE.SRGBColorSpace)
+  // her forearm, where the hand joins her: its material, and the colour of its skin texels
+  // (the face's, all of them, where the model has no forearm skin to read)
+  const body = skinOf(/Body.*SKIN/i), face = skinOf(/Face.*SKIN/i) || skinOf(/SKIN/i)
+  const forearm = o => {
+    const SI = o?.geometry.attributes.skinIndex, SW = o?.geometry.attributes.skinWeight
+    if (!SI || !SW) return null
+    const ok = o.skeleton.bones.map(b => /LowerArm|Elbow/i.test(b.name) && !/Hand/i.test(b.name)), out = []
+    for (let i = 0; i < SI.count; i++) { let b = 0, w = -1; for (let c = 0; c < 4; c++) { const x = SW.getComponent(i, c); if (x > w) { w = x; b = SI.getComponent(i, c) } } if (ok[b]) out.push(i) }
+    return out.length >= 20 ? out : null
   }
+  const arm = body && [].concat(body.material)[0]?.isMToonMaterial ? forearm(body) : null
+  // the material and its skin's median colour, from a mesh (its vertices `only`, else all)
+  const sample = (mesh, only) => {
+    const mats = mesh && [].concat(mesh.material)
+    if (!mats?.[0]?.isMToonMaterial) return null
+    const g = mesh.geometry, UV = g.attributes.uv, img = mats[0].map?.image
+    let tint = new THREE.Color(1, 1, 1)
+    if (img && UV) {
+      const N = 256, cv = document.createElement('canvas'); cv.width = cv.height = N
+      const cx = cv.getContext('2d', { willReadFrequently: true }); cx.drawImage(img, 0, 0, N, N)
+      const px = cx.getImageData(0, 0, N, N).data
+      const ch = [[], [], []]
+      for (const i of only ?? Array.from({ length: UV.count }, (_, i) => i)) {
+        let u = UV.getX(i) % 1, v = UV.getY(i) % 1; if (u < 0) u++; if (v < 0) v++
+        const x = Math.min(N - 1, Math.floor(u * N)), y = Math.min(N - 1, Math.floor((mats[0].map.flipY ? 1 - v : v) * N))
+        const k = (y * N + x) * 4
+        if (px[k + 3] < 128) continue
+        for (let c = 0; c < 3; c++) ch[c].push(px[k + c])
+      }
+      const med = a => { a.sort((x, y) => x - y); return a[a.length >> 1] / 255 }
+      if (ch[0].length) tint = new THREE.Color().setRGB(med(ch[0]), med(ch[1]), med(ch[2]), THREE.SRGBColorSpace)
+    }
+    const lit = mats[0].color.clone().multiply(tint)
+    return { mats, tint, lum: 0.2126 * lit.r + 0.7152 * lit.g + 0.0722 * lit.b }
+  }
+  const fromFace = sample(face), fromArm = arm ? sample(body, arm) : null
+  // (a forearm kept under long sleeves can be painted darker, or not at all: AvatarSample_A's
+  // read a deep brown. Her face's colour then, as before)
+  const pick = fromArm && (!fromFace || fromArm.lum >= 0.75 * fromFace.lum) ? fromArm : fromFace
+  if (!pick) return null
+  const { mats, tint } = pick
   return mats.map((m, i) => {
     const c = m.clone()
     c.name = 'PianistHand' + (i ? ' (Outline)' : '')
@@ -124,6 +292,7 @@ export async function graftPianistHands(alt, { base = new URL('./assets/', impor
   const meshes = []
   // the proxy's rest, kept to put back (set(false) needs a page reload: the rig was made on the new one)
   const saved = { joints: Object.fromEntries(Object.entries(alt.joints).map(([k, v]) => [k, v.clone()])) }
+  const backs = new Map()
   for (const side of ['L', 'R']) {
     const d = '.' + side
     const A = frames(mh.joints, side), B = frames(alt.joints, side)
@@ -161,6 +330,8 @@ export async function graftPianistHands(alt, { base = new URL('./assets/', impor
       const top = [...ws].sort((x, y) => y[1] - x[1]).slice(0, 4), sum = top.reduce((a, x) => a + x[1], 0)
       top.forEach(([b, w], c) => { si[j * 4 + c] = b; sw[j * 4 + c] = w / sum })
     })
+    fitStub(alt, d, pos, handW)
+    taperForearm(alt, d, backs)
     const tri = []
     for (let t = 0; t < IDX.count; t += 3) {
       const a = keep[IDX.getX(t)], b = keep[IDX.getX(t + 1)], c = keep[IDX.getX(t + 2)]
@@ -189,6 +360,7 @@ export async function graftPianistHands(alt, { base = new URL('./assets/', impor
     mesh.frustumCulled = false
     meshes.push({ mesh, geometry: g })
   }
+  unInkWrists(backs)
   alt.group.updateMatrixWorld(true)
   // (in her VRM's scene with toon skin, so the page's ink switch reaches the outline:
   // a skinned mesh draws where its bones are, whatever its parent)
@@ -199,6 +371,12 @@ export async function graftPianistHands(alt, { base = new URL('./assets/', impor
     mesh.bind(new THREE.Skeleton(alt.bones, alt.restWorld.map(m => m.clone().invert())), new THREE.Matrix4())
   }
   // the model's own hands: folded into the wrist
-  for (const b of ['leftHand', 'rightHand'].map(k => alt.humanoid[k]).filter(Boolean)) { b.scale.setScalar(0.02); b.updateMatrixWorld(true) }
+  // (FOLD_CM up her forearm: a fixed place in her lower arm's frame, which the rig turns)
+  for (const b of ['leftHand', 'rightHand'].map(k => alt.humanoid[k]).filter(Boolean)) {
+    const par = b.parent, h = b.getWorldPosition(v3()), e = par.getWorldPosition(v3())
+    const g = alt.group.getWorldScale(v3()).x, len = h.distanceTo(e)
+    if (len > 1e-6) b.position.copy(par.worldToLocal(h.lerp(e, Math.min(0.5, FOLD_CM * g / len))))
+    b.scale.setScalar(0.02); b.updateMatrixWorld(true)
+  }
   return { meshes: meshes.map(m => m.mesh), material: toon || mh.materials.skin, look: toon ? 'toon' : 'real', saved }
 }
