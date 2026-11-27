@@ -128,20 +128,33 @@ const WRAP = /* glsl */`
     vec3 w = vec3( 0.5, 0.24, 0.16 );
     vec3 wd = clamp( ( vec3( nl ) + w ) / ( 1.0 + w ), 0.0, 1.0 );
     wd *= wd * ( 3.0 - 2.0 * wd ) * 0.35 + 0.65;   // soften the falloff a little
-    reflectedLight.directDiffuse += wd * directLight.color * BRDF_Lambert( material.diffuseColor );
+    reflectedLight.directDiffuse += wd * directLight.color * SKIN_BRDF;
   }
 `
+// ?skindebug=thickness shows the baked thickness (pianist/skin-detail.js) in place of the light
+const DEBUG = (typeof location !== 'undefined' && new URLSearchParams(location.search).get('skindebug') === 'thickness') ? 'outgoingLight = vec3( skinThick );\n' : ''
 /** onBeforeCompile's work for a skin material: every mode, chosen by its defines. */
 export function patchSkinShader(shader) {
-  const lambert = 'reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseColor );'
+  // three.js's own diffuse line, which each mode takes the place of: r187's
+  // physical model (Lambert by diffuseContribution, less the Fresnel), or the
+  // older one; SKIN_BRDF is its BRDF either way
+  const chunk = THREE.ShaderChunk.lights_physical_pars_fragment
+  const r187 = 'reflectedLight.directDiffuse += irradiance * diffuseBRDF * ( 1.0 - F );'
+  const lambert = chunk.includes(r187) ? r187 : 'reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseColor );'
+  const brdf = lambert === r187 ? '( diffuseBRDF * ( 1.0 - F ) )' : 'BRDF_Lambert( material.diffuseColor )'
+  if (!chunk.includes(lambert)) console.warn('skin: three.js diffuse line not found; skin shading is three.js own')
   Object.assign(shader.uniforms, { skinLUT: { value: skinLUT() }, skinPass: SKIN_PASS, skinSceneDepth: SKIN_SCENE_DEPTH, skinRes: SKIN_RES })
-  const direct = `#if defined( SKIN_PREINT )\n${SKIN_PREINT_DIRECT}\n#elif defined( SKIN_WRAP )\n${WRAP}\n#else\n  ${lambert}\n#endif\n`
+  const direct = `#define SKIN_BRDF ${brdf}\n#if defined( SKIN_PREINT )\n${SKIN_PREINT_DIRECT}\n#elif defined( SKIN_WRAP )\n${WRAP}\n#else\n  ${lambert}\n#endif\n`
   shader.fragmentShader = shader.fragmentShader
-    .replace('#include <lights_physical_pars_fragment>', SKIN_SHADOW_PARS + SKIN_PREINT_PARS + THREE.ShaderChunk.lights_physical_pars_fragment.replace(lambert, direct))
+    .replace('#include <lights_physical_pars_fragment>', SKIN_SHADOW_PARS + SKIN_PREINT_PARS + chunk.replace(lambert, direct))
     .replace('#include <lights_fragment_begin>', skinShadowChunk(THREE.ShaderChunk.lights_fragment_begin))
+    .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+#ifdef USE_ROUGHNESSMAP
+  skinThick = texture2D( roughnessMap, vRoughnessMapUv ).b;
+#endif`)
     .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
   if ( skinPass > 0.5 && gl_FragCoord.z > texture2D( skinSceneDepth, gl_FragCoord.xy / skinRes ).r + 1e-5 ) discard;   // (behind what the scene shows)`)
-    .replace('#include <opaque_fragment>', `if ( skinPass > 0.5 ) outgoingLight = totalDiffuse;   // (the diffuse light alone, for pianist/skin-sss.js)
+    .replace('#include <opaque_fragment>', `${DEBUG}if ( skinPass > 0.5 ) outgoingLight = totalDiffuse;   // (the diffuse light alone, for pianist/skin-sss.js)
 #include <opaque_fragment>
   skinAlbedo = vec4( diffuseColor.rgb, 1.0 );   // (its second target: the colour the light is blurred under)`)
   shader.fragmentShader = 'uniform float skinPass;\nuniform sampler2D skinSceneDepth;\nuniform vec2 skinRes;\nlayout(location = 1) out highp vec4 skinAlbedo;\n' + shader.fragmentShader
@@ -159,10 +172,15 @@ export function patchSkinShader(shader) {
 // the tint to colour: a few millimetres at the stage's map sizes
 export const SHADOW_EXP = [0.4, 0.8, 1.0]
 export const SKIN_PENUMBRA = +(typeof location !== 'undefined' && new URLSearchParams(location.search).get('skinpenumbra')) || 2.5
+/** The strength of the light through thin skin (?translucency=, 1 by default). */
+export const SKIN_TRANSLUCENCY = (() => { const v = typeof location !== 'undefined' && new URLSearchParams(location.search).get('translucency'); return v !== null && v !== false && v !== '' && isFinite(+v) ? +v : 1 })()
 export const SKIN_SHADOW_PARS = /* glsl */`
 vec3 skinTint = vec3( 1.0 );
+vec3 skinLit = vec3( -1.0 );   // the light's colour before its shadow, for the light through thin skin
+float skinThick = 0.0;         // how thin the skin is here, 0-1 (the roughness map's blue, pianist/skin-detail.js)
 #ifdef SKIN_PREINT
 #define SKIN_PENUMBRA ${SKIN_PENUMBRA.toFixed(2)}
+#define SKIN_TRANSLUCENCY ${SKIN_TRANSLUCENCY.toFixed(2)}
 #else
 #define SKIN_PENUMBRA 0.0
 #endif
@@ -178,7 +196,7 @@ vec3 skinShadow( float s ) {
 export function skinShadowChunk(chunk) {
   let n = 0
   const out = chunk.replace(/directLight\.color \*= (\( directLight\.visible && receiveShadow \) \? .*? : 1\.0);/g,
-    (m, sh) => { n++; return `{ float skinSh = ${sh.replace(/(\w+)\.shadowRadius/g, '$1.shadowRadius + SKIN_PENUMBRA')}; directLight.color *= skinSh; skinTint = skinShadow( skinSh ); }` })
+    (m, sh) => { n++; return `{ float skinSh = ${sh.replace(/(\w+)\.shadowRadius/g, '$1.shadowRadius + SKIN_PENUMBRA')}; skinLit = directLight.color; directLight.color *= skinSh; skinTint = skinShadow( skinSh ); }` })
   if (!n) console.warn('skin: no shadow tests found in lights_fragment_begin')
   return out
 }
@@ -192,8 +210,18 @@ vec3 skinDiffuse( float nl ) {
 }
 `
 export const SKIN_PREINT_DIRECT = /* glsl */`
-  reflectedLight.directDiffuse += skinDiffuse( dot( geometryNormal, directLight.direction ) ) * directLight.color * skinTint * BRDF_Lambert( material.diffuseColor );
+  reflectedLight.directDiffuse += skinDiffuse( dot( geometryNormal, directLight.direction ) ) * directLight.color * skinTint * SKIN_BRDF;
   skinTint = vec3( 1.0 );
+  // light through thin skin (the ears, the nostrils' wings, the fingers), lit
+  // from behind: Barre-Brisebois and Bouchard's translucency, by the baked
+  // thickness, unshadowed (the shadow is the thin part's own), deep red
+  if ( skinThick > 0.0 ) {
+    vec3 lc = skinLit.r >= 0.0 ? skinLit : directLight.color;
+    vec3 Lt = directLight.direction + geometryNormal * 0.3;
+    float b = pow( saturate( dot( geometryViewDir, - Lt ) ), 3.0 ) + 0.25 * saturate( - dot( geometryNormal, directLight.direction ) );
+    reflectedLight.directDiffuse += skinThick * skinThick * b * SKIN_TRANSLUCENCY * lc * material.diffuseColor * vec3( 1.0, 0.3, 0.16 );
+  }
+  skinLit = vec3( -1.0 );
 `
 export const SKIN_PREINT_VERTEX_PARS = /* glsl */`
 attribute float curvature;
