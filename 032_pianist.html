@@ -511,6 +511,7 @@
     import { createFocusPuller, SHOT_DOF } from './pianist/focus-puller.js'
     import { createStageSets } from './stages/sets.js'
     import { createSettings } from './ui/settings.js'
+    import { mountStudio } from './ui/studio.js'
     import { createInsceneStages } from './stages/inscene.js'
     import { createLinerLibrary, clockOfMidi, buildTimeline, toVTT, toChapters, titleScreen, withTitle, titleSecs } from './liner/liner.js'
     import { createLinerOverlay, drawLinerCaption, drawIntertitle, loadIntertitleFonts, INTERTITLE_STYLES, INTERTITLE_THEMES, INTERTITLE_POSITIONS } from './liner/overlay.js'
@@ -1855,6 +1856,8 @@
       ] },
     ].map(sec => ({ ...sec, items: sec.items.filter(it => $(it.el)) }))).bind(document)
     window.__settings = settings
+    // the studio panel (ui/studio.js): every setting, drawn from the schema, on ?studio=1 or the ` key
+    mountStudio(settings, { on: params.get('studio') === '1' })
     // load: controls the start-up code did not already take from the URL
     // (the wardrobe, pose and director keys are read above) get their value
     // and their own handler, exactly as if picked in the menu
@@ -2607,6 +2610,3 @@
   </script>
 </body>
 </html>
-    import { mountStudio } from './ui/studio.js'
-    // the studio panel (ui/studio.js): every setting, drawn from the schema, on ?studio=1 or the ` key
-    mountStudio(settings, { on: params.get('studio') === '1' })

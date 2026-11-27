@@ -54,6 +54,7 @@ import { createLinerLibrary, clockOfMidi, buildTimeline, toVTT, toChapters, titl
 import { createLinerOverlay, drawLinerCaption, drawIntertitle, loadIntertitleFonts, INTERTITLE_STYLES, INTERTITLE_THEMES, INTERTITLE_POSITIONS } from '../liner/overlay.js'
 import { SHELL } from './shell.js'
 import { createSettings } from '../ui/settings.js'
+import { mountStudio } from '../ui/studio.js'
 import { assignHands, handModeOf, HAND_MODES, DEFAULT_HAND_MODE } from '../fingering/hands.js'
 
 export async function boot(plug = {}) {
@@ -1535,6 +1536,8 @@ export async function boot(plug = {}) {
       ] },
     ].map(sec => ({ ...sec, items: sec.items.filter(it => $(it.el)) }))).bind(document)
     window.__settings = settings
+    // the studio panel (ui/studio.js): every setting, drawn from the schema, on ?studio=1 or the ` key
+    mountStudio(settings, { on: params.get('studio') === '1' })
     // load: controls the start-up code did not already take from the URL
     // (the wardrobe, pose and director keys are read above) get their value
     // and their own handler, exactly as if picked in the menu
@@ -2478,6 +2481,3 @@ export async function boot(plug = {}) {
       }
     }
 }
-import { mountStudio } from '../ui/studio.js'
-    // the studio panel (ui/studio.js): every setting, drawn from the schema, on ?studio=1 or the ` key
-    mountStudio(settings, { on: params.get('studio') === '1' })
