@@ -257,7 +257,7 @@
   <div id="visualsPop" class="pop ui">
     <div class="item" id="resetAll" title="Every option back to its default (the song and its position are kept)">↺ Restore all defaults</div>
     <div class="sect">Piano</div>
-    <div class="field" title="The concert grand or the older upright. Changing it reloads the scene"><label>Instrument</label><select id="pianoType"><option value="grand" selected>Concert grand</option><option value="upright">Older upright</option></select></div>
+    <div class="field" title="The concert grand, the older upright, or the 2.74 m concert grand of Afterglow (pianist/afterglow/, MIT). Changing it reloads the scene"><label>Instrument</label><select id="pianoType"><option value="grand" selected>Concert grand</option><option value="upright">Older upright</option><option value="afterglow">Afterglow concert grand</option></select></div>
     <div class="field" id="uprightPanelField" hidden title="Remove the upright's upper front panel to show its hammers, dampers, action and strings"><label>Front panel</label><select id="uprightPanel"><option value="open" selected>Off - show the action</option><option value="closed">On - cover the action</option></select></div>
     <div class="sect">Pianist</div>
     <div class="field"><label>Model</label><select id="model"><option value="">MakeHuman (realistic, CC0)</option></select></div>
@@ -490,6 +490,7 @@
     import { installAcoustics, offlineHall, acousticParams, rt60Of, ROOMS, SEATS } from './concertstage/acoustics.js'
     import { buildGrandPiano, LOW, HIGH, DIM } from './concertstage/concert-grand.js'
     import { loadUprightPiano } from './pianist/upright-piano.js'
+    import { loadAfterglowPiano } from './pianist/afterglow-piano.js'
     import { createLessonView, LESSON_VIEWS } from './pianist/lesson.js'
     import { loadCharacter } from './pianist/character.js'
     import { loadAltCharacter, MODELS } from './pianist/alt-model.js'
@@ -549,17 +550,13 @@
     controls.minDistance = 10; controls.maxDistance = 1400
 
     // ── Piano and stage ──────────────────────────────────────────────────
-    const PIANO_TYPE = params.get('piano') === 'upright' ? 'upright' : 'grand'
+    const PIANO_TYPE = ['upright', 'afterglow'].includes(params.get('piano')) ? params.get('piano') : 'grand'
     $('pianoType').value = PIANO_TYPE
     $('uprightPanelField').hidden = PIANO_TYPE !== 'upright'
     $('uprightPanel').value = params.get('panel') === 'closed' ? 'closed' : 'open'
-    $('pianoType').onchange = () => {
-      const q = new URLSearchParams(location.search)
-      if ($('pianoType').value === 'upright') q.set('piano', 'upright'); else q.delete('piano')
-      location.search = q.toString()
-    }
-    const piano = PIANO_TYPE === 'upright'
-      ? await loadUprightPiano()
+    // (a change of Instrument reloads the page through the settings store: its `piano` entry is reload: true)
+    const piano = PIANO_TYPE === 'upright' ? await loadUprightPiano()
+      : PIANO_TYPE === 'afterglow' ? await loadAfterglowPiano()
       : buildGrandPiano({ mirror: LOWQ ? false : { width: 1600, height: 900 } })
     scene.add(piano.root)
     piano.setFinish('ebony'); piano.setLid(PIANO_TYPE === 'upright' && $('uprightPanel').value === 'closed' ? 'closed' : 'full')
@@ -1051,7 +1048,7 @@
       stageParts: () => [floor, spot, faceKey, rim, back, keyFill, dust, ...Object.values(stageProps).map(p => p.root)],
       foreground: () => [ch.group, hair?.object, hair?.cap, dress?.object, shoes?.object],
       hair: () => hair, progress: () => scheduler?.duration ? songNow() / scheduler.duration : 0, playing: () => !!scheduler?.playing,
-      dim: ['dof', 'bloom', 'filmGrain', 'dust'] })
+      dim: ['dof', 'bloom', 'filmGrain', 'dust'], lake: { piano: { legs: piano.legs, lyre: piano.lyre } } })
     async function setStageSet(name) { await stageSets.choose(name, setStage); applyFx() }
     $('stageSet').onchange = () => setStageSet($('stageSet').value)
     const drawPost = () => stageSets.draw() || composer.render()
@@ -1831,7 +1828,7 @@
     const K = (url, el = url, more = {}) => ({ key: el, el, url, ...more })
     const outfitBase = f => s => OUTFITS[s.outfit]?.[f]
     const settings = createSettings([
-      { id: 'piano', label: 'Piano', items: [K('piano', 'pianoType'), K('panel', 'uprightPanel'), K('stage', 'stageSet'), ...stageSets.state.map(([url, el]) => K(url, el))] },
+      { id: 'piano', label: 'Piano', items: [K('piano', 'pianoType', { reload: true }), K('panel', 'uprightPanel'), K('stage', 'stageSet'), ...stageSets.state.map(([url, el]) => K(url, el))] },
       { id: 'wardrobe', label: 'Outfit', items: [
         K('outfit'), K('dress', 'dressStyle', { base: outfitBase('dress') }), K('slit', 'slit', { base: outfitBase('slit') }), K('fabric', 'fabric', { base: outfitBase('fabric') }),
         K('dcol', 'dressColor', { base: outfitBase('color') }), K('shoes', 'shoeStyle', { base: outfitBase('shoes') }), K('hair', 'hairStyle', { base: outfitBase('hair') }), K('hcol', 'hairColor', { base: outfitBase('hairColor') }),

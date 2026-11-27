@@ -16,6 +16,7 @@ Browser experiments with MIDI, piano and violin rendering, synthesis and audio a
 ## Pianist and piano
 
 - [#054 Afterglow Lake](054_afterglow_lake.html) - #045's pianist on the lake of Afterglow at dusk: its sky, mountains and water, which mirrors her and rings from the piano's legs with each note; also a stage set in [#032](032_pianist.html?stage=lake), [#045](045_pathtracer.html?scene=lake) and [#038, the duo](038_duo.html?stage=lake) ([notes](lake/README.md), [details](CHANGELOG.md#25-nov-2026))
+- [Afterglow's concert grand](032_pianist.html?piano=afterglow) - Afterglow's procedural 2.74 m concert grand (MIT) as a third instrument for the pianist on #032 and #045, beside the concert grand and the upright: Instrument -> Afterglow concert grand ([details](CHANGELOG.md#27-nov-2026))
 - [#052 Grand Action](052_grand_action.html) - the concert grand's double-escapement action, key to hammer and damper, timed to the note; slow motion, x-ray and a trace of one key ([details](CHANGELOG.md#13-nov-2026))
 - [#050 Engraved Score](050_sheet_engraved.html) - #045's pianist with the score engraved by nwc-viewer over her: systems scroll in, the cursor goes from note to note and note heads light as they sound; in videos too ([notes](sheet/README.md), [details](CHANGELOG.md#1-nov-2026))
 - [#049 Score Scan](049_sheet_scan.html) - #045's pianist with the printed page (Bach-Gesellschaft, 1853) sliced into systems over her, bars and barlines found in the scan; in videos too ([notes](sheet/README.md), [details](CHANGELOG.md#1-nov-2026))

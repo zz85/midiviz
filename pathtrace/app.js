@@ -26,6 +26,7 @@ import { chooseParts, newJob, writeJob, writeText, openJob, pickFolder, jobLeft,
 import { installAcoustics, offlineHall, acousticParams, rt60Of, ROOMS, SEATS } from '../concertstage/acoustics.js'
 import { buildGrandPiano, LOW, HIGH, DIM, FINISHES } from '../concertstage/concert-grand.js'
 import { loadUprightPiano } from '../pianist/upright-piano.js'
+import { loadAfterglowPiano } from '../pianist/afterglow-piano.js'
 import { createLessonView, LESSON_VIEWS } from '../pianist/lesson.js'
 import { loadCharacter } from '../pianist/character.js'
 import { loadAltCharacter, MODELS } from '../pianist/alt-model.js'
@@ -127,16 +128,12 @@ export async function boot(plug = {}) {
     controls.minDistance = 10; controls.maxDistance = 1400
 
     // ── Piano and stage ──────────────────────────────────────────────────
-    const PIANO_TYPE = params.get('piano') === 'upright' ? 'upright' : 'grand'
+    const PIANO_TYPE = ['upright', 'afterglow'].includes(params.get('piano')) ? params.get('piano') : 'grand'
     $('pianoType').value = PIANO_TYPE
-    $('pianoType').onchange = () => {
-      const q = new URLSearchParams(location.search)
-      if ($('pianoType').value === 'upright') q.set('piano', 'upright'); else q.delete('piano')
-      location.search = q.toString()
-    }
+    // (a change of Instrument reloads the page through the settings store: its `piano` entry is reload: true)
     // (the grand fallboard's planar mirror is a WebGL Reflector: on WebGPU, SSR reflects the keys in the lacquer)
-    const piano = PIANO_TYPE === 'upright'
-      ? await loadUprightPiano()
+    const piano = PIANO_TYPE === 'upright' ? await loadUprightPiano()
+      : PIANO_TYPE === 'afterglow' ? await loadAfterglowPiano()
       : buildGrandPiano({ mirror: LOWQ || GPU ? false : { width: 1600, height: 900 } })
     scene.add(piano.root)
     piano.setFinish('ebony'); piano.setLid('full')
@@ -744,7 +741,7 @@ export async function boot(plug = {}) {
       stageParts: () => [floor, spot, faceKey, rim, back, keyFill, dust, ...Object.values(stageProps).map(p => p.root)],
       foreground: () => [ch.group, hair?.object, hair?.cap, dress?.object, shoes?.object],
       hair: () => hair, progress: () => scheduler?.duration ? songNow() / scheduler.duration : 0, playing: () => !!scheduler?.playing,
-      dim: ['dof', 'bloom', 'filmGrain', 'dust', 'motionBlur'] })
+      dim: ['dof', 'bloom', 'filmGrain', 'dust', 'motionBlur'], lake: { piano: { legs: piano.legs, lyre: piano.lyre } } })
     if (GPU) { const o = $('stageSet').querySelector('option[value=hall]'); o.disabled = true; o.text += ' - WebGL only' }
     async function setStageSet(name) { await stageSets.choose(name, setStage); applyFx() }
     $('stageSet').onchange = () => setStageSet($('stageSet').value)
@@ -1505,7 +1502,7 @@ export async function boot(plug = {}) {
     const K = (url, el = url, more = {}) => ({ key: el, el, url, ...more })
     const outfitBase = f => s => OUTFITS[s.outfit]?.[f]
     const settings = createSettings([
-      { id: 'piano', label: 'Piano', items: [K('piano', 'pianoType'), K('finish'), K('lid'), K('scene', 'stageSet'), ...stageSets.state.map(([url, el]) => K(url, el))] },
+      { id: 'piano', label: 'Piano', items: [K('piano', 'pianoType', { reload: true }), K('finish'), K('lid'), K('scene', 'stageSet'), ...stageSets.state.map(([url, el]) => K(url, el))] },
       { id: 'wardrobe', label: 'Outfit', items: [
         K('outfit'), K('dress', 'dressStyle', { base: outfitBase('dress') }), K('slit', 'slit', { base: outfitBase('slit') }), K('fabric', 'fabric', { base: outfitBase('fabric') }),
         K('dcol', 'dressColor', { base: outfitBase('color') }), K('shoes', 'shoeStyle', { base: outfitBase('shoes') }), K('hair', 'hairStyle', { base: outfitBase('hair') }), K('hcol', 'hairColor', { base: outfitBase('hairColor') }),

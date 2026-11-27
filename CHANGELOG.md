@@ -2,6 +2,15 @@
 
 What each experiment does and how, newest first. The short list is in the [README](README.md).
 
+## 27 Nov 2026
+
+[Afterglow's concert grand](032_pianist.html?piano=afterglow) as a third instrument on #032 and #045 (and #049, #050, #054): Instrument -> Afterglow concert grand, `?piano=afterglow`
+- The piano is [Afterglow](https://github.com/Leonxlnx/afterglow)'s own (Leonxlnx, MIT, pianist/afterglow/LICENSE): its procedural D-class grand, 2.74 x 1.56 m, with case, 88 keys, action with hammers and dampers, strings, plate, legs, lyre, pedals and its tufted bench, copied unchanged into pianist/afterglow/piano/ (about 4,400 lines; layout_d.json became layout_d.js so it imports without an import attribute).
+- pianist/afterglow-piano.js gives it the interface of concertstage/concert-grand.js and pianist/upright-piano.js. Afterglow's piano frame (metres, left-handed, origin under the front-left case corner) goes into the page's centimetres by a scale of (100, 100, -100): both keyboards have the 23.5 mm pitch, so every key lands where the old grand's does (A0 at -59.9 cm, middle C at -5.9 cm, C8 at +59.9 cm) and the hands need no change. Its key tops are 71.5 cm high against midiviz's 73: the case is raised 1.5 cm and the legs, lyre and pedals stretched by as much, so the casters stay on the floor; the bench stands apart, its seat raised on its own height mechanism to the pianist's 55.4 cm.
+- Each note throws its hammer to the string and back to the check (faster when louder); the dampers follow the keys and the sustain pedal (Afterglow's rule); una corda and sostenuto pedals move. The lake rings from this piano's own legs and lyre (`lake: { piano }` to stages/sets.js).
+- What the film has and this doesn't: its art-directed lacquer looks are tuned to the lake world's glow and skyline, and its probe, planar mirrors and interior fill shadow need the film's render core, so the piano runs on the 'physical' look under each stage's own environment. The keys are one InstancedMesh, so lesson mode's key glow doesn't light them, and Lesson's keyboard-only view keeps the whole piano. At 2.74 m it is 63 cm longer than midiviz's grand, which the director's tail shots don't know of.
+- The Instrument menu now reloads through the settings store (its `piano` entry is reload: true) instead of its own handler. `node ui/test/pathtrace-url.mjs` on #032 and #045: every link comes back as before.
+
 ## 26 Nov 2026
 
 #038's venue switches live: the toolbar's Venue (hall, park, lake) takes effect at once, without reloading
