@@ -443,12 +443,15 @@ export function bakeSkinDetail(renderer, ch, { size = 4096, strength = 1, freckl
   }
   const normal = run(() => bake(0)), orm = run(() => bake(1))
   // the colour, composed again for each skin texture; the bake's geometry kept for it
-  const colour = map => map?.image ? run(() => bake(2, map)) : null
+  const colour = (map, f = freckles) => map?.image ? run(() => { mat.uniforms.freckles.value = f; return bake(2, map) }) : null
   const dispose = () => { for (const x of [A, B, mat, dil, g, copy.material]) x.dispose(); quad.dispose(); copy.dispose() }
   return { normal, orm, colour, dispose, rays: Math.round(tRays), ms: Math.round(performance.now() - t0) }
 }
 
 const FRECKLES = (() => { const v = typeof location !== 'undefined' && new URLSearchParams(location.search).get('freckles'); return v !== null && v !== false && v !== '' && isFinite(+v) ? +v : 0.5 })()
+
+/** The skin textures with freckles of their own (ch.setSkin's keys) */
+const OWN_FRECKLES = new Set(['freckled', 'ginger', 'zoey'])
 
 /** Put the baked maps on the skin (the tiled pores replaced), and the tinted
  * colour on each skin texture ch.setSkin puts on; ?pores=tiled keeps the old. */
@@ -460,16 +463,18 @@ export function useSkinDetail(renderer, ch, opts) {
   m.aoMap = d.orm; m.aoMapIntensity = 1
   // the colour: composed from each skin texture once, and kept
   const tinted = new Map()
+  // (a skin with freckles painted in gets none of ours)
+  let key = 'caucasian'
   const tint = () => {
     const src = m.userData.skinSource && tinted.get(m.userData.skinSource) === m.map ? m.userData.skinSource : m.map
     if (!src) return
-    if (!tinted.has(src)) { const t0 = performance.now(); tinted.set(src, d.colour(src)); console.log(`skin colour composed in ${Math.round(performance.now() - t0)} ms`) }
+    if (!tinted.has(src)) { const t0 = performance.now(); tinted.set(src, d.colour(src, OWN_FRECKLES.has(key) ? 0 : undefined)); console.log(`skin colour composed in ${Math.round(performance.now() - t0)} ms`) }
     const t = tinted.get(src)
     if (t) { m.userData.skinSource = src; m.map = t }
   }
   tint()
   const setSkin = ch.setSkin
-  ch.setSkin = async key => { const ok = await setSkin(key); tint(); m.needsUpdate = true; return ok }
+  ch.setSkin = async k => { key = k; const ok = await setSkin(k); tint(); m.needsUpdate = true; return ok }
   m.needsUpdate = true
   return d
 }

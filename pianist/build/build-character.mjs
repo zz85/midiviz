@@ -504,6 +504,13 @@ ff(['-i', path.join(SYS, 'skins/young_caucasian_female/young_lightskinned_female
 // the other young women's skins (MakeHuman system assets, CC0), swapped in by #047
 for (const [k, f] of [['asian', 'young_asian_female/young_lightskinned_female_diffuse3.png'], ['african', 'young_african_female/young_darkskinned_female_diffuse.png']])
   ff(['-i', path.join(SYS, 'skins', f), '-q:v', '3', path.join(OUT, `skin_${k}.jpg`)])
+// freckled skins from the MakeHuman community's skins01 pack (CC0, unzipped into
+// <SRC>/skins01): MargaretToigo's freckled and ginger skins, Nyloseth's Zoey
+const SKINS01 = path.join(SRC, 'skins01', 'skins')
+for (const [k, f] of [['freckled', 'toigo_light_skin_female_freckles/young_lightskinned_female_diffuse_freckles.png'],
+  ['ginger', 'toigo_light_skin_female_ginger/young_lightskinned_female_diffuse_ginger.png'], ['zoey', 'nyloseth_zoeyskin/zoeyskin.png']])
+  if (fs.existsSync(path.join(SKINS01, f))) ff(['-i', path.join(SKINS01, f), '-q:v', '3', path.join(OUT, `skin_${k}.jpg`)])
+  else console.warn(`skins01 not found (${f}): the freckled skins are left out`)
 // (the eye texture keeps its alpha: the cornea shell is mapped to a transparent corner)
 ff(['-i', path.join(SYS, 'eyes/materials/brownlight_eye.png'), '-vf', 'scale=512:512', path.join(OUT, 'eye.png')])
 fs.copyFileSync(path.join(SYS, 'eyebrows/eyebrow001/eyebrow001.png'), path.join(OUT, 'eyebrow.png'))
