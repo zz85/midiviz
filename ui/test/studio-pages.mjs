@@ -40,7 +40,7 @@ for (const [page, base, o] of PAGES) for (const studio of [true, false]) {
     check(t.more.length >= 5, `${tag} "more in the studio" lines: ${t.more.join(' ')}; headings hidden: ${t.sects.join(', ')}`)
   }
   if (studio) {
-    check(r.n >= r.items - 2 && r.folders.at(-1) === 'Hands', `${tag} ${r.n} bindings over ${r.items} settings; folders: ${r.folders.join(', ')}`)
+    check(r.n >= r.items - 2 && r.folders.includes('Hands') && r.folders.at(-1) === 'Track editor', `${tag} ${r.n} bindings over ${r.items} settings; folders: ${r.folders.join(', ')}`)
     // the Hands folder reads the rig
     await p.evaluate(() => { window.__studio.hands.folder.expanded = true })
     await p.waitForTimeout(1000)

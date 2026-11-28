@@ -168,6 +168,7 @@
     import { fillStageMenu } from './stages/menu.js'
     import { parkSettings, fillParkOptions, wirePark } from './park/controls.js'
     import { createSettings } from './ui/settings.js'
+    import { createOverrides } from './pianist/overrides.js'
     import { mountStudio } from './ui/studio.js'
     import { createLinerLibrary, clockOfMidi, buildTimeline } from './liner/liner.js'
     import { createLinerOverlay } from './liner/overlay.js'
@@ -241,7 +242,8 @@
     settings.read(Q)
     window.__settings = settings
     // the studio panel (ui/studio.js): every setting, with her hands' baked tracks, on ?studio=1 or the ` key
-    mountStudio(settings, { on: Q.get('studio') === '1', expanded: ['stage'], hands: () => pRig, trim: { menus: '#top', line: 'pill' } })
+    const overrides = createOverrides()   // the studio's lift and lean curves for her (pianist/overrides.js, ?curves=)
+    mountStudio(settings, { on: Q.get('studio') === '1', expanded: ['stage'], hands: () => pRig, overrides, song: { duration: () => song.duration, seek: t => seekTo(t) }, trim: { menus: '#top', line: 'pill' } })
     settings.subscribe('studio', () => saveUrl())
     // Share: the address bar's link with the moment it is at (&at=); a link with ?at= starts there
     $('shareBtn').onclick = async () => {
@@ -345,6 +347,7 @@
     if ($('hands').value !== 'model') await graftPianistHands(her, { base: new URL('./pianist/assets/', import.meta.url).href, look: $('hands').value === 'real' ? 'real' : 'toon' }).catch(e => { console.warn('hands:', e.message); $('hands').value = 'model'; $('hands').disabled = true })
     // (the rig is made on one skeleton or the other: a change reloads the page, through the store)
     const pRig = createPianistRig(her, { seat: v3(0, SEAT_Y + 8.6, 44) })
+    pRig.setOverrides(overrides)
     her.attachRig?.(pRig)
     pRig.state.gazeMode = 'music'
     if (her.dress) {
@@ -1219,7 +1222,7 @@
       lake: { center: [MID.x, MID.z], pianoFrame: pianoSide, emitters: [[0, 0]], yaw: 180 } })
     {
       const ps = stageSets.get('park')
-      Object.assign(ps.opts, { time: +settings.get('parkTod'), style: settings.get('parkTree'), scale: +settings.get('parkScale'), painted: settings.get('parkPaint'), azimuth: +settings.get('parkSun'), ambience: +settings.get('parkAmbience') })
+      Object.assign(ps.opts, { time: +settings.get('parkTod'), style: settings.get('parkTree'), scale: +settings.get('parkScale'), painted: settings.get('parkPaint'), azimuth: +settings.get('parkSun'), ambience: +settings.get('parkAmbience'), wind: +settings.get('parkWind'), clouds: +settings.get('parkClouds') })
       stageSets.get('lake').setTime(settings.get('lakeSky'))
       settings.subscribe('lakeSky', v => { stageSets.get('lake').setTime(v); saveUrl() })
     }

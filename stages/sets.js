@@ -48,7 +48,7 @@ export const SETS = [
     section: parkSettings({ birdsKey: 'birds', who: 'her' }),
     wire(s, settings, h) { wirePark(settings, s, { playing: () => h.playing?.() ?? false }) },
     fromUrl(s, settings, params) {
-      Object.assign(s.opts, { time: +settings.get('parkTod'), style: settings.get('parkTree'), painted: settings.get('parkPaint'), scale: +settings.get('parkScale'), azimuth: +settings.get('parkSun'), ambience: +settings.get('parkAmbience') })
+      Object.assign(s.opts, { time: +settings.get('parkTod'), style: settings.get('parkTree'), painted: settings.get('parkPaint'), scale: +settings.get('parkScale'), azimuth: +settings.get('parkSun'), ambience: +settings.get('parkAmbience'), wind: +settings.get('parkWind'), clouds: +settings.get('parkClouds') })
       if (params.has('pturn') && Number.isFinite(+params.get('pturn'))) s.opts.turn = +params.get('pturn')
     },
     playing(s, settings, on) { s.setSound(on && s.on && settings.get('parkAmb')) },

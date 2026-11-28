@@ -55,6 +55,7 @@ import { createLinerLibrary, clockOfMidi, buildTimeline, toVTT, toChapters, titl
 import { createLinerOverlay, drawLinerCaption, drawIntertitle, loadIntertitleFonts, INTERTITLE_STYLES, INTERTITLE_THEMES, INTERTITLE_POSITIONS } from '../liner/overlay.js'
 import { SHELL } from './shell.js'
 import { createSettings } from '../ui/settings.js'
+import { createOverrides } from '../pianist/overrides.js'
 import { mountStudio, PIANIST_TAIL } from '../ui/studio.js'
 import { assignHands, handModeOf, HAND_MODES, DEFAULT_HAND_MODE } from '../fingering/hands.js'
 
@@ -281,6 +282,7 @@ export async function boot(plug = {}) {
     }
     const SEAT = new THREE.Vector3(0, SEAT_Y + 8.6, 44)
     const rig = createRig(ch, { seat: SEAT })
+    rig.setOverrides(createOverrides())   // the studio's lift and lean curves (pianist/overrides.js, ?curves=)
     ch.attachRig?.(rig)
     rig.update(0, 1 / 60)
     ch.group.updateMatrixWorld(true)
@@ -1541,7 +1543,7 @@ export async function boot(plug = {}) {
     window.__settings = settings
     // the studio panel (ui/studio.js): every setting, drawn from the schema, with the hands' baked tracks,
     // on ?studio=1 or the ` key; the menus keep the short list (ui/menus.js PIANIST_TAIL), the rest is there
-    mountStudio(settings, { on: params.get('studio') === '1', trim: true, hands: () => rig })
+    mountStudio(settings, { on: params.get('studio') === '1', trim: true, hands: () => rig, overrides: rig.overrides, song: { duration: () => scheduler?.duration || 0, seek: t => seekTo(t) } })
     // load: controls the start-up code did not already take from the URL
     // (the wardrobe, pose and director keys are read above) get their value
     // and their own handler, exactly as if picked in the menu

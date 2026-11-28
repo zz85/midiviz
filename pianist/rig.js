@@ -139,6 +139,8 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
   // the hand driver uses one set of dims for both hands; take the right one
   // (the build is symmetric)
   const hands = createHandsDriver(handDims.R)
+  // the studio's curves over the song (pianist/overrides.js): her lean, and each wrist's lift through the hands
+  let overrides = null
   const arm = {}
   for (const side of ['L', 'R']) {
     const S = side === 'R' ? '.R' : '.L', s = side === 'R' ? 1 : -1
@@ -1679,7 +1681,7 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
     state.handSide = (state.handSide ?? 0) + (side - (state.handSide ?? 0)) * kq
     state.handTurn = (state.handTurn ?? 0) + (turn - (state.handTurn ?? 0)) * kq
     express(dt)
-    state.lean = Math.min(0.9, state.handLean + state.exLean + state.reachLean)
+    state.lean = Math.min(0.9, state.handLean + state.exLean + state.reachLean + (overrides ? overrides.at('lean', state.songT) : 0))
     state.side = clamp(state.handSide + state.exSide + state.reachSide / 45, -0.4, 0.4)
     state.turn = state.handTurn + state.exTurn + state.reachTurn / TURN_R
     // the end: as her hands lift off the last chord and come to the middle,
@@ -1698,6 +1700,7 @@ export function createRig(ch, { seat: seat0 = v3(0, 64, 42) } = {}) {
 
   return {
     hands, state, dims: handDims, form: () => ({ phrases, glances, hipMoves }),
+    setOverrides(ov) { overrides = ov; hands.setOverrides(ov) }, get overrides() { return overrides },
     /** the music as read from the notes (for the camera director) */
     music: { energyAt: t => energyAt(t), accentAt: t => accentAt(t), glanceAt: t => glanceAt(t) },
     setNotes: notes => { hands.setNotes(notes); analyse(notes) },

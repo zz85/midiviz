@@ -16,8 +16,13 @@
 // address bar on changes alone subscribes to it (settings.subscribe('studio', saveUrl)). It
 // answers { open(), close(), toggle(), studio (a promise of the panel once opened) }. With `trim`, the page's menus are trimmed to the settings not
 // marked tail (ui/menus.js), each with a line that opens the panel (`trim` may be trimMenus's
-// options, such as { menus: '#top', line: 'pill' }); with `hands`, a getter of
-// the pianist's rig, the panel has a Hands folder of the baked tracks (ui/hands-monitor.js).
+// options, such as { menus: '#top', line: 'pill' }); with `presets`, a Presets folder of saved
+// studio states, each a link (ui/presets.js); with `hands`, a getter of
+// the pianist's rig, the panel has a Hands folder of the baked tracks (ui/hands-monitor.js) and,
+// with `overrides` (pianist/overrides.js, which the page gives its rig with rig.setOverrides), a
+// track editor of the lift and lean curves under them (ui/track-editor.js); the curves are the
+// setting `curves`, kept in the address bar as ?curves=, so a link carries them. `song` gives the
+// editor { duration: () => s, seek: t => ... }.
 //
 //   const studio = await createStudio(settings, { title: 'Studio', container, expanded: ['visuals'] })
 //   studio.pane            // the Tweakpane Pane
@@ -161,9 +166,18 @@ export async function createStudio(settings, { title = 'Studio', container = nul
 const CSS = new URL('./studio.css', import.meta.url).href
 export { PIANIST_TAIL } from './menus.js'
 
-export function mountStudio(settings, { on = false, key = '`', title = 'Studio', expanded = ['visuals'], doc = globalThis.document, trim = false, hands = null, ...rest } = {}) {
+export function mountStudio(settings, { on = false, key = '`', title = 'Studio', expanded = ['visuals'], doc = globalThis.document, trim = false, hands = null, overrides = null, song = null, presets = true, ...rest } = {}) {
   let studio = null, opening = null, shown = false, menus = null
   if (!settings.item('studio')) settings.add({ id: 'studio', label: 'Studio', studio: false, items: [{ key: 'studio', el: null, type: 'bool', default: false, url: 'studio' }] })
+  // the hands' override curves: a text setting the overrides read and write, in the link as ?curves=
+  if (overrides && !settings.item('curves')) {
+    settings.add({ id: 'curves', label: 'Curves', studio: false, items: [{ key: 'curves', el: null, type: 'text', default: '', url: 'curves', value: () => overrides.toText() }] })
+    let fromStore = false
+    settings.subscribe('curves', v => { if (!fromStore) overrides.fromText(v) })
+    overrides.subscribe(() => { fromStore = true; settings.set('curves', overrides.toText()); fromStore = false })
+    const q = new URLSearchParams(globalThis.location?.search || '')
+    if (q.get('curves')) overrides.fromText(q.get('curves'))
+  }
   const mark = () => { if (settings.get('studio') !== shown) settings.set('studio', shown) }
   async function open() {
     shown = true; mark()
@@ -171,7 +185,11 @@ export function mountStudio(settings, { on = false, key = '`', title = 'Studio',
       opening = (async () => {
         if (!doc.querySelector(`link[href="${CSS}"]`)) { const l = doc.createElement('link'); l.rel = 'stylesheet'; l.href = CSS; doc.head.append(l) }
         studio = await createStudio(settings, { title, expanded, doc, ...rest })
-        if (hands) { const { addHandsMonitor } = await import('./hands-monitor.js'); studio.hands = addHandsMonitor(studio, { rig: hands }) }
+        // (an add-on that fails leaves the panel standing: its error is logged)
+        const addOn = async (name, f) => { try { studio[name] = await f() } catch (e) { console.error(`studio ${name}:`, e) } }
+        if (presets) await addOn('presets', async () => (await import('./presets.js')).addPresets(studio, settings, presets === true ? {} : presets))
+        if (hands) await addOn('hands', async () => (await import('./hands-monitor.js')).addHandsMonitor(studio, { rig: hands }))
+        if (hands && overrides) await addOn('tracks', async () => (await import('./track-editor.js')).addTrackEditor(studio, { rig: hands, overrides, songDuration: song?.duration, seek: song?.seek }))
         globalThis.__studio = studio   // (for the tests)
         return studio
       })()

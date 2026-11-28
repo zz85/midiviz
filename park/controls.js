@@ -13,11 +13,12 @@ import { TIMES } from './park.js'
 export const PARK_TIMES = TIMES
 export const PARK_TREES = [['summer', 'Summer'], ['sakura', 'Cherry blossom'], ['autumn', 'Autumn'], ['maple', 'Maple']]
 export const PARK_SCALES = [['0.45', '0.45 size'], ['0.5', '1/2 size'], ['0.75', '3/4 size'], ['1', 'full size']]
-export const PARK_DEFAULTS = { tod: 1, tree: 'summer', amb: true, paint: false, scale: 0.45, azimuth: 55, ambience: 0.7 }
+export const PARK_DEFAULTS = { tod: 1, tree: 'summer', amb: true, paint: false, scale: 0.45, azimuth: 55, ambience: 0.7, wind: 1.2, clouds: 0.5 }
 
 const IDS = { tod: 'parkTod', tree: 'parkTree', amb: 'parkAmb', paint: 'parkPaint', scale: 'parkScale' }
 // (the studio's own, with no control in the menus: no element, a range of their own)
-const STUDIO = { parkSun: { label: 'Sun bearing', min: 0, max: 360, step: 1 }, parkAmbience: { label: 'Birds and wind level', min: 0, max: 2, step: 0.05 }, parkScale: { label: 'Park size', min: 0.1, max: 2, step: 0.05 } }
+const STUDIO = { parkSun: { label: 'Sun bearing', min: 0, max: 360, step: 1 }, parkAmbience: { label: 'Birds and wind level', min: 0, max: 2, step: 0.05 }, parkScale: { label: 'Park size', min: 0.1, max: 2, step: 0.05 },
+  parkWind: { label: 'Wind', min: 0, max: 3, step: 0.05 }, parkClouds: { label: 'Cloud cover', min: 0, max: 1, step: 0.02 } }
 
 // `who`: the performers in the labels, 'them' (the duo) or 'her' (the pianist alone). `scale`: a select of
 // the park's size in the menus (#038); where it's false the size is a slider of the studio's alone (the
@@ -41,6 +42,8 @@ export function parkSettings({ ids = {}, birdsKey = 'birds', scale = false, when
   items.push(
     { key: 'parkSun', el: null, type: 'range', default: PARK_DEFAULTS.azimuth, url: 'psun', studio: true, ...STUDIO.parkSun, title: 'Where along the horizon the sun stands, in degrees; the hour sets its height. 55 as made' },
     { key: 'parkAmbience', el: null, type: 'range', default: PARK_DEFAULTS.ambience, url: 'pamb', studio: true, ...STUDIO.parkAmbience, title: 'How loud the wind, songbirds and insects play; 0.7 as made, 0 silent' },
+    { key: 'parkWind', el: null, type: 'range', default: PARK_DEFAULTS.wind, url: 'pwind', studio: true, ...STUDIO.parkWind, title: "The wind's strength: the grass and the leaves, the clouds' drift and the sound of it; 1.2 as made, 0 still" },
+    { key: 'parkClouds', el: null, type: 'range', default: PARK_DEFAULTS.clouds, url: 'pclouds', studio: true, ...STUDIO.parkClouds, title: 'Cloud cover, 0 a clear sky to 1 overcast; 0.5 as made' },
   )
   return { id: 'park', label: 'The park', when, timeOffset, items }
 }
@@ -74,7 +77,9 @@ export function wirePark(S, park, { playing = () => true, timeOffset = 0, onChan
   S.subscribe('parkPaint', v => { if (park.S) park.S.paintPerformers = v; else park.setPainted?.(v); onChange() })
   S.subscribe('parkSun', v => { park.setAzimuth(v); onChange() })
   S.subscribe('parkAmbience', v => { park.setAmbience(v); onChange() })
+  S.subscribe('parkWind', v => { park.setWind(v); onChange() })
+  S.subscribe('parkClouds', v => { park.setClouds(v); onChange() })
   // (the values a link brought, before any change)
-  park.setAzimuth(S.get('parkSun')); park.setAmbience(S.get('parkAmbience'))
+  park.setAzimuth(S.get('parkSun')); park.setAmbience(S.get('parkAmbience')); park.setWind(S.get('parkWind')); park.setClouds(S.get('parkClouds'))
   return { sound }
 }

@@ -291,6 +291,10 @@ export async function createPark(renderer, { time = 1.4, style = 'summer', azimu
     setAzimuth(a) { S.azimuth = +a; lastLook = ''; applyLook() },
     /** The ambience's level, 0 to 2 (wind, birds, insects, the airliner); 0.7 as made. */
     setAmbience(k) { S.ambience = Math.max(0, +k) },
+    /** The wind's strength, 0 to 3 (the grass, the leaves, the clouds' drift and the sound); 1.2 as made. */
+    setWind(w) { S.wind = Math.max(0, +w); lastLook = ''; applyLook() },
+    /** The cloud cover, 0 clear to 1 overcast; 0.5 as made. */
+    setClouds(c) { S.clouds = Math.max(0, Math.min(1, +c)); lastLook = ''; applyLook() },
     setSize, update, render, sound, tree, grass,
     /** A point of the park (m) as the duo's camera sees it (cm). */
     viewFrom(parkPos, parkTarget) { return [toDuo(new THREE.Vector3(...parkPos)), toDuo(new THREE.Vector3(...parkTarget))] },

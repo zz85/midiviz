@@ -27,7 +27,7 @@ export function createParkStage({ renderer, scene, camera, stageParts = () => []
   center = new THREE.Vector3(0, 80, 20), lightK = 0.75, onStatus = () => {}, layout = 'solo', sun: sunKind = 'spot', near = 4 }) {
   let park = null, on = false, building = null, envFor = -1, envMap = null
   // turn: the piano and her on the lawn, in degrees, positive clockwise seen from above (?pturn=)
-  const opts = { time: 1, style: 'summer', scale: 0.45, turn: 90, painted: false, azimuth: 55, ambience: 0.7 }
+  const opts = { time: 1, style: 'summer', scale: 0.45, turn: 90, painted: false, azimuth: 55, ambience: 0.7, wind: 1.2, clouds: 0.5 }
   const saved = {}
   const hidden = new Map()
 
@@ -78,7 +78,7 @@ export function createParkStage({ renderer, scene, camera, stageParts = () => []
 
   async function build() {
     onStatus('Growing the park…')
-    park = await createPark(renderer, { time: opts.time + 0.4, style: opts.style, scale: opts.scale, layout, turn: layout === 'solo' ? -opts.turn * Math.PI / 180 : 0, azimuth: opts.azimuth })
+    park = await createPark(renderer, { time: opts.time + 0.4, style: opts.style, scale: opts.scale, layout, turn: layout === 'solo' ? -opts.turn * Math.PI / 180 : 0, azimuth: opts.azimuth, wind: opts.wind, clouds: opts.clouds })
     park.setAmbience(opts.ambience)
     park.S.paintPerformers = opts.painted
     onStatus('')
@@ -126,6 +126,8 @@ export function createParkStage({ renderer, scene, camera, stageParts = () => []
     setSound(v) { if (park) park.sound.setOn(!!v && on) },
     setAzimuth(a) { opts.azimuth = +a; park?.setAzimuth(opts.azimuth) },
     setAmbience(k) { opts.ambience = +k; park?.setAmbience(opts.ambience) },
+    setWind(w) { opts.wind = +w; park?.setWind(opts.wind) },
+    setClouds(c) { opts.clouds = +c; park?.setClouds(opts.clouds) },
     update(dt) {
       if (!on) return
       park.update(dt)

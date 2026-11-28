@@ -154,6 +154,8 @@ export function createHandDriver(side, dims) {
   // the wrist stroke (pianist/stroke.js): knuckle lift and wrist tilt over
   // the song; ptot = the crossing pitch plus the stroke's tilt
   let stroke = null, lift = 0, ptot = 0
+  // an override of the wrist's height over the song (pianist/overrides.js, drawn in the studio): cm added at song time t
+  let liftOver = null
   // forearm rotation (roll about the hand's long axis, through the middle
   // knuckle and the wrist): positive = the little-finger side down
   let hroll = 0
@@ -565,6 +567,8 @@ export function createHandDriver(side, dims) {
       hand.yaw += (fit.yaw - hand.yaw) * k; hand.y = fit.y
       slide.lerp(computeSlideGoal(tips), Math.min(1, dt * 18))
     }
+    // the studio's lift curve (pianist/overrides.js): cm added to the wrist's height, baked or live
+    if (liftOver) { const o = liftOver(t); if (o) { lift += o; hand.y += o } }
     // never past what a wrist can bend: the hand turns and tilts with the
     // forearm where the fit alone would bend it further
     keepWrist([fit.px, fit.pz])
@@ -798,7 +802,7 @@ export function createHandDriver(side, dims) {
     J.R.subVectors(J.fingers[5][0], J.fingers[2][0]).multiplyScalar(s).normalize()
     armIK(J.W, J.E)
   }
-  return { update, bakeTrack, letGoTimes, clearTrack, wristAt, get slide() { return slide }, setEnding: f => { ending = f }, setPitch: p => { pitchGoal = p }, setDepth: d => { depthGoal = d }, setLift: h => { riseGoal = h }, get crossLift() { return rise },
+  return { update, bakeTrack, letGoTimes, clearTrack, wristAt, get slide() { return slide }, setEnding: f => { ending = f }, setLiftOverride: f => { liftOver = f }, setPitch: p => { pitchGoal = p }, setDepth: d => { depthGoal = d }, setLift: h => { riseGoal = h }, get crossLift() { return rise },
     /** where the elbow is (the rig's arm; null: unknown): the wrist is kept within WRIST_RANGE of straight on the forearm */
     setElbow: v => { if (!v) { elbow = null; return } elbow = (elbow || v3()).copy(v); elbowOff.subVectors(v, J.E) },
     /** how far (radians) the wrist is bent past WRIST_RANGE on a forearm from elbow E to this frame's wrist */
@@ -920,6 +924,8 @@ export function createHandsDriver(dims) {
     get notes() { return own },
     /** Change the stroke settings (re-plans the strokes only, a few ms). */
     setStrokeOpts(o) { Object.assign(strokeOpts, o); plan() },
+    /** The studio's curves (pianist/overrides.js): each wrist's lift from them. */
+    setOverrides(ov) { L.setLiftOverride(ov ? t => ov.at('liftL', t) : null); R.setLiftOverride(ov ? t => ov.at('liftR', t) : null) },
     setNotes(notes) {
       // (not the keys a finger shares with another: fingering.js sharedUnits)
       own = notes.filter(n => n.finger >= 1 && !n.shared)
