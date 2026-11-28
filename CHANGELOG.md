@@ -4,6 +4,12 @@ What each experiment does and how, newest first. The short list is in the [READM
 
 ## 28 Nov 2026
 
+[Experiment #055 - Rolling Reveal](055_notation_reveal.html)
+- #025's 3D score, but the ink follows the playhead: **Appear when played** (nothing ahead is drawn until it sounds), **Vanish after played** (each note goes once played), or **Only what plays now** (both). Lead and Hold, in seconds, open the window ahead and behind; Edge sets how ragged the boundary is
+- Every piece of ink (noteheads, stems, beams, staff lines, clefs, text) gets the time the playhead reaches it from a time map: a float texture over score space, x mapped to time through each line's onsets, y picking the system, so it works in the single line, wrapped and paged layouts. The score's own materials read it and discard hidden fragments, with 3D value noise breaking up the edge and an ember glow along it; their shadows use a depth material that does the same
+- Where ink comes or goes, about 210,000 particles sampled from the ink's surfaces (by area) fly along an analytic curl-noise field: **Dandelion seeds** (pappus sprites that lift and drift up the page) or **Curl dust** (fine, fast, low); **Dissolve only** has none. Particles reverse the same path to assemble a note, and are a function of music time alone, so seeks and video export match live play. Noteheads' particles take their staff colour
+- In `notation3d/reveal.js`; #025 is unchanged. Options are kept in the link (`reveal`, `effect`, `lead`, `hold`, `edge`, `particles`)
+
 Schumann's Carnaval, Op. 9 in the song list: the complete work and No. 12, "Chopin", from MAESTRO v3.0.0 (CC BY-NC-SA 4.0), with liner notes
 - `midis/maestro_schumann_carnaval.mid` (2004, 28 min, unchanged) and No. 12 cut from it and from the 2014 and 2018 performances, each found by matching No. 12's first ten chords and Estrella's, and starting with the pedal as it stood at the cut. Sources and times in [midis/README.md](midis/README.md#sources--credits).
 - Liner notes `liner/pieces/schumann-carnaval.md` (a section for each piece, placed by time from the silences between pieces and their keys; Valse noble to the Lettres dansantes as one section, where the boundaries are not certain) and `schumann-carnaval-chopin.md`, with new cards `carnaval` and `chopin`. `node --test liner/test/liner.test.js` passes.

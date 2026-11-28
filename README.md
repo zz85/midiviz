@@ -29,6 +29,7 @@ Browser experiments with MIDI, piano and violin rendering, synthesis and audio a
 - [#028 Grand Piano](028_grand_piano.html) - a physically based concert grand built in code ([details](CHANGELOG.md#14-oct-2026))
 - [#027 JabTunes Reimagined](027_jabtunes_reimagined.html) - the 2009 JabTunes piano in three.js ([details](CHANGELOG.md#13-oct-2026))
 - [#026 JabTunes (recovered)](026_jabtunes_recovered.html) - an HTML5 port of jabtunes.com as archived in 2010 ([details](CHANGELOG.md#13-oct-2026))
+- [#055 Rolling Reveal](055_notation_reveal.html) - #025's score drawn only as it plays, or blown away once played, notes coming and going as dandelion seeds or curl dust ([details](CHANGELOG.md#28-nov-2026))
 - [#025 Notation 3D](025_notation_3d.html) - 3D sheet music with bouncing balls ([details](CHANGELOG.md#1-oct-2026))
 
 ## Violin and strings
