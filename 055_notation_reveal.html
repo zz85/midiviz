@@ -223,6 +223,7 @@
       <button class="toggle-btn" data-opt="trail" aria-pressed="true" title="Arc streaks"><div class="toggle"></div><span class="toggle-label">Trail</span></button>
       <button class="toggle-btn" data-opt="fx" aria-pressed="false" title="Sparkles, dust and ripples"><div class="toggle"></div><span class="toggle-label">FX</span></button>
       <button class="toggle-btn" data-opt="shadows" aria-pressed="true"><div class="toggle"></div><span class="toggle-label">Shadow</span></button>
+      <button class="toggle-btn" data-opt="keepStaves" aria-pressed="false" title="Staff lines stay on the page while the notes come and go"><div class="toggle"></div><span class="toggle-label">Staves</span></button>
     </div>
 
     <select id="revealModeSelect" class="mini-select" aria-label="Reveal" title="What the score does around the playhead">
@@ -235,6 +236,10 @@
       <option value="dandelion" selected>Dandelion seeds</option>
       <option value="dust">Curl dust</option>
       <option value="dissolve">Dissolve only</option>
+    </select>
+    <select id="revealArriveSelect" class="mini-select" aria-label="How notes arrive" title="How unplayed notes come in (Appear / Only now)">
+      <option value="appear" selected>Notes materialise</option>
+      <option value="fly">Notes fly in</option>
     </select>
 
     <select id="viewSelect" class="mini-select" aria-label="Camera view">
@@ -276,6 +281,14 @@
     <label title="Seconds of ragged edge between shown and hidden ink">Edge:
       <input type="range" id="revealBandRange" min="0.02" max="2" step="0.02" value="0.36" style="width:70px;accent-color:var(--accent)" aria-label="Reveal edge seconds">
       <span id="revealBandValue" style="min-width:30px">0.36s</span>
+    </label>
+    <label title="Seconds a note is in flight (Notes fly in)">Flight:
+      <input type="range" id="revealFlyDurRange" min="0.3" max="4" step="0.1" value="1.4" style="width:70px;accent-color:var(--accent)" aria-label="Flight seconds">
+      <span id="revealFlyDurValue" style="min-width:30px">1.4s</span>
+    </label>
+    <label title="How far to the right notes start, in staff spaces (Notes fly in)">From:
+      <input type="range" id="revealFlyDistRange" min="4" max="60" step="1" value="16" style="width:70px;accent-color:var(--accent)" aria-label="Flight distance">
+      <span id="revealFlyDistValue" style="min-width:30px">16</span>
     </label>
     <label>Particles:
       <select id="revealDensitySelect" class="mini-select">
@@ -490,7 +503,7 @@
     import { midiToScore, midiToSchedule } from './notation3d/midi-score.js?v=22'
     import { patchOpentype, recordElements, buildScoreMeshes } from './notation3d/vector-recorder.js?v=22'
     import { NotationStage, buildOnsets } from './notation3d/stage.js?v=22'
-    import { ScoreReveal } from './notation3d/reveal.js?v=1'
+    import { ScoreReveal } from './notation3d/reveal.js?v=2'
     import { exportVideo, exportSupported, defaultBitrate, drawTitleCard, drawOutroCard } from './notation3d/video-export.js?v=22'
 
     const $ = id => document.getElementById(id)
@@ -866,6 +879,10 @@
     }
     $('revealModeSelect').onchange = e => reveal.setOption('mode', e.target.value)
     $('revealStyleSelect').onchange = e => reveal.setOption('style', e.target.value)
+    $('revealArriveSelect').onchange = e => reveal.setOption('arrive', e.target.value)
+    document.querySelector('.toggle-btn[data-opt="keepStaves"]').addEventListener('click', e => reveal.setOption('keepStaves', e.currentTarget.getAttribute('aria-pressed') === 'true'))
+    $('revealFlyDurRange').oninput = e => { $('revealFlyDurValue').textContent = e.target.value + 's'; reveal.setOption('flyDur', +e.target.value) }
+    $('revealFlyDistRange').oninput = e => { $('revealFlyDistValue').textContent = e.target.value; reveal.setOption('flyDist', +e.target.value) }
     $('revealDensitySelect').onchange = e => reveal.setOption('density', +e.target.value)
     for (const [id, key] of [['revealLeadRange', 'lead'], ['revealHoldRange', 'hold'], ['revealBandRange', 'band']]) {
       $(id).oninput = e => {
@@ -928,9 +945,9 @@
     const HASH_SELECTS = {
       view: 'viewSelect', theme: 'themeSelect', staves: 'staffModeSelect', engine: 'synthEngineSelect', sound: 'synthSelect',
       colors: 'colorModeSelect', layout: 'layoutSelect', line: 'lineChangeSelect', tour: 'tourSelect', order: 'tourOrderSelect', trans: 'transitionSelect', arc: 'arcModeSelect', rest: 'restModeSelect', lit: 'litModeSelect', fade: 'litFadeRange', head: 'headFinishSelect', paper: 'paperFinishSelect',
-      reveal: 'revealModeSelect', effect: 'revealStyleSelect', lead: 'revealLeadRange', hold: 'revealHoldRange', edge: 'revealBandRange', particles: 'revealDensitySelect',
+      reveal: 'revealModeSelect', effect: 'revealStyleSelect', lead: 'revealLeadRange', hold: 'revealHoldRange', edge: 'revealBandRange', particles: 'revealDensitySelect', arrive: 'revealArriveSelect', flight: 'revealFlyDurRange', from: 'revealFlyDistRange',
     }
-    const HASH_TOGGLES = ['bloom', 'dof', 'trail', 'fx', 'shadows']
+    const HASH_TOGGLES = ['bloom', 'dof', 'trail', 'fx', 'shadows', 'keepStaves']
     const toggleBtn = opt => document.querySelector(`.toggle-btn[data-opt="${opt}"]`)
     const readOptions = () => {
       const o = {}

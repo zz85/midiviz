@@ -49,16 +49,28 @@ const UNIFORMS_GLSL = /* glsl */`
 	uniform float uRvLead;     // seconds before its time that ink appears
 	uniform float uRvHold;     // seconds after its time that ink stays
 	uniform float uRvBand;     // seconds of noise in the edge
+	uniform int uRvKeepStaff;  // 1 = staff lines always shown
+	uniform float uRvFly;      // 1 = unplayed ink flies in from the right instead of materialising
+	uniform float uRvFlyDur;   // seconds a piece of ink is in flight
+	uniform float uRvFlyDist;  // staff spaces it starts from
 `
 
 // fragment: returns emission at the edge (0..1), discards hidden ink
 const FRAG_GLSL = /* glsl */`
 	float rvEdgeGlow = 0.0;
-	if (uRvMode != 0) {
+	bool rvSkip = false;
+	#ifdef RV_STAFF
+		rvSkip = uRvKeepStaff == 1;
+	#endif
+	if (uRvMode != 0 && !rvSkip) {
 		float tm = texture2D(uRvTex, (vRvPos.xy - uRvRect.xy) * uRvRect.zw).r;
 		float age = uRvTime - tm;
 		float n = rvEdge(vRvPos);
-		if ((uRvMode & 1) != 0) {
+		bool rvFlying = uRvFly > 0.5;
+		#if defined(RV_STAFF) || defined(RV_TEXT)
+			rvFlying = false;
+		#endif
+		if ((uRvMode & 1) != 0 && !rvFlying) {
 			float d = age - (-uRvLead + n * uRvBand);
 			if (d < 0.0) discard;
 			rvEdgeGlow = max(rvEdgeGlow, 1.0 - smoothstep(0.0, 0.09, d));
@@ -71,8 +83,55 @@ const FRAG_GLSL = /* glsl */`
 	}
 `
 
+// Fly-in: each piece of ink (a glyph instance, or one connected shape of the merged
+// extrusions: a stem, a beam, a slur) has a pivot and the time the playhead reaches it.
+// For uRvFlyDur seconds before it appears it travels in from the right, turning about
+// a random axis, decelerating into place (offset and angle go as u^2, u = time left / dur).
+const FLY_VS = /* glsl */`
+	#ifndef USE_INSTANCING
+		attribute vec3 aRvPiv; // pivot x, y and its time
+	#endif
+	mat3 rvRot = mat3(1.0);
+	vec3 rvOff = vec3(0.0), rvPiv = vec3(0.0);
+	float rvScale = 1.0;
+	bool rvActive = false;
+	void rvFlySetup() {
+		rvActive = false;
+		#if defined(RV_STAFF) || defined(RV_TEXT)
+			return;
+		#endif
+		if (uRvFly < 0.5 || (uRvMode & 1) == 0) return;
+		float tPiv;
+		#ifdef USE_INSTANCING
+			rvPiv = vec3(instanceMatrix[3].xy, 0.0);
+			tPiv = texture2D(uRvTex, (rvPiv.xy - uRvRect.xy) * uRvRect.zw).r;
+		#else
+			rvPiv = vec3(aRvPiv.xy, 0.0);
+			tPiv = aRvPiv.z;
+		#endif
+		float u = (tPiv - uRvLead - uRvTime) / max(0.05, uRvFlyDur);
+		if (u <= 0.0) return;
+		rvActive = true;
+		if (u >= 1.0) { rvScale = 0.0; return; } // not in flight yet: collapsed, draws nothing
+		float h1 = rvHash(vec3(rvPiv.xy * 1.37, 3.1)), h2 = rvHash(vec3(rvPiv.yx * 2.11, 7.7)), h3 = rvHash(vec3(rvPiv.xy * 0.73, 1.9));
+		float k = u * u;
+		vec3 axis = normalize(vec3(h1 - 0.5, h2 - 0.5, h3 - 0.5) + vec3(0.0, 0.35, 0.0));
+		float ang = k * (3.0 + 4.0 * h2) * (h3 < 0.5 ? -1.0 : 1.0);
+		float c = cos(ang), s = sin(ang), t = 1.0 - c;
+		rvRot = mat3(
+			t * axis.x * axis.x + c, t * axis.x * axis.y + s * axis.z, t * axis.x * axis.z - s * axis.y,
+			t * axis.x * axis.y - s * axis.z, t * axis.y * axis.y + c, t * axis.y * axis.z + s * axis.x,
+			t * axis.x * axis.z + s * axis.y, t * axis.y * axis.z - s * axis.x, t * axis.z * axis.z + c);
+		float D = uRvFlyDist;
+		rvOff = vec3(D * (0.75 + 0.5 * h1) * k,
+			D * 0.3 * (h2 - 0.5) * k,
+			D * (0.2 + 0.3 * h3) * k + D * 0.12 * sin(3.14159 * u));
+		rvScale = 1.0 - smoothstep(0.7, 1.0, u);
+	}
+`
+
 /** Patch a three.js material (keeps any earlier onBeforeCompile) so it reads the time map. */
-function patchMaterial(mat, uniforms, edge) {
+function patchMaterial(mat, uniforms, edge, kind = 'ink') {
 	if (mat.userData.revealPatched) return
 	mat.userData.revealPatched = true
 	const prev = mat.onBeforeCompile
@@ -80,13 +139,28 @@ function patchMaterial(mat, uniforms, edge) {
 	mat.onBeforeCompile = (sh, r) => {
 		prev?.call(mat, sh, r)
 		for (const k in uniforms) sh.uniforms[k] = uniforms[k]
-		sh.vertexShader = 'varying vec3 vRvPos;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+		const def = kind === 'staff' ? '#define RV_STAFF\n' : kind === 'text' ? '#define RV_TEXT\n' : ''
+		let vs = def + 'varying vec3 vRvPos;\n' + UNIFORMS_GLSL + NOISE_GLSL + FLY_VS + sh.vertexShader
+		vs = vs.replace('#include <begin_vertex>', `#include <begin_vertex>
 			vec4 rvP = vec4(transformed, 1.0);
 			#ifdef USE_INSTANCING
 				rvP = instanceMatrix * rvP;
 			#endif
-			vRvPos = rvP.xyz;`)
-		let fs = 'varying vec3 vRvPos;\n' + UNIFORMS_GLSL + NOISE_GLSL + sh.fragmentShader
+			vRvPos = rvP.xyz;
+			rvFlySetup();
+			if (rvActive) {
+				vec3 rvQ = rvPiv + rvRot * ((rvP.xyz - rvPiv) * rvScale) + rvOff;
+				#ifdef USE_INSTANCING
+					transformed = (inverse(instanceMatrix) * vec4(rvQ, 1.0)).xyz;
+				#else
+					transformed = rvQ;
+				#endif
+			}`)
+		vs = vs.replace('#include <defaultnormal_vertex>', `#include <defaultnormal_vertex>
+			rvFlySetup();
+			if (rvActive) transformedNormal = normalMatrix * (rvRot * (transpose(normalMatrix) * transformedNormal));`)
+		sh.vertexShader = vs
+		let fs = def + 'varying vec3 vRvPos;\n' + UNIFORMS_GLSL + NOISE_GLSL + sh.fragmentShader
 		fs = fs.replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n' + FRAG_GLSL)
 		if (edge && fs.includes('#include <emissivemap_fragment>')) {
 			fs = fs.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
@@ -95,7 +169,7 @@ function patchMaterial(mat, uniforms, edge) {
 		}
 		sh.fragmentShader = fs
 	}
-	mat.customProgramCacheKey = () => (prevKey ? prevKey() : '') + '|reveal' + (edge ? 'E' : '')
+	mat.customProgramCacheKey = () => (prevKey ? prevKey() : '') + '|reveal' + (edge ? 'E' : '') + kind
 	mat.needsUpdate = true
 }
 
@@ -136,8 +210,10 @@ const PARTICLE_VS = /* glsl */`
 		float age = uRvTime - aT;
 		float n = rvEdge(position);
 		float u = -1.0;
+		bool keep = uRvKeepStaff == 1 && aColor < -1.5;
+		if (keep) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vAlpha = 0.0; return; }
 		// hidden until played: fly in for uRvLife seconds before the ink appears (the reverse of blowing away)
-		if ((uRvMode & 1) != 0) { float uu = ((-uRvLead + n * uRvBand) - age) / uRvLife; if (uu > 0.0 && uu < 1.0) u = uu; }
+		if ((uRvMode & 1) != 0 && (uRvFly < 0.5 || aColor < -1.5)) { float uu = ((-uRvLead + n * uRvBand) - age) / uRvLife; if (uu > 0.0 && uu < 1.0) u = uu; }
 		// gone once played: blow away for uRvLife seconds after the ink goes
 		if ((uRvMode & 2) != 0) { float uu = (age - (uRvHold + n * uRvBand)) / uRvLife; if (uu > 0.0 && uu < 1.0) u = uu; }
 		if (u < 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vAlpha = 0.0; return; }
@@ -307,10 +383,44 @@ function pickTriangle(cum, r) {
 	return lo
 }
 
+/**
+ * Pivot per connected shape of a merged extrusion (a stem, a beam, a whole slur):
+ * triangles that share a vertex position are one shape. aRvPiv = centroid x, y and
+ * the time at the shape's left end, which is when the playhead reaches it.
+ */
+function addPivots(geo, map) {
+	const pos = geo.attributes.position, n = pos.count
+	const parent = new Int32Array(n).map((_, i) => i)
+	const find = i => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i] } return i }
+	const union = (a, b) => { a = find(a); b = find(b); if (a !== b) parent[a] = b }
+	const key = new Map()
+	const idx = geo.index
+	const vtx = i => idx ? idx.getX(i) : i
+	const m = idx ? idx.count : n
+	for (let i = 0; i < n; i++) {
+		const k = Math.round(pos.getX(i) * 1e4) + ',' + Math.round(pos.getY(i) * 1e4) + ',' + Math.round(pos.getZ(i) * 1e4)
+		const j = key.get(k)
+		if (j === undefined) key.set(k, i); else union(i, j)
+	}
+	for (let t = 0; t + 2 < m; t += 3) { union(vtx(t), vtx(t + 1)); union(vtx(t), vtx(t + 2)) }
+	const comp = new Map()
+	for (let i = 0; i < n; i++) {
+		const r = find(i)
+		let c = comp.get(r)
+		if (!c) comp.set(r, c = { sx: 0, sy: 0, k: 0, minX: Infinity })
+		const x = pos.getX(i), y = pos.getY(i)
+		c.sx += x; c.sy += y; c.k++; c.minX = Math.min(c.minX, x)
+	}
+	for (const c of comp.values()) { c.cx = c.sx / c.k; c.cy = c.sy / c.k; c.t = sampleTime(map, c.minX + 0.05, c.cy) }
+	const piv = new Float32Array(n * 3)
+	for (let i = 0; i < n; i++) { const c = comp.get(find(i)); piv[i * 3] = c.cx; piv[i * 3 + 1] = c.cy; piv[i * 3 + 2] = c.t }
+	geo.setAttribute('aRvPiv', new THREE.BufferAttribute(piv, 3))
+}
+
 export class ScoreReveal {
 	constructor(stage) {
 		this.stage = stage
-		this.opts = { mode: 'reveal', style: 'dandelion', lead: 0, hold: 0.6, band: 0.36, density: 1, glow: 1 }
+		this.opts = { mode: 'reveal', style: 'dandelion', lead: 0, hold: 0.6, band: 0.36, density: 1, glow: 1, keepStaves: false, arrive: 'appear', flyDur: 1.4, flyDist: 16 }
 		this.uniforms = {
 			uRvTex: { value: new THREE.DataTexture(new Float32Array([0]), 1, 1, THREE.RedFormat, THREE.FloatType) },
 			uRvRect: { value: new THREE.Vector4(0, 0, 1, 1) },
@@ -319,6 +429,10 @@ export class ScoreReveal {
 			uRvLead: { value: 0 },
 			uRvHold: { value: 0.6 },
 			uRvBand: { value: 0.36 },
+			uRvKeepStaff: { value: 0 },
+			uRvFly: { value: 0 },
+			uRvFlyDur: { value: 1.4 },
+			uRvFlyDist: { value: 16 },
 			uRvEdgeColor: { value: new THREE.Color(1.6, 0.9, 0.4) },
 		}
 		this.uniforms.uRvTex.value.needsUpdate = true
@@ -332,8 +446,8 @@ export class ScoreReveal {
 		this.depthMat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking })
 		patchMaterial(this.depthMat, this.uniforms, false)
 		const m = stage.materials
-		for (const k of ['staff', 'ink']) patchMaterial(m[k], this.uniforms, true)
-		for (const k of ['glyph', 'head']) patchMaterial(m[k], this.uniforms, true)
+		patchMaterial(m.staff, this.uniforms, true, 'staff')
+		for (const k of ['ink', 'glyph', 'head']) patchMaterial(m[k], this.uniforms, true, 'ink')
 		this.points = null
 
 		// hooks: build with each score, follow the theme, set the time for every frame (live and export)
@@ -359,6 +473,13 @@ export class ScoreReveal {
 		U.uRvLead.value = o.lead
 		U.uRvHold.value = o.hold
 		U.uRvBand.value = o.band
+		U.uRvKeepStaff.value = o.keepStaves ? 1 : 0
+		U.uRvFly.value = o.arrive === 'fly' ? 1 : 0
+		U.uRvFlyDur.value = o.flyDur
+		U.uRvFlyDist.value = o.flyDist
+		// pieces in flight leave their chunk's bounds, so nothing of the score is culled while they fly
+		const fly = U.uRvFly.value && (U.uRvMode.value & 1)
+		this.stage.score?.built.group.traverse(m => { if (m.isMesh && !m.isPoints) m.frustumCulled = !fly })
 		const st = REVEAL_STYLES[o.style] || REVEAL_STYLES.dandelion
 		P.uRvLife.value = st.life
 		P.uRvTravel.value = st.travel
@@ -367,7 +488,7 @@ export class ScoreReveal {
 		P.uRvWind.value.set(...st.wind)
 		P.uRvSize.value = st.size
 		P.uRvSeedShape.value = st.seed
-		if (this.points) this.points.visible = st.particles && U.uRvMode.value !== 0
+		if (this.points) this.points.visible = (st.particles || o.arrive === 'fly') && U.uRvMode.value !== 0
 		this._applyTheme()
 	}
 
@@ -413,7 +534,8 @@ export class ScoreReveal {
 		s.built.group.traverse(o => {
 			if (!o.isMesh || o.isPoints) return
 			o.customDepthMaterial = this.depthMat
-			if (o.userData.isText) patchMaterial(o.material, this.uniforms, false)
+			if (o.userData.isText) patchMaterial(o.material, this.uniforms, false, 'text')
+			else if (!o.isInstancedMesh) addPivots(o.geometry, map)
 		})
 		this._buildParticles()
 		console.log(`reveal: time map ${map.W}x${map.H}, ${this.points?.geometry.attributes.position.count ?? 0} particles, ${(performance.now() - t0).toFixed(0)}ms`)
@@ -472,7 +594,7 @@ export class ScoreReveal {
 				pos.push(v.x, v.y, v.z)
 				tt.push(sampleTime(this.map, v.x, v.y))
 				seed.push(rand())
-				col.push(src.color)
+				col.push(src.staff ? -2 : src.color)
 			}
 		}
 		const geo = new THREE.BufferGeometry()
