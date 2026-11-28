@@ -2,6 +2,12 @@
 
 What each experiment does and how, newest first. The short list is in the [README](README.md).
 
+## 28 Nov 2026
+
+Schumann's Carnaval, Op. 9 in the song list: the complete work and No. 12, "Chopin", from MAESTRO v3.0.0 (CC BY-NC-SA 4.0), with liner notes
+- `midis/maestro_schumann_carnaval.mid` (2004, 28 min, unchanged) and No. 12 cut from it and from the 2014 and 2018 performances, each found by matching No. 12's first ten chords and Estrella's, and starting with the pedal as it stood at the cut. Sources and times in [midis/README.md](midis/README.md#sources--credits).
+- Liner notes `liner/pieces/schumann-carnaval.md` (a section for each piece, placed by time from the silences between pieces and their keys; Valse noble to the Lettres dansantes as one section, where the boundaries are not certain) and `schumann-carnaval-chopin.md`, with new cards `carnaval` and `chopin`. `node --test liner/test/liner.test.js` passes.
+
 ## 27 Nov 2026
 
 The Stage menus built from the sets' descriptors ([stages/menu.js](stages/menu.js)): #032's and #045's Stage (and #049, #050, #054) and #038's Venue
