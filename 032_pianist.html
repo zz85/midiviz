@@ -339,7 +339,7 @@
     <div class="field" title="Automatic: each intertitle goes to the side of the frame away from the pianist (her head and hands as the camera sees them), and to the top when the shot looks down on the keys"><label>Intertitle position</label><select id="itPos"></select></div>
     <label class="chk" title="The small capitals over each line (a place and year, a bar, a term)"><input type="checkbox" id="itHeads" checked>Headings over the lines</label>
     <div class="sect">Stage</div>
-    <div class="field" title="Black stage: the piano under its spotlights on a dark floor. Candlelit chamber (from #030): a stone wall with arches behind the piano, some 200 candles on two tiers and along the sides, sconces, a warm candle palette for the lights and the reflections. The hall of water (waterhall/, after the Wallace sets of Blade Runner 2049): the piano on a wooden deck in a flooded concrete room, light off the water climbing the walls, a slit of light swinging over her. The park (#051): Sorairo's hillside, the tree, wind in the grass, the sky, birds and a painterly finish (park/); its own post-processing takes the place of the page's. The lake (#054): Afterglow's mountain lake after sunset (lake/), the water ringing from the piano's legs as she plays and reflecting her"><label>Stage</label><select id="stageSet"><option value="stage" selected>Black stage</option><option value="candle">Candlelit chamber</option><option value="park">The park</option><option value="lake">The lake (Afterglow)</option><option value="hall">The hall of water</option></select></div>
+    <div class="field"><label>Stage</label><select id="stageSet"></select></div>
     <div class="field"><label>Main light</label><input type="range" id="light" min="0" max="2" step="0.01" value="1"></div>
     <div class="field"><label>Exposure</label><input type="range" id="exposure" min="0.3" max="2.5" step="0.01" value="1"></div>
     <div class="sect">Post-processing</div>
@@ -513,6 +513,7 @@
     import { createSettings } from './ui/settings.js'
     import { mountStudio, PIANIST_TAIL } from './ui/studio.js'
     import { createInsceneStages } from './stages/inscene.js'
+    import { fillStageMenu } from './stages/menu.js'
     import { createLinerLibrary, clockOfMidi, buildTimeline, toVTT, toChapters, titleScreen, withTitle, titleSecs } from './liner/liner.js'
     import { createLinerOverlay, drawLinerCaption, drawIntertitle, loadIntertitleFonts, INTERTITLE_STYLES, INTERTITLE_THEMES, INTERTITLE_POSITIONS } from './liner/overlay.js'
 
@@ -612,6 +613,8 @@
     // the in-scene sets (Visuals → Stage): the black stage, the candlelit chamber, the hall of
     // water; their looks, light palettes, props and reflections are stages/inscene.js's
     const pmrem = new THREE.PMREMGenerator(renderer)
+    // the Stage menu, from the sets' descriptors (stages/menu.js)
+    fillStageMenu($('stageSet'), { note: 'The park and the lake draw the picture themselves: their own post-processing takes the place of the page\'s' })
     const inscene = createInsceneStages({ THREE, renderer, scene, pmrem, floor, floorMat, lowQuality: LOWQ })
     const stageProps = inscene.props
     const applyLight = () => {

@@ -50,6 +50,7 @@ import { createFrameSpace, LANDSCAPE_PLACES, portraitPlaces } from '../pianist/f
 import { createFocusPuller, SHOT_DOF } from '../pianist/focus-puller.js'
 import { createStageSets } from '../stages/sets.js'
 import { createInsceneStages } from '../stages/inscene.js'
+import { fillStageMenu } from '../stages/menu.js'
 import { createLinerLibrary, clockOfMidi, buildTimeline, toVTT, toChapters, titleScreen, withTitle, titleSecs, layoutClip } from '../liner/liner.js'
 import { createLinerOverlay, drawLinerCaption, drawIntertitle, loadIntertitleFonts, INTERTITLE_STYLES, INTERTITLE_THEMES, INTERTITLE_POSITIONS } from '../liner/overlay.js'
 import { SHELL } from './shell.js'
@@ -189,6 +190,8 @@ export async function boot(plug = {}) {
     // water; their looks, light palettes, props and reflections are stages/inscene.js's (the
     // path tracers bake inscene.envScene, the panels behind scene.environment)
     const pmrem = GPU ? new TG.PMREMGenerator(renderer) : new THREE.PMREMGenerator(renderer)
+    // the Stage menu, from the sets' descriptors (stages/menu.js)
+    fillStageMenu($('stageSet'), { traced: true, gpu: !!GPU, note: 'The park and the lake are drawn on the live picture only: their own post-processing takes the place of the page\'s, and the path tracers stay on the stages' })
     const inscene = createInsceneStages({ THREE, renderer, scene, pmrem, floor, floorMat, lowQuality: LOWQ, gpu: !!GPU })
     const stageProps = inscene.props
     const CINEMATIC_LIGHTS = {
@@ -743,7 +746,6 @@ export async function boot(plug = {}) {
       foreground: () => [ch.group, hair?.object, hair?.cap, dress?.object, shoes?.object],
       hair: () => hair, progress: () => scheduler?.duration ? songNow() / scheduler.duration : 0, playing: () => !!scheduler?.playing,
       dim: ['dof', 'bloom', 'filmGrain', 'dust', 'motionBlur'], lake: { piano: { legs: piano.legs, lyre: piano.lyre } } })
-    if (GPU) { const o = $('stageSet').querySelector('option[value=hall]'); o.disabled = true; o.text += ' - WebGL only' }
     async function setStageSet(name) { await stageSets.choose(name, setStage); applyFx() }
     $('stageSet').onchange = () => setStageSet($('stageSet').value)
     const drawPost = () => stageSets.draw() || composer.render()
