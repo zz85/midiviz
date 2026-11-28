@@ -41,6 +41,27 @@ const NOISE_GLSL = /* glsl */`
 	float rvEdge(vec3 p) { return clamp(0.65 * rvNoise(p * 1.7) + 0.35 * rvNoise(p * 4.3 + 11.0), 0.0, 1.0); }
 `
 
+const CURL_GLSL = /* glsl */`
+	// curl of the vector potential A = (sin(y+a)cos(.7z+b), sin(z+c)cos(.7x+d), sin(x+e)cos(.7y+f)), analytic
+	vec3 curlA(vec3 p, vec3 a, vec3 b) {
+		float sx = sin(p.x + a.z), cx = cos(p.x + a.z);
+		float sy = sin(p.y + a.x), cy = cos(p.y + a.x);
+		float sz = sin(p.z + a.y), cz = cos(p.z + a.y);
+		float s7x = sin(0.7 * p.x + b.y), c7x = cos(0.7 * p.x + b.y);
+		float s7y = sin(0.7 * p.y + b.z), c7y = cos(0.7 * p.y + b.z);
+		float s7z = sin(0.7 * p.z + b.x), c7z = cos(0.7 * p.z + b.x);
+		return vec3(
+			-0.7 * sx * s7y - cz * c7x,
+			-0.7 * sy * s7z - cx * c7y,
+			-0.7 * sz * s7x - cy * c7z);
+	}
+	vec3 curl(vec3 p) {
+		vec3 q = mat3(0.8, 0.6, 0.0, -0.6, 0.8, 0.0, 0.0, 0.0, 1.0) * p * 2.3;
+		return curlA(p * 0.55, vec3(1.3, 4.1, 2.7), vec3(5.2, 0.4, 3.3)) + 0.5 * curlA(q, vec3(2.9, 0.7, 6.1), vec3(1.1, 3.8, 0.2));
+	}
+
+`
+
 const UNIFORMS_GLSL = /* glsl */`
 	uniform sampler2D uRvTex;
 	uniform vec4 uRvRect;      // x0, y0, 1/w, 1/h of the time map
@@ -50,7 +71,8 @@ const UNIFORMS_GLSL = /* glsl */`
 	uniform float uRvHold;     // seconds after its time that ink stays
 	uniform float uRvBand;     // seconds of noise in the edge
 	uniform int uRvKeepStaff;  // 1 = staff lines always shown
-	uniform float uRvFly;      // 1 = unplayed ink flies in from the right instead of materialising
+	uniform float uRvFly;      // 0 = unplayed ink materialises, 1 = flies in from the right, 2 = swirls in along the curl field
+	uniform float uRvGroup;    // 1 = a note flies with its stem, beam, flag, accidentals and dots, as one unit
 	uniform float uRvFlyDur;   // seconds a piece of ink is in flight
 	uniform float uRvFlyDist;  // staff spaces it starts from
 `
@@ -84,48 +106,62 @@ const FRAG_GLSL = /* glsl */`
 `
 
 // Fly-in: each piece of ink (a glyph instance, or one connected shape of the merged
-// extrusions: a stem, a beam, a slur) has a pivot and the time the playhead reaches it.
-// For uRvFlyDur seconds before it appears it travels in from the right, turning about
-// a random axis, decelerating into place (offset and angle go as u^2, u = time left / dur).
+// extrusions: a stem, a beam, a slur) has a pivot and a landing time (aRvPiv: x, y, t);
+// as a unit (uRvGroup), every piece of one note or beamed group shares its unit's
+// (aRvUnit), so they move rigidly together. For uRvFlyDur seconds before it lands a
+// piece is offset and turned, u = time left / dur going 1 -> 0 and k = u^2, so it
+// decelerates into place:
+//   fly:  offset straight from the right (k * From), a sideways and upward bias, and an
+//         arc of sin(pi u) above the page; angle k * (3..7 rad) about a random axis
+//   curl: the offset is the path of a point carried k * From along the same curl-noise
+//         field the particles ride (with a wind from the right), so the piece swirls in
+//         out of chaos; it tumbles k * (6..12 rad)
+// The first 30% of the flight it grows from nothing.
 const FLY_VS = /* glsl */`
-	#ifndef USE_INSTANCING
-		attribute vec3 aRvPiv; // pivot x, y and its time
-	#endif
+	attribute vec3 aRvPiv;
+	attribute vec3 aRvUnit;
 	mat3 rvRot = mat3(1.0);
 	vec3 rvOff = vec3(0.0), rvPiv = vec3(0.0);
 	float rvScale = 1.0;
-	bool rvActive = false;
+	bool rvActive = false, rvDone = false;
 	void rvFlySetup() {
-		rvActive = false;
+		if (rvDone) return;
+		rvDone = true;
 		#if defined(RV_STAFF) || defined(RV_TEXT)
 			return;
 		#endif
 		if (uRvFly < 0.5 || (uRvMode & 1) == 0) return;
-		float tPiv;
-		#ifdef USE_INSTANCING
-			rvPiv = vec3(instanceMatrix[3].xy, 0.0);
-			tPiv = texture2D(uRvTex, (rvPiv.xy - uRvRect.xy) * uRvRect.zw).r;
-		#else
-			rvPiv = vec3(aRvPiv.xy, 0.0);
-			tPiv = aRvPiv.z;
-		#endif
-		float u = (tPiv - uRvLead - uRvTime) / max(0.05, uRvFlyDur);
+		vec3 pv = uRvGroup > 0.5 ? aRvUnit : aRvPiv;
+		rvPiv = vec3(pv.xy, 0.0);
+		float u = (pv.z - uRvLead - uRvTime) / max(0.05, uRvFlyDur);
 		if (u <= 0.0) return;
 		rvActive = true;
 		if (u >= 1.0) { rvScale = 0.0; return; } // not in flight yet: collapsed, draws nothing
 		float h1 = rvHash(vec3(rvPiv.xy * 1.37, 3.1)), h2 = rvHash(vec3(rvPiv.yx * 2.11, 7.7)), h3 = rvHash(vec3(rvPiv.xy * 0.73, 1.9));
 		float k = u * u;
+		bool swirl = uRvFly > 1.5;
 		vec3 axis = normalize(vec3(h1 - 0.5, h2 - 0.5, h3 - 0.5) + vec3(0.0, 0.35, 0.0));
-		float ang = k * (3.0 + 4.0 * h2) * (h3 < 0.5 ? -1.0 : 1.0);
+		float ang = k * (swirl ? 6.0 + 6.0 * h2 : 3.0 + 4.0 * h2) * (h3 < 0.5 ? -1.0 : 1.0);
 		float c = cos(ang), s = sin(ang), t = 1.0 - c;
 		rvRot = mat3(
 			t * axis.x * axis.x + c, t * axis.x * axis.y + s * axis.z, t * axis.x * axis.z - s * axis.y,
 			t * axis.x * axis.y - s * axis.z, t * axis.y * axis.y + c, t * axis.y * axis.z + s * axis.x,
 			t * axis.x * axis.z + s * axis.y, t * axis.y * axis.z - s * axis.x, t * axis.z * axis.z + c);
 		float D = uRvFlyDist;
-		rvOff = vec3(D * (0.75 + 0.5 * h1) * k,
-			D * 0.3 * (h2 - 0.5) * k,
-			D * (0.2 + 0.3 * h3) * k + D * 0.12 * sin(3.14159 * u));
+		if (swirl) {
+			vec3 p = rvPiv;
+			vec3 wind = normalize(vec3(1.0, 0.15, 0.55)) * 0.7;
+			vec3 off = vec3(h1 * 37.0, h2 * 11.0, h3 * 5.0);
+			const int STEPS = 8;
+			float h = D * (0.7 + 0.6 * h1) * k / float(STEPS);
+			for (int i = 0; i < STEPS; i++) p += (normalize(curl(p * 0.22 + off) + vec3(1e-4)) + wind) * h;
+			p.z = max(p.z, 0.0);
+			rvOff = p - rvPiv;
+		} else {
+			rvOff = vec3(D * (0.75 + 0.5 * h1) * k,
+				D * 0.3 * (h2 - 0.5) * k,
+				D * (0.2 + 0.3 * h3) * k + D * 0.12 * sin(3.14159 * u));
+		}
 		rvScale = 1.0 - smoothstep(0.7, 1.0, u);
 	}
 `
@@ -140,7 +176,7 @@ function patchMaterial(mat, uniforms, edge, kind = 'ink') {
 		prev?.call(mat, sh, r)
 		for (const k in uniforms) sh.uniforms[k] = uniforms[k]
 		const def = kind === 'staff' ? '#define RV_STAFF\n' : kind === 'text' ? '#define RV_TEXT\n' : ''
-		let vs = def + 'varying vec3 vRvPos;\n' + UNIFORMS_GLSL + NOISE_GLSL + FLY_VS + sh.vertexShader
+		let vs = def + 'varying vec3 vRvPos;\n' + UNIFORMS_GLSL + NOISE_GLSL + CURL_GLSL + FLY_VS + sh.vertexShader
 		vs = vs.replace('#include <begin_vertex>', `#include <begin_vertex>
 			vec4 rvP = vec4(transformed, 1.0);
 			#ifdef USE_INSTANCING
@@ -186,24 +222,6 @@ const PARTICLE_VS = /* glsl */`
 	varying vec3 vCol;
 	varying float vAlpha;
 	varying float vSpin;
-
-	// curl of the vector potential A = (sin(y+a)cos(.7z+b), sin(z+c)cos(.7x+d), sin(x+e)cos(.7y+f)), analytic
-	vec3 curlA(vec3 p, vec3 a, vec3 b) {
-		float sx = sin(p.x + a.z), cx = cos(p.x + a.z);
-		float sy = sin(p.y + a.x), cy = cos(p.y + a.x);
-		float sz = sin(p.z + a.y), cz = cos(p.z + a.y);
-		float s7x = sin(0.7 * p.x + b.y), c7x = cos(0.7 * p.x + b.y);
-		float s7y = sin(0.7 * p.y + b.z), c7y = cos(0.7 * p.y + b.z);
-		float s7z = sin(0.7 * p.z + b.x), c7z = cos(0.7 * p.z + b.x);
-		return vec3(
-			-0.7 * sx * s7y - cz * c7x,
-			-0.7 * sy * s7z - cx * c7y,
-			-0.7 * sz * s7x - cy * c7z);
-	}
-	vec3 curl(vec3 p) {
-		vec3 q = mat3(0.8, 0.6, 0.0, -0.6, 0.8, 0.0, 0.0, 0.0, 1.0) * p * 2.3;
-		return curlA(p * 0.55, vec3(1.3, 4.1, 2.7), vec3(5.2, 0.4, 3.3)) + 0.5 * curlA(q, vec3(2.9, 0.7, 6.1), vec3(1.1, 3.8, 0.2));
-	}
 
 	void main() {
 		vCol = aColor < 0.0 ? uRvInk : uRvPalette[int(aColor) % 8];
@@ -383,12 +401,8 @@ function pickTriangle(cum, r) {
 	return lo
 }
 
-/**
- * Pivot per connected shape of a merged extrusion (a stem, a beam, a whole slur):
- * triangles that share a vertex position are one shape. aRvPiv = centroid x, y and
- * the time at the shape's left end, which is when the playhead reaches it.
- */
-function addPivots(geo, map) {
+/** Connected shapes of a merged extrusion (a stem, a beam, a whole slur): triangles that share a vertex position. */
+function components(geo) {
 	const pos = geo.attributes.position, n = pos.count
 	const parent = new Int32Array(n).map((_, i) => i)
 	const find = i => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i] } return i }
@@ -403,24 +417,79 @@ function addPivots(geo, map) {
 		if (j === undefined) key.set(k, i); else union(i, j)
 	}
 	for (let t = 0; t + 2 < m; t += 3) { union(vtx(t), vtx(t + 1)); union(vtx(t), vtx(t + 2)) }
-	const comp = new Map()
+	const comps = [], ofRoot = new Map(), vComp = new Int32Array(n)
 	for (let i = 0; i < n; i++) {
 		const r = find(i)
-		let c = comp.get(r)
-		if (!c) comp.set(r, c = { sx: 0, sy: 0, k: 0, minX: Infinity })
-		const x = pos.getX(i), y = pos.getY(i)
-		c.sx += x; c.sy += y; c.k++; c.minX = Math.min(c.minX, x)
+		let c = ofRoot.get(r)
+		if (c === undefined) { ofRoot.set(r, c = comps.length); comps.push({ minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity }) }
+		vComp[i] = c
+		const b = comps[c], x = pos.getX(i), y = pos.getY(i)
+		b.minX = Math.min(b.minX, x); b.maxX = Math.max(b.maxX, x); b.minY = Math.min(b.minY, y); b.maxY = Math.max(b.maxY, y)
 	}
-	for (const c of comp.values()) { c.cx = c.sx / c.k; c.cy = c.sy / c.k; c.t = sampleTime(map, c.minX + 0.05, c.cy) }
-	const piv = new Float32Array(n * 3)
-	for (let i = 0; i < n; i++) { const c = comp.get(find(i)); piv[i * 3] = c.cx; piv[i * 3 + 1] = c.cy; piv[i * 3 + 2] = c.t }
-	geo.setAttribute('aRvPiv', new THREE.BufferAttribute(piv, 3))
+	return { comps, vComp }
 }
+
+/**
+ * Units for flying as a whole: each piece of ink joins the pieces it touches (head,
+ * stem, flag, ledger lines, beam: so a beamed group is one unit), an accidental joins
+ * the nearest notehead just to its right on its line or space, and a dot the nearest
+ * just to its left. Staff lines and text don't join. A unit lands at its first note.
+ */
+function buildUnits(pieces) {
+	const parent = pieces.map((_, i) => i)
+	const find = i => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i] } return i }
+	const union = (a, b) => { a = find(a); b = find(b); if (a !== b) parent[a] = b }
+	const CELL = 3, TOL = 0.06
+	const grid = new Map()
+	const cells = (p, pad, f) => {
+		for (let i = Math.floor((p.minX - pad) / CELL); i <= Math.floor((p.maxX + pad) / CELL); i++)
+			for (let j = Math.floor((p.minY - pad) / CELL); j <= Math.floor((p.maxY + pad) / CELL); j++) f(i + ',' + j)
+	}
+	pieces.forEach((p, i) => cells(p, 0, k => { if (!grid.has(k)) grid.set(k, []); grid.get(k).push(i) }))
+	const near = (p, pad) => { const s = new Set(); cells(p, pad, k => grid.get(k)?.forEach(j => s.add(j))); return s }
+	const loose = p => p.kind === 'acc' || p.kind === 'dot'
+	pieces.forEach((p, i) => {
+		if (loose(p) || p.kind === 'free') return
+		for (const j of near(p, TOL)) {
+			const q = pieces[j]
+			if (j <= i || loose(q) || q.kind === 'free') continue
+			if (p.minX - TOL <= q.maxX && q.minX - TOL <= p.maxX && p.minY - TOL <= q.maxY && q.minY - TOL <= p.maxY) union(i, j)
+		}
+	})
+	pieces.forEach((p, i) => {
+		if (!loose(p)) return
+		const cy = (p.minY + p.maxY) / 2
+		let best = -1, bd = Infinity
+		for (const j of near(p, 2)) {
+			const q = pieces[j]
+			if (q.kind !== 'head' || Math.abs((q.minY + q.maxY) / 2 - cy) > 0.8) continue
+			const gap = p.kind === 'acc' ? q.minX - p.maxX : p.minX - q.maxX
+			if (gap > -0.3 && gap < 1.6 && gap < bd) { bd = gap; best = j }
+		}
+		if (best >= 0) union(i, best)
+	})
+	const units = new Map()
+	pieces.forEach((p, i) => {
+		const r = find(i)
+		let u = units.get(r)
+		if (!u) units.set(r, u = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity, tHead: Infinity, tAny: Infinity, n: 0 })
+		u.minX = Math.min(u.minX, p.minX); u.maxX = Math.max(u.maxX, p.maxX); u.minY = Math.min(u.minY, p.minY); u.maxY = Math.max(u.maxY, p.maxY)
+		if (p.headTime != null) u.tHead = Math.min(u.tHead, p.headTime)
+		u.tAny = Math.min(u.tAny, p.t)
+		u.n++
+		p.unit = u
+	})
+	for (const u of units.values()) { u.cx = (u.minX + u.maxX) / 2; u.cy = (u.minY + u.maxY) / 2; u.t = isFinite(u.tHead) ? u.tHead : u.tAny }
+	return [...units.values()]
+}
+
+const glyphKind = name => name.startsWith('notehead') ? 'head' : name.startsWith('accidental') ? 'acc' : name.startsWith('augmentationDot') ? 'dot'
+	: /^(rest|gClef|fClef|cClef|timeSig|brace|bracket|dynamic)/.test(name) ? 'free' : 'ink'
 
 export class ScoreReveal {
 	constructor(stage) {
 		this.stage = stage
-		this.opts = { mode: 'reveal', style: 'dandelion', lead: 0, hold: 0.6, band: 0.36, density: 1, glow: 1, keepStaves: false, arrive: 'appear', flyDur: 1.4, flyDist: 16 }
+		this.opts = { mode: 'reveal', style: 'dandelion', lead: 0, hold: 0.6, band: 0.36, density: 1, glow: 1, keepStaves: false, arrive: 'appear', flyDur: 1.4, flyDist: 16, flyUnits: false, paper: 'solid' }
 		this.uniforms = {
 			uRvTex: { value: new THREE.DataTexture(new Float32Array([0]), 1, 1, THREE.RedFormat, THREE.FloatType) },
 			uRvRect: { value: new THREE.Vector4(0, 0, 1, 1) },
@@ -431,6 +500,7 @@ export class ScoreReveal {
 			uRvBand: { value: 0.36 },
 			uRvKeepStaff: { value: 0 },
 			uRvFly: { value: 0 },
+			uRvGroup: { value: 0 },
 			uRvFlyDur: { value: 1.4 },
 			uRvFlyDist: { value: 16 },
 			uRvEdgeColor: { value: new THREE.Color(1.6, 0.9, 0.4) },
@@ -455,6 +525,8 @@ export class ScoreReveal {
 		stage.setScore = (...a) => { setScore(...a); this.attach() }
 		const setTheme = stage.setTheme.bind(stage)
 		stage.setTheme = (...a) => { setTheme(...a); this._applyTheme() }
+		const updateMirror = stage._updateMirror.bind(stage)
+		stage._updateMirror = (...a) => { updateMirror(...a); this._applyPaper() }
 		const update = stage.update.bind(stage)
 		stage.update = (t, dt, playing, wall) => { this._frame(t); return update(t, dt, playing, wall) }
 		this._applyTheme()
@@ -474,7 +546,8 @@ export class ScoreReveal {
 		U.uRvHold.value = o.hold
 		U.uRvBand.value = o.band
 		U.uRvKeepStaff.value = o.keepStaves ? 1 : 0
-		U.uRvFly.value = o.arrive === 'fly' ? 1 : 0
+		U.uRvFly.value = o.arrive === 'fly' ? 1 : o.arrive === 'curl' ? 2 : 0
+		U.uRvGroup.value = o.flyUnits ? 1 : 0
 		U.uRvFlyDur.value = o.flyDur
 		U.uRvFlyDist.value = o.flyDist
 		// pieces in flight leave their chunk's bounds, so nothing of the score is culled while they fly
@@ -488,8 +561,26 @@ export class ScoreReveal {
 		P.uRvWind.value.set(...st.wind)
 		P.uRvSize.value = st.size
 		P.uRvSeedShape.value = st.seed
-		if (this.points) this.points.visible = (st.particles || o.arrive === 'fly') && U.uRvMode.value !== 0
+		if (this.points) this.points.visible = (st.particles || o.arrive !== 'appear') && U.uRvMode.value !== 0
 		this._applyTheme()
+	}
+
+	/**
+	 * The paper under the score: solid, see-through (so a piece flying below the page
+	 * stays in view) or hidden (only the ink, in space). Desk and mirror follow it.
+	 */
+	_applyPaper() {
+		const st = this.stage, mode = this.opts.paper
+		const see = mode === 'see', hide = mode === 'hidden'
+		for (const [mat, a] of [[st.paperMat, 0.3], [st.deskMat, 0.12]]) {
+			const want = see
+			if (mat.transparent !== want) { mat.transparent = want; mat.needsUpdate = true }
+			mat.opacity = want ? a : 1
+			mat.depthWrite = !want
+		}
+		st.score?.root.children.forEach(o => { if (o.material === st.paperMat || o.material === st.deskMat) o.visible = !hide })
+		if (st.mirror && (see || hide)) st.mirror.visible = false
+		st.pools.visible = !hide
 	}
 
 	_applyTheme() {
@@ -505,6 +596,7 @@ export class ScoreReveal {
 		P.uRvGain.value = this.opts.glow
 		this.uniforms.uRvEdgeColor.value.set(light ? '#b0501a' : '#ffb060').multiplyScalar(light ? 0.6 : 2.2 * this.opts.glow)
 		if (this.points) this.points.material.blending = light ? THREE.NormalBlending : THREE.AdditiveBlending
+		this._applyPaper()
 	}
 
 	_frame(t) {
@@ -535,10 +627,71 @@ export class ScoreReveal {
 			if (!o.isMesh || o.isPoints) return
 			o.customDepthMaterial = this.depthMat
 			if (o.userData.isText) patchMaterial(o.material, this.uniforms, false, 'text')
-			else if (!o.isInstancedMesh) addPivots(o.geometry, map)
 		})
+		this._buildPieces(s, map)
 		this._buildParticles()
-		console.log(`reveal: time map ${map.W}x${map.H}, ${this.points?.geometry.attributes.position.count ?? 0} particles, ${(performance.now() - t0).toFixed(0)}ms`)
+		console.log(`reveal: time map ${map.W}x${map.H}, ${this.stats.pieces} pieces in ${this.stats.units} units (${this.stats.wide} over 14 wide), ${this.points?.geometry.attributes.position.count ?? 0} particles, ${(performance.now() - t0).toFixed(0)}ms`)
+	}
+
+	/** Pivots and landing times of every piece of ink, alone (aRvPiv) and as part of its unit (aRvUnit). */
+	_buildPieces(s, map) {
+		const headTime = new Map()
+		for (const st of s.headState.values()) {
+			if (!headTime.has(st.h.mesh)) headTime.set(st.h.mesh, new Map())
+			headTime.get(st.h.mesh).set(st.h.index, st.time)
+		}
+		const pieces = [], meshes = []
+		const m = new THREE.Matrix4(), v = new THREE.Vector3()
+		s.built.group.traverse(o => {
+			if (!o.isMesh || o.isPoints || o.userData.isText) return
+			const staff = o.material === this.stage.materials.staff
+			if (o.isInstancedMesh) {
+				// own geometry, so each mesh carries its own per-instance attributes
+				if (!o.userData.rvOwnGeo) { o.geometry = o.geometry.clone(); o.userData.rvOwnGeo = true }
+				o.geometry.computeBoundingBox()
+				const bb = o.geometry.boundingBox, kind = glyphKind(o.userData.glyphName || '')
+				const list = []
+				for (let i = 0; i < o.count; i++) {
+					o.getMatrixAt(i, m)
+					const p = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity, kind }
+					for (const [x, y] of [[bb.min.x, bb.min.y], [bb.max.x, bb.min.y], [bb.min.x, bb.max.y], [bb.max.x, bb.max.y]]) {
+						v.set(x, y, 0).applyMatrix4(m)
+						p.minX = Math.min(p.minX, v.x); p.maxX = Math.max(p.maxX, v.x); p.minY = Math.min(p.minY, v.y); p.maxY = Math.max(p.maxY, v.y)
+					}
+					p.px = m.elements[12]; p.py = m.elements[13]
+					p.t = sampleTime(map, p.px, p.py)
+					p.headTime = headTime.get(o)?.get(i) ?? null
+					list.push(p)
+					pieces.push(p)
+				}
+				meshes.push({ o, list })
+			} else {
+				const { comps, vComp } = components(o.geometry)
+				for (const c of comps) {
+					c.kind = staff ? 'staff' : 'ink'
+					c.px = (c.minX + c.maxX) / 2; c.py = (c.minY + c.maxY) / 2
+					c.t = sampleTime(map, c.minX + 0.05, c.py)
+					if (!staff) pieces.push(c)
+				}
+				meshes.push({ o, list: comps, vComp })
+			}
+		})
+		const units = buildUnits(pieces)
+		const big = units.filter(u => u.maxX - u.minX > 14).length
+		for (const { o, list, vComp } of meshes) {
+			const own = new Float32Array((vComp ? vComp.length : list.length) * 3), unit = new Float32Array(own.length)
+			const put = (k, p) => {
+				own.set([p.px, p.py, p.t], k * 3)
+				const u = p.unit || { cx: p.px, cy: p.py, t: p.t }
+				unit.set([u.cx, u.cy, u.t], k * 3)
+			}
+			if (vComp) vComp.forEach((c, k) => put(k, list[c]))
+			else list.forEach((p, k) => put(k, p))
+			const A = vComp ? THREE.BufferAttribute : THREE.InstancedBufferAttribute
+			o.geometry.setAttribute('aRvPiv', new A(own, 3))
+			o.geometry.setAttribute('aRvUnit', new A(unit, 3))
+		}
+		this.stats = { pieces: pieces.length, units: units.length, wide: big }
 	}
 
 	_buildParticles() {
@@ -604,7 +757,7 @@ export class ScoreReveal {
 		geo.setAttribute('aColor', new THREE.Float32BufferAttribute(col, 1))
 		const mat = new THREE.ShaderMaterial({
 			uniforms: this.pUniforms,
-			vertexShader: UNIFORMS_GLSL + NOISE_GLSL + PARTICLE_VS,
+			vertexShader: UNIFORMS_GLSL + NOISE_GLSL + CURL_GLSL + PARTICLE_VS,
 			fragmentShader: PARTICLE_FS,
 			transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
 		})

@@ -380,6 +380,7 @@ export function buildScoreMeshes(records, { fontSize, materials, chunk = 40 }) {
 			mesh.castShadow = true
 			mesh.receiveShadow = true
 			mesh.userData.isHead = info.isHead
+			mesh.userData.glyphName = info.name
 			list.forEach((inst, i) => {
 				const [a, b, c, d, e, f] = inst.m
 				mat4.set(a, -c, 0, e * S, -b, d, 0, -f * S, 0, 0, 1, 0, 0, 0, 0, 1)
