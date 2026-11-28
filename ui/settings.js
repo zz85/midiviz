@@ -70,7 +70,7 @@ export function createSettings(sections = [], { tail = null } = {}) {
   function coerce(it, v) {
     if (v == null) return v
     if (isBool(it)) return typeof v === 'string' ? v !== '0' && v !== 'false' : !!v
-    if (isNum(it)) { const n = +v; return Number.isFinite(n) ? n : undefined }
+    if (isNum(it)) { const n = +v; if (!Number.isFinite(n)) return undefined; const st = it.step ?? (doc && it.el ? +doc.getElementById(it.el)?.step : 0); return st > 0 ? +(Math.round(n / st) * st).toFixed(10) : n }
     if (it.type === 'color') return /^#?[0-9a-f]{6}$/i.test(String(v)) ? '#' + hex(v) : undefined
     return String(v)
   }

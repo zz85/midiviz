@@ -1536,7 +1536,7 @@ export async function boot(plug = {}) {
       { id: 'pathtrace', label: 'Path trace', items: [
         K('ptengine', 'ptEngine'), K('ptspp', 'ptSpp', { urlAliases: ['exptspp'] }), K('ptbounces', 'ptBounces'), K('pthair', 'ptHair'), K('ptdn', 'ptDenoise', { urlAliases: ['exptdn'] }), K('ptfx', 'ptFx'), K('ptsize', 'ptSize'),
       ] },
-    ].map(sec => ({ ...sec, items: sec.items.filter(it => $(it.el)) })), { tail: PIANIST_TAIL }).bind(document)
+    ].map(sec => ({ ...sec, items: sec.items.filter(it => it.el === null || $(it.el)) })), { tail: PIANIST_TAIL }).bind(document)
     stageSets.attach(settings)
     window.__settings = settings
     // the studio panel (ui/studio.js): every setting, drawn from the schema, with the hands' baked tracks,

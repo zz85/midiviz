@@ -30,7 +30,7 @@ import { createLakeStage, LAKE_TIMES } from '../lake/stage.js'
 const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
 // the markup of a section's items, as the pages' menus write a field: a select, or a checkbox
 function markup(section) {
-  return section.items.map(it => {
+  return section.items.filter(it => it.el).map(it => {
     const title = it.title ? ` title="${esc(it.title)}"` : ''
     if (it.type === 'bool') return `<label class="chk"${title}><input type="checkbox" id="${it.el}"${it.default ? ' checked' : ''}>${esc(it.label)}</label>`
     const opts = (it.options || []).map(([v, n]) => `<option value="${esc(v)}"${String(v) === String(it.default) ? ' selected' : ''}>${esc(n)}</option>`).join('')
@@ -48,8 +48,7 @@ export const SETS = [
     section: parkSettings({ birdsKey: 'birds', who: 'her' }),
     wire(s, settings, h) { wirePark(settings, s, { playing: () => h.playing?.() ?? false }) },
     fromUrl(s, settings, params) {
-      Object.assign(s.opts, { time: +settings.get('parkTod'), style: settings.get('parkTree'), painted: settings.get('parkPaint') })
-      { const k = +params.get('pscale'); if (k >= 0.02 && k <= 4) s.opts.scale = k }
+      Object.assign(s.opts, { time: +settings.get('parkTod'), style: settings.get('parkTree'), painted: settings.get('parkPaint'), scale: +settings.get('parkScale'), azimuth: +settings.get('parkSun'), ambience: +settings.get('parkAmbience') })
       if (params.has('pturn') && Number.isFinite(+params.get('pturn'))) s.opts.turn = +params.get('pturn')
     },
     playing(s, settings, on) { s.setSound(on && s.on && settings.get('parkAmb')) },

@@ -287,6 +287,10 @@ export async function createPark(renderer, { time = 1.4, style = 'summer', azimu
     scene, camera, shared, S, sun, origin, yaw, LAWN, toPark, toDuo, heightAt, scale, CM,
     setTime(t) { S.time = t; applyLook() },
     setStyle(s) { S.style = s; tree.setStyle(s) },
+    /** The sun's bearing in degrees (where along the horizon it stands; the hour sets its height). */
+    setAzimuth(a) { S.azimuth = +a; lastLook = ''; applyLook() },
+    /** The ambience's level, 0 to 2 (wind, birds, insects, the airliner); 0.7 as made. */
+    setAmbience(k) { S.ambience = Math.max(0, +k) },
     setSize, update, render, sound, tree, grass,
     /** A point of the park (m) as the duo's camera sees it (cm). */
     viewFrom(parkPos, parkTarget) { return [toDuo(new THREE.Vector3(...parkPos)), toDuo(new THREE.Vector3(...parkTarget))] },

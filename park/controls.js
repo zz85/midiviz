@@ -13,11 +13,17 @@ import { TIMES } from './park.js'
 export const PARK_TIMES = TIMES
 export const PARK_TREES = [['summer', 'Summer'], ['sakura', 'Cherry blossom'], ['autumn', 'Autumn'], ['maple', 'Maple']]
 export const PARK_SCALES = [['0.45', '0.45 size'], ['0.5', '1/2 size'], ['0.75', '3/4 size'], ['1', 'full size']]
-export const PARK_DEFAULTS = { tod: 1, tree: 'summer', amb: true, paint: false, scale: 0.45 }
+export const PARK_DEFAULTS = { tod: 1, tree: 'summer', amb: true, paint: false, scale: 0.45, azimuth: 55, ambience: 0.7 }
 
 const IDS = { tod: 'parkTod', tree: 'parkTree', amb: 'parkAmb', paint: 'parkPaint', scale: 'parkScale' }
+// (the studio's own, with no control in the menus: no element, a range of their own)
+const STUDIO = { parkSun: { label: 'Sun bearing', min: 0, max: 360, step: 1 }, parkAmbience: { label: 'Birds and wind level', min: 0, max: 2, step: 0.05 }, parkScale: { label: 'Park size', min: 0.1, max: 2, step: 0.05 } }
 
-// `who`: the performers in the labels, 'them' (the duo) or 'her' (the pianist alone)
+// `who`: the performers in the labels, 'them' (the duo) or 'her' (the pianist alone). `scale`: a select of
+// the park's size in the menus (#038); where it's false the size is a slider of the studio's alone (the
+// pianist pages), as the sun's bearing (?psun=, degrees along the horizon) and the ambience's level
+// (?pamb=, 0-2) are everywhere: all three with no control in the menus, so only the studio shows them.
+// A change of the size reloads the page: the park is built at a size.
 export function parkSettings({ ids = {}, birdsKey = 'birds', scale = false, when = null, timeOffset = 0, who = 'them' } = {}) {
   const id = k => ids[k] ?? IDS[k]
   const her = who === 'her', they = her ? 'she plays' : 'they play', them = her ? 'her' : 'them', their = her ? 'her' : 'their'
@@ -30,6 +36,12 @@ export function parkSettings({ ids = {}, birdsKey = 'birds', scale = false, when
   // the park's size (#038): any value from 0.02 to 4 in a link, the menu's four by default; a change reloads
   if (scale) items.push({ key: 'parkScale', el: id('scale'), type: 'select', default: String(PARK_DEFAULTS.scale), url: 'pscale', label: 'Park size', reload: true, options: PARK_SCALES,
     parse: t => { const k = +t; return k >= 0.02 && k <= 4 ? String(k) : undefined } })
+  else items.push({ key: 'parkScale', el: null, type: 'range', default: PARK_DEFAULTS.scale, url: 'pscale', reload: true, studio: true, ...STUDIO.parkScale,
+    parse: t => { const k = +t; return k >= 0.02 && k <= 4 ? k : undefined }, title: 'The park around her and the piano, who stay as they are: 1 is life size. Changing it reloads the page' })
+  items.push(
+    { key: 'parkSun', el: null, type: 'range', default: PARK_DEFAULTS.azimuth, url: 'psun', studio: true, ...STUDIO.parkSun, title: 'Where along the horizon the sun stands, in degrees; the hour sets its height. 55 as made' },
+    { key: 'parkAmbience', el: null, type: 'range', default: PARK_DEFAULTS.ambience, url: 'pamb', studio: true, ...STUDIO.parkAmbience, title: 'How loud the wind, songbirds and insects play; 0.7 as made, 0 silent' },
+  )
   return { id: 'park', label: 'The park', when, timeOffset, items }
 }
 
@@ -60,5 +72,9 @@ export function wirePark(S, park, { playing = () => true, timeOffset = 0, onChan
   S.subscribe('parkTree', v => { park.setStyle(v); onChange() })
   S.subscribe('parkAmb', () => { sound(); onChange() })
   S.subscribe('parkPaint', v => { if (park.S) park.S.paintPerformers = v; else park.setPainted?.(v); onChange() })
+  S.subscribe('parkSun', v => { park.setAzimuth(v); onChange() })
+  S.subscribe('parkAmbience', v => { park.setAmbience(v); onChange() })
+  // (the values a link brought, before any change)
+  park.setAzimuth(S.get('parkSun')); park.setAmbience(S.get('parkAmbience'))
   return { sound }
 }

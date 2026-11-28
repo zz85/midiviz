@@ -1219,7 +1219,7 @@
       lake: { center: [MID.x, MID.z], pianoFrame: pianoSide, emitters: [[0, 0]], yaw: 180 } })
     {
       const ps = stageSets.get('park')
-      Object.assign(ps.opts, { time: +settings.get('parkTod'), style: settings.get('parkTree'), scale: +settings.get('parkScale'), painted: settings.get('parkPaint') })
+      Object.assign(ps.opts, { time: +settings.get('parkTod'), style: settings.get('parkTree'), scale: +settings.get('parkScale'), painted: settings.get('parkPaint'), azimuth: +settings.get('parkSun'), ambience: +settings.get('parkAmbience') })
       stageSets.get('lake').setTime(settings.get('lakeSky'))
       settings.subscribe('lakeSky', v => { stageSets.get('lake').setTime(v); saveUrl() })
     }
