@@ -194,7 +194,7 @@ function taperForearm(alt, d, backs = new Map()) {
  * her mesh's UVs (outlineWidthMultiplyTexture, its green), painted here per triangle from
  * its distance up the arm: none below INK_FROM cm, all of it from INK_TO.
  */
-const INK_FROM = 0.6, INK_TO = 4.5, INK_TEX = 1024
+const INK_FROM = 0.6, INK_TO = FOREARM_CM - 0.4, INK_TEX = 1024
 function unInkWrists(backs) {
   for (const [o, B] of backs) {
     const mats = [].concat(o.material), ol = mats.find(m => m.isOutline)
@@ -220,6 +220,104 @@ function unInkWrists(backs) {
     ol.outlineWidthMultiplyTexture = tex
     ol.needsUpdate = true
   }
+}
+
+// The forearm follows her arm, not the proxy's. Her forearm's skin turns with its own
+// twist bones (pixiv's twist sample: J_Roll and constraint bones), the proxy's lower arm
+// doesn't, so a forearm skinned to the proxy turned another way from hers: with the hand
+// turned in, the two arms parted in a ring and a notch at the wrist, which read as a
+// robot's joint. Each vertex of the new hand's forearm takes the skin weights and the
+// normal of the nearest vertex of her forearm (at rest, before taperForearm), blended in
+// from the wrist over SKIN_FROM..SKIN_TO cm, and its shape lies on hers (SKIN_GAP outside),
+// so the two meet at the cut with the same surface, the same shading and the same turn.
+const SKIN_FROM = 0.3, SKIN_TO = 2.2, SKIN_GAP = 0.05, SKIN_SIGMA = 0.8, SKIN_REACH = 2.4
+/** Her forearm near the wrist: each skin vertex's place and normal (group frame) and its
+ *  weights on her own bones, her hand and the bones under it left out. */
+function forearmSkin(alt, d) {
+  const F = armFrame(alt, d); if (!F) return null
+  const handBone = alt.humanoid[d === '.L' ? 'leftHand' : 'rightHand']
+  const under = b => { for (let x = b; x; x = x.parent) if (x === handBone) return true; return false }
+  const pts = [], v = v3(), w = v3(), n = v3()
+  alt.group.updateMatrixWorld(true)
+  alt.model.traverse(o => {
+    const name = [].concat(o.material)[0]?.name || ''
+    if (!o.isSkinnedMesh || !/SKIN/i.test(name) || /Face/i.test(name)) return
+    o.skeleton.update()
+    const P = o.geometry.attributes.position, N = o.geometry.attributes.normal, SI = o.geometry.attributes.skinIndex, SW = o.geometry.attributes.skinWeight
+    if (!N || !SI) return
+    const toG = alt.group.matrixWorld.clone().invert().multiply(o.matrixWorld)
+    for (let i = 0; i < P.count; i++) {
+      o.getVertexPosition(i, v).applyMatrix4(toG)
+      const { back, r } = F.at(v)
+      if (back < -0.5 || back > FOREARM_CM + 2 || r > 4) continue
+      const ws = []
+      for (let c = 0; c < 4; c++) { const x = SW.getComponent(i, c), b = o.skeleton.bones[SI.getComponent(i, c)]; if (x > 0 && b && !under(b)) ws.push([b, x]) }
+      const sum = ws.reduce((a, x) => a + x[1], 0); if (sum < 0.5) continue
+      // the skinned normal: a point a little off the bind position, through the same bones
+      w.fromBufferAttribute(P, i).addScaledVector(n.fromBufferAttribute(N, i), 0.5)
+      o.applyBoneTransform(i, w); w.applyMatrix4(toG).sub(v).normalize()
+      pts.push({ p: v.clone(), n: w.clone(), ws: ws.map(([b, x]) => [b, x / sum]) })
+    }
+  })
+  return pts.length >= 20 ? { F, pts } : null
+}
+/** The new hand's forearm vertices onto her forearm's skin: weights (onto `extra`, her bones
+ *  added after the proxy's), normals, and the shape a hair outside hers. */
+function followForearm(alt, skin, pos, nrm, si, sw, handW, extra) {
+  const { F, pts } = skin, p = v3(), m = v3()
+  const nb = alt.bones.length
+  const indexOf = b => { let k = extra.list.indexOf(b); if (k < 0) { k = extra.list.push(b) - 1; extra.rest.push(alt.group.matrixWorld.clone().invert().multiply(b.matrixWorld)) } return nb + k }
+  for (let j = 0; j < handW.length; j++) {
+    p.fromArray(pos, j * 3)
+    const { back } = F.at(p)
+    // the shape and the shading come over SKIN_FROM..SKIN_TO; the weights all the way down
+    // to the hand, so no stretch of the stub takes up the turn between her twist and the proxy's
+    const t = smooth01(SKIN_FROM, SKIN_TO, back) * (1 - handW[j]), tw = 1 - handW[j]
+    if (tw <= 0) continue
+    // her nearby vertices, blended smoothly (a Gaussian of distance): the nearest alone
+    // would give the weights in cells, which tore the forearm apart where her twist turned it
+    const near = []
+    for (const q of pts) { const d2 = q.p.distanceToSquared(p); if (d2 < SKIN_REACH * SKIN_REACH) near.push([q, d2]) }
+    if (!near.length) { let bd = Infinity, b = null; for (const q of pts) { const d2 = q.p.distanceToSquared(p); if (d2 < bd) { bd = d2; b = q } } near.push([b, 0]) }
+    let tot = 0; const n0 = v3(), off0 = { v: 0 }, wsH = new Map()
+    for (const [q, d2] of near) {
+      const k = Math.exp(-d2 / (2 * SKIN_SIGMA * SKIN_SIGMA)) + 1e-9; tot += k
+      n0.addScaledVector(q.n, k); off0.v += k * p.clone().sub(q.p).dot(q.n)
+      for (const [b, x] of q.ws) wsH.set(b, (wsH.get(b) || 0) + x * k)
+    }
+    n0.normalize(); const off = off0.v / tot
+    // the shape: onto her surface along her normal there, SKIN_GAP outside
+    p.addScaledVector(n0, t * (SKIN_GAP - off)).toArray(pos, j * 3)
+    // the normal
+    m.fromArray(nrm, j * 3).lerp(n0, t).normalize().toArray(nrm, j * 3)
+    // the weights: the hand's (the proxy's), and hers by t
+    const ws = new Map()
+    for (let c = 0; c < 4; c++) if (sw[j * 4 + c] > 0) ws.set(si[j * 4 + c], (ws.get(si[j * 4 + c]) || 0) + sw[j * 4 + c] * (1 - tw))
+    for (const [b, x] of wsH) { const k = indexOf(b); ws.set(k, (ws.get(k) || 0) + x / tot * tw) }
+    const top = [...ws].sort((a, b) => b[1] - a[1]).slice(0, 4), sum = top.reduce((a, x) => a + x[1], 0)
+    for (let c = 0; c < 4; c++) { si[j * 4 + c] = top[c]?.[0] ?? 0; sw[j * 4 + c] = top[c] ? top[c][1] / sum : 0 }
+  }
+}
+/** The new hand's forearm ink faded out toward its cut, as hers fades in (unInkWrists),
+ *  so the arm's outline runs on across the join: a texture of the hand's UVs. */
+function fadeStubInk(toon, geoms) {
+  const ol = toon?.find(m => m.isOutline); if (!ol) return
+  const cv = document.createElement('canvas'); cv.width = cv.height = INK_TEX
+  const cx = cv.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, INK_TEX, INK_TEX)
+  for (const { g, backs, handW } of geoms) {
+    const UV = g.attributes.uv, IDX = g.index
+    for (let t = 0; t < IDX.count; t += 3) {
+      const ids = [IDX.getX(t), IDX.getX(t + 1), IDX.getX(t + 2)]
+      if (ids.some(i => handW[i] > 0.5)) continue
+      const back = (backs[ids[0]] + backs[ids[1]] + backs[ids[2]]) / 3
+      if (!(back > INK_FROM)) continue
+      const k = Math.round(255 * (1 - smooth01(INK_FROM, INK_TO, back)))
+      cx.fillStyle = cx.strokeStyle = `rgb(${k},${k},${k})`; cx.lineWidth = 1.5
+      cx.beginPath(); ids.forEach((i, c) => { const x = UV.getX(i) * INK_TEX, y = UV.getY(i) * INK_TEX; c ? cx.lineTo(x, y) : cx.moveTo(x, y) }); cx.closePath(); cx.fill(); cx.stroke()
+    }
+  }
+  const tex = new THREE.CanvasTexture(cv); tex.flipY = false; tex.colorSpace = THREE.NoColorSpace
+  ol.outlineWidthMultiplyTexture = tex; ol.needsUpdate = true
 }
 
 /** Her skin's MToon materials (main and outline), cloned, untextured, coloured as her
@@ -297,7 +395,7 @@ export async function graftPianistHands(alt, { base = new URL('./assets/', impor
   const meshes = []
   // the proxy's rest, kept to put back (set(false) needs a page reload: the rig was made on the new one)
   const saved = { joints: Object.fromEntries(Object.entries(alt.joints).map(([k, v]) => [k, v.clone()])) }
-  const backs = new Map()
+  const backs = new Map(), extra = { list: [], rest: [] }, stubs = []
   for (const side of ['L', 'R']) {
     const d = '.' + side
     const A = frames(mh.joints, side), B = frames(alt.joints, side)
@@ -335,7 +433,8 @@ export async function graftPianistHands(alt, { base = new URL('./assets/', impor
       const top = [...ws].sort((x, y) => y[1] - x[1]).slice(0, 4), sum = top.reduce((a, x) => a + x[1], 0)
       top.forEach(([b, w], c) => { si[j * 4 + c] = b; sw[j * 4 + c] = w / sum })
     })
-    fitStub(alt, d, pos, handW)
+    const skin = forearmSkin(alt, d)   // (before taperForearm changes her)
+    if (!skin) fitStub(alt, d, pos, handW)
     taperForearm(alt, d, backs)
     const tri = []
     for (let t = 0; t < IDX.count; t += 3) {
@@ -349,6 +448,14 @@ export async function graftPianistHands(alt, { base = new URL('./assets/', impor
     g.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4))
     g.setIndex(tri)
     g.computeVertexNormals()
+    if (skin) {
+      // (the geometry's own arrays: Uint16BufferAttribute copies si)
+      const A = g.attributes
+      followForearm(alt, skin, A.position.array, A.normal.array, A.skinIndex.array, A.skinWeight.array, handW, extra)
+      A.position.needsUpdate = A.normal.needsUpdate = A.skinIndex.needsUpdate = A.skinWeight.needsUpdate = true
+      const F = skin.F, q = v3()
+      stubs.push({ g, handW, backs: Float32Array.from({ length: n }, (_, j) => F.at(q.fromArray(pos, j * 3)).back) })
+    }
     // the proxy's wrist and fingers onto the new hand's joints
     const J = alt.joints, MJ = mh.joints
     J['wrist' + d + '____tail'] = toHand(MJ['finger3-1' + d + '____head'])
@@ -366,6 +473,7 @@ export async function graftPianistHands(alt, { base = new URL('./assets/', impor
     meshes.push({ mesh, geometry: g })
   }
   unInkWrists(backs)
+  fadeStubInk(toon, stubs)
   alt.group.updateMatrixWorld(true)
   // (in her VRM's scene with toon skin, so the page's ink switch reaches the outline:
   // a skinned mesh draws where its bones are, whatever its parent)
@@ -373,7 +481,8 @@ export async function graftPianistHands(alt, { base = new URL('./assets/', impor
   for (const { mesh } of meshes) {
     home.add(mesh)
     // bound at the proxy's (new) rest: alt.restWorld, in the group's frame
-    mesh.bind(new THREE.Skeleton(alt.bones, alt.restWorld.map(m => m.clone().invert())), new THREE.Matrix4())
+    // (and her own forearm bones, which its forearm follows: followForearm)
+    mesh.bind(new THREE.Skeleton([...alt.bones, ...extra.list], [...alt.restWorld, ...extra.rest].map(m => m.clone().invert())), new THREE.Matrix4())
   }
   // the model's own hands: folded into the wrist
   // (FOLD_CM up her forearm: a fixed place in her lower arm's frame, which the rig turns)
